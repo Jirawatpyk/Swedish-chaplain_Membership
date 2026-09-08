@@ -84,8 +84,14 @@ currentAudienceCeiling()     = min(configuredAudienceCeiling(), DELIVERABLE_RECI
 DELIVERABLE_RECIPIENTS_PER_TICK = 800
 ```
 
-Every caller reads `currentAudienceCeiling()`, so submit, count and dispatch still compare
-against ONE number — FR-042 is unchanged. The clamp exists because the configured ceiling
+The six single-tick callers read `currentAudienceCeiling()` — both count routes, submit,
+`dispatch-scheduled` and the two compose pages — so what compose shows is what the send obeys and
+FR-042 is unchanged. **The two batch cron routes deliberately read `configuredAudienceCeiling()`
+instead**: `split-large-broadcasts` selects rows with
+`estimated_recipient_count > SPLIT_THRESHOLD_RECIPIENTS` and `dispatch-batches` dispatches
+manifests of an audience that was split *because* it exceeds one tick, so a per-tick clamp would
+refuse every row they can pick up — silently, since that refusal is not counted by
+`dispatchResolveFailedTotal`. The clamp exists because the configured ceiling
 exceeded what a dispatch tick can push: the serial per-contact loop runs at a measured
 ~3.4 req/s (`min(10 req/s account limit, 1 / 0.29 s round trip)`), i.e. ~830 in a 300 s budget,
 and Resend's Free plan independently caps usable contacts near 987. `configuredAudienceCeiling()`
@@ -96,15 +102,16 @@ the same `maxDuration = 300`.
 `split-large-broadcasts` threshold stays 10,000 (< ceiling when ON). DB CHECK
 `broadcasts_estimated_recipient_cap (0..50000)` unchanged.
 
-**Push-capacity gate (added 2026-09-08, T098 — the contract was silent on it).** Being under
-the ceiling is NOT sufficient for delivery. `split-large-broadcasts` skips
-`resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS` (`route.ts:330`), so everything at or below
-10,000 falls to `dispatch-scheduled`, whose push is a serial one-contact-per-request loop
-inside `maxDuration = 300`. A broadcast in `(300 s × measured req/s − margin) … 10,000` is
-therefore **accepted at submit and never delivered** — it sits in `approved`. The band is
-unreachable while `FEATURE_CONTACT_MARKETING_RECIPIENTS` is OFF (ceiling 5,000), and closing
-it is a precondition of the flip: `quickstart.md` § Cutover 3b, `reviews/pr-c.md` row 33,
-`reviews/cutover.md` § 5. The req/s figure is UNMEASURED — T095 is the source of record.
+~~**Push-capacity gate (added 2026-09-08, T098 — the contract was silent on it).** … The band is
+unreachable while `FEATURE_CONTACT_MARKETING_RECIPIENTS` is OFF (ceiling 5,000) … The req/s figure
+is UNMEASURED.~~ **Superseded the same day by the clamp above.** Two things that paragraph got
+wrong within hours of being written: the rate is measured now (~3.45 req/s achievable against a
+10 req/s account limit), and the band it described starts near **827** — *below* the 5,000 ceiling
+that was already enforced, so it was never gated on the flag. What remains true is the mechanism:
+`split-large-broadcasts` skips `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`, so everything at or
+below 10,000 falls to `dispatch-scheduled`'s serial push inside `maxDuration = 300`. The clamp is
+what makes "under the ceiling" sufficient for delivery again. History:
+`quickstart.md` § Cutover 3b, `reviews/pr-c.md` row 33, `reviews/cutover.md` § 5 / § 5a.
 
 ## 4. Audience push (dispatch)
 

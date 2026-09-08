@@ -21,8 +21,10 @@ afterwards. **T094 does not complete when the flag is set. It completes when the
 
 **→ The flag is ABSENT, therefore `false`, and the flip is NOT armed.** `src/lib/env.ts:638`
 declares `booleanFromString.default(false)`, so a missing variable is a valid boot and resolves to
-off; the running production build resolves the `primary_only` leg with
-`audienceCeiling(false) = 5_000`, and so will the next deployment.
+off; the running production build resolves the `primary_only` leg with an enforced ceiling of
+5,000. ~~and so will the next deployment~~ — **the next deployment enforces 800**, because this
+branch clamps the ceiling to `DELIVERABLE_RECIPIENTS_PER_TICK` in every flag state (§ 5). The leg
+stays `primary_only` until the flag is set; the ceiling does not wait for it.
 
 **Consequence**: `main` is safe to merge again, and the preconditions in § 2 can be closed in the
 order the plan intended. Setting the variable to `true` is now the deliberate first step of the
@@ -59,8 +61,8 @@ for whenever someone next merges anything. Set it when you are ready to redeploy
 | 3 | **T093** — FR-027a pre-flight review on `/admin/marketing/audience?kind=secondary&state=on&eligible=1`; switch off anyone who must not receive; record date + reviewer in `docs/go-live-readiness.md` | **CLEARED — VACUOUS at 0 eligible secondaries** (measured 2026-09-08 10:45, maintainer) | The tenant has no secondary contact rows, so the pre-flight page is empty and the 1:N audience equals the primary-only audience. § 3 carries the count. **Expires on SweCham's secondary import — re-run then.** |
 | 3a | **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`) — either the system notices a new secondary on first marketing contact, or T093 attests per contact | **CLEARED — VACUOUS at 0 secondaries** (same measurement) | No secondary contact exists, therefore no data subject the chamber has not informed. **This is the row the import turns back on**: an imported marketing list is exactly a population that never gave the chamber its addresses directly. |
 | 3b | **Push-capacity gate (staff review 🔴)** | **CLEARED 2026-09-08 — closed in code, option (c)** | `DELIVERABLE_RECIPIENTS_PER_TICK = 800` in the Domain; `currentAudienceCeiling()` = `min(configured, 800)`, so count, submit and dispatch all refuse above what one tick can push. Derived from the T095 measurement (§ 5a), not from a guess. The undeliverable band no longer exists in any flag state. |
-| — | **T098** `/speckit.analyze` FR↔SC↔contract traceability, findings folded into `spec.md` | **IN PROGRESS** | Ordered before T094 by `tasks.md:305`. |
-| — | **T095** — record the team's real Resend throughput in `research.md` § R9/R16 | **OPEN — operator, and it is now the ONLY thing between here and a decision** | Needed as the measured input to § 5. Every rate number in the codebase today is an unsourced comment (`~2 req/s` in `audience-ceiling.ts`, `10 req/s` in the F7 notes). **§ 5a below replaces "read Settings → Usage" with a measurement that answers the question the dashboard cannot.** |
+| — | **T098** `/speckit.analyze` FR↔SC↔contract traceability, findings folded into `spec.md` | **CLEARED 2026-09-08** — 28 findings folded (6 HIGH), 60/61 FRs traceable, FR-044 the one declared orphan | Was ordered before T094 by `tasks.md:305`. |
+| — | **T095** — record the team's real Resend throughput in `research.md` § R9/R16 | **CLEARED 2026-09-08 12:41** — 10 req/s account limit, ~3.45 req/s achievable (latency-bound) | The measured input to § 5 and § 5a. It replaced the unsourced `~2 req/s` in `audience-ceiling.ts` and the `10 req/s` in the F7 notes: the first was wrong about the account, the second right about the account and wrong as a throughput input. |
 | — | **T096** — record of processing + legitimate-interest assessment | **CLEARED** | Delivered with PR-D in `docs/compliance/processing-records.md` (recipient-side LIA `:113-135`, per-contact-preference activity `:136-152`). |
 
 ---
@@ -117,12 +119,17 @@ the same order. The FR-027a pre-flight page renders an empty list — there is n
 — and GDPR Art. 14 has no uninformed data subject to notify, because no secondary contact exists.
 Recorded with the count rather than as "n/a", per FR-027a.
 
-**Not settled — the flip is still not a no-op.** It also moves the enforced ceiling from 5,000 to
-50,000 (`audienceCeiling(isF71aUs1Enabled() && contactMarketingRecipients)`; prod has batching ON),
-which is what arms the undeliverable 5,001–10,000 band in § 5. That band does not depend on the
-member count at all — a **custom list** reaches it directly, and a custom list of thousands is
-precisely what SweCham's pending marketing import is for. **Zero secondaries closes rows 3 and 3a;
-it does not close row 3b.**
+~~**Not settled — the flip is still not a no-op.** It also moves the enforced ceiling from 5,000 to
+50,000, which is what arms the undeliverable 5,001–10,000 band in § 5. Zero secondaries closes rows
+3 and 3a; it does not close row 3b.~~
+
+**SUPERSEDED the same day by § 5 (the clamp).** Two corrections. The band was never 5,001–10,000:
+at the measured 3.45 req/s it starts near 827, *below* the 5,000 ceiling that was already enforced
+— so it did not need the flip to be reachable, and a **custom list** reaches it without any member
+count. And it is now closed: `currentAudienceCeiling()` is clamped to 800 in every flag state, so
+the flip no longer changes the enforced ceiling at all. What the flip still changes is the LEG —
+`primary_only` → `all_contacts` — which at 0 secondary contacts resolves to the identical audience.
+**Zero secondaries closes rows 3 and 3a; the clamp closes row 3b.**
 
 **These numbers expire on the import.** They are the state at 10:45 on 2026-09-08, before the
 secondary-contact import. Re-run the command above immediately after that import lands: it flips

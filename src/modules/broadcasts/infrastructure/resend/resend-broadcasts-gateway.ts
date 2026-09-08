@@ -234,8 +234,16 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // `min(10, 1/RTT)` and the warm round trip is ~0.29 s — i.e. ~3.4 req/s,
     // latency-bound. Two consequences worth knowing before you tune anything
     // here: one tick drains ~1,000 contacts, not the ~3,000 the documented
-    // limit suggests; and the 429 backoff below never actually fires in
-    // normal operation, because 3.4 req/s never approaches 10.
+    // limit suggests; and on the `dispatch-scheduled` path the 429 backoff
+    // below never fires, because one serial loop at 3.45 req/s never
+    // approaches 10.
+    //
+    // That second point is path-specific — corrected 2026-09-08 after review.
+    // `dispatch-batches` drives this same method through
+    // `batch-dispatcher.ts`, which keeps up to `concurrencyCap` batches in
+    // flight (default 4). Four serial loops are ~13.8 req/s against a 10 req/s
+    // policy, so on THAT path 429s are expected and the backoff is load-bearing.
+    // Do not tune it away on the strength of the serial-path reasoning.
     // See `specs/108-contact-recipient-rules/research.md` § R9 (T095 block).
     //
     // Wrap EACH single create in its own

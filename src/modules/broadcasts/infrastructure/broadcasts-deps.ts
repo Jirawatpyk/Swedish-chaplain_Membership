@@ -112,7 +112,13 @@ export function currentAudienceMode(): AudienceMode {
 }
 
 /**
- * 108 PR-C T085 (FR-042) — the ONE ceiling every resolver caller reads:
+ * 108 PR-C T085 (FR-042) — the CONFIGURED ceiling, i.e. what the flags say the
+ * system would accept. Since T095 (2026-09-08) it is no longer what any
+ * single-tick caller compares against: they read `currentAudienceCeiling()`
+ * below, which clamps this to `DELIVERABLE_RECIPIENTS_PER_TICK`. Its two
+ * remaining direct readers are the batch crons, whose predicate is
+ * `> SPLIT_THRESHOLD_RECIPIENTS` and for whom a per-tick clamp is the wrong
+ * bound. Value:
  * 5,000 unless BOTH the F7.1a batching path AND the 1:N audience flag are
  * ON, then 50,000. Read per call (a flag flip takes effect on the next
  * request/tick), the same way the legacy `isF71aUs1Enabled()` gate is

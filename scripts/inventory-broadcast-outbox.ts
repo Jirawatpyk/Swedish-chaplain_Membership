@@ -21,10 +21,19 @@
  *   node --env-file=.env.production --import tsx scripts/inventory-broadcast-outbox.ts
  * Dev branch: swap `--env-file=.env.local`.
  *
+ * `TENANT_SLUG` above is only there to satisfy env boot. **The tenant this
+ * script actually inspects comes from `INVENTORY_TENANT_ID` (default
+ * `swecham`)** — the same knob `inventory-primary-contact-invariant.ts` uses.
+ * On a second tenant, set it: `INVENTORY_TENANT_ID=<slug>`. Setting only
+ * `TENANT_SLUG` would inventory swecham and exit 0 without saying so.
+ *
  * Exit 0 = nothing in flight exceeds the bound (safe to deploy the lower
- * ceiling); 1 = at least one in-flight row is above it — decide per row before
- * deploying: cancel it, let it send under the current ceiling first, or accept
- * that it will be refused.
+ * ceiling); 1 = at least one in-flight row is above it. Decide per row BEFORE
+ * deploying — cancel it, or let it send under the current ceiling first.
+ * "Accept the refusal" is not a quiet option: dispatch will transition the row
+ * to a terminal `failed_to_dispatch`, write an audit row, and send the FR-021
+ * failure notification to the member who submitted it
+ * (`dispatch-scheduled-broadcast.ts`). The member finds out.
  */
 import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
@@ -103,7 +112,7 @@ async function main(): Promise<void> {
   if (totalOver > 0) {
     console.log('');
     console.log(
-      'These were accepted under a higher ceiling and will be REFUSED once the lower one deploys. Decide per row (cancel, let it send first, or accept the refusal):',
+      'These were accepted under a higher ceiling and will be REFUSED once the lower one deploys — terminally, with an audit row and a failure email to the member who submitted each one. Decide per row before deploying (cancel it, or let it send under the current ceiling first):',
     );
     for (const r of over) {
       console.log(`  ${r.broadcast_id}  status=${r.status}  estimated=${r.estimated_recipient_count}`);

@@ -49,10 +49,12 @@ describe('audienceCeiling (108 PR-C)', () => {
  * limit is 10 req/s (`ratelimit-policy: 10;w=1`, read from the API), but
  * `addContactsToAudience` is a serial `await` loop, so it reaches only
  * `min(limit, 1/RTT)` and the warm round trip is ~0.29 s — about 3.4 req/s.
- * Across `maxDuration = 300` that is ~1,020 contacts; with a 20 % margin,
- * **~830** — before subtracting dispatch's own per-broadcast work, so 800
- * carries ~4 % headroom, not 20 %. The account is also on Resend's FREE plan,
- * whose 1,000-contact cap bites at ~987. **800 sits under both bounds, for one
+ * One derivation throughout: `1/0.29 = 3.45 req/s`; `300 × 3.45 ≈ 1,034`; with
+ * a 20 % margin **~827**. Operationally: **800 contacts take ~232 s, 77 % of
+ * the 300 s budget**, and the remaining ~23 % absorbs the resolve and three
+ * more Resend round trips. The account is also on Resend's FREE plan, whose
+ * 1,000-contact cap bites around ~987 (a snapshot: 1,000 minus what was
+ * stored that day). **800 sits under both bounds, for one
  * broadcast in flight** — neither bound is per-broadcast (the 300 s is per
  * invocation across `MAX_PER_TICK = 50` rows; the 1,000 contacts is per
  * account across un-reaped ephemeral audiences). The constant's own docblock
@@ -66,8 +68,8 @@ describe('DELIVERABLE_RECIPIENTS_PER_TICK (T095, 2026-09-08)', () => {
     // Pinned as inequalities too, so a later edit to the constant has to
     // confront the two numbers it is supposed to sit under rather than just
     // changing a literal and a docblock.
-    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(830); // 300 s × 3.4 req/s × 0.8
-    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(987); // Resend Free: 1,000 − 13 stored
+    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(827); // 300 s × 3.45 req/s × 0.8
+    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(987); // Resend Free: 1,000 − 13 stored on the day
   });
 
   it('binds in BOTH flag states: it is strictly below even the batching-OFF ceiling', () => {

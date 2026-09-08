@@ -2,7 +2,7 @@
 
 **Feature Branch**: `108-contact-recipient-rules`
 **Created**: 2026-09-04
-**Status**: Implemented — all four PRs merged (PR-A #340, PR-B #342, PR-D #344, PR-C #346 `91505b8f2`); migrations 0292–0297 applied to prod. Remaining: Phase 9 cutover (T093–T100). `FEATURE_CONTACT_MARKETING_RECIPIENTS` is set to `true` in Vercel but production has **not** been redeployed, so the 1:N audience is **not live** — see `reviews/cutover.md`.
+**Status**: Implemented — all four PRs merged (PR-A #340, PR-B #342, PR-D #344, PR-C #346 `91505b8f2`); migrations 0292–0297 applied to prod. Remaining: Phase 9 cutover — **T093, T095, T096, T097, T098 are cleared and the push-capacity gate is closed in code; only T094 (the flip itself, which completes at first-send observation) and the post-flip T099/T100 remain.** `FEATURE_CONTACT_MARKETING_RECIPIENTS` is **absent** from Vercel (set 09:44, deleted 10:41 on 2026-09-08 once it became clear that setting it arms the flip for the next merge), so the 1:N audience is not live. The enforced audience ceiling, however, **is** 800 from the Phase-9 merge onward, in every flag state — see `reviews/cutover.md`.
 **Input**: User description: "Tier A and Tier B + ปิดช่องโหว่ หรือ รูรั่ว ทั้งหมด" — i.e. implement Tier A (harden the primary-contact-only rule for money emails) and Tier B (secondary contacts receive marketing) from `docs/contacts-primary-secondary-gap-analysis.md`, and close every gap that analysis found (H1, H2, G1–G9). Tier C (bulk import of secondary contacts) is a separate follow-on feature and is **out of scope** here.
 
 ## Overview *(context, non-normative)*
@@ -191,18 +191,29 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > (`src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:330`), so 6,200
 > never enters the batch path at all; `dispatch-scheduled` picks it up and
 > pushes it through `addContactsToAudience`, a SERIAL one-contact-at-a-time
-> loop against an account whose real rate limit is **UNMEASURED**
+> loop against an account whose rate limit was **UNMEASURED when this was written and is now
+> measured: 10 req/s, with ~3.45 req/s achievable because the loop is serial** (T095,
+> 2026-09-08 — see below)
 > (`src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts:246-267`)
 > inside a 300 s function budget — this plan says so itself at `plan.md:268`
 > ("the serial push cannot finish 5,000 contacts inside the 300 s function
 > budget even at the documented 10 req/s"), which is precisely why the
-> import-based build exists. **Do not quote a req/s figure anywhere in this
+> import-based build exists. ~~**Do not quote a req/s figure anywhere in this
 > spec — T095 is the only source.** The repo currently carries two live
 > numbers, `~2 req/s` in code comments and `10 req/s` as the documented
-> default, and `research.md:305-307` calls the code's figure stale. They are 5×
-> apart, which puts the safe bound anywhere between ~600 and ~3,000
-> recipients — both *below* the flag-OFF ceiling of 5,000, so the bound must be
-> derived from a measurement and never chosen to match a ceiling. A 6,200-contact broadcast would therefore be
+> default…~~
+>
+> **T095 settled it on 2026-09-08**, and both live numbers were wrong in
+> different ways: the account limit is **10 req/s** (`ratelimit-policy: 10;w=1`,
+> read from the API — so the `~2 req/s` in four source comments was wrong), but
+> a serial `await` loop reaches only `min(limit, 1/RTT)` and the warm round trip
+> is ~0.29 s, so **~3.45 req/s** is what the push achieves — using the
+> documented 10 as a capacity input overestimates by ~3×. The safe bound is
+> `300 s × 3.45 × 0.8 ≈ 827`, which is *below* the flag-OFF ceiling of 5,000 —
+> the point that survives unchanged from the original warning. It is now
+> enforced as `DELIVERABLE_RECIPIENTS_PER_TICK = 800`. The rule this paragraph
+> was written to protect still stands: quote the measurement, never a number
+> chosen to match a ceiling. A 6,200-contact broadcast would therefore be
 > ACCEPTED at submit, killed mid-push every tick, and never delivered — the
 > member sees it sitting approved.
 >

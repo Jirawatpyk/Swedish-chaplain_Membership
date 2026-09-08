@@ -112,7 +112,7 @@ Each row below was re-verified against source on 2026-09-08, not taken from the 
 
 | Gap | Status | What closed it |
 |---|---|---|
-| H1 — broadcasts do the inverse of the requirement (primary only) | **Closed, FLAG-GATED** | PR-C's 1:N audience leg in `resolve-segment-recipients.ts`, behind `FEATURE_CONTACT_MARKETING_RECIPIENTS`. **This is the one row that is not yet live**: the flag is set in Vercel but production has not been redeployed, so the resolver still runs the `primary_only` leg. See § 10. |
+| H1 — broadcasts do the inverse of the requirement (primary only) | **Closed, FLAG-GATED** | PR-C's 1:N audience leg in `resolve-segment-recipients.ts`, behind `FEATURE_CONTACT_MARKETING_RECIPIENTS`. **This is the one row that is not yet live**: the variable is ABSENT from Vercel (set then deleted on 2026-09-08), so the resolver still runs the `primary_only` leg. At today's 0 secondary contacts the two legs resolve to an identical audience anyway. See § 10. |
 | H2 — money mail can go to a FORMER primary (frozen snapshot) | **Closed, LIVE** | PR-A: every money email resolves the LIVE primary contact; `scripts/check-money-email-recipient.ts` is a pre-push + CI gate with a positive control, so a new send path cannot re-introduce the snapshot read. |
 | G1 — Stripe billing email = signed-in portal user | **Closed in code; one operator residual** | F5 takes the address from `BillingRecipientPort` (`src/modules/payments/application/ports/billing-recipient-port.ts:41`, wired at `initiate-payment.ts:218`), not from the session. Residual: the Stripe Dashboard "Successful payments" toggle must be switched OFF at the live-mode switch (quickstart § Cutover 7). |
 | G2 — zero-primary member reachable via a race | **Closed, LIVE** | Migration `0293`: `contacts_check_member_primary()` SECURITY DEFINER (`row_security = off`) behind two DEFERRABLE INITIALLY DEFERRED constraint triggers — the check is at COMMIT, so the pre-check-outside-tx race has no window. Predicate narrowed by spec AMENDMENT to members with ≥ 1 contact row. |
@@ -133,13 +133,19 @@ was deferred during PR-C and never authored; nothing in the codebase implements 
 
 ## 10. What is still open after 108
 
-1. **The flag flip itself** (task T094). `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` is set in
-   Vercel; production has not been redeployed, so H1 is closed in code but not in behaviour.
-2. **Push-capacity gate** (quickstart § Cutover 3b, staff review 🔴). With the flag ON the audience
-   ceiling moves 5,000 → 50,000, and `split-large-broadcasts` skips anything at or below
-   `SPLIT_THRESHOLD_RECIPIENTS = 10_000`, so a broadcast in the 5,001–10,000 band is accepted at
-   submit and then never delivered by the serial dispatch push. Unreachable while the flag is OFF.
-3. **The walk bound for G5**, which must land with (2) — same reason, same band.
+1. **The flag flip itself** (task T094). The variable is **absent** from Vercel — it was set at
+   09:44 on 2026-09-08 and deleted at 10:41, once it was clear that setting it arms the flip for
+   whoever merges next (`vercel.json` has no `ignoreCommand`). H1 is closed in code, not yet in
+   behaviour. T094 completes at first-send observation, not at flag-set.
+2. ~~**Push-capacity gate**~~ — **CLOSED in code 2026-09-08.** The gate was also mis-described
+   here: at the measured ~3.45 req/s the undeliverable band starts near **827**, *below* the 5,000
+   ceiling already enforced, so it was never "the 5,001–10,000 band the flip adds" and it did not
+   need the flip to be reachable. `DELIVERABLE_RECIPIENTS_PER_TICK = 800` now clamps
+   `currentAudienceCeiling()` in every flag state, so compose, submit and dispatch refuse above
+   what one 300 s tick can push. **Consequence for this document: the enforced ceiling is 800,
+   unflagged, from the Phase-9 merge onward.**
+3. **The walk bound for G5** — still open, and now the only piece of (2) that did not land: the
+   read still walks to exhaustion. It matters before any future ceiling RAISE, not for the clamp.
 4. **GDPR Art. 14 first-contact attestation** for secondary contacts the chamber has not itself
    informed (`docs/compliance/processing-records.md:128-135`, quickstart § Cutover 3a). Vacuous
    only while no such contact exists.

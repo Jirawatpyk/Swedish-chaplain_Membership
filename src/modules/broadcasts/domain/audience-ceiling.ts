@@ -85,16 +85,29 @@ export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
  *     only `min(limit, 1/RTT)`, and the warm round trip is **~0.29 s** —
  *     about **3.4 req/s**. Latency binds, not the plan. Using the documented
  *     10 as a capacity input overestimates by ~3×;
- *   - `maxDuration = 300` × 3.4 req/s ⇒ ~1,020 contacts; with a 20 % margin,
- *     **~830**. That figure does NOT subtract dispatch's own per-broadcast
- *     work — the audience resolve (which itself grows with the audience), and
- *     three more Resend round trips for `createAudience` + `createBroadcast` +
- *     `sendBroadcast` (~0.9 s). So 800 carries roughly 4 % headroom against
- *     the measured rate, not 20 %;
+ *   - one derivation, used everywhere: `1 / 0.29 s = 3.45 req/s`;
+ *     `300 s × 3.45 ⇒ ~1,034` contacts; with a 20 % margin, **~827**.
+ *     Read it the other way for the number that matters operationally:
+ *     **800 contacts take ~232 s, i.e. 77 % of the 300 s budget.** The
+ *     remaining ~23 % absorbs dispatch's own per-broadcast work — the audience
+ *     resolve (which itself grows with the audience) and three more Resend
+ *     round trips for `createAudience` + `createBroadcast` + `sendBroadcast`
+ *     (~0.9 s). (An earlier version of this docblock said "~4 % headroom",
+ *     which compared 800 against 827 — a margin already taken — and read as if
+ *     the whole budget were nearly spent. It is not.);
  *   - the account is on Resend's **Free** plan, whose 1,000-contact cap bites
- *     at ~987 (13 already stored). Above it Resend answers 4xx — not 429 — so
- *     `classifyResendError` returns `permanent` and the broadcast fails
- *     terminally in one tick, which is the *better* failure of the two.
+ *     around ~987 (1,000 minus the 13 stored when this was checked — that
+ *     subtrahend is a snapshot, not a constant, and R16's Global Contacts
+ *     survive an audience delete). **What Resend actually returns at the cap
+ *     is UNVERIFIED**: T095 measured `GET /audiences` and never touched the
+ *     limit. IF it is a plain 4xx, `classifyResendError` makes it `permanent`
+ *     and the broadcast fails terminally in one tick with an audit row — the
+ *     better of the two failures. If it is a 429 or a 5xx instead, `withRetry`
+ *     backs off and rethrows `retryable`, and the row sits in `approved` being
+ *     re-pushed every tick — the silent failure this constant exists to
+ *     prevent. Confirm on the first real send (contact count in Resend before
+ *     and after, against the `resend.broadcasts.contacts_added` log) before
+ *     relying on the benign reading.
  *
  * **800 sits under both bounds — for ONE broadcast in flight.** Say that part
  * out loud, because neither bound is per-broadcast:

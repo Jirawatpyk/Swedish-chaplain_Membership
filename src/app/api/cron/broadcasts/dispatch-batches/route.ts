@@ -88,9 +88,14 @@ export const dynamic = 'force-dynamic';
 // BUG-028: full function budget for the per-contact audience sync (Resend's
 // limit is 10 req/s but the serial loop is latency-bound at ~3.4 — measured
 // 2026-09-08, T095; this said 2 before). See dispatch-scheduled for the
-// rationale. NOTE: this route's 300 s budget is per BATCH, and a batch may
-// hold up to RESEND_PER_AUDIENCE_CAP = 10,000 contacts — so splitting does
-// not escape the wall clock, it only makes the same serial push smaller.
+// rationale. NOTE: this route's 300 s budget is per INVOCATION, not per
+// batch — `batch-dispatcher.ts` keeps up to `concurrencyCap` batches in
+// flight (default 4), each a serial push, and a batch may hold up to
+// RESEND_PER_AUDIENCE_CAP = 10,000 contacts. Two consequences that differ
+// from `dispatch-scheduled`: splitting does not escape the wall clock (10,000
+// contacts need ≥ 1,000 s even at the full 10 req/s policy), and this path IS
+// rate-limit-bound rather than latency-bound — 4 × 3.45 ≈ 13.8 req/s exceeds
+// the policy, so 429s and the gateway's reactive backoff are expected here.
 export const maxDuration = 300;
 
 const MAX_BROADCASTS_PER_TICK = 20;
