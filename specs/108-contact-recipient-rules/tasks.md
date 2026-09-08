@@ -356,10 +356,24 @@ unlimited), which is the lever the maintainer asked for.
   **unverified** — T130 checks it, because 5 automatic retries of a permanent 4xx would create 5
   audiences and burn 5 × 500 contacts.
 - The import API is NOT this phase. It works (`POST /contacts/imports` 201 in 458 ms,
-  size-independent, `status: completed` in ~270 ms with honest `counts`) but it creates contacts in
-  **Global Contacts and does not associate them with the `audience_id` passed** — verified twice,
-  the second time with never-seen addresses and a 5 s settle. Bridging that is the segments
-  migration, i.e. T110 + `resend` 4.8 → 6.x. Not a quick close.
+  size-independent, `status: completed` in ~270 ms with honest `counts`), and in two probes the
+  created contacts did NOT appear in the target audience — **but both probes sent the field as
+  `audience_id`, and `contracts/broadcast-audience.md` § 4 specifies `segments=[<audience id>]`.**
+  So "does not associate with the audience" is NOT verified; only "does not associate when passed
+  as `audience_id`" is. T145 re-probes with the contract's field before anyone builds on either
+  reading. If it still does not attach, `data-model.md` § 2.5 already names the fallback (the
+  working-table design, research V4); if it does, the import build (T086/T087/T106) becomes the
+  cheaper close and 9b's batch sizing is the interim. Either way the segments migration is T110.
+- **The batch path RE-RESOLVES the audience every tick** (`dispatch-batches/route.ts` calls
+  `resolveSegmentRecipients` per broadcast per tick) **while each manifest slices
+  `allRecipients` by index ranges frozen at split time**
+  (`dispatch-broadcast-batch.ts:218-220`: `allRecipients.slice(recipientRangeStart,
+  recipientRangeEnd + 1)`). A member opting out, joining or being archived between ticks shifts
+  every later slice: a recipient can be skipped or sent twice. This violates FR-044 (a) "list
+  fixed at the first attempt" and (d) "no recipient added twice". Pre-existing in F7.1a and
+  unreachable until 9b lowers the threshold — **9b makes it live**, so 9b must guard it (T143).
+  The existing drift audit (`broadcast_resend_audience_drift`,
+  `dispatch-scheduled-broadcast.ts:887-981`) is on the single-tick path only.
 
 **Not in scope**: concurrency above 4; the import API; any change to `RESEND_PER_AUDIENCE_CAP`
 (Resend's own per-audience limit — it stays as the hard upper bound the batch size must not exceed).
@@ -390,7 +404,14 @@ unlimited), which is the lever the maintainer asked for.
 - [ ] T141 Gates: `pnpm typecheck` · `pnpm lint` · `pnpm check:i18n` · `pnpm vitest run tests/unit/broadcasts tests/contract/broadcasts` · `pnpm test:integration tests/integration/broadcasts/deliverable-batches-multi-tick.test.ts` · then `git push` (pre-push runs the whole `tests/integration/broadcasts/` folder — do NOT `SKIP_INTEGRATION_PREPUSH`). Then `reliability-guardian` (opus) + `whole-branch-reviewer` (fable) before PR #352 is re-declared MERGEABLE; run the outbox inventory once more before merge
 - [ ] T142 Post-merge observation (no code): confirm on prod that a 150-recipient send still takes `dispatch-scheduled` (150 ≤ 500) — i.e. nothing changes for SweCham until an audience exceeds 500, at which point it splits. Record in `reviews/cutover.md` § 4
 
-**Phase 9b dependencies**: T126–T132 in parallel (different files) → T133 → T134 → T135 → T136 → T137 → T138 → T139 (sequential, shared module) → T140 in the SAME commit as the last GREEN → T141 → T142 after merge.
+### Added by `/speckit.superb.review` (2026-09-08 16:55) — gaps the first task set left open
+
+- [ ] T143 RED then GREEN — **drift guard on the batch path** (FR-044 a/d). Unit `tests/unit/broadcasts/application/dispatch-batches-drift.test.ts` + a case in T132: the manifest already carries the split-time total (`dispatch-broadcast-batch.ts:193-196`, `isLastBatch` compares `recipientRangeEnd + 1` to it). Before dispatching ANY batch of a broadcast in a tick, compare the re-resolved `allRecipients.length` to that total; on mismatch dispatch NOTHING for that broadcast, audit `broadcast_resend_audience_drift` (existing event — payload `{expected, observed, phase: 'batch'}`), count `broadcasts_audience_drift_detected_count` (existing metric), and leave the manifests `pending` for staff (the broadcast surfaces via `approved_overdue_count` / `stuck_sending_count`). This DETECTS drift; it does not fix it. The fix — freezing the resolved list at split time — is the working-table design `data-model.md` § 2.5 keeps as fallback (a per-broadcast recipient table under RLS, deleted at terminal status, covered by the erasure cascade — FR-044 g). Record that as a follow-up in `research.md` V4, not in 9b, because it needs a migration and the erasure-cascade work
+- [ ] T144 RED then GREEN — **"no batch progressed" stuck signal** (FR-044 f). Today a `sending` broadcast whose manifests are deferred tick after tick is indistinguishable from one whose batches keep failing until `stuck_sending_count` fires at 24 h. Extend `reconcile-stuck-sending` (or the gauges cron — check which owns `stuck_sending_count`): a `sending` broadcast with ≥ 1 `pending` manifest and NO manifest reaching a terminal status in the last 30 min (FR-044's number) increments `broadcasts_batch_no_progress_count{tenant}` and logs the broadcast id. Contract test on the cron; docblock in `docs/observability.md` next to `approved_overdue_count`
+- [ ] T145 [P] **Re-probe the import API with the contract's field** — 30 seconds, no code: throwaway audience → `POST /contacts/imports` with multipart `segments=[<audienceId>]` (NOT `audience_id`) + `column_map` + `on_conflict=upsert`, poll to `completed`, then `GET /audiences/{id}/contacts`. Record the answer in `research.md` § R9 (V4) either way, and correct this phase's preamble bullet. If the contacts DO attach: the import build is a ~2-call, size-independent push and should be scheduled as the follow-up that retires batch sizing; if they do NOT: the working-table fallback stands and T143's freeze becomes the road to FR-044 (a)/(d)
+- [ ] T146 [P] Unit pin (one assertion, in T128's file): with batching ON, `currentAudienceCeiling() === configuredAudienceCeiling()` — so the two batch crons (which read `configured`) and count/submit/`dispatch-scheduled` (which read `current`) compare against ONE number, keeping FR-042 true in the state where all five readers are live
+
+**Phase 9b dependencies**: T126–T132 + T145 in parallel (different files; T145 is a probe) → T133 → T134 → T135 → T136 → T137 → T138 → T139 → T143 → T144 (sequential, shared module) → T140 in the SAME commit as the last GREEN → T141 → T142 after merge. T146 rides with T128.
 
 ---
 
