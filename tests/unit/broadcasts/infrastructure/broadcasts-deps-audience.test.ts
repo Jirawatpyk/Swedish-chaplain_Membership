@@ -127,10 +127,15 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
 
   it('the enforced ceiling is never above what one dispatch tick can push', async () => {
     // The invariant, stated independently of the numbers above so that raising
-    // a configured ceiling can never silently raise what is accepted. If the
-    // push is ever made faster (batched multi-tick dispatch, or Resend's
-    // Contacts Import API — T086/T087/T106), raise
-    // DELIVERABLE_RECIPIENTS_PER_TICK and this stays true by construction.
+    // a configured ceiling can never silently raise what is accepted.
+    //
+    // It is NOT true "by construction" — an earlier version of this comment
+    // claimed that and was wrong (reliability review, 2026-09-08). It holds
+    // because 800 is currently below every configured ceiling; the day someone
+    // raises DELIVERABLE_RECIPIENTS_PER_TICK past 5,000 the `Math.min` starts
+    // returning the configured value and these assertions go VACUOUSLY green.
+    // The guard below is what stops that — the same trap the H-2 pinning above
+    // exists to avoid.
     const { DELIVERABLE_RECIPIENTS_PER_TICK } = await import(
       '@/modules/broadcasts/domain/audience-ceiling'
     );
@@ -141,6 +146,14 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
       vi.resetModules();
       stubEnv(flags);
       const deps = await loadDeps();
+      // Keeps the two assertions below meaningful: if the deliverable bound
+      // ever rises above the configured ceiling, the clamp stops binding and
+      // they would pass without testing anything. Fail loudly at that point
+      // instead — the bound moving that far means the push changed shape, and
+      // this whole file needs rereading rather than silently agreeing.
+      expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(
+        deps.configuredAudienceCeiling(),
+      );
       expect(deps.currentAudienceCeiling()).toBeLessThanOrEqual(
         DELIVERABLE_RECIPIENTS_PER_TICK,
       );

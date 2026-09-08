@@ -366,10 +366,15 @@ whether or not 108 ever flips**:
   recipients is accepted at submit today, on the `primary_only` leg, with the 108 flag off, and
   cannot finish its push. Nothing about the flip created that.
 - **The cheapest correct closure is now writable with a measured number**: an explicit
-  submit-time refusal above `per_tick_max` with its own error code, the constant carrying the
-  measurement, its date and its method — option (c) of `reviews/pr-c.md` row 33. A round **800**
-  sits just under the computed 830 and three orders of magnitude above anything SweCham can
-  compose, so its blast radius today is zero while it closes the band completely.
+  submit-time refusal above `per_tick_max`, the constant carrying the measurement, its date and
+  its method — option (c) of `reviews/pr-c.md` row 33. A round **800** sits just under the
+  computed 830 and about **5× above** anything SweCham can currently compose (150 recipients;
+  ~450 after the secondary import), so its blast radius today is zero while it closes the band
+  completely. *(Corrected 2026-09-08 after review: an earlier draft of this line said "three
+  orders of magnitude above", which would be 150,000. And it said "with its own error code" —
+  the shipped fix deliberately reuses `broadcast_audience_too_large` with a smaller `cap`, which
+  is better: the eight i18n strings already interpolate `{ceiling, number}`, so no new key and no
+  new copy in any of the three locales.)*
 - **It is still a behaviour change on a live path**: audiences of 801–5,000 are accepted today and
   would start being refused. They are exactly the ones that silently fail now, so the refusal
   replaces a silent failure with a legible one — but it must ship as a stated change, with a

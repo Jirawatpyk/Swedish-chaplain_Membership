@@ -127,9 +127,18 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     // #4 made the route strip the field for exactly the same reason M-3
     // stripped `orphans` (it is a count of other members' contacts who
     // objected, pollable 30×/min and probeable tier by tier), but the
-    // assertion was never updated. Nothing caught it: this file is not in the
-    // per-PR integration gate. The field survives only at count 0, where the
-    // "everyone objected" empty-state copy needs it.
+    // assertion was never updated. The field survives only at count 0, where
+    // the "everyone objected" empty-state copy needs it.
+    //
+    // Why nothing caught it is worth getting right, because it decides the
+    // remedy. CI is genuinely blind here — `integration-smoke.yml` lists its
+    // files explicitly and this is not one of them. But `.husky/pre-push`
+    // DOES cover it: touching `src/modules/broadcasts/**` runs the whole
+    // `tests/integration/broadcasts/` folder, and PR-C touched that module
+    // heavily. So the gate existed and the failure still shipped — which
+    // points at the folder-sized run itself (worker exhaustion on ~80 files)
+    // or a `SKIP_INTEGRATION_PREPUSH=1`, not at a missing gate. Adding this
+    // file to `integration-smoke.yml` would be treating the wrong cause.
     expect(body).toEqual({ count: 2, ceiling: expectedCeiling, exceeds: false });
     expect(body).not.toHaveProperty('droppedByPreference');
     expect(body).not.toHaveProperty('orphans');

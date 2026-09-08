@@ -89,7 +89,15 @@ vi.mock('@/modules/broadcasts', async () => ({
   makeTickMemoizedMembersBridge: (bridge: unknown) => makeTickMemoMock(bridge),
   resolveSegmentRecipients: (...args: unknown[]) => resolveSegmentRecipientsMock(...args),
   currentAudienceMode: () => 'all_contacts',
-  currentAudienceCeiling: () => 50_000,
+  // This route reads the CONFIGURED ceiling, not the per-tick clamp (T095,
+  // 2026-09-08): it exists to handle audiences too large for one tick, so
+  // clamping it to DELIVERABLE_RECIPIENTS_PER_TICK would make the resolver
+  // refuse every row the query can select. 50,000 is a FORWARDING fixture —
+  // the composition root can no longer return it for `currentAudienceCeiling`,
+  // and what this file pins is that the route passes through whatever it is
+  // given, not that the number is production-real.
+  configuredAudienceCeiling: () => 50_000,
+  currentAudienceCeiling: () => 800,
   SPLIT_THRESHOLD_RECIPIENTS: 10_000,
   splitBroadcastIntoBatches: (...args: unknown[]) => splitBroadcastIntoBatchesMock(...args),
 }));

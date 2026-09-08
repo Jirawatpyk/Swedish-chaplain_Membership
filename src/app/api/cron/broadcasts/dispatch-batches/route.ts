@@ -62,7 +62,7 @@ import {
   resendBroadcastsGateway,
   resolveSegmentRecipients,
   currentAudienceMode,
-  currentAudienceCeiling,
+  configuredAudienceCeiling,
   systemClock,
   tenantDefaultLocaleFor,
 } from '@/modules/broadcasts';
@@ -294,7 +294,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
           audienceMode: currentAudienceMode(),
-          audienceCeiling: currentAudienceCeiling(),
+          // CONFIGURED, not the per-tick clamp — same reason as
+          // `split-large-broadcasts` (T095 review, 2026-09-08): this route
+          // dispatches batches of an audience that was deliberately split
+          // BECAUSE it exceeds one tick, so clamping it to
+          // DELIVERABLE_RECIPIENTS_PER_TICK would refuse every manifest it can
+          // pick up and leave it `pending`, re-tried every tick, visible only
+          // through `stuck_sending_count` at 24 h.
+          audienceCeiling: configuredAudienceCeiling(),
         },
         {
           segment,

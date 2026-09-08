@@ -56,7 +56,7 @@ import {
   recipientSegmentFromPersisted,
   resolveSegmentRecipients,
   currentAudienceMode,
-  currentAudienceCeiling,
+  configuredAudienceCeiling,
   SPLIT_THRESHOLD_RECIPIENTS,
   splitBroadcastIntoBatches,
 } from '@/modules/broadcasts';
@@ -247,7 +247,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
           audienceMode: currentAudienceMode(),
-          audienceCeiling: currentAudienceCeiling(),
+          // CONFIGURED, not the per-tick clamp (T095 review, 2026-09-08).
+          // This route exists precisely to handle audiences too large for one
+          // tick — it selects rows with
+          // `estimated_recipient_count > SPLIT_THRESHOLD_RECIPIENTS` above and
+          // splits them into per-batch audiences. Handing it
+          // `currentAudienceCeiling()` (clamped to
+          // DELIVERABLE_RECIPIENTS_PER_TICK) would make the resolver refuse
+          // every row this query can select, and the refusal is not counted by
+          // `dispatchResolveFailedTotal` — only `resolve.server_error` is — so
+          // the row would sit in `approved` with no signal but
+          // `approved_overdue_count`. A per-tick bound is not this route's
+          // bound. (The batch path's own wall-clock problem is unchanged and
+          // still open: each batch is up to RESEND_PER_AUDIENCE_CAP = 10,000
+          // pushed serially under the same maxDuration = 300.)
+          audienceCeiling: configuredAudienceCeiling(),
         },
         {
           segment,

@@ -85,23 +85,52 @@ export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
  *     only `min(limit, 1/RTT)`, and the warm round trip is **~0.29 s** —
  *     about **3.4 req/s**. Latency binds, not the plan. Using the documented
  *     10 as a capacity input overestimates by ~3×;
- *   - `maxDuration = 300` minus dispatch's own work ⇒ ~950 contacts; with a
- *     20 % margin, ~760;
+ *   - `maxDuration = 300` × 3.4 req/s ⇒ ~1,020 contacts; with a 20 % margin,
+ *     **~830**. That figure does NOT subtract dispatch's own per-broadcast
+ *     work — the audience resolve (which itself grows with the audience), and
+ *     three more Resend round trips for `createAudience` + `createBroadcast` +
+ *     `sendBroadcast` (~0.9 s). So 800 carries roughly 4 % headroom against
+ *     the measured rate, not 20 %;
  *   - the account is on Resend's **Free** plan, whose 1,000-contact cap bites
  *     at ~987 (13 already stored). Above it Resend answers 4xx — not 429 — so
  *     `classifyResendError` returns `permanent` and the broadcast fails
  *     terminally in one tick, which is the *better* failure of the two.
  *
- * **800 sits under both bounds.** It is round rather than computed on purpose:
- * two independent limits that agree to within 20 % do not justify false
- * precision, and the inputs carry caveats that all push the true figure down
- * (measured from Bangkok, not `sin1`; `GET` latency, not `POST /contacts`;
- * four warm samples).
+ * **800 sits under both bounds — for ONE broadcast in flight.** Say that part
+ * out loud, because neither bound is per-broadcast:
+ *
+ *   - the 300 s is per INVOCATION. `dispatch-scheduled` runs up to
+ *     `MAX_PER_TICK = 50` broadcasts in one `await` loop with no wall-clock
+ *     check between rows, so two 800-recipient broadcasts due in the same tick
+ *     need ~470 s and the second is killed mid-push — the very failure this
+ *     constant closes, one layer up;
+ *   - the 1,000 contacts is per ACCOUNT. Ephemeral audiences live until
+ *     `cleanup-audiences` reaps them (grace 1 h, cron every 15 min), so two live
+ *     800-contact audiences are 1,600 against a 1,000 cap.
+ *
+ * Both are unreachable at SweCham's cadence (a handful of sends a month, 150
+ * recipients each), and both are follow-ups rather than blockers: a per-tick
+ * wall-clock budget in that loop, or `MAX_PER_TICK` derived from this constant
+ * and the expected concurrency.
+ *
+ * The value is round rather than computed on purpose: two independent limits
+ * that agree to within 20 % do not justify false precision, and the inputs
+ * carry caveats that all push the true figure down (measured from Bangkok, not
+ * `sin1`; `GET` latency, not `POST /contacts`; four warm samples).
  *
  * **Raise it only with a new measurement**, or when the push stops being
  * serial — batched multi-tick dispatch, or Resend's Contacts Import API
  * (T086 / T087 / T106, deferred). Upgrading the Resend plan is not enough:
- * Pro raises the contact cap to 5,000 but changes no latency, so ~830 per tick
- * survives the upgrade. Money buys the cap, not the wall clock.
+ * Pro raises the contact cap to 5,000 but changes no latency, so the ~830
+ * wall-clock bound survives the upgrade. Money buys the cap, not the clock.
+ *
+ * **Principle III note**: this is an Infrastructure fact (Resend latency,
+ * Vercel `maxDuration`, a Resend plan tier) sitting in `domain/`. It is not an
+ * import violation — it is a bare number — but the contract it stands for
+ * belongs next to the gateway that was measured. It lives here because
+ * `audienceCeiling()` and `SPLIT_THRESHOLD_RECIPIENTS` already do the same
+ * thing in this file and the clamp has to compare against them; moving all
+ * three is the honest fix and is recorded as a follow-up, not smuggled in
+ * with a bugfix.
  */
 export const DELIVERABLE_RECIPIENTS_PER_TICK = 800;

@@ -114,7 +114,12 @@ vi.mock('@/modules/broadcasts', async () => ({
   resendBroadcastsGateway: { kind: 'gateway-stub' },
   resolveSegmentRecipients: (...args: unknown[]) => resolveSegmentRecipientsMock(...args),
   currentAudienceMode: () => 'all_contacts',
-  currentAudienceCeiling: () => 50_000,
+  // CONFIGURED, not the per-tick clamp — this route dispatches batches of an
+  // audience that was split BECAUSE it exceeds one tick (T095, 2026-09-08).
+  // 50,000 is a FORWARDING fixture: the composition root cannot return it for
+  // `currentAudienceCeiling` any more, and what this file pins is pass-through.
+  configuredAudienceCeiling: () => 50_000,
+  currentAudienceCeiling: () => 800,
   systemClock: { now: () => new Date('2026-09-07T00:00:00Z') },
   tenantDefaultLocaleFor: () => 'en',
 }));

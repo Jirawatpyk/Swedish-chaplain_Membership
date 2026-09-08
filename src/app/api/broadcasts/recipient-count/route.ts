@@ -2,9 +2,14 @@
  * 108 PR-C T088 — `GET /api/broadcasts/recipient-count` (member compose).
  *
  * Query: `segment=all_members|tier|event_attendees_last_90d`, `tier=<code>[,<code>]`.
- * 200 `{ count, ceiling, exceeds, droppedByPreference }` — numbers only
- * (FR-040a); `orphans` is stripped here (a fact about OTHER members — the
- * staff route keeps it). Order of checks is the contract: member gate → query
+ * 200 `{ count, ceiling, exceeds }`, plus `droppedByPreference` **only when
+ * `count === 0`** — numbers only (FR-040a). Both `orphans` and (at non-zero
+ * counts) `droppedByPreference` are stripped here as facts about OTHER
+ * members; the staff route keeps them. See the comment at the return for why.
+ * *(Header corrected 2026-09-08: it promised `droppedByPreference`
+ * unconditionally, contradicting the code twelve lines below it, and an
+ * integration test believed the header rather than the route.)*
+ * Order of checks is the contract: member gate → query
  * (400 `invalid_query`) → 30/min (tenant, user) limiter consumed BEFORE the
  * resolve (429 + `Retry-After`) → resolve for the caller's member → 503
  * `count_unavailable` when resolution fails (FR-040b). The custom list is
