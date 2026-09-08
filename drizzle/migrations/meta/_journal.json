@@ -2031,6 +2031,13 @@
       "when": 1798543000000,
       "tag": "0298_broadcasts_audience_import",
       "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1798543100000,
+      "tag": "0299_broadcasts_audience_import_coherence",
+      "breakpoints": true
     }
   ]
 }

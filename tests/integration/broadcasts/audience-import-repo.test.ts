@@ -187,4 +187,130 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
 
     expect((await readImportCols(raw)).audience_import_id).toBe('imp_second');
   }, 30_000);
+
+  /**
+   * 0299 (review S10). THIS CASE PASSED BEFORE 0299 AND IS THE PROOF OF THE BUG.
+   *
+   * 0298 wrote the coherence rule as three one-way implications, so
+   * `(import_id set, submitted_at NULL)` satisfied all of them. That row was
+   * fail-open in two independent places at once: the use case computed
+   * `ageMs = 0` for it — never older than the 30-minute threshold, so it polled
+   * for ever — and the stuck gauge could not see it either, because
+   * `NULL < now() - interval '30 minutes'` is NULL, not true. A broadcast stuck
+   * with no alarm and no automatic way out.
+   */
+  it('the coherence CHECK rejects an import id with no submitted-at (0299 iff)', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+
+    await expectCheckViolation(() =>
+      runInTenant(asTenantContext(TEST_TENANT), async (tx) =>
+        tx.execute(sql`
+          UPDATE broadcasts SET audience_import_id = 'imp_orphan'
+          WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`),
+      ),
+    );
+  }, 30_000);
+
+  it('the coherence CHECK rejects a completion that precedes its submit (0299)', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+
+    await expectCheckViolation(() =>
+      runInTenant(asTenantContext(TEST_TENANT), async (tx) =>
+        tx.execute(sql`
+          UPDATE broadcasts
+             SET audience_import_id = 'imp_backwards',
+                 audience_import_submitted_at = now(),
+                 audience_import_completed_at = now() - interval '1 hour'
+           WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`),
+      ),
+    );
+  }, 30_000);
+
+  /**
+   * POSITIVE CONTROL for the two cases above. Without it they pass just as
+   * happily if the CHECK were tightened into rejecting EVERY write to these
+   * columns — which would break the two-tick build while both negative
+   * assertions still went green.
+   */
+  it('POSITIVE CONTROL — the legal shapes are still accepted after 0299', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+
+    await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+      // id + submitted together (what tick 1 writes)
+      await tx.execute(sql`
+        UPDATE broadcasts
+           SET audience_import_id = 'imp_ok', audience_import_submitted_at = now()
+         WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`);
+      // then a completion at or after it (what tick 2 writes)
+      await tx.execute(sql`
+        UPDATE broadcasts SET audience_import_completed_at = now()
+         WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`);
+    });
+
+    // `readImportCols` projects the two timestamps as BOOLEANS (`submitted` /
+    // `completed`), not as raw columns. The first draft of this case asserted
+    // `cols.audience_import_submitted_at).not.toBeNull()` — which reads
+    // `undefined`, and `expect(undefined).not.toBeNull()` PASSES. Two of the
+    // three assertions here were vacuous, in a test written to close a vacuous
+    // assertion. Caught only because the sibling cross-tenant case used
+    // `toBeNull()` in the same wrong way and failed loudly.
+    const cols = await readImportCols(raw);
+    expect(cols.audience_import_id).toBe('imp_ok');
+    expect(cols.submitted).toBe(true);
+    expect(cols.completed).toBe(true);
+  }, 30_000);
+
+  /**
+   * Constitution v1.4.2 Principle I clause 3 — the mandatory cross-tenant
+   * integration test for a new tenant-scoped write surface. A Review-gate
+   * blocker regardless of blast radius (precedent: 088 T065b), and this branch
+   * added three such writes plus a whole use case without one.
+   *
+   * Two layers, asserted separately, because they fail for different reasons and
+   * the docstring on `assertTenantBoundTx` is explicit that it is a cooperative
+   * guard rather than a security boundary:
+   *
+   *   1. APPLICATION — the adapter, handed a tx bound to tenant A and asked to
+   *      write tenant B's row, must throw before issuing anything.
+   *   2. DATABASE — a raw UPDATE inside `runInTenant(B)` against A's row must
+   *      affect ZERO rows, because RLS+FORCE filters it. This is the layer that
+   *      still holds if someone deletes the helper.
+   */
+  it('cross-tenant: neither the adapter nor RLS lets tenant B touch tenant A row', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved(); // owned by TEST_TENANT
+    const OTHER = 'e2e-tenant';
+    const repo = makeDrizzleBroadcastsRepo(OTHER);
+    const broadcastId = asBroadcastId(raw);
+
+    // Layer 1 — the application guard refuses a tenant-mismatched tx.
+    const otherSlug = asTenantContext(OTHER).slug;
+    await expect(
+      runInTenant(asTenantContext(OTHER), async (tx) =>
+        repo.attachAudienceImport(tx, otherSlug, broadcastId, 'imp_evil'),
+      ),
+    ).rejects.toThrow();
+
+    // Layer 2 — and RLS refuses the raw statement even with the guard bypassed.
+    // `UPDATE ... RETURNING` returns nothing when the row is invisible, which is
+    // the fail-closed answer we want rather than an error.
+    const affected = await runInTenant(asTenantContext(OTHER), async (tx) =>
+      tx.execute(sql`
+        UPDATE broadcasts
+           SET audience_import_id = 'imp_evil', audience_import_submitted_at = now()
+         WHERE broadcast_id = ${raw}::uuid
+        RETURNING broadcast_id`),
+    );
+    expect((affected as unknown as unknown[]).length).toBe(0);
+
+    // And A's row is untouched — the assertion that makes the two above mean
+    // something. A guard that throws AFTER writing would pass both of them.
+    const cols = await readImportCols(raw);
+    expect(cols.audience_import_id).toBeNull();
+    expect(cols.submitted).toBe(false);
+    expect(cols.completed).toBe(false);
+  }, 30_000);
 });

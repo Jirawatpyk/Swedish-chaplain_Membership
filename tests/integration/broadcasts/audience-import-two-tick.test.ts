@@ -97,9 +97,26 @@ function makeDeps(gateway: FakeGateway): unknown {
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,
     // The resolver is injected, so this file tests the tick, not the audience
-    // query — which has its own suites.
+    // query — which has its own suites. `orphans` + `droppedByPreference` are
+    // part of the answer now: the port used to discard them, which is how the
+    // per-broadcast attribution a previous review round added went missing.
     resolveRecipients: async () =>
-      ok({ recipients: RECIPIENTS, estimatedCount: RECIPIENTS.length }),
+      ok({
+        recipients: RECIPIENTS,
+        estimatedCount: RECIPIENTS.length,
+        orphans: [],
+        droppedByPreference: 0,
+      }),
+    // Wired so a terminal failure can tell the member (FR-021) and so the AS5
+    // forensic row is reachable. These are stubs, not the real bridges — this
+    // file proves the tick against live Postgres, and the notification and plan
+    // paths have their own coverage in the unit suite.
+    membersBridge: {
+      getMemberPrimaryContact: async () => null,
+      getMemberPreferredLocale: async () => 'en' as const,
+    },
+    emailTransactional: { sendMemberEmail: async () => undefined },
+    plansBridge: { getPlanForMember: async () => ok({ planId: 'plan-unchanged' }) },
   };
 }
 
