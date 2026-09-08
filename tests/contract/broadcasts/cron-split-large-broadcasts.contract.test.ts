@@ -92,13 +92,16 @@ vi.mock('@/modules/broadcasts', async () => ({
   // This route reads the CONFIGURED ceiling, not the per-tick clamp (T095,
   // 2026-09-08): it exists to handle audiences too large for one tick, so
   // clamping it to DELIVERABLE_RECIPIENTS_PER_TICK would make the resolver
-  // refuse every row the query can select. 50,000 is a FORWARDING fixture —
-  // the composition root can no longer return it for `currentAudienceCeiling`,
-  // and what this file pins is that the route passes through whatever it is
-  // given, not that the number is production-real.
+  // refuse every row the query can select. What this file pins is that the
+  // route passes through whatever it is given, not that the number is
+  // production-real.
+  //
+  // Phase 9b (T131): the two now AGREE with batching ON — `currentAudience-
+  // Ceiling()` stops clamping once audiences above one tick are split rather
+  // than refused — and the threshold is the per-tick batch size, 500.
   configuredAudienceCeiling: () => 50_000,
-  currentAudienceCeiling: () => 500,
-  SPLIT_THRESHOLD_RECIPIENTS: 10_000,
+  currentAudienceCeiling: () => 50_000,
+  SPLIT_THRESHOLD_RECIPIENTS: 500,
   splitBroadcastIntoBatches: (...args: unknown[]) => splitBroadcastIntoBatchesMock(...args),
 }));
 vi.mock('@/modules/broadcasts/domain/value-objects/email-lower', () => ({
@@ -253,7 +256,7 @@ describe('cron split-large-broadcasts — wire contract (108 PR-C review)', () =
   // Review 2026-09-07 round 2 (tests M-3) — the success branch was never
   // reached. PINS: above the threshold the split runs with the resolved
   // count; at or below it the row is skipped and the split never runs.
-  it('PIN — a resolve above SPLIT_THRESHOLD_RECIPIENTS splits; one at the threshold is skipped', async () => {
+  it('PIN — a resolve above SPLIT_THRESHOLD_RECIPIENTS splits, and the split is told the RESOLVED count', async () => {
     runInTenantMock.mockImplementation(async (_ctx, fn) =>
       fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
     );
@@ -264,35 +267,78 @@ describe('cron split-large-broadcasts — wire contract (108 PR-C review)', () =
       segmentParams: null,
       customRecipientEmails: null,
       status: 'approved',
-      estimatedRecipientCount: 12_000,
+      estimatedRecipientCount: 700,
     });
-    const big = Array.from({ length: 10_001 }, (_, i) => `r${i}@example.com`);
+    const big = Array.from({ length: 601 }, (_, i) => `r${i}@example.com`);
     resolveSegmentRecipientsMock.mockResolvedValueOnce(
       ok({ recipients: big, orphans: [], droppedByPreference: 0, estimatedCount: big.length }),
     );
     splitBroadcastIntoBatchesMock.mockResolvedValueOnce(ok({ batchCount: 2 }));
 
     const { POST } = await import('@/app/api/cron/broadcasts/split-large-broadcasts/route');
-    let res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
     expect(res.status).toBe(200);
-    let body = (await res.json()) as { processed: number; split: number; skipped: number; errors: number };
+    const body = (await res.json()) as { processed: number; split: number; skipped: number; errors: number };
     expect(body.split).toBe(1);
     expect(body.errors).toBe(0);
     expect(splitBroadcastIntoBatchesMock).toHaveBeenCalledTimes(1);
     // The split is told the RESOLVED count (its batch arithmetic), never the
     // stale `estimated_recipient_count` from submit time.
-    expect(splitBroadcastIntoBatchesMock.mock.calls[0]?.[1]).toMatchObject({ resolvedRecipientCount: 10_001 });
+    expect(splitBroadcastIntoBatchesMock.mock.calls[0]?.[1]).toMatchObject({ resolvedRecipientCount: 601 });
+  });
 
-    // At the threshold: not split, skipped.
-    splitBroadcastIntoBatchesMock.mockClear();
-    resolveSegmentRecipientsMock.mockResolvedValueOnce(
-      ok({ recipients: big.slice(0, 10_000), orphans: [], droppedByPreference: 0, estimatedCount: 10_000 }),
+  /**
+   * Phase 9b (T148) — **a claimed row is never released.**
+   *
+   * The case this replaces asserted the opposite: a row whose resolved count
+   * had fallen to or below the threshold was counted `skipped` and left in
+   * `approved`, and the route's own comment said why that was safe — "let F7
+   * MVP dispatch-scheduled handle it on its next tick".
+   *
+   * T137 removes that fallback. `dispatch-scheduled`'s claim query gains `AND
+   * estimated_recipient_count <= SPLIT_THRESHOLD_RECIPIENTS`, so the row that
+   * reached this cron BECAUSE its estimate was above the threshold can never be
+   * claimed by the other cron. Skipping it means no cron owns it and it sits in
+   * `approved` until a human notices. With the threshold at 500 that needs a
+   * 501-estimate broadcast and a single opt-out — and opt-out is 108's own
+   * mechanism, so this is not a remote corner.
+   *
+   * Splitting it costs nothing: `computeBatchRanges(480, 500)` is one batch,
+   * the batch path pushes it with the same serial loop the single-tick path
+   * would have used, and the estimate/resolved disagreement is exactly what the
+   * batch path already tolerates.
+   */
+  it('a claimed row whose resolved count fell BELOW the threshold is still split — never released', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
     );
-    res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    body = (await res.json()) as { processed: number; split: number; skipped: number; errors: number };
-    expect(body.split).toBe(0);
-    expect(body.skipped).toBe(1);
-    expect(splitBroadcastIntoBatchesMock).not.toHaveBeenCalled();
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      status: 'approved',
+      // Claimed because the estimate is above the threshold…
+      estimatedRecipientCount: 600,
+    });
+    // …but opt-outs since submit dropped the real audience under it.
+    const shrunk = Array.from({ length: 480 }, (_, i) => `r${i}@example.com`);
+    resolveSegmentRecipientsMock.mockResolvedValueOnce(
+      ok({ recipients: shrunk, orphans: [], droppedByPreference: 120, estimatedCount: 480 }),
+    );
+    splitBroadcastIntoBatchesMock.mockResolvedValueOnce(ok({ batchCount: 1 }));
+
+    const { POST } = await import('@/app/api/cron/broadcasts/split-large-broadcasts/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as { processed: number; split: number; skipped: number; errors: number };
+
+    expect(body.split).toBe(1);
+    expect(body.skipped).toBe(0);
+    expect(splitBroadcastIntoBatchesMock).toHaveBeenCalledTimes(1);
+    expect(splitBroadcastIntoBatchesMock.mock.calls[0]?.[1]).toMatchObject({
+      resolvedRecipientCount: 480,
+    });
   });
 
   // Review 2026-09-07 round 2 (C2) — see the sibling case in

@@ -124,14 +124,18 @@ function makeRepo(opts: RepoOpts): {
   transitions: Array<{ status: string; fields: unknown }>;
   attachCalls: Array<{ audienceId: string; broadcastId: string }>;
   attachAudienceCalls: Array<{ audienceId: string }>;
+  estimateWrites: Array<{ count: number }>;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
   const attachCalls: Array<{ audienceId: string; broadcastId: string }> = [];
   const attachAudienceCalls: Array<{ audienceId: string }> = [];
+  // Phase 9b (T147) — the hand-off channel between the two `*/5` crons.
+  const estimateWrites: Array<{ count: number }> = [];
   return {
     transitions,
     attachCalls,
     attachAudienceCalls,
+    estimateWrites,
     port: {
       async withTx(fn) {
         return fn(null);
@@ -166,6 +170,9 @@ function makeRepo(opts: RepoOpts): {
       },
       async attachAudienceId(_tx, _t, _b, audienceId) {
         attachAudienceCalls.push({ audienceId });
+      },
+      async updateEstimatedRecipientCount(_tx, _t, _b, count: number) {
+        estimateWrites.push({ count });
       },
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
@@ -2385,5 +2392,135 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
     expect(pushed).toContain('two@example.com');
     expect(pushed).toContain('two-secondary@example.com');
     expect(pushed).not.toContain('nine@example.com');
+  });
+
+  /**
+   * Phase 9b (T147) — **hand off, do not die.**
+   *
+   * The two every-5-minutes crons claim on `estimated_recipient_count`, frozen at submit.
+   * This use case pushes based on the RESOLVED count, read days later. When the
+   * audience GREW past one tick's capacity in between, the row is claimed by
+   * `dispatch-scheduled` (its estimate is still small) and `split-large-
+   * broadcasts` never sees it.
+   *
+   * Until Phase 9b that was survivable by accident: `currentAudienceCeiling()`
+   * was clamped to `DELIVERABLE_RECIPIENTS_PER_TICK`, so the resolver refused
+   * anything larger outright with `broadcast_audience_too_large`. T135 lifts
+   * that clamp with batching ON — correctly, because the audience is now
+   * deliverable across ticks — which removes the accident and leaves the row to
+   * be pushed serially and killed at `maxDuration = 300`, every tick, forever.
+   *
+   * So the use case needs a bound of its own, and its answer must be a HAND-OFF
+   * rather than a failure: write the resolved count back as the estimate and
+   * leave the row `approved`. The next `split-large-broadcasts` tick then
+   * claims it on a number that is finally true, splits it, and the batch path
+   * delivers it. Nothing is lost but five minutes.
+   *
+   * The write-back is not a workaround — when the two numbers disagree the
+   * resolved one is the correct one, and the member-visible estimate was stale.
+   */
+  it('resolved count above what one tick can push → hands off to the batch path, does not dispatch', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        // Batching ON, so the ACCEPT ceiling is the configured one…
+        audienceCeiling: 50_000,
+        // …and this is the separate DELIVERY bound. Two recipients per tick is
+        // absurd in production and exactly right here: it keeps the fixture
+        // three addresses long instead of five hundred.
+        deliverablePerTick: 2,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+            recipient('m-3', 'three@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected a hand-off, not a dispatch');
+    expect((result.error as { kind: string }).kind).toBe('DEFERRED_TO_BATCH_PATH');
+
+    // Nothing was pushed. Not one contact — a partial push would leave an
+    // orphan Resend audience holding real addresses.
+    expect(gw.audienceCalls).toHaveLength(0);
+    expect(gw.contactsCalls).toHaveLength(0);
+    expect(gw.createCalls).toHaveLength(0);
+    expect(gw.sendCalls).toHaveLength(0);
+
+    // The row stays `approved` — NOT `failed_to_dispatch`. A terminal status
+    // here would need a human to re-submit, and nothing is actually wrong: the
+    // broadcast is simply bigger than it was at submit.
+    expect(repo.transitions).toHaveLength(0);
+
+    // …and the estimate now tells the truth, which is what routes it to
+    // `split-large-broadcasts` on the next tick.
+    expect(repo.estimateWrites).toEqual([{ count: 3 }]);
+  });
+
+  it('resolved count exactly AT the per-tick bound still dispatches — the hand-off is strictly above', async () => {
+    // The boundary in the other direction. An off-by-one here would send every
+    // full-size broadcast on a round trip through the split path for no reason,
+    // and full-size is the common case once the batch size is the bound.
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 50_000,
+        deliverablePerTick: 2,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(gw.sendCalls).toHaveLength(1);
+    expect(repo.transitions[0]?.status).toBe('sending');
+    expect(repo.estimateWrites).toHaveLength(0);
   });
 });

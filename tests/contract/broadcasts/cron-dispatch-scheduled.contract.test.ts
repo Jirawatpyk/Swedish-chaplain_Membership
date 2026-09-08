@@ -148,4 +148,50 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledTimes(1);
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant');
   });
+
+  /**
+   * Phase 9b (T131/T137) — **the claim query excludes rows that belong to
+   * `split-large-broadcasts`.**
+   *
+   * Both crons run every 5 minutes and both select `status = 'approved'`.
+   * `split-large-broadcasts` narrows to `estimated_recipient_count >
+   * SPLIT_THRESHOLD_RECIPIENTS`; this one has no count predicate at all. `FOR
+   * UPDATE SKIP LOCKED` stops two ticks colliding on the same row at the same
+   * instant — it does nothing about two DIFFERENT crons claiming it seconds
+   * apart. Whichever runs first wins, and if that is this one, a 600-recipient
+   * broadcast goes down the serial single-tick push and dies at 300 s.
+   *
+   * Moot while nothing above 10,000 exists. Live the moment Phase 9b drops the
+   * threshold to 500, which is the point of Phase 9b.
+   *
+   * Asserted on the SQL because the SQL is the only observable here: the
+   * eligibility query is the contract, and `execute` is mocked. The column name
+   * is what is pinned, not the formatting.
+   */
+  it('the eligible-row query bounds on estimated_recipient_count, so the two */5 crons partition the approved set', async () => {
+    const executed: unknown[] = [];
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({
+        execute: async (q: unknown) => {
+          executed.push(q);
+          return [];
+        },
+      }),
+    );
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+
+    expect(executed).toHaveLength(1);
+    // Drizzle's `sql` template keeps its literal fragments in `queryChunks`;
+    // flatten whatever is string-shaped and look for the column.
+    const chunks = (executed[0] as { queryChunks?: unknown[] }).queryChunks ?? [];
+    const text = chunks
+      .map((c) => {
+        if (typeof c === 'string') return c;
+        const v = (c as { value?: unknown }).value;
+        return Array.isArray(v) ? v.join('') : '';
+      })
+      .join('');
+    expect(text).toContain('estimated_recipient_count');
+  });
 });
