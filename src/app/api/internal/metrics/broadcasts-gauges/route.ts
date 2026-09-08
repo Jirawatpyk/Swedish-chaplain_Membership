@@ -75,7 +75,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let dispatchRatios: DispatchRatioRow[];
   let suppressionSizes: PendingRow[];
   let approvedOverdue: PendingRow[];
-  let batchNoProgress: PendingRow[];
   let audienceImportStuck: PendingRow[];
   try {
     const result = await db.transaction(async (tx) => {
@@ -142,51 +141,41 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // that once read 1 kept reading 1 after the incident was resolved —
       // the "≥ 1 sustained 30 min" rule on `approved_overdue_count` was a
       // latch, not a level. "0 means 0" (see `forgetAutoInvoiceGauges`).
-      // Phase 9b (T144, FR-044 f) — a `sending` broadcast that still holds a
-      // `pending` manifest and has retired NONE in the last 30 minutes.
-      //
-      // `stuck_sending_count` fires at 24 h, which was fine while a batched
-      // broadcast was a rarity; with the split threshold at the per-tick batch
-      // size a 100-batch send legitimately spends hours in `sending`, so
-      // duration stopped being evidence. Progress is: a healthy broadcast
-      // retires at least one manifest per 5-minute tick, so 30 minutes with
-      // none is six missed ticks.
-      const batchNoProgressRows = await tx.execute<PendingRow>(sql`
-        SELECT b.tenant_id, COUNT(*)::int AS count
-        FROM broadcasts b
-        WHERE b.status::text = 'sending'
-          AND EXISTS (
-            SELECT 1 FROM broadcast_batch_manifests m
-            WHERE m.tenant_id = b.tenant_id
-              AND m.broadcast_id = b.broadcast_id
-              AND m.status::text = 'pending'
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM broadcast_batch_manifests m2
-            WHERE m2.tenant_id = b.tenant_id
-              AND m2.broadcast_id = b.broadcast_id
-              AND m2.status::text <> 'pending'
-              AND m2.updated_at > now() - interval '30 minutes'
-          )
-        GROUP BY b.tenant_id
-      `);
       // T106 (108 US5, FR-044 f) — an audience IMPORT submitted but never
       // completed. `buildAudienceTick` turns such a row terminal, but only on a
       // tick that reaches it; this is the independent signal, and the one
       // number that says "Resend has stopped answering". 30 min matches
       // IMPORT_STUCK_AFTER_MS.
+      //
+      // `status = 'approved'` is load-bearing, added in review round 1 (S11 /
+      // S46). Without it this gauge LATCHED: `failTerminally` resolves the
+      // incident by moving the row to `failed_to_dispatch`, but it neither
+      // clears `audience_import_id` nor stamps `completed_at`, and
+      // `applyTransition`'s passthrough whitelist contains none of the three
+      // import columns — so no writer anywhere in `src/` ever makes the row stop
+      // matching. Every terminal refusal and every cancel-after-submit
+      // incremented it permanently, and an alarm that never clears is worse than
+      // no alarm because the next incident is invisible underneath it.
+      //
+      // Filtering on status is better than clearing the columns: it also
+      // excludes a cancel-after-submit, and it leaves the forensic values in
+      // place for whoever investigates.
+      //
+      // The `submitted_at IS NULL` shape that used to slip through here is now
+      // impossible at the DB level — 0299 made the coherence CHECK an iff.
       const audienceImportStuckRows = await tx.execute<PendingRow>(sql`
         SELECT tenant_id, COUNT(*)::int AS count
         FROM broadcasts
         WHERE audience_import_id IS NOT NULL
           AND audience_import_completed_at IS NULL
+          AND status::text = 'approved'
           AND audience_import_submitted_at < now() - interval '30 minutes'
         GROUP BY tenant_id
       `);
       const tenantRows = await tx.execute<TenantRow>(sql`
         SELECT DISTINCT tenant_id FROM broadcasts
       `);
-      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows, batchNoProgressRows, audienceImportStuckRows };
+      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows, audienceImportStuckRows };
     });
     tenants = Array.from(result.tenantRows ?? []);
     pending = Array.from(result.pendingRows);
@@ -194,7 +183,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     dispatchRatios = Array.from(result.dispatchRows);
     suppressionSizes = Array.from(result.suppressionRows);
     approvedOverdue = Array.from(result.approvedOverdueRows);
-    batchNoProgress = Array.from(result.batchNoProgressRows ?? []);
     audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
   } catch (e) {
     logger.error(
@@ -212,7 +200,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const pendingByTenant = new Map(pending.map((r) => [r.tenant_id, r.count]));
   const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
-  const noProgressByTenant = new Map(batchNoProgress.map((r) => [r.tenant_id, r.count]));
   const importStuckByTenant = new Map(audienceImportStuck.map((r) => [r.tenant_id, r.count]));
   const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
   const observed = new Set<string>();
@@ -221,7 +208,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     ...pendingByTenant.keys(),
     ...stuckByTenant.keys(),
     ...overdueByTenant.keys(),
-    ...noProgressByTenant.keys(),
     ...importStuckByTenant.keys(),
     // A tenant can carry unsubscribes with no `broadcasts` row at all (a
     // contact-level opt-out recorded before the first send), so the
@@ -231,7 +217,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     observed.add(t);
   }
   let approvedOverdueTotal = 0;
-  let batchNoProgressTotal = 0;
   let audienceImportStuckTotal = 0;
   for (const tenantId of observed) {
     const p = pendingByTenant.get(tenantId) ?? 0;
@@ -240,9 +225,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     broadcastsMetrics.queuePending(tenantId, p);
     broadcastsMetrics.stuckSendingCount(tenantId, s);
     broadcastsMetrics.approvedOverdueCount(tenantId, o);
-    const np = noProgressByTenant.get(tenantId) ?? 0;
-    broadcastsMetrics.batchNoProgressCount(tenantId, np);
-    batchNoProgressTotal += np;
     const ais = importStuckByTenant.get(tenantId) ?? 0;
     broadcastsMetrics.audienceImportStuckCount(tenantId, ais);
     audienceImportStuckTotal += ais;
@@ -292,7 +274,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       pendingTotal,
       stuckTotal,
       approvedOverdueTotal,
-      batchNoProgressTotal,
       audienceImportStuckTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
@@ -310,7 +291,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       pendingTotal,
       stuckTotal,
       approvedOverdueTotal,
-      batchNoProgressTotal,
       audienceImportStuckTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,

@@ -25,7 +25,6 @@ const dispatchFailureRateSpy = vi.fn();
 // than 1 h past `scheduled_for`, the only signal for a schedule slipping tick
 // after tick because the audience cannot be built.
 const approvedOverdueCountSpy = vi.fn();
-const batchNoProgressCountSpy = vi.fn();
 const audienceImportStuckCountSpy = vi.fn();
 const forgetDispatchFailureRateSpy = vi.fn();
 // /code-review 2026-09-07 (finding #6) — the sixth family, and the last one
@@ -66,7 +65,6 @@ vi.mock('@/lib/metrics', async () => {
       dispatchFailureRate: dispatchFailureRateSpy,
       forgetDispatchFailureRate: forgetDispatchFailureRateSpy,
       approvedOverdueCount: approvedOverdueCountSpy,
-      batchNoProgressCount: batchNoProgressCountSpy,
       audienceImportStuckCount: audienceImportStuckCountSpy,
       suppressionListSize: suppressionListSizeSpy,
     },
@@ -90,7 +88,6 @@ beforeEach(() => {
   stuckSendingCountSpy.mockReset();
   dispatchFailureRateSpy.mockReset();
   approvedOverdueCountSpy.mockReset();
-  batchNoProgressCountSpy.mockReset();
   audienceImportStuckCountSpy.mockReset();
   forgetDispatchFailureRateSpy.mockReset();
   suppressionListSizeSpy.mockReset();
@@ -346,50 +343,6 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(res.status).toBe(200);
   });
   /**
-   * Phase 9b (T144) — **"no batch progressed" is a distinct signal from
-   * "stuck".**
-   *
-   * A `sending` broadcast whose manifests are deferred tick after tick looks
-   * exactly like one whose batches keep failing: both sit in `sending` with
-   * `pending` manifests. `stuck_sending_count` only notices at 24 h, which is
-   * far too late once Phase 9b makes multi-tick delivery ordinary — a large
-   * broadcast SHOULD spend hours in `sending`, so the 24 h alarm can no longer
-   * be read as "something is wrong".
-   *
-   * What separates the two is PROGRESS: a healthy multi-tick broadcast moves at
-   * least one manifest to a terminal status every tick. Thirty minutes without
-   * one — six missed ticks — is the FR-044 (f) threshold.
-   *
-   * Alarm (not page) at `>= 1` sustained for 30 min, the same tier as
-   * `approved_overdue_count`, routed to `broadcast-audience-build.md` § C,
-   * whose recovery path is T143's cancel-and-re-submit.
-   */
-  it('a sending broadcast with pending manifests and no terminal transition in the window is counted', async () => {
-    dbTransactionMock.mockImplementationOnce(async () => ({
-      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
-      pendingRows: [],
-      stuckRows: [],
-      dispatchRows: [],
-      suppressionRows: [],
-      approvedOverdueRows: [],
-      batchNoProgressRows: [{ tenant_id: 't1', count: 1 }],
-    }));
-
-    const { GET } = await import(
-      '@/app/api/internal/metrics/broadcasts-gauges/route'
-    );
-    const res = await GET(makeRequest('Bearer test-cron-secret'));
-    expect(res.status).toBe(200);
-
-    expect(batchNoProgressCountSpy).toHaveBeenCalledWith('t1', 1);
-    // Zero-fill, same reason as C9: `observeGauge` re-reports its last value,
-    // so a tenant that drops out of the GROUP BY would latch at its old count
-    // and the "sustained 30 min" rule would fire forever after one incident.
-    expect(batchNoProgressCountSpy).toHaveBeenCalledWith('t2', 0);
-    const body = (await res.json()) as { batchNoProgressTotal: number };
-    expect(body.batchNoProgressTotal).toBe(1);
-  });
-  /**
    * T106 (108 US5, FR-044 f) — an audience IMPORT that never finished.
    *
    * The use case turns one terminal at 30 minutes, but only on a tick that
@@ -409,7 +362,6 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
       dispatchRows: [],
       suppressionRows: [],
       approvedOverdueRows: [],
-      batchNoProgressRows: [],
       audienceImportStuckRows: [{ tenant_id: 't1', count: 2 }],
     }));
 

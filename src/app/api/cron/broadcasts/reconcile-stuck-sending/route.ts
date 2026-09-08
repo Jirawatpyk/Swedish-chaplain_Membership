@@ -25,8 +25,6 @@ import {
   asBroadcastId,
   makeReconcileStuckSendingDeps,
   reconcileStuckSending,
-  // F7.1a Phase 3 T056 — per-batch auto-retry sweep (FR-005 / 5-attempt budget)
-  // Ship-blocker A — batch-completion roll-up sweep
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -79,6 +77,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Pick eligible rows. The 24h threshold is also enforced inside the
   // use-case (defence in depth — protects against clock skew between
   // the cron host + DB; the use-case re-checks before mutating).
+  //
+  // 108 Phase 9 review round 1 (S22) — the query below used to exclude any
+  // broadcast holding a `broadcast_batch_manifests` row. That exclusion existed
+  // because a batched broadcast carries NULL `resend_broadcast_id` on the parent
+  // row, so this single-audience reconcile would have wrongly failed it, and its
+  // stated justification was that "their completion is the batch-completion
+  // roll-up below". `ca51f59a1` deleted that roll-up along with the batch path,
+  // which turned the exclusion into a DEAD END: an excluded row was reconciled
+  // by nothing at all and would sit in `sending` for ever.
+  //
+  // Removed rather than left in place. Nothing writes a manifest any more and
+  // prod has zero rows in that table (the batch path was never flag-enabled), so
+  // there is nothing left to protect against — and a historical row, if one ever
+  // surfaced, is better reconciled here than abandoned by half a mechanism.
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
@@ -89,16 +101,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'sending'
           AND sending_started_at IS NOT NULL
           AND sending_started_at < now() - interval '24 hours'
-          -- H-1 review — batched broadcasts carry NULL resend_broadcast_id
-          -- on the parent row (each batch holds its own provider id), so the
-          -- single-audience reconcile would wrongly mark a fully-dispatched
-          -- batched broadcast failed_to_dispatch (+ lose quota). Exclude
-          -- them; their completion is the batch-completion roll-up below.
-          AND NOT EXISTS (
-            SELECT 1 FROM broadcast_batch_manifests bm
-            WHERE bm.tenant_id = broadcasts.tenant_id
-              AND bm.broadcast_id = broadcasts.broadcast_id
-          )
+          -- NOTE: a NOT EXISTS exclusion over broadcast_batch_manifests used to
+          -- sit here; it was REMOVED in 108 Phase 9 review round 1 (S22). See
+          -- the docblock above this query for why. (Deliberately no backticks
+          -- in SQL comments: this string is a sql tagged template, and one
+          -- backtick closes it — the compiler error lands lines away.)
         ORDER BY sending_started_at ASC
         LIMIT ${MAX_PER_TICK}
         FOR UPDATE SKIP LOCKED
@@ -214,12 +221,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await Promise.allSettled(chunk.map(handleOne));
   }
 
-  // F7.1a Phase 3 T056 — per-batch auto-retry sweep (FR-005). After
-  // the broadcast-level reconciliation completes, sweep failed
-  // batch_manifests with retry_count < 5 + cool-off elapsed and
-  // re-queue them. The dispatch-batches cron (T055) picks them up
-  // on the next 5-min tick.
-  //
   // The batch path was removed in 108 US5, and with it three sweeps that used
   // to live here: per-batch auto-retry, batch completion roll-up, and the
   // orphaned-provider-id observability scan over `broadcast_batch_manifests`.

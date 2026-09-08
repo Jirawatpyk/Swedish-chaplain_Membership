@@ -375,29 +375,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenantId = lookup.tenantId;
       broadcastId = lookup.broadcastId;
     } else {
-      {
-        // Unknown broadcast id — could be a legacy dispatch from a
-        // prior tenant whose row has been archived, or a misrouted
-        // event from a leaked secret. 200 OK so Resend does not
-        // retry-storm, but emit a NULL-tenant audit row so the event
-        // is forensically discoverable per FR-024 (review ERR-C1).
-        logger.warn(
-          {
-            resendBroadcastId: verified.data.broadcastId,
-            eventType: verified.type,
-            requestId,
-            correlationId,
-          },
-          'broadcasts.webhook.unknown_resend_broadcast_id',
-        );
-        await auditUnknownResendBroadcast(
-          verified.data.broadcastId,
-          verified.type,
+      // Unknown broadcast id — could be a legacy dispatch from a
+      // prior tenant whose row has been archived, or a misrouted
+      // event from a leaked secret. 200 OK so Resend does not
+      // retry-storm, but emit a NULL-tenant audit row so the event
+      // is forensically discoverable per FR-024 (review ERR-C1).
+      logger.warn(
+        {
+          resendBroadcastId: verified.data.broadcastId,
+          eventType: verified.type,
           requestId,
           correlationId,
-        );
-        return jsonOk(correlationId);
-      }
+        },
+        'broadcasts.webhook.unknown_resend_broadcast_id',
+      );
+      await auditUnknownResendBroadcast(
+        verified.data.broadcastId,
+        verified.type,
+        requestId,
+        correlationId,
+      );
+      return jsonOk(correlationId);
     }
   } catch (e) {
     logger.error(

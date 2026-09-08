@@ -23,7 +23,7 @@ import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
-import { asTxToken } from '../ports/advisory-lock-port';
+
 import type { AuditPort } from '../ports/audit-port';
 import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
@@ -162,19 +162,18 @@ export async function cancelBroadcast(
         });
       }
 
-      // Phase 3F.1 (Finding 4 fix) — pre-check pending batches BEFORE
-      // policy authorization. The widened `authorizeCancel(status,
-      // hasBatches)` accepts `sending` IFF the broadcast was split
-      // into batches (F7.1a US1 path). When NO batches exist (F7 MVP
-      // single-audience path), the original `sending → cutoff` rule
-      // still applies — we can't recall a Resend-accepted broadcast.
-      // Phase 3F.11.3 (M1 — Round 2 fix) — skip pending-batch lookup
-      // unless status carries batches (saves a DB roundtrip on the
-      // common cancel-of-non-multi-audience path).
-      // The batch path is gone (108 US5): a broadcast has no per-batch rows to
-      // halt, so cancellation is decided by status alone.
-      const hasBatches = false;
-      const policyResult = authorizeCancel(existing.status, hasBatches);
+      // `authorizeCancel(status, hasBatches)` was widened so `sending` could be
+      // cancelled IFF the broadcast had been split into batches; without them
+      // the original rule stands, because a Resend-accepted broadcast cannot be
+      // recalled. The batch path is gone (108 US5), so there are no per-batch
+      // rows to halt and cancellation is decided by status alone.
+      //
+      // The `false` is passed as a literal rather than dropping the parameter:
+      // this is the policy's only production call site, so removing the argument
+      // would delete the batch branch's last documentation of itself, and the
+      // policy's own tests still exercise both. Reviewed as a dead branch and
+      // kept deliberately — see reviews/review-20260908-223000.md S40.
+      const policyResult = authorizeCancel(existing.status, false);
       if (!policyResult.ok) {
         // R7 staff-review MED-R2 — `null` tx is intentional here: the
         // policy reject branch performs NO state mutation (no UPDATE,

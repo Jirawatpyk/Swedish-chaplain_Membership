@@ -2397,22 +2397,6 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts.batch_no_progress_count{tenant}` — Phase 9b (T144, FR-044 f):
-   * `sending` broadcasts that still hold a `pending` batch manifest and have
-   * moved NO manifest to a terminal status in the last 30 minutes.
-   *
-   * `stuck_sending_count` cannot serve here. It fires at 24 h, and once
-   * batching makes multi-tick delivery ordinary a broadcast SHOULD sit in
-   * `sending` for hours — so "long" stopped being evidence of trouble.
-   * PROGRESS is what separates a healthy 100-batch send from a halted one: a
-   * healthy broadcast retires at least one manifest per tick, so thirty minutes
-   * without one is six missed ticks.
-   *
-   * Sampled by the gauges cron; **alarm** (not page) at ≥ 1 sustained 30 min,
-   * the same tier as `approved_overdue_count`. Runbook:
-   * `docs/runbooks/broadcast-audience-build.md` § C.
-   */
-  /**
    * `broadcasts.audience_import_stuck_count{tenant}` — 108 US5 (T106, FR-044 f):
    * broadcasts whose Resend Contacts-Import was submitted, never completed, and
    * is older than `IMPORT_STUCK_AFTER_MS` (30 min).
@@ -2431,17 +2415,6 @@ export const broadcastsMetrics = {
       observeGauge(
         'broadcasts_audience_import_stuck_count',
         'Broadcasts whose Resend contact import was submitted but never completed within 30 min',
-        { tenant: tenantId },
-        count,
-      );
-    });
-  },
-
-  batchNoProgressCount(tenantId: string, count: number): void {
-    safeMetric(() => {
-      observeGauge(
-        'broadcasts_batch_no_progress_count',
-        'Sending broadcasts with a pending batch and no terminal batch transition in 30 min',
         { tenant: tenantId },
         count,
       );

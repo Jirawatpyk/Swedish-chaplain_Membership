@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
@@ -749,12 +749,32 @@ export function makeDrizzleBroadcastsRepo(
           and(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
+            // COMPARE-AND-SET (108 Phase 9 review S13). `lockForUpdate` takes
+            // `pg_advisory_xact_lock`, but its tx COMMITS before any gateway
+            // call, so the read of "is an audience attached?" and this write sit
+            // in different transactions and the lock protects neither. Two
+            // overlapping ticks — reachable, since `maxDuration` equals the cron
+            // cadence — both saw NULL and both called `createAudience`, leaking
+            // one audience against a 3-audience Free-plan allowance.
+            //
+            // Holding the advisory lock across the gateway calls would be worse:
+            // a Postgres lock held over a 300 s HTTP round trip. Instead the
+            // write itself carries the precondition, so the loser updates 0 rows
+            // and the rowcount assertion below turns a silent race into a loud
+            // failure the cron reports.
+            //
+            // Same id is idempotent: a retried tick that already attached this
+            // audience still updates its row.
+            or(
+              isNull(broadcasts.resendAudienceId),
+              eq(broadcasts.resendAudienceId, resendAudienceId),
+            ),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
         throw new Error(
-          `attachAudienceId: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
+          `attachAudienceId: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length} — a concurrent tick may have attached a different audience`,
         );
       }
     },
@@ -778,12 +798,28 @@ export function makeDrizzleBroadcastsRepo(
           and(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
+            // COMPARE-AND-SET, same reasoning as `attachAudienceId` above.
+            //
+            // The existing test asserting "attaching twice overwrites rather
+            // than erroring — a retried tick must be harmless" keeps passing
+            // for the case it names, because re-attaching the SAME id is still
+            // allowed. What no longer passes silently is a SECOND tick
+            // attaching a DIFFERENT import id: that is not a harmless retry,
+            // it is two live import jobs against one broadcast, and the pair
+            // `(resend_audience_id, audience_import_id)` could end up sourced
+            // from different ticks — which logically bypasses the
+            // `count_mismatch` backstop, since the counts would be validated
+            // for one audience while the send goes to the other.
+            or(
+              isNull(broadcasts.audienceImportId),
+              eq(broadcasts.audienceImportId, importId),
+            ),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
         throw new Error(
-          `attachAudienceImport: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
+          `attachAudienceImport: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length} — a concurrent tick may have attached a different import`,
         );
       }
     },

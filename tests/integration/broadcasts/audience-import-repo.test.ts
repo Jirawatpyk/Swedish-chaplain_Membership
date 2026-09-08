@@ -169,10 +169,28 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     );
   }, 30_000);
 
-  it('attaching twice overwrites rather than erroring — a retried tick must be harmless', async () => {
-    // `upsert` on the Resend side makes a resubmitted import safe; this is the
-    // database half of the same property. The use case guards against a second
-    // submit while an id is set, but if it ever does, the row must not 23514.
+  /**
+   * S13 — compare-and-set, replacing a blind overwrite.
+   *
+   * `lockForUpdate` takes `pg_advisory_xact_lock`, but its tx COMMITS before any
+   * gateway call, so the read of "is an import attached?" and the write that
+   * attaches one live in different transactions and the lock protects neither.
+   * Two overlapping ticks are reachable — `maxDuration` equals the cron cadence
+   * — and both would attach, leaving `(resend_audience_id, audience_import_id)`
+   * sourced from different ticks. That logically bypasses the `count_mismatch`
+   * backstop: the counts get validated for one audience while the send goes to
+   * the other.
+   *
+   * The precondition rides on the write itself rather than on a Postgres lock
+   * held across a 300 s HTTP round trip.
+   *
+   * The old version of this case asserted that a second attach OVERWRITES,
+   * justified as "a retried tick must be harmless". The behaviour it named is
+   * preserved below (same id still succeeds); what it actually pinned was the
+   * race.
+   */
+  it('re-attaching the SAME import id is idempotent — a retried tick is harmless', async () => {
+    if (!RUN_INTEGRATION) return;
     const raw = await seedApproved();
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const broadcastId = asBroadcastId(raw);
@@ -182,10 +200,53 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
     });
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_second');
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
     });
 
-    expect((await readImportCols(raw)).audience_import_id).toBe('imp_second');
+    expect((await readImportCols(raw)).audience_import_id).toBe('imp_first');
+  }, 30_000);
+
+  it('attaching a DIFFERENT import id over an existing one fails loudly', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const broadcastId = asBroadcastId(raw);
+    const slug = asTenantContext(TEST_TENANT).slug;
+
+    await repo.withTx(async (tx) => {
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
+    });
+
+    await expect(
+      repo.withTx(async (tx) => {
+        await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_second');
+      }),
+    ).rejects.toThrow(/expected 1 row updated/);
+
+    // And the first id survives — a losing writer must not have half-applied.
+    expect((await readImportCols(raw)).audience_import_id).toBe('imp_first');
+  }, 30_000);
+
+  it('attaching a DIFFERENT audience id over an existing one fails loudly', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const broadcastId = asBroadcastId(raw);
+    const slug = asTenantContext(TEST_TENANT).slug;
+
+    await repo.withTx(async (tx) => {
+      await repo.attachAudienceId(tx, slug, broadcastId, 'aud_first');
+    });
+    // Same id is still fine (the retried-tick case).
+    await repo.withTx(async (tx) => {
+      await repo.attachAudienceId(tx, slug, broadcastId, 'aud_first');
+    });
+
+    await expect(
+      repo.withTx(async (tx) => {
+        await repo.attachAudienceId(tx, slug, broadcastId, 'aud_second');
+      }),
+    ).rejects.toThrow(/expected 1 row updated/);
   }, 30_000);
 
   /**
@@ -261,6 +322,63 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     expect(cols.audience_import_id).toBe('imp_ok');
     expect(cols.submitted).toBe(true);
     expect(cols.completed).toBe(true);
+  }, 30_000);
+
+  /**
+   * S11 / S46 — the stuck gauge must not LATCH.
+   *
+   * `failTerminally` resolves an incident by moving the row to
+   * `failed_to_dispatch`. It deliberately does NOT clear `audience_import_id`
+   * or stamp `completed_at` — those are forensic values, and an operator
+   * investigating afterwards wants them. But the gauge's predicate had no
+   * status filter, and `applyTransition`'s passthrough whitelist contains none
+   * of the three import columns, so nothing in `src/` ever made such a row stop
+   * matching: every terminal refusal and every cancel-after-submit incremented
+   * `broadcasts_audience_import_stuck_count` permanently. An alarm that never
+   * clears is worse than no alarm, because the NEXT incident is invisible
+   * underneath it.
+   *
+   * Asserted here rather than in the contract test on purpose: that suite mocks
+   * the SQL result rows, so it is structurally blind to the predicate. This runs
+   * the real one against real rows.
+   */
+  it('the stuck-import gauge predicate ignores a row that already went terminal', async () => {
+    if (!RUN_INTEGRATION) return;
+    const stale = await seedApproved();
+    const live = await seedApproved();
+
+    await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+      // Both look "stuck" on the import columns alone: submitted 2 h ago, never
+      // completed. The only difference is that one has been dealt with.
+      for (const id of [stale, live]) {
+        await tx.execute(sql`
+          UPDATE broadcasts
+             SET audience_import_id = 'imp_old',
+                 audience_import_submitted_at = now() - interval '2 hours'
+           WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${id}::uuid`);
+      }
+      await tx.execute(sql`
+        UPDATE broadcasts SET status = 'failed_to_dispatch', failed_to_dispatch_at = now()
+         WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${stale}::uuid`);
+    });
+
+    const counted = (await runInTenant(asTenantContext(TEST_TENANT), async (tx) =>
+      tx.execute(sql`
+        SELECT broadcast_id::text AS id
+        FROM broadcasts
+        WHERE audience_import_id IS NOT NULL
+          AND audience_import_completed_at IS NULL
+          AND status::text = 'approved'
+          AND audience_import_submitted_at < now() - interval '30 minutes'
+          AND broadcast_id IN (${stale}::uuid, ${live}::uuid)`),
+    )) as unknown as Array<{ id: string }>;
+
+    const ids = counted.map((r) => r.id);
+    // The resolved one is gone from the gauge...
+    expect(ids).not.toContain(stale);
+    // ...and the genuinely stuck one is still counted. Without this half, a
+    // predicate that matched nothing at all would pass the assertion above.
+    expect(ids).toContain(live);
   }, 30_000);
 
   /**
