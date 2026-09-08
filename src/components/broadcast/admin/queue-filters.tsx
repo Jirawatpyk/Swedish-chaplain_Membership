@@ -38,6 +38,7 @@ import {
 // chain). Client components must stay free of those imports.
 import {
   BROADCAST_STATUSES,
+  RETIRED_BROADCAST_STATUSES,
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 
@@ -55,14 +56,23 @@ const DEFAULT_STATUS: ReadonlyArray<BroadcastStatus> = ['submitted'];
 // is DERIVED by filtering BROADCAST_STATUSES against IN_REVIEW (not
 // hand-listed) so a newly-added status can't silently vanish from
 // both groups.
+//
+// 108 Phase 9 — retired statuses are subtracted from the same derivation
+// rather than hand-removed, so that property survives: a status is offered
+// unless it is in-review OR retired, and both lists are named. Retired rows
+// remain visible under the explicit show-all view and still render their
+// badge; only the chip that could return nothing is withheld.
 const IN_REVIEW_STATUSES: ReadonlyArray<BroadcastStatus> = [
   'submitted',
   'approved',
   'sending',
   'draft',
 ];
+const RETIRED: ReadonlyArray<BroadcastStatus> = RETIRED_BROADCAST_STATUSES;
 const TERMINAL_STATUSES: ReadonlyArray<BroadcastStatus> =
-  BROADCAST_STATUSES.filter((s) => !IN_REVIEW_STATUSES.includes(s));
+  BROADCAST_STATUSES.filter(
+    (s) => !IN_REVIEW_STATUSES.includes(s) && !RETIRED.includes(s),
+  );
 
 export interface QueueFiltersProps {
   readonly memberOptions: ReadonlyArray<{

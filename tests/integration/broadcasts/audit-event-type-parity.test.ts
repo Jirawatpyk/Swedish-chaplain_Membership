@@ -16,18 +16,29 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { F7_AUDIT_EVENT_TYPES } from '@/modules/broadcasts/application/ports/audit-port';
+import {
+  F7_AUDIT_EVENT_TYPES,
+  RETIRED_F7_AUDIT_EVENT_TYPES,
+} from '@/modules/broadcasts/application/ports/audit-port';
 import { getEnumParity } from '../helpers/assert-enum-parity';
+
+const RETIRED: ReadonlySet<string> = new Set(RETIRED_F7_AUDIT_EVENT_TYPES);
 
 describe('F7 audit_event_type ↔ F7AuditEventType parity', () => {
   it('every F7 TS-tuple value exists in pg_enum, and every broadcast_* + F7-prefixed pg_enum value is in the TS tuple', async () => {
     const result = await getEnumParity({
       typeName: 'audit_event_type',
       tsValues: F7_AUDIT_EVENT_TYPES,
+      // Retired values stay in pg_enum for ever (Postgres cannot drop one) and
+      // are deliberately absent from the TS tuple, so they must leave the
+      // SQL→TS direction's scope or this test reports drift the branch cannot
+      // fix. Read from the shared const — never restate the six names here, or
+      // the next retirement desyncs this file from the audit viewer again.
       sqlScopeFilter: (label) =>
-        label.startsWith('broadcast_') ||
-        label === 'member_acknowledged_broadcasts_terms' ||
-        label === 'member_missing_primary_contact',
+        !RETIRED.has(label) &&
+        (label.startsWith('broadcast_') ||
+          label === 'member_acknowledged_broadcasts_terms' ||
+          label === 'member_missing_primary_contact'),
     });
 
     expect(

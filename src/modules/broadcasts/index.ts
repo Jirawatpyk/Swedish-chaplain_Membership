@@ -120,6 +120,7 @@ export { BroadcastConcurrentMutationError } from './application/ports/broadcasts
 // Port interfaces (BroadcastsRepo, GatewayPort, etc.) are NOT re-exported.
 export {
   F7_AUDIT_EVENT_TYPES,
+  RETIRED_F7_AUDIT_EVENT_TYPES,
   F7_AUDIT_RETENTION_YEARS,
   f7RetentionFor,
   isF7AuditEventType,

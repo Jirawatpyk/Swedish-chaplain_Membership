@@ -47,6 +47,29 @@ export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number];
  * constant so a future state-machine change cannot silently desync the
  * SQL from the domain (Finding G).
  */
+/**
+ * Statuses no code path can reach any more, kept in `BROADCAST_STATUSES` so
+ * the type still covers historical rows and `status-badge-mapping` still
+ * renders them. 108 Phase 9 (`ca51f59a1`) deleted the batch dispatch path and
+ * with it every producer: `recordPartialSend`, `transitionToRetrying` and
+ * `acceptPartialDelivery` have no callers in `src/` or `tests/`.
+ *
+ * `partial_delivery_accepted` deliberately STAYS in
+ * `TERMINAL_BROADCAST_STATUSES` below — `cleanup-audiences` reaps Resend
+ * audiences off that list, and a historical row must still be reaped.
+ *
+ * Read this const wherever a surface OFFERS a status to a human (filter
+ * chips, pickers). Offering an unreachable value hands the user a query that
+ * can only return zero rows, which reads as "it never happened" rather than
+ * "this can no longer happen" — the same reasoning as
+ * `NEVER_EMITTED_EVENT_TYPES` in the audit viewer and
+ * `RETIRED_F7_AUDIT_EVENT_TYPES` in the audit port.
+ */
+export const RETIRED_BROADCAST_STATUSES = [
+  'partially_sent',
+  'partial_delivery_accepted',
+] as const;
+
 export const TERMINAL_BROADCAST_STATUSES = [
   'sent',
   'rejected',
