@@ -17,31 +17,36 @@ afterwards. **T094 does not complete when the flag is set. It completes when the
 | 2026-09-07 | PR-C #346 (`91505b8f2`) merged; migrations `0294`–`0297` applied to prod on the deploy | CLAUDE.md § Recent Changes |
 | 2026-09-08 09:36 | Last production deployment: `#351` (`d7003ea0c`, the `check:f8-error-id` CRLF fix) | Vercel deployment `dpl_BTvaqa62oyK1ypzRtBmEbvCcrwPV`, target `production`, state READY, created `2026-09-08T02:36:59Z` |
 | 2026-09-08 ~09:44 | `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` set in the Vercel project | maintainer, confirmed in session |
+| 2026-09-08 ~10:41 | **Variable DELETED from the Vercel project** — the flip is disarmed | maintainer, confirmed in session |
 
-**→ The flag is SET but NOT LIVE.** `src/lib/env.ts` reads `process.env` at boot, so a Vercel
-env-var change takes effect only on the next deployment. No production deployment has happened
-since the variable was changed, therefore the running production build still resolves the
-`primary_only` leg and `audienceCeiling(false) = 5_000`.
+**→ The flag is ABSENT, therefore `false`, and the flip is NOT armed.** `src/lib/env.ts:638`
+declares `booleanFromString.default(false)`, so a missing variable is a valid boot and resolves to
+off; the running production build resolves the `primary_only` leg with
+`audienceCeiling(false) = 5_000`, and so will the next deployment.
 
-**Consequence**: the preconditions below can still be closed in the correct order. **Do not
-redeploy production until § 2 says every row is CLEARED or VACUOUS.**
+**Consequence**: `main` is safe to merge again, and the preconditions in § 2 can be closed in the
+order the plan intended. Setting the variable to `true` is now the deliberate first step of the
+flip rather than a state the next unrelated merge would cash in.
 
-### ⚠️ The flip is now armed on ANY merge to `main`
+### Why it was deleted — keep this if the variable is ever set early again
 
-`vercel.json` has **no `ignoreCommand`**, so every push to `main` produces a production deployment
-(`vercel-build` = `run-migrations.ts && next build`). With the variable already set to `true`, the
-next deployment performs the flip **whatever it was for** — a docs-only PR, a typo fix, a CI-gate
-change. Nobody has to decide to flip it; someone merely has to merge something.
+There was a window on 2026-09-08 between 09:44 and 10:41 in which the variable was `true` while
+production had not yet been redeployed. That is not a harmless "staged" state. `vercel.json` has
+**no `ignoreCommand`**, so every push to `main` produces a production deployment (`vercel-build`
+= `run-migrations.ts && next build`): the next deployment would have performed the flip **whatever
+it was for** — a docs-only PR, a typo fix, a CI-gate change. Nobody would have decided to flip it;
+someone would merely have merged something. The docs PR that opened this very file would have
+done it.
 
-**Recommended while the gates in § 2 are open: set the Vercel variable back to `false` (or delete
-it — it defaults to `false` in `src/lib/env.ts:638`) and set it to `true` again as the deliberate
-first step of the flip.** That restores the property the flag was built for: an operator gate
-between deploy and the first E-Blast to newly eligible contacts (plan.md § Complexity Tracking #2,
-which rejected flip-on-merge for exactly this reason). Leaving it armed converts the flip from a
-decision into an accident.
+Deleting the variable restored the property the flag exists for: an operator gate between deploy
+and the first E-Blast to newly eligible contacts (`plan.md` § Complexity Tracking #2, which
+rejected flip-on-merge for exactly this reason).
 
-The alternative — freeze `main` until the gates close — is worse: it blocks unrelated work and it
-fails open, because the freeze is a convention and the deployment is automatic.
+The alternative — freezing `main` until the gates close — is worse: it blocks unrelated work and
+it fails open, because a freeze is a convention while the deployment is automatic.
+
+**Rule this leaves behind: on this project, setting a feature-flag env var IS the flip, scheduled
+for whenever someone next merges anything. Set it when you are ready to redeploy, not before.**
 
 ---
 
