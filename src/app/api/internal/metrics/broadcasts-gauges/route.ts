@@ -75,6 +75,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let dispatchRatios: DispatchRatioRow[];
   let suppressionSizes: PendingRow[];
   let approvedOverdue: PendingRow[];
+  let batchNoProgress: PendingRow[];
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
@@ -140,10 +141,38 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // that once read 1 kept reading 1 after the incident was resolved —
       // the "≥ 1 sustained 30 min" rule on `approved_overdue_count` was a
       // latch, not a level. "0 means 0" (see `forgetAutoInvoiceGauges`).
+      // Phase 9b (T144, FR-044 f) — a `sending` broadcast that still holds a
+      // `pending` manifest and has retired NONE in the last 30 minutes.
+      //
+      // `stuck_sending_count` fires at 24 h, which was fine while a batched
+      // broadcast was a rarity; with the split threshold at the per-tick batch
+      // size a 100-batch send legitimately spends hours in `sending`, so
+      // duration stopped being evidence. Progress is: a healthy broadcast
+      // retires at least one manifest per 5-minute tick, so 30 minutes with
+      // none is six missed ticks.
+      const batchNoProgressRows = await tx.execute<PendingRow>(sql`
+        SELECT b.tenant_id, COUNT(*)::int AS count
+        FROM broadcasts b
+        WHERE b.status::text = 'sending'
+          AND EXISTS (
+            SELECT 1 FROM broadcast_batch_manifests m
+            WHERE m.tenant_id = b.tenant_id
+              AND m.broadcast_id = b.broadcast_id
+              AND m.status::text = 'pending'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM broadcast_batch_manifests m2
+            WHERE m2.tenant_id = b.tenant_id
+              AND m2.broadcast_id = b.broadcast_id
+              AND m2.status::text <> 'pending'
+              AND m2.updated_at > now() - interval '30 minutes'
+          )
+        GROUP BY b.tenant_id
+      `);
       const tenantRows = await tx.execute<TenantRow>(sql`
         SELECT DISTINCT tenant_id FROM broadcasts
       `);
-      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows };
+      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows, batchNoProgressRows };
     });
     tenants = Array.from(result.tenantRows ?? []);
     pending = Array.from(result.pendingRows);
@@ -151,6 +180,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     dispatchRatios = Array.from(result.dispatchRows);
     suppressionSizes = Array.from(result.suppressionRows);
     approvedOverdue = Array.from(result.approvedOverdueRows);
+    batchNoProgress = Array.from(result.batchNoProgressRows ?? []);
   } catch (e) {
     logger.error(
       { requestId, err: e instanceof Error ? e.message : String(e) },
@@ -167,6 +197,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const pendingByTenant = new Map(pending.map((r) => [r.tenant_id, r.count]));
   const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
+  const noProgressByTenant = new Map(batchNoProgress.map((r) => [r.tenant_id, r.count]));
   const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
   const observed = new Set<string>();
   for (const t of [
@@ -174,6 +205,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     ...pendingByTenant.keys(),
     ...stuckByTenant.keys(),
     ...overdueByTenant.keys(),
+    ...noProgressByTenant.keys(),
     // A tenant can carry unsubscribes with no `broadcasts` row at all (a
     // contact-level opt-out recorded before the first send), so the
     // suppression keys join the observed set rather than relying on it.
@@ -182,6 +214,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     observed.add(t);
   }
   let approvedOverdueTotal = 0;
+  let batchNoProgressTotal = 0;
   for (const tenantId of observed) {
     const p = pendingByTenant.get(tenantId) ?? 0;
     const s = stuckByTenant.get(tenantId) ?? 0;
@@ -189,6 +222,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     broadcastsMetrics.queuePending(tenantId, p);
     broadcastsMetrics.stuckSendingCount(tenantId, s);
     broadcastsMetrics.approvedOverdueCount(tenantId, o);
+    const np = noProgressByTenant.get(tenantId) ?? 0;
+    broadcastsMetrics.batchNoProgressCount(tenantId, np);
+    batchNoProgressTotal += np;
     pendingTotal += p;
     stuckTotal += s;
     approvedOverdueTotal += o;
@@ -235,6 +271,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       pendingTotal,
       stuckTotal,
       approvedOverdueTotal,
+      batchNoProgressTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
@@ -251,6 +288,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       pendingTotal,
       stuckTotal,
       approvedOverdueTotal,
+      batchNoProgressTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,

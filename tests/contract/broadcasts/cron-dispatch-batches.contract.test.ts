@@ -34,6 +34,8 @@ const f71aUs1DisabledReasonMock = vi.fn();
 const resolveSegmentRecipientsMock = vi.fn();
 const findByIdMock = vi.fn();
 const findPendingByBroadcastMock = vi.fn();
+const findByBroadcastMock = vi.fn();
+const audienceDriftDetectedSpy = vi.fn();
 const dispatchResolveFailedTotalSpy = vi.fn();
 // Phase 3F.11.10 (Round 3 MED-2) — capture dispatchAllPendingBatches
 // invocations so kill-switch + auth-rejection paths can assert it was
@@ -80,6 +82,7 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
     broadcastsMetrics: {
       ...actual.broadcastsMetrics,
       dispatchResolveFailedTotal: (...args: unknown[]) => dispatchResolveFailedTotalSpy(...args),
+      audienceDriftDetected: (...args: unknown[]) => audienceDriftDetectedSpy(...args),
     },
   };
 });
@@ -105,6 +108,10 @@ vi.mock('@/modules/broadcasts', async () => ({
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
   makeDrizzleBatchManifestsRepo: () => ({
     findPendingByBroadcast: (...args: unknown[]) => findPendingByBroadcastMock(...args),
+    // Phase 9b (T143) — the drift guard needs EVERY manifest, not just the
+    // pending ones: the split-time recipient total is the sum across all of
+    // them, and by the second tick some are already `sent_to_resend`.
+    findByBroadcast: (...args: unknown[]) => findByBroadcastMock(...args),
   }),
   makeDrizzleBroadcastsRepo: () => ({ findById: (...args: unknown[]) => findByIdMock(...args) }),
   makeDrizzleMarketingUnsubscribesRepo: () => ({ kind: 'unsubscribes-stub' }),
@@ -119,7 +126,10 @@ vi.mock('@/modules/broadcasts', async () => ({
   // 50,000 is a FORWARDING fixture: the composition root cannot return it for
   // `currentAudienceCeiling` any more, and what this file pins is pass-through.
   configuredAudienceCeiling: () => 50_000,
-  currentAudienceCeiling: () => 500,
+  // Phase 9b (T131): with batching ON the enforced ceiling IS the configured
+  // one — large audiences are split, not refused — so the two agree again and
+  // all five readers compare against a single number.
+  currentAudienceCeiling: () => 50_000,
   systemClock: { now: () => new Date('2026-09-07T00:00:00Z') },
   tenantDefaultLocaleFor: () => 'en',
 }));
@@ -152,6 +162,14 @@ beforeEach(() => {
   resolveSegmentRecipientsMock.mockReset();
   findByIdMock.mockReset();
   findPendingByBroadcastMock.mockReset();
+  findByBroadcastMock.mockReset();
+  // Phase 9b (T143) — default coverage matches the two-recipient fixture the
+  // dispatch cases use, so the drift guard is satisfied unless a case sets out
+  // to trip it.
+  findByBroadcastMock.mockResolvedValue([
+    { batchIndex: 0, recipientCount: 2, recipientRangeStart: 0, recipientRangeEnd: 1, status: 'pending' },
+  ]);
+  audienceDriftDetectedSpy.mockReset();
   dispatchResolveFailedTotalSpy.mockReset();
   dispatchAllPendingBatchesMock.mockClear();
 });
@@ -364,5 +382,111 @@ describe('cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)', 
     expect(resolveSegmentRecipientsMock).not.toHaveBeenCalled();
     expect(dispatchResolveFailedTotalSpy).not.toHaveBeenCalled();
     expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
+  });
+  /**
+   * Phase 9b (T143) — **the batch path re-resolves every tick, but each
+   * manifest slices a list frozen at split time.**
+   *
+   * `dispatch-batches` calls `resolveSegmentRecipients` per broadcast per tick,
+   * while `dispatchBroadcastBatch` sends
+   * `allRecipients.slice(recipientRangeStart, recipientRangeEnd + 1)` using
+   * ranges computed when the broadcast was split. A member opting out, joining
+   * or being archived between ticks shifts every later slice: a recipient can
+   * be skipped, or sent to twice. That violates FR-044 (a) "list fixed at the
+   * first attempt" and (d) "no recipient added twice".
+   *
+   * Pre-existing in F7.1a and unreachable in practice, because nothing above
+   * 10,000 recipients was ever split. Phase 9b makes the threshold 500, so
+   * ordinary broadcasts now take this path and drift becomes routine — the
+   * change makes a latent bug live, so the change has to guard it.
+   *
+   * This DETECTS; it does not repair. Freezing the resolved list at split time
+   * needs a per-broadcast recipient table under RLS with an erasure cascade
+   * (`data-model.md` § 2.5) — a migration, not a polish task. Until then the
+   * broadcast halts with its manifests `pending`, is surfaced by the
+   * no-progress signal (T144), and staff cancel and re-submit; there is
+   * deliberately no "accept the new count" path, because the batches already
+   * sent used the OLD slices, so accepting would double-send or skip exactly
+   * the recipients the drift moved.
+   *
+   * The existing `recipient_set_grew_tail_excluded` warning inside
+   * `dispatchBroadcastBatch` is not this: it is log-only, fires only on GROWTH,
+   * only from the last batch, and never stops the send.
+   */
+  it('re-resolved audience differs from the split-time total → dispatches NOTHING for that broadcast', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      subject: 'S',
+      bodyHtml: '<p>b</p>',
+      fromName: 'F',
+      replyToEmail: 'r@example.com',
+      status: 'sending',
+    });
+    findPendingByBroadcastMock.mockResolvedValue([{ batchId: 'b-2', status: 'pending' }]);
+    // Split time: two batches covering 4 recipients. Batch 0 already went out.
+    findByBroadcastMock.mockResolvedValue([
+      { batchIndex: 0, recipientCount: 2, recipientRangeStart: 0, recipientRangeEnd: 1, status: 'sent_to_resend' },
+      { batchIndex: 1, recipientCount: 2, recipientRangeStart: 2, recipientRangeEnd: 3, status: 'pending' },
+    ]);
+    // …but one member opted out since, so the list is 3 long. Batch 1 would now
+    // slice indices 2-3 of a DIFFERENT list: index 2 is a recipient that batch
+    // 0 already received, index 3 does not exist.
+    resolveSegmentRecipientsMock.mockResolvedValue(
+      ok({
+        recipients: ['a@example.com', 'b@example.com', 'c@example.com'],
+        orphans: [],
+        droppedByPreference: 1,
+        estimatedCount: 3,
+      }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-batches/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+
+    expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
+    expect(audienceDriftDetectedSpy).toHaveBeenCalledWith('test-tenant');
+    const body = (await res.json()) as { driftHalted: number; errors: number };
+    expect(body.driftHalted).toBe(1);
+    // Not an error: the data is intact and a human has a defined next step.
+    // Counting it as an error would page on-call for something no retry fixes.
+    expect(body.errors).toBe(0);
+  });
+
+  it('re-resolved audience matching the split-time total dispatches normally', async () => {
+    // The guard must not be a blanket halt: the ordinary case is that nothing
+    // changed between ticks, and a large broadcast spends many ticks here.
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      subject: 'S',
+      bodyHtml: '<p>b</p>',
+      fromName: 'F',
+      replyToEmail: 'r@example.com',
+      status: 'sending',
+    });
+    findPendingByBroadcastMock.mockResolvedValue([{ batchId: 'b-1', status: 'pending' }]);
+    resolveSegmentRecipientsMock.mockResolvedValue(
+      ok({ recipients: ['a@example.com', 'b@example.com'], orphans: [], droppedByPreference: 0, estimatedCount: 2 }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-batches/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+
+    expect(dispatchAllPendingBatchesMock).toHaveBeenCalledTimes(1);
+    expect(audienceDriftDetectedSpy).not.toHaveBeenCalled();
   });
 });

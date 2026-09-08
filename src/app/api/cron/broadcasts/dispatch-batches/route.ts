@@ -233,6 +233,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      * distinguishable from one that is stuck.
      */
     batchesDeferred: 0,
+    /**
+     * Phase 9b (T143) — broadcasts whose re-resolved audience no longer matches
+     * the split-time total, so NO batch of them was dispatched this tick.
+     * Deliberately not `errors`: nothing failed and no retry helps — the
+     * recovery is a staff cancel + re-submit (runbook § C).
+     */
+    driftHalted: 0,
     skipped: 0,
     errors: 0,
   };
@@ -398,6 +405,57 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const allRecipients = resolved.value.recipients.map((e) => ({
         emailLower: e as unknown as string,
       }));
+
+      // 5c-bis (Phase 9b, T143) — **drift guard: the list we just resolved must
+      // be the same SIZE as the one the split was computed from.**
+      //
+      // This route re-resolves the audience every tick, but each manifest holds
+      // index ranges frozen at split time and `dispatchBroadcastBatch` sends
+      // `allRecipients.slice(recipientRangeStart, recipientRangeEnd + 1)`. If a
+      // member opted out, joined or was archived since, every later slice
+      // shifts: recipients get skipped, or sent to twice. FR-044 (a) and (d).
+      //
+      // Latent in F7.1a because nothing above 10,000 recipients was ever split.
+      // Phase 9b makes the threshold the per-tick batch size, so ordinary
+      // broadcasts take this path and the drift is routine — the change that
+      // makes it reachable has to guard it.
+      //
+      // DETECTION ONLY. Repairing it means freezing the resolved list at split
+      // time in a per-broadcast table under RLS with an erasure cascade
+      // (`data-model.md` § 2.5) — a migration, not a polish task. Here the
+      // broadcast halts with its manifests `pending`: no batch of it is
+      // dispatched this tick or any later tick, so nothing is sent on a stale
+      // slice. Staff cancel and re-submit (the runbook's § C recovery path);
+      // there is no "accept the new count", because batches already sent used
+      // the OLD slices and accepting would double-send or skip precisely the
+      // recipients the drift moved.
+      //
+      // Counted separately from `errors`: the data is intact and a human has a
+      // defined next step, so this must not page on-call for a retry that
+      // cannot succeed.
+      const allManifests = await batchManifestsRepo.findByBroadcast(
+        tenant.slug,
+        broadcastId,
+      );
+      const splitTimeCoverage = allManifests.reduce(
+        (sum, m) => sum + m.recipientCount,
+        0,
+      );
+      if (allRecipients.length !== splitTimeCoverage) {
+        summary.driftHalted++;
+        broadcastsMetrics.audienceDriftDetected(tenant.slug);
+        logger.warn(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            expected: splitTimeCoverage,
+            observed: allRecipients.length,
+            phase: 'batch',
+          },
+          'cron.broadcasts.dispatch_batches.audience_drift_halted',
+        );
+        continue;
+      }
 
       // 5d. Build BroadcastContent for the dispatcher service.
       // Phase 3F.7 (F-22 fix) — resolve proper tenant display name
