@@ -113,16 +113,18 @@ export function currentAudienceMode(): AudienceMode {
 
 /**
  * 108 PR-C T085 (FR-042) — the CONFIGURED ceiling, i.e. what the flags say the
- * system would accept. Since T095 (2026-09-08) it is no longer what any
- * single-tick caller compares against: they read `currentAudienceCeiling()`
- * below, which clamps this to `DELIVERABLE_RECIPIENTS_PER_TICK`. Its two
- * remaining direct readers are the batch crons, whose predicate is
- * `> SPLIT_THRESHOLD_RECIPIENTS` and for whom a per-tick clamp is the wrong
- * bound. Value:
- * 5,000 unless BOTH the F7.1a batching path AND the 1:N audience flag are
- * ON, then 50,000. Read per call (a flag flip takes effect on the next
- * request/tick), the same way the legacy `isF71aUs1Enabled()` gate is
- * consulted by the batch crons.
+ * system would accept. Since T095 (2026-09-08) it is no longer what any caller
+ * compares against: they all read `currentAudienceCeiling()` below.
+ *
+ * It has **no reader outside this file** — the two batch crons that used to
+ * read it were deleted in `ca51f59a1`. It is kept and exported anyway because
+ * its test pins it as a column distinct from the enforced value; see the
+ * docblock on `currentAudienceCeiling()` for why collapsing them would make
+ * the clamp assertions vacuous.
+ *
+ * Value: 5,000 unless BOTH the F7.1a batching path AND the 1:N audience flag
+ * are ON, then 50,000. Read per call, so a flag flip takes effect on the next
+ * request/tick.
  *
  * Review H-2 (2026-09-07): the wide ceiling was raised FOR the 1:N audience,
  * so it moves WITH `FEATURE_CONTACT_MARKETING_RECIPIENTS`. Gating on the
@@ -155,30 +157,45 @@ export function configuredAudienceCeiling(): number {
  * sitting in `approved` until `broadcasts_approved_overdue_count` noticed
  * about ninety minutes later.
  *
- * **Phase 9b made the clamp conditional on batching, and that is not a
- * loosening.** T095 closed the gap by REFUSING what one tick could not deliver.
- * Phase 9b closes it by SPLITTING instead: `SPLIT_THRESHOLD_RECIPIENTS` is now
- * the same constant, so an audience above one tick's capacity is cut into
- * batches of exactly that size and delivered one wave per tick. Nothing is
- * accepted that cannot be delivered — the delivery just takes more than one
- * tick. Clamping as well would refuse the very audiences the batch path exists
- * to carry, and would put a chamber's headcount behind a code change instead
- * of behind its Resend plan.
+ * **The clamp is conditional on the IMPORT flag, and it is a tightening.**
+ * Phase 9b's split/batch model is gone — `ca51f59a1` deleted both crons and
+ * `SPLIT_THRESHOLD_RECIPIENTS` with them. What replaced it inverts the
+ * argument: the serial per-contact loop is the thing with a per-tick capacity,
+ * and the import removes it, because one multipart upload carries the whole
+ * CSV in a single size-independent call.
  *
- * With batching OFF there is no split path, so the measured single-tick bound
- * is still the real one and the clamp still applies. That state is prod's
- * rollback position, so it must keep behaving exactly as it does today.
+ *   - import OFF (today's default, and prod's rollback position) → the legacy
+ *     loop runs, so the measured single-tick bound is real and this clamps to
+ *     it. Above ~500 the answer is a refusal at submit.
+ *   - import ON  → no per-tick capacity to clamp against; accept what the
+ *     flags configure. A growing chamber's headcount is then a Resend plan
+ *     decision, not a code change.
  *
- * FR-042 survives in both states: with batching ON this returns the configured
- * value, which is what `split-large-broadcasts` and `dispatch-batches` already
- * read — so all five readers compare against ONE number (pinned in
- * `broadcasts-deps-audience.test.ts`). Every i18n string interpolates
- * `{ceiling, number}`, so the copy follows automatically in all three locales.
+ * **STATE THE DELTA AGAINST `origin/main`, NOT AGAINST THIS BRANCH.** `main`
+ * has no clamp at all — `currentAudienceCeiling()` there is a bare
+ * `audienceCeiling(...)`. So on merge, with the import flag absent and
+ * therefore false, the accepted ceiling moves **5,000 → 500, unflagged**.
+ * That is deliberate and recorded with its reasoning in
+ * `specs/108-contact-recipient-rules/reviews/cutover.md` § 5: audiences of
+ * 501–5,000 are accepted today and *already fail silently*, because 300 s of
+ * the serial loop cannot drain them (measured 2.08 req/s ⇒ ~623/tick). The
+ * refusal replaces a silent non-delivery with a legible error. Do not "restore"
+ * 5,000 to avoid a behaviour change without reading § 5 first.
  *
- * Note this is the ACCEPT bound only. `dispatchScheduledBroadcast` carries a
- * separate `deliverablePerTick` and hands a grown audience off to the split
- * path rather than pushing it — the estimate that routed the row was frozen at
- * submit and can be days stale.
+ * `configuredAudienceCeiling()` stays exported on its own even though nothing
+ * outside this file reads it any more. That is not dead code kept by accident:
+ * `broadcasts-deps-audience.test.ts` asserts `configured` and `enforced` as
+ * SEPARATE columns, and rows where they differ (5,000 vs 500) are what keep an
+ * inverted flag expression failing. Collapse them and the clamp assertions go
+ * vacuously green — the H-2 guard above.
+ *
+ * FR-042 still holds: every call site — compose count, submit, dispatch —
+ * compares against this one function, and every i18n string interpolates
+ * `{ceiling, number}`, so the copy follows in all three locales with no key
+ * changes.
+ *
+ * Note this is the ACCEPT bound only, and the estimate that routed a row was
+ * frozen at submit, so it can be days stale by the time a tick reads it.
  */
 export function currentAudienceCeiling(): number {
   return isF7ImportAudienceEnabled()

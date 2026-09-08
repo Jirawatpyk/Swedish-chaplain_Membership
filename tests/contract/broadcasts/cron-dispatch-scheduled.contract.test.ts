@@ -74,12 +74,11 @@ vi.mock('@/modules/broadcasts', () => ({
   dispatchScheduledBroadcast: (...args: unknown[]) => dispatchScheduledBroadcastMock(...args),
   makeDispatchScheduledBroadcastDeps: async () => ({ membersBridge: { kind: 'members-bridge-stub' } }),
   makeTickMemoizedMembersBridge: (inner: unknown) => inner,
-  // Phase 9b (T131/T137) — the claim query bounds on this. A FORWARDING
-  // fixture: what this file pins is that the predicate exists and names the
-  // column, not that 500 is the production value (that lives in
-  // `audience-ceiling.test.ts`). Omitting it interpolated `undefined` into the
-  // SQL and every case in this file answered 500.
-  SPLIT_THRESHOLD_RECIPIENTS: 500,
+  // `SPLIT_THRESHOLD_RECIPIENTS` was mocked here for the Phase 9b claim
+  // predicate. Both are gone: `ca51f59a1` deleted the batch crons and the
+  // constant, and the route now references neither (`grep -c` = 0). Removed
+  // rather than left as harmless padding — a fixture for a predicate that
+  // cannot exist is how the assertion below went vacuous unnoticed.
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
   isF7ImportAudienceEnabled: () => isF7ImportAudienceEnabledMock(),
   buildAudienceTick: (...args: unknown[]) => buildAudienceTickMock(...args),
@@ -158,6 +157,10 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(body['uncaught_error']).toBe(0);
 
     expect(dispatchScheduledBroadcastMock).toHaveBeenCalledTimes(1);
+    // The ON direction pins that the legacy path is NOT taken; without its
+    // mirror here the routing was only half asserted, and a fault that ran BOTH
+    // paths in one tick would have passed. Both legs write to the same row.
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
     const [, input] = dispatchScheduledBroadcastMock.mock.calls[0] as [unknown, { broadcastId: string }];
     expect(input).toEqual({ broadcastId: BROADCAST_ID });
     // Review errors HIGH-4 — the alarm for a schedule slipping tick after tick.
@@ -219,7 +222,17 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
 
-    expect(sqlTextOf(executed[0])).not.toContain('estimated_recipient_count');
+    // POSITIVE CONTROL FIRST. The `not.toContain` below is asserting the
+    // absence of a predicate that no longer exists in ANY flag state, so on its
+    // own it also passes when `sqlTextOf` returns '' for an unrelated reason —
+    // a changed query shape, a different mock arg, a refactor of the helper.
+    // Anchor on clauses the claim query must keep, or this case proves nothing.
+    const claimSql = sqlTextOf(executed[0]);
+    expect(claimSql).toContain("status = 'approved'");
+    expect(claimSql).toContain('scheduled_for');
+    expect(claimSql).toContain('FOR UPDATE SKIP LOCKED');
+
+    expect(claimSql).not.toContain('estimated_recipient_count');
   });
 
   it('import flag ON and the tick reports sent → counted as succeeded', async () => {

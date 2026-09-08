@@ -263,11 +263,12 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // T085) would burn the whole dispatch-function time budget on sleeping and
     // time the invocation out before it finishes. Reactive backoff only pays
     // the cost when the limit is actually hit. Reliable delivery of very large
-    // audiences within a single invocation is a separate architectural concern
-    // (batched multi-tick dispatch), tracked outside this fix — and it is the
-    // open push-capacity gate on the 108 flag flip: everything at or below
-    // `SPLIT_THRESHOLD_RECIPIENTS` falls to this serial loop, so an audience
-    // above what 300 s of it can drain is accepted and never delivered.
+    // audiences within a single invocation is what `createContactImport` below
+    // solves — one multipart upload instead of N requests — so this loop is the
+    // legacy path only, reached when `FEATURE_F7_IMPORT_AUDIENCE` is off. Its
+    // capacity is the reason `currentAudienceCeiling()` clamps in that state:
+    // measured 2.08 req/s ⇒ ~623 per 300 s tick ⇒ a 500 accept bound. Anything
+    // above that used to be accepted and never delivered.
     for (const c of contacts) {
       await withRetry(
         async () => {
