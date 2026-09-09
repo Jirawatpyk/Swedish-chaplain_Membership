@@ -200,6 +200,20 @@ export type BuildAudienceTickError =
       readonly expected: number | null;
     }
   | { readonly kind: 'audience_import_stuck'; readonly importId: string; readonly ageMs: number }
+  /**
+   * Round 4 F5 — a 404 from Resend used to come back as `audience_import_failed`,
+   * which the cron buckets `permanent_failed`, so `summary.resource_missing` was
+   * STRUCTURALLY 0 on this leg while the legacy leg has a dedicated arm. A trace
+   * read `permanent_failed=1, resource_missing=0` — "finished, nothing to do" —
+   * for the one failure whose own docblock says it needs an admin to look at the
+   * account. The audit event and the suppressed member email were already right;
+   * only the kind the cron sees was not.
+   */
+  | {
+      readonly kind: 'broadcast_resend_resource_missing';
+      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceId: string;
+    }
   | {
       readonly kind: 'dispatch.server_error';
       readonly message: string;
@@ -481,6 +495,26 @@ async function viaRepoConcurrency<T>(
  * a status nobody observed is the same class of defect as an audit row that
  * asserts a role nobody held.
  */
+/**
+ * Round 4 F7 — the observed transport class, expressed in the failure-metric
+ * union without guessing.
+ *
+ * A separate named helper rather than a ternary chain: CLAUDE.md forbids nested
+ * ternaries, and the sibling helper below carries a comment saying a previous
+ * 4-level chain was replaced for exactly that reason.
+ *
+ * `network`, `api` and `unclassified` deliberately stay `app_error`. The union
+ * has no member for them, and inventing an HTTP bucket nobody observed is the
+ * defect being fixed one dimension over — see the sibling's docblock.
+ */
+function budgetSubKindToFailureMetric(
+  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
+): 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' {
+  if (subKind === 'server_5xx') return 'resend_5xx';
+  if (subKind === 'timeout') return 'timeout';
+  return 'app_error';
+}
+
 function importReasonToFailureMetric(
   reason: ImportFailureReason | 'audience_import_stuck',
   code: string | undefined,
@@ -573,13 +607,34 @@ async function onRetryable(
   // plausible one.
   broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, subKind);
 
-  return failTerminally(deps, input, broadcast, {
-    kind: 'audience_import_failed',
-    reason: 'retry_budget_exhausted',
-    importId,
-    observed: elapsedMs,
-    expected: RETRY_BUDGET_MS,
-  });
+  return failTerminally(
+    deps,
+    input,
+    broadcast,
+    {
+      kind: 'audience_import_failed',
+      reason: 'retry_budget_exhausted',
+      importId,
+      observed: elapsedMs,
+      expected: RETRY_BUDGET_MS,
+    },
+    {
+      // Round 4 F7 — the two series used to disagree about one failure.
+      // `dispatchBudgetExhausted` carried the OBSERVED transport class while
+      // `failedToDispatchCount` fell to `importReasonToFailureMetric`, which has
+      // no case for `retry_budget_exhausted` and returned `app_error` — so an
+      // hour of Resend 5xx was filed under "our application" on the series
+      // `broadcasts-dispatch-failure.md` tells an operator to group by.
+      //
+      // Only the two classes the union can express WITHOUT guessing are mapped,
+      // which is that helper's own stated principle: `server_5xx` is exactly
+      // `resend_5xx`, `timeout` is exactly `timeout`. `network`, `api` and
+      // `unclassified` stay `app_error` because the union has no member for them
+      // and inventing an HTTP bucket nobody observed is the defect this is
+      // fixing, one dimension over.
+      failureMetric: budgetSubKindToFailureMetric(subKind),
+    },
+  );
 }
 
 /**
@@ -649,6 +704,10 @@ async function onGatewayFailure(
         auditEventType: 'broadcast_resend_resource_missing',
         notifyMember: false,
         failureMetric: importReasonToFailureMetric(failure.reason, failure.code),
+        resourceMissing: {
+          resourceType: failure.resourceType ?? 'broadcast',
+          resourceId: failure.resourceId ?? (input.broadcastId as unknown as string),
+        },
       },
     );
   }
@@ -1320,6 +1379,17 @@ async function failTerminally(
     readonly notifyMember?: boolean;
     /** Round 3 finding 3-12 — see `importReasonToFailureMetric`. */
     readonly failureMetric?: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout';
+    /**
+     * Round 4 F5 — set on the 404 path so the RETURNED kind is
+     * `broadcast_resend_resource_missing` and the cron buckets it the way the
+     * legacy leg does. The recorded terminal state, the audit event and the
+     * suppressed member email are unchanged; this only stops the cron reporting
+     * an account problem as `permanent_failed`.
+     */
+    readonly resourceMissing?: {
+      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceId: string;
+    };
   } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const auditEventType = opts.auditEventType ?? 'broadcast_failed_to_dispatch';
@@ -1402,12 +1472,22 @@ async function failTerminally(
         },
         requestId: null,
       });
-      // Without these the failure rate reads 0 through a total outage and the
+      // Without this the failure rate reads 0 through a total outage and the
       // dispatch dashboard shows nothing happening while broadcasts die.
-      broadcastsMetrics.failedToDispatchCount(
-        deps.tenant.slug,
-        opts.failureMetric ?? importReasonToFailureMetric(reason, undefined),
-      );
+      //
+      // Round 4 F6 — GATED on the audit event type, which is what the legacy leg
+      // does (`dispatch-scheduled-broadcast.ts`: `if (eventType ===
+      // 'broadcast_failed_to_dispatch')`). Emitting unconditionally counted a
+      // Resend 404 toward `broadcasts.failed_to_dispatch.count` on this leg while
+      // the other leg deliberately excludes it, so the § 22.3 alert on that
+      // series (>10% over send_started) changed meaning at a flag flip. A flag
+      // flip must not redefine an alert.
+      if (auditEventType === 'broadcast_failed_to_dispatch') {
+        broadcastsMetrics.failedToDispatchCount(
+          deps.tenant.slug,
+          opts.failureMetric ?? importReasonToFailureMetric(reason, undefined),
+        );
+      }
       broadcastsMetrics.auditEmitCount(deps.tenant.slug, auditEventType);
     });
   } catch (cleanupErr) {
@@ -1450,7 +1530,17 @@ async function failTerminally(
     await enqueueDispatchFailureNotification({ deps, broadcast, reason, now });
   }
 
-  return err(error);
+  // Round 4 F5 — the recorded state is the same either way; only the kind the
+  // CRON reads differs, so it can bucket an account problem as such.
+  return err(
+    opts.resourceMissing === undefined
+      ? error
+      : {
+          kind: 'broadcast_resend_resource_missing',
+          resourceType: opts.resourceMissing.resourceType,
+          resourceId: opts.resourceMissing.resourceId,
+        },
+  );
 }
 
 /**

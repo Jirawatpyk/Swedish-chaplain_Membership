@@ -54,6 +54,12 @@ function gatewayThrow(
     // `| undefined` is required under `exactOptionalPropertyTypes` — the caller
     // spreads an optional through, so the property is PRESENT and undefined.
     code?: string | undefined;
+    /**
+     * Round 4 F7 — the adapter tags every `retryable` throw with its transport
+     * class (`classifyResendError`), and the fixture could not, so nothing could
+     * drive the observed-class mapping the FR-021 budget now reports.
+     */
+    subKind?: string | undefined;
   } = {},
 ): Error {
   const e = new Error(reason) as Error & {
@@ -62,6 +68,7 @@ function gatewayThrow(
     resourceType?: string;
     resourceId?: string;
     code?: string;
+    subKind?: string;
   };
   e.kind = kind;
   e.reason = reason;
@@ -72,6 +79,7 @@ function gatewayThrow(
   if (extra.resourceType !== undefined) e.resourceType = extra.resourceType;
   if (extra.resourceId !== undefined) e.resourceId = extra.resourceId;
   if (extra.code !== undefined) e.code = extra.code;
+  if (extra.subKind !== undefined) e.subKind = extra.subKind;
   return e;
 }
 
@@ -136,6 +144,8 @@ function makeDeps(opts: {
     readonly kind: string;
     /** Round 3 finding 3-12 — the adapter's `code` (`http_403` at the Free-plan cap). */
     readonly code?: string;
+    /** Round 4 F7 — the transport class the adapter observed. */
+    readonly subKind?: string;
   };
   readonly droppedByPreference?: number;
   readonly orphans?: readonly string[];
@@ -208,8 +218,13 @@ function makeDeps(opts: {
         opts.throwOn.kind,
         'boom',
         opts.throwOn.kind === 'resource_missing'
-          ? { resourceType: 'broadcast', resourceId: 'rb-gone', code: opts.throwOn.code }
-          : { code: opts.throwOn.code },
+          ? {
+              resourceType: 'broadcast',
+              resourceId: 'rb-gone',
+              code: opts.throwOn.code,
+              subKind: opts.throwOn.subKind,
+            }
+          : { code: opts.throwOn.code, subKind: opts.throwOn.subKind },
       );
     }
   }
@@ -915,8 +930,50 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
 
     expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
     expect(spy).toHaveBeenCalledTimes(1);
-    // Never `internal` for a provider failure — the split has to hold both ways.
-    expect(spy.mock.calls[0]?.[1]).not.toBe('internal');
+    // With no class on the throw the budget must NOT invent one. `unclassified`
+    // is visible on the dashboard; `api` would have been a fabricated transport
+    // class on a page-on-call series (round 4 F8).
+    expect(spy.mock.calls[0]?.[1]).toBe('unclassified');
+  });
+
+  /**
+   * Round 4 F7 — the two series used to disagree about ONE failure.
+   *
+   * `dispatchBudgetExhausted` carried the observed transport class while
+   * `failedToDispatchCount` fell through `importReasonToFailureMetric`, which has
+   * no case for `retry_budget_exhausted` and returns `app_error`. So an hour of
+   * Resend 5xx was filed under "our application" on the very series
+   * `broadcasts-dispatch-failure.md` tells an operator to group by.
+   */
+  it('an hour of Resend 5xx reports resend_5xx on BOTH series, not app_error on one', async () => {
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'server_5xx' },
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(budgetSpy.mock.calls[0]?.[1]).toBe('server_5xx');
+    expect(failedSpy.mock.calls[0]?.[1]).toBe('resend_5xx');
+  });
+
+  it('a class the metric union cannot express stays app_error rather than a guessed bucket', async () => {
+    // The positive control for the mapping above. `network` has no member in the
+    // failure-metric union, and inventing one is the defect being fixed one
+    // dimension over — so it must NOT become `resend_5xx`.
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'network' },
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(failedSpy.mock.calls[0]?.[1]).toBe('app_error');
   });
 
   /**
@@ -1279,6 +1336,62 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     // "resource_missing is an ops-side issue requiring admin action, not member
     // notification" — the legacy path's own words.
     expect(rec.memberEmails).toHaveLength(0);
+
+    // Round 4 F5 — the kind the CRON reads. It used to be
+    // `audience_import_failed`, which the cron buckets `permanent_failed`, so
+    // `summary.resource_missing` was structurally 0 on this leg and a trace read
+    // "finished, nothing to do" for the one failure that needs an admin to look
+    // at the Resend account. The legacy leg has always had its own arm.
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_resend_resource_missing');
+    expect(
+      (res.error as { readonly resourceType: string }).resourceType,
+    ).toBe('broadcast');
+  });
+
+  /**
+   * Round 4 F6 — the counter that changed meaning at a flag flip.
+   *
+   * `failTerminally` emitted `failedToDispatchCount` unconditionally, while the
+   * legacy leg gates it on `eventType === 'broadcast_failed_to_dispatch'`. So a
+   * Resend 404 counted toward `broadcasts.failed_to_dispatch.count` on the import
+   * leg and was deliberately excluded on the other — and the § 22.3 alert on that
+   * series (>10 % over `send_started`) meant two different things depending on
+   * one environment variable. A flag flip must not redefine an alert.
+   */
+  it('a 404 does NOT count toward failed_to_dispatch — the same exclusion the legacy leg makes', async () => {
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The terminal state and its own audit still happen — this is about the
+    // COUNTER, not about hiding the failure.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain(
+      'broadcast_resend_resource_missing',
+    );
+    expect(failedSpy).not.toHaveBeenCalled();
+  });
+
+  it('a GENUINE dispatch failure still counts toward failed_to_dispatch', async () => {
+    // The positive control for the gate above: without it, gating on the audit
+    // event type could silence the counter for everything and this file would
+    // not notice.
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(failedSpy).toHaveBeenCalledTimes(1);
   });
 
   /**

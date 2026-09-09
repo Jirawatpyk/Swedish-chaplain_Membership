@@ -310,6 +310,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 'cron.broadcasts.dispatch.server_error',
               );
               break;
+            case 'broadcast_resend_resource_missing':
+              // Round 4 F5 — its own bucket, matching the legacy arm below. The
+              // 404 path used to return `audience_import_failed`, so this counter
+              // was structurally 0 on the import leg and a trace read
+              // "permanent_failed=1, resource_missing=0" — finished, nothing to
+              // do — for the one failure whose docblock says an admin has to look
+              // at the Resend account.
+              //
+              // NOTE the arm is required, not cosmetic: without it the new kind
+              // falls to `default` → `unknown_error` + `cronUnknownErrorCount`,
+              // which is the enum-drift signal that PAGES on-call. Adding a kind
+              // to `BuildAudienceTickError` without an arm here trades a silent
+              // mis-bucket for a false page.
+              summary.resource_missing++;
+              logger.error(
+                {
+                  tenantId: tenant.slug,
+                  broadcastId: row.broadcast_id,
+                  resourceType: built.error.resourceType,
+                  resourceId: built.error.resourceId,
+                },
+                'cron.broadcasts.dispatch.resend_resource_missing',
+              );
+              break;
             case 'audience_import_failed':
             case 'audience_import_stuck':
             case 'broadcast_audience_too_large':
