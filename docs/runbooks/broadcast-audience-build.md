@@ -29,7 +29,7 @@ Steps inside the resolver, in the ORDER the code runs them. The code's own step 
 3. **Dedupe by address.**
 4. **Suppression anti-join** — `marketing_unsubscribes` looked up in chunks of 5,000 addresses.
 5. **Marketing opt-out filter** (step 5b in the code) — `filterMarketingOptedOut` through the real bridge, **fail-closed** (a failed lookup rejects the tick rather than mailing people who objected); metric `broadcasts_marketing_opt_out_filter_count`. On the `all_contacts` leg F3 already excluded those contacts in SQL, so this measures ~0 there and the step-1 count carries the true number.
-6. **Empty check, then the ceiling**: the accepted ceiling is `configured` — 5,000, or 50,000 when BOTH `FEATURE_F7_IMPORT_AUDIENCE` AND `FEATURE_CONTACT_MARKETING_RECIPIENTS` are ON. *(Round 3 finding 3-11: this said "the F7.1a batching flag", i.e. `FEATURE_F71A_US1_PAGINATION`, which nothing reads for the ceiling — an operator following it would set a Vercel var, trigger a production redeploy, and see the ceiling not move.)* **CORRECTED 2026-09-08 (the text here said the enforced ceiling was `min(configured, 500)` in every flag state, contradicting § D two screens down).** That clamp was interim and Phase 9b removed it: the Contacts-Import build accepts any audience the flags allow, because one call carries it regardless of size. `DELIVERABLE_RECIPIENTS_PER_TICK = 500` clamps ONLY with `FEATURE_F7_IMPORT_AUDIENCE` off, where the legacy serial push (~2.08 req/s, ~623 per `maxDuration = 300`) is still the real bound. So with the import on a submit at 800 recipients is ACCEPTED — if you are triaging one that was refused, the cause is the configured ceiling or the resolver, not the per-tick bound.
+6. **Empty check, then the ceiling**: the accepted ceiling is `configured` — 5,000, or 50,000 when BOTH `FEATURE_F7_IMPORT_AUDIENCE` AND `FEATURE_CONTACT_MARKETING_RECIPIENTS` are ON. *(Round 3 finding 3-11: this said "the F7.1a batching flag", i.e. `FEATURE_F71A_US1_PAGINATION`, which nothing reads for the ceiling — an operator following it would set a Vercel var, trigger a production redeploy, and see the ceiling not move.)* **The ENFORCED ceiling is `min(configured, 500)` whenever `FEATURE_F7_IMPORT_AUDIENCE` is off — which is its default, and its state at merge.** With the import ON the clamp does not apply, because one call carries any audience regardless of size; with it OFF the legacy serial push (~2.08 req/s, ~623 per `maxDuration = 300`) is the real bound and 500 is that bound with a margin. *(This paragraph carried a "CORRECTED 2026-09-08" marker over a sentence saying "that clamp was interim and Phase 9b removed it", which contradicted its own next sentence AND the code: Phase 9b's batching is what got removed, by `ca51f59a1` on this branch, and the clamp is live. A correction marker is not evidence of correctness — check § D1 and `audience-ceiling.ts` against each other instead.)* So with the import on a submit at 800 recipients is ACCEPTED — if you are triaging one that was refused, the cause is the configured ceiling or the resolver, not the per-tick bound.
 
 `droppedByPreference` in the count response = opt-out drops (step 5 on any segment kind, plus the SQL-excluded opt-outs on the `all_contacts` leg — counted WITHOUT the sender's own company, round 2 C17) + suppression drops on custom/attendee segments only. On member-based segments a suppression drop is not a "preference" the member can see (FR-053a — no address ever leaves the server). The count body carries `droppedByPreference` on EVERY answer (round 2, C8): the pipeline runs to the end before it refuses, so "0 recipients, 12 excluded by preference" is distinguishable from "0 recipients, nobody there". The MEMBER body never carries `orphans` (a fact about other members); the staff body does.
 
@@ -78,12 +78,22 @@ Never raise `audienceCeiling` by hand for one member: the ceiling is a Resend-fa
 
    **Free-plan limits, worth checking before blaming the code**: 3 audiences (`POST /audiences` fails outright for a fourth — measured 2026-09-08) and 1,000 contacts, counted account-wide across ephemeral audiences until `cleanup-audiences` reaps them (grace 1 h, cron every 15 min). Both surface as a `permanent` 4xx, which fails the broadcast loudly rather than silently, and that is the intended signal to upgrade the plan.
 
-### E. The Contacts-Import build must be switched off (rollback)
+### D1. The Contacts-Import build must be switched off (rollback)
 
+**⚠️ DRAIN FIRST — THIS ROLLBACK IS NOT SAFE AT AN ARBITRARY MOMENT. Read to the
+SQL below before you set anything.**
+
+*(Round 2 R2-46: this section used to open with the command and put the warning on
+the next line. An on-call engineer scanning for what to type executes before
+reading — and the failure mode this section exists to prevent is delivering to a
+half-built audience. The heading was also `E` while sitting between `C` and `D`;
+the two rollback sections are `D1` and `D2` now, so the file reads A, B, C, D1,
+D2 in the order it is printed — and the two rollbacks sit together, which is how
+an operator meets them.)*
+
+The command, once the drain below returns 0 rows:
 `FEATURE_F7_IMPORT_AUDIENCE=false`, or remove the variable — `src/lib/env.ts`
 defaults it to `false`, so absent is a valid boot that resolves to off.
-
-**⚠️ DRAIN FIRST. This rollback is not safe at an arbitrary moment.**
 
 The flag routes each tick to one leg or the other. `dispatchScheduledBroadcast`
 does not read `audience_import_*` at all, but it DOES reuse
@@ -111,14 +121,17 @@ This predicate is **IMPLIED BY** — not identical to —
 clauses only. The index is therefore still used and the query is still cheap; it
 just returns a subset of the index's rows. (The two were described as "the same
 predicate", which stops being true the moment either grows a clause.) A row that will not drain is stuck (§ C.4) — let it reach
-`failed_to_dispatch` and re-submit it after the rollback, rather than flipping
+`failed_to_dispatch` — **worst case ~35 minutes** (up to 30 min for
+`IMPORT_STUCK_AFTER_MS` plus one 5-minute tick to act on it), which is the number
+to plan the maintenance window around — and re-submit it after the rollback,
+rather than flipping
 underneath it.
 
 What changes on the OFF leg: the accepted ceiling becomes `min(configured, 500)`,
 because the serial push drains ~623 contacts per 300 s tick at the measured
 2.08 req/s. Broadcasts already `sending` are unaffected.
 
-### D. The 1:N audience must be switched off (rollback)
+### D2. The 1:N audience must be switched off (rollback)
 
 `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` in Vercel env + redeploy (~30 s, no code deploy).
 
