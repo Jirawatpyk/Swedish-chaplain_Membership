@@ -14,18 +14,29 @@ subsystem rather than adding one, so the stack is wider than any single PR's.
 |---|---|---|---|
 | 1 (2026-09-08) | [`review-20260908-223000.md`](review-20260908-223000.md) | 3 NOT MERGEABLE / BLOCK / NOT SHIP-READY, 4 conditional | 56 findings, **52 closed** across 15 commits |
 | 2 (2026-09-09) | [`review-20260909-081200.md`](review-20260909-081200.md) | 3 blocking, 4 conditional | 56 findings — **five of them introduced by round 1's fixes** |
+| 3 (2026-09-09) | [`review-20260909-092000.md`](review-20260909-092000.md) | 15 findings + a below-cap sweep | **8 absent from both prior rounds**, incl. a RED test and a never-transmitted idempotency key |
 
-Stack (7 read-only reviewers, concurrent, all on `opus`): `security-engineer` ·
-`reliability-guardian` · `drizzle-migration-reviewer` ·
+Rounds 1 and 2 used a stack of 7 read-only reviewers, concurrent, all on `opus`:
+`security-engineer` · `reliability-guardian` · `drizzle-migration-reviewer` ·
 `pdpa-gdpr-compliance-officer` · `observability-instrumentor` ·
-`chamber-os-qa-engineer` · `enterprise-ux-designer`. Closed with
-`whole-branch-reviewer` (on `fable`) as the last pass.
+`chamber-os-qa-engineer` · `enterprise-ux-designer`. Round 3 was one forked
+`/code-review` running 10 finder angles plus a gap sweep that grepped both prior
+files — which is why its overlap is stated as a partition rather than guessed.
+Closed with `whole-branch-reviewer` (on `fable`) as the last pass.
 
-**The rule this scope establishes: re-review the FIXES, not just the code.**
-Round 2 exists because round 1's remediation was not re-reviewed, and it found
-that three of the five new defects write a falsehood into an append-only table
-or into a member's inbox — where the bug they replaced recorded nothing. One is
-on the leg that is live at merge. Budget a round 3 for the same reason.
+**Rule 1 — re-review the FIXES, not just the code.** Round 2 exists because
+round 1's remediation was not re-reviewed, and it found that three of the five
+new defects write a falsehood into an append-only table or into a member's
+inbox — where the bug they replaced recorded nothing. One is on the leg that is
+live at merge.
+
+**Rule 2 — a claim in prose is not covered by a green suite; grep the assertion,
+not the sentence.** Every defect that survived into round 3 was one where a
+comment, a docblock, a runbook or a test asserted the behaviour instead of the
+code providing it: the gateway comment said the SDK accepts an idempotency key
+(it drops it), the docblock said the refusal is terminal (it matches a kind the
+resolver never emits), the runbook said the drain is safe. The tests that should
+have caught the second stubbed the phantom kind and went green.
 
 ## Reviewer stack per PR
 
