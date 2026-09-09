@@ -119,17 +119,14 @@ export const IMPORT_FAILURE_REASONS = [
    * minutes indefinitely, never terminal and the member never told.
    */
   'retry_budget_exhausted',
-  /**
-   * The same hour, but the failures were OURS — Neon, RLS, the members bridge.
-   *
-   * Split from the value above on 2026-09-09. One reason for both put the
-   * sentence *"our email provider was unreachable for over an hour"* in a
-   * member's inbox for a database fault, and reported it on
-   * `dispatch_budget_exhausted{sub_kind="api"}` — a provider transport class for
-   * a fault that never touched the provider. Exactly the R2-13 class this same
-   * branch fixed in `body2`, reintroduced two commits later by the fix for 3-7.
-   */
-  'retry_budget_exhausted_internal',
+  // Round 4 F3 — `retry_budget_exhausted_internal` was here. It was added on
+  // 2026-09-09 to stop ONE reason covering both a provider outage and a Neon
+  // fault, which is a real distinction; it is deleted because the branch that
+  // produced it is deleted. The resolve-side budget it labelled killed
+  // broadcasts on their first DB error whenever the row was already an hour
+  // past its epoch, and forked the two legs on a flag. Nothing reaches this
+  // value any more, so keeping it would leave a member-facing sentence in three
+  // locales for a state the code cannot enter. See `onResolveFailure`.
   /** Everyone in the audience is suppressed or opted out — nothing to send to. */
   'audience_post_suppression_empty',
   /**
@@ -544,8 +541,13 @@ async function onRetryable(
   broadcast: Broadcast,
   message: string,
   importId: string | null,
-  source: 'gateway' | 'resolve',
-  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'internal',
+  /**
+   * Round 4 F3 — `source: 'gateway' | 'resolve'` is gone with the resolve-side
+   * budget it existed to label. Only the gateway reaches this function now, the
+   * same shape the live leg has always had, so the parameter had one possible
+   * value and the ternary it fed had one reachable arm.
+   */
+  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const now = deps.clock.now();
   const epoch = budgetEpoch(broadcast);
@@ -562,7 +564,6 @@ async function onRetryable(
       elapsedMs,
       epochForBudget: epoch.toISOString(),
       sendMode: broadcast.scheduledFor === null ? 'send_now' : 'scheduled',
-      source,
       subKind,
       severity: 'critical',
     },
@@ -574,10 +575,7 @@ async function onRetryable(
 
   return failTerminally(deps, input, broadcast, {
     kind: 'audience_import_failed',
-    reason:
-      source === 'gateway'
-        ? 'retry_budget_exhausted'
-        : 'retry_budget_exhausted_internal',
+    reason: 'retry_budget_exhausted',
     importId,
     observed: elapsedMs,
     expected: RETRY_BUDGET_MS,
@@ -609,8 +607,19 @@ async function onGatewayFailure(
       broadcast,
       failure.message,
       importId,
-      'gateway',
-      failure.subKind ?? 'api',
+      // Round 4 F8 — was `?? 'api'`, against the gateway port's own docblock:
+      // making `subKind` required on a retryable throw "removes the
+      // `subKind ?? 'api'` default that masked classifier bugs". The Application
+      // layer had added it straight back, and `dispatch_budget_exhausted` is a
+      // page-on-call series — attributing an unclassified fault to a real
+      // transport class is the `?? 'admin'` shape in a metric dimension.
+      //
+      // Unreachable today (`GatewayThrowable` requires `subKind` on retryable),
+      // but `viaGateway` narrows against four hardcoded literals and maps
+      // anything else to `undefined`, so a FIFTH sub-kind would land here with
+      // no compiler signal. `'unclassified'` makes that visible on the
+      // dashboard instead of hiding it inside `api`.
+      failure.subKind ?? 'unclassified',
     );
   }
 
@@ -1296,12 +1305,20 @@ async function failTerminally(
       // NOT `reason` (round 3 finding 3-12). `'reason'` and `'*.reason'` are in
       // `logger.ts` REDACT_PATHS, deliberately broad because a Stripe SDK error
       // spreads free text into that key — so this line printed
-      // `reason:"[REDACTED]"` and the nine-value taxonomy reached no surface a
-      // human watches. The remedy is the one that file prescribes: "Operational
+      // `reason:"[REDACTED]"` and the taxonomy reached no surface a human
+      // watches. The remedy is the one that file prescribes: "Operational
       // `reason` fields that are genuinely safe to display should be renamed to
       // a non-`reason` key (e.g. `dispatchFailureKind` already used in the
-      // webhook route)." This value is a closed union of nine literals — no
-      // free text, no PII, nothing to redact.
+      // webhook route)." This value is a CLOSED UNION — no free text, no PII,
+      // nothing to redact, which is what makes the rename safe here and unsafe
+      // on the legacy leg, where the same key carries `e.message` (round 4 L3).
+      //
+      // Round 4 D8 — the count is deliberately not written here any more. It
+      // said "nine" while the union held 13, then F3 deleted one and it is 12;
+      // a number restated beside its own definition is a number that will
+      // disagree with it. `MEMBER_FACING_FAILURE_REASONS` is the count, and
+      // `broadcast-failed-to-dispatch-email.test.ts` iterates it rather than a
+      // copy, so adding a member without its three locales fails a test.
       dispatchFailureKind: reason,
       observed: error.kind === 'audience_import_failed' ? error.observed : ageMsOrNull,
       expected: error.kind === 'audience_import_failed' ? error.expected : IMPORT_STUCK_AFTER_MS,
@@ -1465,20 +1482,35 @@ async function onResolveFailure(
   }
 
   // Everything else — a members-bridge throw, Neon, RLS — is genuinely
-  // transient. The row stays `approved` and the next tick retries, UNTIL the
-  // FR-021 budget is spent (round 3 finding 3-7): "transient" without a bound is
-  // how a broadcast sits `approved` for ever with nobody told.
-  if (mapped.kind === 'dispatch.server_error') {
-    return onRetryable(
-      deps,
-      input,
-      broadcast,
-      mapped.message,
-      broadcast.audienceImportId,
-      'resolve',
-      'internal',
-    );
-  }
+  // transient. The row stays `approved` and the next tick retries.
+  //
+  // **Round 4 F3 — the FR-021 budget was extended to cover THIS path in round 3
+  // (finding 3-7) and that extension is deleted here, not repaired.** Three
+  // reasons, in order of weight:
+  //
+  //  1. It killed broadcasts that had never failed twice. `budgetEpoch` is
+  //     `scheduledFor ?? approvedAt ?? createdAt` — it measures from the EPOCH,
+  //     not from the first failure, and there is no consecutive-failure counter.
+  //     An `approved` row more than an hour past its epoch (cron paused, a late
+  //     approval, the flag enabled retroactively — and setting the env var on
+  //     this repo IS a production deploy, so cold starts cluster exactly there)
+  //     died on its FIRST `resolve.server_error`, with a member email and a
+  //     paging metric, never having had a second attempt.
+  //  2. It forked the two legs. `dispatchScheduledBroadcast` deliberately does
+  //     not budget resolve failures (`route.ts`: "the counter is the alarm"),
+  //     so the same fault became terminal on one leg and retryable on the other
+  //     — decided by a flag, which is what a flag flip must never change.
+  //  3. Its terminal record blamed the wrong party. One reason and one metric
+  //     sub-kind covered both the provider refusing and Neon refusing.
+  //
+  // What 3-7 correctly identified — "transient without a bound is how a
+  // broadcast sits `approved` for ever with nobody told" — is real and is NOT
+  // closed by this. It is answered the way the live leg answers it:
+  // `broadcasts.dispatch_resolve_failed.total` alarms at >0 sustained 15 min,
+  // and since round 4 L4 both legs also log `cron.broadcasts.dispatch
+  // .server_error` with a bounded `errClass`. A wall-clock bound anchored on
+  // FIRST FAILURE rather than on the epoch would be the real fix; it needs a
+  // column and is not this branch's work. Reopened in the round-4 ledger.
   return err(mapped);
 }
 

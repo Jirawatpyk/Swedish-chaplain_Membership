@@ -865,30 +865,42 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
   });
 
   /**
-   * The RESOLVER source through the same budget — untested when the budget
-   * landed, which is exactly where the lie lived.
+   * Round 4 F3 — this case asserted the OPPOSITE and is rewritten, not deleted.
    *
-   * One reason for both sources put *"our email provider was unreachable for
-   * over an hour"* in a member's inbox for a Neon / RLS fault, and reported it on
-   * `dispatch_budget_exhausted{sub_kind="api"}` — a provider transport class for
-   * a failure that never touched the provider. The fix for round-3 3-7
-   * reintroduced the R2-13 class this same branch had just removed from `body2`.
+   * Round 3 (finding 3-7) put resolver failures through the FR-021 budget and
+   * gave them their own reason so a member would not be told Resend was down for
+   * a Neon fault. Both halves of that were right about the SYMPTOM and wrong
+   * about the cure: the budget measures from `scheduledFor ?? approvedAt ??
+   * createdAt`, not from the first failure, so an `approved` row already an hour
+   * past its epoch — a paused cron, a late approval, a flag enabled
+   * retroactively — died on its FIRST transient DB error, never having been
+   * retried once. It also forked the legs: `dispatchScheduledBroadcast` does not
+   * budget resolve failures, so a flag flip changed whether the same fault was
+   * terminal.
+   *
+   * So the resolve-side budget is gone and this case now pins the behaviour that
+   * replaced it, which is the live leg's: stay retryable, leave the row alone,
+   * and let `dispatch_resolve_failed.total` (15-minute alarm, and since round 4
+   * L4 a log line on both legs) be the signal.
    */
-  it('a RESOLVER failure past the budget blames US, not the provider', async () => {
+  it('a RESOLVER failure past the budget stays RETRYABLE — the row is not killed on its first DB error', async () => {
     const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
     const { deps, rec } = makeDeps({
       resolveFails: 'server_error',
+      // Two hours past the epoch: under the old code this alone was enough to
+      // make the very first failure terminal.
       scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
     });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res.ok).toBe(false);
-    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
-    // Its OWN reason, so the member's sentence does not blame Resend.
-    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted_internal');
-    // And the alert carries `internal`, not a plausible provider class.
-    expect(spy).toHaveBeenCalledWith(expect.anything(), 'internal');
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    // The row is untouched — no terminal transition, so the next tick retries.
+    expect(rec.transitions).toHaveLength(0);
+    // And nothing pages: this is not a budget event.
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('a GATEWAY failure past the budget still reports the provider, with the class observed', async () => {

@@ -380,21 +380,42 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
   2. Then the logs: a submit tick logs `broadcasts.audience_import.submitted`;
      the confirming tick logs `broadcasts.audience_import.sent` and writes a
      `broadcast_send_started` audit row.
-  3. **Resend shows a send but there is no audit row** → do NOT flip the flag.
-     Cancel the broadcast (releases the quota) and reconcile by hand; a flag flip
-     here double-sends.
+  3. **Resend shows a send but there is no audit row** → do NOT flip the flag; a
+     flag flip here double-sends. **This is TWO states, not one** (round 4 D4),
+     and they need opposite actions — check
+     `broadcasts_audit_emit_failed_total{event_type='broadcast_send_started'}`
+     and the log `broadcasts.audience_import.send_record_lost` (severity
+     `critical`) to tell them apart:
+     - **`send_record_lost` fired** → the import leg sent correctly and only its
+       audit INSERT failed. The row is already `sending`. Do NOT try to cancel:
+       `cancel-broadcast.ts` accepts only `submitted`/`approved` and will refuse
+       you. Reconcile the audit trail by hand and leave the row alone.
+     - **No `send_record_lost`** → the send did not go through this path.
+       Cancel the broadcast (that releases the quota) and reconcile by hand.
   4. **Resend shows nothing and the row is still `approved`** → the flag flip is
-     safe, and § E's drain query is the precondition.
+     safe, and the drain query in **§ D1 of
+     `docs/runbooks/broadcast-audience-build.md`** is the precondition. (Round 4
+     D2: this said "§ E", and § E was renamed to § D1 in the same commit set that
+     reordered it. There is no § E — an operator scanning for it mid-incident
+     finds nothing and improvises the predicate that exists to stop a delivery to
+     a half-built audience.)
 - [ ] Watch the failure surfaces for one hour — **and know what each can and
   cannot see** (round 2 R2-16). `broadcasts_audience_import_stuck_count` only
   fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero
   there is not evidence of health on its own. The signals that do move on a
-  first-send failure are `broadcasts.failed_to_dispatch.count{failure_reason}`
-  (now carrying a real reason rather than a constant `app_error` — round-3 3-12),
-  `broadcasts_dispatch_budget_exhausted_total` (the FR-021 terminal, which could
-  not fire on this leg at all before round-3 3-7), and the cron span's
-  `cron.import_submitted` / `cron.import_pending` attributes (R2-15). Check those
-  three, not the gauge alone.
+  first-send failure are — **corrected, round 4 D3, because two of the three
+  this used to name are STRUCTURALLY SILENT inside a one-hour watch**:
+
+  | signal | moves within the hour? |
+  |---|---|
+  | `broadcasts.dispatch_resolve_failed.total` | **yes, immediately** — 15-minute alarm, and since round 4 L4 both legs also write `cron.broadcasts.dispatch.server_error` with a bounded `errClass`, so it says WHICH side failed |
+  | cron span `cron.import_submitted` / `cron.import_pending` (R2-15) | yes |
+  | `broadcasts.failed_to_dispatch.count{failure_reason}` | **no** — emitted only from terminal paths, and a first-send failure that is retrying is not terminal |
+  | `broadcasts_dispatch_budget_exhausted_total` | **no** — needs `elapsedMs > 1 h` off `scheduledFor ?? approvedAt ?? createdAt`, so it lands on the first tick past ~65 min, i.e. after the window closes |
+  | `broadcasts_audience_import_stuck_count` | **no on its own** — it only fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero is not evidence of health (round 2 R2-16) |
+
+  Watch the first two. Reading the others as "quiet, therefore healthy" is the
+  failure this table exists to prevent.
 
 **§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
 acknowledged: ☐

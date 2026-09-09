@@ -1847,16 +1847,23 @@ export const broadcastsMetrics = {
    * audit; this metric is the alert-pipeline trigger.
    *
    * `sub_kind` carries the Resend gateway failure subKind that
-   * exhausted the budget (`network`, `timeout`, `server_5xx`, `api`)
-   * so dashboards can distinguish Resend outages from network blips.
+   * exhausted the budget — `network`, `timeout`, `server_5xx`, `api`, plus
+   * **`unclassified`** — so dashboards can distinguish Resend outages from
+   * network blips.
+   *
+   * Round 4 D7 + F8. `internal` was added here on 2026-09-09 for the import
+   * leg's resolve-side budget and is **removed with it** (F3): both legs now
+   * budget gateway failures only, so every value on this series again describes
+   * something Resend did. `unclassified` replaces the Application layer's
+   * `subKind ?? 'api'` default, which the gateway port's docblock had explicitly
+   * removed for "masking classifier bugs" — this is a page-on-call series, and a
+   * fault nobody classified must not arrive labelled as a real transport class.
+   * A `sub_kind="unclassified"` on the dashboard means the classifier grew a
+   * case the mapper does not know, not that Resend's API misbehaved.
    */
   dispatchBudgetExhausted(
     tenantId: string,
-    // `internal` added 2026-09-09: the import path budgets RESOLVER failures
-    // (Neon, RLS, the members bridge) as well as gateway ones, and reporting a
-    // database fault under a provider transport class is a fabricated cause on
-    // an alerting series. The four provider classes keep their meaning.
-    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'internal',
+    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
   ): void {
     safeMetric(() => {
       counter(

@@ -2,7 +2,7 @@
 
 **Owner**: Platform on-call (escalate to the chamber admin when a member's broadcast is refused or delayed)
 **Severity**: alarm (a member's E-Blast is refused, delayed, or its compose-time count is unavailable — never silent under-delivery: the build fails CLOSED)
-**Source signal**: `broadcasts.dispatch_resolve_failed.total{tenant}` (a tick could not build the audience — the alarm for a slipping schedule) · `broadcasts.approved_overdue_count{tenant}` (approved rows > 1 h past `scheduled_for`) · `broadcasts.recipient_count_ms` (SLO-F7-013 — compose-time count p95) · `broadcasts.audience_resolved.total{segment,mode}` · `broadcasts.audience_pages.total` · `broadcasts.marketing_opt_out_filter_count` · route error `count_unavailable` (503) on the two recipient-count endpoints · log events `broadcasts.recipient_count.resolve_failed` / `.resolve_threw` (count), `cron.broadcasts.dispatch.server_error` (dispatch-scheduled), `cron.broadcasts.dispatch_batches.recipient_resolution_failed` / `cron.broadcasts.split_large.recipient_resolution_failed` (batch crons)
+**Source signal**: `broadcasts.dispatch_resolve_failed.total{tenant}` (a tick could not build the audience — the alarm for a slipping schedule) · `broadcasts.approved_overdue_count{tenant}` (approved rows > 1 h past `scheduled_for`) · `broadcasts.recipient_count_ms` (SLO-F7-013 — compose-time count p95) · `broadcasts.audience_resolved.total{segment,mode}` · `broadcasts.audience_pages.total` · `broadcasts.marketing_opt_out_filter_count` · route error `count_unavailable` (503) on the two recipient-count endpoints · log events `broadcasts.recipient_count.resolve_failed` / `.resolve_threw` (count), `cron.broadcasts.dispatch.server_error` — **now emitted by BOTH legs** (round 4 L4 added it to the import arm, which counted without logging) and carrying a bounded `errClass` rather than a `[REDACTED]` free-text `reason` (round 4 L3). *(Round 4 D8: this list also named `cron.broadcasts.dispatch_batches.recipient_resolution_failed` and `cron.broadcasts.split_large.recipient_resolution_failed`. Neither string exists anywhere in `src/` — `ca51f59a1` deleted both crons on this branch. § C:67 carries a note about the deletion three screens below; this line, which is what an operator reads FIRST, did not.)*
 **Audit events**: `broadcast_member_missing_primary_contact_email` (per eligible member with no eligible contact for a NON-preference reason, capped at 50 per submit — above the cap ONE `member_missing_primary_contact` row with `truncated: true, totalOrphans, reported`; payload carries `orphan_reason`) · `broadcast_failed_to_dispatch` (existing F7) · `member_cross_tenant_probe` (admin count endpoint, unknown `member_id`)
 **Last reviewed**: 2026-09-07 (108 PR-C T091; corrected the same day by the review — step order, the verification command, the log-event names)
 **Status**: LIVE behind `FEATURE_CONTACT_MARKETING_RECIPIENTS` (default `false`)
@@ -116,11 +116,15 @@ SELECT tenant_id, broadcast_id, audience_import_submitted_at
 be stranded by the rollback. A `failed_to_dispatch` row also has an import id
 with no completion stamp, and counting it reports work that does not exist.
 
-This predicate is **IMPLIED BY** — not identical to —
+This predicate **IMPLIES** — and is not identical to —
 `broadcasts_audience_import_pending_idx`, whose partial condition is the first two
 clauses only. The index is therefore still used and the query is still cheap; it
 just returns a subset of the index's rows. (The two were described as "the same
-predicate", which stops being true the moment either grows a clause.) A row that will not drain is stuck (§ C.4) — let it reach
+predicate", which stops being true the moment either grows a clause. Round 4 D5:
+the correction then stated the implication BACKWARDS — "IMPLIED BY" — and it is
+the direction that carries the conclusion. Query ⇒ index is what licenses "the
+index is still used"; index ⇒ query would not. `schema.ts:392` had it right the
+same day, in the same words, pointing the other way.) A row that will not drain is stuck (§ C.4) — let it reach
 `failed_to_dispatch` — **worst case ~35 minutes** (up to 30 min for
 `IMPORT_STUCK_AFTER_MS` plus one 5-minute tick to act on it), which is the number
 to plan the maintenance window around — and re-submit it after the rollback,
