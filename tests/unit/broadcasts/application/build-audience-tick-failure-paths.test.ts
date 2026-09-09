@@ -78,8 +78,14 @@ interface Recorder {
     status: string;
     failureReason?: string | undefined;
     estimatedRecipientCount?: number | undefined;
+    /** Which transaction wrote it — see finding 3-8. */
+    txId?: number | undefined;
   }>;
-  readonly audits: Array<{ eventType: string; payload: Record<string, unknown> }>;
+  readonly audits: Array<{
+    eventType: string;
+    payload: Record<string, unknown>;
+    txId?: number | undefined;
+  }>;
   readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
   readonly sends: string[];
   readonly importsSubmitted: string[];
@@ -113,7 +119,10 @@ function makeDeps(opts: {
   readonly casThrow?: 'concurrent' | 'not_found' | 'other';
   /** Round 3 finding 3-15 — make the TERMINAL write itself fail. */
   readonly transitionThrowsOn?: 'failed_to_dispatch' | 'sending';
+  /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
+  readonly auditThrowsOn?: 'broadcast_send_started' | 'broadcast_failed_to_dispatch';
 }): { deps: unknown; rec: Recorder } {
+  let txSeq = 0;
   const rec: Recorder = {
     transitions: [],
     audits: [],
@@ -241,7 +250,12 @@ function makeDeps(opts: {
       },
       broadcastsRepo: {
         async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
-          return fn(null);
+          // A DISTINCT handle per transaction. `null` for every call made the
+          // one property round 3 finding 3-8 turns on — which writes share a
+          // transaction — unobservable in this harness, and a unit harness
+          // cannot reproduce Postgres 25P02 abort semantics any other way.
+          txSeq += 1;
+          return fn({ txId: txSeq });
         },
         async lockForUpdate() {
           return 'approved';
@@ -263,7 +277,7 @@ function makeDeps(opts: {
           /* no-op */
         },
         async applyTransition(
-          _tx: unknown,
+          tx: unknown,
           _t: unknown,
           _b: unknown,
           status: string,
@@ -278,6 +292,7 @@ function makeDeps(opts: {
             status,
             failureReason: fields?.failureReason,
             estimatedRecipientCount: fields?.estimatedRecipientCount,
+            txId: (tx as { txId?: number } | null)?.txId,
           });
           return { ...broadcast, status };
         },
@@ -315,8 +330,18 @@ function makeDeps(opts: {
         },
       },
       audit: {
-        async emit(_tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
-          rec.audits.push({ eventType: e.eventType, payload: e.payload });
+        async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
+          // Round 3 finding 3-8 — a failing audit INSERT. In production this
+          // aborts the surrounding transaction (25P02), which is why WHICH tx it
+          // runs in decides what survives.
+          if (opts.auditThrowsOn === e.eventType) {
+            throw new Error('audit insert failed');
+          }
+          rec.audits.push({
+            eventType: e.eventType,
+            payload: e.payload,
+            txId: (tx as { txId?: number } | null)?.txId,
+          });
         },
       },
     },
@@ -897,6 +922,106 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(rec.transitions).toHaveLength(0);
     // And the member is not told a broadcast failed when nothing was recorded —
     // a concurrent cancel is the likeliest cause of the write failing.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  /**
+   * Round 3 finding 3-8 — the two audit emits need OPPOSITE transaction
+   * semantics, and both were wrong in the same direction.
+   *
+   * On the send path the mail is already delivered. `safeAuditEmit` ran inside
+   * the same tx as `attachResendIds` + `applyTransition('sending')` and swallowed
+   * the INSERT failure, so the aborted transaction committed as a ROLLBACK and
+   * BOTH writes were discarded while the function reported `ok({kind:'sent'})` —
+   * leaving the row `approved` for the next tick to send the whole broadcast
+   * again. The audit row is the recoverable loss; a second send to a chamber's
+   * entire list is not.
+   */
+  it('send path: a failed audit INSERT loses the audit row, NOT the sending transition', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    // The load-bearing assertion: the row moved. If this is empty the next tick
+    // re-sends.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_send_started');
+  });
+
+  /**
+   * The mechanism, asserted directly. A unit harness cannot reproduce Postgres
+   * 25P02 abort semantics, so "the transition survived" alone would pass under
+   * the pre-fix code too. What actually decides the outcome is WHICH transaction
+   * each write is in — and that is observable.
+   */
+  it('send path: the Art. 30 record is written in a DIFFERENT transaction from the transition', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const sending = rec.transitions.find((t) => t.status === 'sending');
+    const record = rec.audits.find((a) => a.eventType === 'broadcast_send_started');
+    expect(sending?.txId).toBeDefined();
+    expect(record?.txId).toBeDefined();
+    expect(record?.txId).not.toBe(sending?.txId);
+  });
+
+  /**
+   * And the inverse for the failure path — same finding, opposite requirement.
+   * Nothing was sent, so the terminal state and its audit row must stand or fall
+   * together.
+   */
+  it('failure path: the terminal transition and its audit row share ONE transaction', async () => {
+    const { deps, rec } = makeDeps({ resolveFails: 'too_large' });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const terminal = rec.transitions.find((t) => t.status === 'failed_to_dispatch');
+    const record = rec.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    expect(terminal?.txId).toBeDefined();
+    expect(record?.txId).toBe(terminal?.txId);
+  });
+
+  it('send path: the audit-volume counter is not incremented for a row that was not written', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // It used to fire unconditionally on the line after the swallow, so the
+    // audit-volume series reported rows that did not exist while the loss was
+    // reported on a different series entirely.
+    expect(
+      spy.mock.calls.filter((c) => c[1] === 'broadcast_send_started'),
+    ).toHaveLength(0);
+  });
+
+  /**
+   * The opposite direction, same finding. On the FAILURE path nothing has been
+   * sent, so a terminal state without its audit row is the worse outcome — and
+   * emailing the member that their broadcast failed while the row sits
+   * `approved` is worse still.
+   */
+  it('failure path: a failed audit INSERT tears the terminal transition down and tells nobody', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      auditThrowsOn: 'broadcast_failed_to_dispatch',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
     expect(rec.memberEmails).toHaveLength(0);
   });
 

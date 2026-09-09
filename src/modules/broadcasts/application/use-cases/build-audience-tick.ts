@@ -56,6 +56,7 @@ import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
+import { AuditPortInvariantError } from '../ports/audit-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
@@ -708,35 +709,85 @@ async function confirmImport(
       { sendingStartedAt: now, estimatedRecipientCount: resolvedCount },
       'approved',
     );
-    // The Art. 30 record that N addresses were disclosed to a processor at a
-    // given time. This path wrote NOTHING on success — the staff timeline jumped
-    // from approve straight to the first delivery webhook, and the emission-site
-    // parity guard could not see the gap because the legacy path still emits it.
-    // Same event type and same payload shape as the legacy path on purpose: a
-    // reader comparing before and after a flag move wants the two
-    // indistinguishable.
-    await safeAuditEmit(deps.audit, tx, {
-      eventType: 'broadcast_send_started',
-      tenantId: deps.tenant.slug,
-      actorUserId: 'system:cron',
-      summary: `Broadcast ${input.broadcastId as unknown as string} sending to ${resolvedCount} recipients`,
-      payload: {
-        broadcastId: input.broadcastId as unknown as string,
-        resendAudienceId: audienceId,
-        resendBroadcastId: rb.broadcastId,
-        recipientCount: resolvedCount,
-        importId,
-        // The attribution the narrowed port used to discard. This is the record
-        // that answers "why did this reach 40 people instead of 55?" — a member
-        // question a previous review round added the fields for.
-        orphanCount: resolved.value.orphans.length,
-        droppedByPreference: resolved.value.droppedByPreference,
-        sendingStartedAt: now.toISOString(),
-      },
-      requestId: null,
-    });
-    broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_send_started');
   });
+
+  // The Art. 30 record that N addresses were disclosed to a processor at a given
+  // time. This path wrote NOTHING on success — the staff timeline jumped from
+  // approve straight to the first delivery webhook, and the emission-site parity
+  // guard could not see the gap because the legacy path still emits it. Same
+  // event type and same payload shape as the legacy path on purpose: a reader
+  // comparing before and after a flag move wants the two indistinguishable.
+  //
+  // **Round 3 finding 3-8 — this INSERT used to run inside the transaction
+  // above, through `safeAuditEmit`, which swallows.** `withTx` is a real
+  // `db.transaction` on postgres.js, so a failed INSERT leaves the transaction
+  // in 25P02: the swallow let the callback resolve, COMMIT returned a ROLLBACK
+  // tag Drizzle does not inspect, and `attachResendIds` + the transition to
+  // `sending` were silently discarded while this function returned
+  // `ok({kind:'sent'})` — after the mail had gone out. The next tick then found
+  // the row still `approved` and sent the whole broadcast again.
+  //
+  // It is NOT moved into the tx as a raw emit either (the rule stated at
+  // `manage-image-allowlist.ts:122`, where a failed emit MUST tear the mutation
+  // down). That rule is for a mutation nothing external has observed. Here the
+  // mail is already delivered: rolling `sending` back to `approved` schedules a
+  // SECOND send. Between losing an audit row and sending a chamber's whole list
+  // twice, the audit row is the recoverable one — and its loss is logged and
+  // counted rather than silent.
+  //
+  // Its own `withTx`, never `tx = null`: the adapter needs a tenant-bound
+  // transaction, and a null tx would take a pool connection with no
+  // `app.current_tenant` GUC, where RLS silently writes nothing.
+  try {
+    await deps.broadcastsRepo.withTx(async (tx) => {
+      // RAW emit, not `safeAuditEmit`: this call site needs to KNOW whether the
+      // row was written, because the counter below claims it was.
+      await deps.audit.emit(tx, {
+        eventType: 'broadcast_send_started',
+        tenantId: deps.tenant.slug,
+        actorUserId: 'system:cron',
+        summary: `Broadcast ${input.broadcastId as unknown as string} sending to ${resolvedCount} recipients`,
+        payload: {
+          broadcastId: input.broadcastId as unknown as string,
+          resendAudienceId: audienceId,
+          resendBroadcastId: rb.broadcastId,
+          recipientCount: resolvedCount,
+          importId,
+          // The attribution the narrowed port used to discard. This is the
+          // record that answers "why did this reach 40 people instead of 55?" —
+          // a member question a previous review round added the fields for.
+          orphanCount: resolved.value.orphans.length,
+          droppedByPreference: resolved.value.droppedByPreference,
+          sendingStartedAt: now.toISOString(),
+        },
+        requestId: null,
+      });
+    });
+    // Only now. Round 3's second half of 3-8: this counter fired
+    // UNCONDITIONALLY on the next line, so whenever the swallow ate a failed
+    // INSERT the audit-volume series still reported a row that did not exist,
+    // while `audit_emit_failed` reported the loss on a DIFFERENT series. The
+    // extraction had quietly changed this metric's meaning from "rows written"
+    // to "emits attempted".
+    broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_send_started');
+  } catch (auditErr) {
+    // A wiring bug must still surface — the fail-soft envelope is for transient
+    // storage hiccups (`_safe-audit-emit.ts` draws the same line).
+    if (auditErr instanceof AuditPortInvariantError) throw auditErr;
+    logger.error(
+      {
+        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId,
+        resendBroadcastId: rb.broadcastId,
+        importId,
+        recipientCount: resolvedCount,
+        severity: 'critical',
+      },
+      'broadcasts.audience_import.send_record_lost',
+    );
+    broadcastsMetrics.auditEmitFailed('broadcast_send_started', deps.tenant.slug);
+  }
 
   // Throughput. Without it the dispatch dashboard reads zero sends while sends
   // are happening.
@@ -827,7 +878,15 @@ async function failTerminally(
         { failedToDispatchAt: now, failureReason: reason },
         'approved',
       );
-      await safeAuditEmit(deps.audit, tx, {
+      // RAW emit, not `safeAuditEmit` — the opposite call from the send path
+      // above, for the opposite reason (round 3 finding 3-8). NOTHING has been
+      // sent here, so a terminal state without its audit row is the worse
+      // outcome: `safeAuditEmit` swallowed the failure, the aborted tx committed
+      // as a rollback, the transition was discarded, and the member was emailed
+      // that their broadcast failed while the row sat `approved`. A throw now
+      // reaches the catch below, which reports `terminal_write_failed` and tells
+      // nobody anything.
+      await deps.audit.emit(tx, {
         eventType: auditEventType,
         tenantId: deps.tenant.slug,
         // The cron is the actor. `system:cron` is the same literal the
