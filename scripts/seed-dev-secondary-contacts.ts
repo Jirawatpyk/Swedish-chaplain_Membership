@@ -46,6 +46,7 @@ import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { assertDbHostNotBlocklisted } from '../tests/helpers/db-host-guard';
+import { isUnroutableEmail } from './lib/unroutable-email';
 
 const MARKER = 'seed-dev-secondary';
 
@@ -65,9 +66,16 @@ function parseEmails(raw: string | undefined): readonly string[] {
   }
   // The one combination that hurts production: a fake address that will bounce
   // from the shared Resend account and land in the shared suppression list.
-  const fake = list.filter((e) =>
-    /@(example\.(com|org|net)|test|localhost|invalid)$/.test(e),
-  );
+  //
+  // Round 3 finding 3-14 — this was an inline regex,
+  // `/@(example\.(com|org|net)|test|localhost|invalid)$/`, which let through
+  // `qa@sub.example.com`, `qa@foo.test` and `qa@mail.invalid`: `example\.` was
+  // anchored immediately after the `@` so subdomains slipped, and the bare
+  // `test`/`localhost`/`invalid` alternatives were unreachable because the
+  // format check above already requires a dot. Extracted so it can be pinned by
+  // value — see `tests/unit/scripts/unroutable-email.test.ts`, which names those
+  // three addresses.
+  const fake = list.filter(isUnroutableEmail);
   if (fake.length > 0) {
     throw new Error(
       `refusing to seed unroutable addresses (${fake.join(', ')}): dev shares ` +
@@ -82,6 +90,19 @@ function parseEmails(raw: string | undefined): readonly string[] {
 async function main(): Promise<void> {
   const tenantId = process.env.INVENTORY_TENANT_ID ?? 'swecham';
   const mode = process.env.SEED_SECONDARY_MODE === 'remove' ? 'remove' : 'add';
+
+  // Round 3 finding 3-14 also asked why this uses `tests/helpers/db-host-guard`
+  // rather than `scripts/lib/seed-target-guard`. Deliberately: that guard is
+  // built for `seed-e2e-user.ts`, which mints an ACTIVE super_admin whose
+  // password is a repo literal, and it enforces an `@swecham.test` account
+  // suffix that is meaningless for CONTACT rows. What it does have and this did
+  // not is the NODE_ENV refusal, which is cheap and belongs on any seeder.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'seed refused: NODE_ENV=production. This script writes contact rows and ' +
+        'dev shares the production Resend key.',
+    );
+  }
 
   // Fails CLOSED on an unset/placeholder blocklist as well as on a match.
   assertDbHostNotBlocklisted(

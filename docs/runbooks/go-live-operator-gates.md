@@ -306,7 +306,7 @@ Recommended launch order (lowest risk → highest; skip any feature you are defe
 2. `FEATURE_F8_RENEWALS` — needs all 7 F8 crons (§5) + `tenant_renewal_settings` row for SweCham.
 3. `FEATURE_F7_BROADCASTS` — needs F7 crons (§5) + verified Broadcasts sender domain.
 4. `FEATURE_F71A_BROADCAST_ADVANCED` (master), then the **staged sub-flags in this order**:
-   `FEATURE_F71A_US7_TEMPLATES` → `FEATURE_F71A_US2_IMAGES` (**needs ClamAV §6**) → `FEATURE_F71A_US1_PAGINATION` (needs the two split/dispatch-batches crons).
+   `FEATURE_F71A_US7_TEMPLATES` → `FEATURE_F71A_US2_IMAGES` (**needs ClamAV §6**) → `FEATURE_F71A_US1_PAGINATION` (recipient pagination only). *(Round 3 finding 3-11: this said "needs the two split/dispatch-batches crons" — `ca51f59a1` deleted both, along with the batch model. This flag no longer gates any ceiling or dispatch behaviour; the audience build is gated by `FEATURE_F7_IMPORT_AUDIENCE`.)*
 5. `FEATURE_F6_EVENTCREATE` — **boot fails** unless `EVENTCREATE_PII_PSEUDONYM_SALT` set **and**, in prod, `ZAPIER_DPA_EXECUTED=true`. Plus F6 crons (§5).
 6. `FEATURE_F5_ONLINE_PAYMENT` — ⚠️ **only after the Stripe LIVE cutover** (§11). Leaving F5 dark is a valid launch-minimal choice.
 
