@@ -34,6 +34,7 @@ import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
@@ -186,6 +187,20 @@ function makeDeps(opts: {
   readonly scheduledFor?: Date;
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
   readonly auditThrowsOn?: 'broadcast_send_started' | 'broadcast_failed_to_dispatch';
+  /**
+   * Round 4 T4/M12 — a WIRING bug rather than a storage hiccup. The use case
+   * rethrows `AuditPortInvariantError` out of its fail-soft envelope on purpose;
+   * the harness could only produce a plain `Error`, so the rethrow had nothing
+   * driving it and the mutant that deletes it survived.
+   */
+  readonly auditThrowKind?: 'invariant';
+  /**
+   * Round 4 T4/M9 — what `lockForUpdate` answers. It was hardcoded `'approved'`,
+   * so the two top-level load refusals were unreachable from this file.
+   */
+  readonly lockStatus?: 'not_found' | 'sending' | 'cancelled';
+  /** Round 4 T4/M8 — the completion stamp failing AFTER a successful send. */
+  readonly completionStampThrows?: boolean;
 }): { deps: DepsWithEveryPort; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
@@ -353,7 +368,8 @@ function makeDeps(opts: {
           return fn({ txId: txSeq });
         },
         async lockForUpdate() {
-          return 'approved';
+          if (opts.lockStatus === 'not_found') return null;
+          return opts.lockStatus ?? 'approved';
         },
         async findByIdInTx() {
           return broadcast;
@@ -366,6 +382,9 @@ function makeDeps(opts: {
           rec.importsSubmitted.push(id);
         },
         async markAudienceImportCompleted() {
+          if (opts.completionStampThrows === true) {
+            throw new Error('25P02 current transaction is aborted');
+          }
           rec.completionStamps.push(true);
         },
         async attachResendIds(tx: unknown, _t: unknown, _b: unknown, _a: string, rbId: string) {
@@ -450,6 +469,9 @@ function makeDeps(opts: {
           // aborts the surrounding transaction (25P02), which is why WHICH tx it
           // runs in decides what survives.
           if (opts.auditThrowsOn === e.eventType || opts.auditThrowsAlways === true) {
+            if (opts.auditThrowKind === 'invariant') {
+              throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+            }
             throw new Error('audit insert failed');
           }
           rec.audits.push({
@@ -1149,6 +1171,121 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
     expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Round 4 T4 / mutant M9 — the two TOP-LEVEL load refusals, re-routed to
+   * `dispatch.server_error` by a reviewer's mutation with all 71 cases still
+   * passing.
+   *
+   * They were unreachable from this file for a mundane reason: `lockForUpdate`
+   * was hardcoded `'approved'`. The cron's contract test covers the routing from
+   * the OTHER end but mocks the use case wholesale, so nothing on the use-case
+   * side could produce either kind — which is the vertical version of the
+   * one-leg-only class this round keeps finding.
+   *
+   * The distinction matters operationally: these two bucket as `concurrent_skip`
+   * (a routine admin cancel, or an erasure cascade), while
+   * `dispatch.server_error` buckets as `retryable` and drives
+   * `dispatch_resolve_failed.total`, whose runbook sends on-call to Neon.
+   */
+  it('T4/M9 — a row that vanished is broadcast_not_found, not a server error', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, lockStatus: 'not_found' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_not_found');
+    // Nothing was attempted against the provider for a row that is gone.
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.importsSubmitted).toHaveLength(0);
+  });
+
+  it('T4/M9 — a row an admin already cancelled is invalid_state_transition, with the status OBSERVED', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, lockStatus: 'cancelled' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_invalid_state_transition');
+    // The real status, not a literal — the same rule the live leg was fixed to
+    // follow in round 4 L2.
+    expect(
+      (res.error as { readonly observedStatus: string }).observedStatus,
+    ).toBe('cancelled');
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 T4 / mutant M12 — the rethrow that keeps a WIRING bug loud.
+   *
+   * The post-send audit emit sits in a fail-soft envelope: a transient storage
+   * hiccup must not undo a broadcast that has already gone out. But an
+   * `AuditPortInvariantError` is not transient — it means the event type is not
+   * registered, i.e. someone added an audit event and missed one of the places it
+   * has to be declared. Swallowing that writes nothing, for ever, silently.
+   *
+   * Deleting the rethrow passed 71/71 because the harness could only throw a
+   * plain `Error`.
+   */
+  it('T4/M12 — an audit WIRING error escapes the fail-soft envelope', async () => {
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+      auditThrowKind: 'invariant',
+    });
+
+    // Not a Result — it must reach the cron as an uncaught fault, which is what
+    // makes an unregistered event type impossible to ignore.
+    await expect(
+      buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID }),
+    ).rejects.toThrow(AuditPortInvariantError);
+  });
+
+  it('T4/M12 — a TRANSIENT audit failure is still swallowed: the mail is already out', async () => {
+    // The positive control. Without it, "rethrow everything" would satisfy the
+    // case above while undoing a delivered broadcast — the opposite defect, and
+    // the reason the envelope exists at all.
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+  });
+
+  /**
+   * Round 4 T4 / mutant M8 — the completion stamp made FATAL.
+   *
+   * It is best-effort on purpose: it runs after the send, and a stamp that fails
+   * must not turn a delivered broadcast into a failure. The mutation (`throw
+   * stampErr`) survived 71/71 because nothing drove a stamp failure at all.
+   */
+  it('T4/M8 — a completion-stamp failure does NOT undo a send that already happened', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      completionStampThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The send stands. Reporting a failure here would send an FR-021 email to a
+    // member whose E-Blast went out, and re-queue a broadcast Resend has already
+    // accepted.
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.transitions.map((t) => t.status)).toContain('sending');
+    // And the stamp is recorded as NOT taken, so the column still answers "when
+    // was this import consumed" with the truth: never.
+    expect(rec.completionStamps).toHaveLength(0);
   });
 
   it('an unverifiable audience count proceeds rather than killing a legitimate send — AND raises the alert', async () => {
