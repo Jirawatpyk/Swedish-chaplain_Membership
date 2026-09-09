@@ -144,6 +144,69 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     expect(row.status).toBe('approved');
   }, 30_000);
 
+  /**
+   * Round 4 F9 — the `isNull(audienceImportCompletedAt)` precondition IS the fix
+   * for round-3 3-9, and nothing fired it. `grep -rn markAudienceImportCompleted
+   * tests/` returned 19 hits, 18 of them empty stubs, and the one real call was
+   * on an unstamped row — the branch that existed before the precondition.
+   *
+   * Three branches hang off the 0-row probe. Two are exercised here; the third
+   * ("row exists, not stamped, yet 0 rows updated" -> ConcurrentMutation) is
+   * unreachable from a single connection, since the predicate that matched the
+   * probe would have matched the UPDATE, so it is left to the type system rather
+   * than faked.
+   */
+  it('F9 — re-stamping an ALREADY-completed import is silent, not an error', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const tenantCtx = asTenantContext(TEST_TENANT);
+    const broadcastId = asBroadcastId(raw);
+
+    await runInTenant(tenantCtx, async (tx) => {
+      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp-f9-once');
+      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId);
+    });
+    const readStamp = async (): Promise<string> => {
+      const rows = (await runInTenant(tenantCtx, async (tx) =>
+        tx.execute(sql`
+          SELECT audience_import_completed_at::text AS ts
+          FROM broadcasts
+          WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`),
+      )) as unknown as Array<{ ts: string }>;
+      return rows[0]!.ts;
+    };
+    const before = await readStamp();
+    expect(before).not.toBeNull();
+
+    // A retried tick must not throw — and, load-bearingly, must not MOVE the
+    // stamp. A first draft of this case asserted only `completed === true`, which
+    // an `isNull`-less UPDATE also satisfies: it re-stamps `now()` and the boolean
+    // stays true. That version would have passed with the precondition deleted,
+    // i.e. it tested nothing that 3-9 was about. The stamp answers "when was this
+    // import consumed", so the assertion has to be the VALUE.
+    await runInTenant(tenantCtx, async (tx) => {
+      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId);
+    });
+    const after = await readStamp();
+    expect(after).toBe(before);
+  }, 30_000);
+
+  it('F9 — stamping a broadcast that does not exist is BroadcastNotFoundError, not a silent no-op', async () => {
+    if (!RUN_INTEGRATION) return;
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const tenantCtx = asTenantContext(TEST_TENANT);
+    // A well-formed uuid that was never seeded: the probe finds nothing, which is
+    // a real fault and must be named rather than swallowed as "already stamped".
+    const ghost = asBroadcastId('00000000-0000-4000-8000-000000000f9a');
+
+    await expect(
+      runInTenant(tenantCtx, async (tx) =>
+        repo.markAudienceImportCompleted(tx, tenantCtx.slug, ghost),
+      ),
+    ).rejects.toThrow(/not found/i);
+  }, 30_000);
+
   it('the coherence CHECK rejects a completion stamp with no import id', async () => {
     const raw = await seedApproved();
     await expectCheckViolation(() =>

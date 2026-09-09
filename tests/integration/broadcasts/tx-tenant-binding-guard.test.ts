@@ -6,9 +6,24 @@
  * cross-tenant integration test as a Review-Gate blocker. The database half is
  * well covered (RLS + FORCE policies, and the cross-tenant probes in the erasure
  * and referenced-audiences suites). The application half is
- * `assertTenantBoundTx`, called at **17 sites** in `drizzle-broadcasts-repo.ts`
- * before every mutation — and `grep "tx tenant mismatch" tests/` returned ZERO
+ * `assertTenantBoundTx`, and `grep "tx tenant mismatch" tests/` returned ZERO
  * hits across the whole repository.
+ *
+ * **Round 4 T3 — the count in this docblock was wrong and the claim it supported
+ * was false.** It said "called at 17 sites … before every mutation". Enumerated:
+ * 17 is the number of tx-taking METHODS, not of guard calls — there were 11 call
+ * sites, and seven methods had none, including `applyTransition`, which writes
+ * `sending` and `failed_to_dispatch` on BOTH dispatch legs. The gap was
+ * pre-existing; the claim was new, and the case below exercises
+ * `attachAudienceId`, one of the ten that already had the guard, so it
+ * structurally could not have revealed it.
+ *
+ * `applyTransition` now carries the guard (verified against live Neon: the
+ * transition, dispatch-idempotency, quota-release and immutability suites all
+ * pass with it). The remaining six — `insertDraft`, `updateDraft`,
+ * `findByIdInTx`, `lockForUpdate`, `recheckMemberQuotaUnderLock`,
+ * `listInFlightOwnedByMember` — are NOT guarded, and this docblock no longer
+ * claims otherwise. Two of them are reads.
  *
  * Why the existing probes cannot cover it: they build the repo and the
  * transaction for the SAME tenant, so the guard's comparison is always equal and
@@ -30,7 +45,6 @@
  * codebase keeps finding.
  */
 import { describe, expect, it } from 'vitest';
-import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
@@ -75,8 +89,10 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
 
     expect(err).toContain(TENANT_A);
     expect(err).toContain(TENANT_B);
-    // And it names the caller, because 17 sites share this guard and a bare
-    // message would not say which write was refused.
+    // And it names the caller, because every guarded method shares one message
+    // and a bare one would not say which write was refused. (Round 4 T3 — this
+    // said "17 sites"; that is the count of tx-taking METHODS, and the guard is
+    // called at 13 of them after `applyTransition` was added.)
     expect(err).toContain('attachAudienceId');
   }, 30_000);
 
@@ -132,12 +148,18 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
       }),
     ).rejects.toThrow(sentinel);
 
-    // Nothing was left behind by the rolled-back transaction.
-    const after = (await runInTenant(CTX_A, async (tx) =>
-      tx.execute(
-        sql`SELECT count(*)::int AS n FROM broadcasts WHERE broadcast_id = ${BROADCAST_ID as unknown as string}`,
-      ),
-    )) as unknown as Array<{ n: number }>;
-    expect(after[0]?.n).toBe(0);
+    // Round 4 T8 — the assertion that used to sit here was VACUOUS and is gone.
+    //
+    // It read `expect(after[0]?.n).toBe(0)` under the comment "nothing was left
+    // behind by the rolled-back transaction". `attachAudienceId` is an UPDATE on
+    // a broadcast id that was never inserted, so that count is 0 before, during
+    // and after regardless of whether anything rolled back — it could not fail,
+    // and a reader would take it as rollback coverage.
+    //
+    // The load-bearing assertion is `rejects.toThrow(sentinel)` above, together
+    // with the message check inside the catch: reaching the repo's own
+    // concurrency error proves the guard admitted us, because a binding mismatch
+    // throws a DIFFERENT message earlier. Rollback of a real write belongs in a
+    // case that performs one, not in a comment here.
   }, 30_000);
 });

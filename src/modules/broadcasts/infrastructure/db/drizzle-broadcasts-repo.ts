@@ -689,6 +689,14 @@ export function makeDrizzleBroadcastsRepo(
       expectedFromStatus: BroadcastStatus,
     ): Promise<Broadcast> {
       const tx = txUnknown as TenantTx;
+      // Round 4 T3 — the guard was MISSING here, on the busiest mutation on this
+      // table: `applyTransition` is what writes `sending` and
+      // `failed_to_dispatch` on BOTH dispatch legs. A round-4 reviewer counted
+      // 17 tx-taking methods against 11 `assertTenantBoundTx` call sites, so the
+      // docblock claim "called before every mutation" was short by seven — and
+      // the test added for that claim exercises `attachAudienceId`, one of the
+      // ten that already had it, so it structurally could not reveal the gap.
+      await assertTenantBoundTx(tx, ctx.slug, 'applyTransition');
       const setClause: Record<string, unknown> = {
         status: target,
         updatedAt: new Date(),
