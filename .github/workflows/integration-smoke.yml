@@ -26,6 +26,24 @@
 # payments cross-tenant-probe 42 s / 7 s · rbac-defence-in-depth 22 s / 3 s ·
 # audit-parity 0.7 s. The three heaviest moved to the nightly's money job; what
 # remains is ~110 s of tests.
+#
+# 2026-09-10: that "~110 s" is now false by 8×. 108 PR-B/C/D added seven suites
+# and took this job from 3 min (eeb38018f, 09-05) to 13–16 min on `main`, with
+# ±3 min run-to-run variance on an IDENTICAL file list — i.e. ~4 min of
+# headroom under `timeout-minutes: 20`, on a REQUIRED check. The two heaviest
+# are contact-marketing-opt-out (4 m 26 s CI) and contact-marketing-routes
+# (2 m 3 s). Before adding anything here, measure it IN CI: the observed
+# CI/local multiplier for these files is ~7×, so a suite that feels free
+# locally is not.
+#
+# Measured the hard way. This file briefly carried three F7/GDPR suites
+# (subprocessor-erasure · erase-member-subprocessor-cascade ·
+# tx-tenant-binding-guard) on the strength of a 1 m 21 s LOCAL run; in CI the
+# first two alone cost 480 s (erase-cascade 346 s) and the job hit the cap
+# without reaching the third. They are covered by the nightly rotation
+# (`members` Wednesdays, `broadcasts` Thursdays) and by the per-module
+# pre-push gate — weekly, not per-PR. Restoring them here needs the cap and
+# this header revisited together, not another line appended.
 name: Integration smoke
 
 on:
@@ -125,7 +143,4 @@ jobs:
             tests/integration/broadcasts/marketing-opt-out-dispatch.test.ts \
             tests/integration/members/marketing-audience-query.test.ts \
             tests/integration/members/broadcast-recipient-contacts-keyset.test.ts \
-            tests/integration/broadcasts/audience-1n-status.test.ts \
-            tests/integration/members/subprocessor-erasure.test.ts \
-            tests/integration/members/erase-member-subprocessor-cascade.test.ts \
-            tests/integration/broadcasts/tx-tenant-binding-guard.test.ts
+            tests/integration/broadcasts/audience-1n-status.test.ts
