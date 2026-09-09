@@ -152,6 +152,14 @@ function makeDeps(opts: {
   readonly orphans?: readonly string[];
   readonly memberPrimaryEmail?: string | null;
   /**
+   * The members bridge THROWING, as opposed to answering `null`. Two different
+   * branches of `_enqueue-dispatch-failure-notification.ts`, and until round 4
+   * only one of them was reachable on purpose — the other was covered by
+   * accident, because the harness had no `membersBridge` at all and every call
+   * threw "not a function" into that catch. Fixing the harness un-covered it.
+   */
+  readonly memberBridgeThrows?: boolean;
+  /**
    * Round 2 R2-1 / round 3 finding 3-13 — make one of the two compare-and-set
    * writes lose its race. `concurrent` and `not_found` are the two typed errors
    * the repo throws after probing the row; `other` is anything else, which must
@@ -191,7 +199,17 @@ function makeDeps(opts: {
   /** Round 3 finding 3-7 — move the row's budget epoch to exercise FR-021. */
   readonly scheduledFor?: Date;
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
-  readonly auditThrowsOn?: 'broadcast_send_started' | 'broadcast_failed_to_dispatch';
+  readonly auditThrowsOn?:
+    | 'broadcast_send_started'
+    | 'broadcast_failed_to_dispatch'
+    /**
+     * The audit inside the NO-PRIMARY-EMAIL branch of the FR-021 enqueue. Needed
+     * separately from `auditThrowsAlways`, which makes the TERMINAL audit throw
+     * first and returns before the notification is ever attempted — which is why
+     * that branch's catch was uncovered despite a test that looked like it drove
+     * it.
+     */
+    | 'broadcast_dispatch_failure_notif_skipped_no_email';
   /**
    * Round 4 T4/M12 — a WIRING bug rather than a storage hiccup. The use case
    * rethrows `AuditPortInvariantError` out of its fail-soft envelope on purpose;
@@ -319,6 +337,9 @@ function makeDeps(opts: {
       resolveRecipients: async () => resolverAnswer(),
       membersBridge: {
         async getMemberPrimaryContact() {
+          if (opts.memberBridgeThrows === true) {
+            throw new Error('F3 bridge unavailable');
+          }
           return opts.memberPrimaryEmail === undefined
             ? 'member@example.com'
             : opts.memberPrimaryEmail;
@@ -1980,6 +2001,55 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     // The terminal write's own audit also failed, so this reports the write, not
     // the notification — see finding 3-8.
     expect(res.ok).toBe(false);
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 — the two branches of `_enqueue-dispatch-failure-notification.ts`
+   * that lost their coverage when the harness was FIXED.
+   *
+   * Both were exercised only by accident: the harness had no `membersBridge` at
+   * all, so every call threw "not a function" straight into the first catch, and
+   * the file sat comfortably above its pins on the strength of a bug. Adding the
+   * missing ports (T2) made the happy path work and dropped the file to 81.13 %
+   * lines / 84.61 % branches against a 90 % pin — caught by running
+   * `pnpm test:coverage` before pushing, which is the blocking required check.
+   *
+   * Coverage earned by a defect is not coverage. These drive the same two
+   * branches on purpose.
+   */
+  it('a members-bridge THROW is logged and swallowed — the terminal state still stands', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      memberBridgeThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The broadcast is still terminal and audited; only the courtesy email is
+    // lost, which is the whole point of the enqueue being best-effort.
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
+    // Nothing was sent, and nothing escaped.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('no primary email AND the skip-audit itself fails: still silent, still terminal', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      memberPrimaryEmail: null,
+      // ONLY the skip audit — the terminal audit must succeed, or the code
+      // returns before the notification is attempted at all.
+      auditThrowsOn: 'broadcast_dispatch_failure_notif_skipped_no_email',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    // The terminal record survives the notification's troubles.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
     expect(rec.memberEmails).toHaveLength(0);
   });
 
