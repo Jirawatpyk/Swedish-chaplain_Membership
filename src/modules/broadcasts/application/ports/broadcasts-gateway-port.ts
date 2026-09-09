@@ -156,12 +156,32 @@ export interface BroadcastsGatewayPort {
    * otherwise. Measured 2026-09-09 (108 Phase 9 review U1): after a successful
    * call answering `{"deleted": true}`, the audience-scoped read 404s while an
    * audience-less `GET /contacts/{email}` still returns the contact at 200. It
-   * detaches. For erasure use `deleteContactGlobally` below.
+   * detaches.
+   *
+   * **This is nevertheless the call the erasure cascade makes, on purpose.**
+   * Round 3 finding 3-10: this line used to read "For erasure use
+   * `deleteContactGlobally` below", which contradicted the only erasure caller
+   * (`subprocessor-erasure-adapter.ts:68`) and pointed a compliance reader at a
+   * call the codebase deliberately does not make. The Resend account is ONE
+   * account shared by every tenant, so a global delete during tenant A's
+   * erasure would destroy tenant B's contact record — including the
+   * Resend-side `unsubscribed` flag that `on_conflict=upsert` exists to
+   * preserve, resurrecting B's objecting member as SUBSCRIBED on the next
+   * import. That trades an Art. 17 residual for an Art. 21 regression on
+   * someone who never asked for anything.
+   *
+   * The residual is tracked as 8a in `docs/compliance/processing-records.md`.
+   * Read that before changing this, not this docblock alone.
    */
   removeContactFromAudience(audienceId: string, email: string): Promise<void>;
 
   /**
    * COMP-1 US3-C — DELETE the contact record itself, across every audience.
+   *
+   * **Not called by the erasure cascade** — see `removeContactFromAudience`
+   * above for why, and residual 8a. It stays on the port because it is the only
+   * call that genuinely erases, and the day the Resend account is split per
+   * tenant it becomes the right one.
    *
    * Measured in the same run (U1b): `DELETE /contacts/{email}` answers 200 and
    * the read-back is a genuine 404, so unlike the audience-scoped call above

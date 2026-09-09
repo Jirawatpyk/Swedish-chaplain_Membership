@@ -6702,6 +6702,13 @@
         "audience_too_large": "målgruppen växte förbi gränsen mellan inskickning och utskick",
         "audience_post_suppression_empty": "inga mottagare återstod när avregistreringar och önskemål hade tillämpats",
         "malformed_segment": "den sparade målgruppen för detta utskick är ofullständig – din kammaradministratör behöver skapa den på nytt",
+        "failed_rows": "vår e-postleverantör avvisade några av mottagaradresserna",
+        "counts_incoherent": "mottagarlistan överfördes inte fullständigt till vår e-postleverantör",
+        "count_mismatch": "mottagarlistan ändrades medan utskicket förbereddes, så det skickades inte till en annan grupp än den du godkände",
+        "provider_failed": "vår e-postleverantör kunde inte förbereda mottagarlistan",
+        "gateway_permanent": "vår e-postleverantör avvisade begäran – din kammaradministratör behöver kontrollera kontot",
+        "gateway_unknown": "ett oväntat problem uppstod när utskicket förbereddes",
+        "audience_import_stuck": "det tog för lång tid att förbereda mottagarlistan, så vi avbröt i stället för att skicka vid en oväntad tidpunkt",
         "generic": "ett tekniskt problem hindrade leveransen"
       },
       "body2": "Vår leveranstjänst var oåtkomlig i mer än en timme, så vi slutade försöka för att inte skicka utskicket vid en oväntad tidpunkt.",

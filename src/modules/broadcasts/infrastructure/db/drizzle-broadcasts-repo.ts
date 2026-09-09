@@ -1539,6 +1539,32 @@ export function makeDrizzleBroadcastsRepo(
      * each of the member's addresses with each live audience in the tenant.
      * Over-broad on purpose: a detach for an address that was never in that
      * audience 404s, and the gateway reads a 404 as "the goal is already met".
+     *
+     * ## What actually bounds it (round 3 finding 3-10)
+     *
+     * The review read this as an unbounded cartesian product — "a 3-address
+     * member in a tenant with 200 import-built broadcasts costs 600 sequential
+     * round-trips inside an Art. 17 erasure" — on the premise that "nothing sets
+     * `audience_deleted_at` for a successfully SENT broadcast". **That premise
+     * is false**, and the bound is worth stating here so it is not re-derived:
+     * `TERMINAL_BROADCAST_STATUSES` includes `sent`, `cleanup-audiences` runs
+     * every 15 minutes (`vercel.json`) with a 1-hour grace
+     * (`cleanup-audiences/route.ts:43`), and it stamps `audience_deleted_at`.
+     * So the live set is broadcasts terminal within roughly the last hour plus
+     * those still in flight — a handful, not a tenant's lifetime of sends.
+     *
+     * ## Why the suggested narrowing is NOT applied
+     *
+     * `AND b.resend_broadcast_id IS NULL` looks like the exact
+     * pushed-but-never-sent window this arm describes, and it would be wrong: a
+     * broadcast that HAS been sent but whose delivery webhooks have not arrived
+     * yet has `resend_broadcast_id` set and zero rows in
+     * `broadcast_deliveries`, so the first arm misses it too. Narrowing here
+     * would leave that member's addresses at the processor with both arms
+     * blind — a real Art. 17 gap traded for round-trips that a 404 already makes
+     * cheap. (Narrowing on `audience_import_completed_at IS NULL` is worse
+     * still: that stamp lands BEFORE `createBroadcast`.)
+     *
      * Bounded by `audience_deleted_at IS NULL` so a reaped audience is not
      * re-attempted, and by `audience_import_id IS NOT NULL` so it covers the
      * import path that introduced the window rather than every audience the

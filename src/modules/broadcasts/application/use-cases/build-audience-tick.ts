@@ -97,22 +97,45 @@ export type BuildAudienceTickOutput =
  * `permanent_failed` — and so the comment there claiming "the use case has
  * already moved the row and audited it" finally becomes true for every arm.
  */
-export type ImportFailureReason =
-  | 'failed_rows'
-  | 'counts_incoherent'
-  | 'count_mismatch'
+export const IMPORT_FAILURE_REASONS = [
+  'failed_rows',
+  'counts_incoherent',
+  'count_mismatch',
   /** The provider itself reported the job failed — do not wait out the 30 min. */
-  | 'provider_failed'
+  'provider_failed',
   /** A 4xx from Resend. The measured instance is the Free plan's contact cap. */
-  | 'gateway_permanent'
+  'gateway_permanent',
   /** A throw carrying no `kind`: not a gateway error, a programming fault. */
-  | 'gateway_unknown'
+  'gateway_unknown',
   /** The row's own `segment_params` cannot be parsed. Retrying cannot fix data. */
-  | 'malformed_segment'
+  'malformed_segment',
   /** The audience grew past the accepted ceiling between submit and this tick. */
-  | 'audience_too_large'
+  'audience_too_large',
   /** Everyone in the audience is suppressed or opted out — nothing to send to. */
-  | 'audience_post_suppression_empty';
+  'audience_post_suppression_empty',
+] as const;
+
+export type ImportFailureReason = (typeof IMPORT_FAILURE_REASONS)[number];
+
+/**
+ * Every token that can reach the member's FR-021 email, which is
+ * `ImportFailureReason` plus the stuck rule — `failTerminally` derives its
+ * `reason` from the error KIND for that one, so it is not in the union above.
+ *
+ * A const tuple rather than a type alone, because round 3 finding 3-12's third
+ * leg was that SEVEN of these rendered the same generic sentence in every
+ * locale, and neither `check:i18n` nor a runtime `MISSING_MESSAGE` could see it:
+ * `broadcast-notification-emails.ts:265` falls back with `?? generic` on a plain
+ * object, so an absent key is indistinguishable from a deliberate one.
+ *
+ * `broadcast-failed-to-dispatch-email.test.ts` iterates THIS, so adding a reason
+ * without adding its sentence in all three locales fails a test instead of
+ * quietly telling a member "a technical problem prevented delivery".
+ */
+export const MEMBER_FACING_FAILURE_REASONS = [
+  ...IMPORT_FAILURE_REASONS,
+  'audience_import_stuck',
+] as const;
 
 export type BuildAudienceTickError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -289,6 +312,14 @@ type GatewayFailure =
       readonly kind: string;
       readonly resourceType?: 'audience' | 'broadcast' | undefined;
       readonly resourceId?: string | undefined;
+      /**
+       * The adapter's `code` — `err.name` from Resend, or `http_<status>`.
+       * Carried for the failure METRIC only (round 3 finding 3-12): without it
+       * every terminal import failure was counted `app_error`, so the runbook's
+       * "group by failure_reason to identify the dominant cause" step had one
+       * bucket. Never logged — it is provider free text.
+       */
+      readonly code?: string | undefined;
     };
 
 /**
@@ -318,6 +349,7 @@ async function viaGateway<T>(fn: () => Promise<T>): Promise<Result<T, GatewayFai
       kind: shape.kind,
       resourceType: shape.resourceType,
       resourceId: shape.resourceId,
+      code: shape.code,
     });
   }
 }
@@ -359,6 +391,34 @@ async function viaRepoConcurrency<T>(
     }
     throw e;
   }
+}
+
+/**
+ * Round 3 finding 3-12 — what `broadcasts.failed_to_dispatch.count`'s
+ * `failure_reason` dimension should say.
+ *
+ * The import path passed the literal `'app_error'` for every terminal failure,
+ * where the legacy path calls `phaseToFailureReason(phase)`. So
+ * `docs/runbooks/broadcasts-dispatch-failure.md`'s "group `failure_reason` to
+ * identify the dominant cause" step could only ever return one bucket, and the
+ * two paths' series were not comparable across a flag move.
+ *
+ * Deliberately conservative. The closed union offers `resend_403`, which is
+ * exactly the measured Free-plan contact cap, and `timeout`, which is exactly
+ * the 30-minute stuck rule — those two are mapped. Everything else stays
+ * `app_error` rather than being guessed into a plausible-looking HTTP bucket: a
+ * `gateway_permanent` may be a 422 as easily as a 403, and a metric that asserts
+ * a status nobody observed is the same class of defect as an audit row that
+ * asserts a role nobody held.
+ */
+function importReasonToFailureMetric(
+  reason: ImportFailureReason | 'audience_import_stuck',
+  code: string | undefined,
+): 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' {
+  if (reason === 'audience_import_stuck') return 'timeout';
+  if (code === 'http_403') return 'resend_403';
+  if (code === 'http_429') return 'resend_429';
+  return 'app_error';
 }
 
 /**
@@ -408,17 +468,24 @@ async function onGatewayFailure(
       {
         auditEventType: 'broadcast_resend_resource_missing',
         notifyMember: false,
+        failureMetric: importReasonToFailureMetric(failure.reason, failure.code),
       },
     );
   }
 
-  return failTerminally(deps, input, broadcast, {
-    kind: 'audience_import_failed',
-    reason: failure.reason,
-    importId,
-    observed: null,
-    expected: null,
-  });
+  return failTerminally(
+    deps,
+    input,
+    broadcast,
+    {
+      kind: 'audience_import_failed',
+      reason: failure.reason,
+      importId,
+      observed: null,
+      expected: null,
+    },
+    { failureMetric: importReasonToFailureMetric(failure.reason, failure.code) },
+  );
 }
 
 /** Tick 1 — hand the audience over. Sends nothing. */
@@ -836,6 +903,8 @@ async function failTerminally(
   opts: {
     readonly auditEventType?: 'broadcast_failed_to_dispatch' | 'broadcast_resend_resource_missing';
     readonly notifyMember?: boolean;
+    /** Round 3 finding 3-12 — see `importReasonToFailureMetric`. */
+    readonly failureMetric?: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout';
   } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const auditEventType = opts.auditEventType ?? 'broadcast_failed_to_dispatch';
@@ -857,7 +926,16 @@ async function failTerminally(
       broadcastId: input.broadcastId,
       importId: error.importId,
       errorKind: error.kind,
-      reason,
+      // NOT `reason` (round 3 finding 3-12). `'reason'` and `'*.reason'` are in
+      // `logger.ts` REDACT_PATHS, deliberately broad because a Stripe SDK error
+      // spreads free text into that key — so this line printed
+      // `reason:"[REDACTED]"` and the nine-value taxonomy reached no surface a
+      // human watches. The remedy is the one that file prescribes: "Operational
+      // `reason` fields that are genuinely safe to display should be renamed to
+      // a non-`reason` key (e.g. `dispatchFailureKind` already used in the
+      // webhook route)." This value is a closed union of nine literals — no
+      // free text, no PII, nothing to redact.
+      dispatchFailureKind: reason,
       observed: error.kind === 'audience_import_failed' ? error.observed : ageMsOrNull,
       expected: error.kind === 'audience_import_failed' ? error.expected : IMPORT_STUCK_AFTER_MS,
     },
@@ -903,7 +981,10 @@ async function failTerminally(
       });
       // Without these the failure rate reads 0 through a total outage and the
       // dispatch dashboard shows nothing happening while broadcasts die.
-      broadcastsMetrics.failedToDispatchCount(deps.tenant.slug, 'app_error');
+      broadcastsMetrics.failedToDispatchCount(
+        deps.tenant.slug,
+        opts.failureMetric ?? importReasonToFailureMetric(reason, undefined),
+      );
       broadcastsMetrics.auditEmitCount(deps.tenant.slug, auditEventType);
     });
   } catch (cleanupErr) {
@@ -915,7 +996,7 @@ async function failTerminally(
         err: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
-        reason,
+        dispatchFailureKind: reason,
       },
       'broadcasts.audience_import.cleanup_failed',
     );

@@ -18,13 +18,24 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildBroadcastFailedToDispatchEmail } from '@/modules/broadcasts/infrastructure/email/broadcast-notification-emails';
+import { MEMBER_FACING_FAILURE_REASONS } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 
 const LOCALES = ['en', 'th', 'sv'] as const;
-const KNOWN_REASONS = [
-  'audience_too_large',
-  'audience_post_suppression_empty',
-  'malformed_segment',
-] as const;
+
+/**
+ * DERIVED, not restated (round 3 finding 3-12, third leg). This list used to
+ * name three reasons by hand while `ImportFailureReason` carried nine, so SEVEN
+ * of the ten tokens a member can receive rendered the same generic sentence —
+ * and nothing could see it: `check:i18n` only compares locales against each
+ * other, and `broadcast-notification-emails.ts:265` falls back with
+ * `?? generic` on a plain object, so an absent key is indistinguishable from a
+ * deliberate one at runtime.
+ *
+ * Importing the tuple means adding a reason without adding its sentence in all
+ * three locales fails HERE instead of quietly telling a member "a technical
+ * problem prevented delivery".
+ */
+const KNOWN_REASONS = MEMBER_FACING_FAILURE_REASONS;
 
 function build(reason: string, locale: (typeof LOCALES)[number]) {
   return buildBroadcastFailedToDispatchEmail({
@@ -71,5 +82,18 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
 
   it('en: malformed_segment tells the member who can fix it', () => {
     expect(build('malformed_segment', 'en').text).toMatch(/administrator/i);
+  });
+
+  /**
+   * The load-bearing half of the derived list: every reason must render a
+   * DISTINCT sentence, not merely a non-token one. Without this, adding the key
+   * with the generic string copied in would satisfy every case above — which is
+   * exactly the state the seven missing reasons were already in.
+   */
+  it.each(LOCALES)('%s: no reason silently reuses the generic sentence', (locale) => {
+    const generic = build('a-token-nothing-maps', locale).text;
+    for (const reason of KNOWN_REASONS) {
+      expect(build(reason, locale).text, `${locale}/${reason}`).not.toBe(generic);
+    }
   });
 });

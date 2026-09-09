@@ -47,13 +47,20 @@ const RECIPIENTS = ['a@example.com', 'b@example.com', 'c@example.com'];
 function gatewayThrow(
   kind: string,
   reason = 'boom',
-  extra: { resourceType?: 'audience' | 'broadcast'; resourceId?: string } = {},
+  extra: {
+    resourceType?: 'audience' | 'broadcast';
+    resourceId?: string;
+    // `| undefined` is required under `exactOptionalPropertyTypes` — the caller
+    // spreads an optional through, so the property is PRESENT and undefined.
+    code?: string | undefined;
+  } = {},
 ): Error {
   const e = new Error(reason) as Error & {
     kind: string;
     reason: string;
     resourceType?: string;
     resourceId?: string;
+    code?: string;
   };
   e.kind = kind;
   e.reason = reason;
@@ -63,6 +70,7 @@ function gatewayThrow(
   // throws.
   if (extra.resourceType !== undefined) e.resourceType = extra.resourceType;
   if (extra.resourceId !== undefined) e.resourceId = extra.resourceId;
+  if (extra.code !== undefined) e.code = extra.code;
   return e;
 }
 
@@ -105,7 +113,12 @@ function makeDeps(opts: {
     failed: number;
   };
   readonly resolveFails?: 'too_large' | 'empty' | 'malformed_segment' | 'server_error';
-  readonly throwOn?: { readonly method: GatewayMethod; readonly kind: string };
+  readonly throwOn?: {
+    readonly method: GatewayMethod;
+    readonly kind: string;
+    /** Round 3 finding 3-12 — the adapter's `code` (`http_403` at the Free-plan cap). */
+    readonly code?: string;
+  };
   readonly droppedByPreference?: number;
   readonly orphans?: readonly string[];
   readonly memberPrimaryEmail?: string | null;
@@ -159,8 +172,8 @@ function makeDeps(opts: {
         opts.throwOn.kind,
         'boom',
         opts.throwOn.kind === 'resource_missing'
-          ? { resourceType: 'broadcast', resourceId: 'rb-gone' }
-          : {},
+          ? { resourceType: 'broadcast', resourceId: 'rb-gone', code: opts.throwOn.code }
+          : { code: opts.throwOn.code },
       );
     }
   }
@@ -1023,6 +1036,63 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     if (res.ok) return;
     expect(res.error.kind).toBe('dispatch.server_error');
     expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  /**
+   * Round 3 finding 3-12 — the nine-value failure taxonomy reached no surface a
+   * human watches. Three legs, two of them fixed here.
+   *
+   * The metric leg: this path passed the literal `'app_error'` for EVERY
+   * terminal failure where the legacy path calls `phaseToFailureReason(phase)`,
+   * so `broadcasts-dispatch-failure.md`'s "group `failure_reason` to identify
+   * the dominant cause" step had exactly one bucket, and the two dispatch
+   * paths' series were not comparable across a flag move.
+   */
+  it('the failure metric names the 30-minute stuck rule as timeout, not app_error', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      // Submitted long enough ago to trip IMPORT_STUCK_AFTER_MS.
+      audienceImportSubmittedAt: new Date(NOW.getTime() - 60 * 60 * 1000),
+      importStatus: 'pending',
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy.mock.calls.map((c) => c[1])).toContain('timeout');
+  });
+
+  it('the failure metric names the measured Free-plan cap as resend_403', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent', code: 'http_403' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy.mock.calls.map((c) => c[1])).toContain('resend_403');
+  });
+
+  /**
+   * Positive control, and the reason the mapper is deliberately narrow: a
+   * `permanent` whose code is NOT one we measured must stay `app_error`. A
+   * mapper that guessed 403 for every 4xx would pass the case above while
+   * asserting a status nobody observed — the actor-role fabrication class in a
+   * metric dimension.
+   */
+  it('an unmeasured permanent code stays app_error rather than being guessed into a bucket', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy.mock.calls.map((c) => c[1])).toEqual(['app_error']);
   });
 
   it('an ordinary permanent 4xx still fails terminally AND still tells the member', async () => {
