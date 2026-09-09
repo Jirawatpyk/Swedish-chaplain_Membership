@@ -431,11 +431,13 @@ export async function makeDispatchScheduledBroadcastDeps(
     eventAttendees: eventAttendeesBridge,
     audienceMode: currentAudienceMode(),
     audienceCeiling: currentAudienceCeiling(),
-    // Phase 9b (T147) — the DELIVERY bound, separate from the ACCEPT ceiling
-    // above. With batching on those two deliberately differ: a large audience
-    // is split rather than refused, so this cron needs its own answer for a
-    // row whose audience grew past one tick since submit — hand it to the
-    // batch path, do not push it and die at `maxDuration`.
+    // Round 4 F13 — an orphaned comment was here, describing a DELIVERY bound
+    // that "hands a large audience to the batch path rather than pushing it and
+    // dying at `maxDuration`". `ca51f59a1` deleted the batch path and the
+    // `deliverablePerTick` dep it annotated; the comment stayed and drifted onto
+    // `audit:`, which it has nothing to do with. There is one ceiling now
+    // (`currentAudienceCeiling()`, above) and an audience above it is refused,
+    // not split.
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,

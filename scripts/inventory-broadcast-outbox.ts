@@ -61,7 +61,9 @@
 import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
-import { DELIVERABLE_RECIPIENTS_PER_TICK } from '@/modules/broadcasts/domain/audience-ceiling';
+// Round 4 F12 — the ENFORCED ceiling, read from the same function the send path
+// reads, not the raw constant. See the `bound` assignment below.
+import { currentAudienceCeiling } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 
 /** One row per in-flight status; counts only. */
 interface StatusRow {
@@ -80,12 +82,24 @@ interface OverRow {
 
 async function main(): Promise<void> {
   const tenantId = process.env.INVENTORY_TENANT_ID ?? 'swecham';
-  const bound = DELIVERABLE_RECIPIENTS_PER_TICK;
+  // Round 4 F12 — was the bare `DELIVERABLE_RECIPIENTS_PER_TICK` (500), which is
+  // correct for only ONE of the two flag states this file's own header describes.
+  // In the other ("turning FEATURE_CONTACT_MARKETING_RECIPIENTS off later narrows
+  // 50,000 to 5,000 the same way") the enforced ceiling is 5,000, and the script
+  // printed "ACTION REQUIRED … refused TERMINALLY" for every safe row between 501
+  // and 5,000 — telling an operator to cancel broadcasts that would have sent.
+  //
+  // `currentAudienceCeiling()` is what the send path itself compares against, so
+  // the script cannot disagree with it. Deliberately the real function rather
+  // than the same expression re-typed here: this constant's own header narrates
+  // two previous wrong versions of it, and both were copies drifting from their
+  // source.
+  const bound = currentAudienceCeiling();
 
   console.log('');
   console.log('=== 108 T094 — broadcast outbox inventory (read-only, counts only) ===');
   console.log(`tenant: ${tenantId}`);
-  console.log(`bound:  DELIVERABLE_RECIPIENTS_PER_TICK = ${bound}`);
+  console.log(`bound:  currentAudienceCeiling() = ${bound} (enforced, this flag state)`);
   console.log('');
 
   const { rows, over } = await runInTenant(asTenantContext(tenantId), async (tx) => {
@@ -132,18 +146,49 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`rows above the bound: ${totalOver}`);
 
-  if (totalOver > 0) {
+  // Round 4 F12, second half — only rows the DISPATCH CRON can still claim are
+  // actionable. It selects `status = 'approved'` (and `submitted` reaches
+  // `approved` by an admin action), so a `sending` or `partially_sent` row has no
+  // next dispatch tick to be refused at. Telling an operator to cancel one of
+  // those would be a wrong instruction on a pre-merge checklist — and it is what
+  // this script printed, because the ACTION REQUIRED text was written against a
+  // query that inventories four statuses.
+  const ACTIONABLE = new Set(['submitted', 'approved']);
+  const actionable = over.filter((r) => ACTIONABLE.has(r.status));
+  const informational = over.filter((r) => !ACTIONABLE.has(r.status));
+
+  if (actionable.length > 0) {
     console.log('');
     console.log(
-      'ACTION REQUIRED. These sit above the enforced ceiling. There is no split path — `ca51f59a1` deleted it — so each row below is refused TERMINALLY at its next dispatch tick: status `failed_to_dispatch`, an append-only audit row, and an FR-021 failure email to the member who submitted it. The member finds out. Decide per row BEFORE deploying: cancel it, or let it send under the current ceiling first.',
+      'ACTION REQUIRED. These sit above the enforced ceiling AND the dispatch cron can still claim them, so each is refused TERMINALLY at its next tick: status `failed_to_dispatch`, an append-only audit row, and an FR-021 failure email to the member who submitted it. The member finds out. Decide per row BEFORE deploying: cancel it, or let it send under the current ceiling first.',
     );
     console.log(
       `(Merging Phase 9 with FEATURE_F7_IMPORT_AUDIENCE unset — its default, and its state at merge — moves the enforced ceiling to ${bound}. Turning FEATURE_CONTACT_MARKETING_RECIPIENTS off later narrows 50,000 to 5,000 the same way.)`,
     );
-    for (const r of over) {
+    for (const r of actionable) {
       console.log(`  ${r.broadcast_id}  status=${r.status}  estimated=${r.estimated_recipient_count}`);
     }
+  }
+
+  if (informational.length > 0) {
+    console.log('');
+    console.log(
+      'FOR INFORMATION ONLY — above the bound, but past the point the dispatch cron claims rows (`sending` / `partially_sent`). No ceiling check runs against these again, so there is nothing to decide before deploying. Listed because a count above the bound with nothing to act on is otherwise indistinguishable from a missed row.',
+    );
+    for (const r of informational) {
+      console.log(`  ${r.broadcast_id}  status=${r.status}  estimated=${r.estimated_recipient_count}`);
+    }
+  }
+
+  if (actionable.length > 0) {
     process.exitCode = 1;
+    return;
+  }
+  if (informational.length > 0) {
+    console.log('');
+    console.log(
+      'Nothing ACTIONABLE above the bound — exit 0. The ceiling question is answered; this is not a general go/no-go for the deploy.',
+    );
     return;
   }
 

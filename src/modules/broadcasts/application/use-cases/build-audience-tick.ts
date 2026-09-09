@@ -866,12 +866,19 @@ async function confirmImport(
     }
 
     const submittedAt = broadcast.audienceImportSubmittedAt;
-    // FAIL CLOSED. `0298`'s coherence CHECK is an implication rather than an
-    // iff, so it admits `(import_id set, submitted_at NULL)`. That row used to
+    // FAIL CLOSED on `(import_id set, submitted_at NULL)`. That row used to
     // compute `ageMs = 0` — never older than the threshold — while the stuck
     // gauge could not see it either, because `NULL < now() - interval` is false.
     // Invisible in both places at once. A state that cannot legally exist is
     // stuck by definition, not brand new.
+    //
+    // Round 4 F11 — the reason given here was "`0298`'s coherence CHECK is an
+    // implication rather than an iff, so it admits that pair", written in the
+    // present tense. Migration `0299`, on this branch, made it an iff, so the
+    // database now rejects the pair. The fail-closed handling stays — a
+    // constraint can be dropped, a row can predate it, and the cost of the safe
+    // answer is one wasted poll — but the reason is HISTORY, not a live property.
+    // The claim, not the code, was the stale part.
     const ageMs =
       submittedAt === null
         ? Number.POSITIVE_INFINITY
@@ -1672,8 +1679,21 @@ function mapResolveError(e: ResolveAudienceError): BuildAudienceTickError {
       // `void`, never `return _exhaustive` — that idiom returns the VALUE at
       // runtime, which is truthy, so a genuinely new kind would be silently
       // treated as a real error object. The safe answer here is the transient
-      // one: the row stays `approved` and a human sees the unrouted kind in the
-      // cron's `unknown_error` log rather than a terminal state nobody chose.
+      // one: the row stays `approved` rather than reaching a terminal state
+      // nobody chose.
+      //
+      // Round 4 F11 — this used to add "and a human sees the unrouted kind in
+      // the cron's `unknown_error` log". Neither half was true.
+      // `dispatch.server_error` lands in the cron's RETRYABLE arm, not
+      // `unknown_error`, and the literal `'unrouted_resolve_error'` was logged
+      // nowhere at all — a new resolver kind would have been invisible.
+      //
+      // It IS visible now, and by the route this comment should have named from
+      // the start: round 4 L4 gave the retryable arm a log line, so an unrouted
+      // kind surfaces as `cron.broadcasts.dispatch.server_error` with
+      // `errClass: 'unclassified'`, and `dispatch_resolve_failed.total` alarms
+      // if it persists. (The claim about the FR-021 budget turning this terminal
+      // after an hour went with the resolve-side budget in F3.)
       const _exhaustive: never = e;
       void _exhaustive;
       return { kind: 'dispatch.server_error', message: 'unrouted_resolve_error' };
