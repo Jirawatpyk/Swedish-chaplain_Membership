@@ -268,6 +268,12 @@ interface GatewayOpts {
   readonly errorAsPlainError?: boolean;
   /** Round-5 R5-T โ€” let tests synthesise audience-count drift on idempotency replay. */
   readonly audienceContactCount?: number | null;
+  /**
+   * Round 4 (whole-branch review #2) — Resend's `has_more`, inverted. `false`
+   * means the adapter read only PART of the audience, so the count is a lower
+   * bound and a shortfall proves nothing about drift.
+   */
+  readonly audienceCountComplete?: boolean;
   readonly throwOnGetAudienceContactCount?: ThrowSpec;
   /** Round 4 L2 — the reclaim itself fails, which is the leak an operator must see. */
   readonly throwOnDeleteAudience?: boolean;
@@ -339,11 +345,8 @@ function makeGateway(opts: GatewayOpts = {}): {
         return {
           kind: 'present' as const,
           count: opts.audienceContactCount ?? 2,
-          // Round 4 F1 residual — `complete` says whether Resend returned the
-          // WHOLE audience (`has_more === false`) or one page of it. The legacy
-          // leg's drift check is forensic-only, so this fixture reports a
-          // complete count; the import leg's harness drives both.
-          complete: true,
+          // Round 4 F1 residual — `complete` is Resend's `has_more`, inverted.
+          complete: opts.audienceCountComplete ?? true,
         };
       },
       async removeContactFromAudience() {
@@ -1685,6 +1688,85 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(driftEvent?.payload['expectedRecipientCount']).toBe(2);
     expect(driftEvent?.payload['actualRecipientCount']).toBe(1);
     expect(driftEvent?.payload['drift']).toBe(1);
+  });
+
+  /**
+   * Round 4, whole-branch review #2 — the same fixture with `has_more` set.
+   *
+   * `2d61a0605` taught `getAudienceContactCount` to report whether it read the
+   * WHOLE audience, and wired the flag into `build-audience-tick.ts` only. That
+   * is class 3 — a fix landing on one leg — inside a commit written to fix class
+   * 3, which is why this case exists on the leg that runs in production.
+   *
+   * A truncated page can only UNDERCOUNT, so a shortfall proves nothing. Filing
+   * it as drift writes a FALSE `broadcast_resend_audience_drift` row into an
+   * append-only table and pages on `observability.md` § 22.3. The excess
+   * direction is unaffected and still refuses — truncation cannot fake it.
+   */
+  it('Round 4 #2 — a TRUNCATED count on the replay arm is unverifiable, not drift', async () => {
+    // Same dynamic-import spy pattern the budget case below uses — the metrics
+    // singleton is not imported at module top in this file.
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'idempotency_conflict' },
+      // One page of a larger audience: fewer than the 2 we resolved, and Resend
+      // said there is more it did not return.
+      audienceContactCount: 1,
+      audienceCountComplete: false,
+    });
+    const gwPort = {
+      ...gw.port,
+      async sendBroadcast() {
+        throw {
+          kind: 'idempotency_conflict',
+          reason: 'duplicate idempotency key',
+        };
+      },
+    };
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gwPort,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // The replay still advances — this is about the RECORD, not the send.
+    expect(result.ok).toBe(true);
+    // No drift row: the comparison was not possible, so it is not asserted.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_resend_audience_drift'),
+    ).toBeUndefined();
+    // Recorded as what it actually is — via the METRIC that feeds the § 22.3
+    // alert, not an append-only audit row. A partial read is not a failure and
+    // does not deserve a 5-to-10-year record; what it must not do is look like a
+    // completed check.
+    expect(unverifiableSpy).toHaveBeenCalledTimes(1);
   });
 
   it('R5-S1 โ€” getAudienceContactCount throws non-404 โ’ broadcast_resend_drift_check_unverifiable audit emitted', async () => {

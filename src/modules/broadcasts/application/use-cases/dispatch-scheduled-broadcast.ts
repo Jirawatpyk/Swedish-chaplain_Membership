@@ -871,8 +871,41 @@ export async function dispatchScheduledBroadcast(
             await deps.broadcastsGateway.getAudienceContactCount(
               resendAudienceId,
             );
-          actualCount =
-            outcome.kind === 'present' ? outcome.count : null;
+          // Round 4 (whole-branch review #2) — the `complete` flag landed on the
+          // import leg only, which is class 3 in a commit written to fix class 3.
+          //
+          // `complete` is Resend's own `has_more`, inverted: false means the
+          // adapter read only PART of the audience. A truncated count can only
+          // UNDERCOUNT, so it is still usable when it EXCEEDS what we expected —
+          // that excess is proven. Below or equal, it proves nothing, and the
+          // drift comparison further down would file a false
+          // `broadcast_resend_audience_drift` row in an append-only table and
+          // page on § 22.3. `null` routes it to the unverifiable branch instead,
+          // which is what "we could not check" already means here.
+          const usable =
+            outcome.kind === 'present' &&
+            (outcome.complete || outcome.count > expectedCount);
+          actualCount = usable ? outcome.count : null;
+          if (outcome.kind === 'present' && !usable) {
+            // A partial read is not a FAILURE, so it gets no append-only row —
+            // but it must not fall through to the plain `idempotency_replay`
+            // log either, which would read as a completed check. Flagging it
+            // here routes it away from that branch and gives the catalogued
+            // alert (`drift_check_unverifiable > 1 / 1h`, observability § 22.3)
+            // the same data source the throw path already feeds it.
+            countCheckFailed = true;
+            logger.warn(
+              {
+                tenantId: deps.tenant.slug,
+                broadcastId: input.broadcastId as string,
+                resendBroadcastId,
+                expectedRecipientCount: expectedCount,
+                pageCount: outcome.count,
+              },
+              'broadcasts.dispatch.audience_count_incomplete',
+            );
+            broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
+          }
         } catch (countErr) {
           // Round-5 R5-S1 — when the count fetch fails on a non-404
           // (e.g. Resend 5xx, network), we cannot verify drift. Emit a

@@ -157,15 +157,31 @@ The cascade has two halves:
 
 **Why non-blocking** (security + DPO sign-off, plan-review 2026-06-20): the
 Resend-removal inputs are captured only in the first-pass atomic tx and are
-**destroyed by the same erasure**. A US2d reconciler re-drive re-captures an
-EMPTY set and can never retry the Resend removal. Blocking `member_erased` on a
-first-pass Resend failure would only delay the completion proof by one
-reconciler tick and then emit it anyway (over a vacuous empty-set re-drive),
-while polluting the DPO log with a misleading second `ok` audit. So
+**destroyed by the same erasure**, so blocking `member_erased` on a first-pass
+Resend failure would only delay the completion proof and then emit it anyway. So
 `member_erased` reflects the controller's authoritative-copy erasure;
 sub-processor propagation is tracked separately by its own audit + metric + this
-runbook. This is **best-effort-ONCE**: a first-pass failure is finished by hand,
-not auto-retried.
+runbook.
+
+> **⚠️ CORRECTED — round 4 B-1 (whole-branch review #5).** This paragraph used to
+> end "a US2d reconciler re-drive re-captures an EMPTY set and can never retry the
+> Resend removal … **best-effort-ONCE**: a first-pass failure is finished by hand,
+> not auto-retried." **A re-drive now DOES retry the detach.**
+>
+> That limit existed because the first derivation arm matches on
+> `broadcast_deliveries.recipient_email_lower`, which the erasure redacts, and a
+> `NOT EXISTS` clause had switched the second arm off for any broadcast holding a
+> delivery row. Removing that clause leaves the second arm able to find the
+> member's still-LIVE audiences, so a failed detach is recoverable and the second
+> audit records a REAL removal instead of a vacuous zero.
+>
+> **What this means for you:** do NOT run the manual remediation below on the
+> assumption that nothing else will. Check for a second
+> `subprocessor_erasure_propagated` row first — if one exists with
+> `resend_contacts_removed_count >= 1`, the re-drive already did it and a manual
+> detach would be a duplicate. The residual is now narrower: **the audience must
+> not yet have been cleaned up** (`cleanup-orphaned-audiences` deletes it at
+> Resend after a 1-hour grace on a terminal broadcast).
 
 ### Alert
 
@@ -267,10 +283,15 @@ evidence log, never inferred from a vacuous re-drive audit.
 Two limits are accepted by design (security-engineer + pdpa-gdpr-compliance-officer
 sign-off, plan-review 2026-06-20):
 
-1. **Best-effort-ONCE.** A first-pass Resend failure is NOT auto-retried — the
-   capture inputs are destroyed by the same erasure, so a reconciler re-drive
-   re-captures an empty set. Failure is closed by the manual procedure above,
-   inside the H-1 window.
+1. ~~**Best-effort-ONCE.**~~ **NARROWED — round 4 B-1.** A first-pass Resend
+   failure IS auto-retried now: the derivation's second arm finds the member's
+   still-live audiences without needing the redacted delivery rows, so a US2d
+   re-drive performs a real detach. What remains is a window, not a one-shot: the
+   retry only works while the audience is still live at Resend — once
+   `cleanup-orphaned-audiences` deletes it (1-hour grace after the broadcast goes
+   terminal) there is nothing left to detach, and only the manual procedure above
+   closes it. Check for a second `subprocessor_erasure_propagated` row before
+   remediating by hand.
 
 2. **Un-enumerable / historical audiences out of reach.** The capture derives
    audiences from the member's `broadcast_deliveries` rows (the audiences it

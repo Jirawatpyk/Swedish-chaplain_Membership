@@ -19,6 +19,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
@@ -204,7 +205,7 @@ export async function cancelBroadcast(
           // (no silent swallow on a forensic event).
           logger.error(
             {
-              err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+              err: errKind(auditErr),
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
               actorUserId,
@@ -311,7 +312,7 @@ export async function cancelBroadcast(
           } catch (e) {
             logger.warn(
               {
-                err: e instanceof Error ? e.message : String(e),
+                err: errKind(e),
                 tenantId: deps.tenant.slug,
                 memberId: cancelled.requestedByMemberId,
                 useCase: 'cancel-broadcast',

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
@@ -221,7 +222,7 @@ function renderTimeSanitise(html: string): {
     return { html: dompurifySanitizer.sanitize(html), error: false };
   } catch (e) {
     logger.error(
-      { err: e instanceof Error ? e.message : String(e) },
+      { err: errKind(e) },
       'admin.broadcasts.detail.render_sanitise_failed',
     );
     return { html: '', error: true };

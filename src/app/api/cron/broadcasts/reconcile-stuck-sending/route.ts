@@ -31,6 +31,7 @@ import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 const MAX_PER_TICK = 50;
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: tenant.slug,
       },
       'cron.broadcasts.reconcile.eligible_query_failed',
@@ -206,8 +207,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       summary.uncaught_error++;
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
-          stack: e instanceof Error ? e.stack : undefined,
+          err: errKind(e),
           tenantId: tenant.slug,
           broadcastId: row.broadcast_id,
         },

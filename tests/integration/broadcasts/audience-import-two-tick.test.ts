@@ -74,6 +74,24 @@ function makeFakeGateway(counts: {
         calls.push('getContactImport');
         return { status: 'completed', counts };
       },
+      /**
+       * Round 4, whole-branch review #8 — this method was MISSING from the fake,
+       * and the omission was invisible: `viaGateway` caught the resulting
+       * "not a function" TypeError, classified it `gateway_unknown`, and the
+       * audience-membership check silently took its `membership_unverifiable`
+       * branch. The send proceeded and the file stayed GREEN — while the flip
+       * sheet and `2d61a0605` both cite this suite as the live-Neon proof of the
+       * drift check. It was proof of nothing on that path.
+       *
+       * `complete: true` mirrors Resend's `has_more === false`: the whole
+       * audience was read, so the count is comparable. Returning
+       * `counts.created` keeps it equal to what the import reported, which is the
+       * happy path this file is about.
+       */
+      async getAudienceContactCount() {
+        calls.push('getAudienceContactCount');
+        return { kind: 'present' as const, count: counts.created, complete: true };
+      },
       async createBroadcast() {
         calls.push('createBroadcast');
         // Round 2 R2-33 — this returned the CONSTANT 'rb-live-test', and
@@ -233,6 +251,13 @@ describe.runIf(RUN_INTEGRATION)('T087 — two-tick import build (live Neon)', ()
     // behaviour.
     expect(gw.sends).toHaveLength(1);
     expect(gw.sends[0]).toMatch(/^rb-live-/);
+    // Round 4, whole-branch review #8 — the audience-membership check must have
+    // RUN, not been swallowed. Before the fake gained this method the call threw
+    // "not a function", `viaGateway` classified it `gateway_unknown`, the check
+    // took its `membership_unverifiable` branch and the send proceeded — green,
+    // while this suite was being cited as the live-Neon proof of that very check.
+    // Asserting the call is what makes the citation true.
+    expect(gw.calls).toContain('getAudienceContactCount');
 
     row = await readRow(raw);
     expect(row.completed).toBe(true);

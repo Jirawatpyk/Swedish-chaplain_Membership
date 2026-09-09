@@ -29,6 +29,7 @@ import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
@@ -186,7 +187,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
   } catch (e) {
     logger.error(
-      { requestId, err: e instanceof Error ? e.message : String(e) },
+      { requestId, err: errKind(e) },
       'cron.broadcasts_gauges.query_failed',
     );
     return NextResponse.json({ error: 'query_failed' }, { status: 500 });

@@ -223,8 +223,8 @@ Cadence below is the *logical* schedule (UTC unless noted ICT = Asia/Bangkok):
 | F7 | `/api/cron/broadcasts/reconcile-stuck-sending` | POST | `*/15 * * * *` | before F7 flip |
 | F7 | `/api/cron/broadcasts/prune-expired-drafts` | POST | `30 4 * * *` (UTC) | before F7 flip |
 | F7 | `/api/internal/metrics/broadcasts-gauges` | GET | `*/5 * * * *` | before F7 flip |
-| F7.1a | `/api/cron/broadcasts/split-large-broadcasts` | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
-| F7.1a | `/api/cron/broadcasts/dispatch-batches` | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
+| ~~F7.1a~~ | ~~`/api/cron/broadcasts/split-large-broadcasts`~~ **DELETED by `ca51f59a1` (Phase 9) — do not register** | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
+| ~~F7.1a~~ | ~~`/api/cron/broadcasts/dispatch-batches`~~ **DELETED by `ca51f59a1` (Phase 9) — do not register** | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
 | F8 | `/api/cron/renewals/dispatch-coordinator` | POST | `0 6 * * *` (ICT) | before F8 flip |
 | F8 | `/api/cron/renewals/at-risk-recompute-coordinator` | POST | `0 2 * * 0` (Sun ICT) | before F8 flip |
 | F8 | `/api/cron/renewals/tier-upgrade-evaluate-coordinator` | POST | `0 3 * * 0` (Sun ICT) | before F8 flip |
