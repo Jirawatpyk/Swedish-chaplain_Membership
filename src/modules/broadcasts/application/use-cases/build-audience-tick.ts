@@ -167,6 +167,24 @@ export const MEMBER_FACING_FAILURE_REASONS = [
   'audience_import_stuck',
 ] as const;
 
+/**
+ * Round 4 L1 — the tokens a member-facing email may be asked to render.
+ *
+ * Exported as a TYPE because the legacy leg proved a `string` parameter is not
+ * enough: `dispatchScheduledBroadcast` passed
+ * `retry_budget_exhausted_after_1h:${subKind}:${reason}` — a composite built for
+ * the `failure_reason` column — straight into the email builder, where it is a
+ * LOOKUP KEY. It matched nothing, fell to `generic`, and the member read
+ * "a technical problem prevented delivery" for an hour-long provider outage.
+ * `tsc` could not see it, because both the composite and the token are strings.
+ *
+ * Two more call sites on that leg had the same shape. Typing the parameter makes
+ * the compiler enumerate all of them, which is the only form of this fix that
+ * cannot miss one — see `[[reference_shared_helper_stamps_one_callers_identity]]`.
+ */
+export type MemberFacingFailureReason =
+  (typeof MEMBER_FACING_FAILURE_REASONS)[number];
+
 export type BuildAudienceTickError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
   | { readonly kind: 'broadcast_invalid_state_transition'; readonly observedStatus: string }

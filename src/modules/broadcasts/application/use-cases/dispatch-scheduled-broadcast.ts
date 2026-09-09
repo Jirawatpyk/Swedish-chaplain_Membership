@@ -51,6 +51,7 @@ import { classifyThrown } from './_classify-thrown';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
+import type { MemberFacingFailureReason } from './build-audience-tick';
 import { recipientSegmentFromPersisted } from '../../domain/recipient-segment';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
 import { resendDashboardName } from '../format/resend-dashboard-name';
@@ -209,10 +210,29 @@ async function failDispatchAndAudit(
   deps: DispatchScheduledBroadcastDeps,
   input: DispatchScheduledBroadcastInput,
   now: Date,
+  /**
+   * Stored verbatim in `broadcasts.failure_reason` and in the audit payload.
+   * Free text on purpose — it carries the forensic detail (the transport class,
+   * Resend's own message, the resource type) that an operator needs.
+   */
   reason: string,
   eventType: 'broadcast_failed_to_dispatch' | 'broadcast_resend_resource_missing',
   payload: Record<string, unknown>,
   phase: string,
+  /**
+   * Round 4 L1 — what the MEMBER reads, which is not the same string.
+   *
+   * `reason` above is free text and reaches the email builder as a LOOKUP KEY;
+   * three call sites on this leg passed composites (`retry_budget_exhausted_
+   * after_1h:...`, `resend_resource_missing:...`, a raw `Error.message`), every
+   * one of which matched nothing and rendered "a technical problem prevented
+   * delivery". `tsc` saw two strings and was satisfied.
+   *
+   * Required and typed, so the compiler enumerates every call site rather than
+   * leaving the next one to a reviewer. Deliberately NOT defaulted — a default
+   * is how the previous version of this bug stayed invisible.
+   */
+  memberFacingReason: MemberFacingFailureReason,
   broadcast: Broadcast | null = null,
 ): Promise<void> {
   try {
@@ -280,7 +300,8 @@ async function failDispatchAndAudit(
     await enqueueDispatchFailureNotification({
       deps,
       broadcast,
-      reason,
+      // Round 4 L1 — the TOKEN, not the free-text `reason` this used to forward.
+      reason: memberFacingReason,
       now,
     });
   }
@@ -357,6 +378,7 @@ export async function dispatchScheduledBroadcast(
         segmentType: segmentResult.error.segmentType,
         failedAt: now.toISOString(),
       },
+      'malformed_segment',
       'malformed_segment',
       broadcast,
     );
@@ -443,6 +465,7 @@ export async function dispatchScheduledBroadcast(
           failedAt: now.toISOString(),
         },
         'audience_too_large',
+        'audience_too_large',
         broadcast,
       );
       return err({
@@ -463,6 +486,7 @@ export async function dispatchScheduledBroadcast(
         reason: 'audience_post_suppression_empty',
         failedAt: now.toISOString(),
       },
+      'audience_post_suppression_empty',
       'audience_post_suppression_empty',
       broadcast,
     );
@@ -660,6 +684,12 @@ export async function dispatchScheduledBroadcast(
             elapsedMs,
             failedAt: now.toISOString(),
           },
+          'retry_budget_exhausted',
+          // Round 4 L1, the defect this parameter exists for. `budgetReason`
+          // above is `retry_budget_exhausted_after_1h:{subKind}:{reason}` — good
+          // forensics, and nothing in the message files. The member used to read
+          // "a technical problem prevented delivery" for an hour-long provider
+          // outage; they now read the sentence that names it.
           'retry_budget_exhausted',
           broadcast,
         );
@@ -910,6 +940,13 @@ export async function dispatchScheduledBroadcast(
           failedAt: now.toISOString(),
         },
         'resend_resource_missing',
+        // No member email is sent on this arm — the notification is gated on
+        // `eventType === 'broadcast_failed_to_dispatch'` and this one is
+        // `broadcast_resend_resource_missing`, which the docblock describes as
+        // needing an admin to look at the account. The parameter is required
+        // anyway, and an unused value is still not licence to state a wrong
+        // cause: a resource Resend no longer has IS a permanent gateway refusal.
+        'gateway_permanent',
         broadcast,
       );
       return err({
@@ -937,6 +974,20 @@ export async function dispatchScheduledBroadcast(
           failedAt: now.toISOString(),
         },
         'permanent_failure',
+        // The token comes from `shape.KIND`, not `shape.reason`.
+        //
+        // A first draft of this line used `shape.reason ?? 'gateway_unknown'`
+        // and a comment calling it "a real token when the classifier supplied
+        // one". `tsc` rejected it, and the classifier says why:
+        // `_classify-thrown.ts:20` types `reason?: string` and `:37` sets it to
+        // `e.message` — it is free text on every path and never a token. (The
+        // typed `reason` on `GatewayFailure` belongs to `build-audience-tick`'s
+        // own wrapper, which MAPS the classifier's output; different value.)
+        //
+        // `kind` is the classification, so mirror it: `permanent` is a refusal
+        // the adapter recognised, everything else reaching this arm — `unknown`,
+        // and the idempotency-conflict fall-through — is honestly unclassified.
+        shape.kind === 'permanent' ? 'gateway_permanent' : 'gateway_unknown',
         broadcast,
       );
       return err({ kind: 'broadcast_failed_to_dispatch', reason });

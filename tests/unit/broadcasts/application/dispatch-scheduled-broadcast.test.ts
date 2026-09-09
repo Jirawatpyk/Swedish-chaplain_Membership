@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
+import { MEMBER_FACING_FAILURE_REASONS } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
@@ -1948,7 +1949,23 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(email.memberCalls).toHaveLength(1);
     expect(email.memberCalls[0]?.templateKey).toBe('broadcast_failed_to_dispatch');
     expect(email.memberCalls[0]?.payload['tenantDisplayName']).toBe('Test Chamber');
-    expect(email.memberCalls[0]?.payload['reason']).toContain('Resend 422');
+    // Round 4 L1 — this asserted `toContain('Resend 422')`, i.e. that the RAW
+    // gateway message was forwarded as the notification's `reason`. It was, and
+    // that was the defect: `reason` is a LOOKUP KEY in the email builder, so a
+    // raw message matched nothing and the member read the generic "a technical
+    // problem prevented delivery" for a refused request. The test pinned the bug
+    // as the contract.
+    //
+    // The raw message is not lost — it still goes to `broadcasts.failure_reason`
+    // and the audit payload, which is where an operator looks. What the member
+    // gets is a token that renders a sentence.
+    expect(email.memberCalls[0]?.payload['reason']).toBe('gateway_permanent');
+    // The load-bearing half: whatever this call site passes must be renderable.
+    // A literal check alone would still pass if someone swapped in another
+    // plausible string.
+    expect(MEMBER_FACING_FAILURE_REASONS as readonly string[]).toContain(
+      email.memberCalls[0]?.payload['reason'],
+    );
   });
 
   it('Phase 8 / Slice E โ€” member has no primary contact email โ’ email skipped (logger warn), audit + transition still happen', async () => {
