@@ -17,11 +17,28 @@
  *     SAME eligibility batch — it does NOT protect the per-row dispatch
  *     window against another tick that arrives after this one's tx
  *     ended but before the dispatch use-case's own tx starts.
- *   - On the LEGACY leg the dispatch-time guard is the per-row
- *     `pg_advisory_xact_lock('broadcasts:'+tenant+':'+id)` acquired inside the
- *     use-case's `withTx`, which closes the TOCTOU window between cron and
- *     manual admin send-now. SKIP LOCKED here is a small additional defence
- *     against eligible-scan duplication, not the primary guard.
+ *   - **Round 4, whole-branch review #3 — this paragraph said the legacy leg's
+ *     per-row `pg_advisory_xact_lock` "closes the TOCTOU window", implying the
+ *     gap below is import-leg-only. It does not, and the gap is not.** That lock
+ *     is taken inside `lockForUpdate`'s transaction, and that transaction
+ *     COMMITS before any gateway call — an advisory *xact* lock dies with its
+ *     transaction, so nothing is held across `createAudience` /
+ *     `addContactsToAudience` / `createBroadcast` / `sendBroadcast`. Holding one
+ *     across a 300-second HTTP budget would be worse, which is why it is not
+ *     done; but the honest description is that NEITHER leg is protected there.
+ *     SKIP LOCKED is a defence against eligible-scan duplication, not the guard
+ *     this claimed.
+ *
+ *     Concretely on the legacy leg: an admin cancel landing during the serial
+ *     push (~72 s for 150 contacts) commits while the row is still `approved`,
+ *     the send goes out, and Step 4's `applyTransition(from 'approved')` then
+ *     matches 0 rows — rolling back `attachResendIds` with it. The row ends
+ *     `cancelled` with `resend_broadcast_id` NULL, so every webhook 200-acks as
+ *     `unknown_resend_broadcast_id`, bounces never reach suppression, and
+ *     `reconcile-stuck-sending` cannot see it (the row is not `sending`).
+ *     Pre-existing, and in scope for the F4 follow-up PR — the same remedy,
+ *     persisting the ids BEFORE the send, closes it and the double-send shape
+ *     together.
  *   - **On the IMPORT leg that lock does NOT span the send** (round 3 finding
  *     3-6). `buildAudienceTick`'s locking tx COMMITS before every gateway call,
  *     so the window covers a poll, a full re-resolve, `createBroadcast` and
@@ -72,12 +89,15 @@ export const dynamic = 'force-dynamic';
 // API is one-at-a-time; the account limit is 10 req/s (measured 2026-09-08,
 // T095 — this comment previously said 2), but the loop is serial so it runs at
 // `min(10, 1/RTT)` ≈ 3.4 req/s on a ~0.29 s warm round trip. A ~130-recipient
-// broadcast therefore syncs in ~40 s, and ~1,000 contacts is what one 300 s
-// tick can drain — the gateway's reactive 429 backoff (no fixed pacing) never
-// fires at that rate. (Genuinely huge audiences
-// still need the batched multi-tick model; this covers SweCham scale +
-// moderate growth without the fixed-pacing timeout that was rejected in
-// review.)
+// broadcast therefore syncs in ~40 s.
+//
+// Round 4, whole-branch review #9 — the rest of this comment was stale twice
+// over. It quoted ~1,000 contacts per tick from the 3.4 req/s figure, while
+// T095 measured the serial loop at ~2.08 req/s (0.481 s per write) — about 623 —
+// and it ended by pointing at "the batched multi-tick model", which
+// `ca51f59a1` DELETED on this branch. There is no batch path: an audience above
+// `currentAudienceCeiling()` is refused, not split. `audience-ceiling.ts` names
+// this exact drift as the reason its own constant is documented in one place.
 export const maxDuration = 300;
 
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's

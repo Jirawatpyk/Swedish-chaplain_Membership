@@ -75,7 +75,7 @@ export type GatewayThrowableInit =
   | { readonly kind: 'idempotency_conflict'; readonly reason: string }
   | {
       readonly kind: 'resource_missing';
-      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceType: 'audience' | 'broadcast' | 'import';
       readonly resourceId: string;
       readonly reason: string;
     }
@@ -86,7 +86,7 @@ export class GatewayThrowable extends Error {
   readonly subKind?: GatewayThrowableSubKind;
   readonly reason: string;
   readonly code?: string;
-  readonly resourceType?: 'audience' | 'broadcast';
+  readonly resourceType?: 'audience' | 'broadcast' | 'import';
   readonly resourceId?: string;
 
   constructor(init: GatewayThrowableInit) {
@@ -107,7 +107,7 @@ export class GatewayThrowable extends Error {
 
 function classifyResendError(
   err: ResendErrorShape | undefined | null,
-  resourceType?: 'audience' | 'broadcast',
+  resourceType?: 'audience' | 'broadcast' | 'import',
   resourceId?: string,
 ): GatewayThrowable {
   const status = err?.statusCode ?? 500;
@@ -840,7 +840,13 @@ function throwImportError(
       name: body.name ?? `http_${status}`,
       message: body.message ?? 'resend contact import error',
     },
-    'audience',
+    // Round 4, whole-branch review #7 — was `'audience'`, with `resourceId` set
+    // to the IMPORT id. A 404 on `GET /contacts/imports/{id}` is a missing
+    // IMPORT JOB, and reporting it as a missing audience sent an operator to
+    // hunt a Resend audience called `imp_…` that was never the problem. The
+    // fabricated half was the TYPE, not the id — class 4, in the field a human
+    // reads off the cron log and the audit row.
+    'import',
     resourceId,
   );
 }

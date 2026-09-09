@@ -24,6 +24,10 @@ import { err } from '@/lib/result';
 import { logger } from '@/lib/logger';
 
 const runInTenantMock = vi.fn();
+// Round 4, whole-branch review #11 — kept ONLY because the `vi.mock` factory
+// below still lists the export. The route no longer imports `isF71aUs1Enabled`
+// (the pagination flag gates nothing since `ca51f59a1`), so this mock steers
+// nothing; it is fixture debris, not coverage.
 const isF71aUs1EnabledMock = vi.fn(() => true);
 const isF7ImportAudienceEnabledMock = vi.fn(() => false);
 const buildAudienceTickMock = vi.fn();

@@ -91,8 +91,11 @@ describe('assertTenantBoundTx — the application layer of Principle I', () => {
     expect(err).toContain(TENANT_B);
     // And it names the caller, because every guarded method shares one message
     // and a bare one would not say which write was refused. (Round 4 T3 — this
-    // said "17 sites"; that is the count of tx-taking METHODS, and the guard is
-    // called at 13 of them after `applyTransition` was added.)
+    // said "17 sites"; that is the count of tx-taking METHODS. The guard is called at
+    // TWELVE of them after `applyTransition` was added — `grep -c` returns 13
+    // because it counts the function DEFINITION too, which is how the original
+    // "17" was produced. Correcting a miscount with a miscount, in the test
+    // written to fix the miscount.)
     expect(err).toContain('attachAudienceId');
   }, 30_000);
 

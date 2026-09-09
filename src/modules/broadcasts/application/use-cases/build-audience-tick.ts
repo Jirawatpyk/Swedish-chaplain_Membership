@@ -211,7 +211,7 @@ export type BuildAudienceTickError =
    */
   | {
       readonly kind: 'broadcast_resend_resource_missing';
-      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceType: 'audience' | 'broadcast' | 'import';
       readonly resourceId: string;
     }
   | {
@@ -384,7 +384,7 @@ type GatewayFailure =
        * — a refunded quota slot for a broadcast that was delivered.
        */
       readonly kind: string;
-      readonly resourceType?: 'audience' | 'broadcast' | undefined;
+      readonly resourceType?: 'audience' | 'broadcast' | 'import' | undefined;
       readonly resourceId?: string | undefined;
       /**
        * The adapter's `code` — `err.name` from Resend, or `http_<status>`.
@@ -1406,7 +1406,7 @@ async function failTerminally(
      * an account problem as `permanent_failed`.
      */
     readonly resourceMissing?: {
-      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceType: 'audience' | 'broadcast' | 'import';
       readonly resourceId: string;
     };
   } = {},

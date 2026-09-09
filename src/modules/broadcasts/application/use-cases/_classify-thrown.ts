@@ -18,7 +18,16 @@ export type GatewayThrownShape = {
   kind?: string;
   subKind?: string;
   reason?: string;
-  resourceType?: 'audience' | 'broadcast';
+  /**
+   * Round 4, whole-branch review #7 — `'import'` added. The adapter tags a 404
+   * on `GET /contacts/imports/{id}` with it, and this file reads the throw
+   * STRUCTURALLY through a cast, so a narrower union here would have been a
+   * silent lie: the value flows at runtime while `tsc` reports a type it does
+   * not have. That is the cast-suppresses-the-compiler shape this branch has
+   * been removing all round, so the union is widened along the whole chain
+   * rather than only where the value is produced.
+   */
+  resourceType?: 'audience' | 'broadcast' | 'import';
   resourceId?: string;
   code?: string;
 };

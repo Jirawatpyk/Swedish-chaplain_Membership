@@ -99,7 +99,7 @@ export type DispatchScheduledBroadcastError =
     }
   | {
       readonly kind: 'broadcast_resend_resource_missing';
-      readonly resourceType: 'audience' | 'broadcast';
+      readonly resourceType: 'audience' | 'broadcast' | 'import';
       readonly resourceId: string;
     }
   | {
@@ -1138,9 +1138,15 @@ export async function dispatchScheduledBroadcast(
       // worker that already transitioned the row to 'sending'.
       // Returning 0 rows → BroadcastConcurrentMutationError thrown →
       // caught below → mapped to broadcast_invalid_state_transition.
-      // Recipients are protected from duplicate emails by Resend's
-      // own idempotency-key dedup (gateway-level invariant); this
-      // closes the DB-side audit/over-emit forensics issue.
+      // Round 4, whole-branch review #3 — this said "recipients are protected
+      // from duplicate emails by Resend's own idempotency-key dedup
+      // (gateway-level invariant)". THAT INVARIANT DOES NOT EXIST: measured
+      // 2026-09-09, two identical `POST /broadcasts` calls carrying the same
+      // `Idempotency-Key` create two resources. What this CAS actually closes is
+      // the DB-side audit/over-emit forensics issue, which is real; the
+      // duplicate-email protection was never here to claim. See F4 in the round-4
+      // ledger — its remedy (persist the ids before the send) is the follow-up
+      // PR.
       const transitioned = await deps.broadcastsRepo.applyTransition(
         tx,
         deps.tenant.slug,
@@ -1225,8 +1231,13 @@ export async function dispatchScheduledBroadcast(
   } catch (e) {
     // G1 closure (verify-fix 2026-05-02) — concurrent worker won the
     // sending-transition race. The other worker has already committed
-    // the transition + audit + email; this worker's Resend external
-    // calls were no-ops (idempotency-key dedup). Surface as
+    // the transition + audit + email. **Round 4 #3 — this said this worker's
+    // Resend calls "were no-ops (idempotency-key dedup)". They were not:
+    // the header is measured inert, and this worker minted its OWN broadcast
+    // resource, so its send is a second real send.** The routing below is still
+    // right — the losing worker has nothing left to do and must not page — but
+    // the reason is "the other worker owns the row", not "our calls did
+    // nothing". Surface as
     // broadcast_invalid_state_transition for the cron route's bucket
     // counter; do NOT page on-call (no actual failure).
     // R3.6 L-7 — standardised on `instanceof` (matches snapshot use-
