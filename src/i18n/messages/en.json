@@ -431,7 +431,8 @@
           "sessionsRevoked": "Sessions revoked",
           "invitationsRevoked": "Invitations revoked",
           "resendOutcome": "Outcome",
-          "contactsRemoved": "Contacts removed",
+          "contactsDetached": "Contacts detached",
+          "contactsAlreadyAbsent": "Already absent",
           "contactsFailed": "Contacts failed"
         },
         "documentKind": {

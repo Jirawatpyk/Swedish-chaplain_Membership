@@ -199,9 +199,23 @@ export function EvidenceCard({
                 <Field label={t('fields.resendOutcome')}>
                   {row.subprocessorOutcome.resendOutcome}
                 </Field>
-                <Field label={t('fields.contactsRemoved')}>
+                {/*
+                  Round 2 R2-25 — the label was "Contacts removed" over a counter
+                  that incremented for every detach the processor acknowledged,
+                  404s included. A DPO citing this card in a DSR answer was
+                  asserting removals that had not happened (Art. 12(3)). The
+                  counter now counts only real detaches, and the label says
+                  "detached", which is what the call does — the contact record
+                  itself survives at the processor (residual 8a).
+                */}
+                <Field label={t('fields.contactsDetached')}>
                   {row.subprocessorOutcome.contactsRemoved}
                 </Field>
+                {row.subprocessorOutcome.contactsAlreadyAbsent !== null && (
+                  <Field label={t('fields.contactsAlreadyAbsent')}>
+                    {row.subprocessorOutcome.contactsAlreadyAbsent}
+                  </Field>
+                )}
                 <Field label={t('fields.contactsFailed')}>
                   {row.subprocessorOutcome.contactsFailed}
                 </Field>

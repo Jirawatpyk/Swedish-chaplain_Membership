@@ -127,7 +127,8 @@ function makeGateway(opts: {
     async sendBroadcast() { throw new Error('not used'); },
     async retrieveBroadcast() { throw new Error('not used'); },
     async getAudienceContactCount() { return { kind: 'not_found' as const }; },
-    async removeContactFromAudience() { throw new Error('not used'); },
+    async removeContactFromAudience() {
+      return { kind: 'detached' as const }; throw new Error('not used'); },
     async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience(audienceId) {
       deleteCalls.push(audienceId);
@@ -275,7 +276,8 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
       async sendBroadcast() { throw new Error('not used'); },
       async retrieveBroadcast() { throw new Error('not used'); },
       async getAudienceContactCount() { return { kind: 'not_found' as const }; },
-      async removeContactFromAudience() { throw new Error('not used'); },
+      async removeContactFromAudience() {
+      return { kind: 'detached' as const }; throw new Error('not used'); },
       async deleteContactGlobally() { throw new Error('not used'); },
       async listAudiences() { return []; },
       async deleteAudience() {

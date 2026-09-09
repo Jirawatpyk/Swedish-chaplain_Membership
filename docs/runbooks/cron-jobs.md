@@ -713,8 +713,10 @@ Recovery:
 
 ## Migration path: Pro plan (DONE — 2026-07-17)
 
-SweCham upgraded to Vercel Pro and **all 39 cron jobs now run on native
-Vercel Cron** via `vercel.json`. This section is the authoritative
+SweCham upgraded to Vercel Pro and **every cron job now runs on native
+Vercel Cron** via `vercel.json` — **37 of the plan's 40 slots used, 3 headroom**
+(round 2 R2-35: this said "all 39", while the § below said 37 + 3; a count stated
+twice in one file is a count that will disagree with itself). This section is the authoritative
 mapping. cron-job.org is a **paused standby** (kept, not deleted).
 
 ### Why the handler code changed (GET alias)

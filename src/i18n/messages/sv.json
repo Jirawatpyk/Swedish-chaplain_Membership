@@ -431,7 +431,8 @@
           "sessionsRevoked": "Återkallade sessioner",
           "invitationsRevoked": "Återkallade inbjudningar",
           "resendOutcome": "Resultat",
-          "contactsRemoved": "Borttagna kontakter",
+          "contactsDetached": "Kontakter borttagna från målgrupp",
+          "contactsAlreadyAbsent": "Redan borta",
           "contactsFailed": "Misslyckade kontakter"
         },
         "documentKind": {

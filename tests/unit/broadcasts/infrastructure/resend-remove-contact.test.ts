@@ -14,19 +14,25 @@ import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/res
 describe('resendBroadcastsGateway.removeContactFromAudience', () => {
   beforeEach(() => removeMock.mockReset());
 
-  it('resolves on a successful removal', async () => {
+  /**
+   * Round 2 R2-25 — both of these asserted `.resolves.toBeUndefined()`, i.e. the
+   * two outcomes were indistinguishable BY DESIGN and the suite pinned that. The
+   * caller counted both as removals, and that number reached a DPO's evidence
+   * card labelled "Contacts removed".
+   */
+  it('answers `detached` on a successful removal', async () => {
     removeMock.mockResolvedValue({ data: { deleted: true }, error: null });
     await expect(
       resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@x.io'),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ kind: 'detached' });
     expect(removeMock).toHaveBeenCalledWith({ audienceId: 'aud_1', email: 'a@x.io' });
   });
 
-  it('treats a 404 (contact/audience already absent) as success', async () => {
+  it('answers `already_absent` on a 404 — still a success, but NOT a removal', async () => {
     removeMock.mockResolvedValue({ data: null, error: { statusCode: 404, message: 'not found' } });
     await expect(
       resendBroadcastsGateway.removeContactFromAudience('aud_1', 'gone@x.io'),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ kind: 'already_absent' });
   });
 
   it('throws a retryable GatewayThrowable on a 5xx (after exhausting the retry budget)', async () => {

@@ -687,7 +687,27 @@ async function confirmImport(
     // was not `completed` was treated as "still working". An explicit `failed`
     // was therefore polled for another 29 minutes and then recorded as `stuck` —
     // the wrong cause, in an append-only table.
-    if (job.status === 'failed' || job.status === 'canceled') {
+    // Round 2 R2-21 asked for this set to be INVERTED — allowlist the in-flight
+    // statuses, default to terminal — so a status Resend adds later is not polled
+    // for 30 minutes and then recorded as `stuck`, the wrong cause in an
+    // append-only table.
+    //
+    // **Only half of that is done here, deliberately.** Resend's import-status
+    // vocabulary is UNVERIFIED: `research.md` § R9 and
+    // `contracts/broadcast-audience.md` document only `completed`, and
+    // `failed`/`canceled` were inferred. An allowlist built on a guess turns a
+    // genuinely in-flight status into an immediate terminal failure — a LOST
+    // SEND — whereas the defect it fixes is a wrong cause recorded after 30
+    // minutes, with the send already gone. That asymmetry decides it.
+    //
+    // What IS safe: `'unknown'` is not a provider status at all — it is the
+    // gateway's own sentinel for a response with no `status` field
+    // (`resend-broadcasts-gateway.ts:765`), so treating it as in-flight means
+    // polling a reply we could not read. It is terminal now.
+    //
+    // TODO(measure): capture the real status strings on the first production
+    // import and invert this properly. Until then the 30-minute rule is the bound.
+    if (job.status === 'failed' || job.status === 'canceled' || job.status === 'unknown') {
       logger.error(
         {
           tenantId: deps.tenant.slug,

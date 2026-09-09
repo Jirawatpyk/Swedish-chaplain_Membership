@@ -1095,6 +1095,7 @@ export async function eraseMember(
           reason,
           resend_outcome: sub.resendOutcome,
           resend_contacts_removed_count: sub.resendContactsRemoved,
+          resend_contacts_already_absent_count: sub.resendContactsAlreadyAbsent,
           resend_contacts_failed_count: sub.resendContactsFailed,
           stripe_outcome: sub.stripeOutcome,
         } satisfies SubprocessorErasurePropagatedAudit,

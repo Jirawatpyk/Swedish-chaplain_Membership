@@ -45,6 +45,12 @@ export type SubprocessorResendOutcome = 'ok' | 'partial' | 'failed';
 export interface SubprocessorErasureResult {
   readonly resendOutcome: SubprocessorResendOutcome;
   readonly resendContactsRemoved: number;
+  /**
+   * Round 2 R2-25 — calls the processor acknowledged where the contact was
+   * ALREADY absent (404). A success, but NOT a removal. Kept apart because
+   * `resendContactsRemoved` reaches an Art. 30 record and a DSR answer.
+   */
+  readonly resendContactsAlreadyAbsent: number;
   readonly resendContactsFailed: number;
   readonly stripeOutcome: 'ok';
 }
@@ -63,6 +69,8 @@ export interface SubprocessorErasurePropagatedAudit {
   readonly reason: string;
   readonly resend_outcome: SubprocessorResendOutcome;
   readonly resend_contacts_removed_count: number;
+  /** R2-25 — see `resendContactsAlreadyAbsent`. */
+  readonly resend_contacts_already_absent_count: number;
   readonly resend_contacts_failed_count: number;
   readonly stripe_outcome: 'ok';
 }

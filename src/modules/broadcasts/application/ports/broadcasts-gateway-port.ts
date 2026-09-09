@@ -94,6 +94,24 @@ export type RetrieveBroadcastOutcome =
  * tail so callers can grep + reason about resource-missing semantics
  * with one mental model.
  */
+/**
+ * Round 2 R2-25 — did the call REMOVE something, or was it already absent?
+ *
+ * `removeContactFromAudience` used to return `void` and resolve on a 404, so its
+ * caller could not tell a detach from a no-op. The erasure adapter counted every
+ * non-throwing call as a removal (its own comment said so: "includes a 404
+ * (already absent)"), that number became `resend_contacts_removed_count` in an
+ * append-only Art. 30 record, and the DPO's evidence card rendered it under the
+ * label **"Contacts removed"**. A DSR answer produced by following the runbook
+ * was therefore materially false under Art. 12(3) — it asserted removals that had
+ * not happened.
+ *
+ * Both outcomes are successes; only one is a removal.
+ */
+export type RemoveContactOutcome =
+  | { readonly kind: 'detached' }
+  | { readonly kind: 'already_absent' };
+
 export type GetAudienceContactCountOutcome =
   | { readonly kind: 'present'; readonly count: number }
   | { readonly kind: 'not_found' };
@@ -173,7 +191,10 @@ export interface BroadcastsGatewayPort {
    * The residual is tracked as 8a in `docs/compliance/processing-records.md`.
    * Read that before changing this, not this docblock alone.
    */
-  removeContactFromAudience(audienceId: string, email: string): Promise<void>;
+  removeContactFromAudience(
+    audienceId: string,
+    email: string,
+  ): Promise<RemoveContactOutcome>;
 
   /**
    * COMP-1 US3-C — DELETE the contact record itself, across every audience.

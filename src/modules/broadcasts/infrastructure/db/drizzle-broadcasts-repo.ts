@@ -827,7 +827,13 @@ export function makeDrizzleBroadcastsRepo(
         .update(broadcasts)
         .set({
           audienceImportId: importId,
-          audienceImportSubmittedAt: new Date(),
+          // R2-26 — SQL `now()`, not a Node clock. `0299`'s CHECK compares
+          // `completed_at >= submitted_at`, and those two are stamped in
+          // DIFFERENT invocations at least 5 minutes apart, possibly on different
+          // Vercel instances. Two Node clocks compared by a DB constraint is a
+          // 23514 on a semantically correct write. `markAudienceDeletedInTx`, one
+          // method away, already did this.
+          audienceImportSubmittedAt: sql`now()`,
           updatedAt: new Date(),
         })
         .where(
@@ -868,7 +874,7 @@ export function makeDrizzleBroadcastsRepo(
       const updated = await tx
         .update(broadcasts)
         .set({
-          audienceImportCompletedAt: new Date(),
+          audienceImportCompletedAt: sql`now()`,  // R2-26 — see the submit stamp.
           updatedAt: new Date(),
         })
         .where(

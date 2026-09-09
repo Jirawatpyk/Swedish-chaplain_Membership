@@ -20,6 +20,7 @@
  */
 import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
+import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
   BroadcastsGatewayPort,
@@ -479,7 +480,10 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     }
   },
 
-  async removeContactFromAudience(audienceId: string, email: string): Promise<void> {
+  async removeContactFromAudience(
+    audienceId: string,
+    email: string,
+  ): Promise<RemoveContactOutcome> {
     try {
       await withRetry(
         async () => {
@@ -495,9 +499,20 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         { method: 'removeContactFromAudience' },
       );
       logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
+      return { kind: 'detached' };
     } catch (e) {
       // A 404 → the contact/audience is already gone → nothing to detach.
-      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
+      //
+      // Round 2 R2-25 — this used to `return` here, indistinguishable from a real
+      // detach. The caller counted both as removals, and that count became
+      // `resend_contacts_removed_count` in an append-only Art. 30 record shown to
+      // a DPO as "Contacts removed". Reporting a removal that did not happen is
+      // worse than reporting none: it is a false statement under Art. 12(3), and
+      // the register entry cannot be corrected once written.
+      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
+        logger.info({ audienceId }, 'resend.broadcasts.contact_already_absent');
+        return { kind: 'already_absent' };
+      }
       throw e;
     }
   },

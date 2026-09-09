@@ -78,7 +78,25 @@ export interface TaxRedactionEvidence {
 /** The sub-processor (Resend) propagation outcome (US3-C). */
 export interface SubprocessorOutcomeEvidence {
   readonly resendOutcome: string;
+  /**
+   * Contacts actually DETACHED from a Resend audience.
+   *
+   * Round 2 R2-25 — this number reaches a DPO through the erasure-log evidence
+   * card and, from there, a DSR answer under Art. 12(3). It used to count every
+   * detach call the processor acknowledged, 404s included, because the gateway
+   * returned `void` and resolved on a 404: the adapter's own comment said
+   * "includes a 404 (already absent)". So the card asserted removals that had not
+   * happened, in an append-only record that cannot be corrected.
+   */
   readonly contactsRemoved: number;
+  /**
+   * Calls where the contact was ALREADY absent. A success, not a removal.
+   *
+   * `null` for rows written before this key existed — which means "this run could
+   * not tell", not "none". A manufactured zero would be the same class of false
+   * statement the split exists to remove.
+   */
+  readonly contactsAlreadyAbsent: number | null;
   readonly contactsFailed: number;
 }
 
@@ -288,6 +306,11 @@ function fold(member: ErasedMemberRow, rows: readonly ErasureEvidenceRow[], now:
     ? {
         resendOutcome: str(sub.payload, 'resend_outcome') ?? 'unknown',
         contactsRemoved: num(sub.payload, 'resend_contacts_removed_count') ?? 0,
+        // Round 2 R2-25 — historical rows predate this key, so `null` (not 0)
+        // means "this run could not tell", which is different from "none were
+        // already absent". A DPO reading an old row must not be shown a
+        // manufactured zero.
+        contactsAlreadyAbsent: num(sub.payload, 'resend_contacts_already_absent_count'),
         contactsFailed: num(sub.payload, 'resend_contacts_failed_count') ?? 0,
       }
     : null;

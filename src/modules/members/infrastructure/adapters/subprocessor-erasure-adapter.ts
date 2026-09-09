@@ -42,6 +42,7 @@ export const noopSubprocessorErasureAdapter: SubprocessorErasurePort = {
     return {
       resendOutcome: 'ok',
       resendContactsRemoved: 0,
+      resendContactsAlreadyAbsent: 0,
       resendContactsFailed: 0,
       stripeOutcome: 'ok',
     };
@@ -88,12 +89,21 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
     //
     // Consequence, recorded rather than hidden: the Global Contact SURVIVES
     // erasure. `docs/compliance/processing-records.md` carries it as a residual.
+    // Round 2 R2-25 — `removed` used to increment for every call that did not
+    // throw, 404s included, and that number reached the DPO's evidence card under
+    // the label "Contacts removed". The gateway now discriminates, so the Art. 30
+    // record can say what actually happened: N detached, M were already absent.
     let removed = 0;
+    let alreadyAbsent = 0;
     let failed = 0;
     for (const { audienceId, email } of input.audienceContacts) {
       try {
-        await resendBroadcastsGateway.removeContactFromAudience(audienceId, email);
-        removed += 1; // includes a 404 (already absent) — the gateway resolves.
+        const outcome = await resendBroadcastsGateway.removeContactFromAudience(
+          audienceId,
+          email,
+        );
+        if (outcome.kind === 'detached') removed += 1;
+        else alreadyAbsent += 1;
       } catch (e) {
         failed += 1;
         logger.warn(
@@ -109,11 +119,15 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
       }
     }
 
+    // `ok` still means "nothing failed". An all-already-absent run is `ok` with
+    // `removed: 0` — which is the honest answer, and the one the re-drive case
+    // has always asserted.
     const resendOutcome =
-      failed === 0 ? 'ok' : removed === 0 ? 'failed' : 'partial';
+      failed === 0 ? 'ok' : removed + alreadyAbsent === 0 ? 'failed' : 'partial';
     return {
       resendOutcome,
       resendContactsRemoved: removed,
+      resendContactsAlreadyAbsent: alreadyAbsent,
       resendContactsFailed: failed,
       stripeOutcome,
     };

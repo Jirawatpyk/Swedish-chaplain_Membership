@@ -72,12 +72,25 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    fired `failed`/`partial` for this member, run the **manual remediation
    procedure** (§ Sub-processor erasure propagation) within the H-1 window.
 
-7. **Acknowledge the out-of-reach copies.** Two copies cannot be erased by the
+7. **Acknowledge the out-of-reach copies.** THREE copies cannot be erased by the
    controller and are accepted residuals (§ Documented residuals + the RoPA):
    **(a)** a GDPR-export ZIP the subject **already downloaded** to their own
    device; **(b)** pre-erasure data in **backup / PITR snapshots** (re-erased
-   only on a restore). If the DSR specifically asks about these, explain the
-   limitation honestly; they do not block closure of the controller-copy erasure.
+   only on a restore); **(c)** ⚠️ **the Resend "Global Contact" record.**
+   If the DSR specifically asks about these, explain the limitation honestly;
+   they do not block closure of the controller-copy erasure.
+
+   **(c) is new to this list and it is the one a DSR answer is most likely to get
+   wrong** (round 2 R2-2). The cascade calls
+   `DELETE /audiences/{id}/contacts/{email}`, which **DETACHES** the contact from
+   that audience — measured 2026-09-09: the call answers `{"deleted": true}`, the
+   audience-scoped read then 404s, and an audience-less `GET /contacts/{email}`
+   **still returns the contact at 200**. So the address remains in Resend's
+   contact store. The capability to delete it for real exists
+   (`deleteContactGlobally`) and is deliberately not called, because one Resend
+   account is shared across tenants — see `processing-records.md` residual 8a for
+   the owner, the review date and the revisit condition. **A DSR answer must say
+   the address may remain in the processor's contact store.**
 
 8. **Handle a half-run (US2d reconciler).** A half-run means a blocking cascade
    (F1/F6/F7/F8) failed transiently. The **US2d reconciler cron** re-drives stuck
@@ -118,11 +131,29 @@ The cascade has two halves:
    and `recipient_member_id` is always NULL in production.
 
 2. **Post-commit propagation (BEST-EFFORT / NON-BLOCKING).** After the scrub tx
-   commits, the cascade removes each captured pair from its Resend audience via
-   `resendBroadcastsGateway.removeContactFromAudience(audienceId, email)`. The
+   commits, the cascade **DETACHES** each captured pair from its Resend audience
+   via `resendBroadcastsGateway.removeContactFromAudience(audienceId, email)`. The
    outcome is recorded in a `subprocessor_erasure_propagated` audit row + the
    `member_subprocessor_erasure_total{resend_outcome}` metric. A failure here
    does **NOT** flip `allCascadesClean` — `member_erased` is still emitted.
+
+   **"Detaches", not "removes" (round 2 R2-2).** This paragraph said "removes",
+   step 7's residual list omitted the Global Contact, and the evidence card
+   rendered the count under the label "Contacts removed" — so a DSR answer
+   produced by following this runbook asserted that the address had been removed
+   from the processor. It had not; only the audience membership had.
+
+   **The three counts in that audit row, and what each one means** (R2-25 — until
+   2026-09-09 the first of them silently included the second):
+
+   | Payload key | Means |
+   |---|---|
+   | `resend_contacts_removed_count` | pairs actually DETACHED |
+   | `resend_contacts_already_absent_count` | the processor answered 404 — a success, but **not** a removal. Absent on rows written before 2026-09-09, where the run could not tell |
+   | `resend_contacts_failed_count` | the call errored; remediate per § Sub-processor erasure propagation |
+
+   Cite the FIRST number when a DSR asks how many audience memberships were
+   removed. Do not add the second to it.
 
 **Why non-blocking** (security + DPO sign-off, plan-review 2026-06-20): the
 Resend-removal inputs are captured only in the first-pass atomic tx and are

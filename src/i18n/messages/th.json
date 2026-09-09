@@ -431,7 +431,8 @@
           "sessionsRevoked": "เซสชันที่เพิกถอน",
           "invitationsRevoked": "คำเชิญที่เพิกถอน",
           "resendOutcome": "ผลลัพธ์",
-          "contactsRemoved": "ผู้ติดต่อที่ลบ",
+          "contactsDetached": "ผู้ติดต่อที่ถอดออกจากกลุ่ม",
+          "contactsAlreadyAbsent": "ไม่พบอยู่แล้ว",
           "contactsFailed": "ผู้ติดต่อที่ล้มเหลว"
         },
         "documentKind": {

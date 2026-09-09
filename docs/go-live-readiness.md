@@ -367,15 +367,34 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
 - [ ] Add `FEATURE_F7_IMPORT_AUDIENCE=true` → **redeploy immediately after**,
   in that order, with no unrelated merge in between.
-- [ ] **Observe the first send.** A submit tick logs
-  `broadcasts.audience_import.submitted`; the confirming tick logs
-  `broadcasts.audience_import.sent` AND writes a `broadcast_send_started` audit
-  row. **If the audit row is missing the send did not go through this path** —
-  flag OFF and redeploy before the next dispatch tick.
-- [ ] Watch `broadcasts_audience_import_stuck_count` for one hour. It is
-  filtered to `status = 'approved'`, so a resolved incident clears it; a value
-  that will not clear means the filter regressed, not that the incident
-  persists.
+- [ ] **Observe the first send — CHECK RESEND FIRST, then the audit row.**
+  This order is not cosmetic (round 2 R2-49). The previous version said "if the
+  audit row is missing the send did not go through this path — flag OFF and
+  redeploy", and that instruction **causes** the failure it is trying to detect:
+  S8's whole shape is *mail already out, audit row missing*, and flipping the flag
+  off hands that still-`approved` row to `dispatchScheduledBroadcast`, which
+  reuses `resend_audience_id` and sends the broadcast a SECOND time to the whole
+  audience.
+  1. **Resend dashboard** — was a broadcast created and sent? That is the only
+     source that knows whether mail left the building.
+  2. Then the logs: a submit tick logs `broadcasts.audience_import.submitted`;
+     the confirming tick logs `broadcasts.audience_import.sent` and writes a
+     `broadcast_send_started` audit row.
+  3. **Resend shows a send but there is no audit row** → do NOT flip the flag.
+     Cancel the broadcast (releases the quota) and reconcile by hand; a flag flip
+     here double-sends.
+  4. **Resend shows nothing and the row is still `approved`** → the flag flip is
+     safe, and § E's drain query is the precondition.
+- [ ] Watch the failure surfaces for one hour — **and know what each can and
+  cannot see** (round 2 R2-16). `broadcasts_audience_import_stuck_count` only
+  fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero
+  there is not evidence of health on its own. The signals that do move on a
+  first-send failure are `broadcasts.failed_to_dispatch.count{failure_reason}`
+  (now carrying a real reason rather than a constant `app_error` — round-3 3-12),
+  `broadcasts_dispatch_budget_exhausted_total` (the FR-021 terminal, which could
+  not fire on this leg at all before round-3 3-7), and the cron span's
+  `cron.import_submitted` / `cron.import_pending` attributes (R2-15). Check those
+  three, not the gauge alone.
 
 **§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
 acknowledged: ☐

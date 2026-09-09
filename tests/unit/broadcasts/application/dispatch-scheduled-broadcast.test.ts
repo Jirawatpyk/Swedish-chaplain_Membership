@@ -294,7 +294,8 @@ function makeGateway(opts: GatewayOpts = {}): {
           count: opts.audienceContactCount ?? 2,
         };
       },
-      async removeContactFromAudience() {},
+      async removeContactFromAudience() {
+      return { kind: 'detached' as const };},
       async deleteContactGlobally() {},
       async deleteAudience() {},
       async listAudiences() { return []; },
