@@ -17,9 +17,10 @@
  * broadcast, recipient_email_lower = lower(E), recipient_member_id = NULL —
  * production shape) all through the chamber_app INSERT grants.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 
+import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import {
   broadcasts,
@@ -163,6 +164,39 @@ describe('broadcasts repo — listMemberResendAudienceContactsInTx (COMP-1 US3-C
   let tenantA: TestTenant;
   let tenantB: TestTenant;
   let user: TestUser;
+
+  /**
+   * Round 4 B-1 — per-case audience isolation, which this file needed the moment
+   * the second UNION arm stopped requiring `NOT EXISTS (deliveries)`.
+   *
+   * That arm is a `CROSS JOIN` of the erased addresses against every broadcast
+   * with a LIVE audience, because no column links a member to an audience they
+   * were pushed into — which is the whole reason the arm exists. So audiences
+   * seeded by EARLIER cases in this file paired with later cases' addresses, and
+   * two tests that assert an ABSENCE started failing for a reason that has
+   * nothing to do with what they check:
+   *   - "a broadcast with resend_audience_id NULL yields no pair" — still true of
+   *     the null broadcast; the pairs came from other cases' audiences.
+   *   - "an email not present in any delivery returns []" — this case seeds
+   *     NOTHING, so with no live audience in the tenant it is exactly right.
+   * Both premises hold; only the shared fixture did not.
+   *
+   * Stamping prior audiences deleted is what `cleanup-orphaned-audiences` does in
+   * production (every 15 min, 1 h grace after a broadcast goes terminal), so this
+   * is the real steady state rather than a convenience.
+   */
+  beforeEach(async () => {
+    for (const t of [tenantA, tenantB]) {
+      if (!t) continue;
+      await runInTenant(t.ctx, async (tx) => {
+        await tx.execute(sql`
+          UPDATE broadcasts SET audience_deleted_at = now()
+           WHERE tenant_id = ${t.ctx.slug}
+             AND resend_audience_id IS NOT NULL
+             AND audience_deleted_at IS NULL`);
+      });
+    }
+  });
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');

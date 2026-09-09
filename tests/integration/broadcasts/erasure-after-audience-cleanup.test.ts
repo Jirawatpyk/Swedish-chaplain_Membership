@@ -186,7 +186,7 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
     if (tenant) await tenant.cleanup();
   });
 
-  it('resolves with resendOutcome=ok when the audience was already cleaned up (404 counted as removed, no throw)', async () => {
+  it('resolves with resendOutcome=ok when the audience was already cleaned up (404 counted as ALREADY-ABSENT, not as a removal — round 4 T1)', async () => {
     const { planId, memberId } = await seedPlanAndMember(tenant, user);
     const email = `erase-${randomUUID().slice(0, 8)}@example.com`;
     // A `resend_audience_id` that was NEVER created in the fake → the fake's
@@ -224,8 +224,9 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
     _setTestOverride(fake.client as unknown as Resend);
 
     // 3) Drive the REAL adapter → REAL gateway → fake SDK. The gateway's
-    //    `removeContactFromAudience` catches the 404 (`resource_missing`) and
-    //    resolves; the adapter counts it as removed.
+    //    `removeContactFromAudience` discriminates the 404 as
+    //    `{kind:'already_absent'}` and the adapter counts it apart from a real
+    //    detach — see 4).
     const result = await subprocessorErasureAdapter.propagate({
       memberId,
       reason: 'gdpr_erasure',
@@ -234,12 +235,27 @@ describe('erasure-after-audience-cleanup (COMP-1 US3-C × PR-2 cleanup, live Neo
       requestId: randomUUID(),
     });
 
-    // 4) Assertions — the cascade RESOLVED cleanly (no throw); the 404 was
-    //    counted as a successful removal (erasure goal already met), not a
-    //    failure. This is exactly D4: cleanup does not break GDPR erasure.
+    // 4) Assertions — the cascade RESOLVED cleanly (no throw), and D4 still
+    //    holds: cleanup does not break GDPR erasure, because the erasure goal is
+    //    already met when the audience is gone.
+    //
+    //    **Round 4 T1 — INVERTED, and this test pinned the defect.** It asserted
+    //    `resendContactsRemoved === audienceContacts.length` under the comment
+    //    "the 404 was counted as a successful removal". That is exactly the
+    //    materially-false count `897dd73d7` split apart: 404s inflated
+    //    `resend_contacts_removed_count`, which reaches an append-only Art. 30
+    //    row and renders on the DPO's evidence card under the label "Contacts
+    //    removed" — a DSR answer asserting removals that never happened
+    //    (Art. 12(3)). Found by the pre-push integration gate, not by me: I ran
+    //    the erasure suites I could name and did not grep `tests/` for the
+    //    method I had changed.
+    //
+    //    Both outcomes are still SUCCESSES, so `resendOutcome` stays `ok`; only
+    //    one of them is a removal.
     expect(result.resendOutcome).toBe('ok');
-    expect(result.resendContactsRemoved).toBe(audienceContacts.length);
-    expect(result.resendContactsRemoved).toBeGreaterThanOrEqual(1);
+    expect(result.resendContactsRemoved).toBe(0);
+    expect(result.resendContactsAlreadyAbsent).toBe(audienceContacts.length);
+    expect(result.resendContactsAlreadyAbsent).toBeGreaterThanOrEqual(1);
     expect(result.resendContactsFailed).toBe(0);
     expect(result.stripeOutcome).toBe('ok');
   });

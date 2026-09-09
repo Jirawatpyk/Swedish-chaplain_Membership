@@ -267,10 +267,32 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
     const ctxData = outboxRows[0]?.contextData as Record<string, unknown>;
     expect(ctxData['broadcastId']).toBe(broadcastId);
     expect(ctxData['tenantDisplayName']).toBe('Test Chamber');
+    // Round 4 L1 — INVERTED, and this test pinned the defect on live Neon.
+    //
+    // It asserted the outbox payload's `reason` CONTAINS
+    // `retry_budget_exhausted_after_1h`, i.e. the composite
+    // `retry_budget_exhausted_after_1h:{subKind}:{message}` that the legacy leg
+    // builds for `broadcasts.failure_reason`. That string appears 0 times in
+    // `src/i18n/messages/`, so the email builder — which uses `reason` as a
+    // LOOKUP KEY — matched nothing and fell to `generic`: a member whose
+    // broadcast died to an hour of provider failures read only "a technical
+    // problem prevented delivery".
+    //
+    // The member-facing value is now the TOKEN. The composite is not lost; it
+    // stays where it is useful, which is what the second assertion pins.
     expect(typeof ctxData['reason']).toBe('string');
-    expect(ctxData['reason'] as string).toContain(
-      'retry_budget_exhausted_after_1h',
-    );
+    expect(ctxData['reason']).toBe('retry_budget_exhausted');
+
+    // The forensic half, on the row rather than in the member's inbox — so this
+    // case now covers BOTH halves of the split instead of conflating them.
+    const failureReason = await runInTenant(tenantA.ctx, async (tx) => {
+      const rows = (await tx.execute(sql`
+        SELECT failure_reason FROM broadcasts
+        WHERE tenant_id = ${tenantA.ctx.slug} AND broadcast_id = ${broadcastId}::uuid`,
+      )) as unknown as Array<{ failure_reason: string | null }>;
+      return rows[0]?.failure_reason ?? null;
+    });
+    expect(failureReason).toContain('retry_budget_exhausted_after_1h');
   });
 
   it('within-budget retryable failure → NO outbox row (row stays approved)', async () => {
