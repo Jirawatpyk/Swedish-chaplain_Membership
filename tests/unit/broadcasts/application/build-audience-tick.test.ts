@@ -106,7 +106,13 @@ function makeDeps(opts: {
         opts.resolveFails === 'too_large'
           ? err({ kind: 'broadcast_audience_too_large' as const, count: 99_999, cap: 5_000 })
           : opts.resolveFails === 'empty'
-            ? err({ kind: 'broadcast_audience_post_suppression_empty' as const })
+            ? // Round 3 finding 3-2 — the resolver's real kind, not the legacy
+              // use case's output kind. See the sibling failure-paths file.
+              err({
+                kind: 'broadcast_empty_segment_blocked' as const,
+                droppedByPreference: 0,
+                orphans: [],
+              })
             : ok({
                 recipients: RECIPIENTS,
                 estimatedCount: RECIPIENTS.length,

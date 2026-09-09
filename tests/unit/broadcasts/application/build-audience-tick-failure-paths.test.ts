@@ -111,6 +111,8 @@ function makeDeps(opts: {
    */
   readonly casThrowOn?: 'attachAudienceId' | 'attachAudienceImport';
   readonly casThrow?: 'concurrent' | 'not_found' | 'other';
+  /** Round 3 finding 3-15 — make the TERMINAL write itself fail. */
+  readonly transitionThrowsOn?: 'failed_to_dispatch' | 'sending';
 }): { deps: unknown; rec: Recorder } {
   const rec: Recorder = {
     transitions: [],
@@ -171,7 +173,17 @@ function makeDeps(opts: {
       return err({ kind: 'broadcast_audience_too_large' as const, count: 99_999, cap: 5_000 });
     }
     if (opts.resolveFails === 'empty') {
-      return err({ kind: 'broadcast_audience_post_suppression_empty' as const });
+      // Round 3 finding 3-2 — the kind the RESOLVER actually returns
+      // (`resolve-segment-recipients.ts:422`). This stub said
+      // `broadcast_audience_post_suppression_empty`, which only
+      // `dispatchScheduledBroadcast` produces, as its OUTPUT. So every "empty
+      // audience" case in this file exercised dead code and passed green while
+      // the real kind fell through to `dispatch.server_error`.
+      return err({
+        kind: 'broadcast_empty_segment_blocked' as const,
+        droppedByPreference: 0,
+        orphans: [],
+      });
     }
     if (opts.resolveFails === 'malformed_segment') {
       return err({ kind: 'malformed_segment' as const });
@@ -257,6 +269,11 @@ function makeDeps(opts: {
           status: string,
           fields?: { failureReason?: string; estimatedRecipientCount?: number },
         ) {
+          if (opts.transitionThrowsOn === status) {
+            // Not a concurrent cancel — a serialization failure or a statement
+            // timeout, i.e. the terminal write genuinely did not land.
+            throw new Error('40001 could not serialize access');
+          }
           rec.transitions.push({
             status,
             failureReason: fields?.failureReason,
@@ -850,6 +867,39 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
    * cap — must still be a full failure WITH the member email. The two arms above
    * are narrow exceptions, not a new default.
    */
+  /**
+   * Round 3 finding 3-15 — `onResolveFailure` awaited `failTerminally` and threw
+   * its Result away, and `failTerminally` returned the SAME `err(error)` whether
+   * the terminal write committed or not. So a broadcast whose terminal write
+   * kept failing was reported as `broadcast_audience_too_large`, which the cron
+   * counts `permanent_failed` — the bucket meaning "finished, nothing left to
+   * do", so no alert could fire — while the row sat `approved` and was re-claimed
+   * every five minutes for ever. That is the exact failure mode
+   * `onResolveFailure`'s own docblock says it exists to remove.
+   *
+   * The assertion is about the KIND the caller sees, because that kind is the
+   * cron's bucket, and the bucket is what decides whether anyone is told.
+   */
+  it('a terminal write that does NOT commit is reported as transient, not as "done"', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      transitionThrowsOn: 'failed_to_dispatch',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // NOT `broadcast_audience_too_large` — that reaches the cron's
+    // `permanent_failed` arm, whose comment promises the row has already been
+    // moved and audited. It has not.
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.transitions).toHaveLength(0);
+    // And the member is not told a broadcast failed when nothing was recorded —
+    // a concurrent cancel is the likeliest cause of the write failing.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
   it('an ordinary permanent 4xx still fails terminally AND still tells the member', async () => {
     const { deps, rec } = makeDeps({
       ...POLLING,

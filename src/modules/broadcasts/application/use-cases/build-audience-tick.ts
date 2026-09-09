@@ -67,7 +67,7 @@ import type { ClockPort } from '../ports/clock-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
-import type { ResolvedOrphan } from './resolve-segment-recipients';
+import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-recipients';
 
 /**
  * FR-044 (f). Measured from the SUBMIT, not from `scheduled_for`: a broadcast
@@ -164,10 +164,30 @@ export interface ResolvedAudience {
   readonly droppedByPreference: number;
 }
 
+/**
+ * What `deps.resolveRecipients` can answer with.
+ *
+ * **Round 3 finding 3-2 — this used to end in `| { readonly kind: string }`,
+ * and that open member is what let the bug below typecheck.** With it present,
+ * comparing `e.kind` against ANY string literal compiles, so
+ * `mapResolveError` matched `broadcast_audience_post_suppression_empty` — a
+ * kind the resolver never returns, produced only by
+ * `dispatchScheduledBroadcast` as its OUTPUT — and the resolver's real
+ * `broadcast_empty_segment_blocked` fell through to `dispatch.server_error`.
+ * The cron then classified an emptied audience as transient and re-claimed the
+ * row every five minutes for ever, with no terminal state, no audit row and no
+ * member email: verbatim the defect `onResolveFailure`'s docblock says it
+ * removed. It was removed for `too_large` only.
+ *
+ * It is now the resolver's OWN union plus the one kind the composition root
+ * adds, so `tsc` enumerates the arms again and an impossible comparison is a
+ * compile error. Same class as `return _exhaustive` — an escape hatch that
+ * stops the compiler being the thing that finds this.
+ */
 export type ResolveAudienceError =
-  | { readonly kind: 'broadcast_audience_too_large'; readonly count: number; readonly cap: number }
-  | { readonly kind: 'broadcast_audience_post_suppression_empty' }
-  | { readonly kind: string };
+  | ResolveSegmentError
+  /** Added by the composition root when the row's own `segment_params` will not parse. */
+  | { readonly kind: 'malformed_segment' };
 
 export interface BuildAudienceTickDeps {
   readonly tenant: TenantContext;
@@ -841,7 +861,19 @@ async function failTerminally(
       },
       'broadcasts.audience_import.cleanup_failed',
     );
-    return err(error);
+    // Round 3 finding 3-15 — this used to return `err(error)`, i.e. the SAME
+    // value as the success path below, so no caller could tell a recorded
+    // terminal state from one that never committed. The cron counts every
+    // terminal kind as `permanent_failed` — the bucket meaning "finished,
+    // nothing left to do", so no alert fires — while the row was still
+    // `approved` and re-refused every five minutes.
+    //
+    // `dispatch.server_error` is the honest answer: the write did not land, the
+    // row is where it was, and the next tick should try again. If a concurrent
+    // cancel is what actually won, that next tick reads a non-`approved` status
+    // and reports `concurrent_skip`, which costs one wasted poll and lies to
+    // nobody.
+    return err({ kind: 'dispatch.server_error', message: 'terminal_write_failed' });
   }
 
   // FR-021 / AS2, after the tx commits. Best-effort by design — a bounced
@@ -889,7 +921,7 @@ async function onResolveFailure(
     // but make the STATE terminal and leave a trail on the way out. The audit
     // reason names the actual cause; routing both through one reason would put a
     // sentence in an append-only row that is not true of the broadcast.
-    await failTerminally(deps, input, broadcast, {
+    const terminal = await failTerminally(deps, input, broadcast, {
       kind: 'audience_import_failed',
       reason:
         mapped.kind === 'broadcast_audience_too_large'
@@ -899,6 +931,20 @@ async function onResolveFailure(
       observed: mapped.kind === 'broadcast_audience_too_large' ? mapped.count : null,
       expected: mapped.kind === 'broadcast_audience_too_large' ? mapped.cap : null,
     });
+    // Round 3 finding 3-15 — this used to `await failTerminally(...)` and DISCARD
+    // its Result while the `malformed_segment` arm below `return`ed it: two arms
+    // of one function disagreeing about whether the terminal write may fail
+    // silently. When it fails (a serialization failure, a statement timeout, an
+    // aborted audit INSERT) `failTerminally` logs `cleanup_failed` and returns
+    // `err`. Discarding that reported `broadcast_audience_too_large` anyway,
+    // which the cron counts as `permanent_failed` — the bucket meaning "finished,
+    // nothing left to do", so no alert can fire — while the row was still
+    // `approved` and re-refused every five minutes.
+    //
+    // The caller-visible kind is still `mapped` on SUCCESS, because the cron's
+    // arms and alerts read it; only a FAILED terminal write now surfaces as
+    // itself.
+    if (!terminal.ok && terminal.error.kind === 'dispatch.server_error') return terminal;
     return err(mapped);
   }
 
@@ -923,12 +969,28 @@ async function onResolveFailure(
  * pushed, so the cron's existing arms and alerts keep working unchanged.
  */
 function mapResolveError(e: ResolveAudienceError): BuildAudienceTickError {
-  if (e.kind === 'broadcast_audience_too_large') {
-    const t = e as { count: number; cap: number };
-    return { kind: 'broadcast_audience_too_large', count: t.count, cap: t.cap };
+  switch (e.kind) {
+    case 'broadcast_audience_too_large':
+      return { kind: 'broadcast_audience_too_large', count: e.count, cap: e.cap };
+    case 'broadcast_empty_segment_blocked':
+      // The resolver's INPUT kind maps to the legacy path's OUTPUT kind on
+      // purpose: the cron's switch and its alerts read the latter, and forking
+      // them would fork the alerting for no gain. What was wrong before was
+      // comparing the input against the output.
+      return { kind: 'broadcast_audience_post_suppression_empty' };
+    case 'resolve.server_error':
+      return { kind: 'dispatch.server_error', message: e.message };
+    case 'malformed_segment':
+      return { kind: 'dispatch.server_error', message: 'malformed_segment' };
+    default: {
+      // `void`, never `return _exhaustive` — that idiom returns the VALUE at
+      // runtime, which is truthy, so a genuinely new kind would be silently
+      // treated as a real error object. The safe answer here is the transient
+      // one: the row stays `approved` and a human sees the unrouted kind in the
+      // cron's `unknown_error` log rather than a terminal state nobody chose.
+      const _exhaustive: never = e;
+      void _exhaustive;
+      return { kind: 'dispatch.server_error', message: 'unrouted_resolve_error' };
+    }
   }
-  if (e.kind === 'broadcast_audience_post_suppression_empty') {
-    return { kind: 'broadcast_audience_post_suppression_empty' };
-  }
-  return { kind: 'dispatch.server_error', message: e.kind };
 }
