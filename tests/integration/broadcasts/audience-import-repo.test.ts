@@ -260,14 +260,34 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const broadcastId = asBroadcastId(raw);
     const slug = asTenantContext(TEST_TENANT).slug;
 
+    const readSubmitted = async (): Promise<string> => {
+      const rows = (await runInTenant(asTenantContext(TEST_TENANT), async (tx) =>
+        tx.execute(sql`
+          SELECT audience_import_submitted_at::text AS ts
+          FROM broadcasts
+          WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`),
+      )) as unknown as Array<{ ts: string }>;
+      return rows[0]!.ts;
+    };
+
     await repo.withTx(async (tx) => {
       await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
     });
+    const firstStamp = await readSubmitted();
+
     await repo.withTx(async (tx) => {
       await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
     });
 
     expect((await readImportCols(raw)).audience_import_id).toBe('imp_first');
+    // Round 4 F10 — the assertion this case was missing, and the reason it was
+    // called out as pinning an unreachable scenario: it only checked the ID, so
+    // it passed while the re-attach RESET `audience_import_submitted_at` to a
+    // fresh `now()`. `IMPORT_STUCK_AFTER_MS` is measured from that column, so a
+    // re-attach moved the 30-minute deadline — and an earlier commit on this same
+    // branch had just added a precondition to stop the SIBLING stamp doing
+    // exactly that. `COALESCE` keeps the first value.
+    expect(await readSubmitted()).toBe(firstStamp);
   }, 30_000);
 
   it('attaching a DIFFERENT import id over an existing one fails loudly', async () => {

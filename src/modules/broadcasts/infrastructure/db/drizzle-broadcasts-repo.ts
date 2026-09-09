@@ -873,7 +873,20 @@ export function makeDrizzleBroadcastsRepo(
           // Vercel instances. Two Node clocks compared by a DB constraint is a
           // 23514 on a semantically correct write. `markAudienceDeletedInTx`, one
           // method away, already did this.
-          audienceImportSubmittedAt: sql`now()`,
+          // Round 4 F10 — `COALESCE`, not a bare `now()`. This wrote a FRESH
+          // timestamp on every call, so a re-attach RESET the 30-minute stuck
+          // clock (`IMPORT_STUCK_AFTER_MS` is measured from this column) — while
+          // an earlier commit on this same branch added a precondition
+          // specifically to stop `markAudienceImportCompleted` overwriting ITS
+          // stamp. The asymmetry was accidental.
+          //
+          // A re-attach is not reachable today: `buildAudienceTick` calls
+          // `submitImport` only when `audienceImportId === null`. `COALESCE`
+          // rather than a refusal keeps the method idempotent for the retry that
+          // IS reachable — the attach tx rolling back, leaving both columns null
+          // — and makes the stamp answer "when did we first hand this to the
+          // provider", which is the only question the stuck rule asks of it.
+          audienceImportSubmittedAt: sql`COALESCE(${broadcasts.audienceImportSubmittedAt}, now())`,
           updatedAt: new Date(),
         })
         .where(
