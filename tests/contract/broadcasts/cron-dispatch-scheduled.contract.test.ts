@@ -21,6 +21,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { err } from '@/lib/result';
+import { logger } from '@/lib/logger';
 
 const runInTenantMock = vi.fn();
 const isF71aUs1EnabledMock = vi.fn(() => true);
@@ -169,6 +170,57 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     // Review errors HIGH-4 — the alarm for a schedule slipping tick after tick.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledTimes(1);
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant');
+  });
+
+  /**
+   * Round 4 L3 + L4 — the two halves of what an operator can actually read when
+   * a tick cannot build its audience.
+   *
+   * L4 is the SECOND SENTENCE of round-3 finding 3-13, which the round-3 ledger
+   * recorded as fully closed (`review-20260909-092000.md:153`) while only the
+   * first was addressed. The import arm incremented
+   * `broadcasts.dispatch_resolve_failed.total` and logged NOTHING, so a Resend
+   * 5xx raised a counter whose runbook triage tree is F3 pages / Neon /
+   * opt-out lookup, with no line on that leg to correct the reading.
+   *
+   * L3 is why the field is `errClass` and not `reason`: `reason` and `*.reason`
+   * are REDACT_PATHS (`logger.ts:332`), deliberately broad because free text
+   * here can carry a Neon error's bound parameters — member addresses. The
+   * legacy arm printed `reason:"[REDACTED]"` for exactly that reason. Renaming
+   * the key would have un-redacted the address; the class is the bounded half.
+   */
+  it('Round 4 L3/L4 — the import arm logs a bounded errClass, and no free text reaches the log', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    buildAudienceTickMock.mockResolvedValue(
+      err({
+        kind: 'dispatch.server_error',
+        // A realistic Neon message: the bound parameter is a member address.
+        message: 'error: relation "contacts" — params: [alice@example.com]',
+        errClass: 'NeonDbError',
+      }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['retryable']).toBe(1);
+    expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledTimes(1);
+
+    const warn = vi
+      .mocked(logger.warn)
+      .mock.calls.find(([, msg]) => msg === 'cron.broadcasts.dispatch.server_error');
+    expect(warn, 'the import arm must LOG, not only count (3-13 second half)').toBeDefined();
+
+    const fields = warn?.[0] as Record<string, unknown>;
+    expect(fields['errClass']).toBe('NeonDbError');
+    // The two things that must never come back: a key the redactor blanks, and
+    // the address itself anywhere in the line.
+    expect(fields).not.toHaveProperty('reason');
+    expect(JSON.stringify(fields)).not.toContain('alice@example.com');
   });
 
   /**

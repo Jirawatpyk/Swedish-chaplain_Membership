@@ -1442,7 +1442,37 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
     const result = await resolveSegmentRecipients(deps, input());
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toEqual({ kind: 'resolve.server_error', message: 'unknown error' });
+    // Round 4 L3 — `errClass` joined this error so the cron has something
+    // loggable: `message` is free text and `reason`/`*.reason` are REDACT_PATHS
+    // (a Neon message carries bound parameters, i.e. member addresses), so the
+    // cron's warn line printed `[REDACTED]` and told an operator nothing.
+    // `'unknown'` here is `errKind`'s honest answer for a thrown non-Error.
+    expect(result.error).toEqual({
+      kind: 'resolve.server_error',
+      message: 'unknown error',
+      errClass: 'unknown',
+    });
+  });
+
+  it('Round 4 L3 — a thrown Error carries its CLASS for the log, while the message stays out of it', async () => {
+    const deps = makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c-p1', 'p1@example.com')] });
+    class NeonDbError extends Error {}
+    deps.membersBridge.getContactsBySegment = async () => {
+      // A realistic shape: the bound parameter is a member address, which is
+      // exactly why `message` must never reach a log unredacted.
+      throw new NeonDbError('relation "contacts" — params: [alice@example.com]');
+    };
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    if (result.error.kind !== 'resolve.server_error') throw new Error('wrong kind');
+    // The class is the bounded discriminator the cron logs — a DB blip, our own
+    // TypeError, or the network are three different on-call responses.
+    expect(result.error.errClass).toBe('NeonDbError');
+    // The message is still carried for callers that persist it; it is the LOG
+    // that must not print it. Pinned so a future change cannot quietly promote
+    // the free text into the bounded field.
+    expect(result.error.errClass).not.toContain('alice@example.com');
   });
 
 });

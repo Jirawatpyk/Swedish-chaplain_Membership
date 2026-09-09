@@ -203,7 +203,12 @@ export type BuildAudienceTickError =
       readonly expected: number | null;
     }
   | { readonly kind: 'audience_import_stuck'; readonly importId: string; readonly ageMs: number }
-  | { readonly kind: 'dispatch.server_error'; readonly message: string };
+  | {
+      readonly kind: 'dispatch.server_error';
+      readonly message: string;
+      /** Round 4 L3 — the loggable class; see `resolve.server_error`'s docblock. */
+      readonly errClass?: string;
+    };
 
 /**
  * What the resolver answers.
@@ -1493,7 +1498,13 @@ function mapResolveError(e: ResolveAudienceError): BuildAudienceTickError {
       // comparing the input against the output.
       return { kind: 'broadcast_audience_post_suppression_empty' };
     case 'resolve.server_error':
-      return { kind: 'dispatch.server_error', message: e.message };
+      // Round 4 L3 — forward the class alongside the message. The message is
+      // redacted in logs; the class is what the cron can actually print.
+      return {
+        kind: 'dispatch.server_error',
+        message: e.message,
+        ...(e.errClass === undefined ? {} : { errClass: e.errClass }),
+      };
     case 'malformed_segment':
       return { kind: 'dispatch.server_error', message: 'malformed_segment' };
     default: {

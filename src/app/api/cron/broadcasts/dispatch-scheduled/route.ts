@@ -287,6 +287,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               // Transient: the row stays `approved` and the next tick retries.
               summary.retryable++;
               broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+              // Round 4 L4 — this arm had NO log line, only the counter. That
+              // is the second half of round-3 finding 3-13, and the round-3
+              // ledger recorded 3-13 as fully CLOSED when only its first
+              // sentence was addressed (`review-20260909-092000.md:153` maps it
+              // to `aeb8d42ce`; line 114 of the same file proves the "half"
+              // notation was available and unused).
+              //
+              // The consequence: `broadcasts.dispatch_resolve_failed.total`
+              // alarms at >0 sustained 15 min and routes on-call to
+              // `broadcast-audience-build.md` § C, whose triage tree is F3
+              // pages / Neon / opt-out lookup — while the same counter also
+              // fires for every Resend 5xx/429. With no log line there was
+              // nothing on this leg to correct that reading. The legacy arm
+              // below has always had one.
+              logger.warn(
+                {
+                  tenantId: tenant.slug,
+                  broadcastId: row.broadcast_id,
+                  errClass: built.error.errClass ?? 'unclassified',
+                },
+                'cron.broadcasts.dispatch.server_error',
+              );
               break;
             case 'audience_import_failed':
             case 'audience_import_stuck':
@@ -357,7 +379,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                reason: result.error.message,
+                // Round 4 L3 — was `reason: result.error.message`, and `reason`
+                // is a REDACT_PATH (`logger.ts:332`), deliberately broad because
+                // free text on this module can carry a Neon error's bound
+                // parameters — member addresses. So this line printed
+                // `reason:"[REDACTED]"` and the leg that runs in production had
+                // NO diagnostic at all.
+                //
+                // Renaming the key would have un-redacted the free text, which
+                // is the wrong direction. `errClass` is the bounded half,
+                // carried from the resolver's catch: `NeonDbError` (a DB blip),
+                // `TypeError` (our bug), a fetch error (the network).
+                errClass: result.error.errClass ?? 'unclassified',
               },
               'cron.broadcasts.dispatch.server_error',
             );
@@ -368,8 +401,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
+                // Round 4 L3 — `reason: result.error.reason` removed. It is
+                // Resend's own response text, so `reason`/`*.reason` redacts it
+                // and the line printed `[REDACTED]`; `subKind` already carries
+                // the classification an operator acts on (network / timeout /
+                // server_5xx / api), so nothing readable is lost.
                 subKind: result.error.subKind,
-                reason: result.error.reason,
               },
               'cron.broadcasts.dispatch.retryable',
             );

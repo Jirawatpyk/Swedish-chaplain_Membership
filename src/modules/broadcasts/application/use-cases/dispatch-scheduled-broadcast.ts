@@ -99,7 +99,12 @@ export type DispatchScheduledBroadcastError =
       readonly kind: 'broadcast_failed_to_dispatch';
       readonly reason: string;
     }
-  | { readonly kind: 'dispatch.server_error'; readonly message: string };
+  | {
+      readonly kind: 'dispatch.server_error';
+      readonly message: string;
+      /** Round 4 L3 — the loggable class; see `resolve.server_error`'s docblock. */
+      readonly errClass?: string;
+    };
 
 export interface DispatchScheduledBroadcastDeps {
   readonly tenant: TenantContext;
@@ -347,6 +352,10 @@ export async function dispatchScheduledBroadcast(
     return err({
       kind: 'dispatch.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
+      // Round 4 L3 — `message` is REDACTED in logs (it can carry a Neon error's
+      // bound parameters, i.e. member addresses). The class is safe and is what
+      // separates a DB blip from our own TypeError.
+      errClass: errKind(e),
     });
   }
 
@@ -426,6 +435,10 @@ export async function dispatchScheduledBroadcast(
     return err({
       kind: 'dispatch.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
+      // Round 4 L3 — `message` is REDACTED in logs (it can carry a Neon error's
+      // bound parameters, i.e. member addresses). The class is safe and is what
+      // separates a DB blip from our own TypeError.
+      errClass: errKind(e),
     });
   }
 
