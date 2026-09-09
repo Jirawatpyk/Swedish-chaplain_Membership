@@ -156,7 +156,14 @@ function makeDeps(opts: {
    * the repo throws after probing the row; `other` is anything else, which must
    * NOT be swallowed into a benign bucket.
    */
-  readonly casThrowOn?: 'attachAudienceId' | 'attachAudienceImport';
+  /**
+   * Round 4 T4/M7 — `attachResendIds` added. It is the POST-SEND write, so a
+   * failure there is the only way to reach `sent_but_row_unattachable`, and until
+   * F2 made it throw a typed error that branch was unreachable: `viaRepoConcurrency`
+   * rethrows anything untyped, so the throw escaped the use case entirely and the
+   * cron counted `uncaught_error`. `grep sent_but_row_unattachable tests/` was 0.
+   */
+  readonly casThrowOn?: 'attachAudienceId' | 'attachAudienceImport' | 'attachResendIds';
   readonly casThrow?: 'concurrent' | 'not_found' | 'other';
   /** Round 3 finding 3-15 — make the TERMINAL write itself fail. */
   readonly transitionThrowsOn?: 'failed_to_dispatch' | 'sending';
@@ -168,6 +175,13 @@ function makeDeps(opts: {
   readonly localeLookupThrows?: boolean;
   readonly auditThrowsAlways?: boolean;
   readonly nullScheduledFor?: boolean;
+  /**
+   * Round 4 T4/M11 — overridable so a SEND-NOW row can be aged past the budget
+   * through the `approvedAt` fallback. It was pinned to `NOW`, so with
+   * `nullScheduledFor` the epoch was always "just now" and the budget branch was
+   * unreachable — which is why the mutant that deletes the fallbacks survived.
+   */
+  readonly approvedAt?: Date;
   /** Round 3 finding 3-7 — move the row's budget epoch to exercise FR-021. */
   readonly scheduledFor?: Date;
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
@@ -200,7 +214,7 @@ function makeDeps(opts: {
     // so the fixture carries all three — omitting the fallbacks would make a
     // send-now row (scheduledFor null) fall through to `undefined` and exempt
     // itself from the budget, which is the defect one row narrower.
-    approvedAt: NOW,
+    approvedAt: opts.approvedAt ?? NOW,
     createdAt: NOW,
     segmentType: 'all_members' as const,
     segmentParams: null,
@@ -229,7 +243,9 @@ function makeDeps(opts: {
     }
   }
 
-  function maybeCasThrow(m: 'attachAudienceId' | 'attachAudienceImport'): void {
+  function maybeCasThrow(
+    m: 'attachAudienceId' | 'attachAudienceImport' | 'attachResendIds',
+  ): void {
     if (opts.casThrowOn !== m) return;
     if (opts.casThrow === 'not_found') {
       throw new BroadcastNotFoundError(tenant.slug, BROADCAST_ID);
@@ -354,6 +370,7 @@ function makeDeps(opts: {
         },
         async attachResendIds(tx: unknown, _t: unknown, _b: unknown, _a: string, rbId: string) {
           rec.resendIdWrites.push({ resendBroadcastId: rbId, txId: (tx as { txId?: number } | null)?.txId });
+          maybeCasThrow('attachResendIds');
         },
         async applyTransition(
           tx: unknown,
@@ -1065,6 +1082,75 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
    * method unstubbed, `viaGateway` caught a "not a function" TypeError and every
    * send in this file silently took THIS branch.
    */
+  /**
+   * Round 4 T4 / mutant M7 — the branch a reviewer's mutation survived because
+   * NOTHING drove it.
+   *
+   * `!idsAttached.ok` guards the state that matters most on this whole path: the
+   * mail is OUT and the row it belongs to is gone (an erasure cascade between the
+   * claim query and the post-send write). Round 4's reviewer disabled the guard
+   * entirely and all 71 cases still passed.
+   *
+   * It was unreachable, not merely untested: `attachResendIds` threw a BARE
+   * `Error`, and `viaRepoConcurrency` converts only the two typed repo errors and
+   * RETHROWS everything else — so the throw escaped `buildAudienceTick`, the cron
+   * counted `uncaught_error`, and the `severity: 'critical'` log could never
+   * print. Round 4 F2 gave that method `throwConcurrentMutation`; this is what
+   * makes the fix checkable end to end.
+   */
+  it('T4/M7 — the row vanishing AFTER the send is a critical, not an uncaught throw', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      casThrowOn: 'attachResendIds',
+      casThrow: 'not_found',
+    });
+
+    // It must NOT escape: an uncaught throw is what the cron used to see.
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_not_found');
+    // The send happened — that is the whole reason this needs its own signal
+    // rather than being reported as a retryable write failure.
+    expect(rec.sends).toHaveLength(1);
+    // And no terminal state is invented for a row that no longer exists.
+    expect(rec.transitions).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 T4 / mutant M11 — `budgetEpoch` losing its fallbacks.
+   *
+   * `scheduledFor ?? approvedAt ?? createdAt`. A send-now broadcast has
+   * `scheduledFor === null`, so with the fallbacks gone the epoch is `undefined`,
+   * `new Date(undefined).getTime()` is NaN, every comparison against NaN is false
+   * — and the row is EXEMPT FROM THE BUDGET FOR EVER. The code's own comment
+   * calls that "the same 'no bound at all' defect one row narrower".
+   *
+   * The mutant survived 71/71 because no case drove a null `scheduledFor` this
+   * far; the `nullScheduledFor` option existed and was used once, on a path that
+   * never reaches the budget. Round 4's other half of this: the sibling harness's
+   * fixture omitted all THREE fields, so the epoch was NaN there for every case.
+   */
+  it('T4/M11 — a SEND-NOW broadcast still honours the budget, via the approvedAt fallback', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'server_5xx' },
+      // The admin hit "approve & send now", so there is no schedule to measure
+      // from — `approvedAt` is the eligibility moment and must be used.
+      nullScheduledFor: true,
+      approvedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it('an unverifiable audience count proceeds rather than killing a legitimate send — AND raises the alert', async () => {
     const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
     const { deps, rec } = makeDeps({
