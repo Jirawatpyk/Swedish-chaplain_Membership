@@ -44,10 +44,25 @@ const NOW = new Date('2026-09-08T12:00:00Z');
 const RECIPIENTS = ['a@example.com', 'b@example.com', 'c@example.com'];
 
 /** A thrown gateway error, in the shape the Infrastructure adapter throws. */
-function gatewayThrow(kind: string, reason = 'boom'): Error {
-  const e = new Error(reason) as Error & { kind: string; reason: string };
+function gatewayThrow(
+  kind: string,
+  reason = 'boom',
+  extra: { resourceType?: 'audience' | 'broadcast'; resourceId?: string } = {},
+): Error {
+  const e = new Error(reason) as Error & {
+    kind: string;
+    reason: string;
+    resourceType?: string;
+    resourceId?: string;
+  };
   e.kind = kind;
   e.reason = reason;
+  // `resource_missing` carries these two — the adapter sets them, and the
+  // Application layer reads the throw structurally (Principle III). A fixture
+  // that omitted them would exercise a differently-shaped error than production
+  // throws.
+  if (extra.resourceType !== undefined) e.resourceType = extra.resourceType;
+  if (extra.resourceId !== undefined) e.resourceId = extra.resourceId;
   return e;
 }
 
@@ -128,7 +143,15 @@ function makeDeps(opts: {
   };
 
   function maybeThrow(m: GatewayMethod): void {
-    if (opts.throwOn?.method === m) throw gatewayThrow(opts.throwOn.kind);
+    if (opts.throwOn?.method === m) {
+      throw gatewayThrow(
+        opts.throwOn.kind,
+        'boom',
+        opts.throwOn.kind === 'resource_missing'
+          ? { resourceType: 'broadcast', resourceId: 'rb-gone' }
+          : {},
+      );
+    }
   }
 
   function maybeCasThrow(m: 'attachAudienceId' | 'attachAudienceImport'): void {
@@ -742,4 +765,103 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
       ).rejects.toThrow(/40001/);
     });
   }
+
+  /**
+   * Round 3 finding 3-3 (= round 2's R2-8 / R2-27) — `classifyResendError`
+   * distinguishes FOUR kinds and `viaGateway` flattened them to a boolean, so
+   * `idempotency_conflict` (409) and `resource_missing` (404) both became
+   * `gateway_permanent` → `failTerminally`. The legacy path routes both
+   * specially, and has since 2026-05-02.
+   *
+   * These two cases are about what gets WRITTEN and SAID, not about the returned
+   * kind — a false row in an append-only table and a false email are the damage.
+   */
+  it('a 409 on the SEND is a success replay: the mail is out, so do not record a failure', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'idempotency_conflict' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.kind).toBe('sent');
+    // Advances to `sending` exactly as a clean send does — a replay must not
+    // leave the row `approved` for the next tick to send AGAIN.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(rec.transitions.some((t) => t.status === 'failed_to_dispatch')).toBe(false);
+    // Emitted once, not twice: the Art. 30 disclosure record must not double.
+    expect(
+      rec.audits.filter((a) => a.eventType === 'broadcast_send_started'),
+    ).toHaveLength(1);
+    // And nobody is told a delivered broadcast failed.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('a 404 is an ops issue: terminal with its OWN audit event, and the member is NOT emailed', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    // The distinct event type is the point: grouping the audit log by
+    // `broadcast_failed_to_dispatch` must not hide a missing Resend resource
+    // among genuine dispatch failures.
+    expect(rec.audits.map((a) => a.eventType)).toContain(
+      'broadcast_resend_resource_missing',
+    );
+    expect(rec.audits.map((a) => a.eventType)).not.toContain(
+      'broadcast_failed_to_dispatch',
+    );
+    // "resource_missing is an ops-side issue requiring admin action, not member
+    // notification" — the legacy path's own words.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  /**
+   * Positive control #1: a 409 raised BEFORE `createBroadcast` has no broadcast
+   * to advance to, so it must NOT be laundered into a success. Without this, an
+   * arm that returned `ok` for every `idempotency_conflict` would pass the replay
+   * case above while reporting sends that never happened.
+   */
+  it('a 409 on createBroadcast is NOT a replay — there is nothing to advance to', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'createBroadcast', kind: 'idempotency_conflict' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  /**
+   * Positive control #2: an ordinary `permanent` 4xx — the measured Free-plan
+   * cap — must still be a full failure WITH the member email. The two arms above
+   * are narrow exceptions, not a new default.
+   */
+  it('an ordinary permanent 4xx still fails terminally AND still tells the member', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
+    expect(rec.memberEmails).toHaveLength(1);
+  });
 });

@@ -252,6 +252,23 @@ type GatewayFailure =
       readonly retryable: false;
       readonly reason: Extract<ImportFailureReason, 'gateway_permanent' | 'gateway_unknown'>;
       readonly message: string;
+      /**
+       * Round 3 finding 3-3 — the adapter's classification, carried through
+       * rather than flattened away.
+       *
+       * `classifyResendError` distinguishes four kinds, and the legacy path
+       * routes two of them SPECIALLY: `idempotency_conflict` (409) is a success
+       * replay that advances the row to `sending`, and `resource_missing` (404)
+       * gets its own audit event and deliberately does NOT email the member,
+       * because it is "an ops-side issue requiring admin action". Collapsing all
+       * of them to a boolean sent both down the `failed_to_dispatch` path: a
+       * false row in an append-only table, a member told their E-Blast did not
+       * go out, and — since `countForMemberQuota` excludes `failed_to_dispatch`
+       * — a refunded quota slot for a broadcast that was delivered.
+       */
+      readonly kind: string;
+      readonly resourceType?: 'audience' | 'broadcast' | undefined;
+      readonly resourceId?: string | undefined;
     };
 
 /**
@@ -278,6 +295,9 @@ async function viaGateway<T>(fn: () => Promise<T>): Promise<Result<T, GatewayFai
       // operator is not sent to look at Resend's status page for our bug.
       reason: shape.kind === 'unknown' ? 'gateway_unknown' : 'gateway_permanent',
       message,
+      kind: shape.kind,
+      resourceType: shape.resourceType,
+      resourceId: shape.resourceId,
     });
   }
 }
@@ -321,7 +341,17 @@ async function viaRepoConcurrency<T>(
   }
 }
 
-/** Route a classified gateway failure: retry next tick, or stop for good. */
+/**
+ * Route a classified gateway failure: retry next tick, or stop for good.
+ *
+ * Round 3 finding 3-3 — `resource_missing` is NOT "the broadcast failed". The
+ * legacy path has treated it apart since its own review rounds: the audience or
+ * broadcast resource is gone at Resend, which needs an admin to look at the
+ * account, and the member is deliberately not told because there is nothing they
+ * can do and nothing they did wrong. Folding it into `failed_to_dispatch` put a
+ * sentence in an append-only row and in a member's inbox that neither the
+ * operator nor the member could act on.
+ */
 async function onGatewayFailure(
   deps: BuildAudienceTickDeps,
   input: BuildAudienceTickInput,
@@ -332,6 +362,36 @@ async function onGatewayFailure(
   if (failure.retryable) {
     return err({ kind: 'dispatch.server_error', message: failure.message });
   }
+
+  if (failure.kind === 'resource_missing') {
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId,
+        importId,
+        resourceType: failure.resourceType ?? 'broadcast',
+        resourceId: failure.resourceId ?? (input.broadcastId as unknown as string),
+      },
+      'broadcasts.audience_import.resend_resource_missing',
+    );
+    return failTerminally(
+      deps,
+      input,
+      broadcast,
+      {
+        kind: 'audience_import_failed',
+        reason: failure.reason,
+        importId,
+        observed: null,
+        expected: null,
+      },
+      {
+        auditEventType: 'broadcast_resend_resource_missing',
+        notifyMember: false,
+      },
+    );
+  }
+
   return failTerminally(deps, input, broadcast, {
     kind: 'audience_import_failed',
     reason: failure.reason,
@@ -559,23 +619,55 @@ async function confirmImport(
   if (!createdRb.ok) return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);
   const rb = createdRb.value;
 
-  // Same idempotency key shape the single-tick path uses, so a replayed tick
-  // cannot double-send: Resend rejects the second call with a 409.
+  // Same idempotency key shape the single-tick path uses.
   //
-  // ⚠️ KNOWN GAP, tracked as S8 in reviews/review-20260908-223000.md and
-  // deliberately NOT closed here. Nothing in this file reads
-  // `audience_import_completed_at` as a guard, and there is no
-  // `idempotency_conflict` replay arm, so a crash between this call and the tx
-  // below leaves the row `approved` with the mail already out. Persisting the
-  // Resend broadcast id BEFORE the send changes the two-tick contract and
-  // deserves its own review round rather than riding along with this one.
+  // ⚠️ S8, NARROWED — and the narrowing matters, because the sentence that used
+  // to stand here ("Resend rejects the second call with a 409") was FALSE.
+  // Round 3 finding 3-1: `resend@4.8.0`'s `broadcasts.send` calls `post()` with
+  // two arguments and drops the key entirely, so no 409 was ever possible. The
+  // gateway now sends the key via `post()`'s third argument, which makes the
+  // WITHIN-TICK replay — `withRetry` re-firing after a lost response — safe, and
+  // makes the arm below reachable for the first time.
+  //
+  // **Still open, and a FLAG-FLIP blocker rather than a merge blocker** (this
+  // whole use case is dark at merge: `FEATURE_F7_IMPORT_AUDIENCE` defaults
+  // false): `createBroadcast` above carries NO key, so a tick that dies between
+  // the send and the tx below re-enters, mints a NEW Resend broadcast resource,
+  // and sends to a different path where no key can dedupe. Closing that means
+  // persisting `resend_broadcast_id` BEFORE the send so a re-entered tick reuses
+  // the resource — a change to the two-tick contract, tracked with the flip
+  // preconditions rather than ridden along here.
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
       rb.broadcastId,
       `broadcast-${deps.tenant.slug}-${input.broadcastId as unknown as string}`,
     ),
   );
-  if (!sent.ok) return onGatewayFailure(deps, input, broadcast, sent.error, importId);
+  // A 409 on the SEND means Resend already accepted this exact dispatch — the
+  // mail is out. The legacy path has treated that as a success replay since
+  // 2026-05-02; failing terminally here would write `failed_to_dispatch` for a
+  // delivered broadcast, email the member that it did not go out, and refund the
+  // quota slot (`countForMemberQuota` excludes `failed_to_dispatch`).
+  //
+  // Only on the send, and only with a broadcast id in hand: a 409 raised earlier
+  // leaves nothing to advance to, which is exactly the distinction
+  // `idempotency_conflict_pre_send` draws on the legacy leg.
+  const sentOrReplayed =
+    sent.ok || (!sent.error.retryable && sent.error.kind === 'idempotency_conflict');
+  if (!sentOrReplayed) {
+    return onGatewayFailure(deps, input, broadcast, sent.error as GatewayFailure, importId);
+  }
+  if (!sent.ok) {
+    logger.warn(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId,
+        resendBroadcastId: rb.broadcastId,
+        importId,
+      },
+      'broadcasts.audience_import.send_idempotency_replay',
+    );
+  }
 
   await deps.broadcastsRepo.withTx(async (tx) => {
     await deps.broadcastsRepo.attachResendIds(
@@ -663,7 +755,21 @@ async function failTerminally(
     BuildAudienceTickError,
     { kind: 'audience_import_failed' } | { kind: 'audience_import_stuck' }
   >,
+  /**
+   * Round 3 finding 3-3. Two of the four gateway kinds are not "this broadcast
+   * failed" in the sense the member email describes, and one of them needs its
+   * own event type so an operator grouping the audit log can see it at all.
+   *
+   * Defaults reproduce the previous behaviour exactly, so every existing caller
+   * is unchanged.
+   */
+  opts: {
+    readonly auditEventType?: 'broadcast_failed_to_dispatch' | 'broadcast_resend_resource_missing';
+    readonly notifyMember?: boolean;
+  } = {},
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  const auditEventType = opts.auditEventType ?? 'broadcast_failed_to_dispatch';
+  const notifyMember = opts.notifyMember ?? true;
   const now = deps.clock.now();
   const reason =
     error.kind === 'audience_import_failed' ? error.reason : 'audience_import_stuck';
@@ -702,7 +808,7 @@ async function failTerminally(
         'approved',
       );
       await safeAuditEmit(deps.audit, tx, {
-        eventType: 'broadcast_failed_to_dispatch',
+        eventType: auditEventType,
         tenantId: deps.tenant.slug,
         // The cron is the actor. `system:cron` is the same literal the
         // single-tick path stamps, so the two paths are indistinguishable in the
@@ -720,7 +826,7 @@ async function failTerminally(
       // Without these the failure rate reads 0 through a total outage and the
       // dispatch dashboard shows nothing happening while broadcasts die.
       broadcastsMetrics.failedToDispatchCount(deps.tenant.slug, 'app_error');
-      broadcastsMetrics.auditEmitCount(deps.tenant.slug, 'broadcast_failed_to_dispatch');
+      broadcastsMetrics.auditEmitCount(deps.tenant.slug, auditEventType);
     });
   } catch (cleanupErr) {
     // Mirrors the single-tick path: if the transition itself failed, a concurrent
@@ -740,7 +846,15 @@ async function failTerminally(
 
   // FR-021 / AS2, after the tx commits. Best-effort by design — a bounced
   // notification must not roll back a recorded terminal state.
-  await enqueueDispatchFailureNotification({ deps, broadcast, reason, now });
+  //
+  // Suppressed for `resource_missing`: the legacy path states the rule as
+  // "resource_missing is an ops-side issue requiring admin action, not member
+  // notification", and telling a member their E-Blast failed for a reason they
+  // cannot act on is worse than silence — the same judgement the cleanup-failed
+  // branch above already makes.
+  if (notifyMember) {
+    await enqueueDispatchFailureNotification({ deps, broadcast, reason, now });
+  }
 
   return err(error);
 }

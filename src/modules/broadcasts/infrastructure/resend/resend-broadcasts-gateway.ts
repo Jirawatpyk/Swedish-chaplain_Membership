@@ -359,12 +359,38 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     await withRetry(
       async () => {
         const sdk = client();
-        // Resend SDK accepts idempotencyKey as a request option.
-        const result = (await sdk.broadcasts.send(broadcastId, {
+        // ⚠️ NOT `sdk.broadcasts.send(...)`. Round 3 finding 3-1: in
+        // resend@4.8.0 that helper is
+        //   `send(id, payload) => this.resend.post(path, {scheduled_at})`
+        // — TWO arguments (`node_modules/resend/dist/index.js:252`). The
+        // `Idempotency-Key` header is set ONLY from `post()`'s THIRD `options`
+        // argument (`:599`), which the sibling `broadcasts.create` does pass and
+        // `send` does not. Its own `.d.ts` declares an unused
+        // `SendBroadcastRequestOptions extends PostOptions`, so the omission
+        // looks like an oversight upstream rather than a design.
+        //
+        // The key was therefore NEVER transmitted, and the previous line here
+        // asserted the opposite ("Resend SDK accepts idempotencyKey as a request
+        // option") while an `as Parameters<...>[1]` cast suppressed the tsc
+        // error that would have said so. A comment plus a cast is how a missing
+        // guarantee survives a green suite.
+        //
+        // `post<T>` is public and typed on the `Resend` class
+        // (`index.d.ts:833`), so this is the SDK's own API, not a raw fetch.
+        // Body `{}` matches what the helper sends: `{scheduled_at: undefined}`
+        // serialises to `{}`.
+        //
+        // What this closes: a `withRetry` replay INSIDE one tick — a lost
+        // response or a 5xx after Resend already accepted the send no longer
+        // re-fires the broadcast.
+        //
+        // What it does NOT close (S8, a flag-flip blocker, see
+        // `build-audience-tick.ts`): `createBroadcast` carries no key at all, so
+        // a re-entered tick mints a NEW broadcast resource and sends to a
+        // different path, where no key can help.
+        const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
           idempotencyKey,
-        } as Parameters<typeof sdk.broadcasts.send>[1])) as ResendSdkResponse<{
-          id: string;
-        }>;
+        })) as ResendSdkResponse<{ id: string }>;
         if (result.error) {
           throw classifyResendError(
             result.error ?? undefined,
