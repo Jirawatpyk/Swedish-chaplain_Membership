@@ -167,6 +167,19 @@ function makeDeps(opts: {
           rec.broadcastsCreated.push(args.audienceId);
           return { broadcastId: 'rb-1' };
         },
+        /**
+         * Round 3 finding 3-5 — the audience-membership check. NEITHER harness
+         * stubbed this, so `viaGateway` caught the "not a function" TypeError,
+         * the check degraded to its unverifiable branch, and 60 tests passed
+         * without ever exercising it. An unstubbed port method is an unexercised
+         * branch that looks like a covered one.
+         */
+        async getAudienceContactCount() {
+          return {
+            kind: 'present' as const,
+            count: RECIPIENTS.length,
+          };
+        },
         async sendBroadcast(id: string) {
           rec.sends.push(id);
         },

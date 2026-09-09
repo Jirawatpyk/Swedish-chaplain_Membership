@@ -138,6 +138,10 @@ function makeDeps(opts: {
   readonly transitionThrowsOn?: 'failed_to_dispatch' | 'sending';
   /** Round 3 finding 3-6 — a cancel landing mid-send, vs an honest tx failure. */
   readonly transitionThrowKind?: 'concurrent';
+  /** Round 3 finding 3-5 — what the Resend audience actually holds. */
+  readonly audienceContactCount?: number;
+  /** Round 3 finding 3-7 — move the row's budget epoch to exercise FR-021. */
+  readonly scheduledFor?: Date;
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
   readonly auditThrowsOn?: 'broadcast_send_started' | 'broadcast_failed_to_dispatch';
 }): { deps: unknown; rec: Recorder } {
@@ -163,7 +167,13 @@ function makeDeps(opts: {
     replyToEmail: 'reply@example.com',
     requestedByMemberId: 'm-1',
     requestedByMemberPlanIdSnapshot: 'plan-old',
-    scheduledFor: NOW,
+    scheduledFor: opts.scheduledFor ?? NOW,
+    // The legacy budget epoch order is `scheduledFor ?? approvedAt ?? createdAt`,
+    // so the fixture carries all three — omitting the fallbacks would make a
+    // send-now row (scheduledFor null) fall through to `undefined` and exempt
+    // itself from the budget, which is the defect one row narrower.
+    approvedAt: NOW,
+    createdAt: NOW,
     segmentType: 'all_members' as const,
     segmentParams: null,
     customRecipientEmails: null,
@@ -350,6 +360,19 @@ function makeDeps(opts: {
         async createBroadcast() {
           maybeThrow('createBroadcast');
           return { broadcastId: 'rb-1' };
+        },
+        /**
+         * Round 3 finding 3-5 — the audience-membership check. NEITHER harness
+         * stubbed this, so `viaGateway` caught the "not a function" TypeError,
+         * the check degraded to its unverifiable branch, and 60 tests passed
+         * without ever exercising it. An unstubbed port method is an unexercised
+         * branch that looks like a covered one.
+         */
+        async getAudienceContactCount() {
+          return {
+            kind: 'present' as const,
+            count: opts.audienceContactCount ?? RECIPIENTS.length,
+          };
         },
         async sendBroadcast(id: string) {
           maybeThrow('sendBroadcast');
@@ -757,6 +780,131 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
    * `reconcile-stuck-sending` could not see the row either, because it is not
    * `sending`.
    */
+  /**
+   * Round 3 finding 3-7 — the FR-021 wall-clock budget, which this path did not
+   * have at all.
+   *
+   * The only time bound on it was `IMPORT_STUCK_AFTER_MS`, evaluated ONLY inside
+   * the `job.status !== 'completed'` branch — which requires a SUCCESSFUL poll.
+   * A Resend 5xx on `createAudience` or `createContactImport`, or a
+   * `resolve.server_error` from a Neon blip, returned `dispatch.server_error`
+   * every tick for ever. And because a tick-1 failure never persists
+   * `audience_import_id`, such a row is invisible to BOTH the T106 gauge and the
+   * documented rollback drain, which require that column to be non-null.
+   *
+   * `dispatchBudgetExhausted` is the metric whose steady state is 0 and whose
+   * non-zero rate pages on-call. With the flag on it could never fire.
+   */
+  it('a retryable failure INSIDE the budget stays approved for the next tick', async () => {
+    const { deps, rec } = makeDeps({
+      // Scheduled 10 minutes ago — well inside the hour.
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('a retryable failure PAST the budget becomes terminal and tells the member', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable' },
+      // Scheduled just over two hours before the clock — past the 1-hour budget.
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    // FR-021: the member who submitted it finds out.
+    expect(rec.memberEmails).toHaveLength(1);
+    // The AS2 alert trigger fires — it could not before.
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Round 3 finding 3-5 — the completion rule compares numbers the import JOB
+   * reported and never looks at what the audience actually holds.
+   *
+   * `submitImport` deliberately REUSES `broadcast.resendAudienceId`,
+   * `createContactImport` posts `on_conflict=upsert`, and nothing anywhere
+   * removes a contact (`unsubscribe-recipient.ts` writes only
+   * `marketing_unsubscribes` and makes no gateway call). So: tick 1 imports
+   * {A,B,C} and dies before `attachAudienceImport` commits; C unsubscribes; tick
+   * 2 imports {A,B} into the same audience, which still holds C. failed=0,
+   * parts==total==2, total==resolvedCount==2 — every clause passes — and the send
+   * reaches all three. GDPR Art. 21 / PDPA §32.
+   */
+  it('an audience holding MORE contacts than we resolved refuses the send', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      // The unsubscribed contact C is still at the processor.
+      audienceContactCount: RECIPIENTS.length + 1,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    // Its OWN reason, not `count_mismatch` — that one compares the import job's
+    // rows, which is a different question and would send an operator to the
+    // wrong place.
+    expect(rec.transitions[0]?.failureReason).toBe('audience_membership_drift');
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    expect(row?.payload['reason']).toBe('audience_membership_drift');
+  });
+
+  it('a matching audience count sends — the check is a comparison, not a veto', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      audienceContactCount: RECIPIENTS.length,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+  });
+
+  /**
+   * The unverifiable branch, and why it PROCEEDS. A 404 on the audience or a
+   * transport blip must not kill a legitimate send — the legacy leg makes the
+   * same call for the same reason. It is on the record instead.
+   *
+   * This case is also the reason the stub above exists at all: with the port
+   * method unstubbed, `viaGateway` caught a "not a function" TypeError and every
+   * send in this file silently took THIS branch.
+   */
+  it('an unverifiable audience count proceeds rather than killing a legitimate send', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+    });
+    // Force the count call to fail without touching any other gateway method.
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+  });
+
   /**
    * Round 3 finding 3-9 — the completion stamp used to commit in its own
    * transaction BEFORE `createBroadcast`, certifying work that had not happened.

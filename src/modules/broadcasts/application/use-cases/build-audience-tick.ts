@@ -111,8 +111,26 @@ export const IMPORT_FAILURE_REASONS = [
   'malformed_segment',
   /** The audience grew past the accepted ceiling between submit and this tick. */
   'audience_too_large',
+  /**
+   * FR-021 / AS2 — an hour of retryable failures. Round 3 finding 3-7: this
+   * path had NO wall-clock budget at all, so a persistently retryable gateway
+   * or resolver failure kept the row `approved` and re-attempted every five
+   * minutes indefinitely, never terminal and the member never told.
+   */
+  'retry_budget_exhausted',
   /** Everyone in the audience is suppressed or opted out — nothing to send to. */
   'audience_post_suppression_empty',
+  /**
+   * The Resend audience holds a DIFFERENT number of contacts than we resolved.
+   *
+   * Distinct from `count_mismatch`, which compares the import JOB's row count.
+   * Round 3 finding 3-5: those are not the same question, and only this one can
+   * see a contact left behind by an earlier attempt — imports are
+   * `on_conflict=upsert` into a REUSED audience and nothing ever removes a
+   * contact, so an address that unsubscribed between two attempts is still in
+   * the audience and would still receive the broadcast.
+   */
+  'audience_membership_drift',
 ] as const;
 
 export type ImportFailureReason = (typeof IMPORT_FAILURE_REASONS)[number];
@@ -422,6 +440,87 @@ function importReasonToFailureMetric(
 }
 
 /**
+ * FR-021 / AS2 — the same 1-hour wall-clock budget the single-tick path enforces
+ * (`dispatch-scheduled-broadcast.ts:77`).
+ *
+ * **Round 3 finding 3-7 — this path had no budget at all.** The only time bound
+ * on it was `IMPORT_STUCK_AFTER_MS`, and that is evaluated ONLY inside the
+ * `job.status !== 'completed'` branch, which requires a SUCCESSFUL poll. A Resend
+ * 5xx / 429 / network failure on `createAudience` or `createContactImport`, or a
+ * `resolve.server_error` from a Neon or RLS blip, returned
+ * `dispatch.server_error` every tick for ever: never terminal, member never
+ * told, and — because a tick-1 failure never persists `audience_import_id` —
+ * invisible to BOTH the T106 gauge and the documented rollback drain, which are
+ * the same shape and require `audience_import_id IS NOT NULL`.
+ *
+ * `dispatchBudgetExhausted` is the metric whose steady state is 0 and whose
+ * non-zero rate pages on-call (`docs/observability.md` § F7 alerts). With the
+ * flag on it could never fire.
+ *
+ * Epoch order copied from the legacy path rather than simplified:
+ * `scheduledFor ?? approvedAt ?? createdAt`. A send-now row has no
+ * `scheduledFor`, and anchoring such a row on nothing would exempt it from the
+ * budget entirely — which is the same "no bound at all" defect one row narrower.
+ */
+const RETRY_BUDGET_MS = 60 * 60 * 1000;
+
+function budgetEpoch(broadcast: Broadcast): Date {
+  const b = broadcast as unknown as {
+    scheduledFor: Date | null;
+    approvedAt?: Date | null;
+    createdAt: Date;
+  };
+  return b.scheduledFor ?? b.approvedAt ?? b.createdAt;
+}
+
+/**
+ * A retryable failure, decided: retry on the next tick, or stop because the
+ * budget is spent. Returns the caller's Result either way.
+ */
+async function onRetryable(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+  message: string,
+  importId: string | null,
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  const now = deps.clock.now();
+  const epoch = budgetEpoch(broadcast);
+  const elapsedMs = now.getTime() - epoch.getTime();
+  if (elapsedMs <= RETRY_BUDGET_MS) {
+    return err({ kind: 'dispatch.server_error', message });
+  }
+
+  logger.error(
+    {
+      tenantId: deps.tenant.slug,
+      broadcastId: input.broadcastId,
+      importId,
+      elapsedMs,
+      epochForBudget: epoch.toISOString(),
+      sendMode:
+        (broadcast as unknown as { scheduledFor: Date | null }).scheduledFor === null
+          ? 'send_now'
+          : 'scheduled',
+      severity: 'critical',
+    },
+    'broadcasts.audience_import.retry_budget_exhausted',
+  );
+  // The AS2 alert trigger. `api` matches what the legacy path reports for a
+  // provider-side refusal; the precise transport class is not carried this far,
+  // and inventing one would put a sub-kind on the series that nobody observed.
+  broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, 'api');
+
+  return failTerminally(deps, input, broadcast, {
+    kind: 'audience_import_failed',
+    reason: 'retry_budget_exhausted',
+    importId,
+    observed: elapsedMs,
+    expected: RETRY_BUDGET_MS,
+  });
+}
+
+/**
  * Route a classified gateway failure: retry next tick, or stop for good.
  *
  * Round 3 finding 3-3 — `resource_missing` is NOT "the broadcast failed". The
@@ -440,7 +539,7 @@ async function onGatewayFailure(
   importId: string | null,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   if (failure.retryable) {
-    return err({ kind: 'dispatch.server_error', message: failure.message });
+    return onRetryable(deps, input, broadcast, failure.message, importId);
   }
 
   if (failure.kind === 'resource_missing') {
@@ -686,6 +785,57 @@ async function confirmImport(
   }
 
   const audienceId = broadcast.resendAudienceId ?? '';
+
+  // ## Round 3 finding 3-5 — verify the AUDIENCE, not just the import job
+  //
+  // Every clause of the completion rule above compares numbers reported by the
+  // import JOB. None of them looks at what the audience actually holds, and the
+  // two can differ: `submitImport` deliberately REUSES
+  // `broadcast.resendAudienceId`, `createContactImport` posts
+  // `on_conflict=upsert`, and nothing anywhere removes a contact —
+  // `unsubscribe-recipient.ts` writes only `marketing_unsubscribes` and makes NO
+  // gateway call, so Resend still holds the contact as subscribed.
+  //
+  // Reachable without anything exotic: tick 1 creates the audience and imports
+  // {A,B,C}, then dies before `attachAudienceImport` commits. C unsubscribes.
+  // Tick 2 re-runs `submitImport`, importing {A,B} into the SAME audience, which
+  // still holds C: failed=0, parts==total==2, total==resolvedCount==2 — every
+  // clause passes — and the send reaches all three. GDPR Art. 21 / PDPA s.32.
+  //
+  // `getAudienceContactCount` was on the port and never called on this path. The
+  // legacy leg has used it for exactly this since its round-4 IMP-5, with the
+  // same two outcomes: a MISMATCH refuses, and an UNVERIFIABLE count proceeds
+  // with a forensic trail rather than killing a legitimate send.
+  const audienceCount = await viaGateway(() =>
+    deps.broadcastsGateway.getAudienceContactCount(audienceId),
+  );
+  if (audienceCount.ok && audienceCount.value.kind === 'present') {
+    if (audienceCount.value.count !== resolvedCount) {
+      return failTerminally(deps, input, broadcast, {
+        kind: 'audience_import_failed',
+        reason: 'audience_membership_drift',
+        importId,
+        observed: audienceCount.value.count,
+        expected: resolvedCount,
+      });
+    }
+  } else {
+    // 404 on the audience, or a transport failure. Proceeding is the lesser
+    // harm — refusing here would kill a legitimate send on a Resend blip — but
+    // it goes on the record, because this is the one check that can see a
+    // carried-over contact.
+    logger.warn(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId,
+        importId,
+        audienceId,
+        expectedRecipientCount: resolvedCount,
+      },
+      'broadcasts.audience_import.membership_unverifiable',
+    );
+  }
+
   const createdRb = await viaGateway(() =>
     deps.broadcastsGateway.createBroadcast({
       audienceId,
@@ -1223,7 +1373,18 @@ async function onResolveFailure(
   }
 
   // Everything else — a members-bridge throw, Neon, RLS — is genuinely
-  // transient. The row stays `approved` and the next tick retries.
+  // transient. The row stays `approved` and the next tick retries, UNTIL the
+  // FR-021 budget is spent (round 3 finding 3-7): "transient" without a bound is
+  // how a broadcast sits `approved` for ever with nobody told.
+  if (mapped.kind === 'dispatch.server_error') {
+    return onRetryable(
+      deps,
+      input,
+      broadcast,
+      mapped.message,
+      broadcast.audienceImportId,
+    );
+  }
   return err(mapped);
 }
 

@@ -6704,6 +6704,8 @@
         "malformed_segment": "den sparade målgruppen för detta utskick är ofullständig – din kammaradministratör behöver skapa den på nytt",
         "failed_rows": "vår e-postleverantör avvisade några av mottagaradresserna",
         "counts_incoherent": "mottagarlistan överfördes inte fullständigt till vår e-postleverantör",
+        "audience_membership_drift": "mottagarlistan hos vår e-postleverantör stämde inte med den vi förberedde, så vi skickade inte till en grupp du inte hade godkänt",
+        "retry_budget_exhausted": "vår e-postleverantör var oåtkomlig i mer än en timme, så vi slutade försöka i stället för att skicka vid en oväntad tidpunkt",
         "count_mismatch": "mottagarlistan ändrades medan utskicket förbereddes, så det skickades inte till en annan grupp än den du godkände",
         "provider_failed": "vår e-postleverantör kunde inte förbereda mottagarlistan",
         "gateway_permanent": "vår e-postleverantör avvisade begäran – din kammaradministratör behöver kontrollera kontot",
