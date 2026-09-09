@@ -26,6 +26,7 @@ import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -41,7 +42,32 @@ interface Recorder {
   readonly completions: number[];
   readonly transitions: Array<{ status: string }>;
   readonly audits: string[];
+  /** Round 4 T2 — FR-021 sends, which this harness could not observe at all. */
+  readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
 }
+
+/**
+ * Round 4 T2 — every port KEY required, each VALUE still loose.
+ *
+ * This harness declared `deps: unknown` and passed `deps as never` at every call
+ * site, so three required ports — `membersBridge`, `emailTransactional`,
+ * `plansBridge` — were simply ABSENT and nothing said so. Every FR-021 member
+ * notification died at `_enqueue-dispatch-failure-notification.ts:70`
+ * (`getMemberPrimaryContact is not a function`), every AS5 forensic check died at
+ * `_expired-plan-audit.ts:42`, both inside a `catch`, and the file passed with
+ * exit code 0 while emitting 7 `member_lookup_failed` lines per run.
+ *
+ * A full `BuildAudienceTickDeps` annotation is not the answer: it would force
+ * every double to implement its whole port (`BroadcastsRepo` alone is 17
+ * methods), which is exactly why the harness was `unknown` to begin with. The
+ * homomorphic mapped type keeps the values `unknown` and requires only that
+ * every key EXISTS — so a port added to the use case fails this file at compile
+ * time instead of silently taking a catch branch at runtime.
+ *
+ * See `[[reference_unstubbed_port_method_is_an_unexercised_branch]]`: this is
+ * that class, made unrepresentable rather than caught one instance at a time.
+ */
+type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 
 function makeDeps(opts: {
   /** Row already carries an import id → this tick is a POLL, not a submit. */
@@ -57,7 +83,7 @@ function makeDeps(opts: {
     failed: number;
   };
   readonly resolveFails?: 'too_large' | 'empty';
-}): { deps: unknown; rec: Recorder } {
+}): { deps: DepsWithEveryPort; rec: Recorder } {
   const rec: Recorder = {
     createdAudiences: [],
     importsSubmitted: [],
@@ -67,6 +93,7 @@ function makeDeps(opts: {
     completions: [],
     transitions: [],
     audits: [],
+    memberEmails: [],
   };
 
   const broadcast = {
@@ -187,6 +214,46 @@ function makeDeps(opts: {
       audit: {
         async emit(_tx: unknown, e: { eventType: string }) {
           rec.audits.push(e.eventType);
+        },
+      },
+      // ── Round 4 T2 — the three ports this harness never had ────────────────
+      //
+      // Their absence was not a coverage gap, it was a SILENT one: the calls
+      // threw `… is not a function` inside the use case's own catch, so the
+      // FR-021 member notification and the AS5 plan-change audit were skipped on
+      // every terminal path in this file and every case still passed.
+      //
+      // Method names are taken from the ports, not guessed. The sibling harness
+      // records a case of guessing one (`getMemberCurrentPlanId` for
+      // `getPlanForMember`) — that one failed loudly, which is the good outcome;
+      // an absent port fails silently, which is this one.
+      membersBridge: {
+        async getMemberPrimaryContact() {
+          return 'member@example.com';
+        },
+        async getMemberPreferredLocale() {
+          return 'en' as const;
+        },
+      },
+      emailTransactional: {
+        async sendMemberEmail(
+          _t: unknown,
+          m: { templateKey: string; payload: { reason?: unknown } },
+        ) {
+          rec.memberEmails.push({
+            templateKey: m.templateKey,
+            reason: m.payload.reason,
+          });
+        },
+      },
+      plansBridge: {
+        // Full `MemberPlanSummary` — planId + planCode + eblastPerYear. The
+        // sibling harness returns `ok({ planId })` only; that is invisible today
+        // because both harnesses type `deps` loosely, and it is the kind of
+        // partial double this mapped type cannot catch (it checks keys, not
+        // values). Spelled completely here so the AS5 path sees a real plan.
+        async getPlanForMember() {
+          return ok({ planId: 'plan-1', planCode: 'CORP', eblastPerYear: 12 });
         },
       },
     },

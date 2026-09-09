@@ -32,6 +32,7 @@ import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { broadcastsMetrics } from '@/lib/metrics';
 import {
   BroadcastConcurrentMutationError,
@@ -104,6 +105,19 @@ interface Recorder {
   readonly completionStamps: boolean[];
 }
 
+/**
+ * Round 4 T2 — every port KEY required, each VALUE still loose. Same guard as
+ * `build-audience-tick.test.ts`, where three ports were missing outright and the
+ * suite passed anyway. This harness already has all twelve; the type is here so
+ * a port added to the use case fails BOTH files at compile time instead of one.
+ *
+ * It deliberately checks keys, not values — a full `BuildAudienceTickDeps`
+ * annotation would force every double to implement its whole port, which is why
+ * `unknown` was chosen in the first place. So it cannot catch a partial double,
+ * only an absent port.
+ */
+type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
+
 function makeDeps(opts: {
   readonly audienceImportId?: string | null;
   readonly audienceImportSubmittedAt?: Date | null;
@@ -148,7 +162,7 @@ function makeDeps(opts: {
   readonly scheduledFor?: Date;
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
   readonly auditThrowsOn?: 'broadcast_send_started' | 'broadcast_failed_to_dispatch';
-}): { deps: unknown; rec: Recorder } {
+}): { deps: DepsWithEveryPort; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
     transitions: [],
@@ -287,7 +301,15 @@ function makeDeps(opts: {
           rec.plansChecked.push(memberId);
           // `plan-new` differs from the row's `requestedByMemberPlanIdSnapshot`
           // (`plan-old`), which is the AS5 condition.
-          return ok({ planId: 'plan-new' });
+          //
+          // Round 4 T2 — `planCode` and `eblastPerYear` added. `MemberPlanSummary`
+          // requires all three and this returned only `planId`; a real
+          // `BuildAudienceTickDeps` annotation would have rejected it, which is
+          // how the round-4 reviewer proved the harness was untyped rather than
+          // merely loosely typed. The key-only guard above cannot catch this
+          // shape — it is fixed by hand, and noted so the next reader does not
+          // assume the type is doing more than it is.
+          return ok({ planId: 'plan-new', planCode: 'CORP', eblastPerYear: 12 });
         },
       },
       broadcastsRepo: {
