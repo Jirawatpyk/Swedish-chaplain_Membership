@@ -195,7 +195,12 @@ export function EvidenceCard({
           <section aria-label={t('sections.subprocessor')} className="flex flex-col gap-2">
             <h3 className="text-sm font-semibold">{t('sections.subprocessor')}</h3>
             {row.subprocessorOutcome ? (
-              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              // Round 4 L10 — `sm:grid-cols-3` with FOUR fields put "Contacts
+              // failed" alone on a second row, and the fourth field used to
+              // appear only for post-2026-09-09 rows, so a field moved position
+              // and the block changed height from card to card down a list.
+              // 2×2 is stable at four.
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label={t('fields.resendOutcome')}>
                   {row.subprocessorOutcome.resendOutcome}
                 </Field>
@@ -211,14 +216,34 @@ export function EvidenceCard({
                 <Field label={t('fields.contactsDetached')}>
                   {row.subprocessorOutcome.contactsRemoved}
                 </Field>
-                {row.subprocessorOutcome.contactsAlreadyAbsent !== null && (
-                  <Field label={t('fields.contactsAlreadyAbsent')}>
-                    {row.subprocessorOutcome.contactsAlreadyAbsent}
-                  </Field>
-                )}
+                {/*
+                  Round 4 L10 — rendered unconditionally with `?? DASH`.
+                  Every other value in this card uses that convention; hiding
+                  this one for pre-2026-09-09 rows meant a DPO could not tell
+                  "this run could not tell" (the projection's documented meaning
+                  for null) from "this card does not have that field" — and the
+                  mapper deliberately preserves the null rather than inventing a
+                  zero. An em-dash says the same thing on the surface where the
+                  DSR answer is actually composed.
+                */}
+                <Field label={t('fields.contactsAlreadyAbsent')}>
+                  {row.subprocessorOutcome.contactsAlreadyAbsent ?? DASH}
+                </Field>
                 <Field label={t('fields.contactsFailed')}>
                   {row.subprocessorOutcome.contactsFailed}
                 </Field>
+                {/*
+                  Round 4 D9 — the rule lives in
+                  `docs/runbooks/member-erasure.md` ("Cite the FIRST number… Do
+                  not add the second to it") and was absent from the surface where
+                  the DPO actually composes the DSR answer. Three bare integers
+                  side by side read as a decomposition to be summed, which would
+                  overstate the removals — the same Art. 12(3) shape the label
+                  rename was for.
+                */}
+                <p className="col-span-full text-xs text-muted-foreground">
+                  {t('fields.countsNote')}
+                </p>
               </dl>
             ) : (
               <p className="text-sm text-muted-foreground">{t('subprocessorNone')}</p>

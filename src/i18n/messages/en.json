@@ -431,9 +431,10 @@
           "sessionsRevoked": "Sessions revoked",
           "invitationsRevoked": "Invitations revoked",
           "resendOutcome": "Outcome",
-          "contactsDetached": "Contacts detached",
-          "contactsAlreadyAbsent": "Already absent",
-          "contactsFailed": "Contacts failed"
+          "contactsDetached": "Contacts detached from audience",
+          "contactsAlreadyAbsent": "Already absent from audience",
+          "contactsFailed": "Contacts failed",
+          "countsNote": "Each contact is counted once. Cite the detached figure; do not add the already-absent figure to it."
         },
         "documentKind": {
           "invoice": "Invoice",
@@ -6692,9 +6693,9 @@
         "malformed_segment": "the saved audience for this broadcast is incomplete — your chamber administrator needs to re-create it",
         "failed_rows": "our email provider rejected some of the recipient addresses",
         "counts_incoherent": "the recipient list did not transfer completely to our email provider",
-        "audience_membership_drift": "the recipient list at our email provider did not match the one we prepared, so we did not send to a group you had not approved",
+        "audience_membership_drift": "the recipient list at our email provider did not match the one we prepared, so we stopped rather than send to a group you had not approved",
         "retry_budget_exhausted": "our email provider was unreachable for over an hour, so we stopped retrying rather than send at an unexpected time",
-        "count_mismatch": "the recipient list changed while the broadcast was being prepared, so it was not sent to a different set of people than you approved",
+        "count_mismatch": "the recipient list changed while the broadcast was being prepared, so we stopped rather than send it to a different group from the one you approved",
         "provider_failed": "our email provider could not prepare the recipient list",
         "gateway_permanent": "our email provider refused the request — your chamber administrator needs to check the account",
         "gateway_unknown": "an unexpected problem occurred while preparing the send",
