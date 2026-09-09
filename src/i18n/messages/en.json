@@ -6702,7 +6702,6 @@
         "audience_import_stuck": "preparing the recipient list took too long, so we stopped rather than send at an unexpected time",
         "generic": "a technical problem prevented delivery"
       },
-      "body2": "Our delivery service was unreachable for over an hour, so we stopped retrying to avoid sending the broadcast at an unexpected time.",
       "reassurance": "Your E-Blast quota slot has NOT been consumed and remains reserved. You can re-schedule the same broadcast from the admin queue, or your chamber admin can re-trigger dispatch manually.",
       "ctaRescheduleLabel": "Open broadcast detail",
       "footerSignOff": "If you need help, please contact your chamber administrator."

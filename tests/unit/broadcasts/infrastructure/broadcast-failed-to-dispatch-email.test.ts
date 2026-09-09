@@ -40,14 +40,15 @@ const LOCALES = ['en', 'th', 'sv'] as const;
  */
 const KNOWN_REASONS = MEMBER_FACING_FAILURE_REASONS;
 
-/** A distinctive fragment of each locale's `body2`, read from the message file. */
-function enOutageMarker(locale: (typeof LOCALES)[number]): string {
+/**
+ * The reassurance paragraph for a locale, read from the message file rather than
+ * restated here — a copy edit must not fail these for the wrong reason.
+ */
+function reassuranceFor(locale: (typeof LOCALES)[number]): string {
   const msgs = { en: enMessages, th: thMessages, sv: svMessages }[locale] as {
-    email: { broadcastFailedToDispatch: { body2: string } };
+    email: { broadcastFailedToDispatch: { reassurance: string } };
   };
-  // First eight words is enough to be distinctive and short enough to survive a
-  // trailing-clause edit.
-  return msgs.email.broadcastFailedToDispatch.body2.split(' ').slice(0, 8).join(' ');
+  return msgs.email.broadcastFailedToDispatch.reassurance;
 }
 
 function build(reason: string, locale: (typeof LOCALES)[number]) {
@@ -98,30 +99,51 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
   });
 
   /**
-   * Round 2 R2-13, second half — `body2` says "our delivery service was
-   * unreachable for over an hour, so we stopped retrying to avoid sending at an
-   * unexpected time". It was rendered UNCONDITIONALLY, so a member whose
-   * broadcast hit the Free-plan cap, or whose segment would not parse, read a
-   * paragraph asserting an outage that had not happened — one paragraph below a
-   * Reason line saying something else, in the same email.
+   * Round 4 L8 — the invariant that REPLACED the outage-paragraph test.
+   *
+   * R2-13 found `body2` ("our delivery service was unreachable for over an
+   * hour") rendered unconditionally, contradicting the Reason line above it. The
+   * round-3 fix gated it to an allowlist. Round 4 found BOTH members of that
+   * allowlist wrong — `audience_import_stuck` fires after a SUCCESSFUL poll at
+   * 30 minutes, and `retry_budget_exhausted` duplicated the paragraph almost
+   * word for word in all three locales — so the paragraph is gone entirely.
+   *
+   * The old test could only ever check the two reasons inside the allowlist,
+   * which is how the wrong second member survived it. This one walks EVERY
+   * member-facing reason in every locale and asserts what the member actually
+   * needs: a cause, and the fate of their quota. It cannot be satisfied by an
+   * allowlist.
    */
-  it.each(LOCALES)('%s: the outage paragraph appears ONLY for the reasons it describes', (locale) => {
-    const outage = build('retry_budget_exhausted', locale).text;
-    const notOutage = build('gateway_permanent', locale).text;
-
-    // Pinned by a distinctive fragment of the sentence rather than the whole
-    // string, so a copy edit does not fail this for the wrong reason.
-    const marker = enOutageMarker(locale);
-    expect(outage).toContain(marker);
-    expect(notOutage).not.toContain(marker);
+  it.each(LOCALES)('%s: every reason still answers "why" and "what about my quota"', (locale) => {
+    for (const reason of KNOWN_REASONS) {
+      const mail = build(reason, locale);
+      const generic = build('__no_such_reason__', locale);
+      // A cause of its own — not the `generic` fallback, which would satisfy a
+      // weaker "is some text present" assertion.
+      expect(mail.text, `${reason} fell through to generic`).not.toBe(generic.text);
+      // And the reassurance paragraph, which is now the ONLY paragraph after
+      // the reason line and carries the quota answer.
+      expect(mail.text, `${reason} lost its reassurance`).toContain(
+        reassuranceFor(locale),
+      );
+    }
   });
 
-  it('the non-outage email still carries its reason and its reassurance', () => {
-    const mail = build('gateway_permanent', 'en');
-    // Dropping the paragraph must not drop the two that answer "why" and
-    // "what happens to my quota".
-    expect(mail.text).toContain('refused the request');
-    expect(mail.text).toMatch(/quota/i);
+  it('the body2 PARAGRAPH is gone, while the reason that meant it keeps saying so', () => {
+    // Pinned on "delivery service", which was body2's subject. The reason line
+    // for `retry_budget_exhausted` says "our email PROVIDER was unreachable for
+    // over an hour" — same fact, and correct there, which is precisely why the
+    // paragraph was a duplicate. An earlier draft of this test matched
+    // /unreachable for over an hour/ and went red on that legitimate sentence:
+    // the assertion was wrong, not the copy.
+    for (const reason of KNOWN_REASONS) {
+      expect(build(reason, 'en').text).not.toMatch(/delivery service was unreachable/i);
+    }
+    // The information body2 carried survives where it belongs — this is the
+    // evidence that deleting the paragraph cost no reader anything.
+    expect(build('retry_budget_exhausted', 'en').text).toMatch(
+      /unreachable for over an hour/i,
+    );
   });
 
   /**
