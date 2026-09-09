@@ -1731,7 +1731,19 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
     );
     expect(unverifiableEvent).toBeDefined();
-    expect(unverifiableEvent?.payload['errorReason']).toContain('503');
+    // Round 4 (security finding 6) — this asserted the payload CONTAINS '503',
+    // pinning the provider's raw message inside an append-only row with 5–10
+    // year retention as the contract. Nothing was filtering it: `REDACT_PATHS`
+    // is a pino formatter and never touches a DB write, and the row is emitted
+    // with `emit(null, …)` through the BYPASSRLS global `db`, so it lands.
+    //
+    // `countErr` is whatever `getAudienceContactCount` threw — a `NeonDbError`
+    // carrying the failed SQL with its bound parameters (member addresses here)
+    // or Resend's own text. The CLASS answers the only question the audit row
+    // exists for — was the drift check unverifiable because of our database or
+    // theirs — and carries nothing that cannot be edited away later.
+    expect(unverifiableEvent?.payload['errorReason']).toBe('Error');
+    expect(JSON.stringify(unverifiableEvent?.payload)).not.toContain('503');
   });
 
   it('TEST-G3 โ€” getAudienceContactCount returns {kind:"audience_missing"} โ’ drift check skipped (no audit, no crash)', async () => {

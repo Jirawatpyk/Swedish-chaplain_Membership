@@ -834,7 +834,7 @@ export async function dispatchScheduledBroadcast(
         } catch (auditErr) {
           logger.error(
             {
-              err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+              err: errKind(auditErr),
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
             },
@@ -875,7 +875,7 @@ export async function dispatchScheduledBroadcast(
           countCheckFailed = true;
           logger.error(
             {
-              err: countErr instanceof Error ? countErr.message : String(countErr),
+              err: errKind(countErr),
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
               resendBroadcastId,
@@ -895,15 +895,29 @@ export async function dispatchScheduledBroadcast(
                 resendBroadcastId,
                 resendAudienceId,
                 expectedRecipientCount: expectedCount,
-                errorReason:
-                  countErr instanceof Error ? countErr.message : String(countErr),
+                // Round 4 (security finding 6) — this is an `audit_log.payload`,
+                // not a pino line, and the distinction is the whole point:
+                // `REDACT_PATHS` is a pino formatter and never touches a DB
+                // write. The row is append-only with 5–10 year retention, is
+                // emitted with `emit(null, …)` so it goes through the global
+                // `db` as `neondb_owner` (BYPASSRLS) and therefore actually
+                // lands, and it is rendered on the staff audit viewer.
+                //
+                // `countErr` comes from `getAudienceContactCount`, so it is a
+                // `NeonDbError` carrying the failed SQL with its bound
+                // parameters — on this module, member addresses — or Resend's
+                // own message. None of that belongs in a record that cannot be
+                // edited or deleted. The class keeps the forensic value: an
+                // operator asking "why was the drift check unverifiable?" needs
+                // DB-vs-provider, not the statement text.
+                errorReason: errKind(countErr),
               },
               requestId: null,
             });
           } catch (auditErr) {
             logger.error(
               {
-                err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                err: errKind(auditErr),
                 tenantId: deps.tenant.slug,
                 broadcastId: input.broadcastId as string,
               },
@@ -939,7 +953,7 @@ export async function dispatchScheduledBroadcast(
           } catch (auditErr) {
             logger.error(
               {
-                err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                err: errKind(auditErr),
                 tenantId: deps.tenant.slug,
                 broadcastId: input.broadcastId as string,
               },
@@ -1243,7 +1257,7 @@ export async function dispatchScheduledBroadcast(
     // operators can confirm the eventual reconciliation.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId as string,
         resendAudienceId,
