@@ -114,7 +114,20 @@ describe('sendBroadcast — the idempotency contract (round 3 finding 3-1)', () 
    * generated the key inside the retry loop would pass a first-attempt-only
    * assertion and still duplicate.
    */
-  it('reuses the SAME key across withRetry attempts, so a retried send can be collapsed', async () => {
+  /**
+   * Round 4 F4 — the TITLE used to end "so a retried send can be collapsed",
+   * which asserts something about Resend that we now know is not true of the
+   * neighbouring endpoint. MEASURED 2026-09-09: two identical `POST /broadcasts`
+   * calls with the same `Idempotency-Key` created two resources — the header is
+   * inert there. `/broadcasts/{id}/send` cannot be probed without sending real
+   * mail.
+   *
+   * The test itself is unchanged and still worth having: that the SAME key
+   * reaches the wire on every attempt is our side of the contract, and it is the
+   * precondition for any collapsing the provider may or may not do. What it does
+   * not do is prove the collapsing happens.
+   */
+  it('reuses the SAME key across withRetry attempts — our half of the contract', async () => {
     stubFetch((call) =>
       call === 1
         ? jsonResponse(500, { message: 'upstream boom' })

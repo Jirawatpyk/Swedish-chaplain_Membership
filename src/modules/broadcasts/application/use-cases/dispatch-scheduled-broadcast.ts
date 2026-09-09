@@ -13,7 +13,14 @@
  *
  * Gateway error handling (review E3 — 2026-04-30):
  *   - `retryable` → row stays 'approved'; cron re-attempts next tick
- *     with the same idempotency key (Resend dedupes)
+ *     with the same idempotency key. **Round 4 F4 — do NOT read that as "so
+ *     the duplicate is collapsed".** MEASURED 2026-09-09 against the live
+ *     account: two identical `POST /broadcasts` calls carrying the SAME
+ *     `Idempotency-Key` created TWO resources. The header is inert on that
+ *     endpoint. `/broadcasts/{id}/send` cannot be probed without sending real
+ *     mail, so its behaviour is unmeasured — and assuming a provider honours the
+ *     header on one endpoint of an API surface where it ignores it on another is
+ *     a guess, not a safety property.
  *   - `idempotency_conflict` → success-replay; advance to 'sending'
  *     (Resend already accepted this broadcast on a prior attempt)
  *   - `resource_missing` (404) → emit `broadcast_resend_resource_missing`
@@ -1250,11 +1257,27 @@ export async function dispatchScheduledBroadcast(
       });
     }
     // Review E2 — DB write failed AFTER Resend success. Recipients have
-    // (or will) receive the broadcast but the DB row is still
-    // 'approved'. Next cron tick will re-detect 'approved' status and
-    // re-call Resend with the same idempotency key (Resend dedupes →
-    // safe replay). MUST log at error severity so ops alerts fire and
-    // operators can confirm the eventual reconciliation.
+    // (or will) receive the broadcast but the DB row is still 'approved', so the
+    // next cron tick re-detects it and re-calls Resend with the same idempotency
+    // key.
+    //
+    // **Round 4 F4 — this said "(Resend dedupes -> safe replay)" and that is not
+    // a property we have.** MEASURED 2026-09-09 on the live account: two
+    // IDENTICAL `POST /broadcasts` calls with the same `Idempotency-Key`
+    // returned two different ids. The header is inert there. The send endpoint
+    // could not be probed without sending real mail, so it is unmeasured —
+    // which is the point: "safe replay" was resting on an assumption nobody had
+    // checked, and the half that WAS checkable came back negative.
+    //
+    // Worse for this particular path: the retry does not even reuse the same
+    // resource. `resend_broadcast_id` was never persisted (that write is what
+    // failed), so the next tick mints a NEW broadcast and sends THAT — a
+    // different URL, which no idempotency scheme would collapse anyway.
+    //
+    // Left as-is and logged at error severity, which is what actually protects
+    // here today. The fix is to persist the id BEFORE the send so a retry hits
+    // the same resource; that is F4 in the round-4 ledger, and a FLIP blocker
+    // rather than a merge blocker because this shape predates the branch.
     logger.error(
       {
         err: errKind(e),
