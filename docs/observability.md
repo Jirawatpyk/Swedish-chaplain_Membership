@@ -1456,8 +1456,8 @@ Extends § 22.1 with **4 new metrics** for pagination (US1) + image embedding (U
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
-| `broadcasts.partial_send_count` | counter | `tenant` | US1 — broadcasts that landed in `partially_sent` terminal state |
-| `broadcasts.manual_retry_count` | counter | `tenant`, `broadcast_id` | US1 — admin-initiated retries on `partially_sent` broadcasts (3-budget per FR-008d) |
+| ~~`broadcasts.partial_send_count`~~ | counter | `tenant` | **NOT EMITTED — round 4, whole-branch review #6.** Defined at `broadcasts-f71a.ts:207`, called from nowhere (grep over `src/` + `tests/` for the emitter: 0 hits). Struck through rather than deleted, because the alert row below still references it and an operator who finds a documented metric returning no data needs to know it never had any. |
+| ~~`broadcasts.manual_retry_count`~~ | counter | `tenant`, `broadcast_id` | **NOT EMITTED — round 4 #6.** `broadcasts-f71a.ts:248`, zero callers. Not to be confused with the DOMAIN FIELD of the same name: `broadcast.manualRetryCount` is the 0..3 retry budget column from migration 0162 and is very much alive. Same name, different thing — which is part of why the dead metric went unnoticed. |
 | `broadcasts.image_scan_duration_ms` | histogram | `tenant`, `verdict` ∈ {clean,infected,error,timeout} | US2 — ClamAV scan latency; SC-005 p95 < 500ms |
 | `broadcasts.clamav_signature_age_hours` | observable gauge | (none — shared infra) | US2 — age of most-recent signature DB load, probed hourly via `CLAMD VERSION` |
 
@@ -1469,7 +1469,7 @@ Extends § 22.3 with **4 new alerts**:
 |---|---|---|---|
 | `broadcasts.clamav_signature_age_hours` > 48 | **page** | freshclam stopped pulling new signatures — image scans are increasingly stale | `docs/runbooks/clamav-signature-stale.md` |
 | `broadcasts.image_scan_duration_ms` p99 > 5000 over 5 min OR no scan completes in 2 min when uploads attempted (proxy for daemon-unreachable) | **page** | ClamAV daemon down or Fly.io VM unreachable; member upload UX banner already shown | `docs/runbooks/clamav-daemon-down.md` |
-| `broadcasts.partial_send_count[1h] / broadcasts.submit.count[1h]` > 0.05 | **alarm** | Partial-send rate > 5% sustained — likely Resend rate-limit pressure or batch-boundary tuning required | `docs/runbooks/broadcast-partial-send-recovery.md` |
+| ~~`broadcasts.partial_send_count[1h] / broadcasts.submit.count[1h]` > 0.05~~ | ~~alarm~~ | **CANNOT FIRE — round 4 #6.** The numerator is never emitted (see the metric row above), so this alarm has been structurally silent since it was written. Either wire the emitter at the `partially_sent` transition or drop the rule; do not read its silence as health. | `docs/runbooks/broadcast-partial-send-recovery.md` |
 | `dispatch_concurrency_saturation` > 0.80 sustained 15 min (computed: active batches / cap 4) | **alarm** | Concurrency cap saturating — batch fan-out may queue; review concurrency policy if persistent | `docs/runbooks/broadcasts-perf-regression.md` |
 
 The 4 F7.1a alerts route per § 22.8 (alarm → `#oncall-platform`; page → PagerDuty). Two F7.1a-specific runbooks land under `docs/runbooks/` for the ClamAV alerts; the partial-send alert shares the broadcasts-perf-regression triage tree plus a dedicated `broadcast-partial-send-recovery.md` decision tree.

@@ -482,7 +482,9 @@ export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
 // EventCreate has shipped). Stub export retained for empty-segment tests.
 export { eventAttendeesBridge } from './infrastructure/event-attendees-bridge';
 export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
-export { noOpAdvisoryLock } from './infrastructure/noop-advisory-lock';
+// Round 4, whole-branch review #9 — `noOpAdvisoryLock` re-export removed with
+// its module. It had no consumer in `src/`, `tests/` or `scripts/`; the barrel
+// was the only thing keeping it reachable, which is what made it look alive.
 export type {
   MemberHaltSummary,
   MemberRecipient,

@@ -1320,7 +1320,7 @@ export async function dispatchScheduledBroadcast(
     //
     // Left as-is and logged at error severity, which is what actually protects
     // here today. The fix is to persist the id BEFORE the send so a retry hits
-    // the same resource; that is F4 in the round-4 ledger, and a FLIP blocker
+    // the same resource; that is F4 in the round-4 ledger, and a follow-up PR (NOT a flip blocker — round 4 reclassified it: the double-send is live on `origin/main` today and waits for a failed DB write, not for a flag)
     // rather than a merge blocker because this shape predates the branch.
     logger.error(
       {

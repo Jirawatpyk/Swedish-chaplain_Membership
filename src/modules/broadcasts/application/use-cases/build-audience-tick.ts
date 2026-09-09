@@ -1080,7 +1080,7 @@ async function confirmImport(
   // WITHIN-TICK replay — `withRetry` re-firing after a lost response — safe, and
   // makes the arm below reachable for the first time.
   //
-  // **Still open, and a FLAG-FLIP blocker rather than a merge blocker** (this
+  // **Still open, and a FLAG-follow-up PR (NOT a flip blocker — round 4 reclassified it: the double-send is live on `origin/main` today and waits for a failed DB write, not for a flag) rather than a merge blocker** (this
   // whole use case is dark at merge: `FEATURE_F7_IMPORT_AUDIENCE` defaults
   // false): `createBroadcast` above carries NO key, so a tick that dies between
   // the send and the tx below re-enters, mints a NEW Resend broadcast resource,

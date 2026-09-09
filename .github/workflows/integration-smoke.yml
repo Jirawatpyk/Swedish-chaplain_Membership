@@ -125,4 +125,7 @@ jobs:
             tests/integration/broadcasts/marketing-opt-out-dispatch.test.ts \
             tests/integration/members/marketing-audience-query.test.ts \
             tests/integration/members/broadcast-recipient-contacts-keyset.test.ts \
-            tests/integration/broadcasts/audience-1n-status.test.ts
+            tests/integration/broadcasts/audience-1n-status.test.ts \
+            tests/integration/members/subprocessor-erasure.test.ts \
+            tests/integration/members/erase-member-subprocessor-cascade.test.ts \
+            tests/integration/broadcasts/tx-tenant-binding-guard.test.ts

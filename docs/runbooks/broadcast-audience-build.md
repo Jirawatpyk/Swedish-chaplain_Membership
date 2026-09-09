@@ -7,7 +7,7 @@
 **Last reviewed**: 2026-09-07 (108 PR-C T091; corrected the same day by the review — step order, the verification command, the log-event names)
 **Status**: LIVE behind `FEATURE_CONTACT_MARKETING_RECIPIENTS` (default `false`)
 
-> **Scope**: this runbook covers HOW the audience of a broadcast is built and counted since 108 PR-C, and what to do when that build is slow, refused, or unavailable. A broadcast stuck in `sending` AFTER a successful build is `broadcasts-stuck-sending.md`; a Resend-side dispatch failure is `broadcasts-dispatch-failure.md`. There is NO "audience building" state and NO import-based build in PR-C — the Resend Contacts Import path (US5 T086/T087/T106) is DEFERRED to a follow-up PR (see `specs/108-contact-recipient-rules/reviews/pr-c.md` § US5 scope decision).
+> **Scope**: this runbook covers HOW the audience of a broadcast is built and counted since 108 PR-C, and what to do when that build is slow, refused, or unavailable. A broadcast stuck in `sending` AFTER a successful build is `broadcasts-stuck-sending.md`; a Resend-side dispatch failure is `broadcasts-dispatch-failure.md`. There is NO "audience building" state. **Round 4, whole-branch review #6 — the sentence that stood here said the Contacts-Import path (US5 T086/T087/T106) is DEFERRED to a follow-up PR. It is not: it SHIPPED on the Phase-9 branch, gated by `FEATURE_F7_IMPORT_AUDIENCE` (default `false`), and §§ C.4 and D1 OF THIS FILE document how to operate and roll it back.** The scope line was written at PR-C time and never swept when the code landed — so the first paragraph an on-call engineer reads told them a subsystem the same file troubleshoots does not exist.
 
 ---
 

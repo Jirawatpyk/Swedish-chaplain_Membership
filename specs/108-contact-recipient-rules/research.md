@@ -1,5 +1,8 @@
 # Phase 0 Research — 108 Contact Recipient Rules
 
+
+> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist. Left as written — it is the record of what was believed at the time.
+
 **Status**: No open `NEEDS CLARIFICATION`. Product decisions were settled in the spec's three
 clarification sessions (2026-09-04). This file resolves the *engineering* unknowns in
 Decision / Rationale / Alternatives form and pins the repo facts each decision depends on.
