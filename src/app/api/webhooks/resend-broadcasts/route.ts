@@ -54,7 +54,6 @@ import {
   resolveTenantByResendBroadcastId,
   WebhookSignatureError,
 } from '@/modules/broadcasts';
-import { createHash } from 'node:crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -523,20 +522,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-
-/**
- * Per-tenant hashed recipient email — matches F7 MVP audit payload
- * convention (`broadcast_delivery_recorded` payload includes
- * `recipientEmailHashed`, not raw). Same SHA-256 with tenant-prefix
- * pattern as F7 MVP `hashRecipient(tenantId, lower)` helper.
- *
- * Inline implementation rather than import — the F7 MVP helper is
- * file-private to `process-webhook-event.ts`. Phase 3D consolidation
- * candidate.
- */
-function hashRecipientEmail(tenantId: string, recipientEmail: string): string {
-  return createHash('sha256')
-    .update(`${tenantId}:${recipientEmail.toLowerCase().trim()}`)
-    .digest('hex')
-    .slice(0, 32);
-}

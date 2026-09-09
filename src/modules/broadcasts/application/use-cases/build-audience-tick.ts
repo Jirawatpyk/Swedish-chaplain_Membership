@@ -50,7 +50,6 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { safeAuditEmit } from './_safe-audit-emit';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';

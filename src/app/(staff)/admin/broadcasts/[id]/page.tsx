@@ -10,11 +10,7 @@ import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
-import {
-  isF71aUs1Enabled,
-  makeGetBroadcastDeps,
-  parseBroadcastId,
-} from '@/modules/broadcasts';
+import { makeGetBroadcastDeps, parseBroadcastId } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
