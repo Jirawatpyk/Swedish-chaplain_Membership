@@ -28,6 +28,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
@@ -606,6 +607,67 @@ export async function dispatchScheduledBroadcast(
       buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
     );
   } catch (e) {
+    // ---- Round 4 L2 — the audience-attach CAS loss, named ------------
+    //
+    // `attachAudienceId` is the only call in this try that throws
+    // `BroadcastConcurrentMutationError`, so reaching here is unambiguous: a
+    // sibling tick attached a different audience first. Two overlapping ticks
+    // are reachable because `maxDuration` equals the cron cadence.
+    //
+    // Until now this fell to `classifyThrown`, which reads a `kind` field the
+    // error class does not have, so it was classified `unknown` → permanent →
+    // an attempt to mark the broadcast `failed_to_dispatch` WHILE THE WINNER WAS
+    // SENDING IT. The row survived only because `failDispatchAndAudit`'s
+    // transition carries `expectedFromStatus: 'approved'` and the winner had
+    // already moved it to `sending`; the loser logged `cleanup_failed` and
+    // stopped. Defence in depth held, but nothing here meant to rely on it.
+    //
+    // The real damage is the audience this tick just minted. Nothing collects
+    // it: `reclaim-orphaned-audiences` filters on the broadcast ROW being gone
+    // and the row is fine, while `cleanup-orphaned-audiences` deletes only the
+    // id the row points at — the winner's. The Resend Free plan allows three
+    // audiences, so a couple of these and `createAudience` starts refusing real
+    // broadcasts.
+    //
+    // Delete it here, where the id is still in hand. Then this IS the benign
+    // race the cron's `concurrent_skip` bucket calls it, rather than a bucket
+    // that is quiet about a permanent leak.
+    if (e instanceof BroadcastConcurrentMutationError) {
+      if (resendAudienceId !== '') {
+        try {
+          await deps.broadcastsGateway.deleteAudience(resendAudienceId);
+          logger.info(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendAudienceId,
+              observedStatus: e.observedStatus,
+            },
+            'broadcasts.dispatch.audience_attach_lost_reclaimed',
+          );
+        } catch (reclaimErr) {
+          // The one outcome an operator must act on: the audience exists at
+          // Resend, no row references it, and no cron will find it. Error
+          // severity because this is where the quota actually leaks.
+          logger.error(
+            {
+              err: errKind(reclaimErr),
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendAudienceId,
+              severity: 'critical',
+            },
+            'broadcasts.dispatch.audience_attach_lost_leaked',
+          );
+        }
+      }
+      // The REAL status from the probe, never a literal.
+      return err({
+        kind: 'broadcast_invalid_state_transition',
+        observedStatus: e.observedStatus,
+      });
+    }
+
     const shape = classifyThrown(e);
 
     // ---- Retryable: row stays 'approved' for next tick ---------------
@@ -1118,14 +1180,33 @@ export async function dispatchScheduledBroadcast(
       );
       return err({
         kind: 'broadcast_invalid_state_transition',
-        observedStatus: 'sending_or_later',
+        // Round 4 L2 — was the literal `'sending_or_later'`, discarding the
+        // status `throwConcurrentMutation` had just read from the row. The
+        // comment six lines above says `instanceof` "gives compile-time type
+        // narrowing on `e.observedStatus`" and then the value was thrown away:
+        // the narrowing was obtained and not used.
+        //
+        // A guessed status in a field an operator reads is the actor-role
+        // fabrication class in a different field — which is what
+        // `throwConcurrentMutation`'s own docblock says the probe exists to
+        // prevent. The import leg (`build-audience-tick.ts`) already read the
+        // real value; this is the live leg catching up.
+        observedStatus: e.observedStatus,
       });
     }
-    // Round 2 R2-1 — the CAS in `attachAudienceId` now probes the row before it
-    // throws, so "the row is GONE" (a member-erasure cascade removed it between
-    // the claim query and this write) arrives as its own type instead of being
-    // folded into the concurrent-mutation case. Same routing: nothing failed
-    // that anyone can act on, and the row it would page about no longer exists.
+    // "The row is GONE" — a member-erasure cascade removed it between the claim
+    // query and this write — as its own type rather than folded into the
+    // concurrent-mutation case. Nothing failed that anyone can act on, and the
+    // row it would page about no longer exists.
+    //
+    // Round 4 L6 — this arm WAS dead code until the commit that wrote this
+    // comment. R2-1 added it citing `attachAudienceId`, which is called in a
+    // different try block (`:524`, catch `:608`); nothing inside THIS try threw
+    // `BroadcastNotFoundError`, because `attachResendIds` still threw a bare
+    // `Error` and landed in `db_write_after_resend_success` instead. Making
+    // `attachResendIds` use `throwConcurrentMutation` (round 4 F2) is what
+    // finally reaches it — so the arm is kept and now genuinely runs, rather
+    // than deleted as unreachable.
     if (e instanceof BroadcastNotFoundError) {
       logger.warn(
         {

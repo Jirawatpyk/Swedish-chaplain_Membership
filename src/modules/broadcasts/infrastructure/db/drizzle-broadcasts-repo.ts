@@ -267,20 +267,37 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
  * Round 2 R2-1 / round 3 finding 3-13 — a compare-and-set that matched no row
  * must throw the error the CALLERS already handle, not a bare `Error`.
  *
- * `dispatchScheduledBroadcast` has caught `BroadcastConcurrentMutationError`
- * since 2026-05-02 and maps it to `broadcast_invalid_state_transition` under a
- * comment saying "do NOT page on-call (no actual failure)". A bare `Error`
- * misses that arm and lands in the `db_write_after_resend_success` branch
- * instead — severity `critical`, `broadcast_failed_to_dispatch`, an append-only
- * audit row and an email telling the member their E-Blast did not go out, for a
- * broadcast that was delivered. That leg is the one live at merge.
+ * **Round 4 L7 — the previous version of this docblock was wrong three ways,
+ * and the corrections are worth keeping because each one changed a fix.**
+ *
+ * It said a bare `Error` from `attachAudienceId` "lands in the
+ * `db_write_after_resend_success` branch — severity critical,
+ * `broadcast_failed_to_dispatch`, an append-only audit row and an email telling
+ * the member their E-Blast did not go out". Read against the code:
+ *
+ *  1. It does not land there. `attachAudienceId` is called inside the try at
+ *     `dispatch-scheduled-broadcast.ts:524`, whose catch is `:608` — a
+ *     different block from the one holding that branch. A round-4 reviewer
+ *     proposed its remediation against the wrong catch arm on the strength of
+ *     this sentence.
+ *  2. `db_write_after_resend_success` writes NO audit row and sends NO member
+ *     email; it returns `gateway_retryable`.
+ *  3. The method this paragraph actually describes was `attachResendIds`, which
+ *     round 3 did not change. It does now — see the call above.
+ *
+ * What is true: `classifyThrown` reads a `kind` field, neither error class has
+ * one, so both were classified `unknown` and treated as permanent gateway
+ * failures. Naming them lets each caller decide.
  *
  * Re-reading to distinguish "row drifted" from "row is gone" is the house
- * pattern in this file (`updateDraft`, `updateDraftFromTemplate`,
- * `applyTransition`). It costs one PK read on a transaction that is about to
- * abort, and it is what keeps `observedStatus` TRUE — the alternative is
- * passing a literal, which is the actor-role fabrication class in a different
- * field.
+ * pattern here (`updateDraft`, `updateDraftFromTemplate`). It costs one PK read
+ * on a transaction that is about to abort, and it keeps `observedStatus` TRUE —
+ * the alternative is passing a literal, which is the actor-role fabrication
+ * class in a different field. (`applyTransition` was cited here as a third
+ * example and should not have been: it passes its `expectedFromStatus` literal
+ * straight through, so it reports the status it WANTED, not the one it saw.
+ * Left as-is and recorded rather than silently repaired — it is a separate
+ * change with its own callers.)
  */
 async function throwConcurrentMutation(
   tx: TenantTx,
@@ -761,9 +778,24 @@ export function makeDrizzleBroadcastsRepo(
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        throw new Error(
-          `attachResendIds: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
-        );
+        // Round 4 F2 / L7(c) — this is the method `throwConcurrentMutation`'s
+        // docblock describes, and round 3 changed its SIBLING instead.
+        //
+        // Unlike `attachAudienceId` below there is no CAS predicate here: the
+        // WHERE is tenant + id, so 0 rows means the ROW IS GONE — an erasure
+        // cascade removed it between the claim query and this write, after the
+        // broadcast was already handed to Resend. `throwConcurrentMutation`
+        // probes and calls that `BroadcastNotFoundError`, which is exactly the
+        // right name for it; a bare `Error` was not a name at all.
+        //
+        // Two consequences downstream, both of which were dead code until now:
+        //  - `buildAudienceTick`'s `viaRepoConcurrency` converts only these two
+        //    typed errors and RETHROWS anything else, so `idsAttached.ok` was
+        //    always true and the `sent_but_row_unattachable` critical log could
+        //    never print. The cron counted `uncaught_error` instead.
+        //  - `dispatchScheduledBroadcast`'s `BroadcastNotFoundError` arm sat in
+        //    a catch nothing could reach it from.
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
       }
     },
 

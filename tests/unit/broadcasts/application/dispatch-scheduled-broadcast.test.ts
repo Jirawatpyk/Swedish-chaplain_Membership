@@ -17,6 +17,10 @@ import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
 import { MEMBER_FACING_FAILURE_REASONS } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import {
+  BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
+} from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
@@ -122,6 +126,21 @@ interface RepoOpts {
   readonly lockedStatus?: BroadcastStatus | null;
   readonly broadcast?: Broadcast | null;
   readonly applyTransitionThrowsOnFinal?: boolean;
+  /**
+   * Round 4 L2 — make the audience-attach compare-and-set LOSE, with the status
+   * the probe would have observed. Nothing could drive this before: the arm that
+   * handles it had no test, and `grep -rl audience_attach_lost tests/` found
+   * nothing, so the reclaim it performs would have shipped unexercised.
+   */
+  readonly attachAudienceIdLosesCasWithStatus?: BroadcastStatus;
+  /**
+   * Round 4 F2 / L6 — the erasure cascade removed the row between the claim
+   * query and the post-send write. `attachResendIds` threw a BARE Error until
+   * this round, so the `BroadcastNotFoundError` arm that handles it was
+   * unreachable; this option is what makes the claim "that arm now runs"
+   * checkable instead of asserted.
+   */
+  readonly attachResendIdsRowVanished?: boolean;
 }
 
 function makeRepo(opts: RepoOpts): {
@@ -169,9 +188,30 @@ function makeRepo(opts: RepoOpts): {
       },
       async attachResendIds(_tx, _t, _b, audienceId, resendBroadcastId) {
         attachCalls.push({ audienceId, broadcastId: resendBroadcastId });
+        if (opts.attachResendIdsRowVanished === true) {
+          // What `throwConcurrentMutation`'s probe produces when the row is gone.
+          throw new BroadcastNotFoundError(
+            'test-tenant' as unknown as ConstructorParameters<
+              typeof BroadcastNotFoundError
+            >[0],
+            _b,
+          );
+        }
       },
       async attachAudienceId(_tx, _t, _b, audienceId) {
         attachAudienceCalls.push({ audienceId });
+        if (opts.attachAudienceIdLosesCasWithStatus !== undefined) {
+          // Exactly what the repo does on a 0-row CAS: probe, then throw with
+          // the status actually read. Not a bare Error — that distinction is
+          // the whole point of the arm under test.
+          throw new BroadcastConcurrentMutationError(
+            'test-tenant' as unknown as ConstructorParameters<
+              typeof BroadcastConcurrentMutationError
+            >[0],
+            _b,
+            opts.attachAudienceIdLosesCasWithStatus,
+          );
+        }
       },
       // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
       async attachAudienceImport() {},
@@ -229,6 +269,8 @@ interface GatewayOpts {
   /** Round-5 R5-T โ€” let tests synthesise audience-count drift on idempotency replay. */
   readonly audienceContactCount?: number | null;
   readonly throwOnGetAudienceContactCount?: ThrowSpec;
+  /** Round 4 L2 — the reclaim itself fails, which is the leak an operator must see. */
+  readonly throwOnDeleteAudience?: boolean;
 }
 
 function makeGateway(opts: GatewayOpts = {}): {
@@ -237,7 +279,10 @@ function makeGateway(opts: GatewayOpts = {}): {
   contactsCalls: Array<{ audienceId: string; contacts: ReadonlyArray<AudienceContact> }>;
   createCalls: Array<{ audienceId: string; subject: string; broadcastNameForResendDashboard: string }>;
   sendCalls: Array<{ broadcastId: string; idempotencyKey: string }>;
+  /** Round 4 L2 — proves the CAS loser actually reclaims the audience it minted. */
+  deleteAudienceCalls: Array<string>;
 } {
+  const deleteAudienceCalls: Array<string> = [];
   const audienceCalls: Array<string> = [];
   const contactsCalls: Array<{
     audienceId: string;
@@ -257,6 +302,7 @@ function makeGateway(opts: GatewayOpts = {}): {
     contactsCalls,
     createCalls,
     sendCalls,
+    deleteAudienceCalls,
     port: {
       async createAudience(name) {
         audienceCalls.push(name);
@@ -298,7 +344,12 @@ function makeGateway(opts: GatewayOpts = {}): {
       async removeContactFromAudience() {
       return { kind: 'detached' as const };},
       async deleteContactGlobally() {},
-      async deleteAudience() {},
+      async deleteAudience(audienceId: string) {
+        deleteAudienceCalls.push(audienceId);
+        if (opts.throwOnDeleteAudience === true) {
+          throw new Error('Resend 500 on DELETE /audiences');
+        }
+      },
       async listAudiences() { return []; },
     },
   };
@@ -1319,6 +1370,167 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     );
     expect(repo.attachAudienceCalls.length).toBe(1);
     expect(repo.attachAudienceCalls[0]?.audienceId).toBe('aud-fake-1');
+  });
+
+  // ---- Round 4 L2 — the lost audience-attach CAS ------------------------
+  //
+  // Two overlapping ticks are reachable because `maxDuration` equals the cron
+  // cadence. The loser's freshly minted audience is referenced by nothing:
+  // `reclaim-orphaned-audiences` filters on the broadcast ROW being gone (it is
+  // not) and `cleanup-orphaned-audiences` deletes only the id the row points at
+  // (the winner's). On the Resend Free plan three audiences is the cap.
+  //
+  // Neither case below could be written before this round: the arm did not
+  // exist, `grep -rl audience_attach_lost tests/` found nothing, and
+  // `attachAudienceId` had no way to lose in the harness.
+
+  it('Round 4 L2 — a lost audience-attach CAS reclaims the audience it minted and reports the status it OBSERVED', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+      attachAudienceIdLosesCasWithStatus: 'sending',
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_invalid_state_transition');
+    // The status the probe actually read. The live leg used to discard it and
+    // pass the literal 'sending_or_later' — a guessed value in a field an
+    // operator reads.
+    expect(
+      (result.error as { readonly observedStatus: string }).observedStatus,
+    ).toBe('sending');
+
+    // The reclaim: exactly the audience this tick created.
+    expect(gw.audienceCalls.length).toBe(1);
+    expect(gw.deleteAudienceCalls).toEqual(['aud-fake-1']);
+
+    // And nothing terminal happened to the broadcast — the WINNER is sending
+    // it. Before this arm existed the throw reached `classifyThrown`, which
+    // reads a `kind` field the error class does not have, so it was treated as
+    // a permanent gateway failure and tried to mark the row failed_to_dispatch
+    // mid-send.
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toHaveLength(0);
+  });
+
+  it('Round 4 L2 — when the reclaim ITSELF fails the audience is genuinely leaked, and the tick still returns the benign race', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+      attachAudienceIdLosesCasWithStatus: 'sent',
+    });
+    const gw = makeGateway({ throwOnDeleteAudience: true });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // Best-effort: a failed reclaim must not change what the tick reports, or a
+    // Resend blip would turn a benign race into a paging error.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_invalid_state_transition');
+    expect(
+      (result.error as { readonly observedStatus: string }).observedStatus,
+    ).toBe('sent');
+    // It was attempted — that is what separates "leaked" from "never tried".
+    expect(gw.deleteAudienceCalls).toEqual(['aud-fake-1']);
+    expect(repo.transitions).toHaveLength(0);
+  });
+
+  it('Round 4 F2/L6 — the row vanishing under the POST-SEND write is broadcast_not_found, not a critical DB failure', async () => {
+    // R2-1 added this arm citing `attachAudienceId`, which throws in a DIFFERENT
+    // try block. Nothing inside the post-send try could produce it, because
+    // `attachResendIds` threw a bare `Error` and landed in
+    // `db_write_after_resend_success` — severity critical, `gateway_retryable`,
+    // i.e. "retry a broadcast Resend has already sent". Routing it through
+    // `throwConcurrentMutation` is what makes the arm reachable; this case is
+    // the proof, and it fails if `attachResendIds` goes back to a bare Error.
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+      attachResendIdsRowVanished: true,
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Not `gateway_retryable`: there is no row left to retry, and the send
+    // already happened.
+    expect(result.error.kind).toBe('broadcast_not_found');
+    // The send DID go out before the row disappeared — that is the whole reason
+    // this must not be reported as a retryable gateway fault.
+    expect(gw.sendCalls.length).toBe(1);
   });
 
   // ---- estimatedRecipientCount written back -----------------------
