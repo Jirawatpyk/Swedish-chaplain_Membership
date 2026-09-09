@@ -98,11 +98,19 @@ Run against prod and require **0 rows** before removing the variable:
 SELECT tenant_id, broadcast_id, audience_import_submitted_at
   FROM broadcasts
  WHERE audience_import_id IS NOT NULL
-   AND audience_import_completed_at IS NULL;
+   AND audience_import_completed_at IS NULL
+   AND status = 'approved';
 ```
 
-It is the same predicate as the `broadcasts_audience_import_pending_idx` partial
-index, so it is cheap. A row that will not drain is stuck (§ C.4) — let it reach
+`status = 'approved'` is load-bearing (round 2 R2-6): only an `approved` row can
+be stranded by the rollback. A `failed_to_dispatch` row also has an import id
+with no completion stamp, and counting it reports work that does not exist.
+
+This predicate is **IMPLIED BY** — not identical to —
+`broadcasts_audience_import_pending_idx`, whose partial condition is the first two
+clauses only. The index is therefore still used and the query is still cheap; it
+just returns a subset of the index's rows. (The two were described as "the same
+predicate", which stops being true the moment either grows a clause.) A row that will not drain is stuck (§ C.4) — let it reach
 `failed_to_dispatch` and re-submit it after the rollback, rather than flipping
 underneath it.
 

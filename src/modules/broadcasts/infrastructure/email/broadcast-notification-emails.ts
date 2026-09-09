@@ -252,6 +252,16 @@ export interface BuildBroadcastFailedToDispatchEmailInput {
   readonly locale: BroadcastNotificationLocale;
 }
 
+/**
+ * The only reasons `body2`'s sentence is true of (round 2 R2-13). Module level so
+ * it is not rebuilt per email and so a reader looking for "when does that
+ * paragraph appear" finds one list.
+ */
+const OUTAGE_REASONS: ReadonlySet<string> = new Set([
+  'retry_budget_exhausted',
+  'audience_import_stuck',
+]);
+
 export function buildBroadcastFailedToDispatchEmail(
   input: BuildBroadcastFailedToDispatchEmailInput,
 ): BuiltEmail {
@@ -265,6 +275,16 @@ export function buildBroadcastFailedToDispatchEmail(
   const reasonText = copy.failureReason[input.reason] ?? copy.failureReason['generic'] ?? '';
   const reasonLine = fillTemplate(copy.failureReasonLabel, { reason: reasonText });
   const ctaUrl = broadcastDetailUrl(input.broadcastId);
+  // Round 2 R2-13 — `body2` says "our delivery service was unreachable for over
+  // an hour, so we stopped retrying". That is TRUE for the FR-021 budget and
+  // false for every other reason: a Free-plan cap, a data defect, an audience
+  // that emptied. Rendered unconditionally it contradicted the Reason line one
+  // paragraph above, in the same email.
+  //
+  // So it renders only for the reasons it describes. The others already have a
+  // reason sentence and the reassurance paragraph; a paragraph asserting the
+  // wrong cause is worse than one paragraph fewer.
+  const body2 = OUTAGE_REASONS.has(input.reason) ? copy.body2 : null;
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
@@ -274,7 +294,7 @@ export function buildBroadcastFailedToDispatchEmail(
     <p style="line-height:1.6;">${escapeHtml(copy.greeting)}</p>
     <p style="line-height:1.6;">${escapeHtml(body1)}</p>
     <p style="line-height:1.6;color:#555;font-size:14px;">${escapeHtml(scheduledLine)}<br>${escapeHtml(reasonLine)}</p>
-    <p style="line-height:1.6;">${escapeHtml(copy.body2)}</p>
+    ${body2 === null ? '' : `<p style="line-height:1.6;">${escapeHtml(body2)}</p>`}
     <p style="line-height:1.6;background:#fff7e6;border-left:4px solid #f5a623;padding:12px 16px;border-radius:4px;">${escapeHtml(copy.reassurance)}</p>
     <p style="margin:24px 0;">
       <a href="${ctaUrl}" style="display:inline-block;background:${EMAIL_BRAND_PRIMARY};color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaRescheduleLabel)}</a>
@@ -288,7 +308,7 @@ export function buildBroadcastFailedToDispatchEmail(
     `${copy.greeting}\n\n` +
     `${body1}\n\n` +
     `${scheduledLine}\n${reasonLine}\n\n` +
-    `${copy.body2}\n\n` +
+    (body2 === null ? '' : `${body2}\n\n`) +
     `${copy.reassurance}\n\n` +
     `${copy.ctaRescheduleLabel}: ${ctaUrl}\n\n` +
     `${copy.footerSignOff}\n`;

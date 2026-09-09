@@ -1,7 +1,10 @@
 /**
  * F7 US2 cron worker — POST `/api/cron/broadcasts/dispatch-scheduled`.
  *
- * Triggered every 5 min by cron-job.org (per docs/runbooks/cron-jobs.md).
+ * Triggered every 5 min by **native Vercel Cron** (`vercel.json`) since the
+ * 2026-07-17 Pro migration — UTC-only, invoked with GET, which is why `GET` is
+ * aliased to `POST` below. cron-job.org is a paused standby.
+ * See docs/runbooks/cron-jobs.md.
  *
  * Auth: Bearer token via `CRON_SECRET` (matches F4 outbox-dispatch).
  *
@@ -14,12 +17,19 @@
  *     SAME eligibility batch — it does NOT protect the per-row dispatch
  *     window against another tick that arrives after this one's tx
  *     ended but before the dispatch use-case's own tx starts.
- *   - The authoritative dispatch-time concurrency guard is the per-row
- *     `pg_advisory_xact_lock('broadcasts:'+tenant+':'+id)` acquired
- *     inside the use-case's `withTx` — that lock survives the entire
- *     dispatch tx and is what closes the TOCTOU window between cron +
- *     manual admin send-now. SKIP LOCKED here is a small additional
- *     defence against eligible-scan duplication, not the primary guard.
+ *   - On the LEGACY leg the dispatch-time guard is the per-row
+ *     `pg_advisory_xact_lock('broadcasts:'+tenant+':'+id)` acquired inside the
+ *     use-case's `withTx`, which closes the TOCTOU window between cron and
+ *     manual admin send-now. SKIP LOCKED here is a small additional defence
+ *     against eligible-scan duplication, not the primary guard.
+ *   - **On the IMPORT leg that lock does NOT span the send** (round 3 finding
+ *     3-6). `buildAudienceTick`'s locking tx COMMITS before every gateway call,
+ *     so the window covers a poll, a full re-resolve, `createBroadcast` and
+ *     `sendBroadcast`. A cancel can land inside it. That path therefore persists
+ *     the Resend ids in their own transaction BEFORE the status transition, so a
+ *     lost race still leaves the webhooks resolvable. This paragraph claimed the
+ *     lock "survives the entire dispatch tx" for both legs; it never did for
+ *     that one.
  *
  * RLS context: the eligible scan runs with `runInTenant(tenant.slug)` so
  * RLS+FORCE policies apply (Constitution Principle I clause 1 — every
@@ -148,7 +158,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: tenant.slug,
       },
       'cron.broadcasts.dispatch.eligible_query_failed',
@@ -461,8 +471,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { tenantId: tenant.slug, ...summary },
       'cron.broadcasts.dispatch.tick_complete',
     );
+    // Round 2 R2-15 — the span carried only `processed` + `succeeded`, so the
+    // FIRST tick of an import build traced as `processed=1, succeeded=0` with no
+    // error status: indistinguishable from a tick that did nothing at all. That
+    // is the one trace an operator opens on the first real send, and tick 1
+    // legitimately succeeding looks identical to tick 1 silently failing.
+    //
+    // Every bucket the summary counts is now an attribute, so the trace says
+    // WHICH outcome happened. `import_submitted` and `import_pending` are the two
+    // that used to be invisible.
     cronSpan.setAttribute('cron.processed', summary.processed);
     cronSpan.setAttribute('cron.succeeded', summary.succeeded);
+    cronSpan.setAttribute('cron.import_submitted', summary.import_submitted);
+    cronSpan.setAttribute('cron.import_pending', summary.import_pending);
+    cronSpan.setAttribute('cron.retryable', summary.retryable);
+    cronSpan.setAttribute('cron.permanent_failed', summary.permanent_failed);
+    cronSpan.setAttribute('cron.concurrent_skip', summary.concurrent_skip);
+    cronSpan.setAttribute('cron.resource_missing', summary.resource_missing);
+    cronSpan.setAttribute('cron.unknown_error', summary.unknown_error);
+    cronSpan.setAttribute('cron.uncaught_error', summary.uncaught_error);
     if (summary.uncaught_error > 0 || summary.unknown_error > 0) {
       cronSpan.setStatus({
         code: SpanStatusCode.ERROR,

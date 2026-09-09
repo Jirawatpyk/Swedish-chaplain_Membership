@@ -385,7 +385,14 @@ export const broadcasts = pgTable(
       .on(table.resendBroadcastId)
       .where(sql`resend_broadcast_id IS NOT NULL`),
     // 108 US5 (migration 0298) — the partial index behind the stuck-import
-    // gauge. Leads with `tenant_id` per convention.
+    // gauge and the flag-rollback drain. Leads with `tenant_id` per convention.
+    //
+    // R2-6: both consumers add clauses this index does NOT carry — the gauge adds
+    // `status = 'approved'` and a 30-minute age window, the drain adds
+    // `status = 'approved'`. So the index condition is IMPLIED BY each query
+    // rather than equal to it, which is what keeps one index serving both. Do not
+    // "align" it by adding `status`: that would make it useless to any future
+    // consumer asking the same question about a different status.
     index('broadcasts_audience_import_pending_idx')
       .on(table.tenantId, table.audienceImportSubmittedAt)
       .where(

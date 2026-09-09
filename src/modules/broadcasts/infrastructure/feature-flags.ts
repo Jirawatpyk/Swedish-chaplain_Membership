@@ -74,8 +74,18 @@ export function isF71aUs1Enabled(): boolean {
  * ```sql
  * SELECT tenant_id, broadcast_id FROM broadcasts
  *  WHERE audience_import_id IS NOT NULL
- *    AND audience_import_completed_at IS NULL;
+ *    AND audience_import_completed_at IS NULL
+ *    AND status = 'approved';
  * ```
+ *
+ * Round 2 R2-6 — the `status = 'approved'` clause is not optional, and the gauge
+ * at `broadcasts-gauges/route.ts` has always had it while these two operator
+ * copies did not. Only an `approved` row can be STRANDED by the rollback; a
+ * `failed_to_dispatch` row also has an import id with no completion stamp and is
+ * terminal, so counting it makes the drain report work that does not exist and
+ * blocks a rollback for no reason. Round 3 finding 3-9 fixed the opposite
+ * direction — the stamp used to land BEFORE the send, so an `approved` row could
+ * carry it and escape this query entirely.
  */
 export function isF7ImportAudienceEnabled(): boolean {
   return env.features.f7Broadcasts && env.features.f7ImportAudience;

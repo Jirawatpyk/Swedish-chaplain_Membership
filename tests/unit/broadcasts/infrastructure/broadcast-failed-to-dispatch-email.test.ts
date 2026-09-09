@@ -19,6 +19,9 @@ import { describe, expect, it } from 'vitest';
 
 import { buildBroadcastFailedToDispatchEmail } from '@/modules/broadcasts/infrastructure/email/broadcast-notification-emails';
 import { MEMBER_FACING_FAILURE_REASONS } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import enMessages from '@/i18n/messages/en.json';
+import thMessages from '@/i18n/messages/th.json';
+import svMessages from '@/i18n/messages/sv.json';
 
 const LOCALES = ['en', 'th', 'sv'] as const;
 
@@ -36,6 +39,16 @@ const LOCALES = ['en', 'th', 'sv'] as const;
  * problem prevented delivery".
  */
 const KNOWN_REASONS = MEMBER_FACING_FAILURE_REASONS;
+
+/** A distinctive fragment of each locale's `body2`, read from the message file. */
+function enOutageMarker(locale: (typeof LOCALES)[number]): string {
+  const msgs = { en: enMessages, th: thMessages, sv: svMessages }[locale] as {
+    email: { broadcastFailedToDispatch: { body2: string } };
+  };
+  // First eight words is enough to be distinctive and short enough to survive a
+  // trailing-clause edit.
+  return msgs.email.broadcastFailedToDispatch.body2.split(' ').slice(0, 8).join(' ');
+}
 
 function build(reason: string, locale: (typeof LOCALES)[number]) {
   return buildBroadcastFailedToDispatchEmail({
@@ -82,6 +95,33 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
 
   it('en: malformed_segment tells the member who can fix it', () => {
     expect(build('malformed_segment', 'en').text).toMatch(/administrator/i);
+  });
+
+  /**
+   * Round 2 R2-13, second half — `body2` says "our delivery service was
+   * unreachable for over an hour, so we stopped retrying to avoid sending at an
+   * unexpected time". It was rendered UNCONDITIONALLY, so a member whose
+   * broadcast hit the Free-plan cap, or whose segment would not parse, read a
+   * paragraph asserting an outage that had not happened — one paragraph below a
+   * Reason line saying something else, in the same email.
+   */
+  it.each(LOCALES)('%s: the outage paragraph appears ONLY for the reasons it describes', (locale) => {
+    const outage = build('retry_budget_exhausted', locale).text;
+    const notOutage = build('gateway_permanent', locale).text;
+
+    // Pinned by a distinctive fragment of the sentence rather than the whole
+    // string, so a copy edit does not fail this for the wrong reason.
+    const marker = enOutageMarker(locale);
+    expect(outage).toContain(marker);
+    expect(notOutage).not.toContain(marker);
+  });
+
+  it('the non-outage email still carries its reason and its reassurance', () => {
+    const mail = build('gateway_permanent', 'en');
+    // Dropping the paragraph must not drop the two that answer "why" and
+    // "what happens to my quota".
+    expect(mail.text).toContain('refused the request');
+    expect(mail.text).toMatch(/quota/i);
   });
 
   /**
