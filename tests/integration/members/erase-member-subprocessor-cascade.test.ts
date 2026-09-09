@@ -59,11 +59,29 @@ import { and, eq } from 'drizzle-orm';
 // `makeDrizzleBroadcastsRepo`; the F7/F8 cancel cascades need the real exports).
 // `vi.hoisted` so the spy is initialised BEFORE the hoisted `vi.mock` factory
 // references it (the factory runs at the top of the module).
-const { removeContactFromAudienceSpy } = vi.hoisted(() => ({
-  removeContactFromAudienceSpy: vi.fn<
-    (audienceId: string, email: string) => Promise<void>
-  >(async () => {}),
-}));
+const { removeContactFromAudienceSpy, deleteContactGloballySpy } = vi.hoisted(
+  () => ({
+    removeContactFromAudienceSpy: vi.fn<
+      (audienceId: string, email: string) => Promise<void>
+    >(async () => {}),
+    /**
+     * Round 2 R2-18 — the U1 decision had NO regression guard, and the gap was
+     * not merely "untested": this factory spreads `...actual`, so
+     * `deleteContactGlobally` reached the REAL gateway. A future re-wiring that
+     * added the global delete to the erasure cascade would have issued a live
+     * `DELETE /contacts/{email}` against the SHARED production Resend account
+     * from the integration suite, and stayed green while doing it.
+     *
+     * Stubbed here so that cannot happen, and asserted never-called below so the
+     * decision recorded in `processing-records.md` residual 8a — detach, never
+     * global-delete, because one Resend account is shared across tenants — has a
+     * test that fails when someone reverses it.
+     */
+    deleteContactGloballySpy: vi.fn<(email: string) => Promise<void>>(
+      async () => {},
+    ),
+  }),
+);
 
 vi.mock('@/modules/broadcasts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/modules/broadcasts')>();
@@ -72,6 +90,7 @@ vi.mock('@/modules/broadcasts', async (importOriginal) => {
     resendBroadcastsGateway: {
       ...actual.resendBroadcastsGateway,
       removeContactFromAudience: removeContactFromAudienceSpy,
+      deleteContactGlobally: deleteContactGloballySpy,
     },
   };
 });
@@ -339,6 +358,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
   it('1 — HAPPY CAPSTONE: a member in TWO audience-bearing broadcasts → both pairs removed, ONE audit (removed_count:2), member_erased + cascadesComplete:true', async () => {
     removeContactFromAudienceSpy.mockClear();
     removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    deleteContactGloballySpy.mockClear();
 
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceA = `aud-cap-a-${randomUUID().slice(0, 8)}`;
@@ -369,6 +389,24 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     for (const call of removeContactFromAudienceSpy.mock.calls) {
       expect(call[1]).toBe(contactEmail);
     }
+
+    // ── Round 2 R2-18 — the U1 decision, made enforceable ────────────────────
+    //
+    // The cascade DETACHES (audience-scoped) and must never issue the
+    // audience-less global delete, because ONE Resend account is shared by every
+    // tenant: deleting the contact record during tenant A's erasure destroys
+    // tenant B's record together with the Resend-side `unsubscribed` flag that
+    // `on_conflict=upsert` exists to preserve — trading an Art. 17 residual for
+    // an Art. 21 regression on someone who never asked. That reasoning lives in
+    // `processing-records.md` residual 8a; until now nothing failed if it was
+    // reversed.
+    //
+    // Note this assertion is only half the guard. The other half is that
+    // `deleteContactGlobally` is now STUBBED in the `vi.mock` factory above: it
+    // used to fall through `...actual` to the real gateway, so a re-wiring would
+    // have issued a live `DELETE /contacts/{email}` against the shared production
+    // account from this suite — and passed.
+    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
 
     // EXACTLY ONE subprocessor_erasure_propagated audit records ok + count 2.
     const subAudits = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);

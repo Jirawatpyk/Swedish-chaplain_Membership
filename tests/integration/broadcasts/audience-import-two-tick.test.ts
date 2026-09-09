@@ -76,7 +76,13 @@ function makeFakeGateway(counts: {
       },
       async createBroadcast() {
         calls.push('createBroadcast');
-        return { broadcastId: 'rb-live-test' };
+        // Round 2 R2-33 — this returned the CONSTANT 'rb-live-test', and
+        // `broadcasts_resend_broadcast_id_uniq` is a partial UNIQUE index on
+        // `resend_broadcast_id`. On the SHARED dev Neon branch a second run (or a
+        // first run after an interrupted one skipped `afterAll`) hits 23505 and
+        // the file is red for a reason that has nothing to do with the code under
+        // test. Unique per broadcast, per run.
+        return { broadcastId: `rb-live-${randomUUID()}` };
       },
       async sendBroadcast(id: string) {
         calls.push('sendBroadcast');
@@ -222,7 +228,11 @@ describe.runIf(RUN_INTEGRATION)('T087 — two-tick import build (live Neon)', ()
     // guard, and a second submit would create a second job whose counts could
     // not be checked against anything.
     expect(gw.imports).toHaveLength(1);
-    expect(gw.sends).toEqual(['rb-live-test']);
+    // Asserts the SHAPE and that exactly one send happened — the id is now
+    // per-run, so pinning its literal value would pin the fixture, not the
+    // behaviour.
+    expect(gw.sends).toHaveLength(1);
+    expect(gw.sends[0]).toMatch(/^rb-live-/);
 
     row = await readRow(raw);
     expect(row.completed).toBe(true);

@@ -1368,6 +1368,39 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(spy.mock.calls.map((c) => c[1])).toEqual(['app_error']);
   });
 
+  /**
+   * Round 2 R2-10 — nothing drove a throw carrying NO `kind`.
+   *
+   * That is not a gateway error at all: it is a fault in our own code reaching
+   * `viaGateway`, and `classifyThrown` maps it to `unknown` -> `gateway_unknown`,
+   * deliberately NON-retryable. With this case absent, a mutant that made
+   * `unknown` retryable — reinstating the exact five-minute forever-loop this
+   * whole use case exists to remove — passed the suite. The two named poles
+   * (`retryable`, `permanent`) were pinned; the arm between them was not.
+   *
+   * A plain `Error`, not a `gatewayThrow`: the fixture must not hand the code the
+   * `kind` field whose ABSENCE is the whole subject.
+   */
+  it('a throw with NO kind is our bug, not the provider — terminal as gateway_unknown', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['sendBroadcast'] = async () => {
+      throw new TypeError('cannot read properties of undefined');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    // Terminal, NOT `dispatch.server_error` — retrying a programming fault every
+    // five minutes for ever is the behaviour being removed.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    // Its own reason, kept apart from `gateway_permanent`, so an operator is not
+    // sent to look at Resend's status page for our bug.
+    expect(rec.transitions[0]?.failureReason).toBe('gateway_unknown');
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
   it('an ordinary permanent 4xx still fails terminally AND still tells the member', async () => {
     const { deps, rec } = makeDeps({
       ...POLLING,
