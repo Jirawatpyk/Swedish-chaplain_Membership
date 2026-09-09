@@ -19,7 +19,7 @@ import { and, eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
-import { isF71aUs1Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
+import { isF7ImportAudienceEnabled } from '@/modules/broadcasts/infrastructure/feature-flags';
 import { DELIVERABLE_RECIPIENTS_PER_TICK } from '@/modules/broadcasts/domain/audience-ceiling';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
@@ -125,8 +125,15 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     // also why this file failed on the pre-push hook rather than in CI: the
     // rule is written out twice on purpose, so changing it in one place has to
     // be a deliberate act in the other.
-    const configured = isF71aUs1Enabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
-    const expectedCeiling = isF71aUs1Enabled()
+    // Round 3 finding 3-4 — this restated `isF71aUs1Enabled()` while
+    // `configuredAudienceCeiling()` reads `isF7ImportAudienceEnabled()`. Under
+    // `.env.local` (pagination ON, 1:N ON, import OFF) it computed 50,000 and
+    // the route returned 500. It stayed green in CI only because both flags
+    // default false there and the two expressions happen to agree at 500 — so
+    // it was written to protect a flip and would have gone RED on that flip.
+    const configured =
+      isF7ImportAudienceEnabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
+    const expectedCeiling = isF7ImportAudienceEnabled()
       ? configured
       : Math.min(configured, DELIVERABLE_RECIPIENTS_PER_TICK);
     // No `orphans` on the member body (review M-3): it is about OTHER members.

@@ -626,7 +626,9 @@ const schema = z.object({
   // Read in ONE module: `src/modules/broadcasts/infrastructure/broadcasts-deps.ts`
   // maps it to `ResolveSegmentDeps.audienceMode` ('primary_only' |
   // 'all_contacts') AND — review H-2 — gates the audience ceiling with
-  // FEATURE_F71A_US1_PAGINATION (50,000 only when BOTH are on, else 5,000),
+  // FEATURE_F7_IMPORT_AUDIENCE (50,000 only when BOTH are on, else 5,000;
+  // round 3 finding 3-4 — this named FEATURE_F71A_US1_PAGINATION, which was
+  // the gate until `ca51f59a1` deleted the batch path it belonged to),
   // so Domain and Application never see the env. A flip therefore also moves
   // the accepted audience size and the compose-page copy. Default
   // FALSE — ships dark; the operator flips it only after the FR-027a

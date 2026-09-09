@@ -128,9 +128,15 @@ export function currentAudienceMode(): AudienceMode {
  * docblock on `currentAudienceCeiling()` for why collapsing them would make
  * the clamp assertions vacuous.
  *
- * Value: 5,000 unless BOTH the F7.1a batching path AND the 1:N audience flag
- * are ON, then 50,000. Read per call, so a flag flip takes effect on the next
- * request/tick.
+ * Value: 5,000 unless BOTH `FEATURE_F7_IMPORT_AUDIENCE` AND the 1:N audience
+ * flag are ON, then 50,000. Read per call, so a flag flip takes effect on the
+ * next request/tick.
+ *
+ * Round 3 finding 3-4 — this said "the F7.1a batching path", naming
+ * `FEATURE_F71A_US1_PAGINATION`. That WAS the gate until `ca51f59a1` deleted
+ * the batch path; the code below has read `isF7ImportAudienceEnabled()` since,
+ * and the prose did not follow. A live-Neon test restated the same stale rule
+ * and was RED under the dev/prod flag configuration.
  *
  * Review H-2 (2026-09-07): the wide ceiling was raised FOR the 1:N audience,
  * so it moves WITH `FEATURE_CONTACT_MARKETING_RECIPIENTS`. Gating on the
