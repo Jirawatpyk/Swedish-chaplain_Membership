@@ -49,6 +49,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
@@ -1075,7 +1076,7 @@ async function confirmImport(
     if (auditErr instanceof AuditPortInvariantError) throw auditErr;
     logger.error(
       {
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        err: errKind(auditErr),
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
         resendBroadcastId: rb.broadcastId,
@@ -1121,7 +1122,7 @@ async function confirmImport(
   } catch (stampErr) {
     logger.error(
       {
-        err: stampErr instanceof Error ? stampErr.message : String(stampErr),
+        err: errKind(stampErr),
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
         importId,
@@ -1268,7 +1269,7 @@ async function failTerminally(
     // broadcast failed when it was cancelled is worse than silence.
     logger.error(
       {
-        err: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+        err: errKind(cleanupErr),
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
         dispatchFailureKind: reason,

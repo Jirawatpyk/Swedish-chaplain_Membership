@@ -75,6 +75,7 @@ export {
 } from './domain/value-objects/quota-counter';
 export {
   BROADCAST_STATUSES,
+  OFFERED_BROADCAST_STATUSES,
   TERMINAL_BROADCAST_STATUSES,
   isBroadcastStatus,
   isTerminalStatus,

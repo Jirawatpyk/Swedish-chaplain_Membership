@@ -19,6 +19,7 @@
  * in its body; they are not carried over.
  */
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -47,7 +48,7 @@ export async function emitExpiredPlanAuditIfApplicable(args: {
     // best-effort; log + skip without blocking the dispatch result.
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: deps.tenant.slug,
         broadcastId: broadcast.broadcastId as string,
         memberId: broadcast.requestedByMemberId,
@@ -85,7 +86,7 @@ export async function emitExpiredPlanAuditIfApplicable(args: {
   } catch (auditErr) {
     logger.error(
       {
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        err: errKind(auditErr),
         tenantId: deps.tenant.slug,
         broadcastId: broadcast.broadcastId as string,
       },

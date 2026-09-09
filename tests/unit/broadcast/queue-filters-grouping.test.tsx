@@ -22,6 +22,7 @@ import enMessages from '@/i18n/messages/en.json';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import {
   BROADCAST_STATUSES,
+  OFFERED_BROADCAST_STATUSES,
   RETIRED_BROADCAST_STATUSES,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 
@@ -93,9 +94,11 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
       </Provider>,
     );
 
-    const offered = BROADCAST_STATUSES.filter(
-      (s) => !(RETIRED_BROADCAST_STATUSES as readonly string[]).includes(s),
-    );
+    // R2-7 — read the VO's derivation rather than re-deriving it. This test
+    // computing the rule a second time is what let the queue's loading skeleton
+    // disagree with the real strip: the assertion tracked the component, and
+    // nothing tracked the skeleton.
+    const offered = OFFERED_BROADCAST_STATUSES;
     expect(screen.getAllByRole('checkbox')).toHaveLength(offered.length);
 
     // Positive controls: the count alone passes if the strip renders the wrong
@@ -104,6 +107,29 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
     expect(offered).toContain('sent');
     expect(offered).toContain('failed_to_dispatch');
     expect(offered).not.toContain('partially_sent');
+  });
+
+  /**
+   * R2-23 — the property the CLS skeleton depends on, asserted where the strip
+   * is rendered. `/admin/broadcasts/loading.tsx` sizes its chip placeholders from
+   * the same tuple; before this the skeleton read `BROADCAST_STATUSES.length` and
+   * reserved 10 for a row of 8. A count is only as good as the two things it
+   * keeps equal.
+   */
+  it('renders exactly OFFERED_BROADCAST_STATUSES.length chips — the number the loading skeleton reserves', () => {
+    render(
+      <Provider>
+        <QueueFilters memberOptions={[]} />
+      </Provider>,
+    );
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(
+      OFFERED_BROADCAST_STATUSES.length,
+    );
+    // Both halves named, so a change to either list has to be deliberate twice.
+    expect(OFFERED_BROADCAST_STATUSES).toHaveLength(
+      BROADCAST_STATUSES.length - RETIRED_BROADCAST_STATUSES.length,
+    );
   });
 
   it('keeps the Reset button adjacent to the chip strip, not pushed to the row edge', () => {

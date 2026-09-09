@@ -70,6 +70,26 @@ export const RETIRED_BROADCAST_STATUSES = [
   'partial_delivery_accepted',
 ] as const;
 
+/**
+ * The statuses a human may FILTER ON — everything except the retired ones.
+ *
+ * Round 2 R2-7 / R2-23. The derivation `BROADCAST_STATUSES` minus
+ * `RETIRED_BROADCAST_STATUSES` lived inside `queue-filters.tsx`, so the queue's
+ * loading skeleton — which sizes its chip strip from `BROADCAST_STATUSES.length`
+ * to keep CLS near zero — reserved 10 chips for a strip that renders 8. The
+ * skeleton's own docblock records fixing this exact class of drift once before
+ * ("this used to hardcode 8, drifting from the 10-entry tuple"), which is the
+ * argument for the derivation living HERE rather than in one consumer.
+ *
+ * Read this wherever a surface OFFERS a status to a human or reserves space for
+ * one. `BROADCAST_STATUSES` remains the full set — a historical row must still
+ * parse and still render its badge.
+ */
+export const OFFERED_BROADCAST_STATUSES: ReadonlyArray<BroadcastStatus> =
+  BROADCAST_STATUSES.filter(
+    (s) => !(RETIRED_BROADCAST_STATUSES as readonly string[]).includes(s),
+  );
+
 export const TERMINAL_BROADCAST_STATUSES = [
   'sent',
   'rejected',

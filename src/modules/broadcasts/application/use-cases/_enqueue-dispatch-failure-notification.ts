@@ -13,6 +13,7 @@
  * not.
  */
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -70,7 +71,7 @@ export async function enqueueDispatchFailureNotification(args: {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: deps.tenant.slug,
         broadcastId: broadcast.broadcastId as string,
         memberId: broadcast.requestedByMemberId,
@@ -112,7 +113,7 @@ export async function enqueueDispatchFailureNotification(args: {
     } catch (auditErr) {
       logger.error(
         {
-          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          err: errKind(auditErr),
           tenantId: deps.tenant.slug,
           broadcastId: broadcast.broadcastId as string,
         },
@@ -134,7 +135,7 @@ export async function enqueueDispatchFailureNotification(args: {
   } catch (localeErr) {
     logger.warn(
       {
-        err: localeErr instanceof Error ? localeErr.message : String(localeErr),
+        err: errKind(localeErr),
         tenantId: deps.tenant.slug,
         broadcastId: broadcast.broadcastId as string,
         memberId: broadcast.requestedByMemberId,
@@ -167,7 +168,7 @@ export async function enqueueDispatchFailureNotification(args: {
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: deps.tenant.slug,
         broadcastId: broadcast.broadcastId as string,
       },
