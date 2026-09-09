@@ -825,6 +825,24 @@ async function confirmImport(
           orphanCount: resolved.value.orphans.length,
           droppedByPreference: resolved.value.droppedByPreference,
           sendingStartedAt: now.toISOString(),
+          // Round 3, below-cap sweep — these three were MISSING while the
+          // comment above claimed "same payload shape as the legacy path on
+          // purpose". They are AS1's spec-required fields, added to the legacy
+          // payload by its own E1 closure: `actualSendAt` is the same wall-clock
+          // moment as `sendingStartedAt` under AS1's second name, and
+          // `delaySeconds` answers "how late did the cron fire" for the SC-001
+          // quartiles. `null` for a send-now row, where the question is moot.
+          //
+          // Computed the same way as `dispatch-scheduled-broadcast.ts:984-995`
+          // rather than approximated: an append-only row that silently omits
+          // three fields is a gap no reader can see, and the parity claim made
+          // it invisible to a diff of the two paths as well.
+          scheduledFor: broadcast.scheduledFor?.toISOString() ?? null,
+          actualSendAt: now.toISOString(),
+          delaySeconds:
+            broadcast.scheduledFor !== null && broadcast.scheduledFor !== undefined
+              ? Math.round((now.getTime() - broadcast.scheduledFor.getTime()) / 1000)
+              : null,
         },
         requestId: null,
       });

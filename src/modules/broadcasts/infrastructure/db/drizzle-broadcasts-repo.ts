@@ -885,33 +885,6 @@ export function makeDrizzleBroadcastsRepo(
       }
     },
 
-    async updateEstimatedRecipientCount(
-      txUnknown,
-      tenantIdArg: TenantSlug,
-      broadcastId: BroadcastId,
-      estimatedRecipientCount: number,
-    ): Promise<void> {
-      const tx = txUnknown as TenantTx;
-      await assertTenantBoundTx(tx, ctx.slug, 'updateEstimatedRecipientCount');
-      const updated = await tx
-        .update(broadcasts)
-        .set({
-          estimatedRecipientCount,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(broadcasts.tenantId, tenantIdArg),
-            eq(broadcasts.broadcastId, broadcastId),
-          ),
-        )
-        .returning({ broadcastId: broadcasts.broadcastId });
-      if (updated.length !== 1) {
-        throw new Error(
-          `updateEstimatedRecipientCount: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
-        );
-      }
-    },
 
     async listByTenantStatus(
       tenantIdArg: TenantSlug,

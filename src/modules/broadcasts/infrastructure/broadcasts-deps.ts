@@ -436,7 +436,6 @@ export async function makeDispatchScheduledBroadcastDeps(
     // is split rather than refused, so this cron needs its own answer for a
     // row whose audience grew past one tick since submit — hand it to the
     // batch path, do not push it and die at `maxDuration`.
-    deliverablePerTick: DELIVERABLE_RECIPIENTS_PER_TICK,
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,

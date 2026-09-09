@@ -716,6 +716,29 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(row?.payload['droppedByPreference']).toBe(12);
   });
 
+  /**
+   * Round 3, below-cap sweep — the send record silently omitted `scheduledFor`,
+   * `actualSendAt` and `delaySeconds` while the comment above it claimed "same
+   * payload shape as the legacy path on purpose". Those are AS1's spec-required
+   * fields, added to the legacy payload by its own E1 closure, and
+   * `delaySeconds` is what answers "how late did the cron fire" for the SC-001
+   * quartiles. A parity CLAIM is exactly what stops a diff of the two paths from
+   * showing the gap.
+   */
+  it('the send record carries the three AS1 fields the legacy payload has', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_send_started');
+    // The fixture schedules for NOW, so the cron fired on time.
+    expect(row?.payload['scheduledFor']).toBe(NOW.toISOString());
+    expect(row?.payload['actualSendAt']).toBe(NOW.toISOString());
+    expect(row?.payload['delaySeconds']).toBe(0);
+    // `actualSendAt` is AS1's second name for the same wall-clock moment.
+    expect(row?.payload['actualSendAt']).toBe(row?.payload['sendingStartedAt']);
+  });
+
   it('carries the orphan count through to the send record', async () => {
     const { deps, rec } = makeDeps({
       ...POLLING,

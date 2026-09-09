@@ -44,6 +44,25 @@ if (!url) {
   process.exit(1);
 }
 
+/**
+ * Round 3, below-cap sweep — **`broadcast_batch_manifests` and the
+ * `partial_delivery_*` columns below belong to a subsystem `ca51f59a1` DELETED,
+ * and they are asserted here on purpose.** A reviewer reasonably read this as a
+ * gate certifying dead DDL; it is a gate certifying DDL that is still THERE, and
+ * the distinction matters because the table still holds rows.
+ *
+ * Measured 2026-09-09 (read-only): dev has 2 rows, both carrying a
+ * `provider_audience_id`; prod has 0 rows and 0 broadcasts. Those
+ * `provider_audience_id` values are still reachable — the erasure and
+ * audience-reclaim reads `LEFT JOIN` this table so a batch-era Resend audience
+ * is not leaked — so the table, its Drizzle declaration and this assertion all
+ * stay until a migration drops it deliberately.
+ *
+ * Likewise `broadcast_dispatched_in_batches` in `EXPECTED_AUDIT_EVENTS`: an
+ * `audit_event_type` value cannot be removed from a Postgres enum without a
+ * rewrite, and historical audit rows may name it. See
+ * `RETIRED_F7_AUDIT_EVENT_TYPES` for how the app surfaces stop OFFERING it.
+ */
 const EXPECTED_TABLES = [
   'broadcast_batch_manifests',
   'broadcast_templates',

@@ -91,9 +91,6 @@ function makeBroadcastsRepo({
     },
     // Phase 9b (T147) — unused here; present so the stub still satisfies
     // BroadcastsRepo.
-    async updateEstimatedRecipientCount() {
-      // no-op
-    },
     // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
     async attachAudienceImport() {},
     async markAudienceImportCompleted() {},

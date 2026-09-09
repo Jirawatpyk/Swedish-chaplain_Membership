@@ -115,25 +115,6 @@ export interface DispatchScheduledBroadcastDeps {
   readonly audienceMode: AudienceMode;
   /** 108 PR-C T085 — the same `audienceCeiling(batchingEnabled)` submit read. */
   readonly audienceCeiling: number;
-  /**
-   * How many contacts THIS cron's serial push can deliver in one invocation
-   * (`DELIVERABLE_RECIPIENTS_PER_TICK`).
-   *
-   * Distinct from `audienceCeiling`, which is what the system ACCEPTS. On this
-   * leg they are currently the same number, because `currentAudienceCeiling()`
-   * clamps to exactly this value whenever the import flag is off — and the
-   * import leg, where the ceiling is deliberately higher, does not run this use
-   * case at all.
-   *
-   * So nothing reads this today: the hand-off it was added for
-   * (`DEFERRED_TO_BATCH_PATH`) was removed in 108 Phase 9 review round 1, since
-   * `ca51f59a1` deleted the path it handed off TO. Kept in the interface rather
-   * than deleted because it names a real bound that stops being implicit the
-   * moment the clamp and the ceiling diverge again; the honest answer for an
-   * audience this loop cannot push is `broadcast_audience_too_large`, which the
-   * ceiling already produces upstream.
-   */
-  readonly deliverablePerTick: number;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /**

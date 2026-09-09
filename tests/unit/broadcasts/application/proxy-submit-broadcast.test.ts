@@ -183,7 +183,6 @@ function makeRepo(opts: FixtureOpts): {
       async attachAudienceId() {},
       // Phase 9b (T147) — unused by this use case; present so the stub
       // still satisfies BroadcastsRepo.
-      async updateEstimatedRecipientCount() {},
       // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
       async attachAudienceImport() {},
       async markAudienceImportCompleted() {},

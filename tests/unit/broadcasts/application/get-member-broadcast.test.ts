@@ -57,9 +57,6 @@ function makeRepoMocks(opts: {
     },
     // Phase 9b (T147) — unused by this use case; present so the stub
     // still satisfies BroadcastsRepo.
-    updateEstimatedRecipientCount: async () => {
-      // no-op
-    },
     // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
     attachAudienceImport: async () => {
       // no-op
