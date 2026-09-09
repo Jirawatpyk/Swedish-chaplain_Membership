@@ -903,15 +903,47 @@ async function confirmImport(
   // still holds C: failed=0, parts==total==2, total==resolvedCount==2 — every
   // clause passes — and the send reaches all three. GDPR Art. 21 / PDPA s.32.
   //
-  // `getAudienceContactCount` was on the port and never called on this path. The
-  // legacy leg has used it for exactly this since its round-4 IMP-5, with the
-  // same two outcomes: a MISMATCH refuses, and an UNVERIFIABLE count proceeds
-  // with a forensic trail rather than killing a legitimate send.
+  // **Round 4 F1 — the comparison is `>`, not `!==`, and that is the whole
+  // difference between a guard and an outage.**
+  //
+  // This check shipped in round 3 refusing on ANY inequality, under a comment
+  // claiming the legacy leg "has used it for exactly this … with the same two
+  // outcomes: a MISMATCH refuses". Every clause of that was false, and reading
+  // the legacy source says so in its own words:
+  //   - legacy calls this ONLY in the idempotency-conflict replay arm, never on
+  //     the normal path;
+  //   - legacy on mismatch STILL ADVANCES to `sending` — "the drift is a
+  //     forensic record, not a blocker";
+  //   - and the number is `sdk.contacts.list({audienceId}).data.length`, where
+  //     the SDK sends NO query parameter at all (`resend/dist/index.js`), so it
+  //     is ONE PAGE of an unknown page size. The method's own comment admits it:
+  //     "(paginated). For MVP we list and return `data.length`".
+  //
+  // So `!==` fired on the happy path for any audience larger than a page —
+  // SweCham's 150 members against a typical 100-row page — killing the
+  // broadcast permanently and telling the member it was not sent.
+  //
+  // `>` is safe in a way `!==` can never be, because a truncated page can only
+  // UNDERCOUNT. If the observed count still EXCEEDS what we resolved, then the
+  // true audience is at least that large and genuinely holds contacts we did
+  // not put there — no pagination can manufacture that. A shortfall, by
+  // contrast, is indistinguishable from truncation, so it proceeds on the
+  // record.
+  //
+  // That keeps the guard pointed at the harm it was built for — the carried-over
+  // contact above, who unsubscribed and would otherwise receive the send (GDPR
+  // Art. 21 / PDPA s.32) — and removes the false-refusal direction entirely.
+  //
+  // RESIDUAL, stated rather than implied: a carried-over contact can still be
+  // MISSED when the page truncates below `resolvedCount`. Closing that needs a
+  // paginating count, which `getAudienceContactCount` is not. False negatives
+  // here are the same exposure as the `unverifiable` branch below and are the
+  // right trade for a check that can kill a send; false positives were not.
   const audienceCount = await viaGateway(() =>
     deps.broadcastsGateway.getAudienceContactCount(audienceId),
   );
   if (audienceCount.ok && audienceCount.value.kind === 'present') {
-    if (audienceCount.value.count !== resolvedCount) {
+    if (audienceCount.value.count > resolvedCount) {
       return failTerminally(deps, input, broadcast, {
         kind: 'audience_import_failed',
         reason: 'audience_membership_drift',
@@ -935,6 +967,13 @@ async function confirmImport(
       },
       'broadcasts.audience_import.membership_unverifiable',
     );
+    // Round 4 (reliability I-2, fourth strand) — the legacy leg emits this at
+    // its own unverifiable branch with a comment saying the catalogued alert at
+    // `observability.md` § 22.3 (`drift_check_unverifiable > 1 / 1h`) needs a
+    // data source. This leg had the log and not the metric, so that alert was
+    // blind here — and this is the branch a Resend blip lands in, on the leg
+    // that a flag flip makes live.
+    broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
   }
 
   const createdRb = await viaGateway(() =>

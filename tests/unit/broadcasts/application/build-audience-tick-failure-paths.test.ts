@@ -967,6 +967,39 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
   });
 
   /**
+   * Round 4 F1 — the direction that had NO case, which is how the bug survived
+   * a whole review round.
+   *
+   * `getAudienceContactCount` is `sdk.contacts.list({audienceId}).data.length`
+   * and the SDK sends no query parameter, so the number is ONE PAGE of an
+   * unknown page size — the method's own comment says "(paginated). For MVP we
+   * list and return `data.length`". The check shipped comparing with `!==`, so
+   * every audience larger than a page failed on the HAPPY PATH: SweCham's 150
+   * members against a typical 100-row page would have killed the first send
+   * after the flip and told the member it did not go out.
+   *
+   * A truncated page can only UNDERCOUNT, so a shortfall is indistinguishable
+   * from truncation and must proceed. An EXCESS cannot be manufactured by
+   * truncation, which is why the case above still refuses. This one fails if
+   * anyone restores `!==`.
+   */
+  it('an audience count BELOW the resolved list still sends — a truncated page must not kill a broadcast', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      // What one page of a larger audience looks like from here.
+      audienceContactCount: RECIPIENTS.length - 1,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    // And it is not quietly recorded as a failure either.
+    expect(rec.transitions.map((t) => t.status)).not.toContain('failed_to_dispatch');
+  });
+
+  /**
    * The unverifiable branch, and why it PROCEEDS. A 404 on the audience or a
    * transport blip must not kill a legitimate send — the legacy leg makes the
    * same call for the same reason. It is on the record instead.
@@ -975,7 +1008,8 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
    * method unstubbed, `viaGateway` caught a "not a function" TypeError and every
    * send in this file silently took THIS branch.
    */
-  it('an unverifiable audience count proceeds rather than killing a legitimate send', async () => {
+  it('an unverifiable audience count proceeds rather than killing a legitimate send — AND raises the alert', async () => {
+    const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
     const { deps, rec } = makeDeps({
       ...POLLING,
       audienceImportSubmittedAt: NOW,
@@ -991,6 +1025,12 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
 
     expect(res.ok).toBe(true);
     expect(rec.sends).toHaveLength(1);
+    // Round 4 (reliability I-2) — proceeding is the right call, but it must not
+    // be SILENT. This branch had the log and not the metric, so the catalogued
+    // alert `drift_check_unverifiable > 1 / 1h` (observability § 22.3) had no
+    // data source on the import leg — the one a flag flip makes live, and the
+    // branch a Resend blip lands in. The legacy leg has emitted it all along.
+    expect(unverifiableSpy).toHaveBeenCalledTimes(1);
   });
 
   /**
