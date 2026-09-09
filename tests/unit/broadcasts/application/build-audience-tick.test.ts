@@ -109,6 +109,30 @@ function makeDeps(opts: {
     segmentParams: null,
     customRecipientEmails: null,
     estimatedRecipientCount: RECIPIENTS.length,
+    // Round 4 T2, second half — found by MEASURING, not by the type above.
+    //
+    // These three were absent, and the mapped type cannot see it: it checks the
+    // keys of `deps`, not the completeness of a fixture. Two consequences, both
+    // silent:
+    //
+    //  1. `_enqueue-dispatch-failure-notification.ts:160` does
+    //     `broadcast.scheduledFor !== null ? broadcast.scheduledFor.toISOString()`
+    //     — `undefined !== null` is TRUE, so every FR-021 send threw a TypeError
+    //     into its own catch. Adding `membersBridge` removed the
+    //     `member_lookup_failed` lines but left 7 `enqueue_failed` ones; the
+    //     member still got nothing.
+    //  2. `budgetEpoch` is `scheduledFor ?? approvedAt ?? createdAt`. All three
+    //     undefined makes it `new Date(undefined).getTime()` → NaN, and every
+    //     comparison against NaN is false, so the FR-021 hour budget could not
+    //     fire in this file at all. That is why round 4's M11 mutant (deleting
+    //     the `?? approvedAt ?? createdAt` fallbacks) survived 71/71.
+    //
+    // `scheduledFor: null` is the send-now case, so the epoch resolves to
+    // `approvedAt` and `elapsedMs` is 0 — the budget is reachable and not
+    // spuriously exhausted.
+    scheduledFor: null,
+    approvedAt: NOW,
+    createdAt: NOW,
     resendAudienceId: opts.resendAudienceId ?? null,
     audienceImportId: opts.audienceImportId ?? null,
     audienceImportSubmittedAt: opts.audienceImportSubmittedAt ?? null,
