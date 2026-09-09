@@ -616,6 +616,46 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // ── 108 Phase 9, round 2 R2-36 — the four files this branch extracted ──
+        //
+        // NONE of them had a per-file pin, so deleting the new suite outright
+        // would have broken no threshold on a file that went 412 -> 766 lines.
+        // And `_enqueue-dispatch-failure-notification.ts` measured **78.57 %
+        // branch**, UNDER the Constitution's 80 % Application bar — it passed only
+        // because the configured threshold is an aggregate. Three cases for the
+        // notifier's own error handling (the skipped-no-email audit catch, the
+        // member-locale catch, the null-`scheduledFor` arm) took it to 93.75 %.
+        //
+        // Pinned at the MEASURED value rounded down, not at an aspiration: a pin
+        // above actual is a broken build, and a pin far below actual is a pin that
+        // notices nothing.
+        'src/modules/broadcasts/application/use-cases/build-audience-tick.ts': {
+          lines: 95,
+          branches: 88,
+          functions: 100,
+          statements: 95,
+        },
+        'src/modules/broadcasts/application/use-cases/_enqueue-dispatch-failure-notification.ts': {
+          lines: 90,
+          branches: 90,
+          functions: 100,
+          statements: 90,
+        },
+        'src/modules/broadcasts/application/use-cases/_expired-plan-audit.ts': {
+          lines: 83,
+          branches: 90,
+          functions: 100,
+          statements: 83,
+        },
+        // 80 % branch is exactly the Constitution's Application bar. The file is
+        // ~60 lines of duck-typing, so one uncovered arm is 20 % — worth knowing
+        // before anyone reads this number as slack.
+        'src/modules/broadcasts/application/use-cases/_classify-thrown.ts': {
+          lines: 100,
+          branches: 80,
+          functions: 100,
+          statements: 100,
+        },
         // The broadcasts Domain never had the 100% line pin every other
         // module's Domain carries (Constitution II). `audience-ceiling.ts` is
         // the first file under it with a function; widen to `**` once the

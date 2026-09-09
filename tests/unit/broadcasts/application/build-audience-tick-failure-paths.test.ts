@@ -140,6 +140,10 @@ function makeDeps(opts: {
   readonly transitionThrowKind?: 'concurrent';
   /** Round 3 finding 3-5 — what the Resend audience actually holds. */
   readonly audienceContactCount?: number;
+  /** R2-36 — drive the FR-021 notifier's own error paths. */
+  readonly localeLookupThrows?: boolean;
+  readonly auditThrowsAlways?: boolean;
+  readonly nullScheduledFor?: boolean;
   /** Round 3 finding 3-7 — move the row's budget epoch to exercise FR-021. */
   readonly scheduledFor?: Date;
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
@@ -167,7 +171,7 @@ function makeDeps(opts: {
     replyToEmail: 'reply@example.com',
     requestedByMemberId: 'm-1',
     requestedByMemberPlanIdSnapshot: 'plan-old',
-    scheduledFor: opts.scheduledFor ?? NOW,
+    scheduledFor: opts.nullScheduledFor === true ? null : (opts.scheduledFor ?? NOW),
     // The legacy budget epoch order is `scheduledFor ?? approvedAt ?? createdAt`,
     // so the fixture carries all three — omitting the fallbacks would make a
     // send-now row (scheduledFor null) fall through to `undefined` and exempt
@@ -255,6 +259,13 @@ function makeDeps(opts: {
             : opts.memberPrimaryEmail;
         },
         async getMemberPreferredLocale() {
+          // R2-36 — the notifier resolves the member's language best-effort and
+          // falls through to the tenant default on a bridge throw. That catch was
+          // uncovered, which is most of why this file sat at 78.57 % branch,
+          // under the Constitution's 80 % Application bar.
+          if (opts.localeLookupThrows === true) {
+            throw new Error('members bridge unavailable');
+          }
           return 'en' as const;
         },
       },
@@ -384,7 +395,7 @@ function makeDeps(opts: {
           // Round 3 finding 3-8 — a failing audit INSERT. In production this
           // aborts the surrounding transaction (25P02), which is why WHICH tx it
           // runs in decides what survives.
-          if (opts.auditThrowsOn === e.eventType) {
+          if (opts.auditThrowsOn === e.eventType || opts.auditThrowsAlways === true) {
             throw new Error('audit insert failed');
           }
           rec.audits.push({
@@ -1399,6 +1410,65 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     // sent to look at Resend's status page for our bug.
     expect(rec.transitions[0]?.failureReason).toBe('gateway_unknown');
     expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  /**
+   * Round 2 R2-36 — `_enqueue-dispatch-failure-notification.ts` measured 81.13 %
+   * line / **78.57 % branch**, under the Constitution's 80 % Application branch
+   * bar. It passed only because the configured threshold is an AGGREGATE, and no
+   * per-file pin existed on any of the four files this branch extracted — so
+   * deleting the new suite outright would have broken no threshold on a file that
+   * went from 412 to 766 lines.
+   *
+   * The uncovered branches were all in the notifier's own error handling: the
+   * catch around the skipped-no-email audit, the catch around the member-locale
+   * lookup, and the null-`scheduledFor` arm. Each is a path that runs while a
+   * member is being told their broadcast failed, which is the worst moment for an
+   * unexercised branch.
+   */
+  it('the FR-021 notifier survives a locale-bridge throw and still emails, in the tenant default', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      localeLookupThrows: true,
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // Best-effort by design: the language is a nicety, the notification is not.
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  it('a send-now row (scheduledFor null) still renders a date in the failure email', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      nullScheduledFor: true,
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  /**
+   * The member has no primary contact email, so there is nobody to notify — and
+   * the forensic audit that records THAT also fails. Both catches at once: the
+   * function must still return normally, because it is called after a terminal
+   * state has already been committed and a throw here would surface as a dispatch
+   * failure that already happened.
+   */
+  it('no member email AND a failing audit emit: records nothing, tells nobody, throws nothing', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      memberPrimaryEmail: null,
+      auditThrowsAlways: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The terminal write's own audit also failed, so this reports the write, not
+    // the notification — see finding 3-8.
+    expect(res.ok).toBe(false);
+    expect(rec.memberEmails).toHaveLength(0);
   });
 
   it('an ordinary permanent 4xx still fails terminally AND still tells the member', async () => {
