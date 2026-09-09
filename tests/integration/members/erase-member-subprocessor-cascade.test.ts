@@ -97,6 +97,8 @@ vi.mock('@/modules/broadcasts', async (importOriginal) => {
 
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { asMemberId, type MemberId } from '@/modules/members';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { eraseMember } from '@/modules/members/application/use-cases/erase-member';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
 import type { BroadcastsAudienceDerivationPort } from '@/modules/members/application/ports/broadcasts-audience-derivation-port';
@@ -267,6 +269,42 @@ async function seedAudienceDelivery(
   return { broadcastId, deliveryId };
 }
 
+/**
+ * A broadcast with a live Resend audience and **no delivery rows at all** — the
+ * pushed-but-never-sent window the S9 UNION arm exists for. Round 2 R2-3.
+ */
+async function seedAudienceNoDeliveries(
+  tenant: TestTenant,
+  authorMemberId: string,
+  submittedByUserId: string,
+  audienceId: string,
+): Promise<{ broadcastId: string }> {
+  const broadcastId = randomUUID();
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(broadcasts).values({
+      tenantId: tenant.ctx.slug,
+      broadcastId,
+      requestedByMemberId: authorMemberId,
+      requestedByMemberPlanIdSnapshot: PLAN_ID,
+      submittedByUserId,
+      actorRole: 'member_self_service',
+      subject: 'Pushed but never sent',
+      bodyHtml: '<p>Never sent</p>',
+      bodySource: 'Never sent',
+      fromName: 'Audience Sender',
+      replyToEmail: 'audience@example.com',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      estimatedRecipientCount: 100,
+      status: 'approved',
+      submittedAt: new Date(),
+      resendAudienceId: audienceId,
+    });
+  });
+  return { broadcastId };
+}
+
 /** `subprocessor_erasure_propagated` audit rows for this tenant + member. */
 async function rawSelectSubprocessorAudits(tenantSlug: string, memberId: string) {
   const rows = await db
@@ -427,6 +465,89 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     // member_erased emitted (completion proof — cascadesComplete held).
     const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
     expect(erased.length).toBeGreaterThanOrEqual(1);
+  }, 120_000);
+
+  /**
+   * Round 2 R2-3 — the S9 UNION arm's **disclosure control**, both directions.
+   *
+   * The arm exists for the pushed-but-never-sent window: a broadcast whose
+   * audience Resend already holds but which produced no delivery rows. Without a
+   * delivery-existence filter it paired the member's addresses with EVERY live
+   * audience in the tenant — and `DELETE /audiences/{id}/contacts/{email}` puts
+   * the address in the URL, so an address Resend had never seen was transmitted to
+   * the marketing processor during, and because of, an erasure.
+   *
+   * Worse, it selected the worst people for that: for a broadcast that WAS sent,
+   * the delivery-row arm already returns its real recipients, so a member absent
+   * from its deliveries is absent BECAUSE the resolver dropped them — most often
+   * `filterMarketingOptedOut`. Art. 17 is a basis to erase, not to disclose.
+   */
+  it('R2-3 — a never-delivered audience IS detached, but a delivered broadcast this member never received is NOT', async () => {
+    removeContactFromAudienceSpy.mockClear();
+    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    deleteContactGloballySpy.mockClear();
+
+    const { memberId, contactEmail } = await seedMember(tenant);
+    // (a) the window the arm is FOR — audience pushed, nothing delivered.
+    const audienceNeverSent = `aud-never-${randomUUID().slice(0, 8)}`;
+    const never = await seedAudienceNoDeliveries(
+      tenant,
+      memberId,
+      admin.userId,
+      audienceNeverSent,
+    );
+
+    // (b) the disclosure trap — a broadcast that DID deliver, to somebody else.
+    //     Stands in for the opted-out case: this member is absent from its
+    //     deliveries because they were dropped at resolve time.
+    const audienceDelivered = `aud-sent-${randomUUID().slice(0, 8)}`;
+    const otherRecipient = `someone-else-${randomUUID().slice(0, 8)}@example.com`;
+    const delivered = await seedAudienceDelivery(
+      tenant,
+      memberId,
+      admin.userId,
+      otherRecipient,
+      audienceDelivered,
+    );
+
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-r2-3-${Date.now()}` },
+      deps,
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    const pairs = removeContactFromAudienceSpy.mock.calls.map(
+      (c) => `${c[0]}|${c[1]}`,
+    );
+    // The never-delivered audience IS cleaned — that is the arm's whole purpose.
+    expect(pairs).toContain(`${audienceNeverSent}|${contactEmail}`);
+    // And the delivered broadcast's audience is NOT touched with THIS member's
+    // address, because this member is not in its delivery rows.
+    expect(pairs).not.toContain(`${audienceDelivered}|${contactEmail}`);
+    // Nobody else's address is transmitted either.
+    expect(pairs.some((p) => p.endsWith(`|${otherRecipient}`))).toBe(false);
+    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
+
+    // Take this case's fixtures back out of the arm's scope. Cases in this file
+    // SHARE one tenant, and within the never-delivered set the arm is
+    // deliberately NOT member-scoped — we cannot know which never-sent audience
+    // held whom — so a leaked never-delivered broadcast adds a pair to every
+    // LATER case's count. This fixture's mess is its own to clear.
+    //
+    // Stamped `audience_deleted_at` rather than deleted: `broadcast_deliveries`
+    // refuses DELETE (append-only), and stamping is what `cleanup-audiences`
+    // legitimately does — so this exercises the same exclusion the arm relies on
+    // in production instead of reaching around it.
+    const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+    await runInTenant(tenant.ctx, async (tx) => {
+      for (const id of [never.broadcastId, delivered.broadcastId]) {
+        await repo.markAudienceDeletedInTx(tx, asBroadcastId(id));
+      }
+    });
   }, 120_000);
 
   it('3 — RE-DRIVE (empty-set): first pass fails → failed audit + member_erased; re-drive reads [] → SECOND audit removed_count:0 + spy NOT re-called + member_erased still present (idempotent re-emit)', async () => {

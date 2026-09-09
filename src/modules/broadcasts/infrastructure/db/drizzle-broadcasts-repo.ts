@@ -1539,39 +1539,53 @@ export function makeDrizzleBroadcastsRepo(
      * FR-044's last clause forbids.
      *
      * A never-sent broadcast has no per-recipient rows to join, so the arm pairs
-     * each of the member's addresses with each live audience in the tenant.
-     * Over-broad on purpose: a detach for an address that was never in that
-     * audience 404s, and the gateway reads a 404 as "the goal is already met".
+     * each of the member's addresses with each live audience of a broadcast that
+     * has **no delivery rows at all**.
      *
-     * ## What actually bounds it (round 3 finding 3-10)
+     * ## The delivery-existence filter is a DISCLOSURE control (round 2 R2-3)
      *
-     * The review read this as an unbounded cartesian product — "a 3-address
-     * member in a tenant with 200 import-built broadcasts costs 600 sequential
-     * round-trips inside an Art. 17 erasure" — on the premise that "nothing sets
-     * `audience_deleted_at` for a successfully SENT broadcast". **That premise
-     * is false**, and the bound is worth stating here so it is not re-derived:
+     * This arm first shipped without one, pairing every address with every live
+     * audience, on the reasoning that a detach for an address that was never in
+     * that audience 404s harmlessly. The 404 is harmless; **the request is not.**
+     * `DELETE /audiences/{id}/contacts/{email}` puts the address in the URL of a
+     * call to the marketing processor, so an address Resend had never seen is
+     * transmitted to it — during, and because of, an erasure.
+     *
+     * And it selected the worst possible people for that. For a broadcast that
+     * WAS sent, arm 1 above already returns its real recipients; so a member
+     * absent from `broadcast_deliveries` for a sent broadcast is absent BECAUSE
+     * the resolver dropped them — most often `filterMarketingOptedOut`. The
+     * members hit hardest were the ones who had objected to marketing. **Art. 17
+     * is a basis to erase, not a basis to disclose.**
+     *
+     * `NOT EXISTS (deliveries for that broadcast)` is therefore the right
+     * predicate, and it is not the same as the narrowing considered and rejected
+     * under round 3 finding 3-10 (`resend_broadcast_id IS NULL`). That one would
+     * have blinded both arms to a broadcast already sent whose webhooks have not
+     * arrived; this one still covers it, because such a broadcast has no delivery
+     * rows either. Round 3 argued the cost (round-trips); R2-3 argued the
+     * disclosure, and the disclosure is what decides it.
+     *
+     * ## Why `audience_import_id IS NOT NULL` is gone
+     *
+     * It restricted the arm to the import path "that introduced the window".
+     * The window is not the import path's: the legacy serial push has the
+     * identical pushed-but-never-sent shape, and that clause left the leg which
+     * is LIVE AT MERGE uncovered while covering the one that is dark. Same
+     * one-leg-only class the branch has now hit three times.
+     *
+     * ## Cost, for the record
+     *
+     * `audience_deleted_at IS NULL` bounds the live set:
      * `TERMINAL_BROADCAST_STATUSES` includes `sent`, `cleanup-audiences` runs
-     * every 15 minutes (`vercel.json`) with a 1-hour grace
-     * (`cleanup-audiences/route.ts:43`), and it stamps `audience_deleted_at`.
-     * So the live set is broadcasts terminal within roughly the last hour plus
-     * those still in flight — a handful, not a tenant's lifetime of sends.
-     *
-     * ## Why the suggested narrowing is NOT applied
-     *
-     * `AND b.resend_broadcast_id IS NULL` looks like the exact
-     * pushed-but-never-sent window this arm describes, and it would be wrong: a
-     * broadcast that HAS been sent but whose delivery webhooks have not arrived
-     * yet has `resend_broadcast_id` set and zero rows in
-     * `broadcast_deliveries`, so the first arm misses it too. Narrowing here
-     * would leave that member's addresses at the processor with both arms
-     * blind — a real Art. 17 gap traded for round-trips that a 404 already makes
-     * cheap. (Narrowing on `audience_import_completed_at IS NULL` is worse
-     * still: that stamp lands BEFORE `createBroadcast`.)
-     *
-     * Bounded by `audience_deleted_at IS NULL` so a reaped audience is not
-     * re-attempted, and by `audience_import_id IS NOT NULL` so it covers the
-     * import path that introduced the window rather than every audience the
-     * tenant has ever had.
+     * every 15 minutes (`vercel.json`) with a 1-hour grace, and it stamps that
+     * column — so the set is broadcasts terminal within roughly the last hour
+     * plus those in flight. `NOT EXISTS` narrows it further to the ones that
+     * never delivered. R2-39: the arm cannot use
+     * `broadcasts_audience_import_pending_idx` (it asserts only part of that
+     * index's predicate, so it cannot imply it) and `EXPLAIN` shows a Seq Scan.
+     * Acceptable — the table is small and `tenant_id` bounds it — and recorded
+     * here so the next reader does not assume coverage.
      *
      * Note this DETACHES; per U1 it does not delete the contact record at the
      * processor. See residual 8a in `docs/compliance/processing-records.md`.
@@ -1612,7 +1626,20 @@ export function makeDrizzleBroadcastsRepo(
         WHERE b.tenant_id = ${tenantIdArg}
           AND b.resend_audience_id IS NOT NULL
           AND b.audience_deleted_at IS NULL
-          AND b.audience_import_id IS NOT NULL
+          -- R2-3, the disclosure control. Only broadcasts that delivered NOTHING.
+          -- For one that DID deliver, the first arm above returns its real
+          -- recipients, so a member missing from its deliveries is missing because
+          -- the resolver dropped them (usually a marketing opt-out) and must not
+          -- have their address transmitted to the processor by this erasure.
+          -- Deliberately NOT narrowed on resend_broadcast_id: a broadcast already
+          -- sent whose webhooks have not arrived has that set and no delivery
+          -- rows, and it still needs covering. See the docblock above.
+          AND NOT EXISTS (
+            SELECT 1
+            FROM broadcast_deliveries d2
+            WHERE d2.tenant_id = b.tenant_id
+              AND d2.broadcast_id = b.broadcast_id
+          )
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },
