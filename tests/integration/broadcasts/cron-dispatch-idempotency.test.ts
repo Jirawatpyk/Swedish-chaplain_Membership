@@ -88,7 +88,7 @@ function makeTrackedGateway(tracker: CallTracker): BroadcastsGatewayPort {
       return { kind: 'not_found' as const };
     },
     async getAudienceContactCount() {
-      return { kind: 'present' as const, count: 1 };
+      return { kind: 'present' as const, count: 1, complete: true };
     },
     async removeContactFromAudience() {
       return { kind: 'detached' as const };},
@@ -295,7 +295,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
         return { kind: 'not_found' as const };
       },
       async getAudienceContactCount() {
-        return { kind: 'present' as const, count: 1 };
+        return { kind: 'present' as const, count: 1, complete: true };
       },
       async removeContactFromAudience() {
       return { kind: 'detached' as const };},

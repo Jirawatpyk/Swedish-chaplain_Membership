@@ -1008,7 +1008,19 @@ async function confirmImport(
   const audienceCount = await viaGateway(() =>
     deps.broadcastsGateway.getAudienceContactCount(audienceId),
   );
-  if (audienceCount.ok && audienceCount.value.kind === 'present') {
+  // Round 4 F1 residual, CLOSED as far as one call can close it. The refusal
+  // below is safe on a truncated page (an excess cannot be manufactured by
+  // truncation), but "we compared and it matched" was NOT: a short page landing
+  // at or below `resolvedCount` was indistinguishable from a verified-clean
+  // audience. `complete` now carries Resend's own `has_more`, so a count we
+  // could not finish reading falls to the unverifiable branch instead of being
+  // reported as a clean check.
+  const countIsUsable =
+    audienceCount.ok &&
+    audienceCount.value.kind === 'present' &&
+    (audienceCount.value.complete || audienceCount.value.count > resolvedCount);
+
+  if (countIsUsable && audienceCount.ok && audienceCount.value.kind === 'present') {
     if (audienceCount.value.count > resolvedCount) {
       return failTerminally(deps, input, broadcast, {
         kind: 'audience_import_failed',

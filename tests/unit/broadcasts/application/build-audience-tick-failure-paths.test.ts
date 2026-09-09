@@ -172,6 +172,11 @@ function makeDeps(opts: {
   readonly transitionThrowKind?: 'concurrent';
   /** Round 3 finding 3-5 — what the Resend audience actually holds. */
   readonly audienceContactCount?: number;
+  /**
+   * Round 4 F1 residual — Resend's own `has_more`, inverted. `false` means the
+   * adapter read only PART of the audience, so the count is a lower bound.
+   */
+  readonly audienceCountComplete?: boolean;
   /** R2-36 — drive the FR-021 notifier's own error paths. */
   readonly localeLookupThrows?: boolean;
   readonly auditThrowsAlways?: boolean;
@@ -456,6 +461,7 @@ function makeDeps(opts: {
           return {
             kind: 'present' as const,
             count: opts.audienceContactCount ?? RECIPIENTS.length,
+            complete: opts.audienceCountComplete ?? true,
           };
         },
         async sendBroadcast(id: string) {
@@ -1286,6 +1292,59 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     // And the stamp is recorded as NOT taken, so the column still answers "when
     // was this import consumed" with the truth: never.
     expect(rec.completionStamps).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 F1 residual — a TRUNCATED count is not a clean check.
+   *
+   * `GET /audiences/{id}/contacts` paginates and reports it: the response's
+   * top-level keys are `data,has_more,object` (measured against the live account
+   * 2026-09-09). The SDK models neither — `ListContactsOptions` is
+   * `{ audienceId }` and the success type is `{ object, data }` — so the adapter
+   * returned `data.length` and discarded the signal.
+   *
+   * The `>` refusal is safe on a short page either way, because truncation can
+   * only undercount. What was NOT safe is the other side: a truncated count
+   * landing at or below `resolvedCount` was reported as a verified-clean
+   * audience, which is exactly the state a carried-over unsubscribed contact
+   * hides in (GDPR Art. 21). It now falls to the unverifiable branch.
+   */
+  it('F1 — a count Resend could not finish reading is UNVERIFIABLE, not clean', async () => {
+    const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      // One page of a larger audience: fewer than we resolved, and `has_more`.
+      audienceContactCount: RECIPIENTS.length - 1,
+      audienceCountComplete: false,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // Still sends — refusing on an unreadable count would kill legitimate
+    // broadcasts, which is the defect the whole F1 fix exists to remove.
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    // But it does NOT claim the audience was checked.
+    expect(unverifiableSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('F1 — a truncated count that STILL exceeds the resolved list is refused', async () => {
+    // The direction truncation cannot fake. If a short page already holds more
+    // than we resolved, the full audience holds at least that many, so the
+    // excess is proven and the refusal is correct even without a complete read.
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      audienceContactCount: RECIPIENTS.length + 1,
+      audienceCountComplete: false,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.transitions[0]?.failureReason).toBe('audience_membership_drift');
   });
 
   it('an unverifiable audience count proceeds rather than killing a legitimate send — AND raises the alert', async () => {

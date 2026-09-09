@@ -339,6 +339,11 @@ function makeGateway(opts: GatewayOpts = {}): {
         return {
           kind: 'present' as const,
           count: opts.audienceContactCount ?? 2,
+          // Round 4 F1 residual — `complete` says whether Resend returned the
+          // WHOLE audience (`has_more === false`) or one page of it. The legacy
+          // leg's drift check is forensic-only, so this fixture reports a
+          // complete count; the import leg's harness drives both.
+          complete: true,
         };
       },
       async removeContactFromAudience() {

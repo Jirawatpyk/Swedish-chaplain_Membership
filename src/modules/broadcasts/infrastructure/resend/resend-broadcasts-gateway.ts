@@ -411,16 +411,26 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   async getAudienceContactCount(
     audienceId: string,
   ): Promise<GetAudienceContactCountOutcome> {
-    // IMP-5 — query Resend for the contact count on an audience. The
-    // SDK exposes `contacts.list(audienceId)` (paginated). For MVP we
-    // list and return `data.length`; a future optimisation could use a
-    // head-only endpoint when Resend provides one.
+    // IMP-5 — query Resend for the contact count on an audience.
+    //
+    // Round 4 F1 residual — this said "(paginated). For MVP we list and return
+    // `data.length`", and then threw away the only thing that made the caveat
+    // actionable. MEASURED against the live account 2026-09-09: the response's
+    // top-level keys are exactly `data,has_more,object`. The endpoint TELLS us
+    // when the list is short, and we were not reading it.
+    //
+    // The SDK models neither half — `ListContactsOptions` is `{ audienceId }`
+    // and `ListContactsResponseSuccess` is `{ object, data }` (resend@4.8.0) —
+    // so `has_more` is read off the runtime shape. Narrowed with `=== true` so a
+    // missing field reads as "not complete", which is the safe direction: an
+    // absent signal must not be reported as a verified-complete count.
     try {
       const count = await withRetry(
         async () => {
           const sdk = client();
           const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
             data: ReadonlyArray<unknown>;
+            has_more?: boolean;
           }>;
           if (result.error) {
             throw classifyResendError(
@@ -429,11 +439,17 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
               audienceId,
             );
           }
-          return result.data?.data.length ?? 0;
+          return {
+            n: result.data?.data.length ?? 0,
+            // `has_more === true` means Resend held back rows. Anything else —
+            // false, or the field absent on an older API shape — is treated as
+            // complete ONLY when it is explicitly false.
+            complete: result.data?.has_more !== true,
+          };
         },
         { method: 'getAudienceContactCount' },
       );
-      return { kind: 'present', count };
+      return { kind: 'present', count: count.n, complete: count.complete };
     } catch (e) {
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
         return { kind: 'not_found' };

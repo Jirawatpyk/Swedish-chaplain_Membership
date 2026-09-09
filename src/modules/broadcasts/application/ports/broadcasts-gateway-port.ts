@@ -113,7 +113,29 @@ export type RemoveContactOutcome =
   | { readonly kind: 'already_absent' };
 
 export type GetAudienceContactCountOutcome =
-  | { readonly kind: 'present'; readonly count: number }
+  | {
+      readonly kind: 'present';
+      readonly count: number;
+      /**
+       * Round 4 F1 residual — is `count` the WHOLE audience, or one page of it?
+       *
+       * `GET /audiences/{id}/contacts` paginates and says so: the response
+       * carries `has_more` alongside `data`. MEASURED against the live account
+       * on 2026-09-09 — top-level keys are exactly `data,has_more,object`. The
+       * SDK models neither: `ListContactsOptions` is `{ audienceId }` and
+       * `ListContactsResponseSuccess` is `{ object, data }`, so the adapter
+       * returned `data.length` and threw the truncation signal away.
+       *
+       * That mattered because a truncated count that happens to land at or below
+       * the resolved count was indistinguishable from a VERIFIED-CLEAN audience.
+       * The `>` comparison is safe either way (truncation can only undercount, so
+       * no false refusals), but "we checked and it matched" was a claim the data
+       * could not support.
+       *
+       * `false` means the caller may only conclude a LOWER BOUND.
+       */
+      readonly complete: boolean;
+    }
   | { readonly kind: 'not_found' };
 
 export interface BroadcastsGatewayPort {
