@@ -98,6 +98,10 @@ interface Recorder {
   readonly sends: string[];
   readonly importsSubmitted: string[];
   readonly plansChecked: string[];
+  /** Round 3 finding 3-6 — was the Resend id persisted, and in which tx. */
+  readonly resendIdWrites: Array<{ resendBroadcastId: string; txId?: number | undefined }>;
+  /** Round 3 finding 3-9 — was the import stamped consumed, and when. */
+  readonly completionStamps: boolean[];
 }
 
 function makeDeps(opts: {
@@ -132,6 +136,8 @@ function makeDeps(opts: {
   readonly casThrow?: 'concurrent' | 'not_found' | 'other';
   /** Round 3 finding 3-15 — make the TERMINAL write itself fail. */
   readonly transitionThrowsOn?: 'failed_to_dispatch' | 'sending';
+  /** Round 3 finding 3-6 — a cancel landing mid-send, vs an honest tx failure. */
+  readonly transitionThrowKind?: 'concurrent';
   /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
   readonly auditThrowsOn?: 'broadcast_send_started' | 'broadcast_failed_to_dispatch';
 }): { deps: unknown; rec: Recorder } {
@@ -143,6 +149,8 @@ function makeDeps(opts: {
     sends: [],
     importsSubmitted: [],
     plansChecked: [],
+    resendIdWrites: [],
+    completionStamps: [],
   };
 
   const broadcast = {
@@ -284,10 +292,10 @@ function makeDeps(opts: {
           rec.importsSubmitted.push(id);
         },
         async markAudienceImportCompleted() {
-          /* no-op */
+          rec.completionStamps.push(true);
         },
-        async attachResendIds() {
-          /* no-op */
+        async attachResendIds(tx: unknown, _t: unknown, _b: unknown, _a: string, rbId: string) {
+          rec.resendIdWrites.push({ resendBroadcastId: rbId, txId: (tx as { txId?: number } | null)?.txId });
         },
         async applyTransition(
           tx: unknown,
@@ -297,8 +305,14 @@ function makeDeps(opts: {
           fields?: { failureReason?: string; estimatedRecipientCount?: number },
         ) {
           if (opts.transitionThrowsOn === status) {
-            // Not a concurrent cancel — a serialization failure or a statement
-            // timeout, i.e. the terminal write genuinely did not land.
+            // Round 3 finding 3-6 — a CANCEL landing in the send window makes
+            // `applyTransition(..., expectedFromStatus:'approved')` match 0 rows,
+            // which the repo turns into `BroadcastConcurrentMutationError`.
+            if (opts.transitionThrowKind === 'concurrent') {
+              throw new BroadcastConcurrentMutationError(tenant.slug, BROADCAST_ID, 'cancelled');
+            }
+            // Otherwise: a serialization failure or statement timeout, i.e. the
+            // write genuinely did not land for a reason nobody chose.
             throw new Error('40001 could not serialize access');
           }
           rec.transitions.push({
@@ -725,6 +739,94 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
    * quartiles. A parity CLAIM is exactly what stops a diff of the two paths from
    * showing the gap.
    */
+  /**
+   * Round 3 finding 3-6 — an admin cancel landing inside the send window.
+   *
+   * Nothing holds a lock across the send: `lockForUpdate`'s advisory lock is
+   * released when its tx commits, which is before every gateway call, and the
+   * window spans a poll, a full re-resolve, `createBroadcast` and
+   * `sendBroadcast`. `cancelBroadcast` accepts `approved`, so the race is real.
+   *
+   * The mail is then delivered and the row says `cancelled` — a state no code
+   * here can undo. What the fix changes is the DAMAGE: both writes used to sit
+   * in one post-send transaction, so the failed transition rolled
+   * `attachResendIds` back with it and `resend_broadcast_id` stayed NULL for
+   * ever. Every later delivery / bounce / complaint webhook then failed to
+   * resolve the broadcast and was dropped — so bounces never reached the
+   * suppression list, which outlives the broadcast — and
+   * `reconcile-stuck-sending` could not see the row either, because it is not
+   * `sending`.
+   */
+  /**
+   * Round 3 finding 3-9 — the completion stamp used to commit in its own
+   * transaction BEFORE `createBroadcast`, certifying work that had not happened.
+   *
+   * Why that mattered is entirely about the OPERATOR: the T106 gauge and the
+   * documented flag-rollback drain query are the same shape and both require
+   * `audience_import_completed_at IS NULL`. A row left `approved` WITH the stamp
+   * set matched neither — so an operator following the runbook's drain saw ZERO
+   * rows in flight, flipped the flag off, and handed the row to the legacy path,
+   * which never reads `audience_import_*` but DOES reuse `resend_audience_id`.
+   * That is the "deliver to a half-built audience" outcome the runbook warns
+   * about, reached by following the runbook.
+   */
+  it('a retryable send failure leaves the import UNSTAMPED, so the drain query can see it', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'retryable' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    // Nothing was consumed, so nothing is stamped — the row stays visible to
+    // both operator predicates as still in flight.
+    expect(rec.completionStamps).toHaveLength(0);
+    expect(rec.transitions).toHaveLength(0);
+  });
+
+  it('a successful send DOES stamp the import consumed', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.completionStamps).toHaveLength(1);
+  });
+
+  it('a cancel landing mid-send still persists the Resend id, so webhooks resolve', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      transitionThrowsOn: 'sending',
+      transitionThrowKind: 'concurrent',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Reported as the race it is — NOT `uncaught_error`, which pages on-call.
+    expect(res.error.kind).toBe('broadcast_invalid_state_transition');
+    // The load-bearing assertion: the id survived the lost transition.
+    expect(rec.resendIdWrites).toHaveLength(1);
+    expect(rec.resendIdWrites[0]?.resendBroadcastId).toBeTruthy();
+  });
+
+  it('the id write and the transition are SEPARATE transactions, so one cannot roll back the other', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const sending = rec.transitions.find((t) => t.status === 'sending');
+    expect(rec.resendIdWrites[0]?.txId).toBeDefined();
+    expect(sending?.txId).toBeDefined();
+    expect(rec.resendIdWrites[0]?.txId).not.toBe(sending?.txId);
+  });
+
   it('the send record carries the three AS1 fields the legacy payload has', async () => {
     const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
 

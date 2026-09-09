@@ -875,13 +875,43 @@ export function makeDrizzleBroadcastsRepo(
           and(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
+            // Round 3 finding 3-9 / round 2 R2-40 — the write carried NO
+            // precondition, so a re-entered tick re-stamped `now()` over an
+            // existing value and the column could not answer "when was this
+            // import consumed" at all.
+            isNull(broadcasts.audienceImportCompletedAt),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        throw new Error(
-          `markAudienceImportCompleted: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
-        );
+        // Zero rows means either "already stamped" (idempotent — a retried tick,
+        // fine) or "row gone / never had an import" (a real fault). Probe rather
+        // than guess: the previous code could not tell them apart because it had
+        // no precondition to fail in the first place.
+        const probe = await tx
+          .select({ completedAt: broadcasts.audienceImportCompletedAt })
+          .from(broadcasts)
+          .where(
+            and(
+              eq(broadcasts.tenantId, tenantIdArg),
+              eq(broadcasts.broadcastId, broadcastId),
+            ),
+          )
+          .limit(1);
+        const probeRow = probe[0];
+        if (probeRow === undefined) {
+          throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
+        }
+        if (probeRow.completedAt === null) {
+          // The row exists and is NOT stamped, yet the UPDATE matched nothing —
+          // that is not a state this predicate can produce, so it is a fault.
+          throw new BroadcastConcurrentMutationError(
+            tenantIdArg,
+            broadcastId,
+            'unknown' as never,
+          );
+        }
+        // Already stamped: nothing to do.
       }
     },
 

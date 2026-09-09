@@ -685,10 +685,6 @@ async function confirmImport(
     });
   }
 
-  await deps.broadcastsRepo.withTx(async (tx) => {
-    await deps.broadcastsRepo.markAudienceImportCompleted(tx, deps.tenant.slug, input.broadcastId);
-  });
-
   const audienceId = broadcast.resendAudienceId ?? '';
   const createdRb = await viaGateway(() =>
     deps.broadcastsGateway.createBroadcast({
@@ -756,26 +752,95 @@ async function confirmImport(
     );
   }
 
-  await deps.broadcastsRepo.withTx(async (tx) => {
-    await deps.broadcastsRepo.attachResendIds(
-      tx,
-      deps.tenant.slug,
-      input.broadcastId,
-      audienceId,
-      rb.broadcastId,
+  // ## Round 3 finding 3-6 — the cancel window, and why the ids go FIRST
+  //
+  // Nothing holds a lock across the send. `lockForUpdate` takes
+  // `pg_advisory_xact_lock`, but its tx commits at the top of this function,
+  // before every gateway call — so the cron header's claim that that lock
+  // "survives the entire dispatch tx and closes the TOCTOU window" is not true
+  // on this path. The window spans a `getContactImport` round trip, a full
+  // `resolveRecipients` re-walk, `createBroadcast` and `sendBroadcast` (each up
+  // to 6 `withRetry` attempts).
+  //
+  // `cancelBroadcast` accepts `approved`, so an admin cancel can land inside it.
+  // The mail is then already delivered and the row says `cancelled` — an
+  // unpleasant state no code here can undo. What made it WORSE was that both
+  // writes sat in one transaction after the send: `applyTransition(...,
+  // expectedFromStatus: 'approved')` matched 0 rows, threw, rolled back
+  // `attachResendIds` with it, and escaped uncaught to the cron's
+  // `uncaught_error` bucket. `resend_broadcast_id` stayed NULL for ever, so
+  // every later delivery / bounce / complaint webhook failed to resolve the
+  // broadcast and was DROPPED — bounces never reaching the suppression list is
+  // a deliverability problem that outlives the broadcast, and
+  // `reconcile-stuck-sending` could not see the row either because it is not
+  // `sending`.
+  //
+  // So the ids are persisted in their OWN transaction first. They are a record
+  // of what Resend was told, true regardless of which status the row ends in,
+  // and they are what makes the webhooks resolvable.
+  const idsAttached = await viaRepoConcurrency(input.broadcastId, () =>
+    deps.broadcastsRepo.withTx(async (tx) => {
+      await deps.broadcastsRepo.attachResendIds(
+        tx,
+        deps.tenant.slug,
+        input.broadcastId,
+        audienceId,
+        rb.broadcastId,
+      );
+    }),
+  );
+  if (!idsAttached.ok) {
+    // The row is gone (erasure cascade). The mail is out and there is nothing
+    // left to attach it to — log at critical and let the cron count it a
+    // concurrent skip rather than a programming fault.
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId,
+        resendBroadcastId: rb.broadcastId,
+        importId,
+        severity: 'critical',
+      },
+      'broadcasts.audience_import.sent_but_row_unattachable',
     );
-    await deps.broadcastsRepo.applyTransition(
-      tx,
-      deps.tenant.slug,
-      input.broadcastId,
-      'sending',
+    return err(idsAttached.error);
+  }
+
+  const transitioned = await viaRepoConcurrency(input.broadcastId, () =>
+    deps.broadcastsRepo.withTx(async (tx) => {
+      await deps.broadcastsRepo.applyTransition(
+        tx,
+        deps.tenant.slug,
+        input.broadcastId,
+        'sending',
       // `estimatedRecipientCount` is re-stamped with the count actually sent to.
       // Without it the row keeps its SUBMIT-time estimate as its only durable
       // number, which can be days stale by the time a tick reads it.
-      { sendingStartedAt: now, estimatedRecipientCount: resolvedCount },
-      'approved',
+        { sendingStartedAt: now, estimatedRecipientCount: resolvedCount },
+        'approved',
+      );
+    }),
+  );
+  if (!transitioned.ok) {
+    // A cancel (or another worker) won the race while the send was in flight.
+    // The mail IS out and the ids ARE persisted, so webhooks still resolve and
+    // bounces still reach the suppression list. Critical-severity log because a
+    // delivered broadcast whose row says `cancelled` needs a human to reconcile
+    // — but NOT `uncaught_error`, which would page on-call for a race the
+    // system handled as well as it can be handled.
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId,
+        resendBroadcastId: rb.broadcastId,
+        importId,
+        recipientCount: resolvedCount,
+        severity: 'critical',
+      },
+      'broadcasts.audience_import.sent_but_transition_lost',
     );
-  });
+    return err(transitioned.error);
+  }
 
   // The Art. 30 record that N addresses were disclosed to a processor at a given
   // time. This path wrote NOTHING on success — the staff timeline jumped from
@@ -871,6 +936,48 @@ async function confirmImport(
       'broadcasts.audience_import.send_record_lost',
     );
     broadcastsMetrics.auditEmitFailed('broadcast_send_started', deps.tenant.slug);
+  }
+
+  // ## Round 3 finding 3-9 — the completion stamp goes HERE, after the send
+  //
+  // It used to commit in its own transaction BEFORE `createBroadcast`, so it
+  // certified work that had not happened yet. A retryable failure on
+  // `createBroadcast` or `sendBroadcast` then left the row `approved` WITH
+  // `audience_import_completed_at` set, and that combination is invisible to
+  // both operator predicates: the T106 gauge
+  // (`broadcasts-gauges/route.ts`) and the documented flag-rollback drain
+  // (`feature-flags.ts`) are the same shape and both require
+  // `audience_import_completed_at IS NULL`.
+  //
+  // So an operator following the runbook's drain query saw ZERO rows in flight,
+  // flipped the flag off, and handed the row to `dispatchScheduledBroadcast` —
+  // which never reads `audience_import_*` but DOES reuse `resend_audience_id`.
+  // That is the "deliver to a half-built audience" outcome the runbook warns
+  // about, reached BY FOLLOWING the runbook.
+  //
+  // Stamping after the transition makes the column mean what both predicates
+  // assume: this import has been consumed, and the row is no longer claimable.
+  // Best-effort — the send has happened and the row already says `sending`, so a
+  // failure here is an observability loss, not a delivery one, and must not be
+  // reported as a dispatch failure.
+  try {
+    await deps.broadcastsRepo.withTx(async (tx) => {
+      await deps.broadcastsRepo.markAudienceImportCompleted(
+        tx,
+        deps.tenant.slug,
+        input.broadcastId,
+      );
+    });
+  } catch (stampErr) {
+    logger.error(
+      {
+        err: stampErr instanceof Error ? stampErr.message : String(stampErr),
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId,
+        importId,
+      },
+      'broadcasts.audience_import.completion_stamp_failed',
+    );
   }
 
   // Throughput. Without it the dispatch dashboard reads zero sends while sends
