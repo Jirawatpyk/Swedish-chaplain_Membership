@@ -1596,20 +1596,38 @@ export function makeDrizzleBroadcastsRepo(
      * call to the marketing processor, so an address Resend had never seen is
      * transmitted to it — during, and because of, an erasure.
      *
-     * And it selected the worst possible people for that. For a broadcast that
-     * WAS sent, arm 1 above already returns its real recipients; so a member
-     * absent from `broadcast_deliveries` for a sent broadcast is absent BECAUSE
-     * the resolver dropped them — most often `filterMarketingOptedOut`. The
-     * members hit hardest were the ones who had objected to marketing. **Art. 17
-     * is a basis to erase, not a basis to disclose.**
+     * **Round 4 B-1 — R2-3's remedy is REVERSED, and this paragraph records why
+     * rather than being edited away, because the branch has now argued this
+     * predicate three times.**
      *
-     * `NOT EXISTS (deliveries for that broadcast)` is therefore the right
-     * predicate, and it is not the same as the narrowing considered and rejected
-     * under round 3 finding 3-10 (`resend_broadcast_id IS NULL`). That one would
-     * have blinded both arms to a broadcast already sent whose webhooks have not
-     * arrived; this one still covers it, because such a broadcast has no delivery
-     * rows either. Round 3 argued the cost (round-trips); R2-3 argued the
-     * disclosure, and the disclosure is what decides it.
+     * The reasoning above rests on one step: "for a broadcast that WAS sent, arm
+     * 1 already returns its real recipients". That step is false. Measured:
+     * `broadcast_deliveries` has exactly ONE insert site in `src/`
+     * (`drizzle-broadcast-deliveries-repo.ts:58`), reachable only through
+     * `upsertByResendEventId`, whose only callers are `process-webhook-event.ts`.
+     * `reconcile-stuck-sending` only reads. **A delivery row means a webhook
+     * ARRIVED — not that the person was in the audience.** So arm 1 returns
+     * recipients whose webhook landed, and the missing ones are not all
+     * resolver-drops: they include everyone whose event has not come back yet.
+     *
+     * `NOT EXISTS` therefore switched arm 2 off for an entire broadcast on the
+     * FIRST recipient's webhook, and a member in a live audience with no row of
+     * their own fell through both arms — while the cascade recorded
+     * `resend_outcome: 'ok'` with 0 detached in an append-only Art. 30 row the
+     * runbook tells the DPO to cite.
+     *
+     * Nothing records what was pushed, so the two absences cannot be told apart
+     * and the guess has to go one way. Transmitting one address to a DPA-bound
+     * processor IN ORDER TO DELETE IT is a proportionate step under Art. 17(1)/(2)
+     * with Art. 28(3)(a)+(e) and PDPA s.33, and a 404 is counted honestly as
+     * `already_absent`. Writing `ok` over an address still sitting in a live
+     * marketing audience is a false statement under Art. 12(3) in a record that
+     * cannot be corrected. R2-3's concern — that an opted-out member's address
+     * reaches Resend because of an erasure — is real and is accepted as the
+     * cost; it is not the same weight.
+     *
+     * The narrowing rejected under round 3 finding 3-10
+     * (`resend_broadcast_id IS NULL`) stays rejected, for its original reason.
      *
      * ## Why `audience_import_id IS NOT NULL` is gone
      *
@@ -1671,20 +1689,47 @@ export function makeDrizzleBroadcastsRepo(
         WHERE b.tenant_id = ${tenantIdArg}
           AND b.resend_audience_id IS NOT NULL
           AND b.audience_deleted_at IS NULL
-          -- R2-3, the disclosure control. Only broadcasts that delivered NOTHING.
-          -- For one that DID deliver, the first arm above returns its real
-          -- recipients, so a member missing from its deliveries is missing because
-          -- the resolver dropped them (usually a marketing opt-out) and must not
-          -- have their address transmitted to the processor by this erasure.
-          -- Deliberately NOT narrowed on resend_broadcast_id: a broadcast already
-          -- sent whose webhooks have not arrived has that set and no delivery
-          -- rows, and it still needs covering. See the docblock above.
-          AND NOT EXISTS (
-            SELECT 1
-            FROM broadcast_deliveries d2
-            WHERE d2.tenant_id = b.tenant_id
-              AND d2.broadcast_id = b.broadcast_id
-          )
+          -- NO BACKTICKS IN THIS COMMENT: it is inside a sql tagged template and
+          -- one backtick closes the literal. The warning line lived here, was
+          -- deleted while rewriting this block, and 18 backticks went in on the
+          -- next edit — all three erasure suites failed to PARSE. Restored.
+          --
+          -- Round 4 B-1 — R2-3's NOT EXISTS clause was HERE and is removed.
+          --
+          -- It read: only broadcasts that delivered NOTHING, on the reasoning
+          -- that "for one that DID deliver, the first arm above returns its real
+          -- recipients". That last step is false, and the fact that settles it
+          -- was not on the table when R2-3 was argued: broadcast_deliveries
+          -- has exactly ONE insert site in src/
+          -- (drizzle-broadcast-deliveries-repo.ts:58, reachable only through
+          -- upsertByResendEventId, whose only callers are
+          -- process-webhook-event.ts). **A delivery row means "a webhook
+          -- arrived", not "this person was in the audience."**
+          --
+          -- So the clause switched the arm off for a whole broadcast as soon as
+          -- ANY ONE recipient's webhook landed, while arm 1 only ever returns
+          -- members whose OWN webhook landed. A member sitting in a live
+          -- audience with no row of their own was returned by neither — and the
+          -- cascade then wrote resendOutcome: 'ok', contacts detached: 0 into
+          -- an append-only Art. 30 record that the runbook tells the DPO to cite
+          -- when closing the DSR.
+          --
+          -- No local predicate can separate "was pushed, webhook pending" from
+          -- "never pushed, dropped at resolve": nothing records what was pushed.
+          -- The two errors are not symmetric, so the guess goes one way:
+          --   * over-transmitting sends one DELETE, with an address in the URL,
+          --     to a processor already under a DPA that receives every
+          --     recipient's address on every send — for the purpose of ensuring
+          --     absence. If it was never there, Resend 404s and we count it
+          --     already_absent. Art. 17(1)/(2) with Art. 28(3)(a)+(e), PDPA
+          --     s.33.
+          --   * under-erasing leaves the address in a LIVE marketing audience
+          --     while an append-only record states the opposite. Art. 12(3),
+          --     and it cannot be retracted.
+          --
+          -- audience_deleted_at IS NULL above is the bound that actually
+          -- matters: cleanup-orphaned-audiences deletes the audience at Resend
+          -- before stamping it, so a stamped row has nothing left to detach.
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },

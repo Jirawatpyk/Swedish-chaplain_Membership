@@ -20,17 +20,22 @@
  *      invisible. This is the use-case-level isolation gate the security review
  *      requires (complementary to the F7-repo-level test).
  *
- *   3. RE-DRIVE (empty-set) — force the first-pass gateway spy to reject →
+ *   3. RE-DRIVE — force the first-pass gateway spy to reject →
  *      resend_outcome:'failed' audit, member_erased emitted (non-blocking). Then
- *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape): the
- *      in-tx capture now reads `[]` (contacts already removed_at-stamped → no
- *      live emails → no audience pairs) → a SECOND
- *      `subprocessor_erasure_propagated` audit (resend_outcome:'ok',
- *      removed_count:0, a VACUOUS empty-set no-op) → member_erased present
- *      exactly ONCE total. The gateway spy is NOT called again on the re-drive.
- *      (Proves the documented best-effort-ONCE residual: the first-pass inputs
- *      are destroyed by the same erasure, so a re-drive cannot retry the Resend
- *      removal — see docs/runbooks/member-erasure.md § Security cond-3.)
+ *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape) and
+ *      the detach is RETRIED: a second `subprocessor_erasure_propagated` audit
+ *      with resend_outcome:'ok' and removed_count:**1**.
+ *
+ *      **Round 4 B-1 — this scenario used to be the opposite, and the change is
+ *      the point.** It documented a best-effort-ONCE residual: the re-drive read
+ *      `[]` and wrote a VACUOUS ok/removed:0 audit without calling the gateway,
+ *      because arm 1 of the derivation matches on
+ *      `broadcast_deliveries.recipient_email_lower` — which the erasure redacts —
+ *      and R2-3's `NOT EXISTS` had switched arm 2 off for any broadcast holding a
+ *      delivery row, which is this fixture. Removing that clause leaves arm 2
+ *      able to find the still-LIVE audience, so a failed detach is recoverable
+ *      and the second audit is evidence rather than a placeholder. The residual
+ *      narrows to "the audience must not yet be cleaned up".
  *
  *   4. THROW-PATH ROLLBACK (security CONDITION-2) — inject a throw into the
  *      in-tx FAIL-LOUD audience-derivation capture (override just
@@ -50,9 +55,9 @@
  * harness from `erase-member-cross-tenant.test.ts`.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 // Round 4 T1 — type-only, so it is erased before `vi.hoisted` runs. Imported
 // rather than re-spelled inline: if `RemoveContactOutcome` ever gains a third
 // member, `tsc` fails HERE instead of the double silently going stale, which is
@@ -390,6 +395,39 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
   let tenant: TestTenant;
   let admin: TestUser;
 
+  /**
+   * Round 4 B-1 — per-case audience isolation, which these tests needed all
+   * along and only started failing without.
+   *
+   * The second UNION arm is a `CROSS JOIN` of the erased addresses against every
+   * broadcast with a LIVE audience: there is no column linking a member to an
+   * audience they were pushed into, which is exactly why the arm exists. In
+   * production `cleanup-orphaned-audiences` (every 15 min, 1 h grace) keeps that
+   * set at roughly the in-flight broadcasts, so the widening costs a handful of
+   * redundant DELETEs that 404 into `already_absent`.
+   *
+   * In a SHARED test tenant nothing collects them, so audiences accumulated
+   * across cases and every `toHaveBeenCalledTimes(n)` became a count of the
+   * whole file's history. R2-3's `NOT EXISTS` had been masking that by filtering
+   * out anything with a delivery row.
+   *
+   * Stamping prior audiences deleted is what the cleanup cron does, so each case
+   * sees only what it seeded and the counts mean what they say again.
+   */
+  const isolateAudiences = async (): Promise<void> => {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts SET audience_deleted_at = now()
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND resend_audience_id IS NOT NULL
+           AND audience_deleted_at IS NULL`);
+    });
+  };
+
+  beforeEach(async () => {
+    await isolateAudiences();
+  });
+
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
@@ -558,7 +596,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
    * from its deliveries is absent BECAUSE the resolver dropped them — most often
    * `filterMarketingOptedOut`. Art. 17 is a basis to erase, not to disclose.
    */
-  it('R2-3 — a never-delivered audience IS detached, but a delivered broadcast this member never received is NOT', async () => {
+  it('B-1 — every LIVE audience of this member is detached, delivered or not; nobody else is touched', async () => {
     removeContactFromAudienceSpy.mockClear();
     removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
     deleteContactGloballySpy.mockClear();
@@ -573,9 +611,17 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
       audienceNeverSent,
     );
 
-    // (b) the disclosure trap — a broadcast that DID deliver, to somebody else.
-    //     Stands in for the opted-out case: this member is absent from its
-    //     deliveries because they were dropped at resolve time.
+    // (b) a broadcast that DID deliver, to somebody else.
+    //
+    //     Round 4 B-1 — this comment used to say it "stands in for the opted-out
+    //     case: this member is absent from its deliveries because they were
+    //     dropped at resolve time". The database cannot support that reading.
+    //     `broadcast_deliveries` has one insert site and it is on the WEBHOOK
+    //     path, so a missing row means "no event has arrived for this address",
+    //     which covers a resolver drop AND a recipient whose webhook is still in
+    //     flight. The fixture is a PARTIALLY delivered broadcast, and it is
+    //     exactly the state where a live audience keeps an address no arm
+    //     returned while the cascade records `ok / 0 detached`.
     const audienceDelivered = `aud-sent-${randomUUID().slice(0, 8)}`;
     const otherRecipient = `someone-else-${randomUUID().slice(0, 8)}@example.com`;
     const delivered = await seedAudienceDelivery(
@@ -601,10 +647,17 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     );
     // The never-delivered audience IS cleaned — that is the arm's whole purpose.
     expect(pairs).toContain(`${audienceNeverSent}|${contactEmail}`);
-    // And the delivered broadcast's audience is NOT touched with THIS member's
-    // address, because this member is not in its delivery rows.
-    expect(pairs).not.toContain(`${audienceDelivered}|${contactEmail}`);
-    // Nobody else's address is transmitted either.
+    // Round 4 B-1 — INVERTED. This asserted `not.toContain`, i.e. that a member
+    // with no webhook row of their own is skipped for a partially-delivered
+    // broadcast. The absence of a row cannot distinguish "dropped at resolve"
+    // from "event still in flight", so skipping leaves an address in a live
+    // audience and writes `ok / detached: 0` into an append-only Art. 30 record
+    // — Art. 12(3), uncorrectable. A redundant DELETE 404s and is counted
+    // `already_absent`, which is a cost, not a falsehood.
+    expect(pairs).toContain(`${audienceDelivered}|${contactEmail}`);
+    // The bound that still holds and is the one that matters: nobody ELSE's
+    // address is transmitted. The erasure widens to the erased member's own
+    // live audiences, never to other people's.
     expect(pairs.some((p) => p.endsWith(`|${otherRecipient}`))).toBe(false);
     expect(deleteContactGloballySpy).not.toHaveBeenCalled();
 
@@ -626,7 +679,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     });
   }, 120_000);
 
-  it('3 — RE-DRIVE (empty-set): first pass fails → failed audit + member_erased; re-drive reads [] → SECOND audit removed_count:0 + spy NOT re-called + member_erased still present (idempotent re-emit)', async () => {
+  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive now RETRIES the detach (B-1) → second audit removed_count:1, member_erased re-emitted', async () => {
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceId = `aud-cap-redrive-${randomUUID().slice(0, 8)}`;
     await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceId);
@@ -673,23 +726,38 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     if (!second.ok) return;
     expect(second.value.cascadesComplete).toBe(true);
 
-    // CRITICAL: the gateway spy was NOT re-invoked — the first-pass inputs are
-    // destroyed by the same erasure, so the re-drive re-captures an EMPTY set
-    // (best-effort-ONCE residual). The second `ok`/removed:0 audit is a VACUOUS
-    // no-op, NOT proof the Resend removal succeeded.
-    expect(removeContactFromAudienceSpy).not.toHaveBeenCalled();
+    // Round 4 B-1 — INVERTED, and this one is the change paying for itself.
+    //
+    // This asserted `not.toHaveBeenCalled()` and documented a residual:
+    // "best-effort-ONCE — the first-pass inputs are destroyed by the same
+    // erasure, so a re-drive re-captures an EMPTY set and the second ok/removed:0
+    // audit is a VACUOUS no-op, NOT proof the Resend removal succeeded."
+    //
+    // That residual existed because arm 1 matches on
+    // `broadcast_deliveries.recipient_email_lower`, which the erasure redacts —
+    // so after the first pass nothing could find the pair again — and R2-3's
+    // `NOT EXISTS` had switched arm 2 off for any broadcast with a delivery row,
+    // which is this fixture. With the clause gone, arm 2 still finds the LIVE
+    // audience, so a failed detach is RETRYABLE instead of lost.
+    //
+    // The DPO consequence is the one that matters: the second audit is now
+    // evidence of an actual detach rather than a vacuous zero.
+    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(1);
 
     const auditsAfterSecond = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
     expect(auditsAfterSecond).toHaveLength(2);
+    // Round 4 B-1 — was `removed_count === 0`, matching the vacuous no-op this
+    // test used to document. The re-drive now performs a real detach, so the
+    // second audit records ONE removal: it is evidence, not a placeholder.
     const secondAudit = auditsAfterSecond.find(
       (a) =>
         (a.payload as { resend_outcome?: string; resend_contacts_removed_count?: number })
-          .resend_contacts_removed_count === 0 &&
+          .resend_contacts_removed_count === 1 &&
         (a.payload as { resend_outcome?: string }).resend_outcome === 'ok',
     );
     expect(
       secondAudit,
-      'the re-drive must record a second ok/removed:0 vacuous audit',
+      'the re-drive must record a second ok audit with a REAL removal (B-1)',
     ).toBeDefined();
     expect(
       (secondAudit!.payload as { resend_contacts_failed_count?: number })

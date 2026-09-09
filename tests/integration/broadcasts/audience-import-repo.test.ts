@@ -463,7 +463,25 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
    * missing because `filterMarketingOptedOut` dropped them. Art. 17 is a basis to
    * erase, not to disclose.
    */
-  it('POSITIVE CONTROL — an audience that DID deliver is not paired with a non-recipient', async () => {
+  /**
+   * Round 4 B-1 — this case is UNCHANGED in what it sets up and INVERTED in what
+   * it asserts, which is the point.
+   *
+   * The fixture is a partially-delivered broadcast: one recipient has a webhook
+   * row, the erased member does not. Round 3 read that as "the audience's real
+   * recipients are known, so a member missing from them was dropped at resolve"
+   * and asserted the address must NOT be sent to Resend — encoding the gap as
+   * intended behaviour.
+   *
+   * `broadcast_deliveries` has one insert site, on the WEBHOOK path. A row means
+   * an event arrived, not that the person was in the audience. So this fixture
+   * is exactly the state where a live audience still holds an address that no
+   * arm returned, while the cascade wrote `ok / 0 detached` into an append-only
+   * Art. 30 record.
+   *
+   * It now asserts coverage.
+   */
+  it('a PARTIALLY delivered broadcast still pairs a member with no webhook row of their own', async () => {
     if (!RUN_INTEGRATION) return;
     const raw = await seedApproved();
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
@@ -490,9 +508,16 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       repo.listMemberResendAudienceContactsInTx(tx, slug, [erased]),
     );
 
-    // The opted-out member's address is never sent to the processor for an
-    // audience whose real recipients are already known.
-    expect(pairs).not.toContainEqual({ audienceId, email: erased });
+    // The audience is live (`audience_deleted_at IS NULL`) and one webhook has
+    // arrived for somebody else. The erased member has no row of their own —
+    // which is indistinguishable from "their event has not come back yet" — so
+    // the detach must be attempted rather than assumed unnecessary.
+    //
+    // If Resend never held the address, the DELETE 404s and the cascade counts
+    // it `already_absent`. That is a cost. Writing `ok / detached: 0` over an
+    // address still in a live marketing audience is Art. 12(3), in a record
+    // that cannot be corrected.
+    expect(pairs).toContainEqual({ audienceId, email: erased });
   }, 30_000);
 
   /**

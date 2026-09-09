@@ -17,9 +17,19 @@
  *      `SubprocessorErasurePort` removes each captured pair from its Resend
  *      audience. A failure here is recorded (`resend_outcome:'failed'` audit +
  *      the `member_subprocessor_erasure_total` metric) but does NOT flip
- *      `allCascadesClean` — the captured inputs do not survive a US2d re-drive,
- *      so retrying would re-capture an empty set; the DPO runbook (US3-E) owns
- *      the residual.
+ *      `allCascadesClean`.
+ *
+ *      **Round 4 B-1 — the residual this used to describe has NARROWED.** It
+ *      said "the captured inputs do not survive a US2d re-drive, so retrying
+ *      would re-capture an empty set". That was true only because arm 1 of the
+ *      derivation matches on `broadcast_deliveries.recipient_email_lower` (which
+ *      the tombstone redacts) and R2-3's `NOT EXISTS` had switched arm 2 off for
+ *      any broadcast holding a delivery row. With that clause removed, arm 2
+ *      still finds the member's still-LIVE audiences, so a re-drive DOES retry
+ *      the detach — see the RE-DRIVE scenario in
+ *      `erase-member-subprocessor-cascade.test.ts`. What remains is narrower: the
+ *      audience must not yet have been cleaned up. The DPO runbook (US3-E) owns
+ *      that.
  *
  * This test drives the PRODUCTION composition root `buildEraseMemberDeps(ctx)`
  * — the REAL `f7BroadcastsAudienceDerivationAdapter` (in-tx SELECT against live
@@ -46,9 +56,9 @@
  * the audience-derivation JOIN yields a pair).
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 // Round 4 T1 — type-only, so it is erased before `vi.hoisted` runs. Imported
 // rather than re-spelled inline: if `RemoveContactOutcome` ever gains a third
 // member, `tsc` fails HERE instead of the double silently going stale, which is
@@ -288,6 +298,33 @@ async function rawSelectMemberErasedAudits(tenantSlug: string, memberId: string)
 describe('eraseMember — sub-processor erasure cascade (COMP-1 US3-C, live Neon, production deps)', () => {
   let tenant: TestTenant;
   let admin: TestUser;
+
+  /**
+   * Round 4 B-1 — per-case audience isolation. The derivation's second UNION arm
+   * is a CROSS JOIN of the erased addresses against every broadcast with a LIVE
+   * audience (no column links a member to an audience they were pushed into —
+   * that is why the arm exists), so in a SHARED test tenant audiences
+   * accumulated across cases and every `toHaveBeenCalledTimes(n)` counted the
+   * whole file's history. R2-3's `NOT EXISTS` had been masking that by filtering
+   * out anything with a delivery row.
+   *
+   * Stamping prior audiences deleted is what `cleanup-orphaned-audiences` does
+   * in production (every 15 min, 1 h grace), so each case sees only what it
+   * seeded and the counts mean what they say again.
+   */
+  const isolateAudiences = async (): Promise<void> => {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts SET audience_deleted_at = now()
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND resend_audience_id IS NOT NULL
+           AND audience_deleted_at IS NULL`);
+    });
+  };
+
+  beforeEach(async () => {
+    await isolateAudiences();
+  });
 
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
