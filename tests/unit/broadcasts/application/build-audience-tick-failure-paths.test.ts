@@ -33,6 +33,10 @@ import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { broadcastsMetrics } from '@/lib/metrics';
+import {
+  BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
+} from '@/modules/broadcasts/application/ports/broadcasts-repo';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -84,6 +88,14 @@ function makeDeps(opts: {
   readonly droppedByPreference?: number;
   readonly orphans?: readonly string[];
   readonly memberPrimaryEmail?: string | null;
+  /**
+   * Round 2 R2-1 / round 3 finding 3-13 — make one of the two compare-and-set
+   * writes lose its race. `concurrent` and `not_found` are the two typed errors
+   * the repo throws after probing the row; `other` is anything else, which must
+   * NOT be swallowed into a benign bucket.
+   */
+  readonly casThrowOn?: 'attachAudienceId' | 'attachAudienceImport';
+  readonly casThrow?: 'concurrent' | 'not_found' | 'other';
 }): { deps: unknown; rec: Recorder } {
   const rec: Recorder = {
     transitions: [],
@@ -117,6 +129,18 @@ function makeDeps(opts: {
 
   function maybeThrow(m: GatewayMethod): void {
     if (opts.throwOn?.method === m) throw gatewayThrow(opts.throwOn.kind);
+  }
+
+  function maybeCasThrow(m: 'attachAudienceId' | 'attachAudienceImport'): void {
+    if (opts.casThrowOn !== m) return;
+    if (opts.casThrow === 'not_found') {
+      throw new BroadcastNotFoundError(tenant.slug, BROADCAST_ID);
+    }
+    if (opts.casThrow === 'other') {
+      // A serialization failure or statement timeout. Not a lost race.
+      throw new Error('40001 could not serialize access');
+    }
+    throw new BroadcastConcurrentMutationError(tenant.slug, BROADCAST_ID, 'sending');
   }
 
   function resolverAnswer() {
@@ -191,9 +215,10 @@ function makeDeps(opts: {
           return broadcast;
         },
         async attachAudienceId() {
-          /* no-op */
+          maybeCasThrow('attachAudienceId');
         },
         async attachAudienceImport(_tx: unknown, _t: unknown, _b: unknown, id: string) {
+          maybeCasThrow('attachAudienceImport');
           rec.importsSubmitted.push(id);
         },
         async markAudienceImportCompleted() {
@@ -645,4 +670,76 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
       'broadcast_sent_with_expired_member_plan',
     );
   });
+
+  /**
+   * Round 2 R2-1 / round 3 finding 3-13 — the compare-and-set round 1 added to
+   * `attachAudienceId` / `attachAudienceImport` throws when a concurrent tick
+   * attached a different audience or import. NEITHER call sat inside
+   * `viaGateway` or any try/catch, so the throw escaped this use case and the
+   * cron counted it `uncaught_error` — the bucket that means "a fault in our own
+   * code" — for the benign race the CAS was added to make survivable.
+   *
+   * The assertion that matters is the ABSENCE: no transition, no audit row, no
+   * member email. The other tick owns this broadcast now; writing a terminal
+   * state or emailing the member here is how a delivered broadcast gets recorded
+   * as failed.
+   */
+  for (const method of ['attachAudienceId', 'attachAudienceImport'] as const) {
+    it(`${method} losing its compare-and-set → invalid_state_transition, no state written, nobody told`, async () => {
+      const { deps, rec } = makeDeps({
+        // `attachAudienceId` only runs when there is no audience yet.
+        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        casThrowOn: method,
+        casThrow: 'concurrent',
+      });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.error.kind).toBe('broadcast_invalid_state_transition');
+      // The status comes from the repo's own probe of the row, not from a
+      // literal — a hardcoded status in this position is the actor-role
+      // fabrication class in a different field.
+      expect(
+        (res.error as { observedStatus?: string }).observedStatus,
+      ).toBe('sending');
+      expect(rec.transitions).toHaveLength(0);
+      expect(rec.audits).toHaveLength(0);
+      expect(rec.memberEmails).toHaveLength(0);
+    });
+
+    it(`${method} finding the row GONE → broadcast_not_found, not a false failure`, async () => {
+      const { deps, rec } = makeDeps({
+        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        casThrowOn: method,
+        casThrow: 'not_found',
+      });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.error.kind).toBe('broadcast_not_found');
+      expect(rec.transitions).toHaveLength(0);
+      expect(rec.memberEmails).toHaveLength(0);
+    });
+
+    /**
+     * Positive control. Without this, `catch { return err(benign) }` would pass
+     * every case above while swallowing a serialization failure — the shape that
+     * turns a real fault into a five-minute retry loop nobody is paged about.
+     */
+    it(`${method} throwing something that is NOT a lost race still propagates`, async () => {
+      const { deps } = makeDeps({
+        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        casThrowOn: method,
+        casThrow: 'other',
+      });
+
+      await expect(
+        buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID }),
+      ).rejects.toThrow(/40001/);
+    });
+  }
 });

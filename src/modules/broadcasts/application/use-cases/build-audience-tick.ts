@@ -59,6 +59,10 @@ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import {
+  BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
+} from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
@@ -278,6 +282,45 @@ async function viaGateway<T>(fn: () => Promise<T>): Promise<Result<T, GatewayFai
   }
 }
 
+/**
+ * Round 2 R2-1 / round 3 finding 3-13 — the repo's compare-and-set throws when
+ * a concurrent tick attached a different audience or import. Neither CAS call in
+ * `submitImport` sat inside `viaGateway` or any try/catch, so that throw escaped
+ * this use case entirely and the cron counted it `uncaught_error` — the bucket
+ * that means "a fault in our own code", for a benign, self-healing race the CAS
+ * was ADDED to make survivable.
+ *
+ * Deliberately NOT folded into `viaGateway`: these are repo faults, not gateway
+ * faults, and routing them through the gateway classifier would put a Resend
+ * failure reason on a Postgres event. Both kinds map to error variants the cron
+ * now buckets as `concurrent_skip`.
+ *
+ * Anything else rethrows — a serialization failure or a statement timeout is
+ * not a lost race, and swallowing it here would hide it behind a benign name.
+ */
+async function viaRepoConcurrency<T>(
+  broadcastId: BroadcastId,
+  fn: () => Promise<T>,
+): Promise<Result<T, BuildAudienceTickError>> {
+  try {
+    return ok(await fn());
+  } catch (e) {
+    if (e instanceof BroadcastConcurrentMutationError) {
+      return err({
+        kind: 'broadcast_invalid_state_transition',
+        observedStatus: e.observedStatus,
+      });
+    }
+    if (e instanceof BroadcastNotFoundError) {
+      return err({
+        kind: 'broadcast_not_found',
+        broadcastId: broadcastId as unknown as string,
+      });
+    }
+    throw e;
+  }
+}
+
 /** Route a classified gateway failure: retry next tick, or stop for good. */
 async function onGatewayFailure(
   deps: BuildAudienceTickDeps,
@@ -320,9 +363,17 @@ async function submitImport(
     );
     if (!created.ok) return onGatewayFailure(deps, input, broadcast, created.error, null);
     audienceId = created.value.audienceId;
-    await deps.broadcastsRepo.withTx(async (tx) => {
-      await deps.broadcastsRepo.attachAudienceId(tx, deps.tenant.slug, input.broadcastId, audienceId);
-    });
+    const attached = await viaRepoConcurrency(input.broadcastId, () =>
+      deps.broadcastsRepo.withTx(async (tx) => {
+        await deps.broadcastsRepo.attachAudienceId(
+          tx,
+          deps.tenant.slug,
+          input.broadcastId,
+          audienceId,
+        );
+      }),
+    );
+    if (!attached.ok) return err(attached.error);
   }
 
   // S48 — time the one call the whole design rests on. Nothing measured it
@@ -339,14 +390,17 @@ async function submitImport(
   );
   if (!submitted.ok) return onGatewayFailure(deps, input, broadcast, submitted.error, null);
 
-  await deps.broadcastsRepo.withTx(async (tx) => {
-    await deps.broadcastsRepo.attachAudienceImport(
-      tx,
-      deps.tenant.slug,
-      input.broadcastId,
-      submitted.value.importId,
-    );
-  });
+  const attachedImport = await viaRepoConcurrency(input.broadcastId, () =>
+    deps.broadcastsRepo.withTx(async (tx) => {
+      await deps.broadcastsRepo.attachAudienceImport(
+        tx,
+        deps.tenant.slug,
+        input.broadcastId,
+        submitted.value.importId,
+      );
+    }),
+  );
+  if (!attachedImport.ok) return err(attachedImport.error);
 
   logger.info(
     {

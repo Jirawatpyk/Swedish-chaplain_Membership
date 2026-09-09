@@ -173,6 +173,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      */
     import_submitted: 0,
     import_pending: 0,
+    /**
+     * Round 2 R2-1/R2-44 + round 3 finding 3-13 — the row is no longer what the
+     * claim query saw: a cancel landed, another worker won the transition, or an
+     * erasure cascade removed it. Normal, self-healing, and NOT a failure of any
+     * kind: nothing to retry (the other worker finished the work) and nothing
+     * failed (so `permanent_failed`, which reads as "done", would suppress a
+     * real alert if this bucket ever did mean trouble).
+     *
+     * Both kinds used to fall to `default` → `unknown_error` +
+     * `cronUnknownErrorCount`, the page-on-call enum-drift signal — while the
+     * use case that produces one of them says in the same breath "do NOT page
+     * on-call (no actual failure)" (`dispatch-scheduled-broadcast.ts:1076`).
+     *
+     * Named after the existing `concurrent_skip` in the cascade-outcome metric
+     * (`metrics.ts:2544`), which draws the same line for the same reason.
+     */
+    concurrent_skip: 0,
     unknown_error: 0,
     uncaught_error: 0,
   };
@@ -271,6 +288,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               // already moved the row to `failed_to_dispatch` and audited it.
               summary.permanent_failed++;
               break;
+            case 'broadcast_invalid_state_transition':
+            case 'broadcast_not_found':
+              // See `summary.concurrent_skip` above. Logged at warn with the
+              // kind so the two stay distinguishable — `not_found` after an
+              // erasure cascade and `invalid_state_transition` after a cancel
+              // are the same bucket but not the same event.
+              summary.concurrent_skip++;
+              logger.warn(
+                {
+                  tenantId: tenant.slug,
+                  broadcastId: row.broadcast_id,
+                  errorKind: built.error.kind,
+                },
+                'cron.broadcasts.dispatch.concurrent_skip',
+              );
+              break;
             default:
               summary.unknown_error++;
               broadcastsMetrics.cronUnknownErrorCount(tenant.slug);
@@ -346,6 +379,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           case 'broadcast_failed_to_dispatch':
           case 'broadcast_audience_post_suppression_empty':
             summary.permanent_failed++;
+            break;
+          case 'broadcast_invalid_state_transition':
+          case 'broadcast_not_found':
+            // Same bucket as the import branch above — and this is the leg that
+            // is LIVE at merge, so it is the half that mattered first. The G1
+            // arm in `dispatchScheduledBroadcast` has produced
+            // `broadcast_invalid_state_transition` since 2026-05-02 with a
+            // comment saying it must not page; this route sent it to
+            // `unknown_error` the whole time.
+            summary.concurrent_skip++;
+            logger.warn(
+              {
+                tenantId: tenant.slug,
+                broadcastId: row.broadcast_id,
+                errorKind: result.error.kind,
+              },
+              'cron.broadcasts.dispatch.concurrent_skip',
+            );
             break;
           default: {
             // Round-4 HIGH-D + Round-5 R5-CRON — unknown error kind

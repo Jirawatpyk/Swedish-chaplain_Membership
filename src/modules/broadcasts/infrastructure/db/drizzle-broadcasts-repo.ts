@@ -263,6 +263,44 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
   };
 }
 
+/**
+ * Round 2 R2-1 / round 3 finding 3-13 — a compare-and-set that matched no row
+ * must throw the error the CALLERS already handle, not a bare `Error`.
+ *
+ * `dispatchScheduledBroadcast` has caught `BroadcastConcurrentMutationError`
+ * since 2026-05-02 and maps it to `broadcast_invalid_state_transition` under a
+ * comment saying "do NOT page on-call (no actual failure)". A bare `Error`
+ * misses that arm and lands in the `db_write_after_resend_success` branch
+ * instead — severity `critical`, `broadcast_failed_to_dispatch`, an append-only
+ * audit row and an email telling the member their E-Blast did not go out, for a
+ * broadcast that was delivered. That leg is the one live at merge.
+ *
+ * Re-reading to distinguish "row drifted" from "row is gone" is the house
+ * pattern in this file (`updateDraft`, `updateDraftFromTemplate`,
+ * `applyTransition`). It costs one PK read on a transaction that is about to
+ * abort, and it is what keeps `observedStatus` TRUE — the alternative is
+ * passing a literal, which is the actor-role fabrication class in a different
+ * field.
+ */
+async function throwConcurrentMutation(
+  tx: TenantTx,
+  tenantIdArg: TenantSlug,
+  broadcastId: BroadcastId,
+): Promise<never> {
+  const probe = await tx
+    .select({ status: broadcasts.status })
+    .from(broadcasts)
+    .where(
+      and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)),
+    )
+    .limit(1);
+  const probeRow = probe[0];
+  if (probeRow === undefined) {
+    throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
+  }
+  throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probeRow.status);
+}
+
 // Cursor format: base64 of `submittedAt-iso|broadcast-id`
 function encodeCursor(submittedAt: Date | null, broadcastId: string): string {
   const iso = submittedAt === null ? '' : submittedAt.toISOString();
@@ -773,9 +811,7 @@ export function makeDrizzleBroadcastsRepo(
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        throw new Error(
-          `attachAudienceId: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length} — a concurrent tick may have attached a different audience`,
-        );
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
       }
     },
 
@@ -818,9 +854,7 @@ export function makeDrizzleBroadcastsRepo(
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        throw new Error(
-          `attachAudienceImport: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length} — a concurrent tick may have attached a different import`,
-        );
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
       }
     },
 

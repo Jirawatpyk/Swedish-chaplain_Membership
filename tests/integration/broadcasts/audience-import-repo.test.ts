@@ -27,6 +27,7 @@ import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL);
 const TEST_TENANT = 'swecham';
@@ -221,7 +222,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       repo.withTx(async (tx) => {
         await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_second');
       }),
-    ).rejects.toThrow(/expected 1 row updated/);
+    ).rejects.toThrow(BroadcastConcurrentMutationError);
 
     // And the first id survives — a losing writer must not have half-applied.
     expect((await readImportCols(raw)).audience_import_id).toBe('imp_first');
@@ -246,7 +247,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       repo.withTx(async (tx) => {
         await repo.attachAudienceId(tx, slug, broadcastId, 'aud_second');
       }),
-    ).rejects.toThrow(/expected 1 row updated/);
+    ).rejects.toThrow(BroadcastConcurrentMutationError);
   }, 30_000);
 
   /**

@@ -222,9 +222,17 @@ export interface BroadcastsRepo {
    * `createBroadcast`) can REUSE the existing Resend audience instead
    * of creating an orphan one.
    *
-   * Idempotent: writing the same value twice is a no-op. Writing a
-   * different value is allowed (caller is the only writer per the
-   * dispatch advisory-lock invariant).
+   * Idempotent on the SAME value: a retried tick that already attached this
+   * audience writes it again harmlessly.
+   *
+   * **Writing a DIFFERENT value throws `BroadcastConcurrentMutationError`** —
+   * or `BroadcastNotFoundError` if the row is gone. This docblock used to say
+   * a different value "is allowed (caller is the only writer per the dispatch
+   * advisory-lock invariant)". That invariant is false: `lockForUpdate`'s
+   * advisory lock is released when its tx commits, which happens BEFORE any
+   * gateway call, so two overlapping ticks both saw NULL and both created an
+   * audience — leaking one against a 3-audience Free-plan allowance. The
+   * precondition now rides on the write itself (108 Phase 9 review S13).
    */
   attachAudienceId(
     tx: unknown,
@@ -269,8 +277,12 @@ export interface BroadcastsRepo {
    * (FR-044 f) measures from — `scheduled_for` would be wrong, because a
    * broadcast can sit approved for hours before a tick picks it up.
    *
-   * Idempotent by overwrite: writing a second id replaces the first rather
-   * than erroring, so a retried tick cannot 23514 the row.
+   * Idempotent on the SAME id: a retried tick re-attaching its own import is
+   * harmless. A DIFFERENT id throws `BroadcastConcurrentMutationError` (or
+   * `BroadcastNotFoundError` if the row is gone) — two live import jobs against
+   * one broadcast would let `(resend_audience_id, audience_import_id)` come from
+   * different ticks, validating counts for one audience while sending to the
+   * other. Overwrite was the documented behaviour until 108 Phase 9 review S13.
    *
    * Does NOT change status. The broadcast stays `approved` for the whole
    * build, which is what keeps it cancellable (`cancelBroadcast` accepts only

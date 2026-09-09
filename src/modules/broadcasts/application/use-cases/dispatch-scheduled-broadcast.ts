@@ -33,7 +33,10 @@ import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import { BroadcastConcurrentMutationError } from '../ports/broadcasts-repo';
+import {
+  BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
+} from '../ports/broadcasts-repo';
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
@@ -1084,6 +1087,26 @@ export async function dispatchScheduledBroadcast(
       return err({
         kind: 'broadcast_invalid_state_transition',
         observedStatus: 'sending_or_later',
+      });
+    }
+    // Round 2 R2-1 — the CAS in `attachAudienceId` now probes the row before it
+    // throws, so "the row is GONE" (a member-erasure cascade removed it between
+    // the claim query and this write) arrives as its own type instead of being
+    // folded into the concurrent-mutation case. Same routing: nothing failed
+    // that anyone can act on, and the row it would page about no longer exists.
+    if (e instanceof BroadcastNotFoundError) {
+      logger.warn(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+          resendAudienceId,
+          resendBroadcastId,
+        },
+        'broadcasts.dispatch.row_vanished',
+      );
+      return err({
+        kind: 'broadcast_not_found',
+        broadcastId: input.broadcastId as string,
       });
     }
     // Review E2 — DB write failed AFTER Resend success. Recipients have

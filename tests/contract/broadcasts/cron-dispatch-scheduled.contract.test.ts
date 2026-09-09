@@ -29,6 +29,7 @@ const buildAudienceTickMock = vi.fn();
 const dispatchScheduledBroadcastMock = vi.fn();
 const dispatchResolveFailedTotalSpy = vi.fn();
 const cronSkippedCountSpy = vi.fn();
+const cronUnknownErrorCountSpy = vi.fn();
 
 const envMock = {
   cron: { secret: 'test-cron-secret' },
@@ -66,6 +67,7 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
       ...actual.broadcastsMetrics,
       dispatchResolveFailedTotal: (...args: unknown[]) => dispatchResolveFailedTotalSpy(...args),
       cronSkippedCount: (...args: unknown[]) => cronSkippedCountSpy(...args),
+      cronUnknownErrorCount: (...args: unknown[]) => cronUnknownErrorCountSpy(...args),
     },
   };
 });
@@ -105,6 +107,7 @@ beforeEach(() => {
   dispatchScheduledBroadcastMock.mockReset();
   dispatchResolveFailedTotalSpy.mockReset();
   cronSkippedCountSpy.mockReset();
+  cronUnknownErrorCountSpy.mockReset();
 });
 
 afterEach(() => {
@@ -276,6 +279,89 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     const body = (await res.json()) as Record<string, number>;
     expect(body['permanent_failed']).toBe(1);
     expect(body['unknown_error']).toBe(0);
+  });
+
+  /**
+   * Round 2 R2-1/R2-44 + round 3 finding 3-13 — two reviews reached this from
+   * opposite ends (the repo compare-and-set, and the cron switch).
+   *
+   * `broadcast_invalid_state_transition` and `broadcast_not_found` both mean
+   * "the row is no longer what the claim query saw": a cancel landed, another
+   * worker won the transition, or an erasure cascade removed it. All three are
+   * NORMAL. Neither branch had an arm for either, so both fell to `default` →
+   * `unknown_error` + `cronUnknownErrorCount`, which this route's own comment
+   * documents as the page-on-call enum-drift signal — and which
+   * `dispatch-scheduled-broadcast.ts:1076` explicitly says must NOT page
+   * ("do NOT page on-call (no actual failure)") in the very arm that produces
+   * the kind.
+   *
+   * The precedent for the bucket is already in the codebase:
+   * `metrics.ts:2544` names `concurrent_skip` an *expected race*, kept apart
+   * from the bucket whose non-zero rate is stop-the-line.
+   *
+   * The `unknown_error: 0` assertion is the load-bearing half. Counting the new
+   * bucket alone would pass while the row was ALSO still paging on-call.
+   */
+  for (const [label, error] of [
+    ['broadcast_invalid_state_transition', { kind: 'broadcast_invalid_state_transition', observedStatus: 'sending' }],
+    ['broadcast_not_found', { kind: 'broadcast_not_found', broadcastId: BROADCAST_ID }],
+  ] as const) {
+    it(`legacy branch: ${label} → concurrent_skip, NOT unknown_error, and does not page`, async () => {
+      runInTenantMock.mockImplementation(async (_ctx, fn) =>
+        fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+      );
+      dispatchScheduledBroadcastMock.mockResolvedValue(err(error));
+
+      const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+      const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+      const body = (await res.json()) as Record<string, number>;
+      expect(body['concurrent_skip']).toBe(1);
+      expect(body['unknown_error']).toBe(0);
+      expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
+      // Not a failure either — `permanent_failed` means "finished, nothing left
+      // to do", which would suppress the alert if this ever WERE a real fault.
+      expect(body['permanent_failed']).toBe(0);
+      expect(body['retryable']).toBe(0);
+    });
+
+    it(`import branch: ${label} → concurrent_skip, NOT unknown_error, and does not page`, async () => {
+      isF7ImportAudienceEnabledMock.mockReturnValue(true);
+      runInTenantMock.mockImplementation(async (_ctx, fn) =>
+        fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+      );
+      buildAudienceTickMock.mockResolvedValue(err(error));
+
+      const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+      const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+      const body = (await res.json()) as Record<string, number>;
+      expect(body['concurrent_skip']).toBe(1);
+      expect(body['unknown_error']).toBe(0);
+      expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
+      expect(body['permanent_failed']).toBe(0);
+      expect(body['retryable']).toBe(0);
+    });
+  }
+
+  /**
+   * Positive control for the four cases above: the `default` arm must STILL
+   * page for a kind nobody routed. Without this, deleting the switch and
+   * bucketing everything as `concurrent_skip` would pass every assertion in
+   * this block — the shape that made round 1's phantom-kind stubs green.
+   */
+  it('an unrouted kind still reaches unknown_error and pages — the arms above are narrow, not a catch-all', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    dispatchScheduledBroadcastMock.mockResolvedValue(
+      err({ kind: 'a_kind_no_switch_has_ever_heard_of' }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['unknown_error']).toBe(1);
+    expect(body['concurrent_skip']).toBe(0);
+    expect(cronUnknownErrorCountSpy).toHaveBeenCalledTimes(1);
   });
 });
 
