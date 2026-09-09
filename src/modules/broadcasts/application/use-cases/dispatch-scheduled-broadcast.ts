@@ -291,10 +291,13 @@ async function failDispatchAndAudit(
   } catch (cleanupErr) {
     logger.error(
       {
-        err:
-          cleanupErr instanceof Error
-            ? cleanupErr.message
-            : String(cleanupErr),
+        // FINAL round H-3. The sweep that claimed "genuinely none in a touched
+        // file" missed this one because it is the MULTI-LINE form — which round 4
+        // had explicitly warned would raise the count. `cleanupErr` is an
+        // audit-INSERT failure, i.e. a `NeonDbError` carrying the statement and
+        // its bound parameters, and on this module a bound parameter is a member's
+        // email address. Neither `err` nor `message` is in `REDACT_PATHS`.
+        err: errKind(cleanupErr),
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId as string,
         phase,
@@ -861,6 +864,10 @@ export async function dispatchScheduledBroadcast(
         const expectedCount = resolvedResult.value.estimatedCount;
         let actualCount: number | null = null;
         let countCheckFailed = false;
+        // Whether the count Resend gave us was a COMPLETE read. Carried into the
+        // drift row so an append-only number is never mistaken for exact when it
+        // was a lower bound (FINAL round L-1).
+        let countComplete: boolean | null = null;
         try {
           // Discriminated union (review TYPES-2): translate to the
           // legacy `number | null` shape kept by this use-case so the
@@ -882,11 +889,32 @@ export async function dispatchScheduledBroadcast(
           // `broadcast_resend_audience_drift` row in an append-only table and
           // page on § 22.3. `null` routes it to the unverifiable branch instead,
           // which is what "we could not check" already means here.
+          // FINAL round, MEASURED 2026-09-10 — the zero clause is not defensive
+          // padding. `GET /audiences/{id}/contacts` on an audience that does not
+          // exist answers `200 {"object":"list","has_more":false,"data":[]}`, so a
+          // DELETED audience arrives here as `count: 0` with `complete: true` —
+          // the one shape that makes the count authoritative. Without this clause
+          // the comparison below files "expected 150, actual 0" into an
+          // append-only table and pages § 22.3, which reads as "nobody received
+          // the mail" when the truth is "the audience was removed after the send".
+          //
+          // An audience reporting zero contacts moments after we pushed N is far
+          // more likely gone than genuinely empty, and either way it is not a
+          // verified count. It is also why `outcome.kind === 'not_found'` is dead
+          // code on this path: Resend never 404s the list endpoint.
           const usable =
             outcome.kind === 'present' &&
-            (outcome.complete || outcome.count > expectedCount);
+            (outcome.complete || outcome.count > expectedCount) &&
+            !(outcome.count === 0 && expectedCount > 0);
           actualCount = usable ? outcome.count : null;
-          if (outcome.kind === 'present' && !usable) {
+          countComplete = outcome.kind === 'present' ? outcome.complete : null;
+          // `!usable` rather than `present && !usable`: a `not_found` outcome also
+          // means the check did not happen, and it used to fall through to the
+          // plain `idempotency_replay` log with no metric and no row — the exact
+          // "reads as a completed check" outcome the flag below exists to prevent.
+          // Unreachable today (see the measurement above), which is precisely why
+          // it must not be the one arm left silent if Resend ever changes.
+          if (!usable) {
             // A partial read is not a FAILURE, so it gets no append-only row —
             // but it must not fall through to the plain `idempotency_replay`
             // log either, which would read as a completed check. Flagging it
@@ -900,7 +928,14 @@ export async function dispatchScheduledBroadcast(
                 broadcastId: input.broadcastId as string,
                 resendBroadcastId,
                 expectedRecipientCount: expectedCount,
-                pageCount: outcome.count,
+                // Optional because the `not_found` arm carries no count. An
+                // operator needs the three cases separable: a truncated page
+                // (pageCount < expected, countComplete false), a vanished or empty
+                // audience (pageCount 0, countComplete true), and no audience at
+                // all (pageCount absent).
+                pageCount: outcome.kind === 'present' ? outcome.count : undefined,
+                countComplete:
+                  outcome.kind === 'present' ? outcome.complete : undefined,
               },
               'broadcasts.dispatch.audience_count_incomplete',
             );
@@ -987,6 +1022,14 @@ export async function dispatchScheduledBroadcast(
                 expectedRecipientCount: expectedCount,
                 actualRecipientCount: actualCount,
                 drift: expectedCount - actualCount,
+                // FINAL round L-1. A row can still reach here on a PARTIAL read:
+                // `usable` accepts `complete: false` when the page already exceeds
+                // what we expected, because truncation cannot fake an excess. In
+                // that case `actualRecipientCount` is a LOWER BOUND and `drift` is
+                // a bound too, not a measurement — and this table is append-only,
+                // so an operator sizing a partial-delivery investigation off an
+                // uncorrectable row needs to know which kind of number it is.
+                countComplete,
               },
               requestId: null,
             });
@@ -1320,8 +1363,12 @@ export async function dispatchScheduledBroadcast(
     //
     // Left as-is and logged at error severity, which is what actually protects
     // here today. The fix is to persist the id BEFORE the send so a retry hits
-    // the same resource; that is F4 in the round-4 ledger, and a follow-up PR (NOT a flip blocker — round 4 reclassified it: the double-send is live on `origin/main` today and waits for a failed DB write, not for a flag)
-    // rather than a merge blocker because this shape predates the branch.
+    // the same resource; that is F4 in the round-4 ledger — a follow-up PR, not a
+    // merge blocker, because the shape predates this branch and is live on
+    // `origin/main` today. It is not a FLIP blocker either: it waits on a failed
+    // DB write, not on a flag. (The same parenthetical was pasted onto
+    // `build-audience-tick.ts`, where the `origin/main` half is false — that leg
+    // does not exist there. Corrected in place.)
     logger.error(
       {
         err: errKind(e),

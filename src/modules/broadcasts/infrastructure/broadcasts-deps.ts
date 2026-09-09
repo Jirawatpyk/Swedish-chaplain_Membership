@@ -8,6 +8,7 @@
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
@@ -61,13 +62,15 @@ import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
 // Two imports were removed here in 108 Phase 9 review round 1: the batch
 // deletion left `makeDrizzleBroadcastsRetryRepo` and `pgAdvisoryLockAdapter`
-// unused in this file. Both MODULES still exist and `pgAdvisoryLockAdapter` has
-// its own integration test, so only the dead imports went.
+// unused in this file.
 //
-// `drizzle-broadcasts-retry-repo.ts` now has no consumer anywhere in `src/`.
-// Left in place rather than deleted on my own initiative — that is a module
-// deletion, not a review finding, and it deserves someone deciding it on
-// purpose.
+// Outcome, recorded because this comment claimed the opposite for a day: the
+// retry repo went WITH the batch path (`ca51f59a1` + round 4 on this branch), so
+// `drizzle-broadcasts-retry-repo.ts` no longer exists. Its port survives without
+// an implementor — `application/ports/broadcasts-retry-repo.ts`, zero consumers
+// in `src/`, `tests/` and `scripts/`; kept deliberately, since deleting a port is
+// a decision someone should make on purpose rather than a review tidy-up.
+// `pgAdvisoryLockAdapter` still exists and still has its integration test.
 // F7.1a Phase 4 (US2 — Image embedding + allowlist + ClamAV scan)
 import { makeDrizzleImageAllowlistRepo } from './drizzle-image-allowlist-repo';
 import { vercelBlobImageStorage } from './vercel-blob-image-storage';
@@ -417,7 +420,10 @@ export async function makeDispatchScheduledBroadcastDeps(
     tenantDisplayName = await resolveTenantDisplayName(tenantId);
   } catch (e) {
     logger.error(
-      { err: (e as Error).message, tenantId },
+      // FINAL round H-3 sweep: this is a DB read, so the throw can be a
+      // `NeonDbError` carrying the statement and its bindings. `errKind` keeps
+      // the class and drops the provider's free text.
+      { err: errKind(e), tenantId },
       'broadcast_dispatch_tenant_displayname_lookup_failed',
     );
     tenantDisplayName = tenantId;

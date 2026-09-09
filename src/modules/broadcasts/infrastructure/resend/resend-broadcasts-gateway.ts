@@ -421,9 +421,11 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     //
     // The SDK models neither half — `ListContactsOptions` is `{ audienceId }`
     // and `ListContactsResponseSuccess` is `{ object, data }` (resend@4.8.0) —
-    // so `has_more` is read off the runtime shape. Narrowed with `=== true` so a
-    // missing field reads as "not complete", which is the safe direction: an
-    // absent signal must not be reported as a verified-complete count.
+    // so `has_more` is read off the runtime shape. Narrowed with `=== false`, so
+    // that a missing field reads as "not complete": an absent signal must not be
+    // reported as a verified-complete count. Because the field is undeclared, a
+    // provider rename cannot fail the build — only this narrowing direction
+    // protects the caller, and only the wire-level test protects the narrowing.
     try {
       const count = await withRetry(
         async () => {
@@ -440,11 +442,15 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
             );
           }
           return {
-            n: result.data?.data.length ?? 0,
-            // `has_more === true` means Resend held back rows. Anything else —
-            // false, or the field absent on an older API shape — is treated as
-            // complete ONLY when it is explicitly false.
-            complete: result.data?.has_more !== true,
+            // BOTH levels need `?.`: with only the outer one a payload-less 200
+            // threw a TypeError, which `withRetry` retries (it short-circuits
+            // only a `GatewayThrowable`) for 31 s and rethrows as a transport
+            // timeout.
+            n: result.data?.data?.length ?? 0,
+            // True only on positive evidence — `has_more: true`, an absent field
+            // and a missing payload all mean "unverifiable". Pinned per case in
+            // `resend-audience-contact-count.test.ts`.
+            complete: result.data?.has_more === false,
           };
         },
         { method: 'getAudienceContactCount' },

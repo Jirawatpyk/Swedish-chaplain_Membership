@@ -254,7 +254,7 @@ type ThrowSpec =
   | {
       kind: 'resource_missing';
       reason: string;
-      resourceType: 'audience' | 'broadcast';
+      resourceType: 'audience' | 'broadcast' | 'import';
       resourceId: string;
     }
   // R7 staff-review HIGH-3 — idempotency_conflict thrown when a
@@ -1767,6 +1767,90 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     // does not deserve a 5-to-10-year record; what it must not do is look like a
     // completed check.
     expect(unverifiableSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * FINAL round, MEASURED 2026-09-10 (read-only probe, live account):
+   *
+   *   GET /audiences/<nonexistent>/contacts
+   *   -> HTTP 200  {"object":"list","has_more":false,"data":[]}
+   *
+   * So a DELETED audience does not arrive as `not_found` -- it arrives as a
+   * count of 0 with `complete: true`, the one shape that makes the count
+   * AUTHORITATIVE. Before the zero clause that filed `expected 2, actual 0` as
+   * drift: an append-only row plus a section 22.3 page, reading as "nobody got the
+   * mail" when the truth is "the audience was removed after the send".
+   *
+   * The truncated case above cannot catch this one: there `complete` is false, so
+   * the `complete ||` term already refuses. Here it is true and only the zero
+   * clause refuses.
+   */
+  it('FINAL round -- a VANISHED audience reads as 0/complete and must not be filed as drift', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'idempotency_conflict' },
+      // What Resend actually answers for an audience that is gone.
+      audienceContactCount: 0,
+      audienceCountComplete: true,
+    });
+    const gwPort = {
+      ...gw.port,
+      async sendBroadcast() {
+        throw {
+          kind: 'idempotency_conflict',
+          reason: 'duplicate idempotency key',
+        };
+      },
+    };
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gwPort,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The assertion the finding is about: NO append-only drift row.
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_resend_audience_drift'),
+    ).toBeUndefined();
+    // Recorded as unverifiable instead, so section 22.3 still hears about it.
+    expect(unverifiableSpy).toHaveBeenCalledTimes(1);
+    // And ROUTED there, not merely counted. The metric call is its own statement, so
+    // deleting `countCheckFailed = true` left every assertion above still passing
+    // while the tick fell back to the plain replay log — the exact 'reads as a
+    // completed check' outcome the flag exists to prevent. These two pin the flag.
+    const warned = warnSpy.mock.calls.map((c) => c[1]);
+    expect(warned).toContain('broadcasts.dispatch.audience_count_incomplete');
+    expect(warned).not.toContain('broadcasts.dispatch.idempotency_replay');
+    warnSpy.mockRestore();
   });
 
   it('R5-S1 โ€” getAudienceContactCount throws non-404 โ’ broadcast_resend_drift_check_unverifiable audit emitted', async () => {

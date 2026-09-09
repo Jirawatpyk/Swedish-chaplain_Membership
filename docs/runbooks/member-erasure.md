@@ -163,25 +163,36 @@ Resend failure would only delay the completion proof and then emit it anyway. So
 sub-processor propagation is tracked separately by its own audit + metric + this
 runbook.
 
-> **⚠️ CORRECTED — round 4 B-1 (whole-branch review #5).** This paragraph used to
-> end "a US2d reconciler re-drive re-captures an EMPTY set and can never retry the
-> Resend removal … **best-effort-ONCE**: a first-pass failure is finished by hand,
-> not auto-retried." **A re-drive now DOES retry the detach.**
+> **⚠️ CORRECTION OF A CORRECTION — FINAL review round, 2026-09-10.** For one day
+> this box claimed *"**A re-drive now DOES retry the detach**"* on the strength of
+> round 4's B-1 change. **That was wrong, and the original limitation stands:
+> Resend removal is still best-effort-ONCE.** A first-pass failure is finished by
+> hand, not auto-retried, and the 2026-06-20 sign-off below was right.
 >
-> That limit existed because the first derivation arm matches on
-> `broadcast_deliveries.recipient_email_lower`, which the erasure redacts, and a
-> `NOT EXISTS` clause had switched the second arm off for any broadcast holding a
-> delivery row. Removing that clause leaves the second arm able to find the
-> member's still-LIVE audiences, so a failed detach is recoverable and the second
-> audit records a REAL removal instead of a vacuous zero.
+> Why the claim was wrong. B-1 removed a `NOT EXISTS` clause that had switched the
+> derivation's second arm off for any broadcast holding a delivery row — a real
+> defect, and removing it does broaden the **first pass**. But retryability turns
+> on the derivation's INPUT, not its arms. That input is `tombstoneEmails` from
+> `listTombstoneEmailsForMemberInTx`, which selects `lower(c.email)` from
+> `contacts` (`erase-member.ts:441`) — and `scrubPiiForMemberInTx`
+> (`erase-member.ts:527`, same tx, 86 lines later) replaces every one of those
+> addresses with a stable per-`contact_id` **sentinel**. A US2d re-drive re-enters
+> the same tx and re-reads sentinels, so arm 2 now happily pairs the member's live
+> audiences with addresses that were never in them: every `DELETE` misses and is
+> counted `already_absent`, never `removed`. Removal on a re-drive is 0, exactly as
+> it was before B-1. `erase-member.ts:1068-1071` has said so all along.
 >
-> **What this means for you:** do NOT run the manual remediation below on the
-> assumption that nothing else will. Check for a second
-> `subprocessor_erasure_propagated` row first — if one exists with
-> `resend_contacts_removed_count >= 1`, the re-drive already did it and a manual
-> detach would be a duplicate. The residual is now narrower: **the audience must
-> not yet have been cleaned up** (`cleanup-orphaned-audiences` deletes it at
-> Resend after a 1-hour grace on a terminal broadcast).
+> **What B-1 actually bought** — worth keeping, just not this: on the FIRST pass the
+> addresses are still real, so arm 2 no longer skips an audience merely because a
+> webhook had recorded a delivery for it. Broader first-pass coverage; no change to
+> retry.
+>
+> **What this means for you:** the manual remediation below is still the ONLY thing
+> that closes a failed detach, and it is still urgent — `cleanup-orphaned-audiences`
+> deletes the audience at Resend after a 1-hour grace on a terminal broadcast, and
+> after that there is nothing left to detach. Do NOT wait for a second
+> `subprocessor_erasure_propagated` row with `resend_contacts_removed_count >= 1`;
+> on a re-drive that count is structurally 0.
 
 ### Alert
 
@@ -283,15 +294,17 @@ evidence log, never inferred from a vacuous re-drive audit.
 Two limits are accepted by design (security-engineer + pdpa-gdpr-compliance-officer
 sign-off, plan-review 2026-06-20):
 
-1. ~~**Best-effort-ONCE.**~~ **NARROWED — round 4 B-1.** A first-pass Resend
-   failure IS auto-retried now: the derivation's second arm finds the member's
-   still-live audiences without needing the redacted delivery rows, so a US2d
-   re-drive performs a real detach. What remains is a window, not a one-shot: the
-   retry only works while the audience is still live at Resend — once
-   `cleanup-orphaned-audiences` deletes it (1-hour grace after the broadcast goes
-   terminal) there is nothing left to detach, and only the manual procedure above
-   closes it. Check for a second `subprocessor_erasure_propagated` row before
-   remediating by hand.
+1. **Best-effort-ONCE.** A first-pass Resend failure is **not** auto-retried; it is
+   finished by hand via the procedure above, inside the 1-hour
+   `cleanup-orphaned-audiences` grace window.
+
+   *For one day (2026-09-09/10) this entry read "~~Best-effort-ONCE~~ **NARROWED**"
+   and claimed a US2d re-drive performs a real detach. It does not — see the
+   correction box in § Audit + metric above. The re-drive's input addresses have
+   already been replaced by sentinels in the first pass, so its removal count is
+   structurally 0. This sign-off was never actually narrowed, and re-narrowing it
+   requires capturing the removal inputs OUTSIDE the erasing tx — a code change,
+   not a documentation change.*
 
 2. **Un-enumerable / historical audiences out of reach.** The capture derives
    audiences from the member's `broadcast_deliveries` rows (the audiences it

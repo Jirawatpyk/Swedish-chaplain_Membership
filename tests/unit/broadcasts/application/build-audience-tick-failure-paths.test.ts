@@ -50,7 +50,10 @@ function gatewayThrow(
   kind: string,
   reason = 'boom',
   extra: {
-    resourceType?: 'audience' | 'broadcast';
+    // `'import'` is a real value on this union (an import-job 404 is not a
+    // missing audience). Without it no test in this file could pin the
+    // retagging fix, one leg of the widening it claims to have swept.
+    resourceType?: 'audience' | 'broadcast' | 'import';
     resourceId?: string;
     // `| undefined` is required under `exactOptionalPropertyTypes` — the caller
     // spreads an optional through, so the property is PRESENT and undefined.

@@ -101,9 +101,13 @@ export interface AdvisoryLockPort {
    * boundary cost), which makes Principle III tenant-tx-laundering
    * via random `as never` casts compile-fail.
    *
-   * Backward compat: `noOpAdvisoryLock` still accepts `null` via the
-   * port's pre-existing acceptance of optional tx — the production
-   * pgAdvisoryLockAdapter throws on null. See pg-advisory-lock-adapter.ts.
+   * The `| null` is NOT backward compat any more. It was justified here by
+   * `noOpAdvisoryLock` accepting null, and this branch DELETED that module, so
+   * the only surviving implementation (`pgAdvisoryLockAdapter`) throws on both
+   * null and undefined. The arm is kept so a missing tx is DIAGNOSED rather than
+   * silently locking nothing; `pg-advisory-lock-adapter.test.ts` pins the throw.
+   * Tightening to `TxToken` is safe whenever someone wants it — there are no
+   * production callers left.
    */
   acquire(tx: TxToken | null, lockKey: string): Promise<AcquireResult>;
 }

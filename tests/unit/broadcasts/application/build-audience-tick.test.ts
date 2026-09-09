@@ -24,6 +24,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
@@ -229,6 +230,13 @@ function makeDeps(opts: {
           return {
             kind: 'present' as const,
             count: RECIPIENTS.length,
+            // REQUIRED on the port. Omitting it does not fail `tsc` here (the
+            // mapped type above keeps every VALUE `unknown`), it silently sends
+            // the happy path down the `membership_unverifiable` branch — so the
+            // negative assertion in the tick-2 case is the real guard, not this
+            // literal. The round-4 lesson one turn on: a WRONGLY-stubbed port
+            // method is also an unexercised branch that looks covered.
+            complete: true,
           };
         },
         async sendBroadcast(id: string) {
@@ -456,6 +464,7 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
   });
 
   it('tick 2: every clause passes → stamps completion, creates the broadcast, sends', async () => {
+    const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
     const { deps, rec } = makeDeps({
       audienceImportId: 'imp-1',
       audienceImportSubmittedAt: new Date(NOW.getTime() - 60_000),
@@ -476,6 +485,20 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
     expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
     // And no second import was submitted on the confirming tick.
     expect(rec.importsSubmitted).toEqual([]);
+    // FINAL round H-1 — "every clause passes" has to include the audience
+    // MEMBERSHIP clause, and for one commit it did not. `complete` became a
+    // required field on `GetAudienceContactCountOutcome`; this harness types every
+    // port as `unknown` and passes `deps as never`, so `tsc` could not see the
+    // stub below still omitting it. `undefined || 3 > 3` is false ⇒ the check was
+    // skipped, the unverifiable branch fired, the send went out anyway, and all 12
+    // cases stayed green — the suite was running the exact mutant "delete
+    // `complete ||`" and passing.
+    //
+    // The stub fix alone would restore the branch silently. This assertion is what
+    // stops it moving again, and there was no negative assertion on this metric
+    // anywhere in the repo: all three existing spies are on tests that EXPECT the
+    // unverifiable branch.
+    expect(unverifiableSpy).not.toHaveBeenCalled();
   });
 });
 

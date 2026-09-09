@@ -1,7 +1,9 @@
 # Phase 0 Research — 108 Contact Recipient Rules
 
 
-> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist. Left as written — it is the record of what was believed at the time.
+> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist — but the live import signals DO: `broadcasts_audience_import_stuck_count` and `broadcasts_audience_import_submit_ms` (T106, emitted per tenant by the `broadcasts-gauges` cron). Watch those during a first send; neither is listed in `reviews/cutover.md` § 4's five signals. Left as written — it is the record of what was believed at the time.
+>
+> **SCOPE OF THIS BANNER (FINAL round):** it applies to §§ 1–8, which predate the Contacts-Import build. **§ R9's `CORRECTED` block remains CANONICAL** and is not superseded by anything above: `src/modules/broadcasts/domain/audience-ceiling.ts` sends every reader here for the throughput derivation, and a reader who followed that pointer was landing on a page labelled historical and having to adjudicate it themselves.
 
 **Status**: No open `NEEDS CLARIFICATION`. Product decisions were settled in the spec's three
 clarification sessions (2026-09-04). This file resolves the *engineering* unknowns in
@@ -40,7 +42,7 @@ retrieval returns a publishable-key-scoped PI with `payment_method` unexpanded),
 is not settleable from source: initiate a PromptPay payment in test mode, call it in the
 console, and grep the result. Also eyeball Stripe's hosted PromptPay instructions page.
 V5 the team's actual Resend
-rate limit (~~Settings → Usage~~ — **MEASURED 2026-09-08 from the API's own `ratelimit-*` headers: 10 req/s confirmed, but the serial loop is latency-bound at ~3.4 req/s; see the T095 block in R9**) and
+rate limit (~~Settings → Usage~~ — **MEASURED 2026-09-08 from the API's own `ratelimit-*` headers: 10 req/s confirmed, but the serial loop is latency-bound. The rate here read ~3.4 req/s until 2026-09-10; that sample had timed `GET /audiences` (0.29 s), not the `POST /contacts` the loop calls (0.481 s) ⇒ **~2.08 req/s**. See the CORRECTED block in R9, which is canonical for this number**) and
 whether the Audiences → Segments / Global Contacts migration has a deprecation date that
 affects F7's `audienceId`-based gateway (R16).
 

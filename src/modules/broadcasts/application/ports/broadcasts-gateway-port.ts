@@ -35,7 +35,17 @@ export type BroadcastsGatewayError =
       readonly reason: string;
     }
   | { readonly kind: 'idempotency_conflict'; readonly reason: string }
-  | { readonly kind: 'resource_missing'; readonly resourceType: 'audience' | 'broadcast'; readonly resourceId: string }
+  | {
+      readonly kind: 'resource_missing';
+      // `'import'` included: `_classify-thrown.ts` names THIS type as the shape it
+      // duck-types into, and its rationale says the union is widened "along the
+      // whole chain rather than only where the value is produced". This
+      // declaration was the one link the sweep missed — invisible to `tsc`
+      // because `BroadcastsGatewayError` has no runtime consumer, which is exactly
+      // what makes it the drift canary the next reader will trust.
+      readonly resourceType: 'audience' | 'broadcast' | 'import';
+      readonly resourceId: string;
+    }
   | { readonly kind: 'permanent'; readonly code: string; readonly reason: string };
 
 export interface AudienceContact {

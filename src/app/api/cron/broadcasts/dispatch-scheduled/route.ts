@@ -87,17 +87,21 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // BUG-028: give the audience sync the full function budget. Resend's Contacts
 // API is one-at-a-time; the account limit is 10 req/s (measured 2026-09-08,
-// T095 — this comment previously said 2), but the loop is serial so it runs at
-// `min(10, 1/RTT)` ≈ 3.4 req/s on a ~0.29 s warm round trip. A ~130-recipient
-// broadcast therefore syncs in ~40 s.
+// T095), but the loop is serial, so throughput is `min(10, 1/RTT)` and RTT is
+// what binds: **0.481 s per `POST /contacts` ⇒ ~2.08 req/s ⇒ ~623 contacts in
+// this 300 s budget** (~63 s for 130 recipients, ~72 s for 150).
 //
-// Round 4, whole-branch review #9 — the rest of this comment was stale twice
-// over. It quoted ~1,000 contacts per tick from the 3.4 req/s figure, while
-// T095 measured the serial loop at ~2.08 req/s (0.481 s per write) — about 623 —
-// and it ended by pointing at "the batched multi-tick model", which
-// `ca51f59a1` DELETED on this branch. There is no batch path: an audience above
-// `currentAudienceCeiling()` is refused, not split. `audience-ceiling.ts` names
-// this exact drift as the reason its own constant is documented in one place.
+// Two numbers were struck here, both derived from a 0.29 s sample that had timed
+// `GET /audiences` instead of the `POST /contacts` the loop actually calls: a
+// "3.4 req/s" rate and the "~1,000 contacts per tick" that followed from it. A
+// third stale clause pointed at "the batched multi-tick model", which
+// `ca51f59a1` DELETED on this branch — there is no batch path; an audience above
+// `currentAudienceCeiling()` is refused, not split.
+//
+// `audience-ceiling.ts` names this exact drift as the reason the derivation lives
+// in ONE place (`research.md` § R9, the CORRECTED block). It took three passes to
+// remove: round 4 deleted the derived figure and left the premise sentence, which
+// then contradicted its own correction three lines below it.
 export const maxDuration = 300;
 
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's

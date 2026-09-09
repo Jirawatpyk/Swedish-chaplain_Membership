@@ -1664,8 +1664,12 @@ export function makeDrizzleBroadcastsRepo(
      * `TERMINAL_BROADCAST_STATUSES` includes `sent`, `cleanup-audiences` runs
      * every 15 minutes (`vercel.json`) with a 1-hour grace, and it stamps that
      * column — so the set is broadcasts terminal within roughly the last hour
-     * plus those in flight. `NOT EXISTS` narrows it further to the ones that
-     * never delivered. R2-39: the arm cannot use
+     * plus those in flight. That bound is now the ONLY one: round 4's B-1 removed
+     * the `NOT EXISTS` sub-clause that had further narrowed this to broadcasts
+     * which never delivered, so the fan-out per erased member is
+     * `addresses × live audiences`, not `addresses × undelivered broadcasts`.
+     * Sizing a cost estimate off the old sentence undercounts. R2-39: the arm
+     * cannot use
      * `broadcasts_audience_import_pending_idx` (it asserts only part of that
      * index's predicate, so it cannot imply it) and `EXPLAIN` shows a Seq Scan.
      * Acceptable — the table is small and `tenant_id` bounds it — and recorded

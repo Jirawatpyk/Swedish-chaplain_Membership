@@ -1080,7 +1080,7 @@ async function confirmImport(
   // WITHIN-TICK replay — `withRetry` re-firing after a lost response — safe, and
   // makes the arm below reachable for the first time.
   //
-  // **Still open, and a FLAG-follow-up PR (NOT a flip blocker — round 4 reclassified it: the double-send is live on `origin/main` today and waits for a failed DB write, not for a flag) rather than a merge blocker** (this
+  // **Still open, and a follow-up PR rather than a merge blocker** (this
   // whole use case is dark at merge: `FEATURE_F7_IMPORT_AUDIENCE` defaults
   // false): `createBroadcast` above carries NO key, so a tick that dies between
   // the send and the tx below re-enters, mints a NEW Resend broadcast resource,
@@ -1088,6 +1088,14 @@ async function confirmImport(
   // persisting `resend_broadcast_id` BEFORE the send so a re-entered tick reuses
   // the resource — a change to the two-tick contract, tracked with the flip
   // preconditions rather than ridden along here.
+  //
+  // This paragraph briefly carried a parenthetical claiming the double-send "is
+  // live on `origin/main` today and waits for a failed DB write, not for a flag".
+  // That is true of the LEGACY leg and false here: this file does not exist on
+  // `origin/main` (`git cat-file -e origin/main:<this path>` fails), so on this
+  // leg the shape genuinely does wait for `FEATURE_F7_IMPORT_AUDIENCE`. It was
+  // pasted across from `dispatch-scheduled-broadcast.ts`, where it is accurate,
+  // without re-checking which leg it had landed on.
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
       rb.broadcastId,

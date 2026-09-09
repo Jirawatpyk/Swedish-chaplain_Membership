@@ -27,8 +27,9 @@
 # audit-parity 0.7 s. The three heaviest moved to the nightly's money job; what
 # remains is ~110 s of tests.
 #
-# 2026-09-10: that "~110 s" is now false by 8×. 108 PR-B/C/D added seven suites
-# and took this job from 3 min (eeb38018f, 09-05) to 13–16 min on `main`, with
+# 2026-09-10: that "~110 s" is now false by 8×. 108 PR-C and PR-D added seven
+# suites (4 in PR-D `a586351cd`, 3 in PR-C `91505b8f2`) and took this job from
+# 3 min (eeb38018f, 09-05) to 13–16 min on `main`, with
 # ±3 min run-to-run variance on an IDENTICAL file list — i.e. ~4 min of
 # headroom under `timeout-minutes: 20`, on a REQUIRED check. The two heaviest
 # are contact-marketing-opt-out (4 m 26 s CI) and contact-marketing-routes
@@ -41,9 +42,10 @@
 # tx-tenant-binding-guard) on the strength of a 1 m 21 s LOCAL run; in CI the
 # first two alone cost 480 s (erase-cascade 346 s) and the job hit the cap
 # without reaching the third. They are covered by the nightly rotation
-# (`members` Wednesdays, `broadcasts` Thursdays) and by the per-module
-# pre-push gate — weekly, not per-PR. Restoring them here needs the cap and
-# this header revisited together, not another line appended.
+# (`members` Wednesdays, `broadcasts` Thursdays) and by the per-module pre-push
+# gate — the rotation weekly, the pre-push gate on every push that touches the
+# module, neither of them per-PR. Restoring them here needs the cap and this
+# header revisited together, not another line appended.
 name: Integration smoke
 
 on:

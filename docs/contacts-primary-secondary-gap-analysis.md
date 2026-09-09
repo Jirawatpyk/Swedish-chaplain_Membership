@@ -131,7 +131,7 @@ delivered. The separate Resend Contacts-Import build (tasks T086/T087/T106 and m
 was deferred during PR-C and never authored; nothing in the codebase implements it, and no
 `audience_import_status` gauge exists.
 
-> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist. Left as written — it is the record of what was believed at the time.
+> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist — but the live import signals DO: `broadcasts_audience_import_stuck_count` and `broadcasts_audience_import_submit_ms` (T106, emitted per tenant by the `broadcasts-gauges` cron). Watch those during a first send; neither is listed in `reviews/cutover.md` § 4's five signals. Left as written — it is the record of what was believed at the time.
 
 ## 10. What is still open after 108
 
