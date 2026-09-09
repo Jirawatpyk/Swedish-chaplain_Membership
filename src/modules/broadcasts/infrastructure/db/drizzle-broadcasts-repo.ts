@@ -895,7 +895,14 @@ export function makeDrizzleBroadcastsRepo(
         // than guess: the previous code could not tell them apart because it had
         // no precondition to fail in the first place.
         const probe = await tx
-          .select({ completedAt: broadcasts.audienceImportCompletedAt })
+          .select({
+            completedAt: broadcasts.audienceImportCompletedAt,
+            // Selected so the error below can name the status the row ACTUALLY
+            // holds. It used to pass `'unknown' as never` — a fabricated status
+            // cast past the compiler, ten lines from `throwConcurrentMutation`,
+            // which probes the real one for exactly this reason.
+            status: broadcasts.status,
+          })
           .from(broadcasts)
           .where(
             and(
@@ -914,7 +921,7 @@ export function makeDrizzleBroadcastsRepo(
           throw new BroadcastConcurrentMutationError(
             tenantIdArg,
             broadcastId,
-            'unknown' as never,
+            probeRow.status,
           );
         }
         // Already stamped: nothing to do.

@@ -416,12 +416,22 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     expect(pairs).toContainEqual({ audienceId, email });
   }, 30_000);
 
-  it('POSITIVE CONTROL — a broadcast with no import id is NOT swept in by the new arm', async () => {
+  /**
+   * **This case asserted the OPPOSITE until round 2 R2-3, and the change is
+   * deliberate.** It was a positive control for `audience_import_id IS NOT NULL`
+   * — "the arm is bounded to the import path that introduced the window".
+   *
+   * That bound was wrong in the one direction that matters: the LEGACY serial
+   * push has the identical pushed-but-never-sent window, and the legacy leg is
+   * the one live at merge. The clause therefore covered the dark leg and missed
+   * the live one — the third time on this branch a fix landed on one leg only.
+   *
+   * The arm is still bounded; the bound is now `NOT EXISTS (deliveries)`, which
+   * is both narrower where it matters and correct on both legs. The next case is
+   * its positive control.
+   */
+  it('a LEGACY audience with no deliveries IS swept in — the window is not the import path’s alone', async () => {
     if (!RUN_INTEGRATION) return;
-    // The arm is bounded to the import path that introduced the window. Without
-    // this, an arm matching EVERY audience the tenant ever had would pass the
-    // case above just as well, and every erasure would fan out across the whole
-    // history for no benefit.
     const raw = await seedApproved();
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const slug = asTenantContext(TEST_TENANT).slug;
@@ -438,7 +448,51 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       repo.listMemberResendAudienceContactsInTx(tx, slug, [email]),
     );
 
-    expect(pairs).not.toContainEqual({ audienceId, email });
+    expect(pairs).toContainEqual({ audienceId, email });
+  }, 30_000);
+
+  /**
+   * POSITIVE CONTROL for the bound that replaced it (R2-3). A broadcast that DID
+   * deliver is covered by the delivery-row arm, so this arm must not pair its
+   * audience with an address that is NOT among its recipients.
+   *
+   * This is a disclosure control, not an efficiency one:
+   * `DELETE /audiences/{id}/contacts/{email}` carries the address in the URL, so
+   * pairing an unrelated audience transmits that address to the marketing
+   * processor — and the members missing from a sent broadcast's deliveries are
+   * missing because `filterMarketingOptedOut` dropped them. Art. 17 is a basis to
+   * erase, not to disclose.
+   */
+  it('POSITIVE CONTROL — an audience that DID deliver is not paired with a non-recipient', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const slug = asTenantContext(TEST_TENANT).slug;
+    const audienceId = `aud-s9-delivered-${Date.now()}`;
+    const recipient = `s9-got-it-${Date.now()}@example.com`;
+    const erased = `s9-opted-out-${Date.now()}@example.com`;
+
+    await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts SET resend_audience_id = ${audienceId}
+         WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`);
+      await tx.execute(sql`
+        INSERT INTO broadcast_deliveries
+          (tenant_id, delivery_id, broadcast_id, recipient_email_lower,
+           recipient_member_id, status, event_timestamp, resend_event_id,
+           resend_message_id)
+        VALUES (${TEST_TENANT}, gen_random_uuid(), ${raw}::uuid, ${recipient},
+                NULL, 'delivered', now(), ${'evt-' + String(Date.now())},
+                ${'msg-' + String(Date.now())})`);
+    });
+
+    const pairs = await repo.withTx(async (tx) =>
+      repo.listMemberResendAudienceContactsInTx(tx, slug, [erased]),
+    );
+
+    // The opted-out member's address is never sent to the processor for an
+    // audience whose real recipients are already known.
+    expect(pairs).not.toContainEqual({ audienceId, email: erased });
   }, 30_000);
 
   /**

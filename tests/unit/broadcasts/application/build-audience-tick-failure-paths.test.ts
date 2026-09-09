@@ -843,6 +843,49 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
   });
 
   /**
+   * The RESOLVER source through the same budget — untested when the budget
+   * landed, which is exactly where the lie lived.
+   *
+   * One reason for both sources put *"our email provider was unreachable for
+   * over an hour"* in a member's inbox for a Neon / RLS fault, and reported it on
+   * `dispatch_budget_exhausted{sub_kind="api"}` — a provider transport class for
+   * a failure that never touched the provider. The fix for round-3 3-7
+   * reintroduced the R2-13 class this same branch had just removed from `body2`.
+   */
+  it('a RESOLVER failure past the budget blames US, not the provider', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resolveFails: 'server_error',
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    // Its OWN reason, so the member's sentence does not blame Resend.
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted_internal');
+    // And the alert carries `internal`, not a plausible provider class.
+    expect(spy).toHaveBeenCalledWith(expect.anything(), 'internal');
+  });
+
+  it('a GATEWAY failure past the budget still reports the provider, with the class observed', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable' },
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Never `internal` for a provider failure — the split has to hold both ways.
+    expect(spy.mock.calls[0]?.[1]).not.toBe('internal');
+  });
+
+  /**
    * Round 3 finding 3-5 — the completion rule compares numbers the import JOB
    * reported and never looks at what the audience actually holds.
    *

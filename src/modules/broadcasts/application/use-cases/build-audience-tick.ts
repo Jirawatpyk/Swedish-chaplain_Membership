@@ -113,12 +113,23 @@ export const IMPORT_FAILURE_REASONS = [
   /** The audience grew past the accepted ceiling between submit and this tick. */
   'audience_too_large',
   /**
-   * FR-021 / AS2 — an hour of retryable failures. Round 3 finding 3-7: this
-   * path had NO wall-clock budget at all, so a persistently retryable gateway
-   * or resolver failure kept the row `approved` and re-attempted every five
+   * FR-021 / AS2 — an hour of retryable failures reaching the PROVIDER. Round 3
+   * finding 3-7: this path had no wall-clock budget at all, so a persistently
+   * retryable failure kept the row `approved` and was re-attempted every five
    * minutes indefinitely, never terminal and the member never told.
    */
   'retry_budget_exhausted',
+  /**
+   * The same hour, but the failures were OURS — Neon, RLS, the members bridge.
+   *
+   * Split from the value above on 2026-09-09. One reason for both put the
+   * sentence *"our email provider was unreachable for over an hour"* in a
+   * member's inbox for a database fault, and reported it on
+   * `dispatch_budget_exhausted{sub_kind="api"}` — a provider transport class for
+   * a fault that never touched the provider. Exactly the R2-13 class this same
+   * branch fixed in `body2`, reintroduced two commits later by the fix for 3-7.
+   */
+  'retry_budget_exhausted_internal',
   /** Everyone in the audience is suppressed or opted out — nothing to send to. */
   'audience_post_suppression_empty',
   /**
@@ -309,7 +320,17 @@ export async function buildAudienceTick(
  * the same answer.
  */
 type GatewayFailure =
-  | { readonly retryable: true; readonly message: string }
+  | {
+      readonly retryable: true;
+      readonly message: string;
+      /**
+       * The adapter's transport class (`classifyResendError` tags every
+       * `retryable` throw with `network` / `server_5xx` / `api`). Carried so the
+       * FR-021 budget can report the class actually observed instead of a
+       * plausible one — the same reason the non-retryable arm carries `kind`.
+       */
+      readonly subKind?: 'network' | 'timeout' | 'server_5xx' | 'api' | undefined;
+    }
   | {
       readonly retryable: false;
       readonly reason: Extract<ImportFailureReason, 'gateway_permanent' | 'gateway_unknown'>;
@@ -357,7 +378,17 @@ async function viaGateway<T>(fn: () => Promise<T>): Promise<Result<T, GatewayFai
   } catch (e) {
     const shape = classifyThrown(e);
     const message = shape.reason ?? shape.kind;
-    if (isRetryableThrow(shape.kind)) return err({ retryable: true, message });
+    if (isRetryableThrow(shape.kind)) {
+      const sub = shape.subKind;
+      return err({
+        retryable: true,
+        message,
+        subKind:
+          sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
+            ? sub
+            : undefined,
+      });
+    }
     return err({
       retryable: false,
       // `unknown` means the throw carried no `kind` at all — not a gateway
@@ -466,17 +497,23 @@ function importReasonToFailureMetric(
 const RETRY_BUDGET_MS = 60 * 60 * 1000;
 
 function budgetEpoch(broadcast: Broadcast): Date {
-  const b = broadcast as unknown as {
-    scheduledFor: Date | null;
-    approvedAt?: Date | null;
-    createdAt: Date;
-  };
-  return b.scheduledFor ?? b.approvedAt ?? b.createdAt;
+  // No cast. `Broadcast` declares all three (`broadcast.ts:105,110,195`), and the
+  // `as unknown as {...}` this replaced was the cast-suppresses-tsc shape that
+  // round-3 finding 3-1 turned on — a cast is how a wrong assumption about a
+  // type survives the compiler.
+  return broadcast.scheduledFor ?? broadcast.approvedAt ?? broadcast.createdAt;
 }
 
 /**
  * A retryable failure, decided: retry on the next tick, or stop because the
  * budget is spent. Returns the caller's Result either way.
+ *
+ * `source` is not decoration. The budget is shared by two very different
+ * failures — the provider refusing, and our own storage refusing — and the
+ * terminal record of each is read by a member (the FR-021 email) and by on-call
+ * (`dispatch_budget_exhausted{sub_kind}`). Collapsing them told a member their
+ * email provider was down when Neon was, and put a DB fault on a provider
+ * transport class.
  */
 async function onRetryable(
   deps: BuildAudienceTickDeps,
@@ -484,6 +521,8 @@ async function onRetryable(
   broadcast: Broadcast,
   message: string,
   importId: string | null,
+  source: 'gateway' | 'resolve',
+  subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'internal',
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const now = deps.clock.now();
   const epoch = budgetEpoch(broadcast);
@@ -499,22 +538,23 @@ async function onRetryable(
       importId,
       elapsedMs,
       epochForBudget: epoch.toISOString(),
-      sendMode:
-        (broadcast as unknown as { scheduledFor: Date | null }).scheduledFor === null
-          ? 'send_now'
-          : 'scheduled',
+      sendMode: broadcast.scheduledFor === null ? 'send_now' : 'scheduled',
+      source,
+      subKind,
       severity: 'critical',
     },
     'broadcasts.audience_import.retry_budget_exhausted',
   );
-  // The AS2 alert trigger. `api` matches what the legacy path reports for a
-  // provider-side refusal; the precise transport class is not carried this far,
-  // and inventing one would put a sub-kind on the series that nobody observed.
-  broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, 'api');
+  // The AS2 alert trigger, carrying the class actually observed rather than a
+  // plausible one.
+  broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, subKind);
 
   return failTerminally(deps, input, broadcast, {
     kind: 'audience_import_failed',
-    reason: 'retry_budget_exhausted',
+    reason:
+      source === 'gateway'
+        ? 'retry_budget_exhausted'
+        : 'retry_budget_exhausted_internal',
     importId,
     observed: elapsedMs,
     expected: RETRY_BUDGET_MS,
@@ -540,7 +580,15 @@ async function onGatewayFailure(
   importId: string | null,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   if (failure.retryable) {
-    return onRetryable(deps, input, broadcast, failure.message, importId);
+    return onRetryable(
+      deps,
+      input,
+      broadcast,
+      failure.message,
+      importId,
+      'gateway',
+      failure.subKind ?? 'api',
+    );
   }
 
   if (failure.kind === 'resource_missing') {
@@ -1404,6 +1452,8 @@ async function onResolveFailure(
       broadcast,
       mapped.message,
       broadcast.audienceImportId,
+      'resolve',
+      'internal',
     );
   }
   return err(mapped);

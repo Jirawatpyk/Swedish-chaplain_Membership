@@ -1852,7 +1852,11 @@ export const broadcastsMetrics = {
    */
   dispatchBudgetExhausted(
     tenantId: string,
-    subKind: 'network' | 'timeout' | 'server_5xx' | 'api',
+    // `internal` added 2026-09-09: the import path budgets RESOLVER failures
+    // (Neon, RLS, the members bridge) as well as gateway ones, and reporting a
+    // database fault under a provider transport class is a fabricated cause on
+    // an alerting series. The four provider classes keep their meaning.
+    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'internal',
   ): void {
     safeMetric(() => {
       counter(

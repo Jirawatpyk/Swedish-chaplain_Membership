@@ -6693,6 +6693,7 @@
         "failed_rows": "vår e-postleverantör avvisade några av mottagaradresserna",
         "counts_incoherent": "mottagarlistan överfördes inte fullständigt till vår e-postleverantör",
         "audience_membership_drift": "mottagarlistan hos vår e-postleverantör stämde inte med den vi förberedde, så vi skickade inte till en grupp du inte hade godkänt",
+        "retry_budget_exhausted_internal": "ett problem på vår sida hindrade oss från att sätta ihop mottagarlistan i mer än en timme, så vi avbröt i stället för att skicka vid en oväntad tidpunkt",
         "retry_budget_exhausted": "vår e-postleverantör var oåtkomlig i mer än en timme, så vi slutade försöka i stället för att skicka vid en oväntad tidpunkt",
         "count_mismatch": "mottagarlistan ändrades medan utskicket förbereddes, så det skickades inte till en annan grupp än den du godkände",
         "provider_failed": "vår e-postleverantör kunde inte förbereda mottagarlistan",
