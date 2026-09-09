@@ -49,6 +49,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+// Round 4 T1 — type-only, so it is erased before `vi.hoisted` runs. Imported
+// rather than re-spelled inline: if `RemoveContactOutcome` ever gains a third
+// member, `tsc` fails HERE instead of the double silently going stale, which is
+// the exact failure this fix is repairing.
+import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 
 // vi.mock F7's barrel: spy on `removeContactFromAudience`, keep everything else
 // real (the audience-derivation + content-scrub adapters need
@@ -56,9 +61,15 @@ import { and, eq } from 'drizzle-orm';
 // `vi.hoisted` so the spy is initialised BEFORE the hoisted `vi.mock` factory
 // references it (the factory runs at the top of the module).
 const { removeContactFromAudienceSpy } = vi.hoisted(() => ({
+  // Round 4 T1 — was `Promise<void>` resolving `undefined`. `897dd73d7` widened
+  // the port to `Promise<RemoveContactOutcome>` and the adapter now reads
+  // `outcome.kind`; reading `.kind` off `undefined` throws INSIDE the adapter's
+  // own catch, which counts it `failed` and writes `resend_outcome: 'failed'`.
+  // The suite went red and read like a real detach failure. This file is not in
+  // the diff that widened the port — a stale double in an untouched file.
   removeContactFromAudienceSpy: vi.fn<
-    (audienceId: string, email: string) => Promise<void>
-  >(async () => {}),
+    (audienceId: string, email: string) => Promise<RemoveContactOutcome>
+  >(async () => ({ kind: 'detached' })),
 }));
 
 vi.mock('@/modules/broadcasts', async (importOriginal) => {
@@ -295,7 +306,7 @@ describe('eraseMember — sub-processor erasure cascade (COMP-1 US3-C, live Neon
 
   it('A — propagates to Resend (removeContactFromAudience called), records resend_outcome:ok + removed_count:1, and emits member_erased (non-blocking)', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceId = `aud-ok-${randomUUID().slice(0, 8)}`;
@@ -354,6 +365,76 @@ describe('eraseMember — sub-processor erasure cascade (COMP-1 US3-C, live Neon
     expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
 
     // member_erased emitted (completion proof — cascadesComplete held).
+    const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
+    expect(erased.length).toBeGreaterThanOrEqual(1);
+  }, 120_000);
+
+  /**
+   * Round 4 T1 + T6 — the sibling of A that had never existed.
+   *
+   * `897dd73d7` split `removeContactFromAudience`'s success into `detached` vs
+   * `already_absent` precisely so `resend_contacts_removed_count` stops counting
+   * 404s as removals: that number reaches an append-only Art. 30 record and the
+   * DPO's evidence card, where it was labelled "Contacts removed" and was
+   * materially false under Art. 12(3). Nothing pinned the split end to end —
+   * `resend_contacts_already_absent_count` appeared in `tests/` exactly once,
+   * inside a comment, and every projection case asserted it `null`. A typo on
+   * either side degraded silently to a card that omits the field.
+   *
+   * Both outcomes are successes, so `resend_outcome` stays `ok`; only one is a
+   * removal.
+   */
+  it('A2 — an already-absent contact is a SUCCESS but NOT a removal: outcome ok, removed_count 0, already_absent_count 1', async () => {
+    removeContactFromAudienceSpy.mockClear();
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'already_absent' });
+
+    const { memberId, contactEmail } = await seedMember(tenant);
+    const audienceId = `aud-absent-${randomUUID().slice(0, 8)}`;
+    await seedAudienceDelivery(
+      tenant,
+      memberId,
+      admin.userId,
+      contactEmail,
+      audienceId,
+    );
+
+    const requestId = `rq-erase-sub-absent-${Date.now()}`;
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId },
+      deps,
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    // A 404 from the processor is not a failure — the address is absent, which
+    // is the state the erasure was asking for.
+    expect(result.value.cascadesComplete).toBe(true);
+    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(1);
+
+    const subAudits = await rawSelectSubprocessorAudits(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(
+      subAudits.length,
+      'expected a subprocessor_erasure_propagated audit row',
+    ).toBeGreaterThanOrEqual(1);
+    const payload = subAudits[0]!.payload as {
+      resend_outcome?: string;
+      resend_contacts_removed_count?: number;
+      resend_contacts_already_absent_count?: number;
+      resend_contacts_failed_count?: number;
+    };
+    expect(payload.resend_outcome).toBe('ok');
+    // The assertion the whole split exists for: NOT 1.
+    expect(payload.resend_contacts_removed_count).toBe(0);
+    expect(payload.resend_contacts_already_absent_count).toBe(1);
+    expect(payload.resend_contacts_failed_count).toBe(0);
+    expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
+
     const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
     expect(erased.length).toBeGreaterThanOrEqual(1);
   }, 120_000);

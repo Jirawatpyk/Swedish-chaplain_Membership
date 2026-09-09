@@ -53,6 +53,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+// Round 4 T1 — type-only, so it is erased before `vi.hoisted` runs. Imported
+// rather than re-spelled inline: if `RemoveContactOutcome` ever gains a third
+// member, `tsc` fails HERE instead of the double silently going stale, which is
+// the exact failure this fix is repairing.
+import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 
 // vi.mock F7's barrel: spy on `removeContactFromAudience`, keep everything else
 // real (the audience-derivation + content-scrub adapters need
@@ -61,9 +66,15 @@ import { and, eq } from 'drizzle-orm';
 // references it (the factory runs at the top of the module).
 const { removeContactFromAudienceSpy, deleteContactGloballySpy } = vi.hoisted(
   () => ({
+    // Round 4 T1 — was `Promise<void>` resolving `undefined`. `897dd73d7`
+    // widened the port to `Promise<RemoveContactOutcome>` and the adapter now
+    // reads `outcome.kind`; reading `.kind` off `undefined` throws INSIDE the
+    // adapter's own catch, which counts it `failed` and writes
+    // `resend_outcome: 'failed'`. This declaration was open in the same commit
+    // range that changed the return type, and kept `Promise<void>`.
     removeContactFromAudienceSpy: vi.fn<
-      (audienceId: string, email: string) => Promise<void>
-    >(async () => {}),
+      (audienceId: string, email: string) => Promise<RemoveContactOutcome>
+    >(async () => ({ kind: 'detached' })),
     /**
      * Round 2 R2-18 — the U1 decision had NO regression guard, and the gap was
      * not merely "untested": this factory spreads `...actual`, so
@@ -395,7 +406,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
 
   it('1 — HAPPY CAPSTONE: a member in TWO audience-bearing broadcasts → both pairs removed, ONE audit (removed_count:2), member_erased + cascadesComplete:true', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
     deleteContactGloballySpy.mockClear();
 
     const { memberId, contactEmail } = await seedMember(tenant);
@@ -468,6 +479,71 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
   }, 120_000);
 
   /**
+   * Round 4 T1 — the MIXED capstone. Case 1 above is all-`detached`, and
+   * `subprocessor-erasure.test.ts` A2 is all-`already_absent` with one contact;
+   * neither can show that the two counters ACCUMULATE INDEPENDENTLY across
+   * several pairs. That is the only place the adapter can silently collapse the
+   * split back into one number, and it is the number an Art. 30 record carries.
+   *
+   * The unit adapter test pins the accumulator; this pins the accumulator
+   * reaching `audit_log.payload` on live Neon, which is where the false
+   * "Contacts removed" figure was actually read from.
+   *
+   * `mockResolvedValueOnce` ×2: the first pair detaches, the second is already
+   * absent. Which audience gets which is not asserted — only the totals are, so
+   * the case does not depend on the cascade's iteration order.
+   */
+  it('1b — MIXED: one pair detached + one already absent → ONE audit, removed_count:1 AND already_absent_count:1, outcome still ok', async () => {
+    removeContactFromAudienceSpy.mockClear();
+    removeContactFromAudienceSpy
+      .mockResolvedValueOnce({ kind: 'detached' })
+      .mockResolvedValueOnce({ kind: 'already_absent' });
+    deleteContactGloballySpy.mockClear();
+
+    const { memberId, contactEmail } = await seedMember(tenant);
+    const audienceA = `aud-mix-a-${randomUUID().slice(0, 8)}`;
+    const audienceB = `aud-mix-b-${randomUUID().slice(0, 8)}`;
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceA);
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceB);
+
+    const requestId = `rq-erase-sub-cap-mix-${Date.now()}`;
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId },
+      deps,
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    // Both outcomes are successes, so nothing is degraded and the U1 decision
+    // still holds — no global delete on the shared Resend account.
+    expect(result.value.cascadesComplete).toBe(true);
+    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(2);
+    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
+
+    const subAudits = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
+    expect(subAudits).toHaveLength(1);
+    const mixed = subAudits[0]!.payload as {
+      resend_outcome?: string;
+      resend_contacts_removed_count?: number;
+      resend_contacts_already_absent_count?: number;
+      resend_contacts_failed_count?: number;
+    };
+    expect(mixed.resend_outcome).toBe('ok');
+    // The assertion that fails if the two counters are ever collapsed: the
+    // pre-split code would have written 2 here.
+    expect(mixed.resend_contacts_removed_count).toBe(1);
+    expect(mixed.resend_contacts_already_absent_count).toBe(1);
+    expect(mixed.resend_contacts_failed_count).toBe(0);
+    expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
+
+    const erasedMixed = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
+    expect(erasedMixed.length).toBeGreaterThanOrEqual(1);
+  }, 120_000);
+
+  /**
    * Round 2 R2-3 — the S9 UNION arm's **disclosure control**, both directions.
    *
    * The arm exists for the pushed-but-never-sent window: a broadcast whose
@@ -484,7 +560,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
    */
   it('R2-3 — a never-delivered audience IS detached, but a delivered broadcast this member never received is NOT', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
     deleteContactGloballySpy.mockClear();
 
     const { memberId, contactEmail } = await seedMember(tenant);
@@ -585,7 +661,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     // first pass), so the in-tx audience-derivation read finds NO live emails →
     // captures [] → a VACUOUS empty-set propagation. The gateway is NOT called.
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     const second = await eraseMember(
       asMemberId(memberId) as MemberId,
@@ -630,7 +706,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
 
   it('4 — THROW-PATH ROLLBACK (security cond-2): a FAIL-LOUD in-tx capture throw rolls the WHOLE erasure back — erased_at NULL, contacts un-scrubbed, no member_erased, re-drivable', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     const { memberId, contactEmail } = await seedMember(tenant);
     const { deliveryId } = await seedAudienceDelivery(
@@ -737,7 +813,7 @@ describe('eraseMember — sub-processor cascade cross-tenant isolation (COMP-1 U
 
   it('2 — erasing tenant-A member removes ONLY aud_A from Resend; tenant-B member sharing the SAME email + its aud_B + delivery are untouched', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     // The SAME contact email in BOTH tenants — the cross-tenant collision the
     // RLS-scoped in-tx audience-derivation read must keep isolated.
