@@ -180,7 +180,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             {
               tenantId: tenant.slug,
               broadcastId: row.broadcast_id,
-              message: result.error.message,
+              // Reliability review L-5 (2026-09-10) — was `message:
+              // result.error.message`, which is `e.message` from the use case's
+              // outer catch: a `NeonDbError` there carries bound parameters, on
+              // this module member addresses, and `message` is not a
+              // REDACT_PATH. Same class round 4 L3 fixed on the dispatch route;
+              // this one was missed. The class is the bounded half.
+              errClass: result.error.errClass ?? 'unclassified',
             },
             'cron.broadcasts.reconcile.server_error',
           );

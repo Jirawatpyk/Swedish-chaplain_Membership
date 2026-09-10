@@ -20,6 +20,7 @@ import { reconcileStuckSending } from '@/modules/broadcasts/application/use-case
 import { asBroadcastId, type Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { asTenantContext } from '@/modules/tenants';
 import { ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 
 import type { AuditEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type {
@@ -96,7 +97,9 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
-    createdAt: FROZEN_NOW,
+    // Two days before `now`, so a provider `sent_at` of 2026-06-14 is INSIDE the
+    // [createdAt, now] sanity range the reconciler enforces (review L-1).
+    createdAt: new Date(FROZEN_NOW.getTime() - 2 * 24 * 60 * 60 * 1000),
     updatedAt: FROZEN_NOW,
     ...overrides,
   };
@@ -437,8 +440,10 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     // The status is carried out VERBATIM so the cron's log line and the
     // operator's runbook step read the same word.
     expect(result.value.observedResendStatus).toBe(status);
-    // Nothing decided: the row stays `sending`, the quota slot stays reserved
-    // (not consumed, not released), and no append-only row claims otherwise.
+    // Nothing decided: the row stays `sending`, no quota is consumed, and no
+    // append-only row claims otherwise. (Not "reserved": a `sending` row is
+    // in neither quota bucket — whole-branch review 2026-09-10 — so the row is
+    // invisible to the cap until a human completes it; the runbook says so.)
     expect(repo.transitions).toEqual([]);
     expect(audit.emits).toEqual([]);
     expect(email.memberSends).toEqual([]);
@@ -478,6 +483,12 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(completed?.payload['reconciledAt']).toBe(FROZEN_NOW.toISOString());
   });
 
+  /**
+   * Passes on the pre-branch code too (which always stamped `now`) — it is a
+   * MUTATION GUARD, not a discriminator: remove the `isNaN` check and
+   * `.toISOString()` on an Invalid Date throws inside the tx. Named as such
+   * per reliability review L-4.
+   */
   it('an unparseable provider sent_at degrades to the reconcile time — it does not throw inside the tx', async () => {
     const repo = makeBroadcastsRepo({ current: baseBroadcast() });
     const gateway = makeGateway({
@@ -497,6 +508,40 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok || result.value.kind !== 'reconciled_sent') throw new Error('expected reconciled_sent');
     expect(result.value.sentAt.toISOString()).toBe(FROZEN_NOW.toISOString());
+  });
+
+  /**
+   * Reliability review L-1 — a value that PARSES but cannot be a send time
+   * (before the broadcast existed; in the future) must not reach
+   * `broadcasts.sent_at` or the append-only `broadcast_sent` row.
+   */
+  it.each([
+    ['in the future', '2026-06-16T00:00:00.000Z'],
+    ['before the broadcast existed', '2020-01-01T00:00:00.000Z'],
+  ])('a provider sent_at %s degrades to the reconcile time and is logged', async (_label, providerSentAt) => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const repo = makeBroadcastsRepo({ current: baseBroadcast() });
+    const gateway = makeGateway({
+      retrieve: { id: 'rsb-stuck', status: 'sent', sentAt: providerSentAt },
+    });
+    const audit = makeAudit();
+    const result = await reconcileStuckSending(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gateway.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, requestId: 'req-sent-at-range' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.kind !== 'reconciled_sent') throw new Error('expected reconciled_sent');
+    expect(result.value.sentAt.toISOString()).toBe(FROZEN_NOW.toISOString());
+    const sentAudit = audit.emits.find((e) => e.eventType === 'broadcast_sent');
+    expect(sentAudit?.payload['sentAt']).toBe(FROZEN_NOW.toISOString());
+    expect(warnSpy.mock.calls.map((c) => c[1])).toContain('broadcasts.reconcile.provider_sent_at_out_of_range');
+    warnSpy.mockRestore();
   });
 
   it('concurrent drift out of sending leaves a benign not_stuck_yet, NOT reconcile.server_error (P2 wave-2 #11)', async () => {

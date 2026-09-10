@@ -437,8 +437,10 @@ export async function dispatchScheduledBroadcast(
   let sendAttempted = false;
   /**
    * Set by the probe below when an INHERITED resource was already handed to
-   * `/send` by an earlier tick. Declared out here because Step 4 -- which runs
-   * after the catch -- needs all three to write a truthful record: without them
+   * `/send` by an earlier tick. Declared out here because `advanceToSending`
+   * (Step 4 — reached from TWO places: after the Step-3 catch, and directly
+   * from Step 2's replay-refusal return) needs all three to write a truthful
+   * record: without them
    * its audit payload stamped `actualSendAt = now` for a send that happened up
    * to an hour earlier, and the value was already in hand and discarded.
    */
@@ -514,20 +516,21 @@ export async function dispatchScheduledBroadcast(
         // FAIL CLOSED. Re-sending on a status we cannot interpret risks a second
         // delivery to the whole audience, and skipping the send risks recording a
         // dispatch that never happened -- and BOTH directions are unmeasured.
-        // Refusing keeps the row `approved` and fires the route's counter, which
-        // ALARMS (not pages) at ≥15 min sustained — `observability.md` grades it
-        // alarm, and routes it to the audience-build runbook, which is a
-        // different subsystem. `errClass: 'gate'` is the only discriminator and
-        // appears in no runbook yet.
+        // Refusing keeps the row `approved` and fires the route's counter with
+        // `phase: 'inherited_status'`, which ALARMS (not pages) at ≥15 min
+        // sustained; `observability.md` § 22.3 and `broadcast-audience-build.md`
+        // § C step 1 route that phase to a human, not to the F3 triage tree.
         //
-        // **NOT bounded by FR-021** — the same property the persist-fault arm
-        // below documents: this `return` leaves from inside the `try`, so
-        // `pastBudget` is never evaluated. If Resend renamed a status we already
-        // know, every inherited-id tick would refuse every 5 minutes
-        // indefinitely; `broadcasts_approved_overdue_count` is what eventually
-        // notices. Recovery is either adding the status to `normaliseStatus` and
-        // deploying, or deleting the resource at Resend so the probe answers
-        // `not_found`.
+        // **NOT bounded by FR-021, on purpose.** The budget lives in
+        // `applyRetryBudget` and is applied to gateway THROWS; this is a
+        // deliberate refusal, and a clock on it would turn "we do not know
+        // whether this was sent" into "it failed, member told" after an hour —
+        // the guess the refusal exists to avoid. If Resend renamed a status we
+        // already know, every inherited-id tick would refuse every 5 minutes
+        // until someone acts; `broadcasts_approved_overdue_count` is what
+        // eventually notices. Recovery is either adding the status to
+        // `normaliseStatus` and deploying, or deleting the resource at Resend so
+        // the probe answers `not_found`.
         //
         // Still the right trade: a stuck broadcast is recoverable by a human; a
         // duplicate send to 150 real members is not.
@@ -778,9 +781,10 @@ export async function dispatchScheduledBroadcast(
 
   // Step 3: Resend Broadcasts API calls (createAudience + addContacts +
   // createBroadcast + sendBroadcast). External calls happen OUTSIDE tx.
-  // Empty string sentinel means "not yet assigned" — used by the
-  // idempotency_conflict handler to distinguish pre-send vs post-send
-  // conflict (the latter is recoverable as success-replay).
+  // Empty string sentinel on `resendAudienceId` / `resendBroadcastId` means
+  // "not yet assigned"; the pre-send vs post-send 409 distinction is keyed on
+  // `sendAttempted` since #353, not on the sentinel (both locals are declared
+  // up at Step 1b now, because the probe reads them first).
   //
   // **Orphan-audience prevention** (post-staff-review polish 2026-05-01):
   // If `broadcast.resendAudienceId` is already set, a prior dispatch
@@ -1067,17 +1071,21 @@ export async function dispatchScheduledBroadcast(
         resendBroadcastId,
         buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
       );
-    } else {
-      // 2026-09-10 follow-up (7): the prior tick sent; verify ITS push for the
-      // record, exactly as the 409-replay arm does. Never throws.
-      await verifyAudienceOnReplay(
-        deps,
-        input,
-        resendAudienceId,
-        resendBroadcastId,
-        resolved.estimatedCount,
-      );
     }
+    // Follow-up (7) asked for `verifyAudienceOnReplay` HERE too, on the
+    // probe-positive path, and for one commit it ran. It was REFUTED by the
+    // whole-branch review of that commit, and the refutation holds on this
+    // file's own invariant: an inherited id proves the prior tick's push
+    // completed (push precedes `createBroadcast` precedes `attachBroadcastId`,
+    // all in one try — the same fact the contact-push guard above rests on).
+    // So the question the check answers — "did the prior push reach Resend in
+    // full?" — is already answered YES here, structurally, and the only thing
+    // a count comparison can add is a FALSE `broadcast_resend_audience_drift`
+    // row (append-only, pages at § 22.3) when membership changed between the
+    // two ticks. Delivery truth for a sent broadcast is the webhook-fed
+    // `broadcast_deliveries` aggregate, not an audience count. The 409 arm
+    // keeps its check (pre-existing, and that arm can also be reached by a
+    // resource this tick minted).
   } catch (e) {
     // ---- Round 4 L2 — the audience-attach CAS loss, named ------------
     //
@@ -1300,6 +1308,13 @@ async function advanceToSending(ctx: {
         input.broadcastId,
         'sending',
         {
+          // On a REPLAY this is later than the provider's `sent_at` — the mail
+          // went out on an earlier tick, this is when the row's status caught
+          // up. `sent_at < sending_started_at` is therefore possible on such a
+          // row and is the truth, not a defect (reliability review L-2,
+          // 2026-09-10); the `broadcast_send_started` payload below says which
+          // rows are replays (`handedToSendOnPriorTick`). No CHECK constraint
+          // orders the two columns, on purpose.
           sendingStartedAt: now,
           estimatedRecipientCount: recipientCount,
         },
@@ -1477,7 +1492,7 @@ async function advanceToSending(ctx: {
     //
     // Round 4 L6 — this arm WAS dead code until the commit that wrote this
     // comment. R2-1 added it citing `attachAudienceId`, which is called in a
-    // different try block (`:524`, catch `:608`); nothing inside THIS try threw
+    // different try block (Step 3's, with its own catch); nothing inside THIS try threw
     // `BroadcastNotFoundError`, because `attachResendIds` still threw a bare
     // `Error` and landed in `db_write_after_resend_success` instead. Making
     // `attachResendIds` use `throwConcurrentMutation` (round 4 F2) is what
@@ -1785,11 +1800,16 @@ async function settleGatewayThrow(
  * `broadcast_resend_drift_check_unverifiable`. Forensic on both — the row still
  * advances, because Resend already accepted the send.
  *
- * 2026-09-10 follow-up (7): this used to run ONLY on the 409-replay arm, i.e.
- * only when a tick learned of the prior send by being refused at `/send`. The
- * probe-positive path learns the same fact by ASKING — and skipped the check,
- * so the append-only record was verified on one path and inferred on the
- * other. Same fact, same record: both callers now run this.
+ * 2026-09-10 follow-up (7) asked for this to run on the probe-positive path as
+ * well; it did for one commit and was refuted in review (see the note at the
+ * send block in Step 3): with an inherited id the prior push is proven complete
+ * by write ordering, so on that path the only possible output of this check is
+ * a false drift row for a membership change between ticks. ONE caller, the
+ * 409 arm — extracted anyway, because the catch reads better without 200 lines
+ * of forensics inline. The comparison here is against THIS tick's re-resolve
+ * (the pushed count is not persisted), so the same false-positive exists on the
+ * 409 arm in principle; it is bounded by the 5-minute cadence and pre-dates
+ * this file's restructure.
  *
  * Never throws: every provider or DB failure inside is caught and recorded.
  */

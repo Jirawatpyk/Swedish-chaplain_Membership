@@ -27,9 +27,11 @@
  *      what the runbook (`broadcasts-stuck-sending.md` § Triage step 2)
  *      already decides: `sent` completes; anything else is reported as
  *      `unresolved_provider_status`, left in `sending`, and handed to an
- *      operator with the status word on the log line. No quota, no audit,
- *      no email — nothing that an append-only table would have to be
- *      corrected for later.
+ *      operator with the status word on the log line. No quota consumed, no
+ *      audit, no email — nothing that an append-only table would have to be
+ *      corrected for later. (A `sending` row holds no RESERVED slot either —
+ *      see the outcome's docblock; that gap predates this and is now
+ *      unbounded, which the runbook tells the operator to check for.)
  *
  * The cron handler at `/api/cron/broadcasts/reconcile-stuck-sending`
  * pre-selects rows with `status='sending' AND sending_started_at <
@@ -41,6 +43,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { unsafeIanaTimezone, type TenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
@@ -83,8 +86,18 @@ export type ReconcileStuckSendingOutcome =
   | {
       /**
        * The resource exists and is NOT `sent`. Nothing was decided: the row
-       * stays `sending`, the quota slot stays reserved, and the operator gets
-       * the provider's status word (runbook § Triage step 2 maps each one).
+       * stays `sending`, no quota is consumed, and the operator gets the
+       * provider's status word (runbook § Triage step 2b maps each one).
+       *
+       * Whole-branch review 2026-09-10 (MEDIUM): a `sending` row holds NO
+       * quota slot — `countMemberQuotaBucketsOnTx` counts `submitted|approved`
+       * as reserved and `sent|partial_delivery_accepted` as used, and
+       * `sending` is in neither. That was always true for the ≤ 24 h window;
+       * this outcome makes the window unbounded, so a parked row is invisible
+       * to the member's cap until a human completes it. The runbook says to
+       * check the count before completing. Holding the slot would mean adding
+       * `sending` to the reserved bucket, which changes submit semantics and
+       * is its own change with its own red test.
        */
       readonly kind: 'unresolved_provider_status';
       readonly broadcastId: BroadcastId;
@@ -99,6 +112,13 @@ export type ReconcileStuckSendingError =
   | {
       readonly kind: 'reconcile.server_error';
       readonly message: string;
+      /**
+       * Reliability review L-5 (2026-09-10) — the loggable CLASS. `message` is
+       * `e.message` from the outer catch, which on this module can be a
+       * `NeonDbError` carrying bound parameters (member addresses), and
+       * `message` is not in `REDACT_PATHS`; the route logs this instead.
+       */
+      readonly errClass?: string;
     };
 
 /**
@@ -286,6 +306,7 @@ export async function reconcileStuckSending(
     return err({
       kind: 'reconcile.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
+      errClass: errKind(e),
     });
   }
 }
@@ -315,11 +336,31 @@ async function markSent(
   }
   const tenantTz = unsafeIanaTimezone(env.tenant.timezone);
   const quotaYear = currentQuotaYear(now, tenantTz);
+  // Parsed AND bounded (reliability review L-1, 2026-09-10): a value that
+  // parses but cannot be a send time — before the broadcast existed, or in the
+  // future — must not reach `broadcasts.sent_at` (a `member_timeline_v` key)
+  // or the append-only `broadcast_sent` row. Out of range degrades to `now`
+  // and says so on the log line, the same way `""` does.
   const parsedSentAt = providerSentAt === null ? null : new Date(providerSentAt);
-  const sentAt =
-    parsedSentAt !== null && !Number.isNaN(parsedSentAt.getTime())
-      ? parsedSentAt
-      : now;
+  const parsedMs = parsedSentAt?.getTime() ?? Number.NaN;
+  const inRange =
+    !Number.isNaN(parsedMs) &&
+    parsedMs >= broadcast.createdAt.getTime() &&
+    parsedMs <= now.getTime();
+  if (parsedSentAt !== null && !inRange) {
+    logger.warn(
+      {
+        tenantId,
+        broadcastId: broadcast.broadcastId,
+        resendBroadcastId: broadcast.resendBroadcastId,
+        providerSentAt,
+        createdAt: broadcast.createdAt.toISOString(),
+        reconciledAt: now.toISOString(),
+      },
+      'broadcasts.reconcile.provider_sent_at_out_of_range',
+    );
+  }
+  const sentAt = inRange ? (parsedSentAt as Date) : now;
 
   return await deps.broadcastsRepo.withTx(async (tx) => {
     await deps.broadcastsRepo.applyTransition(

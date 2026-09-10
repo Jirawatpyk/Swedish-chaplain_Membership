@@ -2961,12 +2961,17 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
   });
 
   /**
-   * (7) The audience check that the 409-replay arm performs — did the prior
-   * tick's push reach Resend in full — never ran on the probe-positive path,
-   * which is the OTHER way a tick learns that a prior tick sent. Same fact,
-   * same record: a mismatch is filed as drift here too.
+   * (7), REFUTED in the whole-branch review of the commit that implemented it.
+   * The follow-up asked for the 409 arm's audience check on the probe-positive
+   * path too. But an inherited id PROVES the prior tick's push completed (write
+   * ordering: push → createBroadcast → attachBroadcastId in one try), so the
+   * check's question is already answered here and the only thing a count
+   * comparison can add is a FALSE `broadcast_resend_audience_drift` row —
+   * append-only, pages at § 22.3 — for a member who joined between the two
+   * ticks. This case is the one that implemented it, inverted: the same
+   * mismatch, and NO drift row.
    */
-  it('FOLLOWUP (7) — the probe-positive path verifies the audience for the record: a mismatch files drift', async () => {
+  it('FOLLOWUP (7) REFUTED — the probe-positive path does NOT file drift against the re-resolve of this tick', async () => {
     const audit = makeAudit();
     const email = makeEmailTransactional();
     const repo = makeRepo({
@@ -3009,13 +3014,15 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     );
 
     expect(result.ok).toBe(true);
-    const drift = audit.emits.find((e) => e.eventType === 'broadcast_resend_audience_drift');
-    expect(drift).toBeDefined();
-    expect(drift?.payload).toMatchObject({
-      expectedRecipientCount: 2,
-      actualRecipientCount: 1,
-      resendBroadcastId: 'rb-from-previous-tick',
-    });
+    // Audience count 1, re-resolve 2 — on the 409 arm that is drift. Here it is
+    // a member who joined after the send, and nothing may be filed.
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_resend_audience_drift')).toBeUndefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_resend_drift_check_unverifiable'),
+    ).toBeUndefined();
+    // The replay itself still advances and is recorded as one.
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    expect((started?.payload as { handedToSendOnPriorTick?: boolean }).handedToSendOnPriorTick).toBe(true);
   });
 
   // ---- 2026-09-10 follow-ups (2) (6): the three leak arms reclaim, symmetrically ----
@@ -3063,7 +3070,9 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(gw.deleteAudienceCalls).toEqual([]);
   });
 
-  it('FOLLOWUP (2) — a vanished row reclaims the resource this tick minted', async () => {
+  it('FOLLOWUP (2)+(6) — a vanished row reclaims the resource this tick minted, and a SUCCESSFUL reclaim is graded info', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     const audit = makeAudit();
     const email = makeEmailTransactional();
     const repo = makeRepo({
@@ -3104,6 +3113,13 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     if (result.ok) return;
     expect(result.error.kind).toBe('broadcast_not_found');
     expect(gw.deleteBroadcastCalls).toEqual(['bcast-fake-1']);
+    // (6) the other half of the symmetry: a reclaim that WORKED is info, and
+    // nothing is logged as leaked (reliability review L-3 — the sibling test
+    // asserted only the failure half).
+    expect(infoSpy.mock.calls.map((c) => c[1])).toContain('broadcasts.dispatch.minted_broadcast_reclaimed');
+    expect(errorSpy.mock.calls.map((c) => c[1])).not.toContain('broadcasts.dispatch.minted_broadcast_leaked');
+    infoSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   /**
@@ -3252,7 +3268,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
    * reclaim failed → error at critical, because that is the one an operator has
    * to act on.
    */
-  it('FOLLOWUP (6) — a failed reclaim is the leak, logged at error on any arm; a successful one is info', async () => {
+  it('FOLLOWUP (6) — on the CAS-loss arm a FAILED reclaim is logged at error as the leak, and no reclaimed-info line is written', async () => {
     const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     const audit = makeAudit();
