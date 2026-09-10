@@ -131,6 +131,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     processed: 0,
     reconciled_sent: 0,
     reconciled_failed_resource_missing: 0,
+    // 2026-09-10 follow-up (1) — present at Resend but NOT `sent`; the use
+    // case decided nothing and an operator has to. Counted apart from the two
+    // decided outcomes so a tick summary of "sent=0, missing=0" can no longer
+    // read as "nothing to do" while a row is being reported for a human.
+    unresolved_provider_status: 0,
     not_stuck_yet: 0,
     not_found: 0,
     gateway_error: 0,
@@ -196,12 +201,43 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'cron.broadcasts.reconcile.resend_resource_missing',
           );
           break;
+        case 'unresolved_provider_status':
+          summary.unresolved_provider_status++;
+          // The use case already logged at critical with the status word and
+          // counted the metric; this line is the cron-level correlation (the
+          // tick summary below carries the count, not the id).
+          logger.warn(
+            {
+              tenantId: tenant.slug,
+              broadcastId: row.broadcast_id,
+              observedResendStatus: result.value.observedResendStatus,
+            },
+            'cron.broadcasts.reconcile.unresolved_provider_status',
+          );
+          break;
         case 'not_stuck_yet':
           summary.not_stuck_yet++;
           break;
         case 'broadcast_not_found':
           summary.not_found++;
           break;
+        default: {
+          // A new outcome kind without an arm here would be counted nowhere —
+          // the exact shape that let `import_submitted` read as a success on the
+          // dispatch cron until it got its own bucket. `void`, never `return
+          // _exhaustive`: that idiom returns the VALUE at runtime.
+          const _exhaustive: never = result.value;
+          void _exhaustive;
+          summary.uncaught_error++;
+          logger.error(
+            {
+              tenantId: tenant.slug,
+              broadcastId: row.broadcast_id,
+              outcomeKind: (result.value as { kind?: string }).kind ?? 'unknown',
+            },
+            'cron.broadcasts.reconcile.unknown_outcome_kind',
+          );
+        }
       }
     } catch (e) {
       summary.uncaught_error++;

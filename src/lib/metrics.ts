@@ -2203,6 +2203,30 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.reconcile_unresolved_status.total{tenant, observed_status}` —
+   * 2026-09-10 follow-up (1). The 24 h reconciler found the Resend resource
+   * PRESENT but not `sent` (`draft` / `queued` / `sending` / `cancelled` /
+   * `unknown`) and, rather than consume the member's quota on a guess, left
+   * the row in `sending` for an operator. `stuck_sending_count` says a row is
+   * stuck; this says WHY, in the provider's own word, and it re-fires every
+   * 15-minute tick until someone acts — that is the alarm staying up.
+   * Bounded label (six values, from `RetrievedBroadcastResource['status']`).
+   * Alarm on any non-zero rate; runbook `broadcasts-stuck-sending.md` § Triage
+   * step 2b.
+   */
+  reconcileUnresolvedStatus(
+    tenantId: string,
+    observedStatus: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled' | 'unknown',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_reconcile_unresolved_status_total',
+        'Stuck-sending rows whose Resend resource is present but not sent; left for an operator',
+      ).add(1, { tenant: tenantId, observed_status: observedStatus });
+    });
+  },
+
+  /**
    * `broadcasts.stuck_sending_count{tenant}` — `status='sending'` for
    * > 24h. Any non-zero alarms (webhook event lost / Resend resource
    * missing).

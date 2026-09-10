@@ -2,20 +2,34 @@
  * T161 — `reconcile-stuck-sending.ts` Application use-case (F7 US5).
  *
  * Runs at 24h timeout per FR-028 / R2-NEW-3. For broadcasts stuck in
- * `sending` longer than 24h we MUST distinguish two failure modes
- * before consuming the member's quota:
+ * `sending` longer than 24h we MUST distinguish THREE outcomes before
+ * consuming the member's quota:
  *
  *   1. **Resend-side completion missed**: Resend dispatched fine but
  *      our webhook ingest dropped events (cron-job.org outage,
  *      signature secret rotation gap, etc.). `retrieveBroadcast`
- *      returns a non-null resource → we transition `sending → sent`
- *      and consume quota.
+ *      returns a resource whose status is `sent` → we transition
+ *      `sending → sent` and consume quota.
  *
  *   2. **Resource missing**: admin manually deleted the broadcast in
  *      the Resend dashboard, OR Resend purged it (rare). 404 →
  *      transition to `failed_to_dispatch` + audit
  *      `broadcast_resend_resource_missing` + alert admin. Quota is NOT
  *      consumed because no recipients received the message.
+ *
+ *   3. **Present but NOT `sent`** (2026-09-10 follow-up 1): `draft`,
+ *      `queued`, `sending`, `cancelled`, or a status this build does not
+ *      know. Until this arm existed every present resource took outcome 1
+ *      — `markSent` never read the status — so the round-6 dispatch defect
+ *      (a row advanced to `sending` with nothing sent) reached its harm
+ *      HERE: quota consumed, `broadcast_sent` audited, delivery summary
+ *      emailed, for mail that never went out. The code now decides only
+ *      what the runbook (`broadcasts-stuck-sending.md` § Triage step 2)
+ *      already decides: `sent` completes; anything else is reported as
+ *      `unresolved_provider_status`, left in `sending`, and handed to an
+ *      operator with the status word on the log line. No quota, no audit,
+ *      no email — nothing that an append-only table would have to be
+ *      corrected for later.
  *
  * The cron handler at `/api/cron/broadcasts/reconcile-stuck-sending`
  * pre-selects rows with `status='sending' AND sending_started_at <
@@ -26,13 +40,18 @@
 import { err, ok, type Result } from '@/lib/result';
 import { unsafeIanaTimezone, type TenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { transition } from '../../domain/policies/broadcast-status-transitions';
 
 import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
 import type { BroadcastDeliveriesRepo } from '../ports/broadcast-deliveries-repo';
-import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import type {
+  BroadcastsGatewayPort,
+  RetrievedBroadcastResource,
+} from '../ports/broadcasts-gateway-port';
 import { BroadcastConcurrentMutationError } from '../ports/broadcasts-repo';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
@@ -60,6 +79,16 @@ export type ReconcileStuckSendingOutcome =
   | {
       readonly kind: 'reconciled_failed_resource_missing';
       readonly broadcastId: BroadcastId;
+    }
+  | {
+      /**
+       * The resource exists and is NOT `sent`. Nothing was decided: the row
+       * stays `sending`, the quota slot stays reserved, and the operator gets
+       * the provider's status word (runbook § Triage step 2 maps each one).
+       */
+      readonly kind: 'unresolved_provider_status';
+      readonly broadcastId: BroadcastId;
+      readonly observedResendStatus: RetrievedBroadcastResource['status'];
     };
 
 export type ReconcileStuckSendingError =
@@ -196,7 +225,50 @@ export async function reconcileStuckSending(
       );
     }
 
-    return await markSent(deps, broadcast, now, input.requestId);
+    // POSITIVE test for the one status that means "the mail went out". This
+    // used to be an unconditional `markSent` — any present resource consumed
+    // the quota — and `normaliseStatus` used to fabricate `'queued'` for
+    // anything it did not recognise, so the two together turned "Resend said
+    // something we have never seen" into a consumed quota slot.
+    if (outcome.resource.status === 'sent') {
+      return await markSent(
+        deps,
+        broadcast,
+        now,
+        outcome.resource.sentAt,
+        input.requestId,
+      );
+    }
+
+    // Present, not sent, 24 h old. The runbook assigns each of these to a
+    // human: `queued` / `sending` → the provider's queue is stuck, engage
+    // support; `cancelled` → decide whether anything went out; `draft` → it
+    // never did (the only MEASURED direction); `unknown` → this build cannot
+    // read the status at all. Deciding any of them here would be a guess
+    // written into an append-only table with 5–10 year retention, so the
+    // row is left exactly as found and the guess is not made.
+    //
+    // Logged at error with `severity: 'critical'` and counted, because the
+    // only other signal is `stuck_sending_count`, which cannot say WHY a row
+    // is stuck. The cron re-reports it every tick until an operator acts —
+    // that repetition is the alarm staying up, not noise.
+    logger.error(
+      {
+        tenantId,
+        broadcastId: input.broadcastId as string,
+        resendBroadcastId: broadcast.resendBroadcastId,
+        observedResendStatus: outcome.resource.status,
+        sendingStartedAt: broadcast.sendingStartedAt?.toISOString() ?? null,
+        severity: 'critical',
+      },
+      'broadcasts.reconcile.unresolved_provider_status',
+    );
+    broadcastsMetrics.reconcileUnresolvedStatus(tenantId, outcome.resource.status);
+    return ok({
+      kind: 'unresolved_provider_status' as const,
+      broadcastId: input.broadcastId,
+      observedResendStatus: outcome.resource.status,
+    });
   } catch (e) {
     // A concurrent transition OUT of 'sending' (a webhook or admin moved the
     // row first) makes markSent's guarded applyTransition return 0 rows →
@@ -222,6 +294,15 @@ async function markSent(
   deps: ReconcileStuckSendingDeps,
   broadcast: Broadcast,
   now: Date,
+  /**
+   * Resend's own `sent_at`, passed through verbatim by the adapter. This path
+   * runs ≥ 24 h after the send by definition, so `now` is the WRONG send time
+   * by at least a day — and it was what `broadcasts.sent_at` and the
+   * append-only `broadcast_sent` row carried until 2026-09-10. Parsed, not
+   * trusted: `""` is not caught by `?? null`, and `new Date('')` is an
+   * `Invalid Date` whose `.toISOString()` throws inside the tx.
+   */
+  providerSentAt: string | null,
   requestId: string | null,
 ): Promise<Result<ReconcileStuckSendingOutcome, ReconcileStuckSendingError>> {
   const tenantId = deps.tenant.slug;
@@ -234,6 +315,11 @@ async function markSent(
   }
   const tenantTz = unsafeIanaTimezone(env.tenant.timezone);
   const quotaYear = currentQuotaYear(now, tenantTz);
+  const parsedSentAt = providerSentAt === null ? null : new Date(providerSentAt);
+  const sentAt =
+    parsedSentAt !== null && !Number.isNaN(parsedSentAt.getTime())
+      ? parsedSentAt
+      : now;
 
   return await deps.broadcastsRepo.withTx(async (tx) => {
     await deps.broadcastsRepo.applyTransition(
@@ -242,7 +328,10 @@ async function markSent(
       broadcast.broadcastId,
       'sent',
       {
-        sentAt: now,
+        sentAt,
+        // Quota is consumed NOW, in this year: the slot was reserved at
+        // submit and this is the moment it stops being reservable. That is a
+        // different fact from when the mail went, and it keeps its own key.
         quotaYearConsumed: quotaYear,
         quotaConsumedAt: now,
       },
@@ -269,7 +358,7 @@ async function markSent(
       payload: {
         broadcastId: broadcast.broadcastId,
         memberId: broadcast.requestedByMemberId,
-        sentAt: now.toISOString(),
+        sentAt: sentAt.toISOString(),
         viaReconciliation: true,
       },
       requestId,
@@ -329,7 +418,7 @@ async function markSent(
     return ok({
       kind: 'reconciled_sent' as const,
       broadcastId: broadcast.broadcastId,
-      sentAt: now,
+      sentAt,
       quotaYear,
     });
   });

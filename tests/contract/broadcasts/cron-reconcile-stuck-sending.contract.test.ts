@@ -220,6 +220,40 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
     expect(body.uncaught_error).toBe(0);
   });
 
+  /**
+   * 2026-09-10 follow-up (1) — the third outcome. A present-but-not-sent
+   * resource is reported for an operator and counted APART: it is not a
+   * `reconciled_sent` (no quota was consumed) and not a 500 (nothing of ours
+   * failed — a harness retry would change nothing, the next 15-minute tick
+   * re-reports it anyway).
+   */
+  it('valid bearer + unresolved_provider_status outcome → 200 + its own counter, not sent, not an error', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) => fn({
+      execute: async () => [{ broadcast_id: 'b1' }],
+    }));
+    reconcileStuckSendingMock.mockResolvedValueOnce(
+      ok({
+        kind: 'unresolved_provider_status',
+        broadcastId: 'b1',
+        observedResendStatus: 'draft',
+      }),
+    );
+    const { POST } = await import(
+      '@/app/api/cron/broadcasts/reconcile-stuck-sending/route'
+    );
+    const res = await POST(
+      makeRequest({ auth: 'Bearer test-cron-secret' }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, number>;
+    expect(body.processed).toBe(1);
+    expect(body.unresolved_provider_status).toBe(1);
+    expect(body.reconciled_sent).toBe(0);
+    expect(body.reconciled_failed_resource_missing).toBe(0);
+    expect(body.uncaught_error).toBe(0);
+    expect(body.server_error).toBe(0);
+  });
+
   it('valid bearer + use-case returns gateway_error → 200 + dedicated outage log (review ERR-H-R3-2)', async () => {
     runInTenantMock.mockImplementation(async (_ctx, fn) => fn({
       execute: async () => [{ broadcast_id: 'b1' }],
