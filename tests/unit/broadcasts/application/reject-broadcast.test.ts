@@ -134,7 +134,8 @@ function makeRepo(opts: RepoOpts = {}): {
       return makeBroadcast(status as BroadcastStatus, fields);
     },
     async attachResendIds() {},
-      async attachAudienceId() {},
+    async attachBroadcastId() {},
+    async attachAudienceId() {},
       // Phase 9b (T147) — unused by this use case; present so the stub
       // still satisfies BroadcastsRepo.
       // T086 — unused here; present so the stub still satisfies BroadcastsRepo.

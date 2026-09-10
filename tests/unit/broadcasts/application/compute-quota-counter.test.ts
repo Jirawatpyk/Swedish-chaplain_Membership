@@ -86,6 +86,7 @@ function makeBroadcastsRepo({
     async attachResendIds() {
       // no-op
     },
+    async attachBroadcastId() {},
     async attachAudienceId() {
       // no-op
     },

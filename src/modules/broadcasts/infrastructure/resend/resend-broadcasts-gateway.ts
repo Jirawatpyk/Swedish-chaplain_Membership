@@ -903,22 +903,35 @@ async function importFetch(
 
 function normaliseStatus(
   raw: string,
-): 'queued' | 'sending' | 'sent' | 'cancelled' {
+): RetrievedBroadcastResource['status'] {
   switch (raw) {
+    // MEASURED 2026-09-10: a broadcast created and never handed to `/send`
+    // reports `draft`. It was absent here, so the single most ordinary state
+    // a resource can be in fell through the unknown-status default below —
+    // reported as `queued` AND logged at error on every retrieve.
+    case 'draft':
     case 'queued':
     case 'sending':
     case 'sent':
     case 'cancelled':
       return raw;
     default:
-      // Unknown Resend status — treat as 'queued' (non-terminal, will
-      // be retried by reconciler). Log so a future Resend status
-      // addition is visible in ops dashboards instead of silently
-      // looping the reconciler forever.
+      // Say "unknown", do not INVENT 'queued'.
+      //
+      // Fabricating a real status here made the union closed at the type level
+      // and open at runtime, and a caller could not tell the difference. It cost
+      // something concrete: a send gate written as `status !== 'draft'` read the
+      // fabricated `'queued'` as proof that a broadcast had been handed to
+      // `/send`, skipped the send, and let the row advance to `sending` — after
+      // which `reconcile-stuck-sending` stamped it `sent` and consumed the
+      // member's annual quota for mail that never went out.
+      //
+      // `'draft'` is the standing proof that this arm catches LIVE values, not
+      // hypothetical future ones: it fell through here until 2026-09-10.
       logger.error(
         { rawStatus: raw },
         'resend.broadcasts.unknown_status',
       );
-      return 'queued';
+      return 'unknown';
   }
 }

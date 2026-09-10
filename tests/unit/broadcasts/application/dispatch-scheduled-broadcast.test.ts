@@ -134,6 +134,16 @@ interface RepoOpts {
    */
   readonly attachAudienceIdLosesCasWithStatus?: BroadcastStatus;
   /**
+   * FINAL review of PR #353, found by five reviewers independently. The
+   * `attachBroadcastId` double could not REFUSE, so the arm that handles its
+   * refusal was never run once — and that arm was deleting the row's live
+   * audience. The audience side has had this knob since round 4 for exactly
+   * this reason; the new sibling shipped without it.
+   */
+  readonly attachBroadcastIdLosesCasWithStatus?: BroadcastStatus;
+  /** A NON-CAS failure (Neon blip, pooler drop). Mail has not gone out yet. */
+  readonly attachBroadcastIdThrows?: Error;
+  /**
    * Round 4 F2 / L6 — the erasure cascade removed the row between the claim
    * query and the post-send write. `attachResendIds` threw a BARE Error until
    * this round, so the `BroadcastNotFoundError` arm that handles it was
@@ -148,15 +158,19 @@ function makeRepo(opts: RepoOpts): {
   transitions: Array<{ status: string; fields: unknown }>;
   attachCalls: Array<{ audienceId: string; broadcastId: string }>;
   attachAudienceCalls: Array<{ audienceId: string }>;
+  /** F4 — proves the broadcast id is persisted BEFORE the send, not with the flip. */
+  attachBroadcastIdCalls: Array<{ broadcastId: string }>;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
   const attachCalls: Array<{ audienceId: string; broadcastId: string }> = [];
   const attachAudienceCalls: Array<{ audienceId: string }> = [];
+  const attachBroadcastIdCalls: Array<{ broadcastId: string }> = [];
   // Phase 9b (T147) — the hand-off channel between the two `*/5` crons.
   return {
     transitions,
     attachCalls,
     attachAudienceCalls,
+    attachBroadcastIdCalls,
     port: {
       async withTx(fn) {
         return fn(null);
@@ -195,6 +209,21 @@ function makeRepo(opts: RepoOpts): {
               typeof BroadcastNotFoundError
             >[0],
             _b,
+          );
+        }
+      },
+      async attachBroadcastId(_tx, _t, _b, resendBroadcastId) {
+        attachBroadcastIdCalls.push({ broadcastId: resendBroadcastId });
+        if (opts.attachBroadcastIdThrows !== undefined) {
+          throw opts.attachBroadcastIdThrows;
+        }
+        if (opts.attachBroadcastIdLosesCasWithStatus !== undefined) {
+          throw new BroadcastConcurrentMutationError(
+            'test-tenant' as unknown as ConstructorParameters<
+              typeof BroadcastConcurrentMutationError
+            >[0],
+            _b,
+            opts.attachBroadcastIdLosesCasWithStatus,
           );
         }
       },
@@ -274,7 +303,32 @@ interface GatewayOpts {
    * bound and a shortfall proves nothing about drift.
    */
   readonly audienceCountComplete?: boolean;
+  /**
+   * What `retrieveBroadcast` reports for an INHERITED id. `'draft'` is the only
+   * value that proves the resource was never handed to `/send` (MEASURED
+   * 2026-09-10 against the live account with a draft + DELETE).
+   */
+  /**
+   * What `retrieveBroadcast` reports as `sent_at`. Until round 8 this was
+   * hardcoded `null` with no way to override, so the branch that reads the
+   * provider clock -- the headline of the previous commit -- was executed by no
+   * test in the repo, and reverting it to `now` survived the whole suite.
+   */
+  readonly retrieveSentAt?: string | null;
+  readonly retrieveStatus?:
+    | 'draft'
+    | 'queued'
+    | 'sending'
+    | 'sent'
+    | 'cancelled'
+    | 'unknown';
   readonly throwOnGetAudienceContactCount?: ThrowSpec;
+  /**
+   * The probe the send gate added. A 409 here is a PRE-SEND conflict on a path
+   * this branch created, and `classifyResendError` maps every 409 from any
+   * endpoint to `idempotency_conflict`.
+   */
+  readonly throwOnRetrieveBroadcast?: ThrowSpec;
   /** Round 4 L2 — the reclaim itself fails, which is the leak an operator must see. */
   readonly throwOnDeleteAudience?: boolean;
 }
@@ -336,6 +390,20 @@ function makeGateway(opts: GatewayOpts = {}): {
         maybeThrow(opts.throwOnSend);
       },
       async retrieveBroadcast() {
+        maybeThrow(opts.throwOnRetrieveBroadcast);
+        // Default stays `not_found` so the send gate falls through, which is what
+        // every pre-existing case expects. `retrieveStatus` opts into the real
+        // shape for the cases that are ABOUT the gate.
+        if (opts.retrieveStatus !== undefined) {
+          return {
+            kind: 'present' as const,
+            resource: {
+              id: 'rb-from-previous-tick',
+              status: opts.retrieveStatus,
+              sentAt: opts.retrieveSentAt ?? null,
+            },
+          };
+        }
         return { kind: 'not_found' as const };
       },
       async getAudienceContactCount() {
@@ -1851,6 +1919,863 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(warned).toContain('broadcasts.dispatch.audience_count_incomplete');
     expect(warned).not.toContain('broadcasts.dispatch.idempotency_replay');
     warnSpy.mockRestore();
+  });
+
+  /**
+   * F4 — **the double-send window.** `createBroadcast` mints a Resend resource and
+   * the id lived only in a local; nothing persisted it until the final tx, 40+
+   * lines and one network call later. A tick that died between the send and that
+   * tx therefore re-entered, minted a SECOND resource, and sent to the whole
+   * audience again — and `Idempotency-Key` cannot collapse that, because it is on
+   * a different resource (and MEASURED inert on `POST /broadcasts` regardless).
+   *
+   * The audience half of this was already solved, one step earlier in the same
+   * function: `resendAudienceId` is read off the row and `createAudience` is
+   * skipped when it is set, so a retry reuses the audience instead of orphaning
+   * one. This is that same shape, applied to the broadcast.
+   */
+  it('F4 — a row that already carries resendBroadcastId does NOT mint a second resource', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        // A prior tick got this far and then died before the status flip.
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The assertion the finding is about: zero NEW resources.
+    expect(gw.createCalls).toEqual([]);
+    // And the send goes to the resource the previous tick already created —
+    // asserting the ID, not just the call count, because a fix that skipped
+    // `createBroadcast` and then sent to '' would satisfy the line above.
+    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
+    // The audience half was already correct; pinned here so the two stay symmetric.
+    expect(gw.audienceCalls).toEqual([]);
+    // ...and the persist is skipped too. Only the mint branch writes, so an
+    // inherited id must not re-write its own value: a CAS that re-attaches the
+    // same id would pass (it is idempotent) and hide a caller putting the write
+    // outside the guard, which is where the leaked-resource logging lives.
+    expect(repo.attachBroadcastIdCalls).toEqual([]);
+  });
+
+  /**
+   * F4, the ORDERING half — and the cancel-landing shape.
+   *
+   * Persisting the id is only worth anything if it happens BEFORE the send. The
+   * window this closes is not hypothetical: `applyTransition('sending')` is a
+   * compare-and-set on `approved`, so a cancel landing mid-dispatch makes it match
+   * 0 rows and roll its whole tx back — including, before this fix,
+   * `attachResendIds`. Mail was out, the row said `cancelled`, and nothing on our
+   * side held the resource id, so the Resend webhook could only answer
+   * `unknown_resend_broadcast_id`.
+   *
+   * A failing `sendBroadcast` reproduces the ordering exactly: if the persist ran
+   * after the send it would never run at all here. Asserting the recorder is
+   * populated is therefore an assertion about SEQUENCE, which is what the fix is.
+   *
+   * Note what this does NOT claim: the mail still goes to a cancelled broadcast's
+   * audience if Resend accepted the send. What changes is that the database can
+   * afterwards say which resource sent it.
+   */
+  it('F4 — the broadcast id is persisted BEFORE the send, so a failure cannot lose it', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+    });
+    const gw = makeGateway({
+      // The send never completes. Before the fix the id existed only in a local
+      // and died with the tick.
+      throwOnSend: { kind: 'retryable', reason: 'resend 503' },
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // The send failed, so the tick did not advance — that half is unchanged.
+    expect(result.ok).toBe(false);
+    // But the resource we minted is now RECORDED, which is the fix.
+    expect(repo.attachBroadcastIdCalls).toHaveLength(1);
+    // The id recorded is the one `createBroadcast` returned — pinned BY VALUE, so a
+    // fix that persisted an empty string or the wrong local would still fail here.
+    expect(repo.attachBroadcastIdCalls[0]!.broadcastId).toBe('bcast-fake-1');
+    // ...and the id we MINTED is the id we tried to SEND. Without this, replacing
+    // `resendBroadcastId` at the send call with `broadcast.resendBroadcastId ?? ''`
+    // sends every FIRST dispatch to '' while the audit still records the real id --
+    // a mutation the whole 3,000-line file could not catch, because this is its
+    // only by-value assertion on what actually reached the gateway.
+    expect(gw.sendCalls[0]?.broadcastId).toBe('bcast-fake-1');
+    // And exactly one resource was minted — the next tick will reuse it, which is
+    // what the sibling test above pins.
+    expect(gw.createCalls).toHaveLength(1);
+  });
+
+  /**
+   * FINAL review BLOCKER -- all five reviewers, independently.
+   *
+   * `attachBroadcastId` throws `BroadcastConcurrentMutationError` on a CAS loss,
+   * the SAME class `attachAudienceId` throws. Putting it inside the same `try`
+   * falsified the catch arm's stated premise ("attachAudienceId is the only call
+   * in this try that throws it") -- and that arm unconditionally deletes
+   * `resendAudienceId`, justified by "the audience this tick just minted".
+   *
+   * On THIS path the tick did not mint it. Reaching `attachBroadcastId` requires
+   * passing `attachAudienceId`, whose own CAS permits it only when the row's
+   * canonical audience is in hand -- the one the WINNER is sending into. So the
+   * loser deleted a live audience mid-send, logged it at INFO under
+   * `audience_attach_lost_reclaimed`, and returned a status the cron buckets as a
+   * benign `concurrent_skip`.
+   */
+  it('FINAL -- a broadcast-id CAS loss does NOT delete the audience the winner is sending to', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdLosesCasWithStatus: 'approved',
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // The assertion the BLOCKER is about.
+    expect(gw.deleteAudienceCalls).toEqual([]);
+    // The loser must not send either -- the winner owns the resource now.
+    expect(gw.sendCalls).toEqual([]);
+    expect(result.ok).toBe(false);
+  });
+
+  /**
+   * FINAL review HIGH -- a DB blip on the new write must not end the broadcast.
+   *
+   * The persist sat inside a `try` whose `catch` is written for GATEWAY errors, so
+   * a Neon blip carried no `kind`, `classifyThrown` returned `unknown`, and
+   * `unknown` is non-retryable BY DESIGN. That routed a transient DB error to the
+   * permanent arm: row terminal, raw driver message into an append-only audit row,
+   * and the FR-021 email telling the member their broadcast FAILED.
+   *
+   * `sendBroadcast` has not run at this point. No mail has gone out. The safe
+   * direction before the send is the opposite one: keep the row `approved` and let
+   * the next tick try again -- which is the entire reason the persist exists.
+   */
+  it('FINAL -- a DB failure on the persist keeps the row retryable, because nothing was sent yet', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdThrows: new Error('neon: connection terminated unexpectedly'),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // RETRYABLE, not terminal — and `dispatch.server_error` rather than
+    // `gateway_retryable`, which is a deliberate CONTRACT change, not an
+    // assertion bent to match the code. The route logs `subKind` as a class of
+    // the RESEND transport (`network` / `timeout` / `server_5xx` / `api`), and
+    // none of those four is honest about a Neon fault; an operator reading
+    // `subKind:"api"` opens the Resend status page. This kind carries `errClass`
+    // instead, and the route already buckets it `retryable` with its own counter.
+    expect(result.error.kind).toBe('dispatch.server_error');
+    // Nothing was sent, so nothing may be reported as failed to the member.
+    expect(gw.sendCalls).toEqual([]);
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch'),
+    ).toBeUndefined();
+    // And the audience is untouched -- this is not a concurrency loss.
+    expect(gw.deleteAudienceCalls).toEqual([]);
+  });
+
+  /**
+   * Round 7 M-3 — the `BroadcastNotFoundError` arm shipped with no test.
+   *
+   * The previous commit's message listed it among four fixes; the repo knob
+   * covered a CAS loss and a bare `Error`, and nothing ever constructed this
+   * class. That is the same shape as the arm it sits beside, which round 4
+   * recorded as dead code until the commit that wrote its comment.
+   *
+   * It must bucket as `broadcast_not_found` — every other sink in the module
+   * treats a vanished row as a benign `concurrent_skip` at warn, not a critical
+   * page for a row that can never be retried — and it must name the resource we
+   * minted seconds earlier and can no longer attach, because nothing collects it.
+   */
+  it('FINAL2 -- a vanished row is a concurrent skip, and names the resource it leaked', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdThrows: new BroadcastNotFoundError(
+        'test-tenant' as unknown as ConstructorParameters<typeof BroadcastNotFoundError>[0],
+        broadcastId,
+      ),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // NOT a DB fault, NOT critical: the row is gone, which every other sink in
+    // this module calls normal and self-healing.
+    expect(result.error.kind).toBe('broadcast_not_found');
+    expect(gw.sendCalls).toEqual([]);
+    // The leaked resource has to appear somewhere. Without this line its id
+    // exists in no log, no row and no metric.
+    const warned = warnSpy.mock.calls.map((c) => c[1]);
+    expect(warned).toContain('broadcasts.dispatch.row_vanished_broadcast_leaked');
+    warnSpy.mockRestore();
+  });
+
+  /**
+   * FINAL review, the type reviewer's challenge -- and it was a fair one.
+   *
+   * Reusing an inherited id closes the double-send across two RESOURCES, but the
+   * send call sits outside the mint guard, so a re-entered tick still issued a
+   * second `/send` on the SAME resource. That leaned on Resend answering 409 --
+   * which this file's own header refuses to assume, because the idempotency
+   * header is MEASURED inert on `POST /broadcasts` and `/send` cannot be probed
+   * without sending real mail. If Resend answers 400/422 instead, the gateway maps
+   * it to `permanent` and a broadcast that SENT is marked failed, with the member
+   * emailed to say so.
+   *
+   * So: ask. `retrieveBroadcast` was already on the port and already returned the
+   * status; nothing read it. A never-sent resource reports `draft` (MEASURED
+   * 2026-09-10, draft + DELETE against the live account), so `draft` is the only
+   * value that licenses a send.
+   */
+
+  it('FINAL -- an inherited id already handed to /send is NOT sent again', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'sent' });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The resource was already sent; the row still advances, but we do not re-send.
+    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual([]);
+  });
+
+
+  it('FINAL -- an inherited id still in draft IS sent, exactly once', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'draft' });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // Never handed to /send, so this tick is the one that sends it.
+    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
+  });
+
+  /**
+   * Round 8 — the previous commit's HEADLINE change had no discriminating test.
+   *
+   * It replaced `actualSendAt = now` with the provider's own `sent_at`, because on
+   * a replay the send happened in an earlier tick — up to an hour earlier. Every
+   * `retrieveBroadcast` double in the repo hardcoded `sentAt: null` with no knob,
+   * so that branch was executed by nothing and `const actualSendAt = now` survived
+   * the full suite. Same shape as `default: return 'queued'` surviving 1,557 tests,
+   * which is the defect the commit before it existed to close.
+   *
+   * `sendingStartedAt` is asserted separately and deliberately: it names a COLUMN
+   * the same transaction writes as `now`, and `one-active-broadcast-state.ts`
+   * requires that column non-null for status `sending`. Aliasing both payload keys
+   * to one nullable variable made the append-only row contradict the column it is
+   * named after.
+   */
+  it('FINAL3 -- a replay records the PROVIDER send time, and still mirrors the column', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      retrieveStatus: 'sent',
+      retrieveSentAt: '2026-06-15T04:00:00.000Z',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The audience was already built by the tick that sent it; re-pushing every
+    // contact buys nothing and is what used to 409 into a false failure.
+    expect(gw.contactsCalls).toEqual([]);
+    expect(gw.sendCalls).toEqual([]);
+
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    expect(started).toBeDefined();
+    const payload = started?.payload as {
+      actualSendAt?: string | null;
+      sendingStartedAt?: string | null;
+      handedToSendOnPriorTick?: boolean;
+      observedResendStatus?: string | null;
+    };
+    // The provider clock, NOT this tick's clock. Pinned by value against a time
+    // that is deliberately not FROZEN_NOW, so `= now` cannot pass.
+    expect(payload.actualSendAt).toBe('2026-06-15T04:00:00.000Z');
+    expect(payload.actualSendAt).not.toBe(FROZEN_NOW.toISOString());
+    // ...while the column-named key still mirrors the column this tx wrote.
+    expect(payload.sendingStartedAt).toBe(FROZEN_NOW.toISOString());
+    // And the row says for itself that this was a replay, so a reader never has
+    // to infer it from a timestamp.
+    expect(payload.handedToSendOnPriorTick).toBe(true);
+    expect(payload.observedResendStatus).toBe('sent');
+  });
+
+  /**
+   * `sent_at` is provider text passed through verbatim, and `?? null` does not
+   * catch `''`. `new Date('')` is `Invalid Date`, and `.toISOString()` on it throws
+   * a RangeError INSIDE the Step-4 transaction — rolling back `attachResendIds`,
+   * `applyTransition` and the audit emit together, AFTER the mail has gone out,
+   * and surfacing as "DB write after Resend success", which sends an operator to
+   * Neon rather than to a date parse.
+   */
+  it('FINAL3 -- an unparseable provider timestamp degrades to null, it does not throw', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'sent', retrieveSentAt: '' });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    const payload = started?.payload as {
+      actualSendAt?: string | null;
+      sendingStartedAt?: string | null;
+    };
+    expect(payload.actualSendAt).toBeNull();
+    expect(payload.sendingStartedAt).toBe(FROZEN_NOW.toISOString());
+  });
+
+  /**
+   * `queued` means Resend accepted the send and has not reported it complete, so
+   * any `sent_at` it carries is not a send time we can stand behind. Reading it
+   * would reintroduce the over-claim the previous commit removed, one status over.
+   */
+  it('FINAL3 -- a queued resource contributes no send time, even if it carries one', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      retrieveStatus: 'queued',
+      retrieveSentAt: '2026-06-15T04:00:00.000Z',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    const payload = started?.payload as {
+      actualSendAt?: string | null;
+      delaySeconds?: number | null;
+      observedResendStatus?: string | null;
+    };
+    expect(payload.actualSendAt).toBeNull();
+    // Unknown send time means unknown delay -- computing it from `now` would
+    // inflate the reported wait by however long the row sat between ticks.
+    expect(payload.delaySeconds).toBeNull();
+    expect(payload.observedResendStatus).toBe('queued');
+  });
+
+  /**
+   * Round 8 — the contact-push guard, and why it is keyed off the INHERITED id
+   * rather than the probe's answer.
+   *
+   * `'draft'` is the case this whole gate exists for: a prior tick built the
+   * audience, minted the resource, persisted the id, and then failed the send. On
+   * this leg the push precedes `createBroadcast` precedes `attachBroadcastId`, all
+   * in one try — so **a persisted broadcast id proves the push completed**. Keying
+   * the skip off `alreadyHandedToSend` (false for `draft`) re-pushed all 150
+   * contacts, which under the branch's own — and UNMEASURED — premise 409s and
+   * ends as `failed_to_dispatch` plus an FR-021 email, for a broadcast that is
+   * fully prepared and simply needs sending.
+   *
+   * This assertion is what makes the guard's key load-bearing: with the probe-
+   * positive statuses the push is skipped either way, so only `draft` can tell the
+   * two versions apart.
+   */
+  it('FINAL3 -- an inherited id skips the contact re-push even when the resource is still draft', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'draft' });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The audience is already built. Re-pushing is the call that turns a
+    // recoverable unsent broadcast into a terminal one.
+    expect(gw.contactsCalls).toEqual([]);
+    // ...and this tick DOES send, because `draft` is the one status proving it
+    // never was sent.
+    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
+  });
+
+  /**
+   * FINAL round 2, the whole-branch reviewer -- and this one is the fix's OWN
+   * defect, which is round SIX of that pattern on this branch.
+   *
+   * The send gate was written as `status !== 'draft'` -- a NEGATIVE predicate over a
+   * provider-controlled string. `normaliseStatus` closes its union by FABRICATING
+   * `'queued'` for anything it does not recognise, and the same commit that added
+   * this gate is the commit that added `case 'draft'` -- proving that default
+   * catches live values.
+   *
+   * So any status this build does not know, and `'cancelled'` which it DOES know,
+   * read as "already handed to /send" and the send was SKIPPED. The row then
+   * advanced to `sending` with `broadcast_send_started`, the cron counted it
+   * succeeded, and `reconcile-stuck-sending` -- which marks any `{kind:'present'}`
+   * resource `sent` without reading `status` -- stamped `sent` and consumed the
+   * member's annual E-Blast quota. Zero mail, quota spent, row says sent. Before
+   * this branch the same input produced an honest `failed_to_dispatch`.
+   *
+   * Only three statuses prove a send was accepted. Everything else must fall
+   * through to the send, where a real refusal reaches the permanent /
+   * resource_missing arms and is reported as what it is.
+   */
+
+  it('FINAL2 -- a CANCELLED resource is NOT treated as already-sent', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'cancelled' });
+    await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // Falls through to the send. Resend refuses it there, and that refusal is
+    // reportable -- unlike a silently skipped send that still stamps `sending`.
+    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
+  });
+
+
+  it('FINAL2 -- a status this build does not know REFUSES, rather than guessing', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'unknown' });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // CONTRACT CHANGE, round 7 -- not an assertion bent to match the code.
+    //
+    // The first version of this test asserted the send happened, on the reasoning
+    // that anything not provably sent should fall through. Two reviewers pointed
+    // out the other half: re-sending on a status we cannot interpret risks a
+    // SECOND delivery to the whole audience, and Resend's answer to a repeat
+    // `/send` is unmeasured -- the same endpoint this file refuses to reason about
+    // everywhere else. Both directions are guesses, so the tie goes to the one a
+    // human can undo: refuse, keep the row `approved`, fire the counter, page in
+    // 15 minutes. A stuck broadcast is recoverable; 150 duplicate emails are not.
+    expect(gw.sendCalls).toEqual([]);
+    // And it must not look like a success either -- no skip-and-advance.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('dispatch.server_error');
+    expect(repo.transitions.map((t) => t.status)).not.toContain('sending');
+  });
+
+  /**
+   * FINAL round 2, finding #4 -- the success-replay arm's premise.
+   *
+   * It gated on `resendBroadcastId !== ''`, which was EXACT only while the id
+   * could not be inherited: a non-empty id then implied this tick had passed
+   * `createBroadcast`, after which `sendBroadcast` was the only call left, so a
+   * 409 could only have come from the send. Seeding the local from the row broke
+   * that -- `addContactsToAudience` and the new probe both run BEFORE the send
+   * with an inherited id in hand, and `classifyResendError` maps every 409 from
+   * ANY endpoint to `idempotency_conflict`.
+   *
+   * A pre-send 409 would then have taken the replay arm and stamped the row
+   * `sending` with `broadcast_send_started`, for a tick that never called the
+   * send. The reconciler turns that into `sent` plus a consumed annual quota 24 h
+   * later. Gating on `sendAttempted` instead makes the arm mean what its name
+   * says.
+   */
+  it('FINAL2 -- a 409 raised BEFORE the send does not become a success-replay', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      throwOnRetrieveBroadcast: {
+        kind: 'idempotency_conflict',
+        reason: 'duplicate request',
+      },
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // Nothing was sent, so nothing may be recorded as sent.
+    expect(gw.sendCalls).toEqual([]);
+    expect(result.ok).toBe(false);
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_send_started'),
+    ).toBeUndefined();
+    expect(repo.transitions.map((t) => t.status)).not.toContain('sending');
   });
 
   it('R5-S1 โ€” getAudienceContactCount throws non-404 โ’ broadcast_resend_drift_check_unverifiable audit emitted', async () => {

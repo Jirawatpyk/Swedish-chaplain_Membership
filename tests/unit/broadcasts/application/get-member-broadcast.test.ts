@@ -52,6 +52,7 @@ function makeRepoMocks(opts: {
     attachResendIds: async () => {
       // no-op
     },
+    attachBroadcastId: async () => {},
     attachAudienceId: async () => {
       // no-op
     },

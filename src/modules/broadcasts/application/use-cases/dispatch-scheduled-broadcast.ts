@@ -48,6 +48,7 @@ import {
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
+  RetrievedBroadcastResource,
 } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { AudienceMode } from '../../domain/audience-mode';
@@ -544,8 +545,151 @@ export async function dispatchScheduledBroadcast(
   // Audience name remains stable across retries (no timestamp suffix)
   // for Resend dashboard searchability.
   let resendAudienceId = broadcast.resendAudienceId ?? '';
-  let resendBroadcastId = '';
+  // F4 — read from the ROW, not a fresh ''. This was the whole bug: the audience
+  // id was inherited from a prior tick and the broadcast id never was, so every
+  // re-entered tick called `createBroadcast` again.
+  let resendBroadcastId = broadcast.resendBroadcastId ?? '';
+  // Frozen at entry so the send gate below can tell "a prior tick minted this"
+  // from "I minted it a few lines ago" — `resendBroadcastId` is reassigned in
+  // between, and after that the two are indistinguishable.
+  const inheritedBroadcastId = resendBroadcastId;
+  // Whether THIS tick actually called `sendBroadcast`. The success-replay arm
+  // below used to gate on `resendBroadcastId !== ''`, which was exact only while
+  // the id could not be inherited: a non-empty id then implied this tick had
+  // passed `createBroadcast`, after which the send was the only call left. F4
+  // broke that — `addContactsToAudience` and the probe both run BEFORE the send
+  // with an inherited id in hand, and `classifyResendError` maps every 409 from
+  // ANY endpoint to `idempotency_conflict`. So a pre-send 409 could advance the
+  // row to `sending` with nothing ever sent.
+  let sendAttempted = false;
+  /**
+   * Set by the probe below when an INHERITED resource was already handed to
+   * `/send` by an earlier tick. Declared out here because Step 4 -- which runs
+   * after the catch -- needs all three to write a truthful record: without them
+   * its audit payload stamped `actualSendAt = now` for a send that happened up
+   * to an hour earlier, and the value was already in hand and discarded.
+   */
+  let alreadyHandedToSend = false;
+  let observedResendStatus: RetrievedBroadcastResource['status'] | null = null;
+  let resendSentAt: string | null = null;
   try {
+    // ---- The probe runs FIRST, before anything else touches Resend --------
+    //
+    // An INHERITED id means a prior tick minted the resource and we do not know
+    // whether its send was accepted. Everything about this file refuses to guess
+    // at Resend's replay semantics -- `Idempotency-Key` is MEASURED inert on
+    // `POST /broadcasts`, and `/send` cannot be probed without sending real mail
+    // -- so ask instead of assuming a 409 will come back.
+    //
+    // **Position is the fix, not just the question.** This sat AFTER
+    // `addContactsToAudience`, and `withRetry` short-circuits a non-retryable
+    // GatewayThrowable immediately -- so a 409 from the first duplicate contact
+    // threw before the probe ever ran.
+    //
+    // **ASSUMED, NOT MEASURED:** that `POST /contacts` answers 409 for a duplicate
+    // address. Every other provider claim on this branch carries a MEASURED date;
+    // this one does not, and it is worth naming because it cuts both ways — if it
+    // were true, the file's own 1-hour FR-021 budget could only ever have fired
+    // ONCE, since the second tick would 409 and go terminal. Prod could not settle
+    // it (checked 2026-09-10: 1 `broadcast_send_started` row in total, 0
+    // `broadcast_dispatch_idempotency_conflict_pre_send`, `broadcasts` empty after
+    // the June wipe). The guard below is keyed off our own write ordering instead,
+    // so nothing here depends on the answer. A tick re-entering after a successful send
+    // therefore re-pushed every contact, took the 409, found `sendAttempted`
+    // false, and terminated the row with the FR-021 email telling the member
+    // their broadcast had FAILED. It had not. Asking first also skips the
+    // re-push entirely, which is ~72 s of a 300 s budget for a 150-member
+    // audience at the measured 2.08 req/s.
+    if (inheritedBroadcastId !== '') {
+      const probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
+      if (probe.kind === 'present') {
+        observedResendStatus = probe.resource.status;
+        // POSITIVE, and that is the whole lesson of this gate's first version. It
+        // was `status !== 'draft'`, a negative test over a provider string that
+        // `normaliseStatus` used to close by fabricating `'queued'` -- so
+        // `'cancelled'` and every status this build had never seen read as
+        // "already sent", the send was SKIPPED, the row still advanced to
+        // `sending`, and `reconcile-stuck-sending` later stamped `sent` and burned
+        // the member's annual quota for mail that never went out.
+        if (
+          probe.resource.status === 'queued' ||
+          probe.resource.status === 'sending' ||
+          probe.resource.status === 'sent'
+        ) {
+          alreadyHandedToSend = true;
+          // Carried into Step 4's audit row. `null` for `queued`/`sending` is the
+          // honest answer -- "accepted, not yet reported sent" -- and Step 4 must
+          // then omit `delaySeconds` rather than compute one from `now`.
+          resendSentAt = probe.resource.sentAt;
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+              observedResendStatus: probe.resource.status,
+            },
+            'broadcasts.dispatch.inherited_broadcast_already_handed_to_send',
+          );
+        } else if (probe.resource.status === 'unknown') {
+          // FAIL CLOSED. Re-sending on a status we cannot interpret risks a second
+          // delivery to the whole audience, and skipping the send risks recording a
+          // dispatch that never happened -- and BOTH directions are unmeasured.
+          // Refusing keeps the row `approved` and fires the route's counter, which
+          // ALARMS (not pages) at ≥15 min sustained — `observability.md` grades it
+          // alarm, and routes it to the audience-build runbook, which is a
+          // different subsystem. `errClass: 'gate'` is the only discriminator and
+          // appears in no runbook yet.
+          //
+          // **NOT bounded by FR-021** — the same property the persist-fault arm
+          // below documents: this `return` leaves from inside the `try`, so
+          // `pastBudget` is never evaluated. If Resend renamed a status we already
+          // know, every inherited-id tick would refuse every 5 minutes
+          // indefinitely; `broadcasts_approved_overdue_count` is what eventually
+          // notices. Recovery is either adding the status to `normaliseStatus` and
+          // deploying, or deleting the resource at Resend so the probe answers
+          // `not_found`.
+          //
+          // Still the right trade: a stuck broadcast is recoverable by a human; a
+          // duplicate send to 150 real members is not.
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+              // The adapter logs the RAW status on its own line but carries no
+              // broadcast id; this line carries the ids but not the raw value.
+              // Neither is joinable alone, so name what we mapped it to.
+              observedResendStatus: probe.resource.status,
+              severity: 'critical',
+            },
+            'broadcasts.dispatch.inherited_resource_unrecognised_status',
+          );
+          return err({
+            kind: 'dispatch.server_error',
+            message: 'inherited_resource_unrecognised_status',
+            errClass: 'gate',
+          });
+        } else {
+          // `'draft'` (never sent -- the case this whole gate exists for) and
+          // `'cancelled'`. Both proceed to the send, where a genuine refusal
+          // reaches the permanent / `resource_missing` arms and is reported as
+          // what it is. Logged HERE because the fall-through is a decision, and
+          // the only other signal for `cancelled` is the absence of one.
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+              observedResendStatus: probe.resource.status,
+            },
+            'broadcasts.dispatch.inherited_broadcast_send_attempted',
+          );
+        }
+      }
+      // `not_found` deliberately falls through: the send 404s into the
+      // `resource_missing` arm, which exists for exactly that.
+    }
+
     if (resendAudienceId === '') {
       const audienceResult = await deps.broadcastsGateway.createAudience(
         `broadcast-${deps.tenant.slug}-${input.broadcastId}`,
@@ -607,28 +751,205 @@ export async function dispatchScheduledBroadcast(
     const contacts: ReadonlyArray<AudienceContact> = resolvedResult.value.recipients.map(
       (e) => ({ emailLower: e as string }),
     );
-    await deps.broadcastsGateway.addContactsToAudience(
-      resendAudienceId,
-      contacts,
-    );
+    // Skipped when the resource was already handed to `/send`: re-pushing every
+    // contact is what produced the 409 that used to mislabel a completed send as
+    // a permanent failure, and it buys nothing -- the audience is already built.
+    // Keyed off the INHERITED id, not `alreadyHandedToSend`, and that difference
+    // is the point. On this leg the push precedes `createBroadcast` which precedes
+    // `attachBroadcastId`, all in this try — so **a persisted broadcast id proves
+    // the push completed**, whatever the probe then reports. Keying off the probe
+    // left `'draft'`, `'cancelled'` and `not_found` re-pushing an audience that is
+    // already built, which is the case this gate exists for.
+    //
+    // It also makes the fix independent of an ASSUMPTION. Whether Resend answers
+    // 409 to a duplicate contact is unmeasured (see the note at the probe); this
+    // guard is correct either way, because it rests on our own write ordering
+    // rather than on the provider's behaviour.
+    if (inheritedBroadcastId === '') {
+      await deps.broadcastsGateway.addContactsToAudience(
+        resendAudienceId,
+        contacts,
+      );
+    }
 
-    const createResult = await deps.broadcastsGateway.createBroadcast({
-      audienceId: resendAudienceId,
-      subject: broadcast.subject,
-      htmlBody: broadcast.bodyHtml,
-      fromName: broadcast.fromName,
-      fromEmail: deps.fromEmail,
-      replyToEmail: broadcast.replyToEmail,
-      broadcastNameForResendDashboard: resendDashboardName(broadcast.fromName, broadcast.subject),
-      tenantDisplayName: deps.tenantDisplayName,
-      locale: deps.locale,
-    });
-    resendBroadcastId = createResult.broadcastId;
+    // F4 — the same reuse shape as the audience above, one step later. Skipping
+    // this when the row already carries an id is what stops a tick that died
+    // before the status flip from minting a SECOND Resend resource and sending
+    // to the whole audience again.
+    if (resendBroadcastId === '') {
+      const createResult = await deps.broadcastsGateway.createBroadcast({
+        audienceId: resendAudienceId,
+        subject: broadcast.subject,
+        htmlBody: broadcast.bodyHtml,
+        fromName: broadcast.fromName,
+        fromEmail: deps.fromEmail,
+        replyToEmail: broadcast.replyToEmail,
+        broadcastNameForResendDashboard: resendDashboardName(broadcast.fromName, broadcast.subject),
+        tenantDisplayName: deps.tenantDisplayName,
+        locale: deps.locale,
+      });
+      resendBroadcastId = createResult.broadcastId;
+      // Persist BEFORE the send, in its own tx. The window this closes is the
+      // one between `sendBroadcast` returning and the transition tx committing:
+      // mail is out, and until this write existed nothing on our side knew which
+      // resource sent it.
+      //
+      // **Its own try/catch, and that is the point.** The enclosing `try` is for
+      // GATEWAY errors: its catch reads a `kind` field off the throw, and its
+      // `BroadcastConcurrentMutationError` arm deletes `resendAudienceId` on the
+      // stated premise that `attachAudienceId` is the only thrower in scope. A DB
+      // write in there breaks both. Five reviewers found the same consequence
+      // independently: on a CAS loss here the audience is the row's canonical one
+      // — the WINNER is sending into it — and the arm deleted it, at INFO, under
+      // a bucket the cron calls benign. Handling it here restores that premise
+      // instead of patching around it.
+      try {
+        await deps.broadcastsRepo.withTx(async (tx) => {
+          await deps.broadcastsRepo.attachBroadcastId(
+            tx,
+            deps.tenant.slug,
+            input.broadcastId,
+            resendBroadcastId,
+          );
+        });
+      } catch (persistErr) {
+        if (persistErr instanceof BroadcastConcurrentMutationError) {
+          // A sibling tick attached first. It owns the row, the audience and the
+          // send. We touch NOTHING — and we leak the resource we just minted,
+          // because the gateway has no `deleteBroadcast` to reclaim it with.
+          // Logged at error rather than info precisely because nothing collects
+          // it: `cleanup-orphaned-audiences` only deletes the audience the row
+          // points at, which is the winner's.
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              leakedResendBroadcastId: resendBroadcastId,
+              resendAudienceId,
+              observedStatus: persistErr.observedStatus,
+              severity: 'critical',
+            },
+            'broadcasts.dispatch.broadcast_attach_lost_leaked',
+          );
+          return err({
+            kind: 'broadcast_invalid_state_transition',
+            observedStatus: persistErr.observedStatus,
+          });
+        }
+        // The row vanishing under us is NOT a fault. Every other sink in this
+        // module calls it `broadcast_not_found` and buckets it `concurrent_skip`
+        // at warn — the cron's own comment says "normal, self-healing, and NOT a
+        // failure of any kind".
+        //
+        // This comment used to justify the arm with "an erasure cascade can remove
+        // the row". It cannot: the cascade calls
+        // `cancelInFlightBroadcastsForMember` — cancel, not delete. The only
+        // DELETEs on `broadcasts` are the member draft route and the prune cron
+        // (both `status = 'draft'`, and this row is `approved`), and
+        // `scripts/reset-broadcast-quota.ts`, which skips rows whose audience is
+        // still live — and a row in THIS window is `approved` with a live
+        // audience, so that script cannot reach it either.
+        //
+        // So: **no code path in `src/` produces this today.** The arm is pure
+        // defence-in-depth, kept because routing a vanished row into the DB-fault
+        // arm would page at critical for something that can never be retried. The
+        // previous wording named that script as the reachable path, in the same
+        // sentence that said the script skips this row — a correction that
+        // refuted itself. The port docblock promises this class;
+        // routing it into the DB-fault arm below would page an operator at
+        // critical for a row that can never be retried.
+        if (persistErr instanceof BroadcastNotFoundError) {
+          // Log for the same reason its CAS sibling twenty lines up does: we minted
+          // a Resend resource seconds ago and cannot attach it, and nothing
+          // collects it — `cleanup-orphaned-audiences` deletes only the audience
+          // the row points at, and the row is gone. Without this line the id
+          // exists in no log, no row and no metric.
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              leakedResendBroadcastId: resendBroadcastId,
+              resendAudienceId,
+            },
+            'broadcasts.dispatch.row_vanished_broadcast_leaked',
+          );
+          return err({
+            kind: 'broadcast_not_found',
+            broadcastId: input.broadcastId as string,
+          });
+        }
+        // Anything else is a DB fault — a Neon blip, a pooler drop, a timeout.
+        // **No mail has gone out yet.** Falling through to the gateway classifier
+        // made this `unknown` → non-retryable BY DESIGN → the permanent arm: the
+        // row went terminal, a raw driver message landed in an append-only audit
+        // row, and the member was emailed that their broadcast had FAILED. Before
+        // the send the safe direction is the opposite one — stay `approved` and
+        // let the next tick retry, which is the whole reason this write exists.
+        //
+        // `dispatch.server_error`, not `gateway_retryable`: the route logs
+        // `subKind` as a class of the RESEND transport (`network`/`timeout`/
+        // `server_5xx`/`api`), and none of those four is honest about Neon. This
+        // kind carries `errClass` instead and the route already buckets it
+        // `retryable` with its own counter.
+        //
+        // **NOT bounded by FR-021, and this comment used to claim it was.** The
+        // budget lives in the enclosing `catch`'s retryable branch, and this
+        // `return` leaves from inside the `try`, so `pastBudget` is never
+        // evaluated. A fault that persists — an RLS/permission problem on the
+        // column, not a blip — therefore keeps the row `approved` for ever while
+        // each tick mints a fresh Resend resource and leaks it, because the
+        // port has no `deleteBroadcast`.
+        //
+        // **That is a PORT GAP, not a Resend limitation** — this branch measured
+        // `'draft'` by creating a broadcast and DELETING it against the live
+        // account, and everything leaked here is a draft by definition (minted,
+        // never sent). So the cheap fix is one port method, not lifting the FR-021
+        // budget out of the catch. Correcting my own claim: I asserted three times
+        // today that the resource could not be reclaimed.
+        //
+        // Scale, also corrected: this leaks BROADCASTS, not audiences — the
+        // audience is minted once and inherited — so the 3-audience Free-plan
+        // ceiling is untouched and the real effect is junk drafts in the
+        // dashboard, roughly 288 a day at a 5-minute cadence. The route's counter
+        // alarms within 15 minutes, i.e. about three of them. Deferrable, and
+        // tracked as a follow-up rather than as an unbounded hazard.
+        const persistFailureReason =
+          (persistErr as { code?: string } | null)?.code === '23505'
+            ? // Needs Resend to reissue an id, so it is the least likely member of
+              // this class — but the one an operator cannot otherwise name.
+              'duplicate_resend_broadcast_id'
+            : 'attach_broadcast_id_failed';
+        logger.error(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            err: errKind(persistErr),
+            // NOT `reason` — that key is in `REDACT_PATHS`, so this line printed
+            // `reason:"[REDACTED]"` and the token added specifically so an
+            // operator could name a 23505 reached no one. `logger.ts` prescribes
+            // exactly this: rename a safe operational field to a non-`reason` key.
+            // Proven by running the suite, not by reading the redact list.
+            persistFailureKind: persistFailureReason,
+            severity: 'critical',
+          },
+          'broadcasts.dispatch.attach_broadcast_id_failed',
+        );
+        return err({
+          kind: 'dispatch.server_error',
+          message: persistFailureReason,
+          errClass: errKind(persistErr),
+        });
+      }
+    }
 
-    await deps.broadcastsGateway.sendBroadcast(
-      resendBroadcastId,
-      buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
-    );
+    if (!alreadyHandedToSend) {
+      sendAttempted = true;
+      await deps.broadcastsGateway.sendBroadcast(
+        resendBroadcastId,
+        buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
+      );
+    }
   } catch (e) {
     // ---- Round 4 L2 — the audience-attach CAS loss, named ------------
     //
@@ -636,6 +957,16 @@ export async function dispatchScheduledBroadcast(
     // `BroadcastConcurrentMutationError`, so reaching here is unambiguous: a
     // sibling tick attached a different audience first. Two overlapping ticks
     // are reachable because `maxDuration` equals the cron cadence.
+    //
+    // **That premise is load-bearing and it has to be RE-EARNED on every
+    // change.** F4 briefly broke it: `attachBroadcastId` throws the same class,
+    // and for one commit it sat in this try. On that path the audience is the
+    // row's canonical one -- the WINNER is sending into it -- so the reclaim
+    // below deleted a live audience and reported it at INFO as a benign skip.
+    // Five reviewers found it independently. It is handled at its own call site
+    // now, so this arm's `resendAudienceId` is once again always this tick's
+    // own mint. Anything else added here that can throw this class must be
+    // handled there, not by widening this arm.
     //
     // Until now this fell to `classifyThrown`, which reads a `kind` field the
     // error class does not have, so it was classified `unknown` → permanent →
@@ -802,16 +1133,26 @@ export async function dispatchScheduledBroadcast(
 
     // ---- Idempotency conflict: success-replay ------------------------
     // Resend already accepted this broadcast on a prior attempt. Treat
-    // as success and fall through to attachResendIds + transition. We
-    // know the resendBroadcastId IFF the conflict happened on `send`
-    // (after createBroadcast); on early conflict we cannot recover the
-    // ID and must drop to permanent.
+    // as success and fall through to attachResendIds + transition.
+    //
+    // F4 widened when we can do that. `resendBroadcastId` is now seeded from the
+    // ROW, not from `''`, so it is known whenever THIS tick reached
+    // `createBroadcast` **or any prior tick did** — which is the common case for
+    // a conflict, since a conflict means someone got further than us. Before F4
+    // an inherited id was invisible here and a replay that could have advanced
+    // dropped to permanent instead.
     if (shape.kind === 'idempotency_conflict') {
-      // If we never reached `createBroadcast` (resendBroadcastId is
-      // unset because the conflict surfaced earlier), we cannot
-      // safely advance — fall through to permanent so the next cron
-      // tick re-resolves the row from scratch.
-      if (resendBroadcastId === '') {
+      // NO SEND WAS ATTEMPTED this tick, so a 409 cannot be a replay of ours.
+      // Fall through to permanent and let the next cron tick re-resolve.
+      //
+      // The predicate used to be `resendBroadcastId === ''` and this comment used
+      // to say "nobody has reached createBroadcast". Re-anchoring on
+      // `sendAttempted` made the arm reachable with an INHERITED id on the row —
+      // and the audit summary below went on asserting there was none, into a
+      // table with 5-to-10-year retention that renders on the staff audit viewer.
+      // Two reviewers found it on the very path this branch's own new test walks.
+      // Say what the flag means, and carry the id so the row cannot mislead.
+      if (!sendAttempted) {
         logger.error(
           {
             tenantId: deps.tenant.slug,
@@ -832,7 +1173,7 @@ export async function dispatchScheduledBroadcast(
             tenantId: deps.tenant.slug,
             eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
             actorUserId: 'system:cron',
-            summary: `Broadcast ${input.broadcastId} hit idempotency conflict BEFORE sendBroadcast — concurrent worker raced through createAudience`,
+            summary: `Broadcast ${input.broadcastId} hit an idempotency conflict BEFORE any send was attempted this tick — the 409 came from an earlier call, not from /send, so there is nothing of ours to replay`,
             payload: {
               broadcastId: input.broadcastId,
               reason: shape.reason,
@@ -1074,7 +1415,7 @@ export async function dispatchScheduledBroadcast(
         //   - `kind === 'idempotency_conflict'` so the next branch
         //     `if (shape.kind === 'resource_missing')` is skipped.
         //   - The permanent-handler condition is
-        //     `shape.kind !== 'idempotency_conflict' || resendBroadcastId === ''`
+        //     `shape.kind !== 'idempotency_conflict' || !sendAttempted`
         //     — both clauses are false here (kind matches AND id is set),
         //     so the permanent handler is intentionally skipped.
         //   - Execution exits the catch block and reaches Step 4
@@ -1129,7 +1470,7 @@ export async function dispatchScheduledBroadcast(
     }
 
     // ---- Permanent (and idempotency_conflict_pre_send fall-through) --
-    if (shape.kind !== 'idempotency_conflict' || resendBroadcastId === '') {
+    if (shape.kind !== 'idempotency_conflict' || !sendAttempted) {
       const reason =
         shape.reason ??
         (e instanceof Error ? e.message : 'unknown gateway error');
@@ -1187,9 +1528,10 @@ export async function dispatchScheduledBroadcast(
       // 2026-09-09, two identical `POST /broadcasts` calls carrying the same
       // `Idempotency-Key` create two resources. What this CAS actually closes is
       // the DB-side audit/over-emit forensics issue, which is real; the
-      // duplicate-email protection was never here to claim. See F4 in the round-4
-      // ledger — its remedy (persist the ids before the send) is the follow-up
-      // PR.
+      // duplicate-email protection was never here to claim. F4's remedy — persist
+      // the id before the send — **landed above** in this same function, so a tick
+      // that dies in that window no longer mints a second resource. This CAS keeps
+      // its own, narrower job.
       const transitioned = await deps.broadcastsRepo.applyTransition(
         tx,
         deps.tenant.slug,
@@ -1207,16 +1549,49 @@ export async function dispatchScheduledBroadcast(
       // (same wall-clock moment, two field names per AS1 wording).
       // `delaySeconds` is the wait between the originator's planned
       // delivery time and the actual cron pickup — surfaces "how
-      // late did the cron handler fire" for SC-001 quartile analysis.
+      // late did the cron handler fire".
+      //
+      // This used to say "for SC-001 quartile analysis". SC-001 is a QUOTA RATE
+      // (sends per quarter), not a latency measure, and nothing reads these keys
+      // out of the payload — the consumer named here was never built.
       // For "send-now" paths where `scheduledFor === null`,
       // delaySeconds is null (the field is irrelevant).
-      const actualSendAt = now;
+      // Round 7 M-1. `now` is right only when THIS tick sent. On the
+      // probe-positive path the send happened in an earlier tick -- up to an hour
+      // earlier -- and `probe.resource.sentAt` was already in hand and discarded.
+      // That is the round-4 L2 class exactly: a narrowing obtained and not used,
+      // written into a table with 5-year retention that cannot be corrected.
+      //
+      // Only `'sent'` carries a meaningful `sent_at`. Reading it on `'queued'` or
+      // `'sending'` would stamp a send time for something Resend has accepted but
+      // not yet reported as gone — the over-claim this field was fixed to stop.
+      //
+      // And it is PARSED, not trusted: the adapter passes `sent_at` through
+      // verbatim and `?? null` does not catch `""`. An unparseable value made
+      // `.toISOString()` throw a RangeError INSIDE this tx, rolling back
+      // `attachResendIds` + `applyTransition` + the audit emit together — after
+      // the mail had already gone out — and surfacing as "DB write after Resend
+      // success", which sends an operator to Neon rather than to a date parse.
+      const providerSentAt =
+        alreadyHandedToSend &&
+        observedResendStatus === 'sent' &&
+        resendSentAt !== null
+          ? new Date(resendSentAt)
+          : null;
+      const actualSendAt =
+        providerSentAt !== null && !Number.isNaN(providerSentAt.getTime())
+          ? providerSentAt
+          : alreadyHandedToSend
+            ? null
+            : now;
       const scheduledForIso =
         broadcast.scheduledFor !== null
           ? broadcast.scheduledFor.toISOString()
           : null;
+      // Unknown send time means unknown delay. Computing it from `now` on a replay
+      // would inflate any delay report by however long the row sat between ticks.
       const delaySeconds =
-        broadcast.scheduledFor !== null
+        broadcast.scheduledFor !== null && actualSendAt !== null
           ? Math.round(
               (actualSendAt.getTime() - broadcast.scheduledFor.getTime()) /
                 1000,
@@ -1232,9 +1607,22 @@ export async function dispatchScheduledBroadcast(
           resendAudienceId,
           resendBroadcastId,
           recipientCount: resolvedResult.value.estimatedCount,
-          sendingStartedAt: actualSendAt.toISOString(),
+          // Mirrors the COLUMN this same tx just wrote (`applyTransition` above),
+          // and it is deliberately NOT the nullable one. Round 7 fixed
+          // `actualSendAt` over-claiming `now` and, by aliasing both names to one
+          // variable, made this under-claim `null` — for a column
+          // `one-active-broadcast-state.ts` requires to be non-null whenever the
+          // status is `sending`. An append-only row contradicting the column it is
+          // named after, written in the same transaction. Only `actualSendAt`
+          // carries the narrowing.
+          sendingStartedAt: now.toISOString(),
+          // The row says for itself whether this tick sent, so a reader never has
+          // to infer it from a timestamp. `observedResendStatus` is what Resend
+          // actually answered -- previously read, acted on, and then dropped.
+          handedToSendOnPriorTick: alreadyHandedToSend,
+          observedResendStatus,
           scheduledFor: scheduledForIso,
-          actualSendAt: actualSendAt.toISOString(),
+          actualSendAt: actualSendAt !== null ? actualSendAt.toISOString() : null,
           delaySeconds,
         },
         requestId: null,
@@ -1315,8 +1703,13 @@ export async function dispatchScheduledBroadcast(
         observedStatus: e.observedStatus,
       });
     }
-    // "The row is GONE" — a member-erasure cascade removed it between the claim
-    // query and this write — as its own type rather than folded into the
+    // "The row is GONE" — the row was deleted between the claim and this write.
+    // (It is NOT the member-erasure cascade: that calls
+    // `cancelInFlightBroadcastsForMember`, which cancels rather than deletes. The
+    // three DELETE sites in `src/` cannot reach an `approved` row with a live
+    // audience, so no code path produces this today — defence-in-depth.)
+    //
+    // Surfaced as its own type rather than folded into the
     // concurrent-mutation case. Nothing failed that anyone can act on, and the
     // row it would page about no longer exists.
     //
@@ -1361,14 +1754,12 @@ export async function dispatchScheduledBroadcast(
     // failed), so the next tick mints a NEW broadcast and sends THAT — a
     // different URL, which no idempotency scheme would collapse anyway.
     //
-    // Left as-is and logged at error severity, which is what actually protects
-    // here today. The fix is to persist the id BEFORE the send so a retry hits
-    // the same resource; that is F4 in the round-4 ledger — a follow-up PR, not a
-    // merge blocker, because the shape predates this branch and is live on
-    // `origin/main` today. It is not a FLIP blocker either: it waits on a failed
-    // DB write, not on a flag. (The same parenthetical was pasted onto
-    // `build-audience-tick.ts`, where the `origin/main` half is false — that leg
-    // does not exist there. Corrected in place.)
+    // Logged at error severity, and **F4 is now FIXED above**: the id is
+    // persisted in its own tx immediately after `createBroadcast` returns, so a
+    // tick that dies in this window leaves the resource recorded and the next
+    // tick reuses it instead of minting a second one. What remains here is the
+    // narrower residual -- this write failing means the STATUS did not advance,
+    // so the row is retried with the same resource rather than a new one.
     logger.error(
       {
         err: errKind(e),

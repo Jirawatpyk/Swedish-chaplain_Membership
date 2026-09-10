@@ -54,7 +54,15 @@ function makeRetryableGateway(): BroadcastsGatewayPort {
     async createContactImport() { throw new Error('not used'); },
     async getContactImport() { throw new Error('not used'); },
     async createBroadcast() {
-      return { broadcastId: 'bcast-test-1' };
+      // UNIQUE per call, because Resend's are. This returned the constant
+      // `'bcast-test-1'` until F4, and got away with it only because the id was
+      // never persisted on a failing dispatch: `sendBroadcast` threw before the
+      // final `attachResendIds` tx ever ran. F4 persists it BEFORE the send, so
+      // the second test in this file wrote the same id onto a different row and
+      // hit `broadcasts_resend_broadcast_id_uniq` (migration 0064) — surfacing as
+      // an opaque `broadcast_failed_to_dispatch` two tests later. A fixture that
+      // mints duplicate ids is modelling a provider that cannot exist.
+      return { broadcastId: `bcast-test-${randomUUID()}` };
     },
     async sendBroadcast() {
       throw {
