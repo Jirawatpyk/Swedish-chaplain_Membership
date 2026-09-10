@@ -552,6 +552,15 @@ export async function dispatchScheduledBroadcast(
   // from "I minted it a few lines ago" — `resendBroadcastId` is reassigned in
   // between, and after that the two are indistinguishable.
   const inheritedBroadcastId = resendBroadcastId;
+  // Whether THIS tick actually called `sendBroadcast`. The success-replay arm
+  // below used to gate on `resendBroadcastId !== ''`, which was exact only while
+  // the id could not be inherited: a non-empty id then implied this tick had
+  // passed `createBroadcast`, after which the send was the only call left. F4
+  // broke that — `addContactsToAudience` and the probe both run BEFORE the send
+  // with an inherited id in hand, and `classifyResendError` maps every 409 from
+  // ANY endpoint to `idempotency_conflict`. So a pre-send 409 could advance the
+  // row to `sending` with nothing ever sent.
+  let sendAttempted = false;
   try {
     if (resendAudienceId === '') {
       const audienceResult = await deps.broadcastsGateway.createAudience(
@@ -683,6 +692,19 @@ export async function dispatchScheduledBroadcast(
             observedStatus: persistErr.observedStatus,
           });
         }
+        // The row vanishing under us is NOT a fault. Every other sink in this
+        // module calls it `broadcast_not_found` and buckets it `concurrent_skip`
+        // at warn — the cron's own comment says "normal, self-healing, and NOT a
+        // failure of any kind" (an erasure cascade can remove the row between the
+        // Step-1 claim and this write). The port docblock promises this class;
+        // routing it into the DB-fault arm below would page an operator at
+        // critical for a row that can never be retried.
+        if (persistErr instanceof BroadcastNotFoundError) {
+          return err({
+            kind: 'broadcast_not_found',
+            broadcastId: input.broadcastId as string,
+          });
+        }
         // Anything else is a DB fault — a Neon blip, a pooler drop, a timeout.
         // **No mail has gone out yet.** Falling through to the gateway classifier
         // made this `unknown` → non-retryable BY DESIGN → the permanent arm: the
@@ -690,31 +712,45 @@ export async function dispatchScheduledBroadcast(
         // row, and the member was emailed that their broadcast had FAILED. Before
         // the send the safe direction is the opposite one — stay `approved` and
         // let the next tick retry, which is the whole reason this write exists.
-        // The FR-021 hour budget still bounds it.
+        //
+        // `dispatch.server_error`, not `gateway_retryable`: the route logs
+        // `subKind` as a class of the RESEND transport (`network`/`timeout`/
+        // `server_5xx`/`api`), and none of those four is honest about Neon. This
+        // kind carries `errClass` instead and the route already buckets it
+        // `retryable` with its own counter.
+        //
+        // **NOT bounded by FR-021, and this comment used to claim it was.** The
+        // budget lives in the enclosing `catch`'s retryable branch, and this
+        // `return` leaves from inside the `try`, so `pastBudget` is never
+        // evaluated. A fault that persists — an RLS/permission problem on the
+        // column, not a blip — therefore keeps the row `approved` for ever while
+        // each tick mints a fresh Resend resource and leaks it, because the
+        // gateway has no `deleteBroadcast`. Bounding it means lifting the budget
+        // out of that branch into a helper this arm can call. OWED, not done: an
+        // honest unbounded retry is still better than the terminal-plus-member-
+        // email this replaced, and half-extracting the budget here would be the
+        // sixth consecutive fix that broke the fix before it.
+        const persistFailureReason =
+          (persistErr as { code?: string } | null)?.code === '23505'
+            ? // Needs Resend to reissue an id, so it is the least likely member of
+              // this class — but the one an operator cannot otherwise name.
+              'duplicate_resend_broadcast_id'
+            : 'attach_broadcast_id_failed';
         logger.error(
           {
             tenantId: deps.tenant.slug,
             broadcastId: input.broadcastId as string,
             resendBroadcastId,
             err: errKind(persistErr),
-            // 23505 needs Resend to reissue an id, so it is the least likely
-            // member of this class — but it is the one an operator cannot
-            // otherwise name, and the class is mostly transient DB faults.
-            reason:
-              (persistErr as { code?: string } | null)?.code === '23505'
-                ? 'duplicate_resend_broadcast_id'
-                : 'persist_failed',
+            reason: persistFailureReason,
             severity: 'critical',
           },
           'broadcasts.dispatch.attach_broadcast_id_failed',
         );
         return err({
-          kind: 'gateway_retryable',
-          subKind: 'api',
-          reason:
-            (persistErr as { code?: string } | null)?.code === '23505'
-              ? 'duplicate_resend_broadcast_id'
-              : 'attach_broadcast_id_failed',
+          kind: 'dispatch.server_error',
+          message: persistFailureReason,
+          errClass: errKind(persistErr),
         });
       }
     }
@@ -729,9 +765,26 @@ export async function dispatchScheduledBroadcast(
     // `/send` (MEASURED 2026-09-10). `not_found` deliberately falls through: the
     // send will 404 into the `resource_missing` arm, which exists for that.
     let alreadyHandedToSend = false;
-    if (inheritedBroadcastId !== '' && resendBroadcastId === inheritedBroadcastId) {
+    if (inheritedBroadcastId !== '') {
       const probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
-      if (probe.kind === 'present' && probe.resource.status !== 'draft') {
+      // POSITIVE, and that is the whole lesson of this gate's first version. It
+      // was `status !== 'draft'`, a negative test over a provider string that
+      // `normaliseStatus` used to close by fabricating `'queued'` — so
+      // `'cancelled'` and every status this build has never seen read as "already
+      // sent", the send was SKIPPED, the row still advanced to `sending`, and
+      // `reconcile-stuck-sending` later stamped `sent` and burned the member's
+      // annual quota for mail that never went out.
+      //
+      // These three are the only values that evidence a send. `'draft'`,
+      // `'cancelled'`, `'unknown'` and `not_found` all fall through TO the send,
+      // where a genuine refusal reaches the permanent / `resource_missing` arms
+      // and gets reported as what it is.
+      if (
+        probe.kind === 'present' &&
+        (probe.resource.status === 'queued' ||
+          probe.resource.status === 'sending' ||
+          probe.resource.status === 'sent')
+      ) {
         alreadyHandedToSend = true;
         logger.warn(
           {
@@ -746,6 +799,7 @@ export async function dispatchScheduledBroadcast(
     }
 
     if (!alreadyHandedToSend) {
+      sendAttempted = true;
       await deps.broadcastsGateway.sendBroadcast(
         resendBroadcastId,
         buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
@@ -947,7 +1001,7 @@ export async function dispatchScheduledBroadcast(
       // not this tick, and not any earlier one — so there is no resource to
       // advance to. Fall through to permanent and let the next cron tick
       // re-resolve from scratch.
-      if (resendBroadcastId === '') {
+      if (!sendAttempted) {
         logger.error(
           {
             tenantId: deps.tenant.slug,
@@ -1265,7 +1319,7 @@ export async function dispatchScheduledBroadcast(
     }
 
     // ---- Permanent (and idempotency_conflict_pre_send fall-through) --
-    if (shape.kind !== 'idempotency_conflict' || resendBroadcastId === '') {
+    if (shape.kind !== 'idempotency_conflict' || !sendAttempted) {
       const reason =
         shape.reason ??
         (e instanceof Error ? e.message : 'unknown gateway error');
@@ -1323,9 +1377,10 @@ export async function dispatchScheduledBroadcast(
       // 2026-09-09, two identical `POST /broadcasts` calls carrying the same
       // `Idempotency-Key` create two resources. What this CAS actually closes is
       // the DB-side audit/over-emit forensics issue, which is real; the
-      // duplicate-email protection was never here to claim. See F4 in the round-4
-      // ledger — its remedy (persist the ids before the send) is the follow-up
-      // PR.
+      // duplicate-email protection was never here to claim. F4's remedy — persist
+      // the id before the send — **landed above** in this same function, so a tick
+      // that dies in that window no longer mints a second resource. This CAS keeps
+      // its own, narrower job.
       const transitioned = await deps.broadcastsRepo.applyTransition(
         tx,
         deps.tenant.slug,

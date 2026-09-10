@@ -83,24 +83,40 @@ export interface CreateBroadcastInput {
 export interface RetrievedBroadcastResource {
   readonly id: string;
   /**
-   * `'draft'` is MEASURED, 2026-09-10: a broadcast created by
-   * `POST /broadcasts` and never handed to `/send` reports
-   * `"status": "draft"` (probed with a draft + DELETE against the live
-   * account — never `/send`). It was missing from this union, so
-   * `normaliseStatus` mapped it through its unknown-status default to
-   * `'queued'` AND logged an error — on the most ordinary state a Resend
-   * broadcast can be in.
+   * MEASURED 2026-09-10, and the measurement cost two review rounds to get right.
    *
-   * The distinction is load-bearing, not cosmetic: `'draft'` is the only
-   * value that proves a resource was NEVER handed to `/send`. Everything
-   * else means it was. `dispatchScheduledBroadcast` uses that to decide
-   * whether a re-entered tick may send an inherited id, instead of
-   * assuming Resend will answer 409 — an assumption the same file
-   * elsewhere refuses to rely on, because the header is MEASURED inert on
-   * `POST /broadcasts` and `/send` cannot be probed without sending real
-   * mail.
+   * `'draft'` is what a broadcast created by `POST /broadcasts` and never handed
+   * to `/send` reports (probed with a draft + DELETE against the live account —
+   * never `/send`). It was missing from this union, so `normaliseStatus` sent the
+   * most ordinary state a broadcast can be in through its unknown-status default
+   * — reported as `'queued'` AND logged at error on every retrieve.
+   *
+   * `'unknown'` is EXPLICIT because the alternative was a lie: that default used
+   * to FABRICATE `'queued'`, so the union was closed at the type level and open at
+   * runtime, and no caller could tell a real `queued` from "Resend said something
+   * we have never seen". `'draft'` is the standing proof that the open set is not
+   * hypothetical — it was in it.
+   *
+   * **Only the never-sent direction is measured.** `'draft'` proves a resource was
+   * never sent; a non-draft status does NOT prove one was. So a caller deciding
+   * anything consequential must test POSITIVELY for the states it means.
+   * `dispatchScheduledBroadcast` reads `'queued' | 'sending' | 'sent'` to decide
+   * whether a re-entered tick may send an inherited id — rather than assuming
+   * Resend answers 409, which that file refuses to rely on because the idempotency
+   * header is MEASURED inert on `POST /broadcasts` and unmeasured on `/send`.
+   *
+   * `'cancelled'` and `'unknown'` are the counter-examples that cost a round: read
+   * as "already sent" by a `!== 'draft'` test, they skipped the send while still
+   * advancing the row to `sending`, after which the reconciler stamped `sent` and
+   * consumed the member's annual E-Blast quota for mail that never went out.
    */
-  readonly status: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled';
+  readonly status:
+    | 'draft'
+    | 'queued'
+    | 'sending'
+    | 'sent'
+    | 'cancelled'
+    | 'unknown';
   readonly sentAt: string | null;
 }
 
@@ -180,8 +196,16 @@ export interface BroadcastsGatewayPort {
 
   /**
    * Send a previously-created broadcast. The `idempotencyKey` MUST be
-   * stable per (tenant, broadcast) — the same broadcast_id retried
-   * MUST use the same key so Resend short-circuits replays.
+   * stable per (tenant, broadcast) per FR-020 — the same broadcast_id retried
+   * MUST use the same key.
+   *
+   * That is OUR half of the contract, and it used to be justified here by "so
+   * Resend short-circuits replays". Do not reason from that: the header was
+   * MEASURED INERT on `POST /broadcasts` (2026-09-09 — two identical calls with
+   * the same key created two resources), and on `/send` it is UNMEASURED, because
+   * probing it means sending real mail from the production account. Sending the
+   * same key every attempt is the precondition for any collapsing the provider
+   * may or may not do; it is not evidence that collapsing happens.
    *
    * Stable format: `broadcast-{tenantId}-{broadcastId}` per FR-020.
    */
