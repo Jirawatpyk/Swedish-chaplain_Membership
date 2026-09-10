@@ -89,7 +89,6 @@ interface BroadcastFailedCopy {
    * an identifier, and never an exception message.
    */
   readonly failureReason: Readonly<Record<string, string>>;
-  readonly body2: string;
   readonly reassurance: string;
   readonly ctaRescheduleLabel: string;
   readonly footerSignOff: string;
@@ -265,6 +264,22 @@ export function buildBroadcastFailedToDispatchEmail(
   const reasonText = copy.failureReason[input.reason] ?? copy.failureReason['generic'] ?? '';
   const reasonLine = fillTemplate(copy.failureReasonLabel, { reason: reasonText });
   const ctaUrl = broadcastDetailUrl(input.broadcastId);
+  // Round 4 L8 — `body2` is GONE, along with the allowlist that gated it.
+  //
+  // R2-13 found it asserting "our delivery service was unreachable for over an
+  // hour" under every reason, contradicting the Reason line one paragraph above.
+  // The fix gated it to the two reasons it describes. Round 4 found BOTH members
+  // of that allowlist wrong — `audience_import_stuck` fires after a SUCCESSFUL
+  // poll at 30 minutes (`IMPORT_STUCK_AFTER_MS`), not an hour of unreachability,
+  // and `retry_budget_exhausted`'s own reason sentence is a near-verbatim
+  // duplicate of the paragraph in all three locales.
+  //
+  // Measured before deleting, rather than taken from the review: `body2`
+  // rendered for exactly two of fourteen reason keys; both of those state its
+  // content themselves; the other twelve never saw it. Every reader still gets
+  // `body1` (the broadcast did not go out), the reason sentence, and
+  // `reassurance` (the quota slot is still reserved). So the deletion costs no
+  // reader anything, and removes a paragraph that had been wrong twice.
 
   const html = `<!doctype html>
 <html lang="${input.locale}">
@@ -274,7 +289,6 @@ export function buildBroadcastFailedToDispatchEmail(
     <p style="line-height:1.6;">${escapeHtml(copy.greeting)}</p>
     <p style="line-height:1.6;">${escapeHtml(body1)}</p>
     <p style="line-height:1.6;color:#555;font-size:14px;">${escapeHtml(scheduledLine)}<br>${escapeHtml(reasonLine)}</p>
-    <p style="line-height:1.6;">${escapeHtml(copy.body2)}</p>
     <p style="line-height:1.6;background:#fff7e6;border-left:4px solid #f5a623;padding:12px 16px;border-radius:4px;">${escapeHtml(copy.reassurance)}</p>
     <p style="margin:24px 0;">
       <a href="${ctaUrl}" style="display:inline-block;background:${EMAIL_BRAND_PRIMARY};color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaRescheduleLabel)}</a>
@@ -288,7 +302,6 @@ export function buildBroadcastFailedToDispatchEmail(
     `${copy.greeting}\n\n` +
     `${body1}\n\n` +
     `${scheduledLine}\n${reasonLine}\n\n` +
-    `${copy.body2}\n\n` +
     `${copy.reassurance}\n\n` +
     `${copy.ctaRescheduleLabel}: ${ctaUrl}\n\n` +
     `${copy.footerSignOff}\n`;

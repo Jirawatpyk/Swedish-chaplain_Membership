@@ -2,7 +2,7 @@
 
 **Feature Branch**: `108-contact-recipient-rules`
 **Created**: 2026-09-04
-**Status**: Implementing
+**Status**: Implemented — all four PRs merged (PR-A #340, PR-B #342, PR-D #344, PR-C #346 `91505b8f2`); migrations 0292–0297 applied to prod. Remaining: Phase 9 cutover — **T093, T095, T096, T097, T098 are cleared and the push-capacity gate is closed in code; only T094 (the flip itself, which completes at first-send observation) and the post-flip T099/T100 remain.** `FEATURE_CONTACT_MARKETING_RECIPIENTS` is **absent** from Vercel (set 09:44, deleted 10:41 on 2026-09-08 once it became clear that setting it arms the flip for the next merge), so the 1:N audience is not live. The enforced audience ceiling, however, **is** 500 from the Phase-9 merge onward, in every flag state — see `reviews/cutover.md`.
 **Input**: User description: "Tier A and Tier B + ปิดช่องโหว่ หรือ รูรั่ว ทั้งหมด" — i.e. implement Tier A (harden the primary-contact-only rule for money emails) and Tier B (secondary contacts receive marketing) from `docs/contacts-primary-secondary-gap-analysis.md`, and close every gap that analysis found (H1, H2, G1–G9). Tier C (bulk import of secondary contacts) is a separate follow-on feature and is **out of scope** here.
 
 ## Overview *(context, non-normative)*
@@ -144,6 +144,31 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 3. **Given** an audience of 4,900 contacts, **When** 300 secondary contacts are added to eligible members, **Then** compose shows 5,200.
 4. **Given** an audience of 20,000 contacts, **When** the member opens compose, **Then** the count appears within the compose page's normal loading time.
 
+> **SUPERSEDED 2026-09-08 — the import build SHIPPED, and the batch path it was
+> deferred behind was DELETED.** Everything from here to the end of this block
+> is the reasoning as it stood on 2026-09-07 and the several corrections it went
+> through on the 8th. Keep it for the history; do not act on it. Current truth:
+>
+> - **The Contacts Import build is live** (T086 / T087 / T106, behind
+>   `FEATURE_F7_IMPORT_AUDIENCE`, default OFF). One multipart call carries the
+>   whole audience in ~412 ms regardless of size; a later tick confirms it
+>   against a four-clause completion rule and only then sends.
+> - **The batch path is gone** (`ca51f59a1`, −13,380 lines): no
+>   `split-large-broadcasts`, no `dispatch-batches`, no manifests, no
+>   `SPLIT_THRESHOLD_RECIPIENTS`. Every sentence below that reasons about them
+>   is describing files that no longer exist.
+> - **There is no `audience_building` status** — it would make the row
+>   un-cancellable. `audience_import_id IS NOT NULL` draws the same
+>   distinction (migration `0298`).
+> - **The deferral reason below was wrong in one specific way that cost half a
+>   day**: it says the docs "do not state whether an audience created through
+>   `POST /audiences` is a valid target". They do not need to — it was probed
+>   on 2026-09-08 and it IS, with `segments=[{ id }]`. Two earlier probes said
+>   otherwise because they sent `audience_id`, which Resend accepts and
+>   silently ignores. An unexercised contract line is a guess, not a spec.
+>
+> ---
+>
 > **AMENDMENT (108 PR-C start of US5, 2026-09-07 — advisor-reviewed scope
 > narrowing).** The provider-side audience build via Resend's Contacts Import
 > API (research R9 "Decision (push)", data-model § 2.5 / § 3
@@ -159,38 +184,114 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > verified without a probe against the team's Resend account would put an
 > unverifiable path in front of the first send under the new rule. The
 > follow-up PR starts with that probe. Until then the existing per-contact
-> push stays: it is bounded by the ceiling, retried per tick on any retryable
-> failure (the row stays `approved`), and SweCham's audience (150 members,
-> secondaries pending import) is two orders of magnitude below the 5,000
-> ceiling. **FR-044** is therefore satisfied in PR-C by per-tick retry of a
-> bounded push rather than by a persisted import job; **FR-041 / FR-042 / FR-040**
-> (one ceiling, truthful count, no truncation) ship in PR-C as planned.
+> push stays: bounded by the ceiling and re-attempted per tick (the row stays
+> `approved`), and SweCham's audience (150 members, secondaries pending
+> import) is two orders of magnitude below the 5,000 ceiling.
+>
+> ~~**FR-044** is therefore satisfied in PR-C by per-tick retry of a bounded
+> push rather than by a persisted import job~~ — **CORRECTED 2026-09-08
+> (T098). That was false, and not by a detail: not one of FR-044's six clauses
+> holds.** The audience is RE-RESOLVED from scratch every tick
+> (`dispatch-scheduled-broadcast.ts:532`), the full recipient list is pushed
+> from index 0 with no persisted progress (`:702`), and
+> `addContactsToAudience` is a bare serial loop with no wall-clock budget and
+> no resume — its own comment says so: *"Reliable delivery of very large
+> audiences within a single invocation is a separate architectural concern
+> (batched multi-tick dispatch), tracked outside this fix"*
+> (`resend-broadcasts-gateway.ts:246-267`). There is no 30-minute stuck flag
+> either; the only 30-minute broadcast alarm is
+> `broadcasts.approved_overdue_count` (`docs/observability.md:1358`), a
+> different subject. **FR-044 is DEFERRED with T086/T087/T106** — see its own
+> entry in § Requirements. Per-tick retry is what the code does; it is not
+> what FR-044 asks for, and calling it satisfied hid the one FR with no
+> shipped coverage at all.
+>
+> **FR-041 / FR-042 / FR-040** (one ceiling, truthful count, no truncation)
+> ship in PR-C as planned.
 > ~~Scenario 2 above (6,200 with batching ON) stays reachable through the
 > existing F7.1a batch path, which pushes per-batch audiences below the split
 > threshold.~~ **CORRECTED 2026-09-07 (staff review Pass 4) — this sentence was
 > FALSE and is the reason AS2 is recorded as MISSING.** `split-large-broadcasts`
 > skips anything at or below `SPLIT_THRESHOLD_RECIPIENTS = 10_000`
-> (`src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:310`), so 6,200
+> (`src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:330`), so 6,200
 > never enters the batch path at all; `dispatch-scheduled` picks it up and
 > pushes it through `addContactsToAudience`, a SERIAL one-contact-at-a-time
-> loop against an account capped at ~2 req/s
-> (`src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts:229-246`)
+> loop against an account whose rate limit was **UNMEASURED when this was written and is now
+> measured: 10 req/s, with ~2.08 req/s achievable because the loop is serial** (T095,
+> 2026-09-08 — see below)
+> (`src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts:246-267`)
 > inside a 300 s function budget — this plan says so itself at `plan.md:268`
 > ("the serial push cannot finish 5,000 contacts inside the 300 s function
 > budget even at the documented 10 req/s"), which is precisely why the
-> import-based build exists. A 6,200-contact broadcast would therefore be
+> import-based build exists. ~~**Do not quote a req/s figure anywhere in this
+> spec — T095 is the only source.** The repo currently carries two live
+> numbers, `~2 req/s` in code comments and `10 req/s` as the documented
+> default…~~
+>
+> **T095 settled it on 2026-09-08**, and both live numbers were wrong in
+> different ways: the account limit is **10 req/s** (`ratelimit-policy: 10;w=1`,
+> read from the API — so the `~2 req/s` in four source comments was wrong), but
+> a serial `await` loop reaches only `min(limit, 1/RTT)` and the warm round trip
+> is ~0.481 s, so **~2.08 req/s** is what the push achieves — using the
+> documented 10 as a capacity input overestimates by ~3×. The safe bound is
+> `300 s × 3.45 × 0.8 ≈ 623`, which is *below* the flag-OFF ceiling of 5,000 —
+> the point that survives unchanged from the original warning. It is now
+> enforced as `DELIVERABLE_RECIPIENTS_PER_TICK = 500`. The rule this paragraph
+> was written to protect still stands: quote the measurement, never a number
+> chosen to match a ceiling. A 6,200-contact broadcast would therefore be
 > ACCEPTED at submit, killed mid-push every tick, and never delivered — the
 > member sees it sitting approved.
 >
 > **AS2 is consequently NOT satisfied by PR-C, and its gap gates the FLAG
 > FLIP, not this merge**: with `FEATURE_CONTACT_MARKETING_RECIPIENTS=false`
 > the ceiling is 5,000 and the leg is `primary_only`, so no audience above
-> 5,000 is ever accepted and the band is unreachable. Before T094 one of
+> 5,000 is ever accepted and the band is unreachable.
+>
+> **RESTATED 2026-09-08: AS2 is no longer "MISSING" — its premise is now
+> REFUSED BY DESIGN.** "Missing" means a scenario that ought to pass and does
+> not. Since the ceiling clamp, a 6,200-recipient broadcast is rejected at
+> submit with the true count and the enforced ceiling, deliberately and
+> testably, because the push cannot deliver it. AS2 therefore describes a
+> capability this system does not claim: it becomes reachable again only when
+> the push stops being serial (the import build, or batched multi-tick
+> dispatch), at which point `DELIVERABLE_RECIPIENTS_PER_TICK` rises and the
+> scenario can be written honestly. Mirrored in
+> `reviews/task-coverage-review.md`'s US5 row.
+>
+> **RESOLVED 2026-09-08 — AS2 is REACHABLE, through the import rather than through
+> batching.** This block said "Phase 9b SHIPPED, split into 13 batches" for a few
+> hours; Phase 9b was then deleted along with the whole batch path, so ignore any
+> sentence about batch sizes or waves.
+>
+> With `FEATURE_F7_IMPORT_AUDIENCE` ON, a 6,200-recipient audience is accepted (the
+> ceiling is the configured 5,000, or 50,000 with the 1:N flag too) and handed to
+> Resend in ONE Contacts-Import call — no splitting, no per-tick capacity to reason
+> about. `DELIVERABLE_RECIPIENTS_PER_TICK` still clamps with the import OFF, because
+> that state is the legacy serial loop and ~623 is still its real bound.
+>
+> Covered by `tests/unit/broadcasts/application/build-audience-tick.test.ts` (12
+> cases, the four completion clauses each with their own refusal reason),
+> `tests/integration/broadcasts/audience-import-two-tick.test.ts` (both ticks on live
+> Neon, a recording fake gateway) and one real end-to-end send on 2026-09-08.
+> **6,200 recipients for real needs Resend Pro** — the Free plan's 1,000-contact cap
+> binds long before anything else does, and that is now a billing decision rather
+> than an engineering one, which was the point. Before T094 one of
 > three must land — the import build (T086/T087/T106), a split threshold
 > lowered below the measured push ceiling PLUS a wall-clock budget with
 > resume in `addContactsToAudience`, or an explicit submit-time refusal above
 > `300 s × measured req/s − margin`. Recorded as a precondition in
 > `reviews/pr-c.md` row 33.
+>
+> **CLOSED 2026-09-08 — the third option landed.** T095 measured the push at
+> ~2.08 req/s (account limit 10 req/s, but a serial `await` loop reaches only
+> `min(limit, 1/RTT)` on a ~0.481 s round trip), so
+> `DELIVERABLE_RECIPIENTS_PER_TICK = 500` and
+> `currentAudienceCeiling() = min(configuredAudienceCeiling(), 500)`. Compose,
+> submit and dispatch now refuse above what one tick can push, in every flag
+> state. **And the sentence above is itself corrected**: "unreachable while the
+> flag is OFF" was wrong — at 2.08 req/s the band starts near 830, below the
+> 5,000 ceiling enforced with the flag OFF, so it was never the "5,001–10,000
+> slice the flip adds" and the fix was owed regardless of the flip.
 >
 > `broadcast_status` gains NO `audience_building` value in PR-C.
 
@@ -309,7 +410,18 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-020**: Member-based audiences ("All members" and tier-filtered) MUST resolve to every non-removed contact — primary and secondary — of every eligible member.
 - **FR-021**: An eligible member is one whose membership status is **active**, that is not erased, and that is not currently halted from broadcasts. Inactive (lapsed) and archived members, and all of their contacts, MUST be excluded from member-based audiences. (Today no status filter is applied at all, so archived members' primaries still receive E-Blasts; this closes that leak. Win-back of lapsed members stays with renewal reminders, not broadcasts.)
 - **FR-022**: A contact MUST be excluded from a member-based audience when any of the following holds: the contact is removed; its address is on the tenant's suppression list; staff have switched marketing off for it; the contact has switched marketing off for themselves; or it belongs to the member submitting the broadcast (self-exclusion covers all of the sender's contacts, not just the primary).
-- **FR-022a**: The suppression-list, staff opt-out and self opt-out exclusions in FR-022 MUST apply to **every** segment type, including the custom list and recent-event-attendees. For a custom list, opted-out addresses MUST be dropped at submit time and the sender MUST be told how many were dropped (never which); the submission is not rejected on that account. Sender self-exclusion does NOT apply to the custom list (unchanged).
+- **FR-022a**: The suppression-list, staff opt-out and self opt-out exclusions in FR-022 MUST apply to **every** segment type, including the custom list and recent-event-attendees. For a custom list, opted-out addresses MUST be dropped at submit time and the sender MUST be told how many were dropped (never which); the submission is not rejected on that account. Sender self-exclusion does NOT apply to the custom list.
+
+  > **CORRECTED 2026-09-08 (T098): the word "(unchanged)" that stood here was wrong, and this is a
+  > LIVE behaviour change — unflagged, in production since PR-C merged.** Before 108, self-exclusion
+  > filtered the candidate list by *address* for **every** segment kind, custom list included
+  > (`resolve-segment-recipients.ts:125-129` at `91505b8f2^`). It is now keyed on member id and gated
+  > on member-based segments (`:336-341`), so a member who puts their own address on a custom list —
+  > or who appears in the recent-event-attendees segment — now receives their own e-blast.
+  > Consequences are small (a sender gets their own mail) and the design is defensible; the defect
+  > was the spec asserting "unchanged" about behaviour that had changed, which is how a live-on-merge
+  > change hides. Recorded in `quickstart.md` § Rollback matrix row C item (4);
+  > `contracts/broadcast-audience.md` § 2 step 3 carries the same corrected wording.
 
 > **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A1).** PR-D ships the DROP
 > without the TELL. The count is computed and returned by the segment resolver
@@ -317,6 +429,13 @@ A contact signed in to the member portal, the primary contact included, can see 
 > it yet; that surface is PR-C (T088/T089). Recorded here so the interim is a stated
 > scope decision rather than an undiscovered gap: for the duration of PR-D a sender
 > sees the corrected recipient count, not the reason it is lower.
+>
+> **CLOSED 2026-09-07 (PR-C #346), recorded 2026-09-08 (T098).** The TELL shipped:
+> `submitBroadcast` returns `recipientPreferenceExcluded` and both compose surfaces
+> render it as a count — `compose-form.tsx:318` and `proxy-compose-form.tsx:304`, key
+> `toast.preferenceExcluded` present in en/th/sv. The interim above is over. (An
+> AMENDMENT of the form "PR-n does X, PR-m will finish it" turns false the moment PR-m
+> merges; it has to be closed then, or it keeps describing a state that no longer exists.)
 - **FR-022b**: The compose screen MUST tell the sender that they and their colleagues will not receive their own broadcast (replacing the current "your primary contact email is excluded" wording).
 - **FR-023**: The resolved recipient list MUST contain each email address at most once.
 - **FR-024**: An unsubscribe by any contact MUST be honoured for that address on every later send and MUST be recorded with attribution to the member and the specific contact.
@@ -357,7 +476,7 @@ A contact signed in to the member portal, the primary contact included, can see 
 > opted back in is not re-silenced by a long-removed row. This applies on every
 > insert path (`addInTx`, `createWithPrimaryContactInTx`, and the member import
 > script). No backfill is required or performed.
-- **FR-027a**: Before the first member-based broadcast is dispatched under the new rule, staff MUST be able to review every secondary contact that will newly become a recipient, grouped by member, with a per-contact switch-off control on the same screen. This review is performed on the Marketing audience page (FR-035) using the pre-flight preset (secondary, currently on, member eligible) by a user holding the marketing-audience right (marketing or admin). The first dispatch MUST NOT be technically blocked on the review; the review is an operational step recorded in the go-live checklist with the date and the reviewer.
+- **FR-027a**: Before the first member-based broadcast is dispatched under the new rule, staff MUST be able to review every secondary contact that will newly become a recipient, ordered so that a member's contacts read together (the normative ordering is FR-035; "grouped by member" here was loose wording — see AS7), with a per-contact switch-off control on the same screen. This review is performed on the Marketing audience page (FR-035) using the pre-flight preset (secondary, currently on, member eligible) by a user holding the marketing-audience right — **admin, super_admin or marketing, per FR-030; never manager**. The first dispatch MUST NOT be technically blocked on the review; the review is an operational step recorded in the go-live checklist with the date and the reviewer. **The count MUST be recorded even when it is zero** (`go-live-readiness.md` § 6.9 sign-off line): "no eligible secondaries" is a measurement that dates itself, and SweCham's pending secondary import changes it in one step — writing "n/a" instead loses that.
 
 > **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A7).** The Marketing audience
 > page's reachability (FR-035, "permanent") is scoped to tenants with the broadcast
@@ -379,7 +498,7 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-030c**: Switching a contact off or on MUST NOT require a confirmation dialog; switching off MUST offer a 10-second Undo in the confirmation toast (existing undo pattern); switching on takes effect immediately.
 - **FR-031**: The member page MUST show, for every non-removed contact, the existing "Primary" badge (the term "billing contact" is not used in the interface; the badge carries the descriptor "receives invoices and payment emails") and its marketing state: on, off (by staff), off (by contact), or unsubscribed.
 - **FR-031a**: When the suppression list cannot be read, the marketing state MUST render as "status unavailable" (neither on nor off) on every surface that shows it; a send is never affected because dispatch re-resolves suppression itself.
-- **FR-031b**: The reasons a contact does not receive a broadcast MUST use one shared vocabulary on the member page, the audience page and the count feedback: member inactive, member archived, member erased, member halted, contact removed, off by staff, off by contact, unsubscribed, sender's own contact, member has no eligible contact.
+- **FR-031b** *(narrowed 2026-09-08, T098 — see the A3 AMENDMENT above: the count feedback carries the umbrella phrase plus a number, never the per-reason breakdown, because FR-040a and the Edge case forbid it)*: The reasons a contact does not receive a broadcast MUST use one shared vocabulary on the member page and the audience page: member inactive, member archived, member erased, member halted, contact removed, off by staff, off by contact, unsubscribed, sender's own contact, member has no eligible contact.
 
 > **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A3).** The fixed vocabulary
 > (10 codes, `domain/marketing-reason.ts`) is consumed by the audience page in PR-D.
@@ -387,6 +506,19 @@ A contact signed in to the member portal, the primary contact included, can see 
 > phrasing rather than the reason codes, and the compose screen does not exist until
 > PR-C. "The same wording on all three surfaces" is therefore a PR-C completion
 > criterion, not a PR-D one.
+>
+> **CLOSED 2026-09-08 (T098) — and FR-031b is NARROWED to two surfaces, because the
+> third was never reachable.** PR-C shipped without wiring the reason codes into the
+> compose count feedback, and it was right not to: FR-040a and the Edge case above
+> forbid telling a sender which addresses were dropped or why "beyond 'recipient
+> preference'", so a per-reason breakdown at compose would contradict this spec's own
+> privacy rule. The vocabulary therefore has exactly one display consumer — the audience
+> page (`admin/marketing/audience/_components/audience-table.tsx:35,86` →
+> `shared.marketing.reason.*`) — and the member page states the same facts through its
+> badge's accessible name. The compose surface satisfies FR-031b with the umbrella
+> phrase and a number, which is the shared vocabulary's one-word form. A completion
+> criterion that could only be met by breaking another requirement was not a criterion;
+> it was a drafting error, corrected here rather than left as a permanent open item.
 - **FR-032**: A signed-in portal contact MUST be able to view and switch their own marketing preference; they MUST NOT be able to change another contact's preference, and other contacts' marketing states are not shown in the portal. Changes MUST be audited.
 - **FR-033**: There MUST be no control that switches money emails off for the primary contact. The primary contact MAY switch marketing off for themselves (portal or unsubscribe link) exactly like any other contact; doing so MUST NOT affect any money email, and the member page MUST still show the Primary badge on that contact with marketing off.
 - **FR-034**: Staff without the marketing-audience right MUST see the states read-only.
@@ -400,10 +532,53 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-040**: The recipient count shown at compose time MUST equal the number of recipients that would be dispatched at that moment, for audiences of any size up to the tenant ceiling. The count MUST refresh when the segment changes and MUST be announced to assistive technology.
 - **FR-040a**: Count and submit responses MUST carry numbers only (count, ceiling, exceeded, excluded-by-preference, members-without-recipient) — never addresses, member ids or contact ids.
 - **FR-040b**: If the count cannot be computed, the compose screen MUST show "count unavailable" (never a stale or partial number); submission remains possible because the server recomputes the audience at submit and refuses it there if the ceiling is exceeded.
-- **FR-041**: The system MUST NOT silently truncate an audience. A submission whose audience exceeds the ceiling MUST be refused with the true count and the ceiling, unless the large-broadcast batching path is enabled, in which case it MUST be accepted and every recipient MUST receive one copy. A failure while assembling the audience (for example one page of a paged read) MUST abort with an error, never yield a partial audience.
+- **FR-041**: The system MUST NOT silently truncate an audience. A submission whose audience exceeds the ceiling MUST be refused with the true count and the ceiling, unless the Contacts-Import build is enabled, in which case it MUST be accepted and every recipient MUST receive one copy. A failure while assembling the audience (for example one page of a paged read) MUST abort with an error, never yield a partial audience.
+
+  > **TRUE AGAIN as of 2026-09-08 (T086/T087).** With `FEATURE_F7_IMPORT_AUDIENCE` ON there is
+  > no undeliverable band at all: one Contacts-Import call carries the whole audience in ~412 ms
+  > regardless of size. With it OFF, `currentAudienceCeiling()` clamps to
+  > `DELIVERABLE_RECIPIENTS_PER_TICK`, so nothing above what the serial loop can finish is ever
+  > accepted. Either way "accepted" implies "deliverable", which is what this FR asks for.
+  > The note below is the history of how it came to be false and is kept for that reason —
+  > every sentence in it about `split-large-broadcasts` or a 10,000 threshold describes deleted
+  > code.
+  >
+  > **NOT CURRENTLY TRUE in the band `(300 s × measured req/s − margin) … 10,000` (T098, 2026-09-08).**
+  > "Accepted" and "every recipient receives one copy" come apart there: `split-large-broadcasts`
+  > skips `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`
+  > (`src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:330`) so the batching path never
+  > picks the broadcast up, and the serial dispatch push cannot finish inside `maxDuration = 300` —
+  > the broadcast is accepted at submit and never delivered. ~~Unreachable while
+  > `FEATURE_CONTACT_MARKETING_RECIPIENTS` is OFF (ceiling 5,000, leg `primary_only`); closing it is a
+  > T094 precondition.~~ The "never silently truncate" half of this FR **is** shipped and live.
+  >
+  > **CLOSED 2026-09-08.** Two corrections and a fix. First, "unreachable while the flag is OFF"
+  > was wrong: T095 measured the serial push at **~2.08 req/s** (account limit 10 req/s, but a
+  > serial `await` loop only reaches `min(limit, 1/RTT)` on a ~0.481 s round trip), which puts the
+  > undeliverable band at roughly **830** — *below* the 5,000 ceiling enforced with the flag OFF.
+  > The band was always reachable; the flip widened it. Second, the fix:
+  > `DELIVERABLE_RECIPIENTS_PER_TICK = 500` in
+  > `src/modules/broadcasts/domain/audience-ceiling.ts`, with
+  > `currentAudienceCeiling() = min(configuredAudienceCeiling(), 500)` — so count, submit and
+  > dispatch refuse above what one tick can push, in every flag state, and this FR's exception is
+  > true again. 500 also sits under the Resend **Free** plan's ~987 usable contacts, a second and
+  > independent bound. See `reviews/cutover.md` § 5 / § 5a and `research.md` § R9 (T095).
+  > **Phase 9b is planned and supersedes "in every flag state" on its GREEN** (`tasks.md`
+  > T126–T146, decided 2026-09-08 16:42): 500 becomes the BATCH SIZE and the split threshold; with
+  > batching ON the enforced ceiling returns to the configured 5,000 / 50,000 and audiences above
+  > 500 deliver across ticks. Until T140 lands this paragraph describes the shipped state.
 - **FR-042**: The audience ceiling MUST be defined in exactly one place and enforced consistently at count, submit and dispatch.
 - **FR-043**: Resolving an audience MUST complete within 400 ms (p95) at 5,000 contacts and within 3 seconds at 20,000 contacts, both for the compose-time count and at submit.
-- **FR-044**: Building the delivery audience at the provider MUST be resumable: the resolved recipient list is fixed at the first delivery attempt, progress is persisted (per recipient, or per provider import job), each scheduled run works within its time budget and later runs continue where the previous stopped, no recipient is added twice, and the broadcast is sent only when every recipient has been added and the provider's own counts confirm it. A build that makes no progress for 30 minutes MUST be flagged for staff attention through the existing stuck-broadcast reconciliation. Any transient recipient list persisted for this purpose MUST be deleted when the broadcast completes or fails and MUST be covered by the member-erasure cascade.
+
+  > **UNVERIFIED as of 2026-09-08 (T098), and a T094 precondition.** The 400 ms @ 5,000 band — the
+  > only one SweCham's own scale approaches — has **no automated test at all**. The 3 s @ 20,000
+  > budget is asserted only by `tests/integration/broadcasts/audience-pagination-20k.test.ts:135`,
+  > which wraps it in `ciScaled(3_000)` = **18,000 ms** on CI (`tests/helpers/ci-latency.ts:22`,
+  > factor 6), and the last green local run needed `PERF_AUDIENCE_20K_MS=4500` against a measured
+  > 3,698 ms (`reviews/pr-c.md:42`). Neither number is evidence for this FR. Both bands MUST be
+  > measured from `sin1` on the first production sample — never from CI, never from a workstation.
+
+- **FR-044** *(**SHIPPED 2026-09-08** with T086 / T087 / T106 and migration `0298`, behind `FEATURE_F7_IMPORT_AUDIENCE`. Was DEFERRED out of PR-C the day before, and was for one day "the one requirement in this spec with no shipped coverage" — the US5 AMENDMENT had claimed per-tick retry satisfied it, T098 checked all six clauses and none held. Clause by clause now: the list is **fixed at the first attempt** because tick 2 re-resolves and refuses on any count mismatch (`count_mismatch`) rather than sending a drifted set; **progress is persisted** as `audience_import_id` + `audience_import_submitted_at`; **later runs continue** by polling that id and never submitting a second import; **no recipient is added twice** because `on_conflict=upsert` makes a resubmitted CSV idempotent; the broadcast is **sent only when the provider's own counts confirm it** — all four clauses of the completion rule, which is load-bearing rather than defensive (`status: completed` with `total: 0` was observed once in five probes); and **no-progress for 30 minutes** is flagged twice over, terminally in the use case and independently by the `broadcasts_audience_import_stuck_count` gauge. The transient-recipient-list clause is moot: no such list is persisted — the CSV lives in memory for one request.)*: Building the delivery audience at the provider MUST be resumable: the resolved recipient list is fixed at the first delivery attempt, progress is persisted (per recipient, or per provider import job), each scheduled run works within its time budget and later runs continue where the previous stopped, no recipient is added twice, and the broadcast is sent only when every recipient has been added and the provider's own counts confirm it. A build that makes no progress for 30 minutes MUST be flagged for staff attention through the existing stuck-broadcast reconciliation. Any transient recipient list persisted for this purpose MUST be deleted when the broadcast completes or fails and MUST be covered by the member-erasure cascade.
 - **FR-045**: Turning the new audience rule off (operator flag) MUST restore the previous primary-only audience for later sends. Broadcasts already delivered cannot be recalled; an incident under the new rule (wrong audience) or under the money rule (email to a former primary) MUST be recorded with the affected broadcast or document ids and reported to the tenant's admin contact, with the remedy (flag off / resend to the correct primary) named in the runbook.
 
 **F. Cross-cutting**
@@ -423,6 +598,17 @@ A contact signed in to the member portal, the primary contact included, can see 
 > `member_timeline_v`, so the row appears on the member timeline either way.
 - **FR-054**: No secondary contact may receive a money email through any path introduced or modified by this feature (verified by a recipient-path inventory test covering every send path catalogued in the gap analysis, with inputs: primary promoted after issue, primary email changed after issue, secondary pays online, secondary triggers a portal resend).
 - **FR-055**: The record of processing MUST be updated for the new processing activities (per-contact marketing preference; marketing to secondary contacts of member companies) with the lawful basis and a short legitimate-interest assessment, before the audience rule is switched on.
+
+  > **Delivered with PR-D** in `docs/compliance/processing-records.md` (recipient-side LIA `:113-135`,
+  > per-contact-preference activity `:136-152`). **That record carries a hard precondition on the
+  > flip, which is part of this requirement and was stated nowhere in this spec until T098 found it
+  > (2026-09-08)**: per `processing-records.md:128-135`, `FEATURE_CONTACT_MARKETING_RECIPIENTS` MUST
+  > NOT be flipped until EITHER the system sends an Art. 14 / PDPA § 23 notice to a new secondary
+  > contact on first marketing contact, OR the FR-027a pre-flight verifies the attestation per
+  > contact. A secondary contact who never gave their address to the chamber directly is a data
+  > subject the chamber has not yet informed. The gate lives in `quickstart.md` § Cutover 3a,
+  > `tasks.md` T096 and `go-live-readiness.md` § 6.9 — an operator reading only this spec would have
+  > flipped straight past it.
 - **FR-056**: On member erasure the per-contact marketing preference fields carry no personal data once the contact is scrubbed and are retained as-is; the contact reference on a suppression record is removed while the email-keyed suppression itself is kept (existing behaviour). A staff user id recorded on a preference change is retained after that user's erasure because the audit trail, not the field, is the authoritative record.
 
 ### Key Entities
@@ -457,7 +643,7 @@ A contact signed in to the member portal, the primary contact included, can see 
 - Per-tenant email uniqueness for contacts is kept; one person cannot be a contact at two member companies in this feature (D4).
 - Secondary contacts with a portal login keep view, download and pay access to invoices (D5); only the two disclosure/routing leaks are closed.
 - Card payments share no email with the payment processor today; this is unchanged. PromptPay shares the primary's address.
-- The audience ceiling stays at its current value; the feature makes it consistent and non-truncating rather than raising it (D6). Larger audiences use the existing large-broadcast batching path when enabled.
+- ~~The audience ceiling stays at its current value; the feature makes it consistent and non-truncating rather than raising it (D6).~~ **Restated 2026-09-08 (T098) — as written this was false.** The DB bound is unchanged (`broadcasts_estimated_recipient_cap`, 0..50,000), but the *enforced* ceiling moves 5,000 → 50,000 when the F7.1a batching flag and `FEATURE_CONTACT_MARKETING_RECIPIENTS` are both ON (`audienceCeiling(batchingEnabled)`, `src/modules/broadcasts/domain/audience-ceiling.ts:27-29`, composed once at `broadcasts-deps.ts:128-131`). D6's "stays at its current value" was about the DB bound; the number that decides a send is the enforced one, and the flip raises it tenfold. Audiences above 10,000 use the existing large-broadcast batching path; the band below it is accepted but not currently deliverable — see the push-capacity gate under FR-041.
 - The gap analysis' G3 (per-tenant unique email) and G8 (no per-contact flag) are addressed respectively by "keep" and by the opt-out state introduced here; H1, H2, G1, G2, G4, G5, G6, G7, G9 are closed by the requirements above.
 - Bulk import of secondary contacts (Tier C), XLSX support, relaxing the unique-email rule, and role-based portal billing access are out of scope and tracked separately.
 - The existing one-click unsubscribe, suppression list and unsubscribe token remain the opt-out mechanism; this feature adds attribution and a per-contact state, not a new consent flow.
@@ -466,7 +652,7 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **No resubscribe flow in this feature.** The suppression list stays authoritative: a contact who unsubscribed via an email link sees "unsubscribed" in the portal and gets no "switch on" control (FR-032's "on" applies only to a contact who switched themselves off in the portal, never to a suppressed address). Lifting a suppression, if ever needed, is a separate consent-flow feature.
 - No new subprocessor or cross-border transfer is introduced (Resend, Stripe, Neon, Vercel unchanged); existing SCC / PDPA §28 documentation covers the feature.
 - Behaviour of the email outbox during the emergency write-freeze (read-only mode) is unchanged and out of scope.
-- The new audience rule's flag is removed after a "clean week": at least two member-based sends under the new rule with zero misrouting reports, bounce and complaint rates within the existing alert thresholds, and zero stuck audience builds.
+- The new audience rule's flag is removed after a "clean week": at least two member-based sends under the new rule with zero misrouting reports, bounce and complaint rates within the existing alert thresholds, and `broadcasts_dispatch_resolve_failed_total` plus `broadcasts_approved_overdue_count` at zero throughout. (**Corrected 2026-09-08, T098**: this said "zero stuck audience builds", a criterion nothing can satisfy or fail — PR-C ships no `audience_building` state and a broadcast cannot be "stuck building", `docs/runbooks/broadcasts-stuck-sending.md:8-11`. It went with the deferred import build. The two metrics named here are the signals that actually exist.)
 - Thai typography rules from `docs/ux-standards.md` apply to every new badge and hint (no italic on Thai text; muted colour reserved for empty sentinels, never for links or states).
 
 ## Related specifications to amend

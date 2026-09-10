@@ -68,6 +68,11 @@ function makeRepo(opts: {
     async applyTransition() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
     async attachResendIds() {},
     async attachAudienceId() {},
+    // Phase 9b (T147) — unused here; present so the stub still satisfies
+    // BroadcastsRepo.
+    // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
+    async attachAudienceImport() {},
+    async markAudienceImportCompleted() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },
     async findByResendBroadcastIdBypassRls() { return null; },
@@ -115,11 +120,16 @@ function makeGateway(opts: {
   const port: BroadcastsGatewayPort = {
     async createAudience() { throw new Error('not used'); },
     async addContactsToAudience() { throw new Error('not used'); },
+    // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
+    async createContactImport() { throw new Error('not used'); },
+    async getContactImport() { throw new Error('not used'); },
     async createBroadcast() { throw new Error('not used'); },
     async sendBroadcast() { throw new Error('not used'); },
     async retrieveBroadcast() { throw new Error('not used'); },
     async getAudienceContactCount() { return { kind: 'not_found' as const }; },
-    async removeContactFromAudience() { throw new Error('not used'); },
+    async removeContactFromAudience() {
+      return { kind: 'detached' as const }; throw new Error('not used'); },
+    async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience(audienceId) {
       deleteCalls.push(audienceId);
       const err = opts.throws?.[audienceId];
@@ -259,11 +269,16 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
     const gateway: BroadcastsGatewayPort = {
       async createAudience() { throw new Error('not used'); },
       async addContactsToAudience() { throw new Error('not used'); },
+      // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
+      async createContactImport() { throw new Error('not used'); },
+      async getContactImport() { throw new Error('not used'); },
       async createBroadcast() { throw new Error('not used'); },
       async sendBroadcast() { throw new Error('not used'); },
       async retrieveBroadcast() { throw new Error('not used'); },
       async getAudienceContactCount() { return { kind: 'not_found' as const }; },
-      async removeContactFromAudience() { throw new Error('not used'); },
+      async removeContactFromAudience() {
+      return { kind: 'detached' as const }; throw new Error('not used'); },
+      async deleteContactGlobally() { throw new Error('not used'); },
       async listAudiences() { return []; },
       async deleteAudience() {
         inFlight++;

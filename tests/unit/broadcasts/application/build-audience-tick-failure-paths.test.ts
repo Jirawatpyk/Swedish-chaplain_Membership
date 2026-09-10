@@ -1,0 +1,2073 @@
+/**
+ * 108 Phase 9 review round 1 — the failure surface of `buildAudienceTick`.
+ *
+ * `build-audience-tick.test.ts` next door covers the completion rule. This file
+ * covers what happens when something goes wrong, because the review found that
+ * `buildAudienceTick` had been written as a clean sibling of
+ * `dispatchScheduledBroadcast` and had dropped four things the older path
+ * accumulated over five review rounds: the terminal transition on a resolver
+ * refusal, the FR-021 member notification, the `failureReason` write, and any
+ * `catch` at all around the gateway.
+ *
+ * `tsc` cannot see a missing `applyTransition`, and a test that asserts only
+ * `error.kind` cannot either. Six reviewers found this from six different
+ * symptoms; the number that summarises it is that the new file had **0** catch
+ * blocks against the legacy path's **18**.
+ *
+ * Every case here therefore asserts the STATE and the TRAIL, not just the
+ * returned error:
+ *
+ *   - which status the row ended in (a row left `approved` is re-polled by the
+ *     cron every 5 minutes for ever, and the bucket it increments means "done",
+ *     so nothing alarms);
+ *   - that an audit row was written, and which event type;
+ *   - that `failureReason` is persisted, because the FR-021 email renders it;
+ *   - that the member was told.
+ *
+ * Refs: reviews/review-20260908-223000.md S4, S5, S6, S7, S10, S12, S45, S47,
+ *       S49, S55, S56
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ok, err } from '@/lib/result';
+import { asTenantContext } from '@/modules/tenants';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import { broadcastsMetrics } from '@/lib/metrics';
+import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
+import {
+  BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
+} from '@/modules/broadcasts/application/ports/broadcasts-repo';
+
+const tenant = asTenantContext('test-tenant');
+const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
+const NOW = new Date('2026-09-08T12:00:00Z');
+const RECIPIENTS = ['a@example.com', 'b@example.com', 'c@example.com'];
+
+/** A thrown gateway error, in the shape the Infrastructure adapter throws. */
+function gatewayThrow(
+  kind: string,
+  reason = 'boom',
+  extra: {
+    // `'import'` is a real value on this union (an import-job 404 is not a
+    // missing audience). Without it no test in this file could pin the
+    // retagging fix, one leg of the widening it claims to have swept.
+    resourceType?: 'audience' | 'broadcast' | 'import';
+    resourceId?: string;
+    // `| undefined` is required under `exactOptionalPropertyTypes` — the caller
+    // spreads an optional through, so the property is PRESENT and undefined.
+    code?: string | undefined;
+    /**
+     * Round 4 F7 — the adapter tags every `retryable` throw with its transport
+     * class (`classifyResendError`), and the fixture could not, so nothing could
+     * drive the observed-class mapping the FR-021 budget now reports.
+     */
+    subKind?: string | undefined;
+  } = {},
+): Error {
+  const e = new Error(reason) as Error & {
+    kind: string;
+    reason: string;
+    resourceType?: string;
+    resourceId?: string;
+    code?: string;
+    subKind?: string;
+  };
+  e.kind = kind;
+  e.reason = reason;
+  // `resource_missing` carries these two — the adapter sets them, and the
+  // Application layer reads the throw structurally (Principle III). A fixture
+  // that omitted them would exercise a differently-shaped error than production
+  // throws.
+  if (extra.resourceType !== undefined) e.resourceType = extra.resourceType;
+  if (extra.resourceId !== undefined) e.resourceId = extra.resourceId;
+  if (extra.code !== undefined) e.code = extra.code;
+  if (extra.subKind !== undefined) e.subKind = extra.subKind;
+  return e;
+}
+
+type GatewayMethod =
+  | 'createAudience'
+  | 'createContactImport'
+  | 'getContactImport'
+  | 'createBroadcast'
+  | 'sendBroadcast';
+
+interface Recorder {
+  readonly transitions: Array<{
+    status: string;
+    failureReason?: string | undefined;
+    estimatedRecipientCount?: number | undefined;
+    /** Which transaction wrote it — see finding 3-8. */
+    txId?: number | undefined;
+  }>;
+  readonly audits: Array<{
+    eventType: string;
+    payload: Record<string, unknown>;
+    txId?: number | undefined;
+  }>;
+  readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
+  readonly sends: string[];
+  readonly importsSubmitted: string[];
+  readonly plansChecked: string[];
+  /** Round 3 finding 3-6 — was the Resend id persisted, and in which tx. */
+  readonly resendIdWrites: Array<{ resendBroadcastId: string; txId?: number | undefined }>;
+  /** Round 3 finding 3-9 — was the import stamped consumed, and when. */
+  readonly completionStamps: boolean[];
+}
+
+/**
+ * Round 4 T2 — every port KEY required, each VALUE still loose. Same guard as
+ * `build-audience-tick.test.ts`, where three ports were missing outright and the
+ * suite passed anyway. This harness already has all twelve; the type is here so
+ * a port added to the use case fails BOTH files at compile time instead of one.
+ *
+ * It deliberately checks keys, not values — a full `BuildAudienceTickDeps`
+ * annotation would force every double to implement its whole port, which is why
+ * `unknown` was chosen in the first place. So it cannot catch a partial double,
+ * only an absent port.
+ */
+type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
+
+function makeDeps(opts: {
+  readonly audienceImportId?: string | null;
+  readonly audienceImportSubmittedAt?: Date | null;
+  readonly resendAudienceId?: string | null;
+  readonly importStatus?: string;
+  readonly counts?: {
+    total: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  };
+  readonly resolveFails?: 'too_large' | 'empty' | 'malformed_segment' | 'server_error';
+  readonly throwOn?: {
+    readonly method: GatewayMethod;
+    readonly kind: string;
+    /** Round 3 finding 3-12 — the adapter's `code` (`http_403` at the Free-plan cap). */
+    readonly code?: string;
+    /** Round 4 F7 — the transport class the adapter observed. */
+    readonly subKind?: string;
+  };
+  readonly droppedByPreference?: number;
+  readonly orphans?: readonly string[];
+  readonly memberPrimaryEmail?: string | null;
+  /**
+   * The members bridge THROWING, as opposed to answering `null`. Two different
+   * branches of `_enqueue-dispatch-failure-notification.ts`, and until round 4
+   * only one of them was reachable on purpose — the other was covered by
+   * accident, because the harness had no `membersBridge` at all and every call
+   * threw "not a function" into that catch. Fixing the harness un-covered it.
+   */
+  readonly memberBridgeThrows?: boolean;
+  /**
+   * Round 2 R2-1 / round 3 finding 3-13 — make one of the two compare-and-set
+   * writes lose its race. `concurrent` and `not_found` are the two typed errors
+   * the repo throws after probing the row; `other` is anything else, which must
+   * NOT be swallowed into a benign bucket.
+   */
+  /**
+   * Round 4 T4/M7 — `attachResendIds` added. It is the POST-SEND write, so a
+   * failure there is the only way to reach `sent_but_row_unattachable`, and until
+   * F2 made it throw a typed error that branch was unreachable: `viaRepoConcurrency`
+   * rethrows anything untyped, so the throw escaped the use case entirely and the
+   * cron counted `uncaught_error`. `grep sent_but_row_unattachable tests/` was 0.
+   */
+  readonly casThrowOn?: 'attachAudienceId' | 'attachAudienceImport' | 'attachResendIds';
+  readonly casThrow?: 'concurrent' | 'not_found' | 'other';
+  /** Round 3 finding 3-15 — make the TERMINAL write itself fail. */
+  readonly transitionThrowsOn?: 'failed_to_dispatch' | 'sending';
+  /** Round 3 finding 3-6 — a cancel landing mid-send, vs an honest tx failure. */
+  readonly transitionThrowKind?: 'concurrent';
+  /** Round 3 finding 3-5 — what the Resend audience actually holds. */
+  readonly audienceContactCount?: number;
+  /**
+   * Round 4 F1 residual — Resend's own `has_more`, inverted. `false` means the
+   * adapter read only PART of the audience, so the count is a lower bound.
+   */
+  readonly audienceCountComplete?: boolean;
+  /** R2-36 — drive the FR-021 notifier's own error paths. */
+  readonly localeLookupThrows?: boolean;
+  readonly auditThrowsAlways?: boolean;
+  readonly nullScheduledFor?: boolean;
+  /**
+   * Round 4 T4/M11 — overridable so a SEND-NOW row can be aged past the budget
+   * through the `approvedAt` fallback. It was pinned to `NOW`, so with
+   * `nullScheduledFor` the epoch was always "just now" and the budget branch was
+   * unreachable — which is why the mutant that deletes the fallbacks survived.
+   */
+  readonly approvedAt?: Date;
+  /** Round 3 finding 3-7 — move the row's budget epoch to exercise FR-021. */
+  readonly scheduledFor?: Date;
+  /** Round 3 finding 3-8 — make the audit INSERT itself fail. */
+  readonly auditThrowsOn?:
+    | 'broadcast_send_started'
+    | 'broadcast_failed_to_dispatch'
+    /**
+     * The audit inside the NO-PRIMARY-EMAIL branch of the FR-021 enqueue. Needed
+     * separately from `auditThrowsAlways`, which makes the TERMINAL audit throw
+     * first and returns before the notification is ever attempted — which is why
+     * that branch's catch was uncovered despite a test that looked like it drove
+     * it.
+     */
+    | 'broadcast_dispatch_failure_notif_skipped_no_email';
+  /**
+   * Round 4 T4/M12 — a WIRING bug rather than a storage hiccup. The use case
+   * rethrows `AuditPortInvariantError` out of its fail-soft envelope on purpose;
+   * the harness could only produce a plain `Error`, so the rethrow had nothing
+   * driving it and the mutant that deletes it survived.
+   */
+  readonly auditThrowKind?: 'invariant';
+  /**
+   * Round 4 T4/M9 — what `lockForUpdate` answers. It was hardcoded `'approved'`,
+   * so the two top-level load refusals were unreachable from this file.
+   */
+  readonly lockStatus?: 'not_found' | 'sending' | 'cancelled';
+  /** Round 4 T4/M8 — the completion stamp failing AFTER a successful send. */
+  readonly completionStampThrows?: boolean;
+}): { deps: DepsWithEveryPort; rec: Recorder } {
+  let txSeq = 0;
+  const rec: Recorder = {
+    transitions: [],
+    audits: [],
+    memberEmails: [],
+    sends: [],
+    importsSubmitted: [],
+    plansChecked: [],
+    resendIdWrites: [],
+    completionStamps: [],
+  };
+
+  const broadcast = {
+    broadcastId: BROADCAST_ID,
+    tenantId: tenant.slug,
+    status: 'approved' as const,
+    subject: 'Hello',
+    bodyHtml: '<p>hi</p>',
+    fromName: 'SweCham',
+    replyToEmail: 'reply@example.com',
+    requestedByMemberId: 'm-1',
+    requestedByMemberPlanIdSnapshot: 'plan-old',
+    scheduledFor: opts.nullScheduledFor === true ? null : (opts.scheduledFor ?? NOW),
+    // The legacy budget epoch order is `scheduledFor ?? approvedAt ?? createdAt`,
+    // so the fixture carries all three — omitting the fallbacks would make a
+    // send-now row (scheduledFor null) fall through to `undefined` and exempt
+    // itself from the budget, which is the defect one row narrower.
+    approvedAt: opts.approvedAt ?? NOW,
+    createdAt: NOW,
+    segmentType: 'all_members' as const,
+    segmentParams: null,
+    customRecipientEmails: null,
+    estimatedRecipientCount: RECIPIENTS.length,
+    resendAudienceId: opts.resendAudienceId ?? null,
+    audienceImportId: opts.audienceImportId ?? null,
+    audienceImportSubmittedAt: opts.audienceImportSubmittedAt ?? null,
+    audienceImportCompletedAt: null,
+  };
+
+  function maybeThrow(m: GatewayMethod): void {
+    if (opts.throwOn?.method === m) {
+      throw gatewayThrow(
+        opts.throwOn.kind,
+        'boom',
+        opts.throwOn.kind === 'resource_missing'
+          ? {
+              resourceType: 'broadcast',
+              resourceId: 'rb-gone',
+              code: opts.throwOn.code,
+              subKind: opts.throwOn.subKind,
+            }
+          : { code: opts.throwOn.code, subKind: opts.throwOn.subKind },
+      );
+    }
+  }
+
+  function maybeCasThrow(
+    m: 'attachAudienceId' | 'attachAudienceImport' | 'attachResendIds',
+  ): void {
+    if (opts.casThrowOn !== m) return;
+    if (opts.casThrow === 'not_found') {
+      throw new BroadcastNotFoundError(tenant.slug, BROADCAST_ID);
+    }
+    if (opts.casThrow === 'other') {
+      // A serialization failure or statement timeout. Not a lost race.
+      throw new Error('40001 could not serialize access');
+    }
+    throw new BroadcastConcurrentMutationError(tenant.slug, BROADCAST_ID, 'sending');
+  }
+
+  function resolverAnswer() {
+    if (opts.resolveFails === 'too_large') {
+      return err({ kind: 'broadcast_audience_too_large' as const, count: 99_999, cap: 5_000 });
+    }
+    if (opts.resolveFails === 'empty') {
+      // Round 3 finding 3-2 — the kind the RESOLVER actually returns
+      // (`resolve-segment-recipients.ts:422`). This stub said
+      // `broadcast_audience_post_suppression_empty`, which only
+      // `dispatchScheduledBroadcast` produces, as its OUTPUT. So every "empty
+      // audience" case in this file exercised dead code and passed green while
+      // the real kind fell through to `dispatch.server_error`.
+      return err({
+        kind: 'broadcast_empty_segment_blocked' as const,
+        droppedByPreference: 0,
+        orphans: [],
+      });
+    }
+    if (opts.resolveFails === 'malformed_segment') {
+      return err({ kind: 'malformed_segment' as const });
+    }
+    if (opts.resolveFails === 'server_error') {
+      return err({ kind: 'resolve.server_error' as const });
+    }
+    return ok({
+      recipients: RECIPIENTS,
+      estimatedCount: RECIPIENTS.length,
+      orphans: opts.orphans ?? [],
+      droppedByPreference: opts.droppedByPreference ?? 0,
+    });
+  }
+
+  return {
+    rec,
+    deps: {
+      tenant,
+      clock: { now: () => NOW },
+      fromEmail: 'noreply@example.com',
+      tenantDisplayName: 'Test Chamber',
+      locale: 'en' as const,
+      resolveRecipients: async () => resolverAnswer(),
+      membersBridge: {
+        async getMemberPrimaryContact() {
+          if (opts.memberBridgeThrows === true) {
+            throw new Error('F3 bridge unavailable');
+          }
+          return opts.memberPrimaryEmail === undefined
+            ? 'member@example.com'
+            : opts.memberPrimaryEmail;
+        },
+        async getMemberPreferredLocale() {
+          // R2-36 — the notifier resolves the member's language best-effort and
+          // falls through to the tenant default on a bridge throw. That catch was
+          // uncovered, which is most of why this file sat at 78.57 % branch,
+          // under the Constitution's 80 % Application bar.
+          if (opts.localeLookupThrows === true) {
+            throw new Error('members bridge unavailable');
+          }
+          return 'en' as const;
+        },
+      },
+      emailTransactional: {
+        async sendMemberEmail(
+          _t: unknown,
+          m: { templateKey: string; payload: { reason?: unknown } },
+        ) {
+          rec.memberEmails.push({ templateKey: m.templateKey, reason: m.payload.reason });
+        },
+      },
+      plansBridge: {
+        // The real port name — `getPlanForMember`, returning a Result. The first
+        // draft of this harness invented `getMemberCurrentPlanId`, and the test
+        // failed for that reason rather than the one it was written to catch.
+        // A stub whose method the production code never calls is a silent pass
+        // waiting to happen; here it was a loud fail, which is the good case.
+        async getPlanForMember(_t: unknown, memberId: string) {
+          rec.plansChecked.push(memberId);
+          // `plan-new` differs from the row's `requestedByMemberPlanIdSnapshot`
+          // (`plan-old`), which is the AS5 condition.
+          //
+          // Round 4 T2 — `planCode` and `eblastPerYear` added. `MemberPlanSummary`
+          // requires all three and this returned only `planId`; a real
+          // `BuildAudienceTickDeps` annotation would have rejected it, which is
+          // how the round-4 reviewer proved the harness was untyped rather than
+          // merely loosely typed. The key-only guard above cannot catch this
+          // shape — it is fixed by hand, and noted so the next reader does not
+          // assume the type is doing more than it is.
+          return ok({ planId: 'plan-new', planCode: 'CORP', eblastPerYear: 12 });
+        },
+      },
+      broadcastsRepo: {
+        async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+          // A DISTINCT handle per transaction. `null` for every call made the
+          // one property round 3 finding 3-8 turns on — which writes share a
+          // transaction — unobservable in this harness, and a unit harness
+          // cannot reproduce Postgres 25P02 abort semantics any other way.
+          txSeq += 1;
+          return fn({ txId: txSeq });
+        },
+        async lockForUpdate() {
+          if (opts.lockStatus === 'not_found') return null;
+          return opts.lockStatus ?? 'approved';
+        },
+        async findByIdInTx() {
+          return broadcast;
+        },
+        async attachAudienceId() {
+          maybeCasThrow('attachAudienceId');
+        },
+        async attachAudienceImport(_tx: unknown, _t: unknown, _b: unknown, id: string) {
+          maybeCasThrow('attachAudienceImport');
+          rec.importsSubmitted.push(id);
+        },
+        async markAudienceImportCompleted() {
+          if (opts.completionStampThrows === true) {
+            throw new Error('25P02 current transaction is aborted');
+          }
+          rec.completionStamps.push(true);
+        },
+        async attachResendIds(tx: unknown, _t: unknown, _b: unknown, _a: string, rbId: string) {
+          rec.resendIdWrites.push({ resendBroadcastId: rbId, txId: (tx as { txId?: number } | null)?.txId });
+          maybeCasThrow('attachResendIds');
+        },
+        async applyTransition(
+          tx: unknown,
+          _t: unknown,
+          _b: unknown,
+          status: string,
+          fields?: { failureReason?: string; estimatedRecipientCount?: number },
+        ) {
+          if (opts.transitionThrowsOn === status) {
+            // Round 3 finding 3-6 — a CANCEL landing in the send window makes
+            // `applyTransition(..., expectedFromStatus:'approved')` match 0 rows,
+            // which the repo turns into `BroadcastConcurrentMutationError`.
+            if (opts.transitionThrowKind === 'concurrent') {
+              throw new BroadcastConcurrentMutationError(tenant.slug, BROADCAST_ID, 'cancelled');
+            }
+            // Otherwise: a serialization failure or statement timeout, i.e. the
+            // write genuinely did not land for a reason nobody chose.
+            throw new Error('40001 could not serialize access');
+          }
+          rec.transitions.push({
+            status,
+            failureReason: fields?.failureReason,
+            estimatedRecipientCount: fields?.estimatedRecipientCount,
+            txId: (tx as { txId?: number } | null)?.txId,
+          });
+          return { ...broadcast, status };
+        },
+      },
+      broadcastsGateway: {
+        async createAudience(name: string) {
+          maybeThrow('createAudience');
+          return { audienceId: `aud-${name}` };
+        },
+        async createContactImport() {
+          maybeThrow('createContactImport');
+          return { importId: 'imp-new' };
+        },
+        async getContactImport() {
+          maybeThrow('getContactImport');
+          return {
+            status: opts.importStatus ?? 'completed',
+            counts:
+              opts.counts ?? {
+                total: RECIPIENTS.length,
+                created: RECIPIENTS.length,
+                updated: 0,
+                skipped: 0,
+                failed: 0,
+              },
+          };
+        },
+        async createBroadcast() {
+          maybeThrow('createBroadcast');
+          return { broadcastId: 'rb-1' };
+        },
+        /**
+         * Round 3 finding 3-5 — the audience-membership check. NEITHER harness
+         * stubbed this, so `viaGateway` caught the "not a function" TypeError,
+         * the check degraded to its unverifiable branch, and 60 tests passed
+         * without ever exercising it. An unstubbed port method is an unexercised
+         * branch that looks like a covered one.
+         */
+        async getAudienceContactCount() {
+          return {
+            kind: 'present' as const,
+            count: opts.audienceContactCount ?? RECIPIENTS.length,
+            complete: opts.audienceCountComplete ?? true,
+          };
+        },
+        async sendBroadcast(id: string) {
+          maybeThrow('sendBroadcast');
+          rec.sends.push(id);
+        },
+      },
+      audit: {
+        async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
+          // Round 3 finding 3-8 — a failing audit INSERT. In production this
+          // aborts the surrounding transaction (25P02), which is why WHICH tx it
+          // runs in decides what survives.
+          if (opts.auditThrowsOn === e.eventType || opts.auditThrowsAlways === true) {
+            if (opts.auditThrowKind === 'invariant') {
+              throw new AuditPortInvariantError(e.eventType, 'unregistered event type');
+            }
+            throw new Error('audit insert failed');
+          }
+          rec.audits.push({
+            eventType: e.eventType,
+            payload: e.payload,
+            txId: (tx as { txId?: number } | null)?.txId,
+          });
+        },
+      },
+    },
+  };
+}
+
+const POLLING = { audienceImportId: 'imp-1', resendAudienceId: 'aud-1' } as const;
+
+beforeEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+describe('buildAudienceTick — a permanent gateway failure is terminal, not an eternal retry', () => {
+  /**
+   * The measured case, not a hypothetical: `resend-contact-import.test.ts` pins
+   * that a 4xx rejects with `{kind:'permanent'}` and names the exact message
+   * Resend returns at the Free plan's contact cap. Before this fix the throw
+   * escaped to the cron's per-row catch, which counts `uncaught_error` — the
+   * bucket reserved for programming bugs — and left the row `approved`, so the
+   * next tick re-uploaded the full member email list to the processor. Every
+   * five minutes. For ever.
+   */
+  it('createContactImport throwing `permanent` moves the row to failed_to_dispatch', async () => {
+    const { deps, rec } = makeDeps({ throwOn: { method: 'createContactImport', kind: 'permanent' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
+  });
+
+  it('records `failureReason` on the transition, because the FR-021 email renders it', async () => {
+    const { deps, rec } = makeDeps({ throwOn: { method: 'createContactImport', kind: 'permanent' } });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const [t] = rec.transitions;
+    expect(t?.failureReason).toBeDefined();
+    expect(t?.failureReason).not.toBe('');
+  });
+
+  it('tells the member, so they can re-submit instead of waiting on silence', async () => {
+    const { deps, rec } = makeDeps({ throwOn: { method: 'createContactImport', kind: 'permanent' } });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.memberEmails).toHaveLength(1);
+    expect(rec.memberEmails[0]?.templateKey).toBe('broadcast_failed_to_dispatch');
+  });
+
+  it('counts the failure, so the rate is not 0 through a total outage', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({ throwOn: { method: 'createContactImport', kind: 'permanent' } });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('createAudience throwing `permanent` is terminal too — the throw is not method-specific', async () => {
+    const { deps, rec } = makeDeps({ throwOn: { method: 'createAudience', kind: 'permanent' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  it('getContactImport throwing `permanent` on a polling tick is terminal', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'getContactImport', kind: 'permanent' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+});
+
+describe('buildAudienceTick — a retryable gateway failure stays retryable', () => {
+  /**
+   * POSITIVE CONTROL for the block above. If every throw went terminal, a
+   * transient Neon or Resend blip would burn a broadcast that only needed the
+   * next tick. The two directions have to be asserted together or "terminal"
+   * is indistinguishable from "over-eager".
+   */
+  it('leaves the row `approved` and writes no audit, so the next tick retries', async () => {
+    const { deps, rec } = makeDeps({ throwOn: { method: 'createContactImport', kind: 'retryable' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('reports a retryable kind the cron already routes, not `uncaught_error`', async () => {
+    const { deps } = makeDeps({ throwOn: { method: 'createContactImport', kind: 'retryable' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.kind).toBe('dispatch.server_error');
+  });
+});
+
+describe('buildAudienceTick — a resolver refusal is a decision, not a pass-through', () => {
+  /**
+   * The cron counts `too_large` and `post_suppression_empty` as
+   * `permanent_failed` under a comment stating the use case has already moved
+   * the row and audited it. That was false for both. The row stayed `approved`,
+   * so it was re-claimed every tick for ever while the counter that means
+   * "finished, nothing to do" ticked up beside it.
+   */
+  it.each([
+    ['too_large', 'broadcast_audience_too_large'],
+    ['empty', 'broadcast_audience_post_suppression_empty'],
+  ] as const)('resolver %s → failed_to_dispatch + audit', async (mode, expectedKind) => {
+    const { deps, rec } = makeDeps({ resolveFails: mode });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.kind).toBe(expectedKind);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  /**
+   * `malformed_segment` is a DATA defect: the row's own `segment_params` cannot
+   * be parsed, and no number of retries changes that. The single-tick path
+   * learned this on 2026-09-07 and made it terminal, with a comment describing
+   * the exact symptom. This path re-introduced it — falling through to
+   * `dispatch.server_error`, which the cron classifies retryable — while its
+   * own comment claimed parity with the path it diverged from.
+   */
+  it('resolver malformed_segment is TERMINAL, not a transient server error', async () => {
+    const { deps, rec } = makeDeps({ resolveFails: 'malformed_segment' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.kind).not.toBe('dispatch.server_error');
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  /**
+   * POSITIVE CONTROL: a genuinely transient resolver failure must NOT be
+   * terminal. Without this, "malformed_segment is terminal" passes just as well
+   * when every resolver refusal is terminal.
+   */
+  it('resolver resolve.server_error stays retryable and leaves the row alone', async () => {
+    const { deps, rec } = makeDeps({ resolveFails: 'server_error' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+  });
+});
+
+describe('buildAudienceTick — the send leaves a record', () => {
+  /**
+   * The legacy path emits `broadcast_send_started` inside the same tx as the
+   * transition to `sending`, carrying the audience id, the Resend broadcast id
+   * and the recipient count. That row is the GDPR Art. 30 record that N
+   * addresses were disclosed to a processor at a given time. The import path
+   * emitted nothing at all on success — and the emission-site parity test could
+   * not see it, because the legacy path still has an emit site for that event.
+   */
+  it('emits broadcast_send_started on a successful send', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_send_started');
+  });
+
+  it('the audit payload carries the recipient count that was actually sent to', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_send_started');
+    expect(row?.payload['recipientCount']).toBe(RECIPIENTS.length);
+  });
+
+  it('counts the dispatch, so the throughput dashboard is not 0 while sends happen', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'cronDispatchedCount');
+    const { deps } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('re-stamps estimatedRecipientCount at send, so the row is not left with a submit-time guess', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const sending = rec.transitions.find((t) => t.status === 'sending');
+    expect(sending?.estimatedRecipientCount).toBe(RECIPIENTS.length);
+  });
+});
+
+describe('buildAudienceTick — an impossible row fails closed', () => {
+  /**
+   * `0298`'s coherence CHECK is an implication, not an iff, so it admits
+   * `(audience_import_id set, audience_import_submitted_at NULL)`. In that state
+   * `ageMs` computed 0, which is never greater than the 30-minute threshold, so
+   * the row polled for ever — and the gauge could not see it either, because
+   * `NULL < now() - interval '30 minutes'` is false. Invisible in both places at
+   * once. A state that cannot legally exist should be judged stuck immediately,
+   * not brand new.
+   */
+  it('an import id with no submitted-at is stuck immediately, not pending', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: null,
+      importStatus: 'pending',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.kind).toBe('audience_import_stuck');
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  /**
+   * POSITIVE CONTROL: a legitimately young pending import must still be
+   * pending, or the case above passes by making everything stuck.
+   */
+  it('a fresh pending import is still pending', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: new Date(NOW.getTime() - 60_000),
+      importStatus: 'pending',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.kind).toBe('import_pending');
+    expect(rec.transitions).toEqual([]);
+  });
+
+  /**
+   * S47 — the provider's own answer was thrown away. An explicit `failed` was
+   * treated as "not completed yet" and polled for another 29 minutes, then
+   * audited with reason `stuck` — the wrong cause, in an append-only table.
+   */
+  it('an explicit provider `failed` is terminal at once, not after the 30-minute timeout', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      importStatus: 'failed',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    expect(row?.payload['reason']).not.toBe('audience_import_stuck');
+  });
+});
+
+describe('buildAudienceTick — the completion rule discriminates between its clauses', () => {
+  /**
+   * S28 — clause ORDER was unpinned. Walking the existing fixtures showed that
+   * no case made both the coherence check and the count check true at once, so
+   * swapping `counts_incoherent` and `count_mismatch` changed nothing anyone
+   * could observe. That is not a cosmetic ordering: the mismatch clause
+   * re-resolves the audience, so the order also decides how many resolver round
+   * trips a refusal costs.
+   *
+   * This is the discriminating fixture. `created + updated + skipped` = 1 while
+   * `total` = 5 (incoherent), AND `total` = 5 while the resolver answers 3
+   * (mismatch). Coherence is checked first because it is a statement about the
+   * job's OWN numbers — a job whose parts do not sum cannot be reasoned about
+   * against anything external.
+   */
+  it('reports counts_incoherent, not count_mismatch, when BOTH clauses are true', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      counts: { total: 5, created: 1, updated: 0, skipped: 0, failed: 0 },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatchObject({
+        kind: 'audience_import_failed',
+        reason: 'counts_incoherent',
+      });
+    }
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    expect(row?.payload['reason']).toBe('counts_incoherent');
+  });
+
+  it('POSITIVE CONTROL — coherent counts that merely disagree with the resolver are count_mismatch', async () => {
+    // Without this, the case above passes if `counts_incoherent` were returned
+    // for every refusal.
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      counts: { total: 5, created: 5, updated: 0, skipped: 0, failed: 0 },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatchObject({
+        kind: 'audience_import_failed',
+        reason: 'count_mismatch',
+      });
+    }
+  });
+});
+
+describe('buildAudienceTick — attribution the port used to discard', () => {
+  /**
+   * S55. `ResolvedAudience` narrowed the resolver's answer to
+   * `{recipients, estimatedCount}`, so `orphans` and `droppedByPreference` could
+   * not reach this file at all — not because a log line was deleted, but because
+   * the type refused to carry them. The legacy path logs both per broadcast, and
+   * `droppedByPreference` exists BECAUSE a previous review round added it to
+   * answer a member asking why their E-Blast reached 40 people instead of 55.
+   *
+   * Asserted through the audit payload rather than a log line: a log is not a
+   * durable record, and this is the number the member's question is about.
+   */
+  it('carries droppedByPreference through to the send record', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      droppedByPreference: 12,
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_send_started');
+    expect(row?.payload['droppedByPreference']).toBe(12);
+  });
+
+  /**
+   * Round 3, below-cap sweep — the send record silently omitted `scheduledFor`,
+   * `actualSendAt` and `delaySeconds` while the comment above it claimed "same
+   * payload shape as the legacy path on purpose". Those are AS1's spec-required
+   * fields, added to the legacy payload by its own E1 closure, and
+   * `delaySeconds` is what answers "how late did the cron fire" for the SC-001
+   * quartiles. A parity CLAIM is exactly what stops a diff of the two paths from
+   * showing the gap.
+   */
+  /**
+   * Round 3 finding 3-6 — an admin cancel landing inside the send window.
+   *
+   * Nothing holds a lock across the send: `lockForUpdate`'s advisory lock is
+   * released when its tx commits, which is before every gateway call, and the
+   * window spans a poll, a full re-resolve, `createBroadcast` and
+   * `sendBroadcast`. `cancelBroadcast` accepts `approved`, so the race is real.
+   *
+   * The mail is then delivered and the row says `cancelled` — a state no code
+   * here can undo. What the fix changes is the DAMAGE: both writes used to sit
+   * in one post-send transaction, so the failed transition rolled
+   * `attachResendIds` back with it and `resend_broadcast_id` stayed NULL for
+   * ever. Every later delivery / bounce / complaint webhook then failed to
+   * resolve the broadcast and was dropped — so bounces never reached the
+   * suppression list, which outlives the broadcast — and
+   * `reconcile-stuck-sending` could not see the row either, because it is not
+   * `sending`.
+   */
+  /**
+   * Round 3 finding 3-7 — the FR-021 wall-clock budget, which this path did not
+   * have at all.
+   *
+   * The only time bound on it was `IMPORT_STUCK_AFTER_MS`, evaluated ONLY inside
+   * the `job.status !== 'completed'` branch — which requires a SUCCESSFUL poll.
+   * A Resend 5xx on `createAudience` or `createContactImport`, or a
+   * `resolve.server_error` from a Neon blip, returned `dispatch.server_error`
+   * every tick for ever. And because a tick-1 failure never persists
+   * `audience_import_id`, such a row is invisible to BOTH the T106 gauge and the
+   * documented rollback drain, which require that column to be non-null.
+   *
+   * `dispatchBudgetExhausted` is the metric whose steady state is 0 and whose
+   * non-zero rate pages on-call. With the flag on it could never fire.
+   */
+  it('a retryable failure INSIDE the budget stays approved for the next tick', async () => {
+    const { deps, rec } = makeDeps({
+      // Scheduled 10 minutes ago — well inside the hour.
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('a retryable failure PAST the budget becomes terminal and tells the member', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable' },
+      // Scheduled just over two hours before the clock — past the 1-hour budget.
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    // FR-021: the member who submitted it finds out.
+    expect(rec.memberEmails).toHaveLength(1);
+    // The AS2 alert trigger fires — it could not before.
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Round 4 F3 — this case asserted the OPPOSITE and is rewritten, not deleted.
+   *
+   * Round 3 (finding 3-7) put resolver failures through the FR-021 budget and
+   * gave them their own reason so a member would not be told Resend was down for
+   * a Neon fault. Both halves of that were right about the SYMPTOM and wrong
+   * about the cure: the budget measures from `scheduledFor ?? approvedAt ??
+   * createdAt`, not from the first failure, so an `approved` row already an hour
+   * past its epoch — a paused cron, a late approval, a flag enabled
+   * retroactively — died on its FIRST transient DB error, never having been
+   * retried once. It also forked the legs: `dispatchScheduledBroadcast` does not
+   * budget resolve failures, so a flag flip changed whether the same fault was
+   * terminal.
+   *
+   * So the resolve-side budget is gone and this case now pins the behaviour that
+   * replaced it, which is the live leg's: stay retryable, leave the row alone,
+   * and let `dispatch_resolve_failed.total` (15-minute alarm, and since round 4
+   * L4 a log line on both legs) be the signal.
+   */
+  it('a RESOLVER failure past the budget stays RETRYABLE — the row is not killed on its first DB error', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resolveFails: 'server_error',
+      // Two hours past the epoch: under the old code this alone was enough to
+      // make the very first failure terminal.
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    // The row is untouched — no terminal transition, so the next tick retries.
+    expect(rec.transitions).toHaveLength(0);
+    // And nothing pages: this is not a budget event.
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a GATEWAY failure past the budget still reports the provider, with the class observed', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable' },
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    expect(spy).toHaveBeenCalledTimes(1);
+    // With no class on the throw the budget must NOT invent one. `unclassified`
+    // is visible on the dashboard; `api` would have been a fabricated transport
+    // class on a page-on-call series (round 4 F8).
+    expect(spy.mock.calls[0]?.[1]).toBe('unclassified');
+  });
+
+  /**
+   * Round 4 F7 — the two series used to disagree about ONE failure.
+   *
+   * `dispatchBudgetExhausted` carried the observed transport class while
+   * `failedToDispatchCount` fell through `importReasonToFailureMetric`, which has
+   * no case for `retry_budget_exhausted` and returns `app_error`. So an hour of
+   * Resend 5xx was filed under "our application" on the very series
+   * `broadcasts-dispatch-failure.md` tells an operator to group by.
+   */
+  it('an hour of Resend 5xx reports resend_5xx on BOTH series, not app_error on one', async () => {
+    const budgetSpy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'server_5xx' },
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(budgetSpy.mock.calls[0]?.[1]).toBe('server_5xx');
+    expect(failedSpy.mock.calls[0]?.[1]).toBe('resend_5xx');
+  });
+
+  it('a class the metric union cannot express stays app_error rather than a guessed bucket', async () => {
+    // The positive control for the mapping above. `network` has no member in the
+    // failure-metric union, and inventing one is the defect being fixed one
+    // dimension over — so it must NOT become `resend_5xx`.
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'network' },
+      scheduledFor: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(failedSpy.mock.calls[0]?.[1]).toBe('app_error');
+  });
+
+  /**
+   * Round 3 finding 3-5 — the completion rule compares numbers the import JOB
+   * reported and never looks at what the audience actually holds.
+   *
+   * `submitImport` deliberately REUSES `broadcast.resendAudienceId`,
+   * `createContactImport` posts `on_conflict=upsert`, and nothing anywhere
+   * removes a contact (`unsubscribe-recipient.ts` writes only
+   * `marketing_unsubscribes` and makes no gateway call). So: tick 1 imports
+   * {A,B,C} and dies before `attachAudienceImport` commits; C unsubscribes; tick
+   * 2 imports {A,B} into the same audience, which still holds C. failed=0,
+   * parts==total==2, total==resolvedCount==2 — every clause passes — and the send
+   * reaches all three. GDPR Art. 21 / PDPA §32.
+   */
+  it('an audience holding MORE contacts than we resolved refuses the send', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      // The unsubscribed contact C is still at the processor.
+      audienceContactCount: RECIPIENTS.length + 1,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    // Its OWN reason, not `count_mismatch` — that one compares the import job's
+    // rows, which is a different question and would send an operator to the
+    // wrong place.
+    expect(rec.transitions[0]?.failureReason).toBe('audience_membership_drift');
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    expect(row?.payload['reason']).toBe('audience_membership_drift');
+  });
+
+  it('a matching audience count sends — the check is a comparison, not a veto', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      audienceContactCount: RECIPIENTS.length,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+  });
+
+  /**
+   * Round 4 F1 — the direction that had NO case, which is how the bug survived
+   * a whole review round.
+   *
+   * `getAudienceContactCount` is `sdk.contacts.list({audienceId}).data.length`
+   * and the SDK sends no query parameter, so the number is ONE PAGE of an
+   * unknown page size — the method's own comment says "(paginated). For MVP we
+   * list and return `data.length`". The check shipped comparing with `!==`, so
+   * every audience larger than a page failed on the HAPPY PATH: SweCham's 150
+   * members against a typical 100-row page would have killed the first send
+   * after the flip and told the member it did not go out.
+   *
+   * A truncated page can only UNDERCOUNT, so a shortfall is indistinguishable
+   * from truncation and must proceed. An EXCESS cannot be manufactured by
+   * truncation, which is why the case above still refuses. This one fails if
+   * anyone restores `!==`.
+   */
+  it('an audience count BELOW the resolved list still sends — a truncated page must not kill a broadcast', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      // What one page of a larger audience looks like from here.
+      audienceContactCount: RECIPIENTS.length - 1,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    // And it is not quietly recorded as a failure either.
+    expect(rec.transitions.map((t) => t.status)).not.toContain('failed_to_dispatch');
+  });
+
+  /**
+   * The unverifiable branch, and why it PROCEEDS. A 404 on the audience or a
+   * transport blip must not kill a legitimate send — the legacy leg makes the
+   * same call for the same reason. It is on the record instead.
+   *
+   * This case is also the reason the stub above exists at all: with the port
+   * method unstubbed, `viaGateway` caught a "not a function" TypeError and every
+   * send in this file silently took THIS branch.
+   */
+  /**
+   * Round 4 T4 / mutant M7 — the branch a reviewer's mutation survived because
+   * NOTHING drove it.
+   *
+   * `!idsAttached.ok` guards the state that matters most on this whole path: the
+   * mail is OUT and the row it belongs to is gone (an erasure cascade between the
+   * claim query and the post-send write). Round 4's reviewer disabled the guard
+   * entirely and all 71 cases still passed.
+   *
+   * It was unreachable, not merely untested: `attachResendIds` threw a BARE
+   * `Error`, and `viaRepoConcurrency` converts only the two typed repo errors and
+   * RETHROWS everything else — so the throw escaped `buildAudienceTick`, the cron
+   * counted `uncaught_error`, and the `severity: 'critical'` log could never
+   * print. Round 4 F2 gave that method `throwConcurrentMutation`; this is what
+   * makes the fix checkable end to end.
+   */
+  it('T4/M7 — the row vanishing AFTER the send is a critical, not an uncaught throw', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      casThrowOn: 'attachResendIds',
+      casThrow: 'not_found',
+    });
+
+    // It must NOT escape: an uncaught throw is what the cron used to see.
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_not_found');
+    // The send happened — that is the whole reason this needs its own signal
+    // rather than being reported as a retryable write failure.
+    expect(rec.sends).toHaveLength(1);
+    // And no terminal state is invented for a row that no longer exists.
+    expect(rec.transitions).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 T4 / mutant M11 — `budgetEpoch` losing its fallbacks.
+   *
+   * `scheduledFor ?? approvedAt ?? createdAt`. A send-now broadcast has
+   * `scheduledFor === null`, so with the fallbacks gone the epoch is `undefined`,
+   * `new Date(undefined).getTime()` is NaN, every comparison against NaN is false
+   * — and the row is EXEMPT FROM THE BUDGET FOR EVER. The code's own comment
+   * calls that "the same 'no bound at all' defect one row narrower".
+   *
+   * The mutant survived 71/71 because no case drove a null `scheduledFor` this
+   * far; the `nullScheduledFor` option existed and was used once, on a path that
+   * never reaches the budget. Round 4's other half of this: the sibling harness's
+   * fixture omitted all THREE fields, so the epoch was NaN there for every case.
+   */
+  it('T4/M11 — a SEND-NOW broadcast still honours the budget, via the approvedAt fallback', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: { method: 'createAudience', kind: 'retryable', subKind: 'server_5xx' },
+      // The admin hit "approve & send now", so there is no schedule to measure
+      // from — `approvedAt` is the eligibility moment and must be used.
+      nullScheduledFor: true,
+      approvedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Round 4 T4 / mutant M9 — the two TOP-LEVEL load refusals, re-routed to
+   * `dispatch.server_error` by a reviewer's mutation with all 71 cases still
+   * passing.
+   *
+   * They were unreachable from this file for a mundane reason: `lockForUpdate`
+   * was hardcoded `'approved'`. The cron's contract test covers the routing from
+   * the OTHER end but mocks the use case wholesale, so nothing on the use-case
+   * side could produce either kind — which is the vertical version of the
+   * one-leg-only class this round keeps finding.
+   *
+   * The distinction matters operationally: these two bucket as `concurrent_skip`
+   * (a routine admin cancel, or an erasure cascade), while
+   * `dispatch.server_error` buckets as `retryable` and drives
+   * `dispatch_resolve_failed.total`, whose runbook sends on-call to Neon.
+   */
+  it('T4/M9 — a row that vanished is broadcast_not_found, not a server error', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, lockStatus: 'not_found' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_not_found');
+    // Nothing was attempted against the provider for a row that is gone.
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.importsSubmitted).toHaveLength(0);
+  });
+
+  it('T4/M9 — a row an admin already cancelled is invalid_state_transition, with the status OBSERVED', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, lockStatus: 'cancelled' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_invalid_state_transition');
+    // The real status, not a literal — the same rule the live leg was fixed to
+    // follow in round 4 L2.
+    expect(
+      (res.error as { readonly observedStatus: string }).observedStatus,
+    ).toBe('cancelled');
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 T4 / mutant M12 — the rethrow that keeps a WIRING bug loud.
+   *
+   * The post-send audit emit sits in a fail-soft envelope: a transient storage
+   * hiccup must not undo a broadcast that has already gone out. But an
+   * `AuditPortInvariantError` is not transient — it means the event type is not
+   * registered, i.e. someone added an audit event and missed one of the places it
+   * has to be declared. Swallowing that writes nothing, for ever, silently.
+   *
+   * Deleting the rethrow passed 71/71 because the harness could only throw a
+   * plain `Error`.
+   */
+  it('T4/M12 — an audit WIRING error escapes the fail-soft envelope', async () => {
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+      auditThrowKind: 'invariant',
+    });
+
+    // Not a Result — it must reach the cron as an uncaught fault, which is what
+    // makes an unregistered event type impossible to ignore.
+    await expect(
+      buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID }),
+    ).rejects.toThrow(AuditPortInvariantError);
+  });
+
+  it('T4/M12 — a TRANSIENT audit failure is still swallowed: the mail is already out', async () => {
+    // The positive control. Without it, "rethrow everything" would satisfy the
+    // case above while undoing a delivered broadcast — the opposite defect, and
+    // the reason the envelope exists at all.
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+  });
+
+  /**
+   * Round 4 T4 / mutant M8 — the completion stamp made FATAL.
+   *
+   * It is best-effort on purpose: it runs after the send, and a stamp that fails
+   * must not turn a delivered broadcast into a failure. The mutation (`throw
+   * stampErr`) survived 71/71 because nothing drove a stamp failure at all.
+   */
+  it('T4/M8 — a completion-stamp failure does NOT undo a send that already happened', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      completionStampThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The send stands. Reporting a failure here would send an FR-021 email to a
+    // member whose E-Blast went out, and re-queue a broadcast Resend has already
+    // accepted.
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    expect(rec.transitions.map((t) => t.status)).toContain('sending');
+    // And the stamp is recorded as NOT taken, so the column still answers "when
+    // was this import consumed" with the truth: never.
+    expect(rec.completionStamps).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 F1 residual — a TRUNCATED count is not a clean check.
+   *
+   * `GET /audiences/{id}/contacts` paginates and reports it: the response's
+   * top-level keys are `data,has_more,object` (measured against the live account
+   * 2026-09-09). The SDK models neither — `ListContactsOptions` is
+   * `{ audienceId }` and the success type is `{ object, data }` — so the adapter
+   * returned `data.length` and discarded the signal.
+   *
+   * The `>` refusal is safe on a short page either way, because truncation can
+   * only undercount. What was NOT safe is the other side: a truncated count
+   * landing at or below `resolvedCount` was reported as a verified-clean
+   * audience, which is exactly the state a carried-over unsubscribed contact
+   * hides in (GDPR Art. 21). It now falls to the unverifiable branch.
+   */
+  it('F1 — a count Resend could not finish reading is UNVERIFIABLE, not clean', async () => {
+    const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      // One page of a larger audience: fewer than we resolved, and `has_more`.
+      audienceContactCount: RECIPIENTS.length - 1,
+      audienceCountComplete: false,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // Still sends — refusing on an unreadable count would kill legitimate
+    // broadcasts, which is the defect the whole F1 fix exists to remove.
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    // But it does NOT claim the audience was checked.
+    expect(unverifiableSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('F1 — a truncated count that STILL exceeds the resolved list is refused', async () => {
+    // The direction truncation cannot fake. If a short page already holds more
+    // than we resolved, the full audience holds at least that many, so the
+    // excess is proven and the refusal is correct even without a complete read.
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      audienceContactCount: RECIPIENTS.length + 1,
+      audienceCountComplete: false,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.sends).toHaveLength(0);
+    expect(rec.transitions[0]?.failureReason).toBe('audience_membership_drift');
+  });
+
+  it('an unverifiable audience count proceeds rather than killing a legitimate send — AND raises the alert', async () => {
+    const unverifiableSpy = vi.spyOn(broadcastsMetrics, 'driftCheckUnverifiable');
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+    });
+    // Force the count call to fail without touching any other gateway method.
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['getAudienceContactCount'] = async () => {
+      throw gatewayThrow('retryable', 'resend 503');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.sends).toHaveLength(1);
+    // Round 4 (reliability I-2) — proceeding is the right call, but it must not
+    // be SILENT. This branch had the log and not the metric, so the catalogued
+    // alert `drift_check_unverifiable > 1 / 1h` (observability § 22.3) had no
+    // data source on the import leg — the one a flag flip makes live, and the
+    // branch a Resend blip lands in. The legacy leg has emitted it all along.
+    expect(unverifiableSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Round 3 finding 3-9 — the completion stamp used to commit in its own
+   * transaction BEFORE `createBroadcast`, certifying work that had not happened.
+   *
+   * Why that mattered is entirely about the OPERATOR: the T106 gauge and the
+   * documented flag-rollback drain query are the same shape and both require
+   * `audience_import_completed_at IS NULL`. A row left `approved` WITH the stamp
+   * set matched neither — so an operator following the runbook's drain saw ZERO
+   * rows in flight, flipped the flag off, and handed the row to the legacy path,
+   * which never reads `audience_import_*` but DOES reuse `resend_audience_id`.
+   * That is the "deliver to a half-built audience" outcome the runbook warns
+   * about, reached by following the runbook.
+   */
+  it('a retryable send failure leaves the import UNSTAMPED, so the drain query can see it', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'retryable' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    // Nothing was consumed, so nothing is stamped — the row stays visible to
+    // both operator predicates as still in flight.
+    expect(rec.completionStamps).toHaveLength(0);
+    expect(rec.transitions).toHaveLength(0);
+  });
+
+  it('a successful send DOES stamp the import consumed', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.completionStamps).toHaveLength(1);
+  });
+
+  it('a cancel landing mid-send still persists the Resend id, so webhooks resolve', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      transitionThrowsOn: 'sending',
+      transitionThrowKind: 'concurrent',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Reported as the race it is — NOT `uncaught_error`, which pages on-call.
+    expect(res.error.kind).toBe('broadcast_invalid_state_transition');
+    // The load-bearing assertion: the id survived the lost transition.
+    expect(rec.resendIdWrites).toHaveLength(1);
+    expect(rec.resendIdWrites[0]?.resendBroadcastId).toBeTruthy();
+  });
+
+  it('the id write and the transition are SEPARATE transactions, so one cannot roll back the other', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const sending = rec.transitions.find((t) => t.status === 'sending');
+    expect(rec.resendIdWrites[0]?.txId).toBeDefined();
+    expect(sending?.txId).toBeDefined();
+    expect(rec.resendIdWrites[0]?.txId).not.toBe(sending?.txId);
+  });
+
+  it('the send record carries the three AS1 fields the legacy payload has', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_send_started');
+    // The fixture schedules for NOW, so the cron fired on time.
+    expect(row?.payload['scheduledFor']).toBe(NOW.toISOString());
+    expect(row?.payload['actualSendAt']).toBe(NOW.toISOString());
+    expect(row?.payload['delaySeconds']).toBe(0);
+    // `actualSendAt` is AS1's second name for the same wall-clock moment.
+    expect(row?.payload['actualSendAt']).toBe(row?.payload['sendingStartedAt']);
+  });
+
+  it('carries the orphan count through to the send record', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      orphans: ['m-7', 'm-9'],
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_send_started');
+    expect(row?.payload['orphanCount']).toBe(2);
+  });
+
+  /**
+   * S56 — the AS5 / T171 forensic audit. A member who changes tier between
+   * approve and the confirming tick still gets their broadcast sent (correct),
+   * but the legacy path writes `broadcast_sent_with_expired_member_plan` so an
+   * admin auditing "this member sent an E-Blast as if they still held the lower
+   * tier" finds evidence. `BuildAudienceTickDeps` had no `plansBridge` at all,
+   * so the check was unrepresentable rather than merely omitted.
+   */
+  it('emits the expired-plan forensic row when the sender changed tier mid-flight', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.plansChecked).toContain('m-1');
+    expect(rec.audits.map((a) => a.eventType)).toContain(
+      'broadcast_sent_with_expired_member_plan',
+    );
+  });
+
+  /**
+   * Round 2 R2-1 / round 3 finding 3-13 — the compare-and-set round 1 added to
+   * `attachAudienceId` / `attachAudienceImport` throws when a concurrent tick
+   * attached a different audience or import. NEITHER call sat inside
+   * `viaGateway` or any try/catch, so the throw escaped this use case and the
+   * cron counted it `uncaught_error` — the bucket that means "a fault in our own
+   * code" — for the benign race the CAS was added to make survivable.
+   *
+   * The assertion that matters is the ABSENCE: no transition, no audit row, no
+   * member email. The other tick owns this broadcast now; writing a terminal
+   * state or emailing the member here is how a delivered broadcast gets recorded
+   * as failed.
+   */
+  for (const method of ['attachAudienceId', 'attachAudienceImport'] as const) {
+    it(`${method} losing its compare-and-set → invalid_state_transition, no state written, nobody told`, async () => {
+      const { deps, rec } = makeDeps({
+        // `attachAudienceId` only runs when there is no audience yet.
+        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        casThrowOn: method,
+        casThrow: 'concurrent',
+      });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.error.kind).toBe('broadcast_invalid_state_transition');
+      // The status comes from the repo's own probe of the row, not from a
+      // literal — a hardcoded status in this position is the actor-role
+      // fabrication class in a different field.
+      expect(
+        (res.error as { observedStatus?: string }).observedStatus,
+      ).toBe('sending');
+      expect(rec.transitions).toHaveLength(0);
+      expect(rec.audits).toHaveLength(0);
+      expect(rec.memberEmails).toHaveLength(0);
+    });
+
+    it(`${method} finding the row GONE → broadcast_not_found, not a false failure`, async () => {
+      const { deps, rec } = makeDeps({
+        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        casThrowOn: method,
+        casThrow: 'not_found',
+      });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.error.kind).toBe('broadcast_not_found');
+      expect(rec.transitions).toHaveLength(0);
+      expect(rec.memberEmails).toHaveLength(0);
+    });
+
+    /**
+     * Positive control. Without this, `catch { return err(benign) }` would pass
+     * every case above while swallowing a serialization failure — the shape that
+     * turns a real fault into a five-minute retry loop nobody is paged about.
+     */
+    it(`${method} throwing something that is NOT a lost race still propagates`, async () => {
+      const { deps } = makeDeps({
+        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        casThrowOn: method,
+        casThrow: 'other',
+      });
+
+      await expect(
+        buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID }),
+      ).rejects.toThrow(/40001/);
+    });
+  }
+
+  /**
+   * Round 3 finding 3-3 (= round 2's R2-8 / R2-27) — `classifyResendError`
+   * distinguishes FOUR kinds and `viaGateway` flattened them to a boolean, so
+   * `idempotency_conflict` (409) and `resource_missing` (404) both became
+   * `gateway_permanent` → `failTerminally`. The legacy path routes both
+   * specially, and has since 2026-05-02.
+   *
+   * These two cases are about what gets WRITTEN and SAID, not about the returned
+   * kind — a false row in an append-only table and a false email are the damage.
+   */
+  it('a 409 on the SEND is a success replay: the mail is out, so do not record a failure', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'idempotency_conflict' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.kind).toBe('sent');
+    // Advances to `sending` exactly as a clean send does — a replay must not
+    // leave the row `approved` for the next tick to send AGAIN.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(rec.transitions.some((t) => t.status === 'failed_to_dispatch')).toBe(false);
+    // Emitted once, not twice: the Art. 30 disclosure record must not double.
+    expect(
+      rec.audits.filter((a) => a.eventType === 'broadcast_send_started'),
+    ).toHaveLength(1);
+    // And nobody is told a delivered broadcast failed.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('a 404 is an ops issue: terminal with its OWN audit event, and the member is NOT emailed', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    // The distinct event type is the point: grouping the audit log by
+    // `broadcast_failed_to_dispatch` must not hide a missing Resend resource
+    // among genuine dispatch failures.
+    expect(rec.audits.map((a) => a.eventType)).toContain(
+      'broadcast_resend_resource_missing',
+    );
+    expect(rec.audits.map((a) => a.eventType)).not.toContain(
+      'broadcast_failed_to_dispatch',
+    );
+    // "resource_missing is an ops-side issue requiring admin action, not member
+    // notification" — the legacy path's own words.
+    expect(rec.memberEmails).toHaveLength(0);
+
+    // Round 4 F5 — the kind the CRON reads. It used to be
+    // `audience_import_failed`, which the cron buckets `permanent_failed`, so
+    // `summary.resource_missing` was structurally 0 on this leg and a trace read
+    // "finished, nothing to do" for the one failure that needs an admin to look
+    // at the Resend account. The legacy leg has always had its own arm.
+    if (res.ok) return;
+    expect(res.error.kind).toBe('broadcast_resend_resource_missing');
+    expect(
+      (res.error as { readonly resourceType: string }).resourceType,
+    ).toBe('broadcast');
+  });
+
+  /**
+   * Round 4 F6 — the counter that changed meaning at a flag flip.
+   *
+   * `failTerminally` emitted `failedToDispatchCount` unconditionally, while the
+   * legacy leg gates it on `eventType === 'broadcast_failed_to_dispatch'`. So a
+   * Resend 404 counted toward `broadcasts.failed_to_dispatch.count` on the import
+   * leg and was deliberately excluded on the other — and the § 22.3 alert on that
+   * series (>10 % over `send_started`) meant two different things depending on
+   * one environment variable. A flag flip must not redefine an alert.
+   */
+  it('a 404 does NOT count toward failed_to_dispatch — the same exclusion the legacy leg makes', async () => {
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The terminal state and its own audit still happen — this is about the
+    // COUNTER, not about hiding the failure.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain(
+      'broadcast_resend_resource_missing',
+    );
+    expect(failedSpy).not.toHaveBeenCalled();
+  });
+
+  it('a GENUINE dispatch failure still counts toward failed_to_dispatch', async () => {
+    // The positive control for the gate above: without it, gating on the audit
+    // event type could silence the counter for everything and this file would
+    // not notice.
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(failedSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Positive control #1: a 409 raised BEFORE `createBroadcast` has no broadcast
+   * to advance to, so it must NOT be laundered into a success. Without this, an
+   * arm that returned `ok` for every `idempotency_conflict` would pass the replay
+   * case above while reporting sends that never happened.
+   */
+  it('a 409 on createBroadcast is NOT a replay — there is nothing to advance to', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'createBroadcast', kind: 'idempotency_conflict' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.sends).toHaveLength(0);
+  });
+
+  /**
+   * Positive control #2: an ordinary `permanent` 4xx — the measured Free-plan
+   * cap — must still be a full failure WITH the member email. The two arms above
+   * are narrow exceptions, not a new default.
+   */
+  /**
+   * Round 3 finding 3-15 — `onResolveFailure` awaited `failTerminally` and threw
+   * its Result away, and `failTerminally` returned the SAME `err(error)` whether
+   * the terminal write committed or not. So a broadcast whose terminal write
+   * kept failing was reported as `broadcast_audience_too_large`, which the cron
+   * counts `permanent_failed` — the bucket meaning "finished, nothing left to
+   * do", so no alert could fire — while the row sat `approved` and was re-claimed
+   * every five minutes for ever. That is the exact failure mode
+   * `onResolveFailure`'s own docblock says it exists to remove.
+   *
+   * The assertion is about the KIND the caller sees, because that kind is the
+   * cron's bucket, and the bucket is what decides whether anyone is told.
+   */
+  it('a terminal write that does NOT commit is reported as transient, not as "done"', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      transitionThrowsOn: 'failed_to_dispatch',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // NOT `broadcast_audience_too_large` — that reaches the cron's
+    // `permanent_failed` arm, whose comment promises the row has already been
+    // moved and audited. It has not.
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.transitions).toHaveLength(0);
+    // And the member is not told a broadcast failed when nothing was recorded —
+    // a concurrent cancel is the likeliest cause of the write failing.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  /**
+   * Round 3 finding 3-8 — the two audit emits need OPPOSITE transaction
+   * semantics, and both were wrong in the same direction.
+   *
+   * On the send path the mail is already delivered. `safeAuditEmit` ran inside
+   * the same tx as `attachResendIds` + `applyTransition('sending')` and swallowed
+   * the INSERT failure, so the aborted transaction committed as a ROLLBACK and
+   * BOTH writes were discarded while the function reported `ok({kind:'sent'})` —
+   * leaving the row `approved` for the next tick to send the whole broadcast
+   * again. The audit row is the recoverable loss; a second send to a chamber's
+   * entire list is not.
+   */
+  it('send path: a failed audit INSERT loses the audit row, NOT the sending transition', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    // The load-bearing assertion: the row moved. If this is empty the next tick
+    // re-sends.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_send_started');
+  });
+
+  /**
+   * The mechanism, asserted directly. A unit harness cannot reproduce Postgres
+   * 25P02 abort semantics, so "the transition survived" alone would pass under
+   * the pre-fix code too. What actually decides the outcome is WHICH transaction
+   * each write is in — and that is observable.
+   */
+  it('send path: the Art. 30 record is written in a DIFFERENT transaction from the transition', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const sending = rec.transitions.find((t) => t.status === 'sending');
+    const record = rec.audits.find((a) => a.eventType === 'broadcast_send_started');
+    expect(sending?.txId).toBeDefined();
+    expect(record?.txId).toBeDefined();
+    expect(record?.txId).not.toBe(sending?.txId);
+  });
+
+  /**
+   * And the inverse for the failure path — same finding, opposite requirement.
+   * Nothing was sent, so the terminal state and its audit row must stand or fall
+   * together.
+   */
+  it('failure path: the terminal transition and its audit row share ONE transaction', async () => {
+    const { deps, rec } = makeDeps({ resolveFails: 'too_large' });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const terminal = rec.transitions.find((t) => t.status === 'failed_to_dispatch');
+    const record = rec.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    expect(terminal?.txId).toBeDefined();
+    expect(record?.txId).toBe(terminal?.txId);
+  });
+
+  it('send path: the audit-volume counter is not incremented for a row that was not written', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      auditThrowsOn: 'broadcast_send_started',
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // It used to fire unconditionally on the line after the swallow, so the
+    // audit-volume series reported rows that did not exist while the loss was
+    // reported on a different series entirely.
+    expect(
+      spy.mock.calls.filter((c) => c[1] === 'broadcast_send_started'),
+    ).toHaveLength(0);
+  });
+
+  /**
+   * The opposite direction, same finding. On the FAILURE path nothing has been
+   * sent, so a terminal state without its audit row is the worse outcome — and
+   * emailing the member that their broadcast failed while the row sits
+   * `approved` is worse still.
+   */
+  it('failure path: a failed audit INSERT tears the terminal transition down and tells nobody', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      auditThrowsOn: 'broadcast_failed_to_dispatch',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  /**
+   * Round 3 finding 3-12 — the nine-value failure taxonomy reached no surface a
+   * human watches. Three legs, two of them fixed here.
+   *
+   * The metric leg: this path passed the literal `'app_error'` for EVERY
+   * terminal failure where the legacy path calls `phaseToFailureReason(phase)`,
+   * so `broadcasts-dispatch-failure.md`'s "group `failure_reason` to identify
+   * the dominant cause" step had exactly one bucket, and the two dispatch
+   * paths' series were not comparable across a flag move.
+   */
+  it('the failure metric names the 30-minute stuck rule as timeout, not app_error', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      // Submitted long enough ago to trip IMPORT_STUCK_AFTER_MS.
+      audienceImportSubmittedAt: new Date(NOW.getTime() - 60 * 60 * 1000),
+      importStatus: 'pending',
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy.mock.calls.map((c) => c[1])).toContain('timeout');
+  });
+
+  it('the failure metric names the measured Free-plan cap as resend_403', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent', code: 'http_403' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy.mock.calls.map((c) => c[1])).toContain('resend_403');
+  });
+
+  /**
+   * Positive control, and the reason the mapper is deliberately narrow: a
+   * `permanent` whose code is NOT one we measured must stay `app_error`. A
+   * mapper that guessed 403 for every 4xx would pass the case above while
+   * asserting a status nobody observed — the actor-role fabrication class in a
+   * metric dimension.
+   */
+  it('an unmeasured permanent code stays app_error rather than being guessed into a bucket', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(spy.mock.calls.map((c) => c[1])).toEqual(['app_error']);
+  });
+
+  /**
+   * Round 2 R2-10 — nothing drove a throw carrying NO `kind`.
+   *
+   * That is not a gateway error at all: it is a fault in our own code reaching
+   * `viaGateway`, and `classifyThrown` maps it to `unknown` -> `gateway_unknown`,
+   * deliberately NON-retryable. With this case absent, a mutant that made
+   * `unknown` retryable — reinstating the exact five-minute forever-loop this
+   * whole use case exists to remove — passed the suite. The two named poles
+   * (`retryable`, `permanent`) were pinned; the arm between them was not.
+   *
+   * A plain `Error`, not a `gatewayThrow`: the fixture must not hand the code the
+   * `kind` field whose ABSENCE is the whole subject.
+   */
+  it('a throw with NO kind is our bug, not the provider — terminal as gateway_unknown', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    (
+      (deps as { broadcastsGateway: Record<string, unknown> }).broadcastsGateway
+    )['sendBroadcast'] = async () => {
+      throw new TypeError('cannot read properties of undefined');
+    };
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    // Terminal, NOT `dispatch.server_error` — retrying a programming fault every
+    // five minutes for ever is the behaviour being removed.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    // Its own reason, kept apart from `gateway_permanent`, so an operator is not
+    // sent to look at Resend's status page for our bug.
+    expect(rec.transitions[0]?.failureReason).toBe('gateway_unknown');
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  /**
+   * Round 2 R2-36 — `_enqueue-dispatch-failure-notification.ts` measured 81.13 %
+   * line / **78.57 % branch**, under the Constitution's 80 % Application branch
+   * bar. It passed only because the configured threshold is an AGGREGATE, and no
+   * per-file pin existed on any of the four files this branch extracted — so
+   * deleting the new suite outright would have broken no threshold on a file that
+   * went from 412 to 766 lines.
+   *
+   * The uncovered branches were all in the notifier's own error handling: the
+   * catch around the skipped-no-email audit, the catch around the member-locale
+   * lookup, and the null-`scheduledFor` arm. Each is a path that runs while a
+   * member is being told their broadcast failed, which is the worst moment for an
+   * unexercised branch.
+   */
+  it('the FR-021 notifier survives a locale-bridge throw and still emails, in the tenant default', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      localeLookupThrows: true,
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // Best-effort by design: the language is a nicety, the notification is not.
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  it('a send-now row (scheduledFor null) still renders a date in the failure email', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      nullScheduledFor: true,
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  /**
+   * The member has no primary contact email, so there is nobody to notify — and
+   * the forensic audit that records THAT also fails. Both catches at once: the
+   * function must still return normally, because it is called after a terminal
+   * state has already been committed and a throw here would surface as a dispatch
+   * failure that already happened.
+   */
+  it('no member email AND a failing audit emit: records nothing, tells nobody, throws nothing', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      memberPrimaryEmail: null,
+      auditThrowsAlways: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The terminal write's own audit also failed, so this reports the write, not
+    // the notification — see finding 3-8.
+    expect(res.ok).toBe(false);
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  /**
+   * Round 4 — the two branches of `_enqueue-dispatch-failure-notification.ts`
+   * that lost their coverage when the harness was FIXED.
+   *
+   * Both were exercised only by accident: the harness had no `membersBridge` at
+   * all, so every call threw "not a function" straight into the first catch, and
+   * the file sat comfortably above its pins on the strength of a bug. Adding the
+   * missing ports (T2) made the happy path work and dropped the file to 81.13 %
+   * lines / 84.61 % branches against a 90 % pin — caught by running
+   * `pnpm test:coverage` before pushing, which is the blocking required check.
+   *
+   * Coverage earned by a defect is not coverage. These drive the same two
+   * branches on purpose.
+   */
+  it('a members-bridge THROW is logged and swallowed — the terminal state still stands', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      memberBridgeThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    // The broadcast is still terminal and audited; only the courtesy email is
+    // lost, which is the whole point of the enqueue being best-effort.
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
+    // Nothing was sent, and nothing escaped.
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('no primary email AND the skip-audit itself fails: still silent, still terminal', async () => {
+    const { deps, rec } = makeDeps({
+      resolveFails: 'too_large',
+      memberPrimaryEmail: null,
+      // ONLY the skip audit — the terminal audit must succeed, or the code
+      // returns before the notification is attempted at all.
+      auditThrowsOn: 'broadcast_dispatch_failure_notif_skipped_no_email',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    // The terminal record survives the notification's troubles.
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('an ordinary permanent 4xx still fails terminally AND still tells the member', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'permanent' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+});

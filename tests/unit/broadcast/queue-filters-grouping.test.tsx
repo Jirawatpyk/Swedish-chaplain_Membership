@@ -20,6 +20,11 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
+import {
+  BROADCAST_STATUSES,
+  OFFERED_BROADCAST_STATUSES,
+  RETIRED_BROADCAST_STATUSES,
+} from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 
 const nav = vi.hoisted(() => ({
   replaceMock: vi.fn(),
@@ -67,14 +72,64 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
     expect(groups.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('still renders all 10 statuses as checkboxes across the two groups', () => {
+  /**
+   * 10 → 8 (108 Phase 9 review S44). `partially_sent` and
+   * `partial_delivery_accepted` are registered in `RETIRED_BROADCAST_STATUSES`:
+   * their producing use cases were deleted with the batch path, so filtering on
+   * either can only ever return zero rows — and zero rows reads as "it never
+   * happened", not as "this state can no longer be produced".
+   *
+   * They remain in `BROADCAST_STATUSES` and in `status-badge-mapping`, so a
+   * historical row still parses and still renders its badge. What is withheld is
+   * the CHIP, and only the chip.
+   *
+   * Derived rather than hard-coded, so the next status added or retired updates
+   * this assertion by itself — the count is what went stale here, and it is the
+   * only thing in the file that could.
+   */
+  it('renders one checkbox per non-retired status across the two groups', () => {
     render(
       <Provider>
         <QueueFilters memberOptions={[]} />
       </Provider>,
     );
 
-    expect(screen.getAllByRole('checkbox')).toHaveLength(10);
+    // R2-7 — read the VO's derivation rather than re-deriving it. This test
+    // computing the rule a second time is what let the queue's loading skeleton
+    // disagree with the real strip: the assertion tracked the component, and
+    // nothing tracked the skeleton.
+    const offered = OFFERED_BROADCAST_STATUSES;
+    expect(screen.getAllByRole('checkbox')).toHaveLength(offered.length);
+
+    // Positive controls: the count alone passes if the strip renders the wrong
+    // eight, and it also passes if a live status were retired by mistake.
+    expect(offered).toHaveLength(8);
+    expect(offered).toContain('sent');
+    expect(offered).toContain('failed_to_dispatch');
+    expect(offered).not.toContain('partially_sent');
+  });
+
+  /**
+   * R2-23 — the property the CLS skeleton depends on, asserted where the strip
+   * is rendered. `/admin/broadcasts/loading.tsx` sizes its chip placeholders from
+   * the same tuple; before this the skeleton read `BROADCAST_STATUSES.length` and
+   * reserved 10 for a row of 8. A count is only as good as the two things it
+   * keeps equal.
+   */
+  it('renders exactly OFFERED_BROADCAST_STATUSES.length chips — the number the loading skeleton reserves', () => {
+    render(
+      <Provider>
+        <QueueFilters memberOptions={[]} />
+      </Provider>,
+    );
+
+    expect(screen.getAllByRole('checkbox')).toHaveLength(
+      OFFERED_BROADCAST_STATUSES.length,
+    );
+    // Both halves named, so a change to either list has to be deliberate twice.
+    expect(OFFERED_BROADCAST_STATUSES).toHaveLength(
+      BROADCAST_STATUSES.length - RETIRED_BROADCAST_STATUSES.length,
+    );
   });
 
   it('keeps the Reset button adjacent to the chip strip, not pushed to the row edge', () => {

@@ -1,5 +1,10 @@
 # Phase 0 Research — 108 Contact Recipient Rules
 
+
+> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist — but the live import signals DO: `broadcasts_audience_import_stuck_count` and `broadcasts_audience_import_submit_ms` (T106, emitted per tenant by the `broadcasts-gauges` cron). Watch those during a first send; neither is listed in `reviews/cutover.md` § 4's five signals. Left as written — it is the record of what was believed at the time.
+>
+> **SCOPE OF THIS BANNER (FINAL round):** it applies to §§ 1–8, which predate the Contacts-Import build. **§ R9's `CORRECTED` block remains CANONICAL** and is not superseded by anything above: `src/modules/broadcasts/domain/audience-ceiling.ts` sends every reader here for the throughput derivation, and a reader who followed that pointer was landing on a page labelled historical and having to adjudicate it themselves.
+
 **Status**: No open `NEEDS CLARIFICATION`. Product decisions were settled in the spec's three
 clarification sessions (2026-09-04). This file resolves the *engineering* unknowns in
 Decision / Rationale / Alternatives form and pins the repo facts each decision depends on.
@@ -37,7 +42,7 @@ retrieval returns a publishable-key-scoped PI with `payment_method` unexpanded),
 is not settleable from source: initiate a PromptPay payment in test mode, call it in the
 console, and grep the result. Also eyeball Stripe's hosted PromptPay instructions page.
 V5 the team's actual Resend
-rate limit (Settings → Usage; docs default is 10 req/s per team, raisable via support) and
+rate limit (~~Settings → Usage~~ — **MEASURED 2026-09-08 from the API's own `ratelimit-*` headers: 10 req/s confirmed, but the serial loop is latency-bound. The rate here read ~3.4 req/s until 2026-09-10; that sample had timed `GET /audiences` (0.29 s), not the `POST /contacts` the loop calls (0.481 s) ⇒ **~2.08 req/s**. See the CORRECTED block in R9, which is canonical for this number**) and
 whether the Audiences → Segments / Global Contacts migration has a deprecation date that
 affects F7's `audienceId`-based gateway (R16).
 
@@ -312,6 +317,195 @@ affects F7's `audienceId`-based gateway (R16).
   `status` + `counts { total, created, updated, skipped, failed }`). Even at 10 req/s the
   serial loop needs ~500 s for 5,000 contacts, so the loop cannot stay; the import API removes
   the problem instead of pacing it.
+
+> **T095 — MEASURED 2026-09-08 12:41 (Asia/Bangkok). The limit is real; it is also not the
+> binding constraint.** Five `GET /audiences` calls against the production
+> `RESEND_BROADCASTS_API_KEY`, keep-alive on one connection, from the maintainer's Bangkok
+> workstation:
+>
+> ```
+> ratelimit-policy: 10;w=1   ratelimit-limit: 10   (200 OK on every call)
+> req0 (cold)  dns=4ms  tcp=8.5ms  tls=37ms  total=333ms
+> req1..req4   (keep-alive)                  total=285 / 281 / 300 / 291 ms
+> ```
+>
+> So the account limit is **10 req/s, confirmed from the API's own headers** — the paragraph
+> above is right and `resend-broadcasts-gateway.ts`'s "2 req/s" comment is wrong. But
+> `addContactsToAudience` is a **serial `await` loop**, so its throughput is
+> `min(account_limit, 1 / RTT)` and the warm RTT is **~0.29 s**:
+>
+> ```
+> throughput   = min(10, 1/0.29)  ≈  3.4 req/s      ← from GET /audiences — SUPERSEDED, see below
+> per_tick_max = 300 s × 3.4 × 0.8 ≈ 830 contacts   (20 % margin)                 ← SUPERSEDED
+> ```
+>
+> ### CORRECTED 2026-09-08 15:00 — the verb was wrong, and this is the CANONICAL derivation
+>
+> The sample above used `GET /audiences` because nothing had ever been dispatched and a read was
+> the only probe available. Rehearsal ② (`quickstart.md` § Dev rehearsal) then dispatched a real
+> broadcast, and **15 serial samples of `POST /contacts` — the verb `addContactsToAudience`
+> actually calls —** came back at:
+>
+> ```
+> mean 481 ms   median 420 ms   p95 894 ms   min 380 ms   zero 429s across all 15
+> throughput   = min(10, 1/0.481)  ≈  2.08 req/s     ← latency-bound; writes ~1.7× slower than reads
+> one tick     = 300 s × 2.08       ≈  623 contacts
+> per_tick_max = 623 × 0.8          ≈  499  →  DELIVERABLE_RECIPIENTS_PER_TICK = 500
+> ```
+>
+> Mean is the statistic (a serial loop of N requests takes N × mean, not N × p95). Caveat 2
+> below — "GET latency, not POST" — turned out to be worth ~300 recipients. **Every other file
+> that states this number (`domain/audience-ceiling.ts`, its unit test, `reviews/cutover.md`
+> § 5a, `tasks.md` Phase 9b) cites THIS block; do not restate the arithmetic elsewhere, point
+> here** (analyze 2026-09-08 D1 — five restatements had drifted by rounding and one was wrong).
+>
+> **Using the documented 10 req/s as a capacity input overestimates by ~5×.** The undeliverable
+> band therefore starts near **~623 recipients**, not at the 5,001 the review reasoned about —
+> i.e. **well below the 5,000 ceiling enforced before the clamp**, so the exposure predates the
+> 108 flag exactly as `plan.md:268` claimed. The year-old "~2 req/s" comment was right about the
+> effect and wrong only about the cause (it read as an account cap; the account allows 10).
+>
+> Three caveats, all of which push the true number DOWN, not up:
+> 1. Measured from a Bangkok workstation, not from Vercel `sin1`. Re-check on the first real send.
+> 2. `GET /audiences` is a read; the loop calls `POST /contacts`, a write. This is a lower bound
+>    on latency and therefore an upper bound on throughput.
+> 3. Four warm samples (281–300 ms, tight), one cold. Handshake is only ~37 ms, so connection
+>    reuse is not the lever — the ~285 ms is the server round trip itself.
+>
+> One thing this settles cheerfully: at 2.08 req/s the loop never approaches the 10 req/s policy
+> (zero 429s in 15 consecutive writes), so `withRetry`'s reactive 429 backoff never fires on the
+> serial `dispatch-scheduled` path. It DOES fire on `dispatch-batches`, where `batch-dispatcher.ts`
+> runs up to `concurrencyCap` (default 4) serial loops in parallel — 4 × 2.08 ≈ 8.3 req/s fits,
+> 8 × 2.08 ≈ 16.6 does not (`MAX_CONCURRENCY_CAP = 8` exceeds the policy at this batch size).
+>
+> **SweCham today** (measured 2026-09-08: 150 primaries, 0 secondaries): 150 ÷ 2.08 ≈ **72 s** of
+> a 300 s budget — 24 %. **Post-import** (~150 members × 3 contacts ≈ 450): ≈ **216 s**, 72 %.
+> Both fit under 500, the second with little room. The gap is between ~623 and whatever ceiling
+> is enforced — closed by the clamp, and reopened as the batch size by Phase 9b.
+>
+> **STATUS 2026-09-08 (end of day): the import build SHIPPED and the batch path was DELETED.**
+> Everything in § R9 about batch sizing, split thresholds or waves describes code that no longer
+> exists. What survives, and is still load-bearing, is the MEASUREMENT: the serial per-contact
+> push manages ~2.08 req/s, so ~623 contacts is all one 300 s function can drain — which is why
+> `DELIVERABLE_RECIPIENTS_PER_TICK = 500` still clamps the accepted ceiling whenever
+> `FEATURE_F7_IMPORT_AUDIENCE` is off. V2 and V4 below are the probes that closed the question.
+
+> ### V2 — the Contacts Import API on the live account (ANSWERED 2026-09-08, except one clause)
+>
+> Probed before writing any of T086/T087, because one clause could have made the design
+> illegal rather than merely wrong. Synthetic `@example.com` addresses, throwaway audiences,
+> no broadcast created, everything deleted after.
+>
+> **(a) Does `on_conflict=upsert` clear a contact's `unsubscribed` flag when the CSV carries
+> no such column? → NO. SAFE.** Measured directly: import → `PATCH .../contacts/{id}
+> {unsubscribed:true}` → re-import the same address with an email-only CSV → read back →
+> `unsubscribed` is still `true`, and the import reports `updated: 1` (so it DID touch the
+> row and still left the flag alone). `upsert` is therefore usable as designed. This was the
+> gating question: had it cleared the flag, every import would have silently resurrected
+> people who pressed unsubscribe (GDPR Art. 21 / PDPA § 32).
+>
+> **(b) Does an import attach a contact that already exists GLOBALLY but not in the target
+> audience? → YES, and the suppression carries across.** A fresh audience B, importing an
+> address that already existed account-wide, reports `updated: 1` and the address appears in
+> B — **still `unsubscribed: true`**. Resend's suppression is account-wide, not per-audience.
+> Useful, because every dispatch builds a NEW ephemeral audience: an unsubscribe from one
+> broadcast protects the next one for free. **It does not make Resend the source of truth** —
+> a member who opts out in our portal without clicking Resend's link is suppressed on OUR side
+> only, so the CSV must still be built from the resolver, which applies `marketing_unsubscribes`
+> and the PR-D opt-out filter. Resend's flag is defence in depth, one layer below ours.
+>
+> **(c) `status: completed` with `failed: 0` DOES NOT MEAN THE ROWS LANDED.** One import out
+> of five, same code and same shape as the others, returned
+> `{status: "completed", counts: {total: 0, created: 0, updated: 0, skipped: 0, failed: 0}}`
+> and attached nothing. Three deliberate repeats afterwards (one with a 1.5 s delay after
+> audience creation) all reported `total: 1` — so it is **not reproducible on demand, which
+> makes it worse, not better**. Consequence: the contract § 4 completion rule
+> (`total === resolvedCount`) is **load-bearing, not defensive**, and "completed with zero
+> rows → do NOT send" is the first RED case T087 must carry, not an edge case appended later.
+>
+> **(d) The Free plan's 3-audience cap is REAL and `POST /audiences` FAILS at it.** Found by
+> accident: with `General` plus two throwaway audiences live, creating a third returned no id.
+> Every dispatch creates one ephemeral audience, so on Free at most **two** broadcasts can be
+> in flight until `cleanup-audiences` reaps (grace 1 h, cron every 15 min).
+>
+> **(e) UNRESOLVED — whether the 1,000-contact cap counts GLOBAL contacts.** The probe read
+> `GET /contacts` before and after and got **20 both times, and 20 again after cleanup**. 20 is
+> the default page size, not a total: the call measured a page, not the account. **This
+> answers nothing** and is recorded as unanswered rather than as "no change" — the same class
+> as V4's earlier false negative. It matters because if the cap is global, reaping audiences
+> frees no slots and a Free account fills permanently at ~1,000 distinct addresses ever mailed,
+> which is a different operator story from "1,000 in flight". Resolve with the account's own
+> usage page or a paginated count before promising an operator either reading.
+>
+> ### V4 — does the Contacts Import API attach contacts to the target audience? **YES** (T145, ANSWERED 2026-09-08)
+>
+> **It attaches. The two earlier "no" probes were measuring a typo.** They sent the field as
+> `audience_id`; contract § 4 said `segments=[<audience id>]`; the API wants
+> **`segments=[{ "id": "<uuid>" }]`** — an array of OBJECTS. So all three spellings were
+> different, and the two that were tried were the two that do not work.
+>
+> Measured, one throwaway audience and one synthetic `@example.com` row, deleted after:
+>
+> | Field sent | Answer |
+> |---|---|
+> | `audience_id=<uuid>` (probes 1–2) | 201, import completes, contacts land in **Global Contacts only** — the field is ignored, not rejected |
+> | `segments=["<uuid>"]` (contract § 4's shape) | **422** `validation_error` — *"The `segments` must be an array of objects with a UUID `id` field."* |
+> | `segments=[{"id":"<uuid>"}]` | **201 in 412 ms** → `status: completed` in ~306 ms, `counts {total:1, created:1, updated:0, skipped:0, failed:0}` → `GET /audiences/{id}/contacts` returns **count = 1** ✅ |
+>
+> The 422 is the useful half of the finding: `audience_id` fails SILENTLY (accepted, ignored),
+> which is exactly how two probes reached a confident wrong conclusion, while the wrong
+> `segments` shape fails LOUDLY. Contract § 4 has been corrected to the object form.
+>
+> **What this changes.** The import build (T086 / T087 / T106) is now known to be a ~2-call,
+> size-independent push: one `POST /contacts/imports`, then poll. It does not care whether the
+> audience is 500 or 50,000, so it retires batch SIZING as the scaling mechanism — Phase 9b's
+> batches become an implementation detail rather than the bound. It also supersedes the reason
+> `data-model.md` § 2.5's working table was being held as a fallback for the *push*; the table is
+> still the answer for FR-044 (a)/(d) **list freezing**, which is a different problem (the batch
+> path re-resolves between ticks — see Phase 9b T143's drift halt, the interim guard).
+>
+> Not yet known, and needed before building on this: whether the import respects the Free plan's
+> 1,000-contact cap the same way the serial push does (the addendum below), what it answers when
+> the CSV exceeds it, and whether `on_conflict=upsert` re-attaches a contact that already exists
+> globally but is not in the target audience. Those are T086's questions, not T145's.
+>
+> ### T095 addendum — the account is on Resend's **FREE** plan, and that binds first
+>
+> Confirmed from the Resend billing + usage pages, 2026-09-08:
+>
+> | Free-plan limit | Value | In use now |
+> |---|---|---|
+> | **Contacts** | **1,000** | 13 |
+> | **Segments** (= Audiences) | **3** | 1 (`General`, id `e367de00…`) |
+> | Domains | 3 | — |
+> | Broadcast sending | unlimited | — |
+>
+> **1. The 1,000-contact cap is a harder bound than the wall clock, and it arrives first.** Every
+> dispatch pushes the whole resolved audience into a Resend audience, so a broadcast above roughly
+> **987** recipients (1,000 − the 13 already stored) hits the cap mid-push. Resend answers 4xx —
+> not 429 — so `classifyResendError` returns `permanent`
+> (`resend-broadcasts-gateway.ts:12,158`), and `dispatch-scheduled-broadcast.ts:21-22` transitions
+> the broadcast to `failed_to_dispatch` with an audit event. **That is the good failure mode**: it
+> fails loudly and terminally in one tick instead of sitting in `approved` being killed mid-push
+> forever. The wall-clock bound (~623) and the plan bound (~987) land within ~40 % of each other by
+> coincidence; both say the same thing about where the safe ceiling is.
+>
+> **2. Three segments means at most THREE audiences can exist at once — and one is already taken.**
+> Chamber-OS creates an ephemeral audience per broadcast and lets the `cleanup-audiences` cron
+> (`*/15`) delete it once the broadcast is terminal. With `General` occupying a slot, **two
+> concurrent in-flight broadcasts is the real limit**; a third fails until the cron frees room.
+> This is the "transient plan-segment-limit overflow surfaces as a `failed_to_dispatch`" already
+> noted in `go-live-readiness.md` § 6.6 — on the Free plan the number behind that sentence is 2.
+>
+> **3. Upgrading does not fix the push.** Pro marketing ($40/mo) raises contacts to 5,000 — which
+> happens to equal the app's flag-OFF ceiling — and segments to unlimited. It does **not** change
+> latency, so the ~2.08 req/s and the ~623-per-tick bound survive the upgrade unchanged. Money buys
+> the contact cap, not the wall clock.
+>
+> **Consequence for the enforced ceiling**: the app currently accepts up to 5,000 (50,000 after the
+> 108 flip) while the provider account can physically hold 1,000. Nothing SweCham can compose today
+> reaches either — 150 now, ~450 post-import — but the configured ceiling is 5× to 50× larger than
+> what the account can accept, and that mismatch is invisible until a send fails.
 - **Decision (push)**: build the provider audience with **one import per broadcast**: the first
   `dispatch-scheduled` tick resolves the audience, renders a CSV (`email` column only — never an
   `unsubscribed` column, so the upsert cannot flip a Global Contact's Resend-side preference),
@@ -449,6 +643,25 @@ affects F7's `audienceId`-based gateway (R16).
   is added to `.env.example` and passes `check:env-example` + `check:env-boot`.
 
 ## R16 — Resend Audiences → Segments / Global Contacts (risk outside this feature's scope)
+
+> **STATUS 2026-09-09 — SUPERSEDED. The import path is BUILT.** This section carried a
+> DEFERRED banner saying T086 / T087 / T106 and migration 0298 were "none authored" and that
+> PR-C shipped none of it. Branch `108-phase9-cutover` authors all of them, so the banner was
+> describing the opposite of the tree it sat in — found by the 108 Phase 9 review (S37), which
+> also noted that R9 got its correction and R16 did not, for the second time.
+>
+> **Two claims below are now MEASURED rather than read from docs** (2026-09-09, live account,
+> synthetic `@example.com`, positive control first):
+>
+> - **Global Contacts are real and they outlive the audience.** `DELETE
+>   /audiences/{id}/contacts/{email}` answers `{"deleted": true}` and merely DETACHES: the
+>   audience-scoped read then 404s while `GET /contacts/{email}` still returns the contact at
+>   200. The provider's own response is why this went unnoticed for as long as it did.
+> - **An audience-less `DELETE /contacts/{email}` deletes for real** (read-back 404). It is
+>   implemented as `deleteContactGlobally` and deliberately NOT called by the erasure cascade:
+>   one Resend account serves every tenant, so a global delete during tenant A's erasure would
+>   destroy tenant B's contact record and the Resend-side unsubscribe flag with it. See residual
+>   8a in `docs/compliance/processing-records.md`.
 
 - **Fact** (Resend docs `dashboard/segments/migrating-from-audiences-to-segments`, 2026-09):
   Audiences are being replaced by Segments; a contact is now one record per team across

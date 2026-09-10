@@ -29,6 +29,7 @@ import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
@@ -75,6 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let dispatchRatios: DispatchRatioRow[];
   let suppressionSizes: PendingRow[];
   let approvedOverdue: PendingRow[];
+  let audienceImportStuck: PendingRow[];
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
@@ -140,10 +142,41 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // that once read 1 kept reading 1 after the incident was resolved —
       // the "≥ 1 sustained 30 min" rule on `approved_overdue_count` was a
       // latch, not a level. "0 means 0" (see `forgetAutoInvoiceGauges`).
+      // T106 (108 US5, FR-044 f) — an audience IMPORT submitted but never
+      // completed. `buildAudienceTick` turns such a row terminal, but only on a
+      // tick that reaches it; this is the independent signal, and the one
+      // number that says "Resend has stopped answering". 30 min matches
+      // IMPORT_STUCK_AFTER_MS.
+      //
+      // `status = 'approved'` is load-bearing, added in review round 1 (S11 /
+      // S46). Without it this gauge LATCHED: `failTerminally` resolves the
+      // incident by moving the row to `failed_to_dispatch`, but it neither
+      // clears `audience_import_id` nor stamps `completed_at`, and
+      // `applyTransition`'s passthrough whitelist contains none of the three
+      // import columns — so no writer anywhere in `src/` ever makes the row stop
+      // matching. Every terminal refusal and every cancel-after-submit
+      // incremented it permanently, and an alarm that never clears is worse than
+      // no alarm because the next incident is invisible underneath it.
+      //
+      // Filtering on status is better than clearing the columns: it also
+      // excludes a cancel-after-submit, and it leaves the forensic values in
+      // place for whoever investigates.
+      //
+      // The `submitted_at IS NULL` shape that used to slip through here is now
+      // impossible at the DB level — 0299 made the coherence CHECK an iff.
+      const audienceImportStuckRows = await tx.execute<PendingRow>(sql`
+        SELECT tenant_id, COUNT(*)::int AS count
+        FROM broadcasts
+        WHERE audience_import_id IS NOT NULL
+          AND audience_import_completed_at IS NULL
+          AND status::text = 'approved'
+          AND audience_import_submitted_at < now() - interval '30 minutes'
+        GROUP BY tenant_id
+      `);
       const tenantRows = await tx.execute<TenantRow>(sql`
         SELECT DISTINCT tenant_id FROM broadcasts
       `);
-      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows };
+      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows, audienceImportStuckRows };
     });
     tenants = Array.from(result.tenantRows ?? []);
     pending = Array.from(result.pendingRows);
@@ -151,9 +184,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     dispatchRatios = Array.from(result.dispatchRows);
     suppressionSizes = Array.from(result.suppressionRows);
     approvedOverdue = Array.from(result.approvedOverdueRows);
+    audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
   } catch (e) {
     logger.error(
-      { requestId, err: e instanceof Error ? e.message : String(e) },
+      { requestId, err: errKind(e) },
       'cron.broadcasts_gauges.query_failed',
     );
     return NextResponse.json({ error: 'query_failed' }, { status: 500 });
@@ -167,6 +201,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const pendingByTenant = new Map(pending.map((r) => [r.tenant_id, r.count]));
   const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
+  const importStuckByTenant = new Map(audienceImportStuck.map((r) => [r.tenant_id, r.count]));
   const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
   const observed = new Set<string>();
   for (const t of [
@@ -174,6 +209,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     ...pendingByTenant.keys(),
     ...stuckByTenant.keys(),
     ...overdueByTenant.keys(),
+    ...importStuckByTenant.keys(),
     // A tenant can carry unsubscribes with no `broadcasts` row at all (a
     // contact-level opt-out recorded before the first send), so the
     // suppression keys join the observed set rather than relying on it.
@@ -182,6 +218,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     observed.add(t);
   }
   let approvedOverdueTotal = 0;
+  let audienceImportStuckTotal = 0;
   for (const tenantId of observed) {
     const p = pendingByTenant.get(tenantId) ?? 0;
     const s = stuckByTenant.get(tenantId) ?? 0;
@@ -189,6 +226,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     broadcastsMetrics.queuePending(tenantId, p);
     broadcastsMetrics.stuckSendingCount(tenantId, s);
     broadcastsMetrics.approvedOverdueCount(tenantId, o);
+    const ais = importStuckByTenant.get(tenantId) ?? 0;
+    broadcastsMetrics.audienceImportStuckCount(tenantId, ais);
+    audienceImportStuckTotal += ais;
     pendingTotal += p;
     stuckTotal += s;
     approvedOverdueTotal += o;
@@ -235,6 +275,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       pendingTotal,
       stuckTotal,
       approvedOverdueTotal,
+      audienceImportStuckTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
@@ -251,6 +292,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       pendingTotal,
       stuckTotal,
       approvedOverdueTotal,
+      audienceImportStuckTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,

@@ -8,8 +8,6 @@
     { "path": "/api/internal/metrics/broadcasts-gauges", "schedule": "*/5 * * * *" },
 
     { "path": "/api/cron/broadcasts/dispatch-scheduled", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/broadcasts/split-large-broadcasts", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/broadcasts/dispatch-batches", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/broadcasts/reconcile-stuck-sending", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/broadcasts/cleanup-audiences", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/broadcasts/reclaim-orphan-audiences", "schedule": "30 3 * * *" },

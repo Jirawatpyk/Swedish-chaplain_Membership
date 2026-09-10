@@ -86,6 +86,10 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     quotaYearConsumed: null,
     quotaConsumedAt: null,
     resendAudienceId: 'aud-1',
+    // T086 — the Contacts-Import build (migration 0298). Absent on every fixture written before it.
+    audienceImportId: null,
+    audienceImportSubmittedAt: null,
+    audienceImportCompletedAt: null,
     resendBroadcastId: 'rsb-stuck',
     retentionYears: 5,
     manualRetryCount: 0,
@@ -124,6 +128,11 @@ function makeBroadcastsRepo(args: {
     },
     async attachResendIds() {},
     async attachAudienceId() {},
+    // Phase 9b (T147) — unused by this use case; present so the stub
+    // still satisfies BroadcastsRepo.
+    // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
+    async attachAudienceImport() {},
+    async markAudienceImportCompleted() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },
     async findByResendBroadcastIdBypassRls() { return null; },
@@ -162,10 +171,15 @@ function makeGateway(args: {
   const port: BroadcastsGatewayPort = {
     async createAudience() { throw new Error('not used'); },
     async addContactsToAudience() { throw new Error('not used'); },
+    // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
+    async createContactImport() { throw new Error('not used'); },
+    async getContactImport() { throw new Error('not used'); },
     async createBroadcast() { throw new Error('not used'); },
     async sendBroadcast() { throw new Error('not used'); },
     async getAudienceContactCount() { return { kind: 'not_found' as const }; },
-    async removeContactFromAudience() { throw new Error('not used'); },
+    async removeContactFromAudience() {
+      return { kind: 'detached' as const }; throw new Error('not used'); },
+    async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience() { throw new Error('not used'); },
     async listAudiences() { return []; },
     async retrieveBroadcast() {

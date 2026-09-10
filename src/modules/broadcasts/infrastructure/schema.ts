@@ -209,6 +209,24 @@ export const broadcasts = pgTable(
     resendAudienceId: text('resend_audience_id'),
     resendBroadcastId: text('resend_broadcast_id'),
 
+    // 108 US5 / T086 — the Contacts-Import audience build (migration 0298).
+    // `audienceImportId` NON-NULL means an import is in flight or finished and
+    // is the idempotency guard: a tick never submits a second one while it is
+    // set. The 30-minute stuck rule measures from `submittedAt`, not from
+    // `scheduledFor`. `completedAt` is stamped only after the completion rule
+    // passes (`completed`, `failed === 0`, parts sum to `total`, and `total`
+    // equals the resolved count) — `sendBroadcast` runs only after that,
+    // because a `completed` import can still have processed zero rows.
+    // Deliberately NO `audience_building` status: it would make the row
+    // un-cancellable (cancel accepts only submitted/approved). See 0298.
+    audienceImportId: text('audience_import_id'),
+    audienceImportSubmittedAt: timestamp('audience_import_submitted_at', {
+      withTimezone: true,
+    }),
+    audienceImportCompletedAt: timestamp('audience_import_completed_at', {
+      withTimezone: true,
+    }),
+
     // Audit retention (Constitution v1.4.0 retention column)
     retentionYears: smallint('retention_years').notNull().default(5),
 
@@ -325,6 +343,21 @@ export const broadcasts = pgTable(
       sql`(started_from_template_id IS NULL AND template_name_snapshot IS NULL)
        OR (started_from_template_id IS NOT NULL AND template_name_snapshot IS NOT NULL)`,
     ),
+    // 108 US5 — the audience-import columns. Written by migration 0298 and
+    // TIGHTENED by 0299 after review S10 found 0298's version was an implication
+    // rather than an iff: it admitted `(import_id set, submitted_at NULL)`, a row
+    // that polled for ever (`ageMs = 0`) AND was invisible to the stuck gauge
+    // (`NULL < now() - interval` is NULL, not true). Declared here because this
+    // file documents every hand-written constraint even though `db:generate` was
+    // abandoned at 0018 — an integration test asserting this `constraint_name`
+    // should not look like it came from nowhere.
+    check(
+      'broadcasts_audience_import_coherent',
+      sql`(audience_import_id IS NULL) = (audience_import_submitted_at IS NULL)
+       AND (audience_import_completed_at IS NULL OR audience_import_submitted_at IS NOT NULL)
+       AND (audience_import_completed_at IS NULL
+            OR audience_import_completed_at >= audience_import_submitted_at)`,
+    ),
 
     // Indexes
     index('broadcasts_tenant_status_member_idx').on(
@@ -351,6 +384,20 @@ export const broadcasts = pgTable(
     uniqueIndex('broadcasts_resend_broadcast_id_uniq')
       .on(table.resendBroadcastId)
       .where(sql`resend_broadcast_id IS NOT NULL`),
+    // 108 US5 (migration 0298) — the partial index behind the stuck-import
+    // gauge and the flag-rollback drain. Leads with `tenant_id` per convention.
+    //
+    // R2-6: both consumers add clauses this index does NOT carry — the gauge adds
+    // `status = 'approved'` and a 30-minute age window, the drain adds
+    // `status = 'approved'`. So the index condition is IMPLIED BY each query
+    // rather than equal to it, which is what keeps one index serving both. Do not
+    // "align" it by adding `status`: that would make it useless to any future
+    // consumer asking the same question about a different status.
+    index('broadcasts_audience_import_pending_idx')
+      .on(table.tenantId, table.audienceImportSubmittedAt)
+      .where(
+        sql`audience_import_id IS NOT NULL AND audience_import_completed_at IS NULL`,
+      ),
   ],
 );
 

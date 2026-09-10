@@ -431,8 +431,10 @@
           "sessionsRevoked": "Sessions revoked",
           "invitationsRevoked": "Invitations revoked",
           "resendOutcome": "Outcome",
-          "contactsRemoved": "Contacts removed",
-          "contactsFailed": "Contacts failed"
+          "contactsDetached": "Contacts detached from audience",
+          "contactsAlreadyAbsent": "Already absent from audience",
+          "contactsFailed": "Contacts failed",
+          "countsNote": "Each contact is counted once. Cite the detached figure; do not add the already-absent figure to it."
         },
         "documentKind": {
           "invoice": "Invoice",
@@ -3133,18 +3135,6 @@
           "reasonTooLong": "Reason exceeds 500 characters."
         }
       },
-      "haltDialog": {
-        "title": "Halt this broadcast mid-send?",
-        "description": "This stops every batch that hasn't been dispatched yet. Batches already sent to Resend cannot be recalled. Provide a reason for the audit log + member notification.",
-        "reasonLabel": "Reason for halting",
-        "reasonPlaceholder": "Why is this being halted…",
-        "reasonHelp": "1–500 characters.",
-        "confirm": "Halt sending",
-        "cancel": "Keep sending",
-        "errors": {
-          "reasonTooLong": "Reason exceeds 500 characters."
-        }
-      },
       "proxySubmitDialog": {
         "title": "Submit on behalf of member",
         "memberLabel": "Member",
@@ -3191,83 +3181,14 @@
         "body": "Manager role: you can view the queue + broadcast details but cannot approve, reject, or cancel."
       },
       "toast": {
-        "retrySuccess": "Retry attempt {attempt} initiated for {count} failed batches.",
-        "retryBudgetExhausted": "All 3 manual retries used. Accept partial delivery to finalize this broadcast.",
-        "retryAlreadyInProgress": "Another admin is currently retrying this broadcast. Please wait a moment and refresh.",
-        "retryInvalidState": "This broadcast is not in a state that allows retry.",
-        "retryServerError": "Retry failed. Please try again or contact support.",
-        "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
-        "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
-        "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
-        "acceptPartialServerError": "Failed to accept partial delivery. Please try again.",
         "approved": "Broadcast approved.",
         "rejected": "Broadcast rejected. The member has been notified.",
         "cancelled": "Broadcast cancelled. The member has been notified.",
-        "halted": "Sending halted. Pending batches were stopped; already-sent batches will still deliver.",
         "cancelError": "Could not cancel the broadcast. Please try again.",
         "cancelTooLate": "This broadcast can no longer be cancelled — it is past the point where it can be stopped.",
         "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
         "clearHalted": "Broadcast halt cleared for this member.",
         "error": "Something went wrong. Please try again."
-      },
-      "batches": {
-        "title": "Per-batch dispatch breakdown",
-        "description": "This broadcast was split into {count} batches because the recipient list exceeded Resend's 10,000-per-audience cap. Each batch is dispatched independently.",
-        "expandLabel": "Show per-batch breakdown",
-        "collapseLabel": "Hide per-batch breakdown",
-        "summary": "{succeeded} sent · {failed} failed · {pending} pending of {total} batches",
-        "tableCaption": "Per-batch dispatch breakdown, {count} batches",
-        "columns": {
-          "batchIndex": "Batch",
-          "recipientRange": "Range",
-          "recipientCount": "Recipients",
-          "status": "Status",
-          "dispatchedAt": "Dispatched",
-          "delivered": "Delivered",
-          "bounced": "Bounced",
-          "complained": "Complained",
-          "unsubscribed": "Unsubscribed",
-          "retryCount": "Retries"
-        },
-        "batchLabel": "Batch {index} of {total}",
-        "rangeLabel": "{start}–{end}",
-        "retryCountLabel": "{count} / 5",
-        "manualRetryRemaining": "Manual retries remaining: {remaining} / 3",
-        "manualRetryExhausted": "All 3 manual retries have been used",
-        "batchStatus": {
-          "pending": "Pending",
-          "sending": "Sending",
-          "sent": "Sent",
-          "failed": "Failed",
-          "cancelled": "Cancelled"
-        },
-        "notSplit": "This broadcast was small enough to dispatch as a single audience and was not split."
-      },
-      "retryDialog": {
-        "trigger": "Retry failed batches",
-        "triggerAria": "Retry {count} failed batches",
-        "triggerDisabledAria": "Retry unavailable — budget exhausted",
-        "title": "Retry failed batches?",
-        "description": "{count} failed batches will be re-queued for another dispatch attempt. This counts as one of your 3 manual retry attempts.",
-        "budgetLine": "You have {remaining} of 3 manual retries remaining.",
-        "warning": "Re-dispatching consumes Resend API quota and may trigger duplicate emails if the original recipients have already received the message.",
-        "confirm": "Retry now",
-        "cancel": "Cancel",
-        "submitting": "Retrying…"
-      },
-      "acceptPartialDialog": {
-        "trigger": "Accept partial delivery",
-        "triggerAria": "Accept partial delivery and finalize broadcast",
-        "title": "Accept partial delivery?",
-        "description": "This broadcast will be marked as completed in its current state. Failed batches will not be retried, and the broadcast status cannot be changed afterward.",
-        "summary": "{sent} of {total} batches delivered successfully.",
-        "reasonLabel": "Reason (optional)",
-        "reasonPlaceholder": "Optional — e.g., Resend rate-limit not clearing, member already notified separately…",
-        "reasonHelp": "Optional context for the audit trail. Maximum 500 characters.",
-        "reasonCounter": "{count} / 500",
-        "confirm": "Accept partial",
-        "cancel": "Cancel",
-        "submitting": "Accepting…"
       },
       "templates": {
         "pageTitle": "Broadcast templates",
@@ -6770,9 +6691,17 @@
         "audience_too_large": "the audience grew past the limit between submission and sending",
         "audience_post_suppression_empty": "no eligible recipients were left once unsubscribes and preferences were applied",
         "malformed_segment": "the saved audience for this broadcast is incomplete — your chamber administrator needs to re-create it",
+        "failed_rows": "our email provider rejected some of the recipient addresses",
+        "counts_incoherent": "the recipient list did not transfer completely to our email provider",
+        "audience_membership_drift": "the recipient list at our email provider did not match the one we prepared, so we stopped rather than send to a group you had not approved",
+        "retry_budget_exhausted": "our email provider was unreachable for over an hour, so we stopped retrying rather than send at an unexpected time",
+        "count_mismatch": "the recipient list changed while the broadcast was being prepared, so we stopped rather than send it to a different group from the one you approved",
+        "provider_failed": "our email provider could not prepare the recipient list",
+        "gateway_permanent": "our email provider refused the request — your chamber administrator needs to check the account",
+        "gateway_unknown": "an unexpected problem occurred while preparing the send",
+        "audience_import_stuck": "preparing the recipient list took too long, so we stopped rather than send at an unexpected time",
         "generic": "a technical problem prevented delivery"
       },
-      "body2": "Our delivery service was unreachable for over an hour, so we stopped retrying to avoid sending the broadcast at an unexpected time.",
       "reassurance": "Your E-Blast quota slot has NOT been consumed and remains reserved. You can re-schedule the same broadcast from the admin queue, or your chamber admin can re-trigger dispatch manually.",
       "ctaRescheduleLabel": "Open broadcast detail",
       "footerSignOff": "If you need help, please contact your chamber administrator."

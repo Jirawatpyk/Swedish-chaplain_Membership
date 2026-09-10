@@ -1847,12 +1847,23 @@ export const broadcastsMetrics = {
    * audit; this metric is the alert-pipeline trigger.
    *
    * `sub_kind` carries the Resend gateway failure subKind that
-   * exhausted the budget (`network`, `timeout`, `server_5xx`, `api`)
-   * so dashboards can distinguish Resend outages from network blips.
+   * exhausted the budget — `network`, `timeout`, `server_5xx`, `api`, plus
+   * **`unclassified`** — so dashboards can distinguish Resend outages from
+   * network blips.
+   *
+   * Round 4 D7 + F8. `internal` was added here on 2026-09-09 for the import
+   * leg's resolve-side budget and is **removed with it** (F3): both legs now
+   * budget gateway failures only, so every value on this series again describes
+   * something Resend did. `unclassified` replaces the Application layer's
+   * `subKind ?? 'api'` default, which the gateway port's docblock had explicitly
+   * removed for "masking classifier bugs" — this is a page-on-call series, and a
+   * fault nobody classified must not arrive labelled as a real transport class.
+   * A `sub_kind="unclassified"` on the dashboard means the classifier grew a
+   * case the mapper does not know, not that Resend's API misbehaved.
    */
   dispatchBudgetExhausted(
     tenantId: string,
-    subKind: 'network' | 'timeout' | 'server_5xx' | 'api',
+    subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
   ): void {
     safeMetric(() => {
       counter(
@@ -2390,6 +2401,61 @@ export const broadcastsMetrics = {
       observeGauge(
         'broadcasts_approved_overdue_count',
         'Approved broadcasts more than 1 h past scheduled_for (slipping schedule)',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts.audience_import_submit_ms{tenant}` — 108 Phase 9 review S48.
+   *
+   * How long the ONE multipart Contacts-Import call takes. Nothing timed it
+   * before: the whole design rests on that call being size-independent at
+   * roughly 412 ms, and the 30-minute stuck threshold rests on it too, yet
+   * neither number was observable in production. A design constant that cannot
+   * be checked against reality is an assumption with a decimal point.
+   *
+   * Deliberately has **no SLO row and no alert yet** — a target needs data
+   * first, and picking one from the same measurement the code was written
+   * against would only restate the assumption. Recorded on both outcomes so a
+   * slow failure is not invisible to the histogram, which is the mistake
+   * `recipientCountMs` above documents having made once.
+   *
+   * The number to compare against is `research.md` § R9's warm round trip,
+   * measured from a Bangkok workstation against a ~220 ms-RTT link. Vercel
+   * `sin1` sits beside Neon and does not pay that, so a prod p50 well under the
+   * measured figure is the expected shape, not a surprise.
+   */
+  audienceImportSubmitMs(tenantId: string, ms: number, outcome: 'ok' | 'failed'): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_audience_import_submit_ms',
+        'Duration of the single Contacts-Import multipart call (no SLO target set yet — see S48)',
+        'ms',
+      ).record(ms, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `broadcasts.audience_import_stuck_count{tenant}` — 108 US5 (T106, FR-044 f):
+   * broadcasts whose Resend Contacts-Import was submitted, never completed, and
+   * is older than `IMPORT_STUCK_AFTER_MS` (30 min).
+   *
+   * `buildAudienceTick` already turns such a row terminal — but only on a tick
+   * that reaches that broadcast. This gauge is the independent signal, so a
+   * broadcast the cron has stopped visiting at all is still visible. It is also
+   * the one number that says "Resend has stopped answering", which no
+   * per-broadcast status can.
+   *
+   * Sampled by the gauges cron; **alarm** (not page) at ≥ 1 sustained 30 min.
+   * Runbook: `docs/runbooks/broadcast-audience-build.md` § C.
+   */
+  audienceImportStuckCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_audience_import_stuck_count',
+        'Broadcasts whose Resend contact import was submitted but never completed within 30 min',
         { tenant: tenantId },
         count,
       );

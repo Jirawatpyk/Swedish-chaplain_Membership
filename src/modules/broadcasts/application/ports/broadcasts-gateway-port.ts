@@ -35,7 +35,17 @@ export type BroadcastsGatewayError =
       readonly reason: string;
     }
   | { readonly kind: 'idempotency_conflict'; readonly reason: string }
-  | { readonly kind: 'resource_missing'; readonly resourceType: 'audience' | 'broadcast'; readonly resourceId: string }
+  | {
+      readonly kind: 'resource_missing';
+      // `'import'` included: `_classify-thrown.ts` names THIS type as the shape it
+      // duck-types into, and its rationale says the union is widened "along the
+      // whole chain rather than only where the value is produced". This
+      // declaration was the one link the sweep missed — invisible to `tsc`
+      // because `BroadcastsGatewayError` has no runtime consumer, which is exactly
+      // what makes it the drift canary the next reader will trust.
+      readonly resourceType: 'audience' | 'broadcast' | 'import';
+      readonly resourceId: string;
+    }
   | { readonly kind: 'permanent'; readonly code: string; readonly reason: string };
 
 export interface AudienceContact {
@@ -94,8 +104,48 @@ export type RetrieveBroadcastOutcome =
  * tail so callers can grep + reason about resource-missing semantics
  * with one mental model.
  */
+/**
+ * Round 2 R2-25 — did the call REMOVE something, or was it already absent?
+ *
+ * `removeContactFromAudience` used to return `void` and resolve on a 404, so its
+ * caller could not tell a detach from a no-op. The erasure adapter counted every
+ * non-throwing call as a removal (its own comment said so: "includes a 404
+ * (already absent)"), that number became `resend_contacts_removed_count` in an
+ * append-only Art. 30 record, and the DPO's evidence card rendered it under the
+ * label **"Contacts removed"**. A DSR answer produced by following the runbook
+ * was therefore materially false under Art. 12(3) — it asserted removals that had
+ * not happened.
+ *
+ * Both outcomes are successes; only one is a removal.
+ */
+export type RemoveContactOutcome =
+  | { readonly kind: 'detached' }
+  | { readonly kind: 'already_absent' };
+
 export type GetAudienceContactCountOutcome =
-  | { readonly kind: 'present'; readonly count: number }
+  | {
+      readonly kind: 'present';
+      readonly count: number;
+      /**
+       * Round 4 F1 residual — is `count` the WHOLE audience, or one page of it?
+       *
+       * `GET /audiences/{id}/contacts` paginates and says so: the response
+       * carries `has_more` alongside `data`. MEASURED against the live account
+       * on 2026-09-09 — top-level keys are exactly `data,has_more,object`. The
+       * SDK models neither: `ListContactsOptions` is `{ audienceId }` and
+       * `ListContactsResponseSuccess` is `{ object, data }`, so the adapter
+       * returned `data.length` and threw the truncation signal away.
+       *
+       * That mattered because a truncated count that happens to land at or below
+       * the resolved count was indistinguishable from a VERIFIED-CLEAN audience.
+       * The `>` comparison is safe either way (truncation can only undercount, so
+       * no false refusals), but "we checked and it matched" was a claim the data
+       * could not support.
+       *
+       * `false` means the caller may only conclude a LOWER BOUND.
+       */
+      readonly complete: boolean;
+    }
   | { readonly kind: 'not_found' };
 
 export interface BroadcastsGatewayPort {
@@ -148,12 +198,103 @@ export interface BroadcastsGatewayPort {
   ): Promise<GetAudienceContactCountOutcome>;
 
   /**
-   * COMP-1 US3-C — best-effort removal of a contact from an audience on
-   * member erasure. A 404 (contact or audience already absent) resolves
-   * (idempotent); a 5xx / network error throws a retryable GatewayThrowable
-   * so the caller can classify it as a propagation failure.
+   * Detach a contact from ONE audience. A 404 (contact or audience already
+   * absent) resolves (idempotent); a 5xx / network error throws a retryable
+   * GatewayThrowable so the caller can classify it as a propagation failure.
+   *
+   * ⚠️ This does NOT satisfy GDPR Art. 17, and its provider response says
+   * otherwise. Measured 2026-09-09 (108 Phase 9 review U1): after a successful
+   * call answering `{"deleted": true}`, the audience-scoped read 404s while an
+   * audience-less `GET /contacts/{email}` still returns the contact at 200. It
+   * detaches.
+   *
+   * **This is nevertheless the call the erasure cascade makes, on purpose.**
+   * Round 3 finding 3-10: this line used to read "For erasure use
+   * `deleteContactGlobally` below", which contradicted the only erasure caller
+   * (`subprocessor-erasure-adapter.ts:68`) and pointed a compliance reader at a
+   * call the codebase deliberately does not make. The Resend account is ONE
+   * account shared by every tenant, so a global delete during tenant A's
+   * erasure would destroy tenant B's contact record — including the
+   * Resend-side `unsubscribed` flag that `on_conflict=upsert` exists to
+   * preserve, resurrecting B's objecting member as SUBSCRIBED on the next
+   * import. That trades an Art. 17 residual for an Art. 21 regression on
+   * someone who never asked for anything.
+   *
+   * The residual is tracked as 8a in `docs/compliance/processing-records.md`.
+   * Read that before changing this, not this docblock alone.
    */
-  removeContactFromAudience(audienceId: string, email: string): Promise<void>;
+  removeContactFromAudience(
+    audienceId: string,
+    email: string,
+  ): Promise<RemoveContactOutcome>;
+
+  /**
+   * COMP-1 US3-C — DELETE the contact record itself, across every audience.
+   *
+   * **Not called by the erasure cascade** — see `removeContactFromAudience`
+   * above for why, and residual 8a. It stays on the port because it is the only
+   * call that genuinely erases, and the day the Resend account is split per
+   * tenant it becomes the right one.
+   *
+   * Measured in the same run (U1b): `DELETE /contacts/{email}` answers 200 and
+   * the read-back is a genuine 404, so unlike the audience-scoped call above
+   * this is the one that actually erases. The erasure cascade had been calling
+   * the other one and reporting `resendOutcome: 'ok'` while every address
+   * remained at the processor — on both dispatch paths, not just the import.
+   *
+   * Same idempotency contract: a 404 resolves, transport errors throw
+   * retryable.
+   */
+  deleteContactGlobally(email: string): Promise<void>;
+
+  /**
+   * T086 (108 US5) — hand an entire audience to the provider in ONE call.
+   *
+   * The alternative, `addContactsToAudience`, is a serial loop bounded by
+   * latency (~2.08 req/s measured), so roughly 623 contacts is all a 300 s
+   * function can drain. This is size-independent: one multipart request,
+   * ~412 ms whether it carries one address or fifty thousand, because the
+   * provider processes it asynchronously and answers with a job id.
+   *
+   * The caller MUST NOT treat the returned id as delivery. Nothing has been
+   * added yet — `getContactImport` is how completion is learned, and its
+   * completion rule is the only safe send signal.
+   *
+   * Throws the same classified `GatewayThrowable` as every other method here.
+   * A 4xx is `permanent` and must not be retried: the archetypal one is the
+   * account contact cap, where each retry consumes the resource whose
+   * exhaustion caused the failure.
+   */
+  createContactImport(
+    audienceId: string,
+    emails: readonly string[],
+  ): Promise<{ readonly importId: string }>;
+
+  /**
+   * T086 — poll one import job.
+   *
+   * Returns the provider's `status` and `counts` VERBATIM; the completion
+   * decision belongs to the Application layer, which requires ALL of:
+   * `status === 'completed'`, `failed === 0`,
+   * `created + updated + skipped === total`, and `total` equal to the count it
+   * resolved. That rule is load-bearing, not defensive — one import in five
+   * identical probes returned `completed` with `failed: 0` and `total: 0` and
+   * attached nothing (research R9 V2 (c)). A caller that reads only `status`
+   * will eventually send a broadcast to an empty audience.
+   *
+   * Absent counts (a job still `pending` has none) are returned as zeros, so
+   * arithmetic on them compares rather than yielding NaN.
+   */
+  getContactImport(importId: string): Promise<{
+    readonly status: string;
+    readonly counts: {
+      readonly total: number;
+      readonly created: number;
+      readonly updated: number;
+      readonly skipped: number;
+      readonly failed: number;
+    };
+  }>;
 
   /**
    * PR-2 #5 — delete an ephemeral per-broadcast Resend audience after the

@@ -239,7 +239,7 @@ Feature-specific (set before flipping the feature on):
 ### 6.2 Cron jobs — native Vercel Cron since 2026-07-17 (see `docs/runbooks/cron-jobs.md`)
 All jobs run on native Vercel Cron (`vercel.json`), registered on the production deploy; cron-job.org is a paused standby. Confirm present in Vercel → Settings → Cron Jobs (Bearer `CRON_SECRET` auto-injected):
 - [ ] F9 `snapshot-refresh-coordinator` `*/5` (**POST**) + `process-export-jobs` `*/5` **(T101)**
-- [ ] F7 `dispatch-scheduled` `*/5`, `reconcile-stuck-sending` `*/15`, `dispatch-batches` `*/5`, `split-large-broadcasts` `*/5`, `broadcasts-gauges` `*/5`, **`prune-expired-drafts` `30 4 * * *`** ← was missing, **`cleanup-audiences` `*/15`** (PR-2 #5 — deletes terminal broadcasts' ephemeral Resend audiences) ← new
+- [ ] F7 `dispatch-scheduled` `*/5`, `reconcile-stuck-sending` `*/15`, ~~`dispatch-batches` `*/5`~~, ~~`split-large-broadcasts` `*/5`~~, `broadcasts-gauges` `*/5`, **`prune-expired-drafts` `30 4 * * *`** ← was missing, **`cleanup-audiences` `*/15`** (PR-2 #5 — deletes terminal broadcasts' ephemeral Resend audiences) ← new **⚠️ Round 4, whole-branch review #1 — `ca51f59a1` DELETED both batch crons on the Phase-9 branch (`split-large-broadcasts`, `dispatch-batches`). Do not look for them in `vercel.json`; there is nothing to register.**
 - [ ] F5 `stale-pending-count` `*/5`
 - [ ] **F5 Stripe webhook — ENABLE `charge.refund.updated` event delivery** on the Stripe endpoint (Dashboard → Developers → Webhooks → this endpoint's enabled events). **Load-bearing (H-e):** without it every ASYNC refund (`pending`/`requires_action` at creation) hangs forever — the `processRefundUpdated` reconciler never fires. **Ordering guard (A.10→A.11):** enable this ONLY AFTER the `processRefundUpdated` handler is deployed; an event delivered before the handler ships is swallowed by the default `acknowledged_only` branch. Monitor `payments_refund_pending_awaiting_processor_total` — a sustained rate>0 means the subscription is off/broken.
 - [ ] F8 — **all 7** coordinators: `dispatch-coordinator`, `at-risk-recompute-coordinator`, `tier-upgrade-evaluate-coordinator`, `reconcile-pending-reactivations-coordinator`, `lapse-cycles-on-grace-expiry-coordinator`, `prune-consumed-tokens`, `reconcile-pending-applications` (cadence per `cron-jobs.md`)
@@ -272,6 +272,7 @@ Flip on only after each feature's gates above pass:
 - [ ] F7 send hardening PR-1 merged (name ≤70, from un-wrapped, quota released on failed_to_dispatch).
 - [ ] **F7 send hardening PR-2 merged** (defect #5 — ephemeral per-broadcast audience + cleanup cron). After merge, each dispatch creates its OWN Resend audience and the `cleanup-audiences` cron deletes it once the broadcast is terminal.
 - [ ] **`cleanup-audiences` cron registered** in cron-job.org: `POST /api/cron/broadcasts/cleanup-audiences`, Bearer `CRON_SECRET`, `*/15`, **retry OFF** (per `docs/runbooks/cron-jobs.md`).
+- [ ] **Resend plan limits — the account is on FREE (confirmed 2026-09-08)**: **1,000 contacts** (13 in use) and **3 segments/audiences** (1 in use — `General`), 3 domains, unlimited sending. Two operator consequences. (a) A broadcast above ~**987** recipients cannot be pushed: Resend answers 4xx, `classifyResendError` returns `permanent`, and the broadcast goes to `failed_to_dispatch` in one tick — loud and terminal, which is the *good* failure, but it is a real cap 5× below the app's configured 5,000 ceiling. (b) With `General` holding a slot, **only two broadcasts can be in flight at once**; a third fails until `cleanup-audiences` frees room — that is the number behind the "plan-segment-limit overflow" bullet below. Pro marketing ($40/mo) raises contacts to 5,000 and segments to unlimited, but **does not** change the push: it is latency-bound at ~2.08 req/s / ~623 per 300 s tick either way (T095, `specs/108-contact-recipient-rules/research.md` § R9). SweCham reaches neither cap today (150 recipients; ~450 after the secondary import).
 - [ ] **Resend audience count stays bounded post-deploy** — spot-check the Resend dashboard a few cron ticks after the first production broadcast: terminal broadcasts' audiences should be removed (`audience_deleted_at` stamped), not accumulating. A transient plan-segment-limit overflow surfaces as a `failed_to_dispatch` until the cron frees room (known behavior; the cron keeps the count bounded).
 - [ ] **COMP-1 GDPR erasure × cleanup interaction** is covered by `tests/integration/broadcasts/erasure-after-audience-cleanup.test.ts` (member-erasure of Resend contacts still resolves after the audience is cleaned up — the gateway is 404-tolerant). No operator action; noted for the security reviewer.
 
@@ -294,6 +295,130 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 - [ ] **Prerequisite — `billing_cycle` admin-review pass** before enrolling a cohort. Errors skew one way (false `'calendar'`, not false `'rolling'`); there is deliberately **no bulk-correct tool**, so scope the review to the cohort being enrolled. If it turns up more than a handful of corrections, raise it — building the tool may be cheaper than the manual pass, and that is a maintainer call.
 - [ ] **Stand-down**: reverse any ONE key; key 1 is fastest (env + redeploy, no data change). Un-enrolling does not remove drafts already created — discard those from the review queue.
 - [ ] **`FEATURE_ERASURE_DISCARD_DRAFTS` is NOT one of these keys** — see § 6.4. It is independently required, and standing auto-invoice down does not stand it down.
+
+### 6.9 108 Contact recipient rules — `FEATURE_CONTACT_MARKETING_RECIPIENTS` flip (task T094)
+
+> **Full record: `specs/108-contact-recipient-rules/reviews/cutover.md`.** Run that; this is the index entry and the sign-off line.
+>
+> **State on 2026-09-08 (10:41): the variable is ABSENT from the Vercel project and the feature is OFF.** It was set to `true` at 09:44 and deleted at 10:41 once it became clear the flip was armed; `src/lib/env.ts:638` defaults it to `false`, so a missing variable is a valid boot that resolves to off.
+>
+> ⚠️ **Why it matters that it was deleted rather than left set:** `vercel.json` has no `ignoreCommand`, so every push to `main` deploys production — with the variable set, a docs-only PR performs the flip just as well as a deliberate one, and nobody has to decide anything. **On this project, setting a feature-flag env var IS the flip, scheduled for whenever someone next merges. Set it when you are ready to redeploy, not before.** That is the operator gate the flag exists for — `plan.md` § Complexity Tracking #2 rejected flip-on-merge for precisely this reason.
+
+- [x] **T093 — FR-027a pre-flight review.** *(Cleared 2026-09-08 as VACUOUS — see the sign-off line below. Re-open on the secondary import.)* Open `/admin/marketing/audience?kind=secondary&state=on&eligible=1`, switch off anyone who must not receive marketing, and record **date + reviewer + the eligible-secondary count** on the sign-off line below. If the count is 0 the review is *vacuous* — record it as "0 eligible secondaries, nothing to switch off" **with the date**, never as "n/a": the count is the evidence, and SweCham's pending secondary-contact import changes it in one step.
+- [x] **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`). *(Cleared 2026-09-08 as VACUOUS: 0 secondary contacts exist. Re-open on the secondary import — that population is exactly the one Art. 14 is about.)* The flip must not happen until either the system notices a new secondary on first marketing contact, or the T093 pass above attests per contact. A secondary who never gave their address to the chamber directly is a data subject the chamber has not yet informed. Vacuous at 0 eligible secondaries.
+- [x] **Push-capacity gate (staff review 🔴) — CLOSED IN CODE 2026-09-08, then closed a SECOND way the same day.** First: `DELIVERABLE_RECIPIENTS_PER_TICK = 500` with `currentAudienceCeiling() = min(configured, 500)` — refuse what one 300 s tick cannot push at the measured ~2.08 req/s. Then **Round 4, whole-branch review #1 — the sentence that stood here described BATCHING, and `ca51f59a1` deleted the batch model on this same branch.** There is no batch size, no split threshold, and nothing is split: an audience above the enforced ceiling is REFUSED. **§ 6.10 owns the ceiling number — read it there.** 
+- [x] **T095 — MEASURED 2026-09-08 12:41.** `ratelimit-policy: 10;w=1` read from the API (account limit **10 req/s**, so the "~2 req/s" in four source comments was wrong), but the push is a serial `await` loop, so `throughput = min(account_limit, 1 / RTT)` and the warm RTT is ~0.481 s ⇒ **~2.08 req/s — latency binds, not the plan**. `per_tick_max ≈ 623`; the enforced ceiling is now 500. Full record + caveats in `research.md` § R9 (T095 block) and `reviews/cutover.md` § 5a; capture command kept there for re-measuring from `sin1` on the first real send.
+- [ ] **Before MERGING the Phase-9 branch**: run `scripts/inventory-broadcast-outbox.ts` against prod, and act on its exit code. **§ 6.10 OWNS THE CEILING NUMBER — read it there, not here.** *(Round 4, whole-branch review #1: this line has now been wrong twice about the same merge. It first said the merge lands a clamp; that was corrected on 2026-09-08 to say the merge leaves the ceiling UNCHANGED at 5,000 and lowers a SPLIT THRESHOLD instead, with "do not cancel broadcasts the system will handle by itself". **That correction described the batch model, which `ca51f59a1` deleted on this same branch** — there is no split threshold and nothing is split. § 6.10, 32 lines below, said the opposite and correctly. Two places owning one number is how this happened, so this one now points and the other one states. The same fix was applied to `quickstart.md` row C as round-4 D1; this copy was not swept with it.)*
+- [ ] **Flip**: add `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` to the Vercel project (it is currently **absent** — deleted 2026-09-08) → **redeploy production immediately after**, in that order and without an unrelated merge in between.
+- [ ] **Observe the first send** — the five signals in `reviews/cutover.md` § 4. The `audience_import_status` gauge went with the deferred T086 and **does not exist**; do not wait for it. Any of the first four wrong → flag OFF + redeploy before the next dispatch tick.
+- [ ] **After one clean week (T099)**: delete the flag from `src/lib/env.ts`, `.env.example` and Vercel, and delete the `primary_only` leg.
+
+**T093 sign-off** — date: **2026-09-08 10:45 (Asia/Bangkok)** · reviewer: **maintainer** · eligible secondaries at review: **0** (tenant has 150 members / 150 primaries / **0 secondary contact rows**; measured read-only against prod with `scripts/inventory-primary-contact-invariant.ts`, `violations: 0`) · Art. 14 attestation: **vacuous (0)** — no secondary contact exists, so there is no data subject the chamber has not informed.
+
+> **This sign-off expires on SweCham's secondary-contact import.** Re-run the inventory and redo
+> this line the moment that import lands: it turns both the pre-flight review and the Art. 14
+> attestation from vacuous into real work, on a population that by definition never gave the
+> chamber its addresses directly.
+
+---
+
+### 6.10 108 Phase 9 — `FEATURE_F7_IMPORT_AUDIENCE` flip
+
+> **A second flag, with its own gate.** § 6.9 covers the audience LEG
+> (`FEATURE_CONTACT_MARKETING_RECIPIENTS`, primary-only → 1:N). This one covers
+> HOW the audience reaches Resend: OFF is the serial per-contact push, ON is a
+> single Contacts-Import upload confirmed on a later tick.
+>
+> The same property as § 6.9 applies and is the reason this section exists at
+> all: `vercel.json` has no `ignoreCommand`, so **setting the variable IS the
+> flip**, scheduled for whoever merges next. `src/lib/env.ts` defaults it to
+> `false`, so absent is a valid boot that resolves to off.
+>
+> Added 2026-09-09 by the 108 Phase 9 review (S36): a flag that changes where
+> recipient lists go had no go-live gate, appearing only in a runbook and
+> `.env.example`.
+
+**Unflagged on merge — true whatever this flag is set to:**
+
+- [ ] **Accepted audience ceiling moves 5,000 → 500** while the import flag is
+  OFF. Deliberate (`reviews/cutover.md` § 5): 501–5,000 is accepted today and
+  already fails silently, because 300 s of the serial loop drains ~623. Run
+  `scripts/inventory-broadcast-outbox.ts` against prod before merging and
+  confirm nothing is queued in that band.
+- [ ] **Migrations `0298` + `0299` apply on the deploy.** Both were measured
+  against an empty `broadcasts` table in prod on 2026-09-09; re-check
+  `SELECT count(*) FROM broadcasts` if that is no longer true, because `0299`
+  validates a CHECK under ACCESS EXCLUSIVE.
+
+**Before setting the flag:**
+
+- [ ] **Resend plan headroom.** The Free plan allows 3 audiences and 1,000
+  contacts. One in-flight broadcast + one recently sent (reaped ≥ 1 h after
+  terminal) + one crash-orphan (reaped at 24–48 h) fills it. Confirm the plan
+  or the audience count before the first large send.
+- [ ] **Privacy sign-off.** `docs/compliance/processing-records.md` residual 8a
+  records that Resend contact records survive member erasure — measured, not
+  inferred. A DSR answer must say so. Sign the line below acknowledging it.
+- [ ] **FR-043's 400 ms @ 5,000 band has no test**, and the 3 s @ 20,000 budget
+  is asserted only through `ciScaled(3_000)`. Both must be measured from
+  `sin1`, never from CI or a workstation.
+
+**The flip, then the observation:**
+
+- [ ] Add `FEATURE_F7_IMPORT_AUDIENCE=true` → **redeploy immediately after**,
+  in that order, with no unrelated merge in between.
+- [ ] **Observe the first send — CHECK RESEND FIRST, then the audit row.**
+  This order is not cosmetic (round 2 R2-49). The previous version said "if the
+  audit row is missing the send did not go through this path — flag OFF and
+  redeploy", and that instruction **causes** the failure it is trying to detect:
+  S8's whole shape is *mail already out, audit row missing*, and flipping the flag
+  off hands that still-`approved` row to `dispatchScheduledBroadcast`, which
+  reuses `resend_audience_id` and sends the broadcast a SECOND time to the whole
+  audience.
+  1. **Resend dashboard** — was a broadcast created and sent? That is the only
+     source that knows whether mail left the building.
+  2. Then the logs: a submit tick logs `broadcasts.audience_import.submitted`;
+     the confirming tick logs `broadcasts.audience_import.sent` and writes a
+     `broadcast_send_started` audit row.
+  3. **Resend shows a send but there is no audit row** → do NOT flip the flag; a
+     flag flip here double-sends. **This is TWO states, not one** (round 4 D4),
+     and they need opposite actions — check
+     `broadcasts_audit_emit_failed_total{event_type='broadcast_send_started'}`
+     and the log `broadcasts.audience_import.send_record_lost` (severity
+     `critical`) to tell them apart:
+     - **`send_record_lost` fired** → the import leg sent correctly and only its
+       audit INSERT failed. The row is already `sending`. Do NOT try to cancel:
+       `cancel-broadcast.ts` accepts only `submitted`/`approved` and will refuse
+       you. Reconcile the audit trail by hand and leave the row alone.
+     - **No `send_record_lost`** → the send did not go through this path.
+       Cancel the broadcast (that releases the quota) and reconcile by hand.
+  4. **Resend shows nothing and the row is still `approved`** → the flag flip is
+     safe, and the drain query in **§ D1 of
+     `docs/runbooks/broadcast-audience-build.md`** is the precondition. (Round 4
+     D2: this said "§ E", and § E was renamed to § D1 in the same commit set that
+     reordered it. There is no § E — an operator scanning for it mid-incident
+     finds nothing and improvises the predicate that exists to stop a delivery to
+     a half-built audience.)
+- [ ] Watch the failure surfaces for one hour — **and know what each can and
+  cannot see** (round 2 R2-16). `broadcasts_audience_import_stuck_count` only
+  fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero
+  there is not evidence of health on its own. The signals that do move on a
+  first-send failure are — **corrected, round 4 D3, because two of the three
+  this used to name are STRUCTURALLY SILENT inside a one-hour watch**:
+
+  | signal | moves within the hour? |
+  |---|---|
+  | `broadcasts.dispatch_resolve_failed.total` | **yes, immediately** — 15-minute alarm, and since round 4 L4 both legs also write `cron.broadcasts.dispatch.server_error` with a bounded `errClass`, so it says WHICH side failed |
+  | cron span `cron.import_submitted` / `cron.import_pending` (R2-15) | yes |
+  | `broadcasts.failed_to_dispatch.count{failure_reason}` | **no** — emitted only from terminal paths, and a first-send failure that is retrying is not terminal |
+  | `broadcasts_dispatch_budget_exhausted_total` | **no** — needs `elapsedMs > 1 h` off `scheduledFor ?? approvedAt ?? createdAt`, so it lands on the first tick past ~65 min, i.e. after the window closes |
+  | `broadcasts_audience_import_stuck_count` | **no on its own** — it only fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero is not evidence of health (round 2 R2-16) |
+
+  Watch the first two. Reading the others as "quiet, therefore healthy" is the
+  failure this table exists to prevent.
+
+**§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
+acknowledged: ☐
 
 ---
 
@@ -398,6 +523,7 @@ Work that can proceed NOW (does not depend on F9):
 - [ ] 🟡 **Privacy policy / PDPA consent text** — longest lead, hardest blocker; start with legal/customer now
 - [ ] 🟡 **Assign UAT sign-off owner** at SweCham
 - [ ] 🟡 **Stripe live-mode prep** — create live products/prices, plan test→live cutover
+  - [ ] **Stripe Dashboard → Settings → Business → Customer emails → "Successful payments" = OFF** (108 gap G1, quickstart § Cutover 7). Chamber-OS never sets `receipt_email`, but for PromptPay it passes `billing_details.email`, so with this toggle ON Stripe sends its own receipt to that address **in addition** to the chamber's own receipt — two receipts for one payment, one of them not the chamber's document. Turn it off in the LIVE dashboard as part of the test→live cutover, not after.
 - [ ] Confirm ClamAV daemon health + Resend domain still verified
 
 **Housekeeping (anytime):** resolve untracked artifacts (§ 8).

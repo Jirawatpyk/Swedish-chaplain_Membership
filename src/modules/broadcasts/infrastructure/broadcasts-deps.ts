@@ -8,6 +8,7 @@
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
@@ -30,11 +31,20 @@ import type { BroadcastApprovalCounter } from '../application/ports/broadcast-ap
 import type { ClockPort } from '../application/ports/clock-port';
 import type { AudienceMode } from '../domain/audience-mode';
 import type { ResolveSegmentDeps } from '../application/use-cases/resolve-segment-recipients';
-import { audienceCeiling } from '../domain/audience-ceiling';
-import { isF71aUs1Enabled } from './feature-flags';
+import {
+  audienceCeiling,
+  DELIVERABLE_RECIPIENTS_PER_TICK,
+} from '../domain/audience-ceiling';
+import { isF7ImportAudienceEnabled } from './feature-flags';
+import { err, ok } from '@/lib/result';
+import { recipientSegmentFromPersisted } from '../domain/recipient-segment';
+import { unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
+import { resolveSegmentRecipients } from '../application/use-cases/resolve-segment-recipients';
+import type { MembersBridgePort } from '../application/ports/members-bridge-port';
+import type { BuildAudienceTickDeps } from '../application/use-cases/build-audience-tick';
+import type { Broadcast } from '../domain/broadcast';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
-import type { RollUpBatchBroadcastDeps } from '../application/use-cases/roll-up-batch-broadcast';
 import type { UnsubscribeRecipientDeps } from '../application/use-cases/unsubscribe-recipient';
 import type { SaveDraftDeps } from '../application/use-cases/save-draft';
 import type { SubmitBroadcastDeps } from '../application/use-cases/submit-broadcast';
@@ -50,15 +60,17 @@ import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expi
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
-// F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k)
-import type { SplitBroadcastIntoBatchesDeps } from '../application/use-cases/split-broadcast-into-batches';
-import type { RetryFailedBatchesDeps } from '../application/use-cases/retry-failed-batches';
-import type { AcceptPartialDeliveryDeps } from '../application/use-cases/accept-partial-delivery';
-import type { AutoRetryFailedBatchesDeps } from '../application/use-cases/auto-retry-failed-batches';
-import type { ApplyBatchWebhookEventDeps } from '../application/use-cases/apply-batch-webhook-event';
-import { makeDrizzleBatchManifestsRepo } from './drizzle-batch-manifests-repo';
-import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
-import { pgAdvisoryLockAdapter } from './pg-advisory-lock-adapter';
+// Two imports were removed here in 108 Phase 9 review round 1: the batch
+// deletion left `makeDrizzleBroadcastsRetryRepo` and `pgAdvisoryLockAdapter`
+// unused in this file.
+//
+// Outcome, recorded because this comment claimed the opposite for a day: the
+// retry repo went WITH the batch path (`ca51f59a1` + round 4 on this branch), so
+// `drizzle-broadcasts-retry-repo.ts` no longer exists. Its port survives without
+// an implementor — `application/ports/broadcasts-retry-repo.ts`, zero consumers
+// in `src/`, `tests/` and `scripts/`; kept deliberately, since deleting a port is
+// a decision someone should make on purpose rather than a review tidy-up.
+// `pgAdvisoryLockAdapter` still exists and still has its integration test.
 // F7.1a Phase 4 (US2 — Image embedding + allowlist + ClamAV scan)
 import { makeDrizzleImageAllowlistRepo } from './drizzle-image-allowlist-repo';
 import { vercelBlobImageStorage } from './vercel-blob-image-storage';
@@ -109,11 +121,25 @@ export function currentAudienceMode(): AudienceMode {
 }
 
 /**
- * 108 PR-C T085 (FR-042) — the ONE ceiling every resolver caller reads:
- * 5,000 unless BOTH the F7.1a batching path AND the 1:N audience flag are
- * ON, then 50,000. Read per call (a flag flip takes effect on the next
- * request/tick), the same way the legacy `isF71aUs1Enabled()` gate is
- * consulted by the batch crons.
+ * 108 PR-C T085 (FR-042) — the CONFIGURED ceiling, i.e. what the flags say the
+ * system would accept. Since T095 (2026-09-08) it is no longer what any caller
+ * compares against: they all read `currentAudienceCeiling()` below.
+ *
+ * It has **no reader outside this file** — the two batch crons that used to
+ * read it were deleted in `ca51f59a1`. It is kept and exported anyway because
+ * its test pins it as a column distinct from the enforced value; see the
+ * docblock on `currentAudienceCeiling()` for why collapsing them would make
+ * the clamp assertions vacuous.
+ *
+ * Value: 5,000 unless BOTH `FEATURE_F7_IMPORT_AUDIENCE` AND the 1:N audience
+ * flag are ON, then 50,000. Read per call, so a flag flip takes effect on the
+ * next request/tick.
+ *
+ * Round 3 finding 3-4 — this said "the F7.1a batching path", naming
+ * `FEATURE_F71A_US1_PAGINATION`. That WAS the gate until `ca51f59a1` deleted
+ * the batch path; the code below has read `isF7ImportAudienceEnabled()` since,
+ * and the prose did not follow. A live-Neon test restated the same stale rule
+ * and was RED under the dev/prod flag configuration.
  *
  * Review H-2 (2026-09-07): the wide ceiling was raised FOR the 1:N audience,
  * so it moves WITH `FEATURE_CONTACT_MARKETING_RECIPIENTS`. Gating on the
@@ -125,10 +151,71 @@ export function currentAudienceMode(): AudienceMode {
  * the old 5,000. Pinned by `broadcasts-deps-audience.test.ts` against an
  * explicit flag matrix (never against itself).
  */
-export function currentAudienceCeiling(): number {
+export function configuredAudienceCeiling(): number {
   return audienceCeiling(
-    isF71aUs1Enabled() && env.features.contactMarketingRecipients,
+    isF7ImportAudienceEnabled() && env.features.contactMarketingRecipients,
   );
+}
+
+/**
+ * The ceiling every SINGLE-TICK call site actually compares against.
+ *
+ * T095 (2026-09-08) separated two numbers that had been conflated.
+ * `configuredAudienceCeiling()` is the flag decision — 5,000, or 50,000 when
+ * the batching path and the 1:N audience are both on — and it stays pinned on
+ * its own so an inverted flag expression still fails a test (the H-2 guard
+ * above). `DELIVERABLE_RECIPIENTS_PER_TICK` is the measured bound of the
+ * serial Resend push (derivation: `research.md` § R9, CORRECTED block).
+ *
+ * They were never the same number, and the gap was the bug: a broadcast
+ * between the two passed submit and then could not be delivered by any path,
+ * sitting in `approved` until `broadcasts_approved_overdue_count` noticed
+ * about ninety minutes later.
+ *
+ * **The clamp is conditional on the IMPORT flag, and it is a tightening.**
+ * Phase 9b's split/batch model is gone — `ca51f59a1` deleted both crons and
+ * `SPLIT_THRESHOLD_RECIPIENTS` with them. What replaced it inverts the
+ * argument: the serial per-contact loop is the thing with a per-tick capacity,
+ * and the import removes it, because one multipart upload carries the whole
+ * CSV in a single size-independent call.
+ *
+ *   - import OFF (today's default, and prod's rollback position) → the legacy
+ *     loop runs, so the measured single-tick bound is real and this clamps to
+ *     it. Above ~500 the answer is a refusal at submit.
+ *   - import ON  → no per-tick capacity to clamp against; accept what the
+ *     flags configure. A growing chamber's headcount is then a Resend plan
+ *     decision, not a code change.
+ *
+ * **STATE THE DELTA AGAINST `origin/main`, NOT AGAINST THIS BRANCH.** `main`
+ * has no clamp at all — `currentAudienceCeiling()` there is a bare
+ * `audienceCeiling(...)`. So on merge, with the import flag absent and
+ * therefore false, the accepted ceiling moves **5,000 → 500, unflagged**.
+ * That is deliberate and recorded with its reasoning in
+ * `specs/108-contact-recipient-rules/reviews/cutover.md` § 5: audiences of
+ * 501–5,000 are accepted today and *already fail silently*, because 300 s of
+ * the serial loop cannot drain them (measured 2.08 req/s ⇒ ~623/tick). The
+ * refusal replaces a silent non-delivery with a legible error. Do not "restore"
+ * 5,000 to avoid a behaviour change without reading § 5 first.
+ *
+ * `configuredAudienceCeiling()` stays exported on its own even though nothing
+ * outside this file reads it any more. That is not dead code kept by accident:
+ * `broadcasts-deps-audience.test.ts` asserts `configured` and `enforced` as
+ * SEPARATE columns, and rows where they differ (5,000 vs 500) are what keep an
+ * inverted flag expression failing. Collapse them and the clamp assertions go
+ * vacuously green — the H-2 guard above.
+ *
+ * FR-042 still holds: every call site — compose count, submit, dispatch —
+ * compares against this one function, and every i18n string interpolates
+ * `{ceiling, number}`, so the copy follows in all three locales with no key
+ * changes.
+ *
+ * Note this is the ACCEPT bound only, and the estimate that routed a row was
+ * frozen at submit, so it can be days stale by the time a tick reads it.
+ */
+export function currentAudienceCeiling(): number {
+  return isF7ImportAudienceEnabled()
+    ? configuredAudienceCeiling()
+    : Math.min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK);
 }
 
 /**
@@ -282,12 +369,6 @@ export function makeCancelBroadcastDeps(
     // null; future-extensibility for F12 white-label).
     membersBridge,
     // F7.1a US1 FR-004 (Phase 3E.3) — pre-cancel pending batch halt.
-    // Production wiring includes the Drizzle BatchManifestsPort so
-    // cancel-broadcast can call `markCancelled` on pending batch rows
-    // BEFORE the broadcast-row transition. Test fixtures (F7 MVP era)
-    // can continue to mock CancelBroadcastDeps without this field
-    // since it's typed optional — backward compat preserved.
-    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
   };
 }
 
@@ -339,7 +420,10 @@ export async function makeDispatchScheduledBroadcastDeps(
     tenantDisplayName = await resolveTenantDisplayName(tenantId);
   } catch (e) {
     logger.error(
-      { err: (e as Error).message, tenantId },
+      // FINAL round H-3 sweep: this is a DB read, so the throw can be a
+      // `NeonDbError` carrying the statement and its bindings. `errKind` keeps
+      // the class and drops the provider's free text.
+      { err: errKind(e), tenantId },
       'broadcast_dispatch_tenant_displayname_lookup_failed',
     );
     tenantDisplayName = tenantId;
@@ -353,6 +437,13 @@ export async function makeDispatchScheduledBroadcastDeps(
     eventAttendees: eventAttendeesBridge,
     audienceMode: currentAudienceMode(),
     audienceCeiling: currentAudienceCeiling(),
+    // Round 4 F13 — an orphaned comment was here, describing a DELIVERY bound
+    // that "hands a large audience to the batch path rather than pushing it and
+    // dying at `maxDuration`". `ca51f59a1` deleted the batch path and the
+    // `deliverablePerTick` dep it annotated; the comment stayed and drifted onto
+    // `audit:`, which it has nothing to do with. There is one ceiling now
+    // (`currentAudienceCeiling()`, above) and an audience above it is refused,
+    // not split.
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,
@@ -521,22 +612,6 @@ export function makeReconcileStuckSendingDeps(
 }
 
 /**
- * Ship-blocker A — composition root for the batch-completion roll-up
- * sweep run by the reconcile-stuck-sending cron.
- */
-export function makeRollUpBatchBroadcastDeps(
-  tenantId: string,
-): RollUpBatchBroadcastDeps {
-  return {
-    tenant: asTenantContext(tenantId),
-    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
-    audit: f7AuditAdapter,
-    clock: systemClock,
-  };
-}
-
-/**
  * Webhook signature verifier — exposed at the composition root for the
  * route handler. The verifier is stateless; tests inject a stub via the
  * ports module rather than swapping the singleton.
@@ -611,126 +686,6 @@ export async function resolveTenantByResendBroadcastId(
 // F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) — use-case factories
 // =====================================================================
 
-/**
- * T044 — composition root for `splitBroadcastIntoBatches` use case.
- * Called by the cron dispatcher (Phase 3 T055) after recipient
- * resolution completes; runs inside `runInTenant(ctx)` provided by the
- * factory-bound `batchManifests` adapter.
- */
-export function makeSplitBroadcastIntoBatchesDeps(
-  tenantId: string,
-): SplitBroadcastIntoBatchesDeps {
-  return {
-    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
-    audit: f7AuditAdapter,
-    clock: systemClock,
-  };
-}
-
-/**
- * T047 — composition root for `retryFailedBatches` use case (admin
- * route T050). Phase 3E.1 (2026-05-19) wired the production
- * `pgAdvisoryLockAdapter` — T047's body runs in `broadcasts.withTx`
- * so the lock holds across snapshot + increment + fan-out + audit
- * (true SC-007 semantics). The inline comment on the `advisoryLock`
- * line below is the authoritative reference.
- */
-export function makeRetryFailedBatchesDeps(
-  tenantId: string,
-): RetryFailedBatchesDeps {
-  return {
-    broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
-    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
-    // Phase 3E production AdvisoryLockPort — replaces the 3C.1 noOp
-    // stub. T047 retry use case now wraps its body in
-    // `broadcasts.withTx` so the lock holds across snapshot read +
-    // increment + batch fan-out + audit emit (true SC-007 semantics).
-    advisoryLock: pgAdvisoryLockAdapter,
-    audit: f7AuditAdapter,
-    clock: systemClock,
-  };
-}
-
-/**
- * T048 — composition root for `acceptPartialDelivery` use case (admin
- * route T051). No advisory lock needed — the underlying
- * `acceptPartial` SQL uses `WHERE status='partially_sent'` so
- * concurrent clicks serialise via DB row lock; the loser surfaces
- * INVALID_STATE_TRANSITION.
- */
-export function makeAcceptPartialDeliveryDeps(
-  tenantId: string,
-): AcceptPartialDeliveryDeps {
-  return {
-    broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
-    audit: f7AuditAdapter,
-    clock: systemClock,
-  };
-}
-
-/**
- * T056 — composition root for `autoRetryFailedBatches` /
- * `sweepAutoRetryFailedBatches` (reconcile-stuck-sending cron
- * extension). FR-005: 5-attempt auto-retry budget per batch.
- */
-export function makeAutoRetryFailedBatchesDeps(
-  tenantId: string,
-): AutoRetryFailedBatchesDeps {
-  return {
-    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
-    audit: f7AuditAdapter,
-    clock: systemClock,
-  };
-}
-
-/**
- * T057 — composition root for `applyBatchWebhookEvent`. Called by
- * `/api/webhooks/resend-broadcasts/route.ts` after the bypass-RLS
- * batch lookup resolves the tenant context.
- */
-export function makeApplyBatchWebhookEventDeps(
-  tenantId: string,
-): ApplyBatchWebhookEventDeps {
-  return {
-    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
-    audit: f7AuditAdapter,
-    clock: systemClock,
-    // Bug #10 (code-review) — batch webhook path suppresses recipients too.
-    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
-  };
-}
-
-/**
- * Bypass-RLS lookup helper for the F7.1a webhook routing fallback.
- * Mirrors `resolveTenantByResendBroadcastId` (F7 MVP single-audience
- * lookup) but scans `broadcast_batch_manifests` instead of `broadcasts`.
- * Caller is the webhook route handler — runs BEFORE
- * `app.current_tenant` is bound, so we use a placeholder repo and
- * call the bypass-RLS method directly.
- */
-export async function resolveTenantByBatchProviderBroadcastId(
-  providerBroadcastId: string,
-): Promise<{
-  readonly tenantId: string;
-  readonly broadcastId: string;
-  readonly batchManifestId: string;
-  readonly batchIndex: number;
-  readonly recipientCount: number;
-} | null> {
-  const placeholderRepo = makeDrizzleBatchManifestsRepo('lookup');
-  const lookup =
-    await placeholderRepo.findBatchByProviderBroadcastIdBypassRls(
-      providerBroadcastId,
-    );
-  if (lookup === null) return null;
-  return {
-    tenantId: lookup.tenantId,
-    broadcastId: lookup.broadcastId as unknown as string,
-    batchManifestId: lookup.batchManifestId,
-    batchIndex: lookup.batchIndex,
-    recipientCount: lookup.recipientCount,
-  };
-}
 
 // ----- PR-2 Task 4 — cleanup-orphaned-audiences cron composition -----------
 
@@ -926,5 +881,99 @@ export function makeListBroadcastTemplatesDeps(
 ): ListBroadcastTemplatesDeps {
   return {
     port: makeDrizzleBroadcastTemplatesRepo(),
+  };
+}
+
+/**
+ * T087 (108 US5) — composition root for the Contacts-Import audience build.
+ *
+ * `buildAudienceTick` takes the resolver as a FUNCTION rather than composing
+ * its dependency graph itself: the resolver needs the members bridge, the
+ * suppression repo, the attendee bridge, the audience mode and the ceiling, and
+ * threading all five through the use case would bury a completion rule that
+ * ought to be readable in one screen. They are wired here, where every other
+ * caller already wires them.
+ *
+ * The per-tick memo wrapper is applied by the CALLER (the cron builds one per
+ * tick and shares it across broadcasts), so it is passed in rather than built
+ * here — the same shape `makeDispatchScheduledBroadcastDeps` expects.
+ */
+export async function makeBuildAudienceTickDeps(
+  tenantId: string,
+  bridge: MembersBridgePort,
+): Promise<BuildAudienceTickDeps> {
+  const tenant = asTenantContext(tenantId);
+  const { resolveTenantDisplayName } = await import('@/lib/broadcasts-route-helpers');
+  let tenantDisplayName: string;
+  try {
+    tenantDisplayName = await resolveTenantDisplayName(tenantId);
+  } catch {
+    // Same best-effort rule as the sibling maker: a tenant-settings outage must
+    // not wedge the cron loop, and the display name is cosmetic.
+    tenantDisplayName = tenantId;
+  }
+
+  const resolverDeps = {
+    tenant,
+    membersBridge: bridge,
+    eventAttendees: eventAttendeesBridge,
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
+  };
+
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    broadcastsGateway: resendBroadcastsGateway,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    fromEmail: env.broadcasts.fromEmail,
+    tenantDisplayName,
+    locale: tenantDefaultLocaleFor(tenantId),
+    async resolveRecipients(broadcast: Broadcast) {
+      // A malformed persisted segment (a `tier` row that lost its codes) is a
+      // DATA DEFECT, not a transient error: read as `{ tier, [] }` the
+      // primary-only leg would address every active member. Refuse it here the
+      // way the single-tick path refuses it, so the two paths cannot disagree
+      // about what a broken row means.
+      const segmentResult = recipientSegmentFromPersisted(broadcast);
+      if (!segmentResult.ok) {
+        return err({ kind: 'malformed_segment' as const });
+      }
+      const resolved = await resolveSegmentRecipients(resolverDeps, {
+        segment: segmentResult.value,
+        phase: 'dispatch',
+        requestingMemberId: broadcast.requestedByMemberId,
+        customRecipients:
+          broadcast.customRecipientEmails === null
+            ? null
+            : broadcast.customRecipientEmails.map((e) =>
+                unsafeBrandEmailLower(e.toLowerCase().trim()),
+              ),
+      });
+      if (!resolved.ok) return err(resolved.error);
+      // Pass the resolver's answer through WHOLE. This used to return only
+      // `{recipients, estimatedCount}`, which is where `orphans` and
+      // `droppedByPreference` were actually lost — the resolver computes both,
+      // the legacy dispatch logs both per broadcast, and `droppedByPreference`
+      // exists because an earlier review round added it to answer a member
+      // asking why their E-Blast reached 40 people instead of 55. Dropping two
+      // fields at a composition boundary is invisible to a grep for the log
+      // name and to a diff of the two use cases.
+      return ok({
+        recipients: resolved.value.recipients as unknown as readonly string[],
+        estimatedCount: resolved.value.estimatedCount,
+        orphans: resolved.value.orphans,
+        droppedByPreference: resolved.value.droppedByPreference,
+      });
+    },
+    // Wired in 108 Phase 9 review round 1. Their absence was not an oversight
+    // in composition — the use case's Deps did not DECLARE them, so the FR-021
+    // member notification and the AS5 forensic audit were unrepresentable on
+    // this path rather than merely unwired.
+    membersBridge: bridge,
+    emailTransactional: emailTransactionalBridge,
+    plansBridge,
   };
 }

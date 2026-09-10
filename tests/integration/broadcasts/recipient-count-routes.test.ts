@@ -19,7 +19,8 @@ import { and, eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
-import { isF71aUs1Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
+import { isF7ImportAudienceEnabled } from '@/modules/broadcasts/infrastructure/feature-flags';
+import { DELIVERABLE_RECIPIENTS_PER_TICK } from '@/modules/broadcasts/domain/audience-ceiling';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -110,9 +111,54 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     // when batching AND the 1:N flag are both on), never from
     // `currentAudienceCeiling()` itself — that comparison was a tautology
     // (review BLOCKER); the composition root's own unit test pins the matrix.
-    const expectedCeiling = isF71aUs1Enabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
+    //
+    // T095 (2026-09-08) added a second half: what the flags CONFIGURE was
+    // clamped to what one dispatch tick can push. **Phase 9b made that clamp
+    // conditional on batching**, because an audience above one tick is now
+    // SPLIT rather than refused — `DELIVERABLE_RECIPIENTS_PER_TICK` became the
+    // batch size. With batching ON (prod's state) the compose count therefore
+    // shows the configured ceiling again; with it OFF there is no split path,
+    // so the single-tick bound is still the real one and the clamp still binds.
+    //
+    // Restated here from the flags and the Domain constant, not read from the
+    // function under test — the tautology the review BLOCKER caught. That is
+    // also why this file failed on the pre-push hook rather than in CI: the
+    // rule is written out twice on purpose, so changing it in one place has to
+    // be a deliberate act in the other.
+    // Round 3 finding 3-4 — this restated `isF71aUs1Enabled()` while
+    // `configuredAudienceCeiling()` reads `isF7ImportAudienceEnabled()`. Under
+    // `.env.local` (pagination ON, 1:N ON, import OFF) it computed 50,000 and
+    // the route returned 500. It stayed green in CI only because both flags
+    // default false there and the two expressions happen to agree at 500 — so
+    // it was written to protect a flip and would have gone RED on that flip.
+    const configured =
+      isF7ImportAudienceEnabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
+    const expectedCeiling = isF7ImportAudienceEnabled()
+      ? configured
+      : Math.min(configured, DELIVERABLE_RECIPIENTS_PER_TICK);
     // No `orphans` on the member body (review M-3): it is about OTHER members.
-    expect(body).toEqual({ count: 2, ceiling: expectedCeiling, exceeds: false, droppedByPreference: 0 });
+    //
+    // And no `droppedByPreference` either, whenever the count is non-zero.
+    // FIXED 2026-09-08: this expectation still listed it and had been RED on
+    // `main` since PR-C (#346, `91505b8f2`) — that PR's `/code-review` finding
+    // #4 made the route strip the field for exactly the same reason M-3
+    // stripped `orphans` (it is a count of other members' contacts who
+    // objected, pollable 30×/min and probeable tier by tier), but the
+    // assertion was never updated. The field survives only at count 0, where
+    // the "everyone objected" empty-state copy needs it.
+    //
+    // Why nothing caught it is worth getting right, because it decides the
+    // remedy. CI is genuinely blind here — `integration-smoke.yml` lists its
+    // files explicitly and this is not one of them. But `.husky/pre-push`
+    // DOES cover it: touching `src/modules/broadcasts/**` runs the whole
+    // `tests/integration/broadcasts/` folder, and PR-C touched that module
+    // heavily. So the gate existed and the failure still shipped — which
+    // points at the folder-sized run itself (worker exhaustion on ~80 files)
+    // or a `SKIP_INTEGRATION_PREPUSH=1`, not at a missing gate. Adding this
+    // file to `integration-smoke.yml` would be treating the wrong cause.
+    expect(body).toEqual({ count: 2, ceiling: expectedCeiling, exceeds: false });
+    expect(body).not.toHaveProperty('droppedByPreference');
+    expect(body).not.toHaveProperty('orphans');
     expect(JSON.stringify(body)).not.toMatch(/@|-4[0-9a-f]{3}-/);
   });
 

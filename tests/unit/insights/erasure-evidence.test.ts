@@ -180,6 +180,10 @@ describe('getErasureEvidenceLog', () => {
     expect(row.subprocessorOutcome).toEqual({
       resendOutcome: 'ok',
       contactsRemoved: 2,
+      // R2-25 — `null`, not 0: this fixture's payload predates
+      // `resend_contacts_already_absent_count`, and "the run could not tell" is a
+      // different statement from "none were already absent".
+      contactsAlreadyAbsent: null,
       contactsFailed: 0,
     });
     // flags
@@ -411,7 +415,12 @@ describe('getErasureEvidenceLog', () => {
     const { rows } = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
     const row = rows[0]!;
     // The first-pass FAILED outcome wins — the page does NOT mask it with the re-drive ok.
-    expect(row.subprocessorOutcome).toEqual({ resendOutcome: 'failed', contactsRemoved: 0, contactsFailed: 2 });
+    expect(row.subprocessorOutcome).toEqual({
+      resendOutcome: 'failed',
+      contactsRemoved: 0,
+      contactsAlreadyAbsent: null,
+      contactsFailed: 2,
+    });
     // The earliest request wins the Art.12 clock (40d ago) → overdue (half-run: no member_erased).
     expect(row.requestedAt?.toISOString()).toBe(isoMinus(FORTY_DAYS_MS));
     expect(row.reason).toBe('gdpr_erasure_request');
@@ -464,6 +473,7 @@ describe('getErasureEvidenceLog', () => {
     expect(row.subprocessorOutcome).toEqual({
       resendOutcome: 'unknown',
       contactsRemoved: 0,
+      contactsAlreadyAbsent: null,
       contactsFailed: 0,
     });
   });

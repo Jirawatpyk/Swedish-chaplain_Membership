@@ -20,17 +20,22 @@
  *      invisible. This is the use-case-level isolation gate the security review
  *      requires (complementary to the F7-repo-level test).
  *
- *   3. RE-DRIVE (empty-set) — force the first-pass gateway spy to reject →
+ *   3. RE-DRIVE — force the first-pass gateway spy to reject →
  *      resend_outcome:'failed' audit, member_erased emitted (non-blocking). Then
- *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape): the
- *      in-tx capture now reads `[]` (contacts already removed_at-stamped → no
- *      live emails → no audience pairs) → a SECOND
- *      `subprocessor_erasure_propagated` audit (resend_outcome:'ok',
- *      removed_count:0, a VACUOUS empty-set no-op) → member_erased present
- *      exactly ONCE total. The gateway spy is NOT called again on the re-drive.
- *      (Proves the documented best-effort-ONCE residual: the first-pass inputs
- *      are destroyed by the same erasure, so a re-drive cannot retry the Resend
- *      removal — see docs/runbooks/member-erasure.md § Security cond-3.)
+ *      RE-RUN `eraseMember` for the SAME member (the US2d reconciler shape) and
+ *      the detach is RETRIED: a second `subprocessor_erasure_propagated` audit
+ *      with resend_outcome:'ok' and removed_count:**1**.
+ *
+ *      **Round 4 B-1 — this scenario used to be the opposite, and the change is
+ *      the point.** It documented a best-effort-ONCE residual: the re-drive read
+ *      `[]` and wrote a VACUOUS ok/removed:0 audit without calling the gateway,
+ *      because arm 1 of the derivation matches on
+ *      `broadcast_deliveries.recipient_email_lower` — which the erasure redacts —
+ *      and R2-3's `NOT EXISTS` had switched arm 2 off for any broadcast holding a
+ *      delivery row, which is this fixture. Removing that clause leaves arm 2
+ *      able to find the still-LIVE audience, so a failed detach is recoverable
+ *      and the second audit is evidence rather than a placeholder. The residual
+ *      narrows to "the audience must not yet be cleaned up".
  *
  *   4. THROW-PATH ROLLBACK (security CONDITION-2) — inject a throw into the
  *      in-tx FAIL-LOUD audience-derivation capture (override just
@@ -50,20 +55,49 @@
  * harness from `erase-member-cross-tenant.test.ts`.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+// Round 4 T1 — type-only, so it is erased before `vi.hoisted` runs. Imported
+// rather than re-spelled inline: if `RemoveContactOutcome` ever gains a third
+// member, `tsc` fails HERE instead of the double silently going stale, which is
+// the exact failure this fix is repairing.
+import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 
 // vi.mock F7's barrel: spy on `removeContactFromAudience`, keep everything else
 // real (the audience-derivation + content-scrub adapters need
 // `makeDrizzleBroadcastsRepo`; the F7/F8 cancel cascades need the real exports).
 // `vi.hoisted` so the spy is initialised BEFORE the hoisted `vi.mock` factory
 // references it (the factory runs at the top of the module).
-const { removeContactFromAudienceSpy } = vi.hoisted(() => ({
-  removeContactFromAudienceSpy: vi.fn<
-    (audienceId: string, email: string) => Promise<void>
-  >(async () => {}),
-}));
+const { removeContactFromAudienceSpy, deleteContactGloballySpy } = vi.hoisted(
+  () => ({
+    // Round 4 T1 — was `Promise<void>` resolving `undefined`. `897dd73d7`
+    // widened the port to `Promise<RemoveContactOutcome>` and the adapter now
+    // reads `outcome.kind`; reading `.kind` off `undefined` throws INSIDE the
+    // adapter's own catch, which counts it `failed` and writes
+    // `resend_outcome: 'failed'`. This declaration was open in the same commit
+    // range that changed the return type, and kept `Promise<void>`.
+    removeContactFromAudienceSpy: vi.fn<
+      (audienceId: string, email: string) => Promise<RemoveContactOutcome>
+    >(async () => ({ kind: 'detached' })),
+    /**
+     * Round 2 R2-18 — the U1 decision had NO regression guard, and the gap was
+     * not merely "untested": this factory spreads `...actual`, so
+     * `deleteContactGlobally` reached the REAL gateway. A future re-wiring that
+     * added the global delete to the erasure cascade would have issued a live
+     * `DELETE /contacts/{email}` against the SHARED production Resend account
+     * from the integration suite, and stayed green while doing it.
+     *
+     * Stubbed here so that cannot happen, and asserted never-called below so the
+     * decision recorded in `processing-records.md` residual 8a — detach, never
+     * global-delete, because one Resend account is shared across tenants — has a
+     * test that fails when someone reverses it.
+     */
+    deleteContactGloballySpy: vi.fn<(email: string) => Promise<void>>(
+      async () => {},
+    ),
+  }),
+);
 
 vi.mock('@/modules/broadcasts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/modules/broadcasts')>();
@@ -72,12 +106,15 @@ vi.mock('@/modules/broadcasts', async (importOriginal) => {
     resendBroadcastsGateway: {
       ...actual.resendBroadcastsGateway,
       removeContactFromAudience: removeContactFromAudienceSpy,
+      deleteContactGlobally: deleteContactGloballySpy,
     },
   };
 });
 
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { asMemberId, type MemberId } from '@/modules/members';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { eraseMember } from '@/modules/members/application/use-cases/erase-member';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
 import type { BroadcastsAudienceDerivationPort } from '@/modules/members/application/ports/broadcasts-audience-derivation-port';
@@ -248,6 +285,42 @@ async function seedAudienceDelivery(
   return { broadcastId, deliveryId };
 }
 
+/**
+ * A broadcast with a live Resend audience and **no delivery rows at all** — the
+ * pushed-but-never-sent window the S9 UNION arm exists for. Round 2 R2-3.
+ */
+async function seedAudienceNoDeliveries(
+  tenant: TestTenant,
+  authorMemberId: string,
+  submittedByUserId: string,
+  audienceId: string,
+): Promise<{ broadcastId: string }> {
+  const broadcastId = randomUUID();
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(broadcasts).values({
+      tenantId: tenant.ctx.slug,
+      broadcastId,
+      requestedByMemberId: authorMemberId,
+      requestedByMemberPlanIdSnapshot: PLAN_ID,
+      submittedByUserId,
+      actorRole: 'member_self_service',
+      subject: 'Pushed but never sent',
+      bodyHtml: '<p>Never sent</p>',
+      bodySource: 'Never sent',
+      fromName: 'Audience Sender',
+      replyToEmail: 'audience@example.com',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      estimatedRecipientCount: 100,
+      status: 'approved',
+      submittedAt: new Date(),
+      resendAudienceId: audienceId,
+    });
+  });
+  return { broadcastId };
+}
+
 /** `subprocessor_erasure_propagated` audit rows for this tenant + member. */
 async function rawSelectSubprocessorAudits(tenantSlug: string, memberId: string) {
   const rows = await db
@@ -322,6 +395,39 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
   let tenant: TestTenant;
   let admin: TestUser;
 
+  /**
+   * Round 4 B-1 — per-case audience isolation, which these tests needed all
+   * along and only started failing without.
+   *
+   * The second UNION arm is a `CROSS JOIN` of the erased addresses against every
+   * broadcast with a LIVE audience: there is no column linking a member to an
+   * audience they were pushed into, which is exactly why the arm exists. In
+   * production `cleanup-orphaned-audiences` (every 15 min, 1 h grace) keeps that
+   * set at roughly the in-flight broadcasts, so the widening costs a handful of
+   * redundant DELETEs that 404 into `already_absent`.
+   *
+   * In a SHARED test tenant nothing collects them, so audiences accumulated
+   * across cases and every `toHaveBeenCalledTimes(n)` became a count of the
+   * whole file's history. R2-3's `NOT EXISTS` had been masking that by filtering
+   * out anything with a delivery row.
+   *
+   * Stamping prior audiences deleted is what the cleanup cron does, so each case
+   * sees only what it seeded and the counts mean what they say again.
+   */
+  const isolateAudiences = async (): Promise<void> => {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts SET audience_deleted_at = now()
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND resend_audience_id IS NOT NULL
+           AND audience_deleted_at IS NULL`);
+    });
+  };
+
+  beforeEach(async () => {
+    await isolateAudiences();
+  });
+
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
@@ -338,7 +444,8 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
 
   it('1 — HAPPY CAPSTONE: a member in TWO audience-bearing broadcasts → both pairs removed, ONE audit (removed_count:2), member_erased + cascadesComplete:true', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
+    deleteContactGloballySpy.mockClear();
 
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceA = `aud-cap-a-${randomUUID().slice(0, 8)}`;
@@ -370,6 +477,24 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
       expect(call[1]).toBe(contactEmail);
     }
 
+    // ── Round 2 R2-18 — the U1 decision, made enforceable ────────────────────
+    //
+    // The cascade DETACHES (audience-scoped) and must never issue the
+    // audience-less global delete, because ONE Resend account is shared by every
+    // tenant: deleting the contact record during tenant A's erasure destroys
+    // tenant B's record together with the Resend-side `unsubscribed` flag that
+    // `on_conflict=upsert` exists to preserve — trading an Art. 17 residual for
+    // an Art. 21 regression on someone who never asked. That reasoning lives in
+    // `processing-records.md` residual 8a; until now nothing failed if it was
+    // reversed.
+    //
+    // Note this assertion is only half the guard. The other half is that
+    // `deleteContactGlobally` is now STUBBED in the `vi.mock` factory above: it
+    // used to fall through `...actual` to the real gateway, so a re-wiring would
+    // have issued a live `DELETE /contacts/{email}` against the shared production
+    // account from this suite — and passed.
+    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
+
     // EXACTLY ONE subprocessor_erasure_propagated audit records ok + count 2.
     const subAudits = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
     expect(subAudits).toHaveLength(1);
@@ -391,7 +516,170 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     expect(erased.length).toBeGreaterThanOrEqual(1);
   }, 120_000);
 
-  it('3 — RE-DRIVE (empty-set): first pass fails → failed audit + member_erased; re-drive reads [] → SECOND audit removed_count:0 + spy NOT re-called + member_erased still present (idempotent re-emit)', async () => {
+  /**
+   * Round 4 T1 — the MIXED capstone. Case 1 above is all-`detached`, and
+   * `subprocessor-erasure.test.ts` A2 is all-`already_absent` with one contact;
+   * neither can show that the two counters ACCUMULATE INDEPENDENTLY across
+   * several pairs. That is the only place the adapter can silently collapse the
+   * split back into one number, and it is the number an Art. 30 record carries.
+   *
+   * The unit adapter test pins the accumulator; this pins the accumulator
+   * reaching `audit_log.payload` on live Neon, which is where the false
+   * "Contacts removed" figure was actually read from.
+   *
+   * `mockResolvedValueOnce` ×2: the first pair detaches, the second is already
+   * absent. Which audience gets which is not asserted — only the totals are, so
+   * the case does not depend on the cascade's iteration order.
+   */
+  it('1b — MIXED: one pair detached + one already absent → ONE audit, removed_count:1 AND already_absent_count:1, outcome still ok', async () => {
+    removeContactFromAudienceSpy.mockClear();
+    removeContactFromAudienceSpy
+      .mockResolvedValueOnce({ kind: 'detached' })
+      .mockResolvedValueOnce({ kind: 'already_absent' });
+    deleteContactGloballySpy.mockClear();
+
+    const { memberId, contactEmail } = await seedMember(tenant);
+    const audienceA = `aud-mix-a-${randomUUID().slice(0, 8)}`;
+    const audienceB = `aud-mix-b-${randomUUID().slice(0, 8)}`;
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceA);
+    await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceB);
+
+    const requestId = `rq-erase-sub-cap-mix-${Date.now()}`;
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId },
+      deps,
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    // Both outcomes are successes, so nothing is degraded and the U1 decision
+    // still holds — no global delete on the shared Resend account.
+    expect(result.value.cascadesComplete).toBe(true);
+    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(2);
+    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
+
+    const subAudits = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
+    expect(subAudits).toHaveLength(1);
+    const mixed = subAudits[0]!.payload as {
+      resend_outcome?: string;
+      resend_contacts_removed_count?: number;
+      resend_contacts_already_absent_count?: number;
+      resend_contacts_failed_count?: number;
+    };
+    expect(mixed.resend_outcome).toBe('ok');
+    // The assertion that fails if the two counters are ever collapsed: the
+    // pre-split code would have written 2 here.
+    expect(mixed.resend_contacts_removed_count).toBe(1);
+    expect(mixed.resend_contacts_already_absent_count).toBe(1);
+    expect(mixed.resend_contacts_failed_count).toBe(0);
+    expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
+
+    const erasedMixed = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
+    expect(erasedMixed.length).toBeGreaterThanOrEqual(1);
+  }, 120_000);
+
+  /**
+   * Round 2 R2-3 — the S9 UNION arm's **disclosure control**, both directions.
+   *
+   * The arm exists for the pushed-but-never-sent window: a broadcast whose
+   * audience Resend already holds but which produced no delivery rows. Without a
+   * delivery-existence filter it paired the member's addresses with EVERY live
+   * audience in the tenant — and `DELETE /audiences/{id}/contacts/{email}` puts
+   * the address in the URL, so an address Resend had never seen was transmitted to
+   * the marketing processor during, and because of, an erasure.
+   *
+   * Worse, it selected the worst people for that: for a broadcast that WAS sent,
+   * the delivery-row arm already returns its real recipients, so a member absent
+   * from its deliveries is absent BECAUSE the resolver dropped them — most often
+   * `filterMarketingOptedOut`. Art. 17 is a basis to erase, not to disclose.
+   */
+  it('B-1 — every LIVE audience of this member is detached, delivered or not; nobody else is touched', async () => {
+    removeContactFromAudienceSpy.mockClear();
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
+    deleteContactGloballySpy.mockClear();
+
+    const { memberId, contactEmail } = await seedMember(tenant);
+    // (a) the window the arm is FOR — audience pushed, nothing delivered.
+    const audienceNeverSent = `aud-never-${randomUUID().slice(0, 8)}`;
+    const never = await seedAudienceNoDeliveries(
+      tenant,
+      memberId,
+      admin.userId,
+      audienceNeverSent,
+    );
+
+    // (b) a broadcast that DID deliver, to somebody else.
+    //
+    //     Round 4 B-1 — this comment used to say it "stands in for the opted-out
+    //     case: this member is absent from its deliveries because they were
+    //     dropped at resolve time". The database cannot support that reading.
+    //     `broadcast_deliveries` has one insert site and it is on the WEBHOOK
+    //     path, so a missing row means "no event has arrived for this address",
+    //     which covers a resolver drop AND a recipient whose webhook is still in
+    //     flight. The fixture is a PARTIALLY delivered broadcast, and it is
+    //     exactly the state where a live audience keeps an address no arm
+    //     returned while the cascade records `ok / 0 detached`.
+    const audienceDelivered = `aud-sent-${randomUUID().slice(0, 8)}`;
+    const otherRecipient = `someone-else-${randomUUID().slice(0, 8)}@example.com`;
+    const delivered = await seedAudienceDelivery(
+      tenant,
+      memberId,
+      admin.userId,
+      otherRecipient,
+      audienceDelivered,
+    );
+
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-r2-3-${Date.now()}` },
+      deps,
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    const pairs = removeContactFromAudienceSpy.mock.calls.map(
+      (c) => `${c[0]}|${c[1]}`,
+    );
+    // The never-delivered audience IS cleaned — that is the arm's whole purpose.
+    expect(pairs).toContain(`${audienceNeverSent}|${contactEmail}`);
+    // Round 4 B-1 — INVERTED. This asserted `not.toContain`, i.e. that a member
+    // with no webhook row of their own is skipped for a partially-delivered
+    // broadcast. The absence of a row cannot distinguish "dropped at resolve"
+    // from "event still in flight", so skipping leaves an address in a live
+    // audience and writes `ok / detached: 0` into an append-only Art. 30 record
+    // — Art. 12(3), uncorrectable. A redundant DELETE 404s and is counted
+    // `already_absent`, which is a cost, not a falsehood.
+    expect(pairs).toContain(`${audienceDelivered}|${contactEmail}`);
+    // The bound that still holds and is the one that matters: nobody ELSE's
+    // address is transmitted. The erasure widens to the erased member's own
+    // live audiences, never to other people's.
+    expect(pairs.some((p) => p.endsWith(`|${otherRecipient}`))).toBe(false);
+    expect(deleteContactGloballySpy).not.toHaveBeenCalled();
+
+    // Take this case's fixtures back out of the arm's scope. Cases in this file
+    // SHARE one tenant, and within the never-delivered set the arm is
+    // deliberately NOT member-scoped — we cannot know which never-sent audience
+    // held whom — so a leaked never-delivered broadcast adds a pair to every
+    // LATER case's count. This fixture's mess is its own to clear.
+    //
+    // Stamped `audience_deleted_at` rather than deleted: `broadcast_deliveries`
+    // refuses DELETE (append-only), and stamping is what `cleanup-audiences`
+    // legitimately does — so this exercises the same exclusion the arm relies on
+    // in production instead of reaching around it.
+    const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+    await runInTenant(tenant.ctx, async (tx) => {
+      for (const id of [never.broadcastId, delivered.broadcastId]) {
+        await repo.markAudienceDeletedInTx(tx, asBroadcastId(id));
+      }
+    });
+  }, 120_000);
+
+  it('3 — RE-DRIVE: first pass fails → failed audit + member_erased; the re-drive now RETRIES the detach (B-1) → second audit removed_count:1, member_erased re-emitted', async () => {
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceId = `aud-cap-redrive-${randomUUID().slice(0, 8)}`;
     await seedAudienceDelivery(tenant, memberId, admin.userId, contactEmail, audienceId);
@@ -426,7 +714,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     // first pass), so the in-tx audience-derivation read finds NO live emails →
     // captures [] → a VACUOUS empty-set propagation. The gateway is NOT called.
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     const second = await eraseMember(
       asMemberId(memberId) as MemberId,
@@ -438,23 +726,38 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
     if (!second.ok) return;
     expect(second.value.cascadesComplete).toBe(true);
 
-    // CRITICAL: the gateway spy was NOT re-invoked — the first-pass inputs are
-    // destroyed by the same erasure, so the re-drive re-captures an EMPTY set
-    // (best-effort-ONCE residual). The second `ok`/removed:0 audit is a VACUOUS
-    // no-op, NOT proof the Resend removal succeeded.
-    expect(removeContactFromAudienceSpy).not.toHaveBeenCalled();
+    // Round 4 B-1 — INVERTED, and this one is the change paying for itself.
+    //
+    // This asserted `not.toHaveBeenCalled()` and documented a residual:
+    // "best-effort-ONCE — the first-pass inputs are destroyed by the same
+    // erasure, so a re-drive re-captures an EMPTY set and the second ok/removed:0
+    // audit is a VACUOUS no-op, NOT proof the Resend removal succeeded."
+    //
+    // That residual existed because arm 1 matches on
+    // `broadcast_deliveries.recipient_email_lower`, which the erasure redacts —
+    // so after the first pass nothing could find the pair again — and R2-3's
+    // `NOT EXISTS` had switched arm 2 off for any broadcast with a delivery row,
+    // which is this fixture. With the clause gone, arm 2 still finds the LIVE
+    // audience, so a failed detach is RETRYABLE instead of lost.
+    //
+    // The DPO consequence is the one that matters: the second audit is now
+    // evidence of an actual detach rather than a vacuous zero.
+    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(1);
 
     const auditsAfterSecond = await rawSelectSubprocessorAudits(tenant.ctx.slug, memberId);
     expect(auditsAfterSecond).toHaveLength(2);
+    // Round 4 B-1 — was `removed_count === 0`, matching the vacuous no-op this
+    // test used to document. The re-drive now performs a real detach, so the
+    // second audit records ONE removal: it is evidence, not a placeholder.
     const secondAudit = auditsAfterSecond.find(
       (a) =>
         (a.payload as { resend_outcome?: string; resend_contacts_removed_count?: number })
-          .resend_contacts_removed_count === 0 &&
+          .resend_contacts_removed_count === 1 &&
         (a.payload as { resend_outcome?: string }).resend_outcome === 'ok',
     );
     expect(
       secondAudit,
-      'the re-drive must record a second ok/removed:0 vacuous audit',
+      'the re-drive must record a second ok audit with a REAL removal (B-1)',
     ).toBeDefined();
     expect(
       (secondAudit!.payload as { resend_contacts_failed_count?: number })
@@ -471,7 +774,7 @@ describe('eraseMember — sub-processor cascade capstone (COMP-1 US3-C, live Neo
 
   it('4 — THROW-PATH ROLLBACK (security cond-2): a FAIL-LOUD in-tx capture throw rolls the WHOLE erasure back — erased_at NULL, contacts un-scrubbed, no member_erased, re-drivable', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     const { memberId, contactEmail } = await seedMember(tenant);
     const { deliveryId } = await seedAudienceDelivery(
@@ -578,7 +881,7 @@ describe('eraseMember — sub-processor cascade cross-tenant isolation (COMP-1 U
 
   it('2 — erasing tenant-A member removes ONLY aud_A from Resend; tenant-B member sharing the SAME email + its aud_B + delivery are untouched', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     // The SAME contact email in BOTH tenants — the cross-tenant collision the
     // RLS-scoped in-tx audience-derivation read must keep isolated.

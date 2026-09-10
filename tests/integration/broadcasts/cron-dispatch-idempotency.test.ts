@@ -69,6 +69,14 @@ function makeTrackedGateway(tracker: CallTracker): BroadcastsGatewayPort {
     async addContactsToAudience() {
       tracker.addContactsCalls++;
     },
+    // T086 — unused by this fixture; present so the stub still satisfies
+    // BroadcastsGatewayPort.
+    async createContactImport() {
+      throw new Error('not used');
+    },
+    async getContactImport() {
+      throw new Error('not used');
+    },
     async createBroadcast() {
       tracker.createBroadcastCalls++;
       return { broadcastId: `bcast-test-${randomUUID().slice(0, 8)}` };
@@ -80,9 +88,11 @@ function makeTrackedGateway(tracker: CallTracker): BroadcastsGatewayPort {
       return { kind: 'not_found' as const };
     },
     async getAudienceContactCount() {
-      return { kind: 'present' as const, count: 1 };
+      return { kind: 'present' as const, count: 1, complete: true };
     },
-    async removeContactFromAudience() {},
+    async removeContactFromAudience() {
+      return { kind: 'detached' as const };},
+    async deleteContactGlobally() {},
     async deleteAudience() {},
     async listAudiences() { return []; },
   };
@@ -272,6 +282,9 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
         return { audienceId: `aud-test-${name.slice(0, 16)}` };
       },
       async addContactsToAudience() {},
+      // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
+      async createContactImport() { throw new Error('not used'); },
+      async getContactImport() { throw new Error('not used'); },
       async createBroadcast() {
         return { broadcastId: `bcast-test-${randomUUID().slice(0, 8)}` };
       },
@@ -282,9 +295,11 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
         return { kind: 'not_found' as const };
       },
       async getAudienceContactCount() {
-        return { kind: 'present' as const, count: 1 };
+        return { kind: 'present' as const, count: 1, complete: true };
       },
-      async removeContactFromAudience() {},
+      async removeContactFromAudience() {
+      return { kind: 'detached' as const };},
+      async deleteContactGlobally() {},
       async deleteAudience() {},
       async listAudiences() { return []; },
     };

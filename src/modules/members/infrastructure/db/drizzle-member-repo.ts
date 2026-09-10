@@ -1617,7 +1617,31 @@ export const drizzleMemberRepo: MemberRepo = {
               eq(members.broadcastsHaltedUntilAdminReview, false),
               ...(tierFilter ? [tierFilter] : []),
             ),
-          );
+          )
+          // 108 Phase 9b B-1 (reliability review, 2026-09-08) — **a TOTAL
+          // ORDER is a correctness requirement here, not a nicety.**
+          //
+          // The batch dispatch path slices THIS list by index ranges frozen at
+          // split time (`dispatch-broadcast-batch.ts`:
+          // `allRecipients.slice(recipientRangeStart, recipientRangeEnd + 1)`)
+          // and re-resolves it on every tick. Postgres makes no ordering
+          // promise without an ORDER BY, and migration 0009's
+          // `last_activity_at` trigger issues HOT updates that move tuples
+          // within the heap — so a member merely opening an email between
+          // ticks can reshuffle a seq scan. Every later slice then addresses
+          // different people: some receive two copies, some none, and the
+          // roll-up still stamps `broadcast_sent`.
+          //
+          // The drift guard in `dispatch-batches/route.ts` compares SIZES, so
+          // a pure reorder passes it cleanly. Size equality is only a usable
+          // proxy for "the same list" once the order is fixed.
+          //
+          // The 1:N leg (`buildBroadcastRecipientContactsQuery`) already
+          // orders by `(memberId, contactId)`. This leg — the one prod runs
+          // today with the 108 flag OFF — did not, and Phase 9b is what first
+          // routes an ordinary broadcast (anything over 500) through the
+          // slicing path.
+          .orderBy(asc(members.memberId));
         // 108 PR-C (research R8): the `.limit(5000)` that used to end this
         // query is gone. It silently truncated the audience BELOW the
         // resolver's ceiling check, so 5,001 members resolved as a clean

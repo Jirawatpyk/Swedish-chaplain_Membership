@@ -54,6 +54,10 @@ const baseBroadcast: Broadcast = {
   quotaYearConsumed: null,
   quotaConsumedAt: null,
   resendAudienceId: null,
+  // T086 — the Contacts-Import build (migration 0298). Absent on every fixture written before it.
+  audienceImportId: null,
+  audienceImportSubmittedAt: null,
+  audienceImportCompletedAt: null,
   resendBroadcastId: null,
   retentionYears: 5,
   // F7.1a US1 + US7 defaults (Phase 2 + 3 B0).

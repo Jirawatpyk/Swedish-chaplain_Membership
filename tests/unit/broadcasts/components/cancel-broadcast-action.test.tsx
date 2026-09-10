@@ -34,20 +34,10 @@ afterEach(() => {
   vi.useFakeTimers();
 });
 
-function renderAction(
-  surface: 'admin' | 'member',
-  broadcastId = 'b1',
-  variant?: 'cancel' | 'halt',
-) {
-  // Branch on the literal surface so the discriminated CancelBroadcastActionProps
-  // narrows ('member' cannot take a variant; 'admin' may take 'cancel' | 'halt').
+function renderAction(surface: 'admin' | 'member', broadcastId = 'b1') {
   const action =
     surface === 'admin' ? (
-      <CancelBroadcastAction
-        broadcastId={broadcastId}
-        surface="admin"
-        {...(variant ? { variant } : {})}
-      />
+      <CancelBroadcastAction broadcastId={broadcastId} surface="admin" />
     ) : (
       <CancelBroadcastAction broadcastId={broadcastId} surface="member" />
     );
@@ -211,59 +201,6 @@ describe('CancelBroadcastAction (member surface)', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ cancellationReason: 'changing my mind' }),
-        }),
-      );
-    });
-  });
-});
-
-// ── Admin halt variant (F7.1a mid-dispatch halt) ────────────────────────
-
-describe('CancelBroadcastAction (admin halt variant)', () => {
-  const triggerName = en.admin.broadcasts.haltDialog.confirm; // "Halt sending"
-
-  it('renders the Halt sending trigger', () => {
-    renderAction('admin', 'b1', 'halt');
-    expect(screen.getByRole('button', { name: triggerName })).toBeInTheDocument();
-  });
-
-  it('opens the halt dialog when the trigger is clicked', async () => {
-    renderAction('admin', 'b1', 'halt');
-    fireEvent.click(screen.getByRole('button', { name: triggerName }));
-    expect(
-      await screen.findByText(en.admin.broadcasts.haltDialog.title),
-    ).toBeInTheDocument();
-  });
-
-  it('fires the same admin /cancel endpoint with the typed reason', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    } as Response);
-
-    renderAction('admin', 'broadcast-halt', 'halt');
-    fireEvent.click(screen.getByRole('button', { name: triggerName }));
-    await screen.findByText(en.admin.broadcasts.haltDialog.title);
-
-    const dialog = screen.getByRole('alertdialog');
-    fireEvent.change(
-      within(dialog).getByLabelText(
-        new RegExp(en.admin.broadcasts.haltDialog.reasonLabel, 'i'),
-      ),
-      { target: { value: 'complaint spike — stop now' } },
-    );
-    fireEvent.click(
-      within(dialog).getByRole('button', {
-        name: en.admin.broadcasts.haltDialog.confirm,
-      }),
-    );
-
-    await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledWith(
-        '/api/admin/broadcasts/broadcast-halt/cancel',
-        expect.objectContaining({
-          method: 'POST',
-          body: JSON.stringify({ cancellationReason: 'complaint spike — stop now' }),
         }),
       );
     });

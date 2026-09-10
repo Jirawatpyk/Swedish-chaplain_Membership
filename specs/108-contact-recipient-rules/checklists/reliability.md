@@ -1,5 +1,8 @@
 # Reliability Requirements Checklist: Contact Recipient Rules
 
+
+> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist — but the live import signals DO: `broadcasts_audience_import_stuck_count` and `broadcasts_audience_import_submit_ms` (T106, emitted per tenant by the `broadcasts-gauges` cron). Watch those during a first send; neither is listed in `reviews/cutover.md` § 4's five signals. Left as written — it is the record of what was believed at the time.
+
 **Purpose**: Validate that error paths, transactional boundaries, idempotency, concurrency, DB-level guards and degraded modes are specified completely and consistently across spec.md, data-model.md and the contracts. Formal gate; reviewed by `reliability-guardian` and `drizzle-migration-reviewer`.
 **Created**: 2026-09-04
 **Feature**: [spec.md](../spec.md) · [data-model.md](../data-model.md) · [contracts/](../contracts/) · [research.md](../research.md) R4, R5, R8, R9
@@ -37,11 +40,17 @@
 
 ## Resumable audience push
 
-- [x] CHK018 Are the requirements for building the Resend audience across cron ticks specified — snapshot of the recipient list, per-tick time budget, progress persistence, resume condition, send-only-when-complete? [Gap in spec / defined in Contract §4, Research R9] → resolved: FR-044
-- [x] CHK019 Is idempotency of contact creation per `(audience, email)` stated as a requirement with the verification item (V2) that decides the guard strategy? [Completeness, Research R9/V2] → resolved: FR-044 + V2
-- [x] CHK020 Is the stuck-state definition (`audience_building` with no progress for 30 min) and its reconcile action specified, with a runbook named? [Completeness, Contract §4, Plan Constitution VII] → resolved: FR-044 (30 min) + R15 runbook
-- [x] CHK021 Are recovery requirements defined for a tick that fails mid-push (partial `pushed_at` stamps, retry semantics, no duplicate sends)? [Coverage, Contract §4] → resolved: FR-044 + contract §4
-- [x] CHK022 Is the audience working set's lifecycle (deleted at `sent`/`failed`) specified, including the erasure cascade? [Completeness, data-model §2.5] → resolved: FR-044 (delete + erasure)
+> **`[~]` = N/A-DEFERRED, not passed (marker corrected 2026-09-08, T098).** All five rows below
+> specify the Resend Contacts-Import build, deferred with T086/T087/T106 and never authored; they
+> resolve to FR-044, which is itself DEFERRED. They were ticked `[x]` while this file's own footer
+> recorded them as N/A-DEFERRED — five green ticks for a design that is not on the branch. Nothing
+> here is a PR-C regression; the marker is.
+
+- [~] CHK018 Are the requirements for building the Resend audience across cron ticks specified — snapshot of the recipient list, per-tick time budget, progress persistence, resume condition, send-only-when-complete? [Gap in spec / defined in Contract §4, Research R9] → resolved: FR-044
+- [~] CHK019 Is idempotency of contact creation per `(audience, email)` stated as a requirement with the verification item (V2) that decides the guard strategy? [Completeness, Research R9/V2] → resolved: FR-044 + V2
+- [~] CHK020 Is the stuck-state definition (`audience_building` with no progress for 30 min) and its reconcile action specified, with a runbook named? [Completeness, Contract §4, Plan Constitution VII] → resolved: FR-044 (30 min) + R15 runbook
+- [~] CHK021 Are recovery requirements defined for a tick that fails mid-push (partial `pushed_at` stamps, retry semantics, no duplicate sends)? [Coverage, Contract §4] → resolved: FR-044 + contract §4
+- [~] CHK022 Is the audience working set's lifecycle (deleted at `sent`/`failed`) specified, including the erasure cascade? [Completeness, data-model §2.5] → resolved: FR-044 (delete + erasure)
 
 ## Toggle, count and degraded modes
 

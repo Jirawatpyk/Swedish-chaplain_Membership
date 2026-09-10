@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
@@ -243,6 +243,9 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     quotaConsumedAt: row.quotaConsumedAt,
 
     resendAudienceId: row.resendAudienceId,
+    audienceImportId: row.audienceImportId,
+    audienceImportSubmittedAt: row.audienceImportSubmittedAt,
+    audienceImportCompletedAt: row.audienceImportCompletedAt,
     resendBroadcastId: row.resendBroadcastId,
 
     retentionYears: row.retentionYears as 5 | 10,
@@ -258,6 +261,61 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/**
+ * Round 2 R2-1 / round 3 finding 3-13 — a compare-and-set that matched no row
+ * must throw the error the CALLERS already handle, not a bare `Error`.
+ *
+ * **Round 4 L7 — the previous version of this docblock was wrong three ways,
+ * and the corrections are worth keeping because each one changed a fix.**
+ *
+ * It said a bare `Error` from `attachAudienceId` "lands in the
+ * `db_write_after_resend_success` branch — severity critical,
+ * `broadcast_failed_to_dispatch`, an append-only audit row and an email telling
+ * the member their E-Blast did not go out". Read against the code:
+ *
+ *  1. It does not land there. `attachAudienceId` is called inside the try at
+ *     `dispatch-scheduled-broadcast.ts:524`, whose catch is `:608` — a
+ *     different block from the one holding that branch. A round-4 reviewer
+ *     proposed its remediation against the wrong catch arm on the strength of
+ *     this sentence.
+ *  2. `db_write_after_resend_success` writes NO audit row and sends NO member
+ *     email; it returns `gateway_retryable`.
+ *  3. The method this paragraph actually describes was `attachResendIds`, which
+ *     round 3 did not change. It does now — see the call above.
+ *
+ * What is true: `classifyThrown` reads a `kind` field, neither error class has
+ * one, so both were classified `unknown` and treated as permanent gateway
+ * failures. Naming them lets each caller decide.
+ *
+ * Re-reading to distinguish "row drifted" from "row is gone" is the house
+ * pattern here (`updateDraft`, `updateDraftFromTemplate`). It costs one PK read
+ * on a transaction that is about to abort, and it keeps `observedStatus` TRUE —
+ * the alternative is passing a literal, which is the actor-role fabrication
+ * class in a different field. (`applyTransition` was cited here as a third
+ * example and should not have been: it passes its `expectedFromStatus` literal
+ * straight through, so it reports the status it WANTED, not the one it saw.
+ * Left as-is and recorded rather than silently repaired — it is a separate
+ * change with its own callers.)
+ */
+async function throwConcurrentMutation(
+  tx: TenantTx,
+  tenantIdArg: TenantSlug,
+  broadcastId: BroadcastId,
+): Promise<never> {
+  const probe = await tx
+    .select({ status: broadcasts.status })
+    .from(broadcasts)
+    .where(
+      and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)),
+    )
+    .limit(1);
+  const probeRow = probe[0];
+  if (probeRow === undefined) {
+    throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
+  }
+  throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probeRow.status);
 }
 
 // Cursor format: base64 of `submittedAt-iso|broadcast-id`
@@ -631,6 +689,14 @@ export function makeDrizzleBroadcastsRepo(
       expectedFromStatus: BroadcastStatus,
     ): Promise<Broadcast> {
       const tx = txUnknown as TenantTx;
+      // Round 4 T3 — the guard was MISSING here, on the busiest mutation on this
+      // table: `applyTransition` is what writes `sending` and
+      // `failed_to_dispatch` on BOTH dispatch legs. A round-4 reviewer counted
+      // 17 tx-taking methods against 11 `assertTenantBoundTx` call sites, so the
+      // docblock claim "called before every mutation" was short by seven — and
+      // the test added for that claim exercises `attachAudienceId`, one of the
+      // ten that already had it, so it structurally could not reveal the gap.
+      await assertTenantBoundTx(tx, ctx.slug, 'applyTransition');
       const setClause: Record<string, unknown> = {
         status: target,
         updatedAt: new Date(),
@@ -720,9 +786,24 @@ export function makeDrizzleBroadcastsRepo(
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        throw new Error(
-          `attachResendIds: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
-        );
+        // Round 4 F2 / L7(c) — this is the method `throwConcurrentMutation`'s
+        // docblock describes, and round 3 changed its SIBLING instead.
+        //
+        // Unlike `attachAudienceId` below there is no CAS predicate here: the
+        // WHERE is tenant + id, so 0 rows means the ROW IS GONE — an erasure
+        // cascade removed it between the claim query and this write, after the
+        // broadcast was already handed to Resend. `throwConcurrentMutation`
+        // probes and calls that `BroadcastNotFoundError`, which is exactly the
+        // right name for it; a bare `Error` was not a name at all.
+        //
+        // Two consequences downstream, both of which were dead code until now:
+        //  - `buildAudienceTick`'s `viaRepoConcurrency` converts only these two
+        //    typed errors and RETHROWS anything else, so `idsAttached.ok` was
+        //    always true and the `sent_but_row_unattachable` critical log could
+        //    never print. The cron counted `uncaught_error` instead.
+        //  - `dispatchScheduledBroadcast`'s `BroadcastNotFoundError` arm sat in
+        //    a catch nothing could reach it from.
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
       }
     },
 
@@ -746,15 +827,160 @@ export function makeDrizzleBroadcastsRepo(
           and(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
+            // COMPARE-AND-SET (108 Phase 9 review S13). `lockForUpdate` takes
+            // `pg_advisory_xact_lock`, but its tx COMMITS before any gateway
+            // call, so the read of "is an audience attached?" and this write sit
+            // in different transactions and the lock protects neither. Two
+            // overlapping ticks — reachable, since `maxDuration` equals the cron
+            // cadence — both saw NULL and both called `createAudience`, leaking
+            // one audience against a 3-audience Free-plan allowance.
+            //
+            // Holding the advisory lock across the gateway calls would be worse:
+            // a Postgres lock held over a 300 s HTTP round trip. Instead the
+            // write itself carries the precondition, so the loser updates 0 rows
+            // and the rowcount assertion below turns a silent race into a loud
+            // failure the cron reports.
+            //
+            // Same id is idempotent: a retried tick that already attached this
+            // audience still updates its row.
+            or(
+              isNull(broadcasts.resendAudienceId),
+              eq(broadcasts.resendAudienceId, resendAudienceId),
+            ),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        throw new Error(
-          `attachAudienceId: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
-        );
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
       }
     },
+
+    async attachAudienceImport(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      importId: string,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'attachAudienceImport');
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          audienceImportId: importId,
+          // R2-26 — SQL `now()`, not a Node clock. `0299`'s CHECK compares
+          // `completed_at >= submitted_at`, and those two are stamped in
+          // DIFFERENT invocations at least 5 minutes apart, possibly on different
+          // Vercel instances. Two Node clocks compared by a DB constraint is a
+          // 23514 on a semantically correct write. `markAudienceDeletedInTx`, one
+          // method away, already did this.
+          // Round 4 F10 — `COALESCE`, not a bare `now()`. This wrote a FRESH
+          // timestamp on every call, so a re-attach RESET the 30-minute stuck
+          // clock (`IMPORT_STUCK_AFTER_MS` is measured from this column) — while
+          // an earlier commit on this same branch added a precondition
+          // specifically to stop `markAudienceImportCompleted` overwriting ITS
+          // stamp. The asymmetry was accidental.
+          //
+          // A re-attach is not reachable today: `buildAudienceTick` calls
+          // `submitImport` only when `audienceImportId === null`. `COALESCE`
+          // rather than a refusal keeps the method idempotent for the retry that
+          // IS reachable — the attach tx rolling back, leaving both columns null
+          // — and makes the stamp answer "when did we first hand this to the
+          // provider", which is the only question the stuck rule asks of it.
+          audienceImportSubmittedAt: sql`COALESCE(${broadcasts.audienceImportSubmittedAt}, now())`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            // COMPARE-AND-SET, same reasoning as `attachAudienceId` above.
+            //
+            // The existing test asserting "attaching twice overwrites rather
+            // than erroring — a retried tick must be harmless" keeps passing
+            // for the case it names, because re-attaching the SAME id is still
+            // allowed. What no longer passes silently is a SECOND tick
+            // attaching a DIFFERENT import id: that is not a harmless retry,
+            // it is two live import jobs against one broadcast, and the pair
+            // `(resend_audience_id, audience_import_id)` could end up sourced
+            // from different ticks — which logically bypasses the
+            // `count_mismatch` backstop, since the counts would be validated
+            // for one audience while the send goes to the other.
+            or(
+              isNull(broadcasts.audienceImportId),
+              eq(broadcasts.audienceImportId, importId),
+            ),
+          ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      if (updated.length !== 1) {
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
+      }
+    },
+
+    async markAudienceImportCompleted(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'markAudienceImportCompleted');
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          audienceImportCompletedAt: sql`now()`,  // R2-26 — see the submit stamp.
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            // Round 3 finding 3-9 / round 2 R2-40 — the write carried NO
+            // precondition, so a re-entered tick re-stamped `now()` over an
+            // existing value and the column could not answer "when was this
+            // import consumed" at all.
+            isNull(broadcasts.audienceImportCompletedAt),
+          ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      if (updated.length !== 1) {
+        // Zero rows means either "already stamped" (idempotent — a retried tick,
+        // fine) or "row gone / never had an import" (a real fault). Probe rather
+        // than guess: the previous code could not tell them apart because it had
+        // no precondition to fail in the first place.
+        const probe = await tx
+          .select({
+            completedAt: broadcasts.audienceImportCompletedAt,
+            // Selected so the error below can name the status the row ACTUALLY
+            // holds. It used to pass `'unknown' as never` — a fabricated status
+            // cast past the compiler, ten lines from `throwConcurrentMutation`,
+            // which probes the real one for exactly this reason.
+            status: broadcasts.status,
+          })
+          .from(broadcasts)
+          .where(
+            and(
+              eq(broadcasts.tenantId, tenantIdArg),
+              eq(broadcasts.broadcastId, broadcastId),
+            ),
+          )
+          .limit(1);
+        const probeRow = probe[0];
+        if (probeRow === undefined) {
+          throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
+        }
+        if (probeRow.completedAt === null) {
+          // The row exists and is NOT stamped, yet the UPDATE matched nothing —
+          // that is not a state this predicate can produce, so it is a fault.
+          throw new BroadcastConcurrentMutationError(
+            tenantIdArg,
+            broadcastId,
+            probeRow.status,
+          );
+        }
+        // Already stamped: nothing to do.
+      }
+    },
+
 
     async listByTenantStatus(
       tenantIdArg: TenantSlug,
@@ -1365,6 +1591,92 @@ export function makeDrizzleBroadcastsRepo(
      * Empty email set → short-circuit `[]` (no email can match; skip the `=
      * ANY('{}')` predicate entirely). This is a READ — it mutates nothing — so
      * NO `SET LOCAL app.allow_broadcast_redaction` GUC is needed.
+     *
+     * ## The second UNION arm (108 Phase 9 review S9)
+     *
+     * The delivery-row join cannot see an audience that was PUSHED but never
+     * SENT, because `broadcast_deliveries` is written only by the delivery
+     * webhook. The two-tick import build makes that window ordinary rather than
+     * exotic: tick 1 hands the WHOLE audience to Resend, and there are then four
+     * ways to refuse (`failed_rows`, `counts_incoherent`, `count_mismatch`,
+     * `audience_import_stuck`) plus a cancel window — each leaving every address
+     * at the processor with zero delivery rows. The cascade returned nothing for
+     * those and still reported `resendOutcome: 'ok'`, which is the exact shape
+     * FR-044's last clause forbids.
+     *
+     * A never-sent broadcast has no per-recipient rows to join, so the arm pairs
+     * each of the member's addresses with each live audience of a broadcast that
+     * has **no delivery rows at all**.
+     *
+     * ## The delivery-existence filter is a DISCLOSURE control (round 2 R2-3)
+     *
+     * This arm first shipped without one, pairing every address with every live
+     * audience, on the reasoning that a detach for an address that was never in
+     * that audience 404s harmlessly. The 404 is harmless; **the request is not.**
+     * `DELETE /audiences/{id}/contacts/{email}` puts the address in the URL of a
+     * call to the marketing processor, so an address Resend had never seen is
+     * transmitted to it — during, and because of, an erasure.
+     *
+     * **Round 4 B-1 — R2-3's remedy is REVERSED, and this paragraph records why
+     * rather than being edited away, because the branch has now argued this
+     * predicate three times.**
+     *
+     * The reasoning above rests on one step: "for a broadcast that WAS sent, arm
+     * 1 already returns its real recipients". That step is false. Measured:
+     * `broadcast_deliveries` has exactly ONE insert site in `src/`
+     * (`drizzle-broadcast-deliveries-repo.ts:58`), reachable only through
+     * `upsertByResendEventId`, whose only callers are `process-webhook-event.ts`.
+     * `reconcile-stuck-sending` only reads. **A delivery row means a webhook
+     * ARRIVED — not that the person was in the audience.** So arm 1 returns
+     * recipients whose webhook landed, and the missing ones are not all
+     * resolver-drops: they include everyone whose event has not come back yet.
+     *
+     * `NOT EXISTS` therefore switched arm 2 off for an entire broadcast on the
+     * FIRST recipient's webhook, and a member in a live audience with no row of
+     * their own fell through both arms — while the cascade recorded
+     * `resend_outcome: 'ok'` with 0 detached in an append-only Art. 30 row the
+     * runbook tells the DPO to cite.
+     *
+     * Nothing records what was pushed, so the two absences cannot be told apart
+     * and the guess has to go one way. Transmitting one address to a DPA-bound
+     * processor IN ORDER TO DELETE IT is a proportionate step under Art. 17(1)/(2)
+     * with Art. 28(3)(a)+(e) and PDPA s.33, and a 404 is counted honestly as
+     * `already_absent`. Writing `ok` over an address still sitting in a live
+     * marketing audience is a false statement under Art. 12(3) in a record that
+     * cannot be corrected. R2-3's concern — that an opted-out member's address
+     * reaches Resend because of an erasure — is real and is accepted as the
+     * cost; it is not the same weight.
+     *
+     * The narrowing rejected under round 3 finding 3-10
+     * (`resend_broadcast_id IS NULL`) stays rejected, for its original reason.
+     *
+     * ## Why `audience_import_id IS NOT NULL` is gone
+     *
+     * It restricted the arm to the import path "that introduced the window".
+     * The window is not the import path's: the legacy serial push has the
+     * identical pushed-but-never-sent shape, and that clause left the leg which
+     * is LIVE AT MERGE uncovered while covering the one that is dark. Same
+     * one-leg-only class the branch has now hit three times.
+     *
+     * ## Cost, for the record
+     *
+     * `audience_deleted_at IS NULL` bounds the live set:
+     * `TERMINAL_BROADCAST_STATUSES` includes `sent`, `cleanup-audiences` runs
+     * every 15 minutes (`vercel.json`) with a 1-hour grace, and it stamps that
+     * column — so the set is broadcasts terminal within roughly the last hour
+     * plus those in flight. That bound is now the ONLY one: round 4's B-1 removed
+     * the `NOT EXISTS` sub-clause that had further narrowed this to broadcasts
+     * which never delivered, so the fan-out per erased member is
+     * `addresses × live audiences`, not `addresses × undelivered broadcasts`.
+     * Sizing a cost estimate off the old sentence undercounts. R2-39: the arm
+     * cannot use
+     * `broadcasts_audience_import_pending_idx` (it asserts only part of that
+     * index's predicate, so it cannot imply it) and `EXPLAIN` shows a Seq Scan.
+     * Acceptable — the table is small and `tenant_id` bounds it — and recorded
+     * here so the next reader does not assume coverage.
+     *
+     * Note this DETACHES; per U1 it does not delete the contact record at the
+     * processor. See residual 8a in `docs/compliance/processing-records.md`.
      */
     async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails) {
       const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -1375,6 +1687,10 @@ export function makeDrizzleBroadcastsRepo(
         ctx.slug,
         'listMemberResendAudienceContactsInTx',
       );
+      const emailArray = sql`ARRAY[${sql.join(
+        lowered.map((e) => sql`${e}`),
+        sql`, `,
+      )}]::text[]`;
       const rows = (await tx.execute(sql`
         SELECT DISTINCT b.resend_audience_id AS audience_id,
                         d.recipient_email_lower AS email
@@ -1383,11 +1699,62 @@ export function makeDrizzleBroadcastsRepo(
           ON b.tenant_id = d.tenant_id
          AND b.broadcast_id = d.broadcast_id
         WHERE d.tenant_id = ${tenantIdArg}
-          AND d.recipient_email_lower = ANY(ARRAY[${sql.join(
-            lowered.map((e) => sql`${e}`),
-            sql`, `,
-          )}]::text[])
+          AND d.recipient_email_lower = ANY(${emailArray})
           AND b.resend_audience_id IS NOT NULL
+
+        UNION
+
+        -- 108 Phase 9 review S9 — the pushed-but-never-sent arm. See the
+        -- docblock above for why it exists. (No backticks in SQL comments: this
+        -- is a sql tagged template and one backtick closes it.)
+        SELECT DISTINCT b.resend_audience_id AS audience_id,
+                        e.email AS email
+        FROM broadcasts b
+        CROSS JOIN unnest(${emailArray}) AS e(email)
+        WHERE b.tenant_id = ${tenantIdArg}
+          AND b.resend_audience_id IS NOT NULL
+          AND b.audience_deleted_at IS NULL
+          -- NO BACKTICKS IN THIS COMMENT: it is inside a sql tagged template and
+          -- one backtick closes the literal. The warning line lived here, was
+          -- deleted while rewriting this block, and 18 backticks went in on the
+          -- next edit — all three erasure suites failed to PARSE. Restored.
+          --
+          -- Round 4 B-1 — R2-3's NOT EXISTS clause was HERE and is removed.
+          --
+          -- It read: only broadcasts that delivered NOTHING, on the reasoning
+          -- that "for one that DID deliver, the first arm above returns its real
+          -- recipients". That last step is false, and the fact that settles it
+          -- was not on the table when R2-3 was argued: broadcast_deliveries
+          -- has exactly ONE insert site in src/
+          -- (drizzle-broadcast-deliveries-repo.ts:58, reachable only through
+          -- upsertByResendEventId, whose only callers are
+          -- process-webhook-event.ts). **A delivery row means "a webhook
+          -- arrived", not "this person was in the audience."**
+          --
+          -- So the clause switched the arm off for a whole broadcast as soon as
+          -- ANY ONE recipient's webhook landed, while arm 1 only ever returns
+          -- members whose OWN webhook landed. A member sitting in a live
+          -- audience with no row of their own was returned by neither — and the
+          -- cascade then wrote resendOutcome: 'ok', contacts detached: 0 into
+          -- an append-only Art. 30 record that the runbook tells the DPO to cite
+          -- when closing the DSR.
+          --
+          -- No local predicate can separate "was pushed, webhook pending" from
+          -- "never pushed, dropped at resolve": nothing records what was pushed.
+          -- The two errors are not symmetric, so the guess goes one way:
+          --   * over-transmitting sends one DELETE, with an address in the URL,
+          --     to a processor already under a DPA that receives every
+          --     recipient's address on every send — for the purpose of ensuring
+          --     absence. If it was never there, Resend 404s and we count it
+          --     already_absent. Art. 17(1)/(2) with Art. 28(3)(a)+(e), PDPA
+          --     s.33.
+          --   * under-erasing leaves the address in a LIVE marketing audience
+          --     while an append-only record states the opposite. Art. 12(3),
+          --     and it cannot be retracted.
+          --
+          -- audience_deleted_at IS NULL above is the bound that actually
+          -- matters: cleanup-orphaned-audiences deletes the audience at Resend
+          -- before stamping it, so a stamped row has nothing left to detach.
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },

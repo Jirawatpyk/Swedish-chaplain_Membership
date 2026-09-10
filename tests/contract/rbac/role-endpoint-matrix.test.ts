@@ -270,11 +270,9 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/members/ids',
     'GET /api/plans/[year]/[planId]/affected-members',
     'PATCH /api/admin/broadcasts/templates/[id]',
-    'POST /api/admin/broadcasts/[id]/accept-partial',
     'POST /api/admin/broadcasts/[id]/approve',
     'POST /api/admin/broadcasts/[id]/cancel',
     'POST /api/admin/broadcasts/[id]/reject',
-    'POST /api/admin/broadcasts/[id]/retry',
     'POST /api/admin/broadcasts/proxy-submit',
     'POST /api/admin/broadcasts/templates',
     // 108 PR-D — the contact marketing toggle, keyed `contacts.marketing`,
@@ -296,7 +294,11 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/plans/search',
   ];
 
-  it('reaches EXACTLY the frozen 50-surface set — nothing more, nothing less', () => {
+  // 108 Phase 9 — 50 → 48: `[id]/accept-partial` and `[id]/retry` were deleted
+  // with the batch dispatch path (`ca51f59a1`). Both halves of this comparison
+  // were stale in the same direction, so this test passed while naming two
+  // routes that no longer exist; only `api-route-exhaustiveness` caught them.
+  it('reaches EXACTLY the frozen 48-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

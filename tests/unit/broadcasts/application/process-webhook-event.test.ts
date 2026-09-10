@@ -74,6 +74,10 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     quotaYearConsumed: null,
     quotaConsumedAt: null,
     resendAudienceId: 'aud-1',
+    // T086 — the Contacts-Import build (migration 0298). Absent on every fixture written before it.
+    audienceImportId: null,
+    audienceImportSubmittedAt: null,
+    audienceImportCompletedAt: null,
     resendBroadcastId: 'rsb-1',
     retentionYears: 5,
     manualRetryCount: 0,
@@ -123,6 +127,11 @@ function makeBroadcastsRepo(args: {
     },
     async attachResendIds() {},
     async attachAudienceId() {},
+    // Phase 9b (T147) — unused by this use case; present so the stub
+    // still satisfies BroadcastsRepo.
+    // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
+    async attachAudienceImport() {},
+    async markAudienceImportCompleted() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },

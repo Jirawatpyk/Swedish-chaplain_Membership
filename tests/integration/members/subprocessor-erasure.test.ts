@@ -17,9 +17,19 @@
  *      `SubprocessorErasurePort` removes each captured pair from its Resend
  *      audience. A failure here is recorded (`resend_outcome:'failed'` audit +
  *      the `member_subprocessor_erasure_total` metric) but does NOT flip
- *      `allCascadesClean` — the captured inputs do not survive a US2d re-drive,
- *      so retrying would re-capture an empty set; the DPO runbook (US3-E) owns
- *      the residual.
+ *      `allCascadesClean`.
+ *
+ *      **Round 4 B-1 — the residual this used to describe has NARROWED.** It
+ *      said "the captured inputs do not survive a US2d re-drive, so retrying
+ *      would re-capture an empty set". That was true only because arm 1 of the
+ *      derivation matches on `broadcast_deliveries.recipient_email_lower` (which
+ *      the tombstone redacts) and R2-3's `NOT EXISTS` had switched arm 2 off for
+ *      any broadcast holding a delivery row. With that clause removed, arm 2
+ *      still finds the member's still-LIVE audiences, so a re-drive DOES retry
+ *      the detach — see the RE-DRIVE scenario in
+ *      `erase-member-subprocessor-cascade.test.ts`. What remains is narrower: the
+ *      audience must not yet have been cleaned up. The DPO runbook (US3-E) owns
+ *      that.
  *
  * This test drives the PRODUCTION composition root `buildEraseMemberDeps(ctx)`
  * — the REAL `f7BroadcastsAudienceDerivationAdapter` (in-tx SELECT against live
@@ -46,9 +56,14 @@
  * the audience-derivation JOIN yields a pair).
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+// Round 4 T1 — type-only, so it is erased before `vi.hoisted` runs. Imported
+// rather than re-spelled inline: if `RemoveContactOutcome` ever gains a third
+// member, `tsc` fails HERE instead of the double silently going stale, which is
+// the exact failure this fix is repairing.
+import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 
 // vi.mock F7's barrel: spy on `removeContactFromAudience`, keep everything else
 // real (the audience-derivation + content-scrub adapters need
@@ -56,9 +71,15 @@ import { and, eq } from 'drizzle-orm';
 // `vi.hoisted` so the spy is initialised BEFORE the hoisted `vi.mock` factory
 // references it (the factory runs at the top of the module).
 const { removeContactFromAudienceSpy } = vi.hoisted(() => ({
+  // Round 4 T1 — was `Promise<void>` resolving `undefined`. `897dd73d7` widened
+  // the port to `Promise<RemoveContactOutcome>` and the adapter now reads
+  // `outcome.kind`; reading `.kind` off `undefined` throws INSIDE the adapter's
+  // own catch, which counts it `failed` and writes `resend_outcome: 'failed'`.
+  // The suite went red and read like a real detach failure. This file is not in
+  // the diff that widened the port — a stale double in an untouched file.
   removeContactFromAudienceSpy: vi.fn<
-    (audienceId: string, email: string) => Promise<void>
-  >(async () => {}),
+    (audienceId: string, email: string) => Promise<RemoveContactOutcome>
+  >(async () => ({ kind: 'detached' })),
 }));
 
 vi.mock('@/modules/broadcasts', async (importOriginal) => {
@@ -278,6 +299,33 @@ describe('eraseMember — sub-processor erasure cascade (COMP-1 US3-C, live Neon
   let tenant: TestTenant;
   let admin: TestUser;
 
+  /**
+   * Round 4 B-1 — per-case audience isolation. The derivation's second UNION arm
+   * is a CROSS JOIN of the erased addresses against every broadcast with a LIVE
+   * audience (no column links a member to an audience they were pushed into —
+   * that is why the arm exists), so in a SHARED test tenant audiences
+   * accumulated across cases and every `toHaveBeenCalledTimes(n)` counted the
+   * whole file's history. R2-3's `NOT EXISTS` had been masking that by filtering
+   * out anything with a delivery row.
+   *
+   * Stamping prior audiences deleted is what `cleanup-orphaned-audiences` does
+   * in production (every 15 min, 1 h grace), so each case sees only what it
+   * seeded and the counts mean what they say again.
+   */
+  const isolateAudiences = async (): Promise<void> => {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts SET audience_deleted_at = now()
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND resend_audience_id IS NOT NULL
+           AND audience_deleted_at IS NULL`);
+    });
+  };
+
+  beforeEach(async () => {
+    await isolateAudiences();
+  });
+
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
@@ -295,7 +343,7 @@ describe('eraseMember — sub-processor erasure cascade (COMP-1 US3-C, live Neon
 
   it('A — propagates to Resend (removeContactFromAudience called), records resend_outcome:ok + removed_count:1, and emits member_erased (non-blocking)', async () => {
     removeContactFromAudienceSpy.mockClear();
-    removeContactFromAudienceSpy.mockResolvedValue(undefined);
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'detached' });
 
     const { memberId, contactEmail } = await seedMember(tenant);
     const audienceId = `aud-ok-${randomUUID().slice(0, 8)}`;
@@ -354,6 +402,76 @@ describe('eraseMember — sub-processor erasure cascade (COMP-1 US3-C, live Neon
     expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
 
     // member_erased emitted (completion proof — cascadesComplete held).
+    const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
+    expect(erased.length).toBeGreaterThanOrEqual(1);
+  }, 120_000);
+
+  /**
+   * Round 4 T1 + T6 — the sibling of A that had never existed.
+   *
+   * `897dd73d7` split `removeContactFromAudience`'s success into `detached` vs
+   * `already_absent` precisely so `resend_contacts_removed_count` stops counting
+   * 404s as removals: that number reaches an append-only Art. 30 record and the
+   * DPO's evidence card, where it was labelled "Contacts removed" and was
+   * materially false under Art. 12(3). Nothing pinned the split end to end —
+   * `resend_contacts_already_absent_count` appeared in `tests/` exactly once,
+   * inside a comment, and every projection case asserted it `null`. A typo on
+   * either side degraded silently to a card that omits the field.
+   *
+   * Both outcomes are successes, so `resend_outcome` stays `ok`; only one is a
+   * removal.
+   */
+  it('A2 — an already-absent contact is a SUCCESS but NOT a removal: outcome ok, removed_count 0, already_absent_count 1', async () => {
+    removeContactFromAudienceSpy.mockClear();
+    removeContactFromAudienceSpy.mockResolvedValue({ kind: 'already_absent' });
+
+    const { memberId, contactEmail } = await seedMember(tenant);
+    const audienceId = `aud-absent-${randomUUID().slice(0, 8)}`;
+    await seedAudienceDelivery(
+      tenant,
+      memberId,
+      admin.userId,
+      contactEmail,
+      audienceId,
+    );
+
+    const requestId = `rq-erase-sub-absent-${Date.now()}`;
+    const deps = buildEraseMemberDeps(tenant.ctx);
+    const result = await eraseMember(
+      asMemberId(memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId },
+      deps,
+    );
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    // A 404 from the processor is not a failure — the address is absent, which
+    // is the state the erasure was asking for.
+    expect(result.value.cascadesComplete).toBe(true);
+    expect(removeContactFromAudienceSpy).toHaveBeenCalledTimes(1);
+
+    const subAudits = await rawSelectSubprocessorAudits(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(
+      subAudits.length,
+      'expected a subprocessor_erasure_propagated audit row',
+    ).toBeGreaterThanOrEqual(1);
+    const payload = subAudits[0]!.payload as {
+      resend_outcome?: string;
+      resend_contacts_removed_count?: number;
+      resend_contacts_already_absent_count?: number;
+      resend_contacts_failed_count?: number;
+    };
+    expect(payload.resend_outcome).toBe('ok');
+    // The assertion the whole split exists for: NOT 1.
+    expect(payload.resend_contacts_removed_count).toBe(0);
+    expect(payload.resend_contacts_already_absent_count).toBe(1);
+    expect(payload.resend_contacts_failed_count).toBe(0);
+    expect(JSON.stringify(subAudits[0])).not.toContain(contactEmail);
+
     const erased = await rawSelectMemberErasedAudits(tenant.ctx.slug, memberId);
     expect(erased.length).toBeGreaterThanOrEqual(1);
   }, 120_000);

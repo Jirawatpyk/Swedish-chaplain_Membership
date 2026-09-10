@@ -53,13 +53,7 @@ import {
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
   WebhookSignatureError,
-  // F7.1a Phase 3 T057 — per-batch counter routing
-  applyBatchWebhookEvent,
-  makeApplyBatchWebhookEventDeps,
-  resolveTenantByBatchProviderBroadcastId,
-  type BatchWebhookEventType,
 } from '@/modules/broadcasts';
-import { createHash } from 'node:crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -365,16 +359,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // Step 5 — tenant resolve via resend_broadcast_id (BYPASS RLS).
-  // F7 MVP single-audience path first; on miss, fall back to F7.1a
-  // per-batch lookup (T057). The two lookups are mutually exclusive
-  // (a given Resend broadcast id maps to either ONE F7 MVP broadcast
-  // row OR ONE F7.1a batch_manifest row, never both).
+  //
+  // ONE lookup since 108 US5. There used to be a second, per-batch fallback
+  // (T057) because a batched broadcast's provider id lived on a batch manifest
+  // rather than on the broadcasts row. The batch path is gone: every broadcast
+  // — legacy push or import-built — carries its provider id on its own row.
   let tenantId: string;
   let broadcastId: string;
-  let batchRoutingContext: {
-    readonly batchManifestId: string;
-    readonly batchIndex: number;
-  } | null = null;
   try {
     const lookup = await resolveTenantByResendBroadcastId(
       verified.data.broadcastId,
@@ -383,39 +374,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenantId = lookup.tenantId;
       broadcastId = lookup.broadcastId;
     } else {
-      // F7 MVP miss → try F7.1a batch lookup (T057).
-      const batchLookup = await resolveTenantByBatchProviderBroadcastId(
-        verified.data.broadcastId,
-      );
-      if (batchLookup === null) {
-        // Unknown broadcast id — could be a legacy dispatch from a
-        // prior tenant whose row has been archived, or a misrouted
-        // event from a leaked secret. 200 OK so Resend does not
-        // retry-storm, but emit a NULL-tenant audit row so the event
-        // is forensically discoverable per FR-024 (review ERR-C1).
-        logger.warn(
-          {
-            resendBroadcastId: verified.data.broadcastId,
-            eventType: verified.type,
-            requestId,
-            correlationId,
-          },
-          'broadcasts.webhook.unknown_resend_broadcast_id',
-        );
-        await auditUnknownResendBroadcast(
-          verified.data.broadcastId,
-          verified.type,
+      // Unknown broadcast id — could be a legacy dispatch from a
+      // prior tenant whose row has been archived, or a misrouted
+      // event from a leaked secret. 200 OK so Resend does not
+      // retry-storm, but emit a NULL-tenant audit row so the event
+      // is forensically discoverable per FR-024 (review ERR-C1).
+      logger.warn(
+        {
+          resendBroadcastId: verified.data.broadcastId,
+          eventType: verified.type,
           requestId,
           correlationId,
-        );
-        return jsonOk(correlationId);
-      }
-      tenantId = batchLookup.tenantId;
-      broadcastId = batchLookup.broadcastId;
-      batchRoutingContext = {
-        batchManifestId: batchLookup.batchManifestId,
-        batchIndex: batchLookup.batchIndex,
-      };
+        },
+        'broadcasts.webhook.unknown_resend_broadcast_id',
+      );
+      await auditUnknownResendBroadcast(
+        verified.data.broadcastId,
+        verified.type,
+        requestId,
+        correlationId,
+      );
+      return jsonOk(correlationId);
     }
   } catch (e) {
     logger.error(
@@ -429,109 +408,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return jsonInternalError('tenant_resolve_failed', correlationId);
   }
 
-  // F7.1a Phase 3 T057 — per-batch counter increment path.
-  //
-  // If the lookup resolved a batch_manifest (not a F7 MVP broadcast
-  // row), increment the batch's counter via `applyBatchWebhookEvent`
-  // and return early. The F7 MVP processWebhookEvent path is for
-  // single-audience broadcasts; F7.1a multi-batch broadcasts have
-  // their own per-batch state.
-  //
-  // Skip event types we don't count at batch level (e.g.
-  // `email.opened` — informational only; broadcast-level metric
-  // tracking happens via the F8 telemetry pipeline).
-  if (batchRoutingContext !== null) {
-    const batchEventType = mapToBatchEventType(verified.type);
-    if (batchEventType === null) {
-      // Event type not relevant to per-batch counters (e.g. opened) —
-      // 200 OK so Resend stops retrying. Audit + telemetry already
-      // captured via the upstream Svix idempotency layer.
-      return jsonOk(correlationId);
-    }
-    try {
-      const batchDeps = makeApplyBatchWebhookEventDeps(tenantId);
-      const recipientEmailHashed = hashRecipientEmail(
-        tenantId,
-        verified.data.recipientEmail,
-      );
-      const r = await applyBatchWebhookEvent(batchDeps, {
-        tenantId,
-        batchManifestId: batchRoutingContext.batchManifestId,
-        batchIndex: batchRoutingContext.batchIndex,
-        broadcastId,
-        eventType: batchEventType,
-        recipientEmailHashed,
-        // Bug #10 (code-review) — plaintext lower + bounceType so the batch
-        // path can suppress hard-bounce/complaint/unsubscribe recipients.
-        recipientEmailLower: verified.data.recipientEmail,
-        ...(verified.data.bounceType !== undefined && {
-          bounceType: verified.data.bounceType,
-        }),
-        ...(verified.data.errorMessage !== undefined && {
-          errorMessage: verified.data.errorMessage,
-        }),
-        resendEventId: verified.id,
-        requestId,
-      });
-      if (!r.ok) {
-        // speckit-review I-1 — branch on the error kind. A real
-        // `storage_error` (Neon blip / serialization failure on the
-        // counter UPDATE) MUST return 500 so Svix retries: the increment
-        // is idempotent on `resend_event_id` (the broadcast_batch_
-        // delivery_events ledger), so a retry recovers the lost counter
-        // bump. Swallowing it to 200 makes Resend never retry → the batch
-        // counter is permanently short → the broadcast strands in
-        // `sending` until the 24h backstop rolls it to a FALSE
-        // `partially_sent` + consumes the member's quota.
-        if (r.error.kind === 'apply_batch_webhook.server_error') {
-          logger.error(
-            {
-              err: r.error.kind,
-              message: r.error.message,
-              eventType: verified.type,
-              batchManifestId: batchRoutingContext.batchManifestId,
-              tenantId,
-              correlationId,
-              requestId,
-            },
-            'broadcasts.webhook.batch_counter_apply_failed',
-          );
-          return jsonInternalError('dispatch_failed', correlationId);
-        }
-        // BATCH_NOT_FOUND only — benign (the batch row was deleted by a
-        // manual ops action mid-flight; the use case already emitted a
-        // forensic audit row). 200 so Resend doesn't retry-storm against
-        // a row that no longer exists.
-        logger.warn(
-          {
-            err: r.error.kind,
-            eventType: verified.type,
-            batchManifestId: batchRoutingContext.batchManifestId,
-            tenantId,
-            correlationId,
-            requestId,
-          },
-          'broadcasts.webhook.batch_counter_apply_failed',
-        );
-      }
-      return jsonOk(correlationId);
-    } catch (e) {
-      logger.error(
-        {
-          err: e instanceof Error ? e.constructor.name : 'unknown',
-          message: e instanceof Error ? e.message : 'unknown',
-          batchManifestId: batchRoutingContext.batchManifestId,
-          tenantId,
-          correlationId,
-          requestId,
-        },
-        'broadcasts.webhook.batch_route_threw',
-      );
-      // 500 → Svix retries — but this is an in-process bug
-      // (DB blip, programmer error). Same escalation hook as F7 MVP.
-      return jsonInternalError('dispatch_failed', correlationId);
-    }
-  }
 
   // Step 6 — build per-tenant deps + dispatch (F7 MVP single-audience).
   try {
@@ -646,42 +522,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 }
 
-/**
- * F7.1a Phase 3 T057 — map verified Resend webhook event type to the
- * F71A batch-counter event type, or `null` when the event isn't
- * relevant to per-batch counters (`email.opened`, `email.clicked`,
- * etc.). Mutually exclusive — one counter increments per event.
- */
-function mapToBatchEventType(
-  verifiedType: string,
-): BatchWebhookEventType | null {
-  switch (verifiedType) {
-    case 'email.delivered':
-      return 'delivered';
-    case 'email.bounced':
-      return 'bounced';
-    case 'email.complained':
-      return 'complained';
-    case 'email.unsubscribed':
-      return 'unsubscribed';
-    default:
-      return null;
-  }
-}
-
-/**
- * Per-tenant hashed recipient email — matches F7 MVP audit payload
- * convention (`broadcast_delivery_recorded` payload includes
- * `recipientEmailHashed`, not raw). Same SHA-256 with tenant-prefix
- * pattern as F7 MVP `hashRecipient(tenantId, lower)` helper.
- *
- * Inline implementation rather than import — the F7 MVP helper is
- * file-private to `process-webhook-event.ts`. Phase 3D consolidation
- * candidate.
- */
-function hashRecipientEmail(tenantId: string, recipientEmail: string): string {
-  return createHash('sha256')
-    .update(`${tenantId}:${recipientEmail.toLowerCase().trim()}`)
-    .digest('hex')
-    .slice(0, 32);
-}

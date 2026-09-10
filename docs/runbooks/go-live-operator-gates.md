@@ -223,8 +223,8 @@ Cadence below is the *logical* schedule (UTC unless noted ICT = Asia/Bangkok):
 | F7 | `/api/cron/broadcasts/reconcile-stuck-sending` | POST | `*/15 * * * *` | before F7 flip |
 | F7 | `/api/cron/broadcasts/prune-expired-drafts` | POST | `30 4 * * *` (UTC) | before F7 flip |
 | F7 | `/api/internal/metrics/broadcasts-gauges` | GET | `*/5 * * * *` | before F7 flip |
-| F7.1a | `/api/cron/broadcasts/split-large-broadcasts` | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
-| F7.1a | `/api/cron/broadcasts/dispatch-batches` | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
+| ~~F7.1a~~ | ~~`/api/cron/broadcasts/split-large-broadcasts`~~ **DELETED by `ca51f59a1` (Phase 9) — do not register** | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
+| ~~F7.1a~~ | ~~`/api/cron/broadcasts/dispatch-batches`~~ **DELETED by `ca51f59a1` (Phase 9) — do not register** | POST | `*/5 * * * *` | before F7.1a US1 flip (503 until then = OK) |
 | F8 | `/api/cron/renewals/dispatch-coordinator` | POST | `0 6 * * *` (ICT) | before F8 flip |
 | F8 | `/api/cron/renewals/at-risk-recompute-coordinator` | POST | `0 2 * * 0` (Sun ICT) | before F8 flip |
 | F8 | `/api/cron/renewals/tier-upgrade-evaluate-coordinator` | POST | `0 3 * * 0` (Sun ICT) | before F8 flip |
@@ -306,7 +306,7 @@ Recommended launch order (lowest risk → highest; skip any feature you are defe
 2. `FEATURE_F8_RENEWALS` — needs all 7 F8 crons (§5) + `tenant_renewal_settings` row for SweCham.
 3. `FEATURE_F7_BROADCASTS` — needs F7 crons (§5) + verified Broadcasts sender domain.
 4. `FEATURE_F71A_BROADCAST_ADVANCED` (master), then the **staged sub-flags in this order**:
-   `FEATURE_F71A_US7_TEMPLATES` → `FEATURE_F71A_US2_IMAGES` (**needs ClamAV §6**) → `FEATURE_F71A_US1_PAGINATION` (needs the two split/dispatch-batches crons).
+   `FEATURE_F71A_US7_TEMPLATES` → `FEATURE_F71A_US2_IMAGES` (**needs ClamAV §6**) → `FEATURE_F71A_US1_PAGINATION` (recipient pagination only). *(Round 3 finding 3-11: this said "needs the two split/dispatch-batches crons" — `ca51f59a1` deleted both, along with the batch model. This flag no longer gates any ceiling or dispatch behaviour; the audience build is gated by `FEATURE_F7_IMPORT_AUDIENCE`.)*
 5. `FEATURE_F6_EVENTCREATE` — **boot fails** unless `EVENTCREATE_PII_PSEUDONYM_SALT` set **and**, in prod, `ZAPIER_DPA_EXECUTED=true`. Plus F6 crons (§5).
 6. `FEATURE_F5_ONLINE_PAYMENT` — ⚠️ **only after the Stripe LIVE cutover** (§11). Leaving F5 dark is a valid launch-minimal choice.
 

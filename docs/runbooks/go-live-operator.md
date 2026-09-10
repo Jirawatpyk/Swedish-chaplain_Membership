@@ -85,7 +85,7 @@ For every job: **Bearer `CRON_SECRET`** (auto-injected), retry is N/A
 (Vercel Cron has no retry — the cadence is the natural retry).
 Launch-critical 5-min jobs (previously needed cron-job.org on Hobby):
 - [ ] **F9** `/api/cron/insights/snapshot-refresh-coordinator` `*/5` **+** `/api/cron/insights/process-export-jobs` `*/5` ← **T101** (both now GET+POST — `export const GET = POST` so Vercel's GET cron reaches them)
-- [ ] **F7** `dispatch-scheduled` `*/5` · `reconcile-stuck-sending` `*/15` · `dispatch-batches` `*/5` · `split-large-broadcasts` `*/5` · `broadcasts-gauges` `*/5` · `prune-expired-drafts` `30 4 * * *`
+- [ ] **F7** `dispatch-scheduled` `*/5` · `reconcile-stuck-sending` `*/15` · ~~`dispatch-batches` `*/5`~~ · ~~`split-large-broadcasts` `*/5`~~ · `broadcasts-gauges` `*/5` · `prune-expired-drafts` `30 4 * * *` **⚠️ Round 4, whole-branch review #1 — `ca51f59a1` DELETED both batch crons on the Phase-9 branch (`split-large-broadcasts`, `dispatch-batches`). Do not look for them in `vercel.json`; there is nothing to register.**
 - [ ] **F5** `stale-pending-count` `*/5`
 - [ ] **F8** all 7: `dispatch-coordinator` · `at-risk-recompute-coordinator` · `tier-upgrade-evaluate-coordinator` · `reconcile-pending-reactivations-coordinator` · `lapse-cycles-on-grace-expiry-coordinator` · `prune-consumed-tokens` · `reconcile-pending-applications`
 - [ ] **F6** 4 jobs: idempotency sweep · PII pseudonymisation sweep (compliance-critical) · error-CSV blob TTL sweep · match-rate gauge (hourly)

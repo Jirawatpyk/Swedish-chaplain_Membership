@@ -69,14 +69,22 @@ describe('subprocessorErasureAdapter', () => {
     expect(result).toEqual({
       resendOutcome: 'ok',
       resendContactsRemoved: 0,
+      resendContactsAlreadyAbsent: 0,
       resendContactsFailed: 0,
       stripeOutcome: 'ok',
     });
     expect(removeContactFromAudience).not.toHaveBeenCalled();
   });
 
-  it('all pairs resolve → ok, removed = N (404 counts as removed — gateway resolves)', async () => {
-    removeContactFromAudience.mockResolvedValue(undefined);
+  /**
+   * Round 2 R2-25 — this case was named **"404 counts as removed — gateway
+   * resolves"**, so the false number was not an oversight: it was asserted. That
+   * count reached `resend_contacts_removed_count` in an append-only Art. 30 row,
+   * and the DPO's evidence card rendered it as "Contacts removed" — making a DSR
+   * answer produced from this system false under Art. 12(3).
+   */
+  it('all pairs DETACHED → ok, removed = N, alreadyAbsent = 0', async () => {
+    removeContactFromAudience.mockResolvedValue({ kind: 'detached' });
 
     const result = await subprocessorErasureAdapter.propagate(
       inputWith([
@@ -87,6 +95,7 @@ describe('subprocessorErasureAdapter', () => {
 
     expect(result.resendOutcome).toBe('ok');
     expect(result.resendContactsRemoved).toBe(2);
+    expect(result.resendContactsAlreadyAbsent).toBe(0);
     expect(result.resendContactsFailed).toBe(0);
     expect(result.stripeOutcome).toBe('ok');
     expect(removeContactFromAudience).toHaveBeenCalledTimes(2);
@@ -94,9 +103,47 @@ describe('subprocessorErasureAdapter', () => {
     expect(removeContactFromAudience).toHaveBeenCalledWith('aud-2', 'b@example.com');
   });
 
+  /**
+   * The distinction the split exists for: both are successes, only one is a
+   * removal. Before this the result read `removed: 2` for a member whose contacts
+   * were BOTH already gone.
+   */
+  it('a 404 is `ok` but NOT a removal — removed:0, alreadyAbsent:2', async () => {
+    removeContactFromAudience.mockResolvedValue({ kind: 'already_absent' });
+
+    const result = await subprocessorErasureAdapter.propagate(
+      inputWith([
+        { audienceId: 'aud-1', email: 'a@example.com' },
+        { audienceId: 'aud-2', email: 'b@example.com' },
+      ]),
+    );
+
+    expect(result.resendOutcome).toBe('ok');
+    expect(result.resendContactsRemoved).toBe(0);
+    expect(result.resendContactsAlreadyAbsent).toBe(2);
+    expect(result.resendContactsFailed).toBe(0);
+  });
+
+  it('a MIX reports each apart — removed:1, alreadyAbsent:1', async () => {
+    removeContactFromAudience
+      .mockResolvedValueOnce({ kind: 'detached' })
+      .mockResolvedValueOnce({ kind: 'already_absent' });
+
+    const result = await subprocessorErasureAdapter.propagate(
+      inputWith([
+        { audienceId: 'aud-1', email: 'a@example.com' },
+        { audienceId: 'aud-2', email: 'b@example.com' },
+      ]),
+    );
+
+    expect(result.resendOutcome).toBe('ok');
+    expect(result.resendContactsRemoved).toBe(1);
+    expect(result.resendContactsAlreadyAbsent).toBe(1);
+  });
+
   it('1 of 2 rejects → partial, removed:1 failed:1', async () => {
     removeContactFromAudience
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ kind: 'detached' })
       .mockRejectedValueOnce(new Error('resend 503'));
 
     const result = await subprocessorErasureAdapter.propagate(
@@ -180,6 +227,7 @@ describe('noopSubprocessorErasureAdapter', () => {
     expect(result).toEqual({
       resendOutcome: 'ok',
       resendContactsRemoved: 0,
+      resendContactsAlreadyAbsent: 0,
       resendContactsFailed: 0,
       stripeOutcome: 'ok',
     });

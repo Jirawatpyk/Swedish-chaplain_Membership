@@ -47,6 +47,49 @@ export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number];
  * constant so a future state-machine change cannot silently desync the
  * SQL from the domain (Finding G).
  */
+/**
+ * Statuses no code path can reach any more, kept in `BROADCAST_STATUSES` so
+ * the type still covers historical rows and `status-badge-mapping` still
+ * renders them. 108 Phase 9 (`ca51f59a1`) deleted the batch dispatch path and
+ * with it every producer: `recordPartialSend`, `transitionToRetrying` and
+ * `acceptPartialDelivery` have no callers in `src/` or `tests/`.
+ *
+ * `partial_delivery_accepted` deliberately STAYS in
+ * `TERMINAL_BROADCAST_STATUSES` below — `cleanup-audiences` reaps Resend
+ * audiences off that list, and a historical row must still be reaped.
+ *
+ * Read this const wherever a surface OFFERS a status to a human (filter
+ * chips, pickers). Offering an unreachable value hands the user a query that
+ * can only return zero rows, which reads as "it never happened" rather than
+ * "this can no longer happen" — the same reasoning as
+ * `NEVER_EMITTED_EVENT_TYPES` in the audit viewer and
+ * `RETIRED_F7_AUDIT_EVENT_TYPES` in the audit port.
+ */
+export const RETIRED_BROADCAST_STATUSES = [
+  'partially_sent',
+  'partial_delivery_accepted',
+] as const;
+
+/**
+ * The statuses a human may FILTER ON — everything except the retired ones.
+ *
+ * Round 2 R2-7 / R2-23. The derivation `BROADCAST_STATUSES` minus
+ * `RETIRED_BROADCAST_STATUSES` lived inside `queue-filters.tsx`, so the queue's
+ * loading skeleton — which sizes its chip strip from `BROADCAST_STATUSES.length`
+ * to keep CLS near zero — reserved 10 chips for a strip that renders 8. The
+ * skeleton's own docblock records fixing this exact class of drift once before
+ * ("this used to hardcode 8, drifting from the 10-entry tuple"), which is the
+ * argument for the derivation living HERE rather than in one consumer.
+ *
+ * Read this wherever a surface OFFERS a status to a human or reserves space for
+ * one. `BROADCAST_STATUSES` remains the full set — a historical row must still
+ * parse and still render its badge.
+ */
+export const OFFERED_BROADCAST_STATUSES: ReadonlyArray<BroadcastStatus> =
+  BROADCAST_STATUSES.filter(
+    (s) => !(RETIRED_BROADCAST_STATUSES as readonly string[]).includes(s),
+  );
+
 export const TERMINAL_BROADCAST_STATUSES = [
   'sent',
   'rejected',

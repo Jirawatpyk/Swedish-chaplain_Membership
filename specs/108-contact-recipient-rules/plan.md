@@ -1,5 +1,8 @@
 # Implementation Plan: Contact Recipient Rules — Primary-only money emails + secondary contacts as marketing recipients
 
+
+> **⚠️ Superseded on 2026-09-08/09 — see `specs/108-contact-recipient-rules/reviews/review-20260909-142600.md` § 6 and `docs/changelog.md`'s dated correction.** This was written before the Contacts-Import build landed. In short: `0298`+`0299` EXIST and apply on this deploy; the ceiling clamp is import-flag-OFF only, not "every flag state"; and the two batch cron routes were DELETED by `ca51f59a1`. The `audience_import_status` gauge genuinely does not exist — but the live import signals DO: `broadcasts_audience_import_stuck_count` and `broadcasts_audience_import_submit_ms` (T106, emitted per tenant by the `broadcasts-gauges` cron). Watch those during a first send; neither is listed in `reviews/cutover.md` § 4's five signals. Left as written — it is the record of what was believed at the time.
+
 **Branch**: `108-contact-recipient-rules` | **Date**: 2026-09-04 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/108-contact-recipient-rules/spec.md`
 **Evidence companion**: `docs/contacts-primary-secondary-gap-analysis.md` (H1, H2, G1–G9 with
@@ -17,8 +20,31 @@ application and at commit by deferred DB constraint triggers, and unarchive must
 primary. **Tier B** — member-based broadcast audiences fan out to every eligible contact
 (primary + secondaries) of **active** members, minus suppressions, a new per-contact opt-out
 (staff or self) and all contacts of the sender; opt-out applies to every segment; audiences
-are keyset-paginated with no silent truncation, one ceiling, a resumable Resend push, and a
-truthful compose-time count; unsubscribes gain contact attribution. **Operations** — a new
+are keyset-paginated with no silent truncation, one ceiling, ~~a resumable Resend push~~, and a
+truthful compose-time count; unsubscribes gain contact attribution.
+
+> **THE DEFERRAL BELOW IS OVER (2026-09-08, end of day).** T086 / T087 / T106 and migration
+> `0298` all SHIPPED, behind `FEATURE_F7_IMPORT_AUDIENCE` (default OFF), and the batch path they
+> were deferred behind was DELETED (`ca51f59a1`, −13,380 lines). So the five statements the note
+> flags as "describing the deferred design" are simply TRUE again — the provider audience IS
+> built with Resend's Contacts Import API, one import per broadcast, polled across ticks. Two
+> corrections to the note's own text: there is **no `audience_building` status** (it would make
+> the row un-cancellable; `audience_import_id IS NOT NULL` draws the same line), and the
+> push-capacity gate it names as a flip precondition is **CLOSED** — one import call carries any
+> audience, so there is no band between accepted and deliverable. With the flag OFF the legacy
+> serial push still runs and `currentAudienceCeiling()` clamps to what it can finish.
+
+> **DEFERRAL NOTE (added 2026-09-08, T098 — applies to every mention of the import build in this
+> file).** The resumable, import-based audience push was **deferred out of PR-C on 2026-09-07**
+> with tasks T086 / T087 / T106 and migration 0298; none of them were authored and nothing in the
+> codebase implements them. Five statements in this plan still describe it as the shipped
+> mechanism — this line, the `≤ 240 s per cron tick, resumable` budget below, the Constraints
+> sentence "the provider audience **is built with** Resend's asynchronous Contacts Import API",
+> the "audience snapshot + progress stamps per tick" note, and the Principle X justification
+> "Replacing the serial per-contact push with one provider import per broadcast **is** simpler".
+> Read every one of them as *the design that was deferred*. What ships is the pre-existing serial
+> per-contact push, and its wall-clock limit is the push-capacity gate on the flag flip
+> (`quickstart.md` § Cutover 3b, `reviews/cutover.md` § 5). **Operations** — a new
 `contacts.marketing` right, a permanent Marketing audience page (also the FR-027a pre-flight
 surface), member-page badges/toggle, and a portal self-toggle. Delivery in four PRs
 (A → B → D → C) with the audience change behind a temporary flag flipped only after the
@@ -40,18 +66,18 @@ import job (0298)~~ **DEFERRED 2026-09-07 with T086/T087/T106 — not authored**
 rehearsal, 20k-contact pagination, ~~import-based audience build~~ deferred) · Playwright + axe (`--workers=1`) ·
 static gates incl. a new `check:money-recipient`
 **Target Platform**: Vercel `sin1` (prod live at `swecham.dxtspace.com`); native Vercel Cron
-(`dispatch-scheduled` / `dispatch-batches` / `split-large-broadcasts` / `reconcile-stuck-sending`,
+(`dispatch-scheduled` / `reconcile-stuck-sending` / the gauges + cleanup jobs — the two batch crons were removed 2026-09-08,
 GET, UTC, `maxDuration = 300`)
 **Project Type**: Web application — existing modular monolith (`src/modules/*` bounded
 contexts: invoicing, payments, members, broadcasts, auth; App Router presentation)
 **Performance Goals**: money-email enqueue adds one indexed contact read (p95 < 20 ms);
 recipient count p95 < 400 ms at 5,000 and < 3 s at 20,000 contacts (SC-004); toggle API
-p95 < 400 ms; Marketing audience page LCP < 2.5 s at 50 rows; audience push ≤ 240 s per
-cron tick, resumable
+p95 < 400 ms; Marketing audience page LCP < 2.5 s at 50 rows; ~~audience push ≤ 240 s per
+cron tick, resumable~~ (DEFERRED — the shipped push has no per-tick budget and no resume)
 **Constraints**: live money path — tax-document buyer identity stays frozen (only delivery
 address goes live); no PII in logs or audit payloads (ids + hashes only); actor role always
 the session role (`check:actor-role-truth`); tenant isolation two-layer for every new query
-(`runInTenant` tx + RLS FORCE); the provider audience is built with Resend's asynchronous
+(`runInTenant` tx + RLS FORCE); the provider audience ~~is built~~ **was to be built** (DEFERRED — see the note above) with Resend's asynchronous
 Contacts Import API (one import per broadcast, polled across cron ticks — research R9; the
 installed SDK 4.8 lacks the method, so the adapter calls the endpoint directly); flag OFF
 must be behaviour-identical except the `status = 'active'` narrowing
@@ -120,9 +146,12 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       `aria-live="polite"`; axe sweeps on the new page, member detail, portal profile,
       compose. `enterprise-ux-designer` pass on every UI PR.
 - [x] **VII. Performance & Observability** — Budgets in Technical Context; new metrics
-      `broadcasts.audience_resolved_total{segment,mode,phase}`, `audience_pages_total`,
-      `recipient_count_ms{outcome}` (the `audience_import_status` gauge went with the
-      deferred T086), plus `dispatch_resolve_failed_total` and `approved_overdue_count`
+      `broadcasts_audience_resolved_total{segment,mode,phase}`, `broadcasts_audience_pages_total`,
+      `broadcasts_recipient_count_ms{outcome}` (dot-separated names were used in this
+      paragraph until 2026-09-08, T098 — the names on the wire are underscored, with no
+      transform in `src/lib/metrics.ts`; grep for the dotted form finds nothing. The
+      `audience_import_status` gauge went with the
+      deferred T086), plus `broadcasts_dispatch_resolve_failed_total` and `broadcasts_approved_overdue_count`
       from the 2026-09-07 review; existing
       `invoicing.auto_email_skipped{reason}`; structured logs with member-id hashes;
       runbook `docs/runbooks/broadcast-audience-build.md`; `docs/observability.md` updated.
@@ -131,8 +160,8 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       audit + skip, never a fallback; page failure in pagination → error, never `[]`;
       suppressed → 409; race → 409 at commit; unarchive without primary → 409 with remedy).
       Transactions: recipient resolve + enqueue + audit in one tenant tx (or the port's own
-      tx on resend); designate-primary + unarchive atomic; audience snapshot + progress
-      stamps per tick; deferred constraint triggers = DB-level defence-in-depth (IX.4).
+      tx on resend); designate-primary + unarchive atomic; ~~audience snapshot + progress
+      stamps per tick~~ (DEFERRED); deferred constraint triggers = DB-level defence-in-depth (IX.4).
       Idempotency: toggle same-state = `unchanged`; audience push idempotent per
       `(audience, email)`; existing Stripe idempotency keys unchanged. Audit entries:
       `auto_email_skipped_no_recipient`, `contact_marketing_opted_out/in`, existing
@@ -147,8 +176,10 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       toggle patterns; three columns + one index instead of a preferences table; two audit
       events with a `source` payload instead of four. Accepted temporary complexity: the
       cutover flag with a scheduled deletion (Complexity Tracking #2). Replacing the serial
-      per-contact push with one provider import per broadcast is simpler, not more complex:
-      2–3 API calls instead of thousands, and no per-recipient working table (research R9).
+      per-contact push with one provider import per broadcast **would be** simpler, not more
+      complex: 2–3 API calls instead of thousands, and no per-recipient working table
+      (research R9) — **but it was DEFERRED (see the note at the top of this file), so the
+      simplification is not banked and the serial push is what runs.**
 
 ## Project Structure
 
@@ -257,6 +288,7 @@ page cloned from the members directory pattern.
 | **#2 — Principle X: temporary `FEATURE_CONTACT_MARKETING_RECIPIENTS` flag + `primary_only` resolver leg (PR-C → follow-up deletion)** | The audience change is the one behaviour a code rollback cannot undo once a send has gone out; FR-027a requires a staff pre-flight review before the first send under the new rule | Flip-on-merge was rejected: no operator gate between deploy and the first E-Blast to newly eligible contacts. The flag is read in one composition site, passed as a parameter (Domain pure), parameterised in tests (both legs), and its deletion is a named task after one clean week. |
 | **#3 — Principle III (note, not a deviation): the members-module `MarketingSuppressionLookupPort` adapter is composed in `src/lib/contact-marketing-deps.ts`, not in `members-deps.ts`** | `setContactMarketingOptOut` must refuse "on" for a suppressed address, and suppression is owned by broadcasts, which already imports the members barrel (`members-bridge.ts`) | Implementing the adapter inside `members-deps.ts` would create a members↔broadcasts barrel cycle (066 barrel-cycle class, breaks tsx scripts and client bundles). `src/lib` is the sanctioned composition layer (Principle III "barrel-rule-exempt by constitution", precedent `events-csv-import-deps.ts`). Duplicating the suppression read inside members was rejected: two readers of one GDPR record drift. |
 | **#4 — Development-workflow: migration 0293 carries a data pre-check that fails the deploy if any active member already violates the invariant** | Prod migrates automatically on deploy; a trigger created over violating rows would make every later contact write on those members fail | A silent backfill (auto-promote a contact) was rejected: it silently chooses who receives money emails. Instead V1 (read-only prod inventory) is a named operator task BEFORE PR-B merges, and the pre-check is the technical enforcement that the task actually ran. |
+| **#5 — Principle III (layering, not imports): `DELIVERABLE_RECIPIENTS_PER_TICK` is an Infrastructure fact in `domain/audience-ceiling.ts`** (added 2026-09-08, `/speckit.analyze` C1) | The constant encodes Resend's measured write latency (481 ms → 2.08 req/s), Vercel's `maxDuration = 300` and the Resend plan tier — none of them Domain concepts. It is a bare number with no import, so the constitution's import rule (:410) is not breached; the deviation is where the *contract* lives. It sits in Domain because the clamp must compare it against `audienceCeiling()` and `SPLIT_THRESHOLD_RECIPIENTS`, which already carried provider facts (5,000 / 50,000 / 10,000) in that file before 108, and because `tests/unit/broadcasts/domain/audience-ceiling.test.ts` pins all three together. | **Rejected for now: moving all three to `infrastructure/`** next to the gateway that was measured. Correct in principle; deferred because Phase 9b's T133 rewrites this file and the barrel anyway, and moving it in the same change as the batch-size semantics would mix a layering refactor into a behaviour change on a live dispatch path. Decision hook: T133 either moves the three constants (retiring this row) or keeps them here and leaves this row standing. **DECIDED AT GREEN (T133, 2026-09-08): kept in `domain/`; this row STANDS — and is now SMALLER.** `SPLIT_THRESHOLD_RECIPIENTS` was deleted with the batch path later the same day, so the deviation covers two symbols rather than three: `audienceCeiling()` and `DELIVERABLE_RECIPIENTS_PER_TICK`. The latter is also narrower in meaning — it now bounds only the legacy serial push, i.e. the `FEATURE_F7_IMPORT_AUDIENCE`-OFF state, because one import call has no per-tick capacity to bound. Original reasoning: Three reasons, in order of weight: (1) `SPLIT_THRESHOLD_RECIPIENTS` is now *derived* from `DELIVERABLE_RECIPIENTS_PER_TICK` rather than being a second literal, so the two can no longer be separated — moving one means moving both, and `audienceCeiling()` compares against them; (2) the move touches the barrel and two test paths for zero behavioural change, inside a commit that changes how a live dispatch path routes every broadcast — exactly the mix this row's rejected alternative was rejected for; (3) the honest cost of keeping it is one docblock paragraph, which `audience-ceiling.ts` now carries and which points here. Revisit when the constants next change for a reason of their own, not as a rider on a behaviour change. |
 
 ## Post-Design Constitution Re-check (after Phase 0 + Phase 1 artefacts)
 
@@ -266,8 +298,10 @@ migration 0298 — DEFERRED 2026-09-07 with T086/T087/T106, never authored — w
 earlier working-table idea was dropped after Resend's Contacts Import API was verified —
 research R9, corrected 2026-09-04). The import-based audience build is a reliability
 requirement surfaced by research, not speculative scope: the serial push cannot finish 5,000
-contacts inside the 300 s function budget even at the documented 10 req/s. The four Complexity Tracking entries are the
-complete deviation set. **GATE: PASS.**
+contacts inside the 300 s function budget even at the documented 10 req/s. ~~The four Complexity Tracking entries are the
+complete deviation set.~~ **Five, since 2026-09-08 — #5 records the layering deviation the
+Phase-9 clamp introduced** (`/speckit.analyze` C1; decision hook in Phase 9b T133).
+**GATE: PASS.**
 
 ## Phase Outputs
 

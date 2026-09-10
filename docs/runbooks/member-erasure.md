@@ -72,12 +72,25 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    fired `failed`/`partial` for this member, run the **manual remediation
    procedure** (§ Sub-processor erasure propagation) within the H-1 window.
 
-7. **Acknowledge the out-of-reach copies.** Two copies cannot be erased by the
+7. **Acknowledge the out-of-reach copies.** THREE copies cannot be erased by the
    controller and are accepted residuals (§ Documented residuals + the RoPA):
    **(a)** a GDPR-export ZIP the subject **already downloaded** to their own
    device; **(b)** pre-erasure data in **backup / PITR snapshots** (re-erased
-   only on a restore). If the DSR specifically asks about these, explain the
-   limitation honestly; they do not block closure of the controller-copy erasure.
+   only on a restore); **(c)** ⚠️ **the Resend "Global Contact" record.**
+   If the DSR specifically asks about these, explain the limitation honestly;
+   they do not block closure of the controller-copy erasure.
+
+   **(c) is new to this list and it is the one a DSR answer is most likely to get
+   wrong** (round 2 R2-2). The cascade calls
+   `DELETE /audiences/{id}/contacts/{email}`, which **DETACHES** the contact from
+   that audience — measured 2026-09-09: the call answers `{"deleted": true}`, the
+   audience-scoped read then 404s, and an audience-less `GET /contacts/{email}`
+   **still returns the contact at 200**. So the address remains in Resend's
+   contact store. The capability to delete it for real exists
+   (`deleteContactGlobally`) and is deliberately not called, because one Resend
+   account is shared across tenants — see `processing-records.md` residual 8a for
+   the owner, the review date and the revisit condition. **A DSR answer must say
+   the address may remain in the processor's contact store.**
 
 8. **Handle a half-run (US2d reconciler).** A half-run means a blocking cascade
    (F1/F6/F7/F8) failed transiently. The **US2d reconciler cron** re-drives stuck
@@ -118,23 +131,68 @@ The cascade has two halves:
    and `recipient_member_id` is always NULL in production.
 
 2. **Post-commit propagation (BEST-EFFORT / NON-BLOCKING).** After the scrub tx
-   commits, the cascade removes each captured pair from its Resend audience via
-   `resendBroadcastsGateway.removeContactFromAudience(audienceId, email)`. The
+   commits, the cascade **DETACHES** each captured pair from its Resend audience
+   via `resendBroadcastsGateway.removeContactFromAudience(audienceId, email)`. The
    outcome is recorded in a `subprocessor_erasure_propagated` audit row + the
    `member_subprocessor_erasure_total{resend_outcome}` metric. A failure here
    does **NOT** flip `allCascadesClean` — `member_erased` is still emitted.
 
+   **"Detaches", not "removes" (round 2 R2-2).** This paragraph said "removes",
+   step 7's residual list omitted the Global Contact, and the evidence card
+   rendered the count under the label "Contacts removed" — so a DSR answer
+   produced by following this runbook asserted that the address had been removed
+   from the processor. It had not; only the audience membership had.
+
+   **The three counts in that audit row, and what each one means** (R2-25 — until
+   2026-09-09 the first of them silently included the second):
+
+   | Payload key | Means |
+   |---|---|
+   | `resend_contacts_removed_count` | pairs actually DETACHED |
+   | `resend_contacts_already_absent_count` | the processor answered 404 — a success, but **not** a removal. Absent on rows written before 2026-09-09, where the run could not tell |
+   | `resend_contacts_failed_count` | the call errored; remediate per § Sub-processor erasure propagation |
+
+   Cite the FIRST number when a DSR asks how many audience memberships were
+   removed. Do not add the second to it.
+
 **Why non-blocking** (security + DPO sign-off, plan-review 2026-06-20): the
 Resend-removal inputs are captured only in the first-pass atomic tx and are
-**destroyed by the same erasure**. A US2d reconciler re-drive re-captures an
-EMPTY set and can never retry the Resend removal. Blocking `member_erased` on a
-first-pass Resend failure would only delay the completion proof by one
-reconciler tick and then emit it anyway (over a vacuous empty-set re-drive),
-while polluting the DPO log with a misleading second `ok` audit. So
+**destroyed by the same erasure**, so blocking `member_erased` on a first-pass
+Resend failure would only delay the completion proof and then emit it anyway. So
 `member_erased` reflects the controller's authoritative-copy erasure;
 sub-processor propagation is tracked separately by its own audit + metric + this
-runbook. This is **best-effort-ONCE**: a first-pass failure is finished by hand,
-not auto-retried.
+runbook.
+
+> **⚠️ CORRECTION OF A CORRECTION — FINAL review round, 2026-09-10.** For one day
+> this box claimed *"**A re-drive now DOES retry the detach**"* on the strength of
+> round 4's B-1 change. **That was wrong, and the original limitation stands:
+> Resend removal is still best-effort-ONCE.** A first-pass failure is finished by
+> hand, not auto-retried, and the 2026-06-20 sign-off below was right.
+>
+> Why the claim was wrong. B-1 removed a `NOT EXISTS` clause that had switched the
+> derivation's second arm off for any broadcast holding a delivery row — a real
+> defect, and removing it does broaden the **first pass**. But retryability turns
+> on the derivation's INPUT, not its arms. That input is `tombstoneEmails` from
+> `listTombstoneEmailsForMemberInTx`, which selects `lower(c.email)` from
+> `contacts` (`erase-member.ts:441`) — and `scrubPiiForMemberInTx`
+> (`erase-member.ts:527`, same tx, 86 lines later) replaces every one of those
+> addresses with a stable per-`contact_id` **sentinel**. A US2d re-drive re-enters
+> the same tx and re-reads sentinels, so arm 2 now happily pairs the member's live
+> audiences with addresses that were never in them: every `DELETE` misses and is
+> counted `already_absent`, never `removed`. Removal on a re-drive is 0, exactly as
+> it was before B-1. `erase-member.ts:1068-1071` has said so all along.
+>
+> **What B-1 actually bought** — worth keeping, just not this: on the FIRST pass the
+> addresses are still real, so arm 2 no longer skips an audience merely because a
+> webhook had recorded a delivery for it. Broader first-pass coverage; no change to
+> retry.
+>
+> **What this means for you:** the manual remediation below is still the ONLY thing
+> that closes a failed detach, and it is still urgent — `cleanup-orphaned-audiences`
+> deletes the audience at Resend after a 1-hour grace on a terminal broadcast, and
+> after that there is nothing left to detach. Do NOT wait for a second
+> `subprocessor_erasure_propagated` row with `resend_contacts_removed_count >= 1`;
+> on a re-drive that count is structurally 0.
 
 ### Alert
 
@@ -236,10 +294,17 @@ evidence log, never inferred from a vacuous re-drive audit.
 Two limits are accepted by design (security-engineer + pdpa-gdpr-compliance-officer
 sign-off, plan-review 2026-06-20):
 
-1. **Best-effort-ONCE.** A first-pass Resend failure is NOT auto-retried — the
-   capture inputs are destroyed by the same erasure, so a reconciler re-drive
-   re-captures an empty set. Failure is closed by the manual procedure above,
-   inside the H-1 window.
+1. **Best-effort-ONCE.** A first-pass Resend failure is **not** auto-retried; it is
+   finished by hand via the procedure above, inside the 1-hour
+   `cleanup-orphaned-audiences` grace window.
+
+   *For one day (2026-09-09/10) this entry read "~~Best-effort-ONCE~~ **NARROWED**"
+   and claimed a US2d re-drive performs a real detach. It does not — see the
+   correction box in § Audit + metric above. The re-drive's input addresses have
+   already been replaced by sentinels in the first pass, so its removal count is
+   structurally 0. This sign-off was never actually narrowed, and re-narrowing it
+   requires capturing the removal inputs OUTSIDE the erasing tx — a code change,
+   not a documentation change.*
 
 2. **Un-enumerable / historical audiences out of reach.** The capture derives
    audiences from the member's `broadcast_deliveries` rows (the audiences it

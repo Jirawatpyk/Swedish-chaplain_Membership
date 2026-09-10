@@ -48,6 +48,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { RecipientSegment } from '../../domain/recipient-segment';
 import type { AudienceMode } from '../../domain/audience-mode';
@@ -96,7 +97,28 @@ export type ResolveSegmentError =
    * `approved`; the next tick retries). It must never be reported as an
    * empty or too-large audience.
    */
-  | { readonly kind: 'resolve.server_error'; readonly message: string };
+  | {
+      readonly kind: 'resolve.server_error';
+      readonly message: string;
+      /**
+       * Round 4 L3 — the bounded half of `message`, for logs.
+       *
+       * `message` is free text and can carry a Neon error's bound parameters,
+       * which on this module are member addresses. `REDACT_PATHS` covers
+       * `reason`/`*.reason` for exactly that, so the cron's warn lines printed
+       * `reason:"[REDACTED]"` and an operator debugging the leg that runs in
+       * production had nothing at all. Renaming the key would un-redact free
+       * text — the wrong fix.
+       *
+       * The error CLASS is safe and is the discriminator that matters: a
+       * `NeonDbError` is a database blip, a `TypeError` is our bug, a fetch
+       * error is the network. Optional on purpose — present when a real throw
+       * was caught and classified, absent when the error was synthesised
+       * (`malformed_segment`, `unrouted_resolve_error`), which is a truthful
+       * distinction rather than a gap.
+       */
+      readonly errClass?: string;
+    };
 
 export interface ResolveSegmentDeps {
   readonly tenant: TenantContext;
@@ -287,6 +309,7 @@ export async function resolveSegmentRecipients(
       return err({
         kind: 'resolve.server_error',
         message: e instanceof Error ? e.message : 'unknown error',
+        errClass: errKind(e),
       });
     }
     if (sourcedRows.leg === 'contacts') {

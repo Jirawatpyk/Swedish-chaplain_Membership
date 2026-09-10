@@ -626,7 +626,9 @@ const schema = z.object({
   // Read in ONE module: `src/modules/broadcasts/infrastructure/broadcasts-deps.ts`
   // maps it to `ResolveSegmentDeps.audienceMode` ('primary_only' |
   // 'all_contacts') AND — review H-2 — gates the audience ceiling with
-  // FEATURE_F71A_US1_PAGINATION (50,000 only when BOTH are on, else 5,000),
+  // FEATURE_F7_IMPORT_AUDIENCE (50,000 only when BOTH are on, else 5,000;
+  // round 3 finding 3-4 — this named FEATURE_F71A_US1_PAGINATION, which was
+  // the gate until `ca51f59a1` deleted the batch path it belonged to),
   // so Domain and Application never see the env. A flip therefore also moves
   // the accepted audience size and the compose-page copy. Default
   // FALSE — ships dark; the operator flips it only after the FR-027a
@@ -636,6 +638,28 @@ const schema = z.object({
   // Deleted together with the `primary_only` resolver leg after one clean
   // week of sends (T099 — plan § Complexity Tracking #2).
   FEATURE_CONTACT_MARKETING_RECIPIENTS: booleanFromString.default(false),
+
+  // 108 US5 / T086-T087 — build the Resend audience with ONE Contacts-Import
+  // call instead of the per-contact `addContactsToAudience` loop.
+  //
+  // The loop is serial and latency-bound at a measured ~2.08 req/s, so roughly
+  // 623 contacts is all one 300 s function can drain; the import is a single
+  // multipart request, ~412 ms whether it carries one address or fifty
+  // thousand. Everything this codebase grew to work around the loop — the
+  // split threshold, per-batch manifests, one-wave dispatch, cross-tick drift
+  // guards — exists only because the push was per-contact.
+  //
+  // A NEW flag on purpose. Reusing `FEATURE_F71A_US1_PAGINATION` would change
+  // that flag's meaning for the third time on this branch, and this branch has
+  // twice been bitten by a constant or a flag that meant something different
+  // depending on when you read it.
+  //
+  // Flag OFF is the rollback: the serial loop with the ceiling clamped to
+  // DELIVERABLE_RECIPIENTS_PER_TICK. NOT "the pre-108 behaviour exactly" — the
+  // batch path that phrase named was deleted, and origin/main has no clamp.
+  // Drain in-flight imports BEFORE removing the variable; see the docblock on
+  // `isF7ImportAudienceEnabled` for the query and why it matters.
+  FEATURE_F7_IMPORT_AUDIENCE: booleanFromString.default(false),
 
   // --- ClamAV virus scanner (US2 dependency) -------------------------------
   // Network address of the clamd daemon. Empty string in dev = US2 disabled.
@@ -1055,6 +1079,8 @@ export const env = {
     f71aUs7Templates: raw.FEATURE_F71A_US7_TEMPLATES,
     // 108 PR-C — temporary cutover flag for the 1:N marketing audience.
     contactMarketingRecipients: raw.FEATURE_CONTACT_MARKETING_RECIPIENTS,
+    // 108 US5 — one Contacts-Import call instead of the per-contact loop.
+    f7ImportAudience: raw.FEATURE_F7_IMPORT_AUDIENCE,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     // COMP-1 US2d — member-erasure reconciliation sweep kill-switch.

@@ -44,9 +44,13 @@ export interface CancelBroadcastDialogProps {
    */
   readonly reasonRequired: boolean;
   /**
-   * Success toast key under `toastNamespace`. Defaults to 'cancelled'; the
-   * F7.1a mid-dispatch halt variant passes 'halted' (same /cancel endpoint,
-   * the use-case stops only the pending batches).
+   * Success toast key under `toastNamespace`. Defaults to 'cancelled'.
+   *
+   * Parameterised rather than hardcoded because the admin and member surfaces
+   * read different namespaces. The only caller that passed a different KEY was
+   * the `variant="halt"` arm, deleted in 108 Phase 9's round-3 sweep along with
+   * the batch model it halted; the parameter stays because the namespace split it
+   * serves is still real.
    */
   readonly successToastKey?: string;
   /**

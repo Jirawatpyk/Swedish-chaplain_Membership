@@ -75,6 +75,7 @@ export {
 } from './domain/value-objects/quota-counter';
 export {
   BROADCAST_STATUSES,
+  OFFERED_BROADCAST_STATUSES,
   TERMINAL_BROADCAST_STATUSES,
   isBroadcastStatus,
   isTerminalStatus,
@@ -120,6 +121,7 @@ export { BroadcastConcurrentMutationError } from './application/ports/broadcasts
 // Port interfaces (BroadcastsRepo, GatewayPort, etc.) are NOT re-exported.
 export {
   F7_AUDIT_EVENT_TYPES,
+  RETIRED_F7_AUDIT_EVENT_TYPES,
   F7_AUDIT_RETENTION_YEARS,
   f7RetentionFor,
   isF7AuditEventType,
@@ -220,12 +222,23 @@ export {
   type ClearHaltOutput,
 } from './application/use-cases/clear-halt';
 export {
+  buildAudienceTick,
+  IMPORT_STUCK_AFTER_MS,
+  type BuildAudienceTickError,
+  type BuildAudienceTickOutput,
+} from './application/use-cases/build-audience-tick';
+export {
   dispatchScheduledBroadcast,
-  enqueueDispatchFailureNotification,
   type DispatchScheduledBroadcastError,
   type DispatchScheduledBroadcastInput,
   type DispatchScheduledBroadcastOutput,
 } from './application/use-cases/dispatch-scheduled-broadcast';
+// Moved out of `dispatch-scheduled-broadcast` in 108 Phase 9 so BOTH dispatch
+// paths can send the FR-021 notification. The import path had none.
+export {
+  enqueueDispatchFailureNotification,
+  type DispatchFailureNotificationDeps,
+} from './application/use-cases/_enqueue-dispatch-failure-notification';
 export {
   pruneExpiredDrafts,
   type PruneExpiredDraftsError,
@@ -271,9 +284,17 @@ export {
 // --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
 export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
 // 108 PR-C — the flag-derived resolver leg, read in the composition root only.
-export { currentAudienceMode, currentAudienceCeiling, makeResolveSegmentDeps } from './infrastructure/broadcasts-deps';
+export {
+  currentAudienceMode,
+  configuredAudienceCeiling,
+  currentAudienceCeiling,
+  makeResolveSegmentDeps,
+} from './infrastructure/broadcasts-deps';
 // 108 PR-C T085 — the one ceiling (Domain) + the split threshold it bounds.
-export { audienceCeiling, SPLIT_THRESHOLD_RECIPIENTS } from './domain/audience-ceiling';
+export {
+  audienceCeiling,
+  DELIVERABLE_RECIPIENTS_PER_TICK,
+} from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------
@@ -284,6 +305,7 @@ export {
   makeProxySubmitBroadcastDeps,
   makeClearHaltDeps,
   makeDispatchScheduledBroadcastDeps,
+  makeBuildAudienceTickDeps,
   makePruneExpiredDraftsDeps,
   makeCancelInFlightBroadcastsForMemberDeps,
   makeScrubBroadcastContentForMemberDeps,
@@ -291,58 +313,10 @@ export {
 
 // --- F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) -------------------
 export {
-  splitBroadcastIntoBatches,
-  type SplitBroadcastIntoBatchesDeps,
-  type SplitBroadcastIntoBatchesError,
-  type SplitBroadcastIntoBatchesInput,
-  type SplitBroadcastIntoBatchesOutput,
-} from './application/use-cases/split-broadcast-into-batches';
-export {
-  retryFailedBatches,
-  MANUAL_RETRY_BUDGET,
-  type RetryFailedBatchesDeps,
-  type RetryFailedBatchesError,
-  type RetryFailedBatchesInput,
-  type RetryFailedBatchesOutput,
-} from './application/use-cases/retry-failed-batches';
-export {
-  acceptPartialDelivery,
-  MAX_REASON_LENGTH,
-  type AcceptPartialDeliveryDeps,
-  type AcceptPartialDeliveryError,
-  type AcceptPartialDeliveryInput,
-  type AcceptPartialDeliveryOutput,
-} from './application/use-cases/accept-partial-delivery';
-export {
-  makeSplitBroadcastIntoBatchesDeps,
-  makeRetryFailedBatchesDeps,
-  makeAcceptPartialDeliveryDeps,
-  makeAutoRetryFailedBatchesDeps,
-  makeApplyBatchWebhookEventDeps,
-  resolveTenantByBatchProviderBroadcastId,
 } from './infrastructure/broadcasts-deps';
 export {
-  autoRetryFailedBatch,
-  sweepAutoRetryFailedBatches,
-  AUTO_RETRY_BUDGET,
-  AUTO_RETRY_COOLOFF_SECONDS,
-  type AutoRetryFailedBatchesDeps,
-  type AutoRetryFailedBatchesError,
-  type AutoRetryFailedBatchesInput,
-  type AutoRetryFailedBatchesOutput,
-  type AutoRetrySweepInput,
-  type AutoRetrySweepOutcome,
-  type AutoRetrySweepOutput,
-} from './application/use-cases/auto-retry-failed-batches';
-export {
-  applyBatchWebhookEvent,
-  type ApplyBatchWebhookEventDeps,
-  type ApplyBatchWebhookEventError,
-  type ApplyBatchWebhookEventInput,
-  type BatchWebhookEventType,
-} from './application/use-cases/apply-batch-webhook-event';
-export {
   isF71aUs1Enabled,
+  isF7ImportAudienceEnabled,
   f71aUs1DisabledReason,
   type F71aUs1DisabledReason,
   isF71aUs7Enabled,
@@ -416,24 +390,11 @@ export {
 export { makeReclaimOrphanedAudiencesDeps } from './infrastructure/broadcasts-deps';
 
 // --- Ship-blocker A — batch completion roll-up --------------------------
-export {
-  rollUpBatchBroadcast,
-  sweepBatchCompletion,
-  evaluateBatchCompletion,
-  type RollUpBatchBroadcastDeps,
-  type RollUpBatchBroadcastInput,
-  type RollUpOutcome,
-  type RollUpError,
-  type BatchCompletion,
-  type SweepBatchCompletionInput,
-  type SweepBatchCompletionOutput,
-} from './application/use-cases/roll-up-batch-broadcast';
 
 // --- Composition root factories (Phase 7 US5) ----------------------------
 export {
   makeProcessWebhookEventDeps,
   makeReconcileStuckSendingDeps,
-  makeRollUpBatchBroadcastDeps,
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
 } from './infrastructure/broadcasts-deps';
@@ -513,7 +474,6 @@ export { f7AuditAdapter } from './infrastructure/audit-adapter';
 // `@/modules/broadcasts/infrastructure/...`. Closes ~28 entries from
 // the `broadcasts-barrel.test.ts` KNOWN_BACKLOG (Round 2 staff-review
 // W3 architectural warning).
-export { makeDrizzleBatchManifestsRepo } from './infrastructure/drizzle-batch-manifests-repo';
 export { makeDrizzleBroadcastsRepo } from './infrastructure/db/drizzle-broadcasts-repo';
 export { makeDrizzleMarketingUnsubscribesRepo } from './infrastructure/db/drizzle-marketing-unsubscribes-repo';
 export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
@@ -522,8 +482,9 @@ export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
 // EventCreate has shipped). Stub export retained for empty-segment tests.
 export { eventAttendeesBridge } from './infrastructure/event-attendees-bridge';
 export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
-export { noOpAdvisoryLock } from './infrastructure/noop-advisory-lock';
-export { dispatchAllPendingBatches } from './application/services/batch-dispatcher';
+// Round 4, whole-branch review #9 — `noOpAdvisoryLock` re-export removed with
+// its module. It had no consumer in `src/`, `tests/` or `scripts/`; the barrel
+// was the only thing keeping it reachable, which is what made it look alive.
 export type {
   MemberHaltSummary,
   MemberRecipient,
@@ -567,15 +528,6 @@ export {
 // ---------------------------------------------------------------------------
 
 // US1 (Pagination) — BatchManifest port types + Domain value types
-export type {
-  BatchManifest,
-  BatchManifestsPort,
-  BatchStatus,
-  BatchInsertError,
-  BatchUpdateError,
-  BatchStatusUpdate,
-  NewBatchManifestInput,
-} from './application/ports/batch-manifests-port';
 
 // US2 (Image embedding) — VirusScanner + ImageAllowlist port types
 export type {

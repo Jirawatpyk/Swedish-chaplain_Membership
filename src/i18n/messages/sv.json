@@ -431,8 +431,10 @@
           "sessionsRevoked": "Återkallade sessioner",
           "invitationsRevoked": "Återkallade inbjudningar",
           "resendOutcome": "Resultat",
-          "contactsRemoved": "Borttagna kontakter",
-          "contactsFailed": "Misslyckade kontakter"
+          "contactsDetached": "Kontakter borttagna från målgrupp",
+          "contactsAlreadyAbsent": "Redan borta från målgrupp",
+          "contactsFailed": "Misslyckade kontakter",
+          "countsNote": "Varje kontakt räknas en gång. Ange antalet borttagna; addera inte antalet redan borta till det."
         },
         "documentKind": {
           "invoice": "Faktura",
@@ -3133,18 +3135,6 @@
           "reasonTooLong": "Anledningen överskrider 500 tecken."
         }
       },
-      "haltDialog": {
-        "title": "Stoppa detta utskick mitt i sändningen?",
-        "description": "Detta stoppar alla batchar som ännu inte skickats. Batchar som redan skickats till Resend kan inte återkallas. Ange en anledning för granskningsloggen + medlemsmeddelande.",
-        "reasonLabel": "Anledning till stopp",
-        "reasonPlaceholder": "Varför stoppas detta…",
-        "reasonHelp": "1–500 tecken.",
-        "confirm": "Stoppa sändning",
-        "cancel": "Fortsätt sända",
-        "errors": {
-          "reasonTooLong": "Anledningen överskrider 500 tecken."
-        }
-      },
       "proxySubmitDialog": {
         "title": "Skicka in å medlems vägnar",
         "memberLabel": "Medlem",
@@ -3191,83 +3181,14 @@
         "body": "Manager-roll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
       },
       "toast": {
-        "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
-        "retryBudgetExhausted": "Alla 3 manuella försök är förbrukade. Godkänn partiell leverans för att slutföra utskicket.",
-        "retryAlreadyInProgress": "En annan administratör försöker just nu med detta utskick. Vänta ett ögonblick och uppdatera sidan.",
-        "retryInvalidState": "Detta utskick är inte i ett tillstånd som tillåter försök igen.",
-        "retryServerError": "Försöket misslyckades. Försök igen eller kontakta support.",
-        "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
-        "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
-        "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
-        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen.",
         "approved": "Utskicket har godkänts.",
         "rejected": "Utskicket har avvisats. Medlemmen har meddelats.",
         "cancelled": "Utskicket har avbrutits. Medlemmen har meddelats.",
-        "halted": "Sändningen stoppades. Väntande batchar stoppades; redan skickade batchar levereras ändå.",
         "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
         "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
         "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."
-      },
-      "batches": {
-        "title": "Leveransdetaljer per batch",
-        "description": "Detta utskick delades i {count} batcher eftersom mottagarlistan översteg Resends gräns på 10 000 per audience. Varje batch skickas oberoende.",
-        "expandLabel": "Visa batch-detaljer",
-        "collapseLabel": "Dölj batch-detaljer",
-        "summary": "{succeeded} skickade · {failed} misslyckade · {pending} väntar av totalt {total} batcher",
-        "tableCaption": "Leveransdetaljer per batch, {count} batcher",
-        "columns": {
-          "batchIndex": "Batch",
-          "recipientRange": "Intervall",
-          "recipientCount": "Mottagare",
-          "status": "Status",
-          "dispatchedAt": "Skickad",
-          "delivered": "Levererade",
-          "bounced": "Studsade",
-          "complained": "Anmälda",
-          "unsubscribed": "Avslutade",
-          "retryCount": "Försök"
-        },
-        "batchLabel": "Batch {index} av {total}",
-        "rangeLabel": "{start}–{end}",
-        "retryCountLabel": "{count} / 5",
-        "manualRetryRemaining": "Återstående manuella försök: {remaining} / 3",
-        "manualRetryExhausted": "Alla 3 manuella försök är förbrukade",
-        "batchStatus": {
-          "pending": "Väntar",
-          "sending": "Skickar",
-          "sent": "Skickad",
-          "failed": "Misslyckad",
-          "cancelled": "Avbruten"
-        },
-        "notSplit": "Detta utskick var litet nog att skickas som en enskild audience och delades inte."
-      },
-      "retryDialog": {
-        "trigger": "Försök igen med misslyckade batcher",
-        "triggerAria": "Försök igen med {count} misslyckade batcher",
-        "triggerDisabledAria": "Försök igen otillgängligt — alla försök förbrukade",
-        "title": "Försök igen med misslyckade batcher?",
-        "description": "{count} misslyckade batcher köas om för ett nytt försök. Detta räknas som ett av dina 3 manuella försök.",
-        "budgetLine": "Du har {remaining} av 3 manuella försök kvar.",
-        "warning": "Att skicka om förbrukar Resend API-kvot och kan orsaka dubbletter om de ursprungliga mottagarna redan har fått meddelandet.",
-        "confirm": "Försök igen nu",
-        "cancel": "Avbryt",
-        "submitting": "Försöker igen…"
-      },
-      "acceptPartialDialog": {
-        "trigger": "Godkänn partiell leverans",
-        "triggerAria": "Godkänn partiell leverans och slutför utskick",
-        "title": "Godkänn partiell leverans?",
-        "description": "Detta utskick markeras som slutfört i nuvarande tillstånd. Misslyckade batcher kommer inte att försökas igen, och utskickets status kan inte ändras efteråt.",
-        "summary": "{sent} av {total} batcher levererades framgångsrikt.",
-        "reasonLabel": "Anledning (valfri)",
-        "reasonPlaceholder": "Valfri — t.ex. Resend rate-limit kvarstår, medlem informerad separat…",
-        "reasonHelp": "Valfri kontext för granskningsspår. Max 500 tecken.",
-        "reasonCounter": "{count} / 500",
-        "confirm": "Bekräfta partiell leverans",
-        "cancel": "Avbryt",
-        "submitting": "Bekräftar…"
       },
       "templates": {
         "pageTitle": "Utskicksmallar",
@@ -6770,9 +6691,17 @@
         "audience_too_large": "målgruppen växte förbi gränsen mellan inskickning och utskick",
         "audience_post_suppression_empty": "inga mottagare återstod när avregistreringar och önskemål hade tillämpats",
         "malformed_segment": "den sparade målgruppen för detta utskick är ofullständig – din kammaradministratör behöver skapa den på nytt",
+        "failed_rows": "vår e-postleverantör avvisade några av mottagaradresserna",
+        "counts_incoherent": "mottagarlistan överfördes inte fullständigt till vår e-postleverantör",
+        "audience_membership_drift": "mottagarlistan hos vår e-postleverantör stämde inte med den vi förberedde, så vi stoppade det i stället för att skicka till en grupp du inte hade godkänt",
+        "retry_budget_exhausted": "vår e-postleverantör var oåtkomlig i mer än en timme, så vi slutade försöka i stället för att skicka vid en oväntad tidpunkt",
+        "count_mismatch": "mottagarlistan ändrades medan utskicket förbereddes, så vi stoppade det i stället för att skicka till en annan grupp än den du godkände",
+        "provider_failed": "vår e-postleverantör kunde inte förbereda mottagarlistan",
+        "gateway_permanent": "vår e-postleverantör avvisade begäran – din kammaradministratör behöver kontrollera kontot",
+        "gateway_unknown": "ett oväntat problem uppstod när utskicket förbereddes",
+        "audience_import_stuck": "det tog för lång tid att förbereda mottagarlistan, så vi avbröt i stället för att skicka vid en oväntad tidpunkt",
         "generic": "ett tekniskt problem hindrade leveransen"
       },
-      "body2": "Vår leveranstjänst var oåtkomlig i mer än en timme, så vi slutade försöka för att inte skicka utskicket vid en oväntad tidpunkt.",
       "reassurance": "Din utskickskvot har INTE förbrukats och är fortfarande reserverad. Du kan schemalägga om samma utskick från administrationskön, eller låta din kammaradministratör skicka det manuellt.",
       "ctaRescheduleLabel": "Öppna utskicksdetaljer",
       "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."

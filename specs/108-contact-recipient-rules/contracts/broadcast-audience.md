@@ -1,8 +1,9 @@
 # Contract — Broadcast audience resolution (Tier B)
 
 `resolveSegmentRecipients` remains the single source of truth for "who receives this
-broadcast", used by submit (estimate), the recipient-count endpoints, dispatch, split and
-batch crons. Any other recipient query is a defect.
+broadcast", used by submit (estimate), the recipient-count endpoints and dispatch. Any other
+recipient query is a defect. (It used to name the split and batch crons too; those were deleted
+on 2026-09-08 — see § 3 and § 4.)
 
 ## 1. Inputs / outputs
 
@@ -13,7 +14,7 @@ interface ResolveSegmentDeps {
   eventAttendees: EventAttendeesRepository;
   marketingUnsubscribes: MarketingUnsubscribesRepo;   // lookupBatch, chunked ≤5,000
   audienceMode: 'primary_only' | 'all_contacts';      // from FEATURE_CONTACT_MARKETING_RECIPIENTS
-  audienceCeiling: number;                            // audienceCeiling(isF71aUs1Enabled() && contactMarketingRecipients) — review H-2: 50,000 needs BOTH flags
+  audienceCeiling: number;                            // audienceCeiling(isF7ImportAudienceEnabled() && contactMarketingRecipients) — 50,000 needs BOTH flags (§ 3)
 }
 interface ResolveSegmentInput {
   segment: RecipientSegment;
@@ -52,7 +53,12 @@ interface ResolveSegmentOutput {
    documented here was not the code's, and the code's own docblock explains why it must be
    after.)
 3. Self-exclusion: drop every candidate whose `memberId === requestingMemberId`
-   (member-based segments only; custom list unaffected — unchanged rule).
+   (member-based segments only; custom list and attendee rows unaffected). (**Corrected
+   2026-09-08, T098**: this said "unchanged rule" and it is not one. Pre-108 the filter
+   compared *addresses* and ran on every segment kind, custom list included
+   (`resolve-segment-recipients.ts:125-129` at `91505b8f2^`); keying it on member id
+   necessarily exempts the two sources that are not member-keyed. The change is live on
+   merge, behind no flag — a sender on their own custom list now receives their own send.)
 4. Dedupe by `emailLower`.
 5. Suppression: `lookupBatch` in chunks of 5,000; removed entries count toward
    `droppedByPreference` for custom/attendee sources.
@@ -64,31 +70,81 @@ applies in both modes (FR-021).
 
 ## 3. Ceiling
 
-`audienceCeiling(batchingEnabled)` = 5,000 | 50,000, where the argument is
-`isF71aUs1Enabled() && FEATURE_CONTACT_MARKETING_RECIPIENTS` (review H-2: the wide ceiling
-belongs to the wide audience; with the 1:N flag OFF the ceiling is 5,000 whatever the batching
-flag says — prod has batching ON). Read at one composition site; submit, count and dispatch
-compare against the same number.
-`split-large-broadcasts` threshold stays 10,000 (< ceiling when ON). DB CHECK
-`broadcasts_estimated_recipient_cap (0..50000)` unchanged.
+`audienceCeiling(wideAudienceEnabled)` = 5,000 | 50,000. Read at one composition site; submit,
+count and dispatch compare against the same number.
+
+**Amended 2026-09-08 — TWICE in one day. Read the second block; the first is history.**
+
+*(History, so the reasoning is not lost: T095 measured the serial per-contact push at ~2.08 req/s
+— `min(10 req/s account limit, 1 / 0.481 s round trip)` — i.e. ~623 contacts in a 300 s function,
+against a configured ceiling of 5,000. Everything in between was accepted at submit and never
+delivered. The first answer clamped the enforced ceiling to `min(configured, 500)` in every flag
+state; the second, hours later, made 500 a batch size and split above it. Both are gone. What
+survives from them is the MEASUREMENT, which still bounds the legacy push.)*
+
+**The current answer: one Contacts-Import call, and the batch path is deleted.**
+
+```
+configuredAudienceCeiling() = audienceCeiling(isF7ImportAudienceEnabled() && contactMarketingRecipients)
+currentAudienceCeiling()    = isF7ImportAudienceEnabled()
+                                ? configuredAudienceCeiling()
+                                : min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK)
+DELIVERABLE_RECIPIENTS_PER_TICK = 500
+```
+
+Every caller — both count routes, submit, `dispatch-scheduled` and the two compose pages — reads
+`currentAudienceCeiling()`. There is no second reader with a different bound, because there is no
+second dispatch path: `split-large-broadcasts`, `dispatch-batches`, the batch manifests and their
+admin surfaces were deleted on 2026-09-08 (`ca51f59a1`, −13,380 lines). FR-042 is therefore
+simpler than it has been since PR-C: **one function, one number.**
+
+The two flags gate the wide ceiling for different reasons and BOTH are required:
+
+| flag | answers |
+|---|---|
+| `FEATURE_CONTACT_MARKETING_RECIPIENTS` | WHOSE addresses — the ceiling was raised for the 1:N audience (review H-2), so it moves with it |
+| `FEATURE_F7_IMPORT_AUDIENCE` | whether 50,000 can be DELIVERED at all — the serial push could not finish it in any number of ticks a member would wait through |
+
+`DELIVERABLE_RECIPIENTS_PER_TICK` still clamps when the import is OFF, because that state is the
+legacy serial loop and the measurement above is still its real bound. With the import ON there is
+no per-tick capacity to clamp against: one multipart call carries the whole audience in ~412 ms
+regardless of size, so **headcount stops being an engineering constraint and becomes a Resend plan
+limit** (Free: 1,000 contacts / 3 audiences; Pro: 5,000). That was the point of the change.
+
+DB CHECK `broadcasts_estimated_recipient_cap (0..50000)` unchanged.
 
 ## 4. Audience push (dispatch)
 
-> **DEFERRED out of PR-C (2026-09-07)** — everything in this section (the Contacts Import
-> API, `createContactImport` / `getContactImport`, `broadcasts.audience_import_id`,
-> `audience_building`, the 30-minute stuck rule) ships in the follow-up PR with T110
-> (tasks T086 / T087 / T106; spec AMENDMENT under User Story 5). What PR-C ships at
-> dispatch is the bounded per-tick push of the resolved audience: a tick that cannot build
-> it rejects, counts `broadcasts_dispatch_resolve_failed_total`, and the next tick retries
-> (FR-044); nothing partial is ever pushed.
+> **SHIPPED 2026-09-08 (T086 / T087 / T106)** — this section was DEFERRED out of PR-C the
+> day before and is now the live dispatch path, behind `FEATURE_F7_IMPORT_AUDIENCE`
+> (default OFF). With the flag OFF the legacy per-tick serial push still runs, unchanged,
+> and is the rollback position.
+>
+> **One departure from what this section originally specified: there is no
+> `audience_building` status.** `cancelBroadcast` accepts only `submitted` / `approved`, so
+> a broadcast parked in a new status could not be cancelled — the same defect the
+> 2026-09-08 reliability review raised against the (now deleted) batch drift halt, where a
+> runbook told staff to cancel something the code refuses to cancel. The row stays
+> `approved` for the whole build and `audience_import_id IS NOT NULL` draws the same
+> distinction, without an enum value, a transition-policy entry, every exhaustive switch,
+> three locales of copy and an audit type. Recorded in migration `0298`.
 
 - First dispatch tick resolves the audience, renders a CSV with a single `email` column
   (never `unsubscribed`), and submits ONE import: `POST /contacts/imports` (multipart:
-  `file`, `column_map={"email":"email"}`, `on_conflict="upsert"`, `segments=[<audience id>]`)
+  `file`, `column_map={"email":"email"}`, `on_conflict="upsert"`,
+  **`segments=[{"id":"<audience id>"}]`** — an array of OBJECTS. This line said
+  `segments=[<audience id>]` until T145 probed it (2026-09-08) and Resend answered
+  **422** `validation_error`: *"The `segments` must be an array of objects with a UUID
+  `id` field."* The same probe settled the open question underneath: with the object
+  form the imported contacts DO land in the target audience (`GET /audiences/{id}/contacts`
+  → 1 of 1). Two earlier probes had concluded the opposite, but both sent `audience_id`,
+  which Resend **accepts and silently ignores** — see `research.md` § R9 V4)
   through two new port methods `createContactImport` / `getContactImport` on
   `BroadcastsGatewayPort`, implemented with a raw multipart `fetch` in the existing gateway
   adapter (SDK 4.8 has no `contacts.imports`). The returned id is stored in
-  `broadcasts.audience_import_id`; the broadcast enters `audience_building`.
+  `broadcasts.audience_import_id` alongside `audience_import_submitted_at`; the row STAYS
+  `approved` (see the note above — no `audience_building` status), so a member or admin can
+  still cancel while the import is in flight.
 - Each later tick polls `GET /contacts/imports/{id}`. Completion rule: `status = completed`
   AND `failed = 0` AND `created + updated + skipped = total` AND `total` equals the resolved
   count → stamp `audience_import_completed_at` and call `sendBroadcast`. Any `failed > 0`, a
@@ -96,9 +152,23 @@ compare against the same number.
   (`audience_import_failed` / `audience_import_stuck`) with audit + alert; never a partial send.
 - Idempotency: `upsert` makes re-submitting the same CSV safe; a tick never submits a second
   import while `audience_import_id` is set.
-- `reconcile-stuck-sending` treats `audience_building` past 30 min as stuck (existing runbook
-  extended). Rate limit (10 req/s per team by default; V5 confirms the team's value) is
-  irrelevant at 2–3 calls per broadcast.
+- The 30-minute stuck rule is enforced in TWO places on purpose. `buildAudienceTick` turns
+  such a row terminal, but only on a tick that reaches that broadcast; the
+  `broadcasts_audience_import_stuck_count` gauge (T106, sampled by the gauges cron) counts them
+  independently, so one the cron has stopped visiting is still visible. The gauge is also the
+  only signal that distinguishes "this broadcast is unhappy" from "Resend's import pipeline has
+  stopped answering". Alarm at ≥ 1 sustained 30 min.
+- Rate limit (10 req/s per account, read from `ratelimit-policy` headers) is irrelevant here:
+  2–3 calls per broadcast regardless of audience size. That is the whole point — the serial
+  push needed one call per contact.
+- **Measured, 2026-09-08** (research § R9 V2 + V4): `POST /contacts/imports` answers 201 in
+  ~412 ms and completes in ~306 ms, size-independent; `on_conflict=upsert` PRESERVES a
+  contact's `unsubscribed` flag when the CSV carries no such column, which is the only reason
+  `upsert` is lawful here (GDPR Art. 21 / PDPA § 32); and Resend's suppression is account-wide,
+  so an unsubscribe carries into each new ephemeral audience. **`status: completed` does NOT
+  mean the rows landed** — one import in five identical probes returned `completed` with
+  `failed: 0` and `total: 0` and attached nothing. The completion rule above is load-bearing,
+  not defensive.
 
 ## 5. Recipient-count endpoints
 

@@ -55,6 +55,11 @@ function makeRepo(opts: {
       },
       async attachResendIds() {},
       async attachAudienceId() {},
+      // Phase 9b (T147) — unused by this use case; present so the stub
+      // still satisfies BroadcastsRepo.
+      // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
+      async attachAudienceImport() {},
+      async markAudienceImportCompleted() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
       },

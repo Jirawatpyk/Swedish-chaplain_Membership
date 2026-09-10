@@ -92,7 +92,6 @@ export const F7_AUDIT_EVENT_TYPES = [
   // because the batch was force-deleted). Separated from the
   // security-forensic `broadcast_cross_tenant_probe` to keep SIEM
   // alerts noise-free. Added via migration 0173.
-  'broadcast_webhook_batch_missing',
 
   // --- Unsubscribe + suppression (US5) — 4 events --------------------
   // All US5-deferred — emit sites land with the public unsubscribe
@@ -127,15 +126,10 @@ export const F7_AUDIT_EVENT_TYPES = [
   // (T031 Phase 2, FR-002 / FR-008a-d). Migration 0167 added these enum
   // values to the DB; this list mirrors the DB enum + data-model § 7
   // taxonomy. All 5y retention via Constitution v1.4.0 trigger.
-  'broadcast_dispatched_in_batches',
-  'broadcast_retry_initiated',
-  'broadcast_retry_completed',
-  'broadcast_partial_delivery_accepted',
   // review-fix F (migration 0220) — system roll-up of a batched broadcast
   // to `partially_sent`. Distinct from the 24h single-audience
   // `broadcast_send_timeout_completed` so name-keyed alerts / the
   // stuck-sending runbook do not misfire on a normal partial roll-up.
-  'broadcast_partially_sent',
 
   // --- F7.1a US2 (Image embedding + allowlist + scan) — 4 events ----
   'broadcast_body_image_source_unsafe',
@@ -196,7 +190,48 @@ export const F7_AUDIT_EVENT_TYPES = [
  * additions", so it summed to 60 while the real count was 59. Don't
  * re-introduce a hand-summed breakdown next to a self-checking assert.)
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 61
+/**
+ * Event types that WERE emitted, are still in the DB enum, and can never be
+ * emitted again. 61 → 55: the batch dispatch path was deleted in 108 Phase 9
+ * (`ca51f59a1`) and took these six with it.
+ *
+ * They are deliberately ABSENT from `F7_AUDIT_EVENT_TYPES` above and present
+ * here instead, because two guards make contradictory demands and this const
+ * is the single place that satisfies both:
+ *
+ *   - `audit-event-type-emission.test.ts` greps `src/` for an emit site per
+ *     tuple entry, so it FORCES an unemitted value out of the tuple.
+ *   - `audit-event-type-parity.test.ts` compares the tuple against `pg_enum`,
+ *     and Postgres CANNOT drop an enum value, so it FORBIDS removing it.
+ *
+ * The first round of this deletion dropped them from the tuple only. That
+ * satisfied the emission test — which was run locally — and red-lined the
+ * parity test in `integration-smoke`, a required check on `main`, which was
+ * not. Every consumer that needs to know "declared in the DB, never emitted
+ * again" MUST read this list rather than restating it:
+ *
+ *   1. the parity test excludes these from the SQL→TS direction;
+ *   2. the audit viewer drops them from its filter dropdown, so an
+ *      investigator is never offered a query that can only return zero rows
+ *      (see `NEVER_EMITTED_EVENT_TYPES` in the audit page for why an empty
+ *      result is the most dangerous wrong answer on a governance surface);
+ *   3. historical rows keep rendering — `audit-event-label-coverage.test.ts`
+ *      invariant 2 still requires an EN+TH+SV label for every pgEnum value,
+ *      so DO NOT delete their i18n keys.
+ */
+export const RETIRED_F7_AUDIT_EVENT_TYPES = [
+  'broadcast_webhook_batch_missing',
+  'broadcast_dispatched_in_batches',
+  'broadcast_retry_initiated',
+  'broadcast_retry_completed',
+  'broadcast_partial_delivery_accepted',
+  'broadcast_partially_sent',
+] as const satisfies ReadonlyArray<string>;
+
+export type RetiredF7AuditEventType =
+  (typeof RETIRED_F7_AUDIT_EVENT_TYPES)[number];
+
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 55
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;

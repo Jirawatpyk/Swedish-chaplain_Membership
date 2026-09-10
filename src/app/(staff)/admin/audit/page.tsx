@@ -32,6 +32,7 @@ import { humanizeEventType, resolveEventLabel } from '@/lib/audit-event-label';
 import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { ALL_AUDIT_EVENT_TYPES } from '@/modules/auth';
+import { RETIRED_F7_AUDIT_EVENT_TYPES } from '@/modules/broadcasts';
 import {
   auditQuery,
   makeAuditQueryDeps,
@@ -66,6 +67,14 @@ const NEVER_EMITTED_EVENT_TYPES: ReadonlySet<string> = new Set([
   // any recent window — which reads as "no violations", the most dangerous
   // possible wrong answer on a governance surface.
   'manager_denied_write',
+  // 108 Phase 9 — the six batch-path event types, read from the module that
+  // owns the retirement rather than restated here. Same class as
+  // `manager_denied_write` one line up: the emitting use cases
+  // (`recordPartialSend`, `transitionToRetrying`, `acceptPartialDelivery`)
+  // have no callers left, so filtering on one of these can only ever return
+  // zero rows — and on this page zero rows reads as "it never happened",
+  // not as "this state can no longer be produced".
+  ...RETIRED_F7_AUDIT_EVENT_TYPES,
 ]);
 const EVENT_TYPE_OPTIONS: readonly string[] = ALL_AUDIT_EVENT_TYPES.filter(
   (t) => !NEVER_EMITTED_EVENT_TYPES.has(t),

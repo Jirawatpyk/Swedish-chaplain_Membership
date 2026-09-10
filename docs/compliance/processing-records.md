@@ -133,6 +133,26 @@ business categorisation, not special-category PII.
   either the system sends a notice to a new secondary on first marketing
   contact, or the FR-027a pre-flight step verifies the attestation per
   contact.
+
+  **Gate EVALUATED 2026-09-08 10:45 (Asia/Bangkok) — satisfied VACUOUSLY.**
+  A read-only inventory of production
+  (`scripts/inventory-primary-contact-invariant.ts`, counts only, no PII)
+  returned **150 members / 150 primary contacts / 0 secondary contacts / 0
+  `marketing_unsubscribes` / 0 invariant violations**. With no secondary
+  contact in existence there is no data subject the chamber has not
+  informed, and the FR-027a pre-flight page renders an empty list. The gate
+  is therefore met — by the absence of the population it protects, not by a
+  notice being sent. Recorded with the count rather than as "n/a" because
+  the finding is a measurement and measurements expire.
+
+  **This evaluation LAPSES the moment SweCham's secondary-contact import
+  lands** — an imported marketing list is by definition a population that
+  gave its addresses to someone other than the chamber, which is exactly
+  what Art. 14 governs. Before the first marketing send after that import,
+  re-run the inventory and satisfy this gate the real way: either ship the
+  first-contact notice, or attest per contact through the FR-027a pre-flight.
+  Sign-off surface: `docs/go-live-readiness.md` § 6.9; full record:
+  `specs/108-contact-recipient-rules/reviews/cutover.md` § 2–3.
 - **Per-contact marketing preference** (108 PR-D, 2026-09-06) — a NEW
   processing activity: `contacts.marketing_opt_out_at` /
   `marketing_opt_out_source` (`staff` | `self`) /
@@ -164,7 +184,10 @@ business categorisation, not special-category PII.
   broadcast emails dispatched by F7.
 - **Resend Inc. (processor)** — receives the broadcast HTML body +
   recipient list at dispatch time; transmits the email; reports
-  delivery events back via webhook.
+  delivery events back via webhook. It also **retains each recipient
+  address as a team-level contact record** that outlives both the
+  ephemeral audience and the member's erasure — see the retention table
+  and residual 8a. Measured 2026-09-09, not assumed.
 - **Chamber admins (data subjects in the controller's role)** —
   receive admin-notification emails on submission via F1+F4
   transactional path (NOT via F7 Broadcasts).
@@ -197,6 +220,7 @@ business categorisation, not special-category PII.
 | `audit_log` rows `contact_marketing_opted_out` / `contact_marketing_opted_in` (108 PR-D) | **5 years** | Constitution default; payload carries `member_id` / `related_member_id`, `contact_id`, `source`, `actor_role` — no address (FR-053a) |
 | `audit_log` rows for F7 events (37 event types) | **5 years** | All F7 events default 5y per `src/modules/broadcasts/application/ports/audit-port.ts` `F7_AUDIT_RETENTION_YEARS` map |
 | Resend Broadcasts API send logs | Resend default (90 days) | Provider retention; not under chamber control |
+| **Resend contact records ("Global Contacts")** | **Indefinite — survives both audience deletion and member erasure** | One record per team, not per audience (research § R16). The erasure cascade detaches the contact from the audience; measured 2026-09-09 (U1), that leaves the contact readable at `GET /contacts/{email}`. Not under chamber control and **not currently erased** — see residual 8a for why the audience-less delete is not called and what closing it needs. |
 
 ### Technical + organisational measures (TOMs)
 
@@ -1140,6 +1164,7 @@ when answering a DSR:
 | 6 | **Old-address broadcast deliveries / outbox mail** — a contact's email was *edited off* its row before erasure (peer-collision sub-case) | A contact **archived** before erasure is now tombstoned: the in-tx redaction set is **all** the member's contact emails (any `removed_at`) **minus** any address a *peer* holds via a LIVE contact (COMP-1 review **FIX-3**), and the `notifications_outbox` cancel carries a two-pronged cross-member ownership guard (**FIX-4**). The residual is narrowed to (a) an address that was UPDATE-edited off every contact row (no longer discoverable) and (b) the deliberate **peer-collision exclusion** — an address a peer still holds live is left un-redacted to avoid cross-member over-deletion. |
 | 7 | **Cross-author `custom_recipient_emails`** (peer-collision edge only) | The erased member's email is now **element-wise redacted** out of OTHER authors' custom recipient lists tenant-wide, keyed on the same peer-excluding email set as the tombstone (COMP-1 review **FIX-9**). Residual narrowed to the deliberate peer-collision exclusion: an email that is ALSO a peer's LIVE contact is left in place to avoid over-redacting the peer's legitimate target. |
 | 8 | **Resend historical / un-enumerable audiences** (US3-C #H-2 above) | Best-effort-once; manual remediation within the §30 window. |
+| 8a | **Resend "Global Contacts" survive erasure — MEASURED, not inferred** | The erasure cascade calls `DELETE /audiences/{id}/contacts/{email}`, which **detaches** rather than deletes. Measured 2026-09-09 (108 Phase 9 review U1) against the live account: the call answers `{"deleted": true}` and the audience-scoped read then 404s, **while an audience-less `GET /contacts/{email}` still returns the contact at 200**. The provider's own response is what made this invisible for as long as it was. Per research § R16 a contact is one record per team that survives an audience delete, so the address persists at the processor indefinitely and is **not under chamber control**. An audience-less `DELETE /contacts/{email}` was measured in the same run to delete for real (read-back 404) and is implemented as `deleteContactGlobally`, but it is **deliberately not called by the cascade**: the Resend account is shared by every tenant, so two tenants whose members share an address share ONE contact record, and deleting it during tenant A's erasure would destroy tenant B's record together with the Resend-side `unsubscribed` flag that `on_conflict=upsert` exists to preserve — trading an Art. 17 residual for an Art. 21 regression on an uninvolved person. Closing this properly requires a cross-tenant "is this address held by any live member anywhere" check, which is an architectural decision. **OPEN — owner: solo maintainer (Jirawatpyk). Opened 2026-09-09. Review by 2026-12-09 (90 days) or on the event below, whichever is sooner.** ⚠️ **The protective trade is VACUOUS in production today, measured not assumed: prod holds exactly ONE tenant** (`SELECT DISTINCT tenant_id FROM members` → `swecham`; there is no `tenants` table). There is no tenant B, so tenant A's Art. 17 right is currently withheld to protect an Art. 21 flag belonging to nobody. It is nevertheless NOT closed by simply calling the global delete: the platform is Multi-Tenant Aware by design (MTA+STD), a cross-tenant integration test already enforces the safe behaviour, and "correct because we only have one tenant" is the class of thing that breaks silently on tenant #2. **Revisit condition: the second live tenant, or a per-tenant Resend account — whichever comes first.** **Instructing the processor — NOT yet attempted.** The zero-cost measure here is to INSTRUCT Resend to delete the contact record, and no such instruction has been sent; that is an action item on this residual, not a limitation of it. Legal basis: **Art. 28(3)(a)** (the processor processes only on the controller's documented instructions) together with **Art. 28(3)(e)** (the processor assists the controller in responding to data-subject-rights requests), and **PDPA s.33** for the Thai data subjects, who are the majority here. *(Round 4 M-2 — this cited **Art. 28(3)(g)**, which is the duty to delete or return all personal data **after the end of the provision of services**; it is a contract-termination obligation and has not been triggered. The action item was right and the citation named the wrong duty, in a document written to be read by a regulator. The same paragraph was framed GDPR-only while the code and `docs/runbooks/member-erasure.md` cite PDPA s.33.)* Until closed, a DSR answer must say the address may remain in the processor's contact store. |
 | 9 | **Sentinel vocabulary divergence** (`'[erased]'` F1/F3 vs `'[redacted]'` F7) | Clean-Architecture prevents F7 importing F3's constant; a single-token PII-oracle must check both. Cosmetic, no leak. |
 
 ### Technical + organisational measures (TOMs)
