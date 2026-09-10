@@ -1,7 +1,7 @@
 ---
 name: drizzle-migration-reviewer
 description: "Use this agent when Drizzle ORM schema changes or SQL migrations have been created or modified and need expert review before merge. This includes changes to `src/modules/*/infrastructure/schema.ts`, files under `drizzle/migrations/`, RLS policies, indexes, triggers, or any `drizzle-kit generate`/`migrate` output. The agent reviews recently written migration code by default, not the entire migration history."
-model: inherit
+model: opus
 color: purple
 memory: project
 ---

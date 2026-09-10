@@ -307,7 +307,7 @@ function Update-ExistingAgentFile {
 
     $lines = Get-Content -LiteralPath $TargetFile -Encoding utf8
     $output = New-Object System.Collections.Generic.List[string]
-    $inTech = $false; $inChanges = $false; $techAdded = $false; $changeAdded = $false; $existingChanges = 0
+    $inTech = $false; $inChanges = $false; $techAdded = $false
 
     for ($i=0; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
@@ -326,17 +326,44 @@ function Update-ExistingAgentFile {
         }
         if ($line -eq '## Recent Changes') {
             $output.Add($line)
-            if ($newChangeEntry) { $output.Add($newChangeEntry); $changeAdded = $true }
+            if ($newChangeEntry) { $output.Add($newChangeEntry) }
             $inChanges = $true
             continue
         }
         if ($inChanges -and $line -match '^##\s') { $output.Add($line); $inChanges = $false; continue }
-        if ($inChanges -and $line -match '^- ') {
-            if ($existingChanges -lt 2) { $output.Add($line); $existingChanges++ }
-            continue
-        }
-        if ($line -match '(\*\*)?Last updated(\*\*)?: .*\d{4}-\d{2}-\d{2}') {
-            $output.Add(($line -replace '\d{4}-\d{2}-\d{2}',$Date.ToString('yyyy-MM-dd')))
+        # `## Recent Changes` is HAND-CURATED on this repo and this function does not
+        # write to it. Upstream kept only the first two bullets and dropped the rest
+        # with no output at all; that truncation is deleted here so it cannot fire if
+        # the sections are ever reordered.
+        #
+        # MEASURED, not read: with the template ordering (`## Active Technologies`
+        # before `## Recent Changes`) every branch keyed on `## Recent Changes` is
+        # UNREACHABLE — the `$inTech` exit branch above matches `^##\s` first, adds
+        # the heading and `continue`s, so `$inChanges` is never set. A probe run with
+        # a populated plan put its entry in Active Technologies and nothing in Recent
+        # Changes. So the truncation never ate a bullet, and `$newChangeEntry` below
+        # is never emitted either. Left dead deliberately rather than "fixed": the
+        # insertion point is directly under the heading, which on this file sits ABOVE
+        # the section's intro paragraph, so making it live would corrupt the layout.
+        # Long-form per-feature history lives in docs/changelog.md.
+
+        # `Last updated:` — refresh ONLY the stamp that directly follows the label.
+        # A blanket `-replace '\d{4}-\d{2}-\d{2}'` rewrote EVERY date on the line, so
+        # a line that also cited a measurement or incident date had that date silently
+        # moved to today. If the label carries no stamp in the expected position the
+        # line is left alone and we say so, rather than no-op'ing quietly.
+        # `^`-anchored on purpose: the real stamp starts the line. Unanchored, any
+        # prose that merely NAMES the label - a comment explaining this very rule -
+        # matched, and the "no stamp here" warning fired on a line that was never
+        # the stamp.
+        if ($line -match '^(?:\*\*)?Last updated(?:\*\*)?:') {
+            $stamp = $Date.ToString('yyyy-MM-dd')
+            if ($line -match '^(?:\*\*)?Last updated(?:\*\*)?:\s*\d{4}-\d{2}-\d{2}') {
+                $output.Add(($line -replace '^((?:\*\*)?Last updated(?:\*\*)?:\s*)\d{4}-\d{2}-\d{2}', "`${1}$stamp"))
+            } else {
+                Write-WarningMsg "'Last updated:' in $TargetFile carries no yyyy-MM-dd immediately after the label - date NOT refreshed"
+                $output.Add($line)
+            }
             continue
         }
         $output.Add($line)
