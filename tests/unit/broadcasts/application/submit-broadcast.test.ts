@@ -256,6 +256,7 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       };
     },
     async attachResendIds() {},
+      async attachBroadcastId() {},
       async attachAudienceId() {},
       // Phase 9b (T147) — unused by this use case; present so the stub
       // still satisfies BroadcastsRepo.

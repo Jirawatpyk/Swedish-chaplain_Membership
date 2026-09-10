@@ -855,6 +855,45 @@ export function makeDrizzleBroadcastsRepo(
       }
     },
 
+    /**
+     * F4 sibling of `attachAudienceId` — see the port docblock for why the
+     * broadcast id has to land BEFORE the send rather than with the status flip.
+     * Same CAS shape deliberately: `isNull OR eq(same)` makes a retry with the
+     * same id idempotent and a DIFFERENT id loud, which is what tells two
+     * overlapping ticks apart (`maxDuration` equals the cron cadence, so they
+     * overlap in normal operation, and the `lockForUpdate` advisory lock is long
+     * released by the time any gateway call returns).
+     */
+    async attachBroadcastId(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      resendBroadcastId: string,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'attachBroadcastId');
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          resendBroadcastId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            or(
+              isNull(broadcasts.resendBroadcastId),
+              eq(broadcasts.resendBroadcastId, resendBroadcastId),
+            ),
+          ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      if (updated.length !== 1) {
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
+      }
+    },
+
     async attachAudienceImport(
       txUnknown,
       tenantIdArg: TenantSlug,

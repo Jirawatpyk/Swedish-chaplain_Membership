@@ -544,7 +544,10 @@ export async function dispatchScheduledBroadcast(
   // Audience name remains stable across retries (no timestamp suffix)
   // for Resend dashboard searchability.
   let resendAudienceId = broadcast.resendAudienceId ?? '';
-  let resendBroadcastId = '';
+  // F4 — read from the ROW, not a fresh ''. This was the whole bug: the audience
+  // id was inherited from a prior tick and the broadcast id never was, so every
+  // re-entered tick called `createBroadcast` again.
+  let resendBroadcastId = broadcast.resendBroadcastId ?? '';
   try {
     if (resendAudienceId === '') {
       const audienceResult = await deps.broadcastsGateway.createAudience(
@@ -612,18 +615,36 @@ export async function dispatchScheduledBroadcast(
       contacts,
     );
 
-    const createResult = await deps.broadcastsGateway.createBroadcast({
-      audienceId: resendAudienceId,
-      subject: broadcast.subject,
-      htmlBody: broadcast.bodyHtml,
-      fromName: broadcast.fromName,
-      fromEmail: deps.fromEmail,
-      replyToEmail: broadcast.replyToEmail,
-      broadcastNameForResendDashboard: resendDashboardName(broadcast.fromName, broadcast.subject),
-      tenantDisplayName: deps.tenantDisplayName,
-      locale: deps.locale,
-    });
-    resendBroadcastId = createResult.broadcastId;
+    // F4 — the same reuse shape as the audience above, one step later. Skipping
+    // this when the row already carries an id is what stops a tick that died
+    // before the status flip from minting a SECOND Resend resource and sending
+    // to the whole audience again.
+    if (resendBroadcastId === '') {
+      const createResult = await deps.broadcastsGateway.createBroadcast({
+        audienceId: resendAudienceId,
+        subject: broadcast.subject,
+        htmlBody: broadcast.bodyHtml,
+        fromName: broadcast.fromName,
+        fromEmail: deps.fromEmail,
+        replyToEmail: broadcast.replyToEmail,
+        broadcastNameForResendDashboard: resendDashboardName(broadcast.fromName, broadcast.subject),
+        tenantDisplayName: deps.tenantDisplayName,
+        locale: deps.locale,
+      });
+      resendBroadcastId = createResult.broadcastId;
+      // Persist BEFORE the send, in its own tx. The window this closes is the
+      // one between `sendBroadcast` returning and the transition tx committing:
+      // mail is out, and until this write existed nothing on our side knew which
+      // resource sent it.
+      await deps.broadcastsRepo.withTx(async (tx) => {
+        await deps.broadcastsRepo.attachBroadcastId(
+          tx,
+          deps.tenant.slug,
+          input.broadcastId,
+          resendBroadcastId,
+        );
+      });
+    }
 
     await deps.broadcastsGateway.sendBroadcast(
       resendBroadcastId,
@@ -802,15 +823,19 @@ export async function dispatchScheduledBroadcast(
 
     // ---- Idempotency conflict: success-replay ------------------------
     // Resend already accepted this broadcast on a prior attempt. Treat
-    // as success and fall through to attachResendIds + transition. We
-    // know the resendBroadcastId IFF the conflict happened on `send`
-    // (after createBroadcast); on early conflict we cannot recover the
-    // ID and must drop to permanent.
+    // as success and fall through to attachResendIds + transition.
+    //
+    // F4 widened when we can do that. `resendBroadcastId` is now seeded from the
+    // ROW, not from `''`, so it is known whenever THIS tick reached
+    // `createBroadcast` **or any prior tick did** — which is the common case for
+    // a conflict, since a conflict means someone got further than us. Before F4
+    // an inherited id was invisible here and a replay that could have advanced
+    // dropped to permanent instead.
     if (shape.kind === 'idempotency_conflict') {
-      // If we never reached `createBroadcast` (resendBroadcastId is
-      // unset because the conflict surfaced earlier), we cannot
-      // safely advance — fall through to permanent so the next cron
-      // tick re-resolves the row from scratch.
+      // Still empty means NOBODY has reached `createBroadcast` for this row —
+      // not this tick, and not any earlier one — so there is no resource to
+      // advance to. Fall through to permanent and let the next cron tick
+      // re-resolve from scratch.
       if (resendBroadcastId === '') {
         logger.error(
           {
@@ -832,7 +857,7 @@ export async function dispatchScheduledBroadcast(
             tenantId: deps.tenant.slug,
             eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
             actorUserId: 'system:cron',
-            summary: `Broadcast ${input.broadcastId} hit idempotency conflict BEFORE sendBroadcast — concurrent worker raced through createAudience`,
+            summary: `Broadcast ${input.broadcastId} hit idempotency conflict with no resend_broadcast_id on the row — no tick has reached createBroadcast, so there is no resource to replay onto`,
             payload: {
               broadcastId: input.broadcastId,
               reason: shape.reason,

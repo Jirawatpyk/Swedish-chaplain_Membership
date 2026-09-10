@@ -241,6 +241,36 @@ export interface BroadcastsRepo {
     resendAudienceId: string,
   ): Promise<void>;
 
+  /**
+   * Persist the `resend_broadcast_id` column ALONE, without changing
+   * `resend_audience_id` or status. The exact sibling of `attachAudienceId`
+   * one step later in dispatch, and it exists for the same reason.
+   *
+   * **F4 — the double-send window.** `gateway.createBroadcast` mints a Resend
+   * resource, and until this method existed the id lived only in a local
+   * variable until the final `attachResendIds` + transition tx, on the far side
+   * of `sendBroadcast`. A tick that died in that window re-entered, minted a
+   * SECOND resource and sent to the whole audience again. `Idempotency-Key`
+   * cannot collapse that — it is a different resource, and it was MEASURED
+   * inert on `POST /broadcasts` anyway (2026-09-09).
+   *
+   * Called immediately after `createBroadcast` returns, in its OWN tx, so it
+   * commits independently of the later status flip. That independence is the
+   * point on the cancel-landing path too: when a cancel lands mid-dispatch the
+   * transition finds 0 rows and rolls back, and the id must survive that
+   * rollback or the webhook cannot correlate the mail that already went out.
+   *
+   * Same CAS contract as `attachAudienceId`: idempotent on the SAME value,
+   * `BroadcastConcurrentMutationError` on a different one,
+   * `BroadcastNotFoundError` if the row is gone.
+   */
+  attachBroadcastId(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    resendBroadcastId: string,
+  ): Promise<void>;
+
 
   /**
    * T086 (108 US5) — record that a Contacts-Import job has been handed to the

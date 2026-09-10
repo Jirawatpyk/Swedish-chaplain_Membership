@@ -148,15 +148,19 @@ function makeRepo(opts: RepoOpts): {
   transitions: Array<{ status: string; fields: unknown }>;
   attachCalls: Array<{ audienceId: string; broadcastId: string }>;
   attachAudienceCalls: Array<{ audienceId: string }>;
+  /** F4 — proves the broadcast id is persisted BEFORE the send, not with the flip. */
+  attachBroadcastIdCalls: Array<{ broadcastId: string }>;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
   const attachCalls: Array<{ audienceId: string; broadcastId: string }> = [];
   const attachAudienceCalls: Array<{ audienceId: string }> = [];
+  const attachBroadcastIdCalls: Array<{ broadcastId: string }> = [];
   // Phase 9b (T147) — the hand-off channel between the two `*/5` crons.
   return {
     transitions,
     attachCalls,
     attachAudienceCalls,
+    attachBroadcastIdCalls,
     port: {
       async withTx(fn) {
         return fn(null);
@@ -197,6 +201,9 @@ function makeRepo(opts: RepoOpts): {
             _b,
           );
         }
+      },
+      async attachBroadcastId(_tx, _t, _b, resendBroadcastId) {
+        attachBroadcastIdCalls.push({ broadcastId: resendBroadcastId });
       },
       async attachAudienceId(_tx, _t, _b, audienceId) {
         attachAudienceCalls.push({ audienceId });
@@ -1851,6 +1858,138 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(warned).toContain('broadcasts.dispatch.audience_count_incomplete');
     expect(warned).not.toContain('broadcasts.dispatch.idempotency_replay');
     warnSpy.mockRestore();
+  });
+
+  /**
+   * F4 — **the double-send window.** `createBroadcast` mints a Resend resource and
+   * the id lived only in a local; nothing persisted it until the final tx, 40+
+   * lines and one network call later. A tick that died between the send and that
+   * tx therefore re-entered, minted a SECOND resource, and sent to the whole
+   * audience again — and `Idempotency-Key` cannot collapse that, because it is on
+   * a different resource (and MEASURED inert on `POST /broadcasts` regardless).
+   *
+   * The audience half of this was already solved, one step earlier in the same
+   * function: `resendAudienceId` is read off the row and `createAudience` is
+   * skipped when it is set, so a retry reuses the audience instead of orphaning
+   * one. This is that same shape, applied to the broadcast.
+   */
+  it('F4 — a row that already carries resendBroadcastId does NOT mint a second resource', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        // A prior tick got this far and then died before the status flip.
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The assertion the finding is about: zero NEW resources.
+    expect(gw.createCalls).toEqual([]);
+    // And the send goes to the resource the previous tick already created —
+    // asserting the ID, not just the call count, because a fix that skipped
+    // `createBroadcast` and then sent to '' would satisfy the line above.
+    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
+    // The audience half was already correct; pinned here so the two stay symmetric.
+    expect(gw.audienceCalls).toEqual([]);
+  });
+
+  /**
+   * F4, the ORDERING half — and the cancel-landing shape.
+   *
+   * Persisting the id is only worth anything if it happens BEFORE the send. The
+   * window this closes is not hypothetical: `applyTransition('sending')` is a
+   * compare-and-set on `approved`, so a cancel landing mid-dispatch makes it match
+   * 0 rows and roll its whole tx back — including, before this fix,
+   * `attachResendIds`. Mail was out, the row said `cancelled`, and nothing on our
+   * side held the resource id, so the Resend webhook could only answer
+   * `unknown_resend_broadcast_id`.
+   *
+   * A failing `sendBroadcast` reproduces the ordering exactly: if the persist ran
+   * after the send it would never run at all here. Asserting the recorder is
+   * populated is therefore an assertion about SEQUENCE, which is what the fix is.
+   *
+   * Note what this does NOT claim: the mail still goes to a cancelled broadcast's
+   * audience if Resend accepted the send. What changes is that the database can
+   * afterwards say which resource sent it.
+   */
+  it('F4 — the broadcast id is persisted BEFORE the send, so a failure cannot lose it', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+    });
+    const gw = makeGateway({
+      // The send never completes. Before the fix the id existed only in a local
+      // and died with the tick.
+      throwOnSend: { kind: 'retryable', reason: 'resend 503' },
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [
+            recipient('m-r1', 'one@example.com'),
+            recipient('m-2', 'two@example.com'),
+          ],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    // The send failed, so the tick did not advance — that half is unchanged.
+    expect(result.ok).toBe(false);
+    // But the resource we minted is now RECORDED, which is the fix.
+    expect(repo.attachBroadcastIdCalls).toHaveLength(1);
+    // The id recorded is the one `createBroadcast` returned — pinned BY VALUE, so a
+    // fix that persisted an empty string or the wrong local would still fail here.
+    expect(repo.attachBroadcastIdCalls[0]!.broadcastId).toBe('bcast-fake-1');
+    // And exactly one resource was minted — the next tick will reuse it, which is
+    // what the sibling test above pins.
+    expect(gw.createCalls).toHaveLength(1);
   });
 
   it('R5-S1 โ€” getAudienceContactCount throws non-404 โ’ broadcast_resend_drift_check_unverifiable audit emitted', async () => {

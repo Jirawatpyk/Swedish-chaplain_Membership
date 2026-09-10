@@ -198,7 +198,8 @@ function makeBroadcastsRepo(counters: CallCounters): BroadcastsRepo {
       );
     },
     async attachResendIds() {},
-    async attachAudienceId() {},
+    async attachBroadcastId() {},
+      async attachAudienceId() {},
     // Phase 9b (T147) — unused by this use case; present so the stub
     // still satisfies BroadcastsRepo.
     // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
