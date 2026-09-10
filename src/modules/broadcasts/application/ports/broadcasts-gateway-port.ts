@@ -132,13 +132,6 @@ export type RetrieveBroadcastOutcome =
   | { readonly kind: 'not_found' };
 
 /**
- * Discriminated union for `getAudienceContactCount` (review TYPES-2
- * round 2 + TYPES-#4 round 3). Mirrors `RetrieveBroadcastOutcome` for
- * cross-port consistency — both unions use the SAME `'not_found'`
- * tail so callers can grep + reason about resource-missing semantics
- * with one mental model.
- */
-/**
  * Round 2 R2-25 — did the call REMOVE something, or was it already absent?
  *
  * `removeContactFromAudience` used to return `void` and resolve on a 404, so its
@@ -156,31 +149,45 @@ export type RemoveContactOutcome =
   | { readonly kind: 'detached' }
   | { readonly kind: 'already_absent' };
 
-export type GetAudienceContactCountOutcome =
-  | {
-      readonly kind: 'present';
-      readonly count: number;
-      /**
-       * Round 4 F1 residual — is `count` the WHOLE audience, or one page of it?
-       *
-       * `GET /audiences/{id}/contacts` paginates and says so: the response
-       * carries `has_more` alongside `data`. MEASURED against the live account
-       * on 2026-09-09 — top-level keys are exactly `data,has_more,object`. The
-       * SDK models neither: `ListContactsOptions` is `{ audienceId }` and
-       * `ListContactsResponseSuccess` is `{ object, data }`, so the adapter
-       * returned `data.length` and threw the truncation signal away.
-       *
-       * That mattered because a truncated count that happens to land at or below
-       * the resolved count was indistinguishable from a VERIFIED-CLEAN audience.
-       * The `>` comparison is safe either way (truncation can only undercount, so
-       * no false refusals), but "we checked and it matched" was a claim the data
-       * could not support.
-       *
-       * `false` means the caller may only conclude a LOWER BOUND.
-       */
-      readonly complete: boolean;
-    }
-  | { readonly kind: 'not_found' };
+/**
+ * What `getAudienceContactCount` answers. A plain record, not a discriminated
+ * union — and it used to be one.
+ *
+ * Until 2026-09-10 this carried a `| { kind: 'not_found' }` tail "mirroring
+ * `RetrieveBroadcastOutcome`", and the adapter mapped a 404 into it. But the
+ * list endpoint does not 404: `GET /audiences/{id}/contacts` on an audience
+ * that does not exist answers `200 {"object":"list","has_more":false,"data":[]}`
+ * (MEASURED, read-only probe against the live account — pinned in
+ * `resend-audience-contact-count.test.ts`). So the arm was real code with no
+ * reachable input, every caller carried a branch for it, and one of those
+ * branches (`build-audience-tick`) routed the impossible value to the
+ * unverifiable path — a decision nothing could ever exercise. Removed rather
+ * than documented: if Resend ever starts answering 404 here, the adapter's
+ * `resource_missing` throw reaches the caller's catch, which is the
+ * unverifiable arm anyway, and now says so on the log line.
+ */
+export interface AudienceContactCount {
+  readonly count: number;
+  /**
+   * Round 4 F1 residual — is `count` the WHOLE audience, or one page of it?
+   *
+   * `GET /audiences/{id}/contacts` paginates and says so: the response
+   * carries `has_more` alongside `data`. MEASURED against the live account
+   * on 2026-09-09 — top-level keys are exactly `data,has_more,object`. The
+   * SDK models neither: `ListContactsOptions` is `{ audienceId }` and
+   * `ListContactsResponseSuccess` is `{ object, data }`, so the adapter
+   * returned `data.length` and threw the truncation signal away.
+   *
+   * That mattered because a truncated count that happens to land at or below
+   * the resolved count was indistinguishable from a VERIFIED-CLEAN audience.
+   * The `>` comparison is safe either way (truncation can only undercount, so
+   * no false refusals), but "we checked and it matched" was a claim the data
+   * could not support.
+   *
+   * `false` means the caller may only conclude a LOWER BOUND.
+   */
+  readonly complete: boolean;
+}
 
 export interface BroadcastsGatewayPort {
   createAudience(name: string): Promise<{ readonly audienceId: string }>;
@@ -232,12 +239,13 @@ export interface BroadcastsGatewayPort {
    * `broadcast_resend_audience_drift` audit emission so ops can
    * investigate partial-delivery before the broadcast ships.
    *
-   * Returns a discriminated union: `present` with the count, or
-   * `audience_missing` when Resend reports 404 on the audience.
+   * A DELETED audience is a verified-complete ZERO here, not an error — see
+   * `AudienceContactCount`. Transport and 5xx failures throw a retryable
+   * `GatewayThrowable`, like every other method on this port.
    */
   getAudienceContactCount(
     audienceId: string,
-  ): Promise<GetAudienceContactCountOutcome>;
+  ): Promise<AudienceContactCount>;
 
   /**
    * Detach a contact from ONE audience. A 404 (contact or audience already
@@ -346,6 +354,29 @@ export interface BroadcastsGatewayPort {
    * retry next tick without blocking normal broadcast flow.
    */
   deleteAudience(audienceId: string): Promise<void>;
+
+  /**
+   * Delete a broadcast RESOURCE this tick minted and cannot keep.
+   *
+   * Exists because `dispatchScheduledBroadcast` has three arms where
+   * `createBroadcast` has returned an id that will never be persisted — a
+   * sibling tick attached its own id first (CAS loss), the row vanished, or the
+   * persist itself faulted — and until 2026-09-10 each of them wrote "we leak
+   * the resource we just minted, because the gateway has no `deleteBroadcast`".
+   * That was a PORT GAP, not a provider limit: this branch measured `'draft'`
+   * by creating a broadcast and DELETING it against the live account, and a
+   * resource on any of those arms is a draft by definition (minted, never sent).
+   *
+   * Same idempotency contract as `deleteAudience`: 404 / 410 (already gone)
+   * resolve; 5xx / network throw a retryable `GatewayThrowable`. Best-effort at
+   * every call site — a failed reclaim is logged at critical and the tick's
+   * outcome is unchanged, because the outcome was decided before the reclaim.
+   *
+   * **Never call this on an id read from the row.** A persisted id is the
+   * resource a send may already have gone out on; only an id this tick minted
+   * and failed to persist is safe to remove.
+   */
+  deleteBroadcast(broadcastId: string): Promise<void>;
 
   /**
    * PR-2 orphan-reclaim — list all Resend audiences for the configured

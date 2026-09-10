@@ -60,7 +60,7 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
 
     const outcome = await resendBroadcastsGateway.getAudienceContactCount(AUDIENCE_ID);
 
-    expect(outcome).toEqual({ kind: 'present', count: 1, complete: false });
+    expect(outcome).toEqual({ count: 1, complete: false });
   });
 
   it('has_more: false → complete: true (the ONLY input that verifies a count)', async () => {
@@ -68,7 +68,7 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
 
     const outcome = await resendBroadcastsGateway.getAudienceContactCount(AUDIENCE_ID);
 
-    expect(outcome).toEqual({ kind: 'present', count: 2, complete: true });
+    expect(outcome).toEqual({ count: 2, complete: true });
   });
 
   /**
@@ -86,7 +86,7 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
 
     const outcome = await resendBroadcastsGateway.getAudienceContactCount(AUDIENCE_ID);
 
-    expect(outcome).toEqual({ kind: 'present', count: 3, complete: false });
+    expect(outcome).toEqual({ count: 3, complete: false });
   });
 
   /**
@@ -101,7 +101,7 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
 
     const outcome = await resendBroadcastsGateway.getAudienceContactCount(AUDIENCE_ID);
 
-    expect(outcome).toEqual({ kind: 'present', count: 0, complete: false });
+    expect(outcome).toEqual({ count: 0, complete: false });
   });
 
   /**
@@ -121,8 +121,9 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
    * file existed:
    *
    *  1. `getAudienceContactCount` can NEVER answer `not_found` via the list
-   *     endpoint. The arm is real code with no reachable input, so the callers'
-   *     `not_found` handling is driven by nothing.
+   *     endpoint. The arm WAS real code with no reachable input, so the callers'
+   *     `not_found` handling was driven by nothing — removed 2026-09-10; the
+   *     port now answers a plain `{ count, complete }`.
    *  2. A DELETED audience is indistinguishable from an empty one, and returns
    *     the one shape that makes `complete` authoritative. So the honest answer
    *     from this adapter is a verified-complete zero, and the "an audience that
@@ -135,6 +136,6 @@ describe('getAudienceContactCount — has_more decides `complete` (FINAL round, 
 
     const outcome = await resendBroadcastsGateway.getAudienceContactCount(AUDIENCE_ID);
 
-    expect(outcome).toEqual({ kind: 'present', count: 0, complete: true });
+    expect(outcome).toEqual({ count: 0, complete: true });
   });
 });

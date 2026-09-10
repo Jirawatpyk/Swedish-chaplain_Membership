@@ -100,6 +100,7 @@ should look but harness MUST NOT retry":
 | HTTP code | Meaning | Operator action |
 |-----------|---------|-----------------|
 | 200 + `gateway_error > 0` in body | Resend outage. Per-row reconcile already done idempotently. Next 15-min tick is the natural retry. | Check Resend status page; alert pipeline pages on the dedicated `cron.broadcasts.reconcile.gateway_outage` log channel |
+| 200 + `unresolved_provider_status > 0` in body (reconcile-stuck-sending, since 2026-09-10) | A stuck row's Resend resource is present but NOT `sent` (`draft` / `queued` / `sending` / `cancelled` / unrecognised). The use case decided nothing — no quota, no transition — and will report it again next tick. | Harness MUST NOT retry (nothing of ours failed). Operator follows `broadcasts-stuck-sending.md` § Triage step 2b; the alarm is `broadcasts.reconcile_unresolved_status.total{observed_status}`. |
 | 500 + `uncaught_error > 0` | Programmer bug or transient DB blip | Harness MAY retry; investigate next morning if persistent |
 | 500 + `server_error > 0` | Use-case Result.err (transition guard, RLS probe, etc.) | Harness MAY retry; investigate stack trace in logs |
 | 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |

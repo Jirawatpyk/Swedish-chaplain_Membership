@@ -49,6 +49,7 @@ import type {
   BroadcastsGatewayPort,
   AudienceContact,
   RetrievedBroadcastResource,
+  RetrieveBroadcastOutcome,
 } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { AudienceMode } from '../../domain/audience-mode';
@@ -59,7 +60,10 @@ import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import { classifyThrown } from './_classify-thrown';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
-import { resolveSegmentRecipients } from './resolve-segment-recipients';
+import {
+  resolveSegmentRecipients,
+  type ResolveSegmentOutput,
+} from './resolve-segment-recipients';
 import type { MemberFacingFailureReason } from './build-audience-tick';
 import { recipientSegmentFromPersisted } from '../../domain/recipient-segment';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
@@ -112,7 +116,33 @@ export type DispatchScheduledBroadcastError =
       readonly message: string;
       /** Round 4 L3 — the loggable class; see `resolve.server_error`'s docblock. */
       readonly errClass?: string;
+      /**
+       * 2026-09-10 follow-up (5) — WHICH step faulted. The route labels
+       * `broadcasts.dispatch_resolve_failed.total` with it: that counter was
+       * incremented for every kind of `dispatch.server_error` while its name
+       * and runbook (§ C: F3 pages / Neon / opt-out lookup) described one.
+       * Required and closed, so a new return site has to say where it is.
+       */
+      readonly phase: DispatchServerErrorPhase;
     };
+
+/**
+ * The four places this leg can answer `dispatch.server_error` (row stays
+ * `approved`, next tick retries). `lock` — Step 1 could not read the row;
+ * `resolve` — Step 2 could not build the audience (the case the counter was
+ * named for); `inherited_status` — the probe answered a status this build
+ * cannot interpret and the tick REFUSED rather than guess; `persist_broadcast_id`
+ * — the pre-send persist faulted. The import leg has its own three; the
+ * metric's label type is the union.
+ */
+export type DispatchServerErrorPhase =
+  | 'lock'
+  | 'resolve'
+  | 'inherited_status'
+  | 'persist_broadcast_id';
+
+/** What Step 2 hands Step 3 and Step 4 once a resolve has been ACCEPTED. */
+type ResolvedAudience = ResolveSegmentOutput;
 
 export interface DispatchScheduledBroadcastDeps {
   readonly tenant: TenantContext;
@@ -367,6 +397,7 @@ export async function dispatchScheduledBroadcast(
       // bound parameters, i.e. member addresses). The class is safe and is what
       // separates a DB blip from our own TypeError.
       errClass: errKind(e),
+      phase: 'lock',
     });
   }
 
@@ -377,173 +408,15 @@ export async function dispatchScheduledBroadcast(
     });
   }
 
-  // Step 2: re-resolve recipients (segment may have changed since submit)
-  // Review 2026-09-07 round 2 (C1/C2) — a tier row with no codes is refused
-  // at the boundary, TERMINALLY. It used to reach the resolver as
-  // `{ tier, [] }`: the primary_only read then addressed every active member,
-  // and the all_contacts read's throw was retried every tick forever as a
-  // "transient" `dispatch.server_error`. It is neither: it is a data defect,
-  // so the broadcast fails with an honest reason and the member is told.
-  const segmentResult = recipientSegmentFromPersisted(broadcast);
-  if (!segmentResult.ok) {
-    await failDispatchAndAudit(
-      deps,
-      input,
-      now,
-      'malformed_segment',
-      'broadcast_failed_to_dispatch',
-      {
-        broadcastId: input.broadcastId,
-        reason: 'malformed_segment',
-        detail: segmentResult.error.reason,
-        segmentType: segmentResult.error.segmentType,
-        failedAt: now.toISOString(),
-      },
-      'malformed_segment',
-      'malformed_segment',
-      broadcast,
-    );
-    return err({ kind: 'broadcast_failed_to_dispatch', reason: 'malformed_segment' });
-  }
-  const segment = segmentResult.value;
-  const requestingMember = broadcast.requestedByMemberId;
-  // 108 PR-C (FR-022): the requesting member's PRIMARY email used to be read
-  // here (W2-05) only to feed the resolver's email-equality self-exclusion.
-  // Self-exclusion is by member id now, so that read — and its throw path —
-  // is gone; the reply-to read at Step 1 is untouched.
-
-  // W2-05, extended for 108 PR-D (review errors MEDIUM-5): the resolver has
-  // bridge reads that throw by design — the suppression anti-join and the
-  // per-contact opt-out filter, both fail-closed. An unhandled throw here
-  // escapes to the cron route and lands in `summary.uncaught_error`, the class
-  // that means "programming bug, page someone". A Neon blip is not that: it is
-  // a typed `dispatch.server_error`, and the next tick retries because the
-  // broadcast is still `approved`.
-  let resolvedResult: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
-  try {
-    resolvedResult = await resolveSegmentRecipients(
-      {
-        tenant: deps.tenant,
-        membersBridge: deps.membersBridge,
-        eventAttendees: deps.eventAttendees,
-        marketingUnsubscribes: deps.marketingUnsubscribes,
-        audienceMode: deps.audienceMode,
-        audienceCeiling: deps.audienceCeiling,
-      },
-      {
-        segment,
-        phase: 'dispatch',
-        requestingMemberId: requestingMember,
-        customRecipients:
-          broadcast.customRecipientEmails === null
-            ? null
-            : broadcast.customRecipientEmails.map((e) =>
-                unsafeBrandEmailLower(e.toLowerCase().trim()),
-              ),
-      },
-    );
-  } catch (e) {
-    return err({
-      kind: 'dispatch.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-      // Round 4 L3 — `message` is REDACTED in logs (it can carry a Neon error's
-      // bound parameters, i.e. member addresses). The class is safe and is what
-      // separates a DB blip from our own TypeError.
-      errClass: errKind(e),
-    });
-  }
-
-  // 108 PR-C — the member-leg read failing is typed by the resolver
-  // (research R8). It is the SAME class as the throw above: no transition,
-  // no audit, the broadcast stays `approved` and the next tick retries. It
-  // must never fall through to the branches below, which would mark the
-  // broadcast failed with a fabricated "empty audience" reason.
-  if (!resolvedResult.ok && resolvedResult.error.kind === 'resolve.server_error') {
-    return err({
-      kind: 'dispatch.server_error',
-      message: resolvedResult.error.message,
-    });
-  }
-
-  if (!resolvedResult.ok) {
-    // Bug #13 fix (2026-07-10): distinguish the TWO terminal resolve
-    // failures. `resolveSegmentRecipients` returns
-    // `broadcast_empty_segment_blocked`, `broadcast_audience_too_large`, or
-    // `resolve.server_error` (handled above). The segment is re-resolved here
-    // because it can change since submit (e.g. membership grew past the
-    // audience ceiling via a bulk import). Hard-coding 'audience_post_suppression_empty' for
-    // EVERY error mislabelled the failure_reason, the audit payload, AND the
-    // AS2 member-notification email as "empty audience" when the true cause was
-    // "too large". Mirror submit-broadcast.ts's switch on error.kind.
-    if (resolvedResult.error.kind === 'broadcast_audience_too_large') {
-      await failDispatchAndAudit(
-        deps,
-        input,
-        now,
-        'audience_too_large',
-        'broadcast_failed_to_dispatch',
-        {
-          broadcastId: input.broadcastId,
-          reason: 'audience_too_large',
-          count: resolvedResult.error.count,
-          cap: resolvedResult.error.cap,
-          failedAt: now.toISOString(),
-        },
-        'audience_too_large',
-        'audience_too_large',
-        broadcast,
-      );
-      return err({
-        kind: 'broadcast_failed_to_dispatch',
-        reason: 'audience_too_large',
-      });
-    }
-    // Empty audience post-suppression — transition to failed_to_dispatch +
-    // emit audit + Slice E member notification.
-    await failDispatchAndAudit(
-      deps,
-      input,
-      now,
-      'audience_post_suppression_empty',
-      'broadcast_failed_to_dispatch',
-      {
-        broadcastId: input.broadcastId,
-        reason: 'audience_post_suppression_empty',
-        failedAt: now.toISOString(),
-      },
-      'audience_post_suppression_empty',
-      'audience_post_suppression_empty',
-      broadcast,
-    );
-    return err({ kind: 'broadcast_audience_post_suppression_empty' });
-  }
-
-  // Step 2b was a hand-off to the batch path when the audience had grown past
-  // what one invocation could serially push. `ca51f59a1` deleted that path, so
-  // the hand-off had nowhere to go: `DEFERRED_TO_BATCH_PATH` had no case in the
-  // cron's switch, fell to `default` -> `unknown_error`, and left the row
-  // `approved` with no claimant. Unreachable only because
-  // `currentAudienceCeiling()` clamps to exactly `DELIVERABLE_RECIPIENTS_PER_TICK`
-  // on this leg, so an over-size audience is already refused upstream as
-  // `broadcast_audience_too_large` — which is the honest answer when there is no
-  // second path to carry it. Removed in 108 Phase 9 review round 1 (S21) rather
-  // than left to re-arm the first time someone raises the ceiling.
-
-  // Step 3: Resend Broadcasts API calls (createAudience + addContacts +
-  // createBroadcast + sendBroadcast). External calls happen OUTSIDE tx.
-  // Empty string sentinel means "not yet assigned" — used by the
-  // idempotency_conflict handler to distinguish pre-send vs post-send
-  // conflict (the latter is recoverable as success-replay).
+  // Step 1b (2026-09-10 follow-up 3): the inherited-id probe, BEFORE Step 2.
   //
-  // **Orphan-audience prevention** (post-staff-review polish 2026-05-01):
-  // If `broadcast.resendAudienceId` is already set, a prior dispatch
-  // attempt's `createAudience` succeeded but a downstream call failed
-  // (retryable). REUSE the existing audience instead of creating a
-  // duplicate orphan. The audience is persisted via `attachAudienceId`
-  // immediately after `createAudience` succeeds (a separate small tx)
-  // so a crash between that and `addContactsToAudience` does not leak.
-  // Audience name remains stable across retries (no timestamp suffix)
-  // for Resend dashboard searchability.
+  // It sat inside the Step-3 try, i.e. AFTER Step 2's terminal refusals. A row
+  // carrying an id already handed to `/send` — mail out, status flip lost —
+  // could therefore be marked `failed_to_dispatch` by THIS tick's re-resolve
+  // (a bulk import pushed the segment past the ceiling in the five minutes
+  // since), releasing the quota slot and emailing the member that a delivered
+  // broadcast had failed. Step 2 now knows the answer first. It also means a
+  // probe that cannot be answered returns before the F3 page walk runs.
   let resendAudienceId = broadcast.resendAudienceId ?? '';
   // F4 — read from the ROW, not a fresh ''. This was the whole bug: the audience
   // id was inherited from a prior tick and the broadcast id never was, so every
@@ -564,132 +437,365 @@ export async function dispatchScheduledBroadcast(
   let sendAttempted = false;
   /**
    * Set by the probe below when an INHERITED resource was already handed to
-   * `/send` by an earlier tick. Declared out here because Step 4 -- which runs
-   * after the catch -- needs all three to write a truthful record: without them
+   * `/send` by an earlier tick. Declared out here because `advanceToSending`
+   * (Step 4 — reached from TWO places: after the Step-3 catch, and directly
+   * from Step 2's replay-refusal return) needs all three to write a truthful
+   * record: without them
    * its audit payload stamped `actualSendAt = now` for a send that happened up
    * to an hour earlier, and the value was already in hand and discarded.
    */
   let alreadyHandedToSend = false;
   let observedResendStatus: RetrievedBroadcastResource['status'] | null = null;
   let resendSentAt: string | null = null;
-  try {
-    // ---- The probe runs FIRST, before anything else touches Resend --------
-    //
-    // An INHERITED id means a prior tick minted the resource and we do not know
-    // whether its send was accepted. Everything about this file refuses to guess
-    // at Resend's replay semantics -- `Idempotency-Key` is MEASURED inert on
-    // `POST /broadcasts`, and `/send` cannot be probed without sending real mail
-    // -- so ask instead of assuming a 409 will come back.
-    //
-    // **Position is the fix, not just the question.** This sat AFTER
-    // `addContactsToAudience`, and `withRetry` short-circuits a non-retryable
-    // GatewayThrowable immediately -- so a 409 from the first duplicate contact
-    // threw before the probe ever ran.
-    //
-    // **ASSUMED, NOT MEASURED:** that `POST /contacts` answers 409 for a duplicate
-    // address. Every other provider claim on this branch carries a MEASURED date;
-    // this one does not, and it is worth naming because it cuts both ways — if it
-    // were true, the file's own 1-hour FR-021 budget could only ever have fired
-    // ONCE, since the second tick would 409 and go terminal. Prod could not settle
-    // it (checked 2026-09-10: 1 `broadcast_send_started` row in total, 0
-    // `broadcast_dispatch_idempotency_conflict_pre_send`, `broadcasts` empty after
-    // the June wipe). The guard below is keyed off our own write ordering instead,
-    // so nothing here depends on the answer. A tick re-entering after a successful send
-    // therefore re-pushed every contact, took the 409, found `sendAttempted`
-    // false, and terminated the row with the FR-021 email telling the member
-    // their broadcast had FAILED. It had not. Asking first also skips the
-    // re-push entirely, which is ~72 s of a 300 s budget for a 150-member
-    // audience at the measured 2.08 req/s.
-    if (inheritedBroadcastId !== '') {
-      const probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
-      if (probe.kind === 'present') {
-        observedResendStatus = probe.resource.status;
-        // POSITIVE, and that is the whole lesson of this gate's first version. It
-        // was `status !== 'draft'`, a negative test over a provider string that
-        // `normaliseStatus` used to close by fabricating `'queued'` -- so
-        // `'cancelled'` and every status this build had never seen read as
-        // "already sent", the send was SKIPPED, the row still advanced to
-        // `sending`, and `reconcile-stuck-sending` later stamped `sent` and burned
-        // the member's annual quota for mail that never went out.
-        if (
-          probe.resource.status === 'queued' ||
-          probe.resource.status === 'sending' ||
-          probe.resource.status === 'sent'
-        ) {
-          alreadyHandedToSend = true;
-          // Carried into Step 4's audit row. `null` for `queued`/`sending` is the
-          // honest answer -- "accepted, not yet reported sent" -- and Step 4 must
-          // then omit `delaySeconds` rather than compute one from `now`.
-          resendSentAt = probe.resource.sentAt;
-          logger.warn(
+  // ---- The probe runs FIRST, before Step 2 and before anything touches Resend
+  //
+  // An INHERITED id means a prior tick minted the resource and we do not know
+  // whether its send was accepted. Everything about this file refuses to guess
+  // at Resend's replay semantics -- `Idempotency-Key` is MEASURED inert on
+  // `POST /broadcasts`, and `/send` cannot be probed without sending real mail
+  // -- so ask instead of assuming a 409 will come back.
+  //
+  // **Position is the fix, not just the question.** This sat AFTER
+  // `addContactsToAudience`, and `withRetry` short-circuits a non-retryable
+  // GatewayThrowable immediately -- so a 409 from the first duplicate contact
+  // threw before the probe ever ran.
+  //
+  // **ASSUMED, NOT MEASURED:** that `POST /contacts` answers 409 for a duplicate
+  // address. Every other provider claim on this branch carries a MEASURED date;
+  // this one does not, and it is worth naming because it cuts both ways — if it
+  // were true, the file's own 1-hour FR-021 budget could only ever have fired
+  // ONCE, since the second tick would 409 and go terminal. Prod could not settle
+  // it (checked 2026-09-10: 1 `broadcast_send_started` row in total, 0
+  // `broadcast_dispatch_idempotency_conflict_pre_send`, `broadcasts` empty after
+  // the June wipe). The guard below is keyed off our own write ordering instead,
+  // so nothing here depends on the answer. A tick re-entering after a successful send
+  // therefore re-pushed every contact, took the 409, found `sendAttempted`
+  // false, and terminated the row with the FR-021 email telling the member
+  // their broadcast had FAILED. It had not. Asking first also skips the
+  // re-push entirely, which is ~72 s of a 300 s budget for a 150-member
+  // audience at the measured 2.08 req/s.
+  if (inheritedBroadcastId !== '') {
+    let probe: RetrieveBroadcastOutcome;
+    try {
+      probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
+    } catch (e) {
+      // The same rules as every other gateway throw — including the FR-021
+      // budget for a retryable one. This is not the Step-3 try, so it cannot
+      // borrow that catch; it borrows the function the catch calls.
+      return await settleGatewayThrow(deps, input, broadcast, now, e, classifyThrown(e));
+    }
+    if (probe.kind === 'present') {
+      observedResendStatus = probe.resource.status;
+      // POSITIVE, and that is the whole lesson of this gate's first version. It
+      // was `status !== 'draft'`, a negative test over a provider string that
+      // `normaliseStatus` used to close by fabricating `'queued'` -- so
+      // `'cancelled'` and every status this build had never seen read as
+      // "already sent", the send was SKIPPED, the row still advanced to
+      // `sending`, and `reconcile-stuck-sending` later stamped `sent` and burned
+      // the member's annual quota for mail that never went out.
+      if (
+        probe.resource.status === 'queued' ||
+        probe.resource.status === 'sending' ||
+        probe.resource.status === 'sent'
+      ) {
+        alreadyHandedToSend = true;
+        // Carried into Step 4's audit row. `null` for `queued`/`sending` is the
+        // honest answer -- "accepted, not yet reported sent" -- and Step 4 must
+        // then omit `delaySeconds` rather than compute one from `now`.
+        resendSentAt = probe.resource.sentAt;
+        logger.warn(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            observedResendStatus: probe.resource.status,
+          },
+          'broadcasts.dispatch.inherited_broadcast_already_handed_to_send',
+        );
+      } else if (probe.resource.status === 'unknown') {
+        // FAIL CLOSED. Re-sending on a status we cannot interpret risks a second
+        // delivery to the whole audience, and skipping the send risks recording a
+        // dispatch that never happened -- and BOTH directions are unmeasured.
+        // Refusing keeps the row `approved` and fires the route's counter with
+        // `phase: 'inherited_status'`, which ALARMS (not pages) at ≥15 min
+        // sustained; `observability.md` § 22.3 and `broadcast-audience-build.md`
+        // § C step 1 route that phase to a human, not to the F3 triage tree.
+        //
+        // **NOT bounded by FR-021, on purpose.** The budget lives in
+        // `applyRetryBudget` and is applied to gateway THROWS; this is a
+        // deliberate refusal, and a clock on it would turn "we do not know
+        // whether this was sent" into "it failed, member told" after an hour —
+        // the guess the refusal exists to avoid. If Resend renamed a status we
+        // already know, every inherited-id tick would refuse every 5 minutes
+        // until someone acts; `broadcasts_approved_overdue_count` is what
+        // eventually notices. Recovery is either adding the status to
+        // `normaliseStatus` and deploying, or deleting the resource at Resend so
+        // the probe answers `not_found`.
+        //
+        // Still the right trade: a stuck broadcast is recoverable by a human; a
+        // duplicate send to 150 real members is not.
+        logger.error(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            // The adapter logs the RAW status on its own line but carries no
+            // broadcast id; this line carries the ids but not the raw value.
+            // Neither is joinable alone, so name what we mapped it to.
+            observedResendStatus: probe.resource.status,
+            severity: 'critical',
+          },
+          'broadcasts.dispatch.inherited_resource_unrecognised_status',
+        );
+        return err({
+          kind: 'dispatch.server_error',
+          message: 'inherited_resource_unrecognised_status',
+          errClass: 'gate',
+          phase: 'inherited_status',
+        });
+      } else {
+        // `'draft'` (never sent -- the case this whole gate exists for) and
+        // `'cancelled'`. Both proceed to the send, where a genuine refusal
+        // reaches the permanent / `resource_missing` arms and is reported as
+        // what it is. Logged HERE because the fall-through is a decision, and
+        // the only other signal for `cancelled` is the absence of one.
+        logger.warn(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            observedResendStatus: probe.resource.status,
+          },
+          'broadcasts.dispatch.inherited_broadcast_send_attempted',
+        );
+      }
+    }
+    // `not_found` deliberately falls through: the send 404s into the
+    // `resource_missing` arm, which exists for exactly that.
+  }
+
+  // Step 2: re-resolve recipients (segment may have changed since submit)
+  // Review 2026-09-07 round 2 (C1/C2) — a tier row with no codes is refused
+  // at the boundary, TERMINALLY. It used to reach the resolver as
+  // `{ tier, [] }`: the primary_only read then addressed every active member,
+  // and the all_contacts read's throw was retried every tick forever as a
+  // "transient" `dispatch.server_error`. It is neither: it is a data defect,
+  // so the broadcast fails with an honest reason and the member is told.
+  const segmentResult = recipientSegmentFromPersisted(broadcast);
+  //
+  // 2026-09-10 follow-up (3): gated on the probe. With an inherited id already
+  // handed to `/send`, a refusal here is about THIS tick's audience, not the
+  // one that was sent; it is recorded below and the row advances on the frozen
+  // estimate. (Unreachable in practice on that path — the segment is immutable
+  // after submit, so a row that reached `/send` had a well-formed one — but the
+  // gate is uniform with the two refusals below rather than special-cased.)
+  if (!segmentResult.ok && !alreadyHandedToSend) {
+    await failDispatchAndAudit(
+      deps,
+      input,
+      now,
+      'malformed_segment',
+      'broadcast_failed_to_dispatch',
+      {
+        broadcastId: input.broadcastId,
+        reason: 'malformed_segment',
+        detail: segmentResult.error.reason,
+        segmentType: segmentResult.error.segmentType,
+        failedAt: now.toISOString(),
+      },
+      'malformed_segment',
+      'malformed_segment',
+      broadcast,
+    );
+    return err({ kind: 'broadcast_failed_to_dispatch', reason: 'malformed_segment' });
+  }
+  const requestingMember = broadcast.requestedByMemberId;
+  // 108 PR-C (FR-022): the requesting member's PRIMARY email used to be read
+  // here (W2-05) only to feed the resolver's email-equality self-exclusion.
+  // Self-exclusion is by member id now, so that read — and its throw path —
+  // is gone; the reply-to read at Step 1 is untouched.
+
+  // W2-05, extended for 108 PR-D (review errors MEDIUM-5): the resolver has
+  // bridge reads that throw by design — the suppression anti-join and the
+  // per-contact opt-out filter, both fail-closed. An unhandled throw here
+  // escapes to the cron route and lands in `summary.uncaught_error`, the class
+  // that means "programming bug, page someone". A Neon blip is not that: it is
+  // a typed `dispatch.server_error`, and the next tick retries because the
+  // broadcast is still `approved`.
+  //
+  // `resolvedOrNull` is what Step 3 and Step 4 read. `null` means "refused, on
+  // the replay path" — the ONE combination that does not return from this
+  // block — and it is settled before Step 3 so the rest of the function reads
+  // a non-null audience.
+  let resolvedOrNull: ResolvedAudience | null = null;
+  let replayRefusal: string | null = segmentResult.ok ? null : 'malformed_segment';
+  if (segmentResult.ok) {
+    const segment = segmentResult.value;
+    let resolvedResult: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
+    try {
+      resolvedResult = await resolveSegmentRecipients(
+        {
+          tenant: deps.tenant,
+          membersBridge: deps.membersBridge,
+          eventAttendees: deps.eventAttendees,
+          marketingUnsubscribes: deps.marketingUnsubscribes,
+          audienceMode: deps.audienceMode,
+          audienceCeiling: deps.audienceCeiling,
+        },
+        {
+          segment,
+          phase: 'dispatch',
+          requestingMemberId: requestingMember,
+          customRecipients:
+            broadcast.customRecipientEmails === null
+              ? null
+              : broadcast.customRecipientEmails.map((e) =>
+                  unsafeBrandEmailLower(e.toLowerCase().trim()),
+                ),
+        },
+      );
+    } catch (e) {
+      return err({
+        kind: 'dispatch.server_error',
+        message: e instanceof Error ? e.message : 'unknown error',
+        // Round 4 L3 — `message` is REDACTED in logs (it can carry a Neon error's
+        // bound parameters, i.e. member addresses). The class is safe and is what
+        // separates a DB blip from our own TypeError.
+        errClass: errKind(e),
+        phase: 'resolve',
+      });
+    }
+    // 108 PR-C — the member-leg read failing is typed by the resolver
+    // (research R8). It is the SAME class as the throw above: no transition,
+    // no audit, the broadcast stays `approved` and the next tick retries. It
+    // must never fall through to the branches below, which would mark the
+    // broadcast failed with a fabricated "empty audience" reason.
+    if (!resolvedResult.ok && resolvedResult.error.kind === 'resolve.server_error') {
+      return err({
+        kind: 'dispatch.server_error',
+        message: resolvedResult.error.message,
+        phase: 'resolve',
+      });
+    }
+    if (!resolvedResult.ok) {
+      if (alreadyHandedToSend) {
+        replayRefusal = resolvedResult.error.kind;
+      } else {
+        // Bug #13 fix (2026-07-10): distinguish the TWO terminal resolve
+        // failures. `resolveSegmentRecipients` returns
+        // `broadcast_empty_segment_blocked`, `broadcast_audience_too_large`, or
+        // `resolve.server_error` (handled above). The segment is re-resolved here
+        // because it can change since submit (e.g. membership grew past the
+        // audience ceiling via a bulk import). Hard-coding 'audience_post_suppression_empty' for
+        // EVERY error mislabelled the failure_reason, the audit payload, AND the
+        // AS2 member-notification email as "empty audience" when the true cause was
+        // "too large". Mirror submit-broadcast.ts's switch on error.kind.
+        if (resolvedResult.error.kind === 'broadcast_audience_too_large') {
+          await failDispatchAndAudit(
+            deps,
+            input,
+            now,
+            'audience_too_large',
+            'broadcast_failed_to_dispatch',
             {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-              observedResendStatus: probe.resource.status,
+              broadcastId: input.broadcastId,
+              reason: 'audience_too_large',
+              count: resolvedResult.error.count,
+              cap: resolvedResult.error.cap,
+              failedAt: now.toISOString(),
             },
-            'broadcasts.dispatch.inherited_broadcast_already_handed_to_send',
-          );
-        } else if (probe.resource.status === 'unknown') {
-          // FAIL CLOSED. Re-sending on a status we cannot interpret risks a second
-          // delivery to the whole audience, and skipping the send risks recording a
-          // dispatch that never happened -- and BOTH directions are unmeasured.
-          // Refusing keeps the row `approved` and fires the route's counter, which
-          // ALARMS (not pages) at ≥15 min sustained — `observability.md` grades it
-          // alarm, and routes it to the audience-build runbook, which is a
-          // different subsystem. `errClass: 'gate'` is the only discriminator and
-          // appears in no runbook yet.
-          //
-          // **NOT bounded by FR-021** — the same property the persist-fault arm
-          // below documents: this `return` leaves from inside the `try`, so
-          // `pastBudget` is never evaluated. If Resend renamed a status we already
-          // know, every inherited-id tick would refuse every 5 minutes
-          // indefinitely; `broadcasts_approved_overdue_count` is what eventually
-          // notices. Recovery is either adding the status to `normaliseStatus` and
-          // deploying, or deleting the resource at Resend so the probe answers
-          // `not_found`.
-          //
-          // Still the right trade: a stuck broadcast is recoverable by a human; a
-          // duplicate send to 150 real members is not.
-          logger.error(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-              // The adapter logs the RAW status on its own line but carries no
-              // broadcast id; this line carries the ids but not the raw value.
-              // Neither is joinable alone, so name what we mapped it to.
-              observedResendStatus: probe.resource.status,
-              severity: 'critical',
-            },
-            'broadcasts.dispatch.inherited_resource_unrecognised_status',
+            'audience_too_large',
+            'audience_too_large',
+            broadcast,
           );
           return err({
-            kind: 'dispatch.server_error',
-            message: 'inherited_resource_unrecognised_status',
-            errClass: 'gate',
+            kind: 'broadcast_failed_to_dispatch',
+            reason: 'audience_too_large',
           });
-        } else {
-          // `'draft'` (never sent -- the case this whole gate exists for) and
-          // `'cancelled'`. Both proceed to the send, where a genuine refusal
-          // reaches the permanent / `resource_missing` arms and is reported as
-          // what it is. Logged HERE because the fall-through is a decision, and
-          // the only other signal for `cancelled` is the absence of one.
-          logger.warn(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-              observedResendStatus: probe.resource.status,
-            },
-            'broadcasts.dispatch.inherited_broadcast_send_attempted',
-          );
         }
+        // Empty audience post-suppression — transition to failed_to_dispatch +
+        // emit audit + Slice E member notification.
+        await failDispatchAndAudit(
+          deps,
+          input,
+          now,
+          'audience_post_suppression_empty',
+          'broadcast_failed_to_dispatch',
+          {
+            broadcastId: input.broadcastId,
+            reason: 'audience_post_suppression_empty',
+            failedAt: now.toISOString(),
+          },
+          'audience_post_suppression_empty',
+          'audience_post_suppression_empty',
+          broadcast,
+        );
+        return err({ kind: 'broadcast_audience_post_suppression_empty' });
       }
-      // `not_found` deliberately falls through: the send 404s into the
-      // `resource_missing` arm, which exists for exactly that.
+    } else {
+      resolvedOrNull = resolvedResult.value;
     }
+  }
+  if (resolvedOrNull === null) {
+    // Only reachable with `alreadyHandedToSend`: every refusal without it
+    // returned above. The audience that was SENT is the one the prior tick
+    // pushed; this tick's refusal describes a different audience. Record it,
+    // and advance the row on the frozen estimate so the webhook and the
+    // reconciler can complete a send that has already happened.
+    logger.warn(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        resendBroadcastId,
+        observedResendStatus,
+        refusal: replayRefusal,
+        frozenEstimate: broadcast.estimatedRecipientCount,
+      },
+      'broadcasts.dispatch.replay_resolve_refused',
+    );
+    return await advanceToSending({
+      deps,
+      input,
+      now,
+      broadcast,
+      resendAudienceId,
+      resendBroadcastId,
+      recipientCount: broadcast.estimatedRecipientCount,
+      alreadyHandedToSend,
+      observedResendStatus,
+      resendSentAt,
+    });
+  }
+  const resolved: ResolvedAudience = resolvedOrNull;
 
+  // Step 2b was a hand-off to the batch path when the audience had grown past
+  // what one invocation could serially push. `ca51f59a1` deleted that path, so
+  // the hand-off had nowhere to go: `DEFERRED_TO_BATCH_PATH` had no case in the
+  // cron's switch, fell to `default` -> `unknown_error`, and left the row
+  // `approved` with no claimant. Unreachable only because
+  // `currentAudienceCeiling()` clamps to exactly `DELIVERABLE_RECIPIENTS_PER_TICK`
+  // on this leg, so an over-size audience is already refused upstream as
+  // `broadcast_audience_too_large` — which is the honest answer when there is no
+  // second path to carry it. Removed in 108 Phase 9 review round 1 (S21) rather
+  // than left to re-arm the first time someone raises the ceiling.
+
+  // Step 3: Resend Broadcasts API calls (createAudience + addContacts +
+  // createBroadcast + sendBroadcast). External calls happen OUTSIDE tx.
+  // Empty string sentinel on `resendAudienceId` / `resendBroadcastId` means
+  // "not yet assigned"; the pre-send vs post-send 409 distinction is keyed on
+  // `sendAttempted` since #353, not on the sentinel (both locals are declared
+  // up at Step 1b now, because the probe reads them first).
+  //
+  // **Orphan-audience prevention** (post-staff-review polish 2026-05-01):
+  // If `broadcast.resendAudienceId` is already set, a prior dispatch
+  // attempt's `createAudience` succeeded but a downstream call failed
+  // (retryable). REUSE the existing audience instead of creating a
+  // duplicate orphan. The audience is persisted via `attachAudienceId`
+  // immediately after `createAudience` succeeds (a separate small tx)
+  // so a crash between that and `addContactsToAudience` does not leak.
+  // Audience name remains stable across retries (no timestamp suffix)
+  // for Resend dashboard searchability.
+  try {
     if (resendAudienceId === '') {
       const audienceResult = await deps.broadcastsGateway.createAudience(
         `broadcast-${deps.tenant.slug}-${input.broadcastId}`,
@@ -719,36 +825,36 @@ export async function dispatchScheduledBroadcast(
     // last eligible contact between submit and this tick surfaces HERE, and
     // this branch used to discard `orphans` entirely. Counts by reason only,
     // with the broadcast id (FR-053a) — the per-member audit stays at submit.
-    if (resolvedResult.value.orphans.length > 0) {
+    if (resolved.orphans.length > 0) {
       const byReason: Record<string, number> = {};
-      for (const o of resolvedResult.value.orphans) {
+      for (const o of resolved.orphans) {
         byReason[o.reason] = (byReason[o.reason] ?? 0) + 1;
       }
       logger.info(
         {
           tenantId: deps.tenant.slug,
           broadcastId: input.broadcastId,
-          orphans: resolvedResult.value.orphans.length,
+          orphans: resolved.orphans.length,
           orphansByReason: byReason,
           estimatedAtSubmit: broadcast.estimatedRecipientCount,
-          resolvedAtDispatch: resolvedResult.value.estimatedCount,
+          resolvedAtDispatch: resolved.estimatedCount,
         },
         'broadcasts.dispatch.orphans_at_dispatch',
       );
     }
-    if (resolvedResult.value.droppedByPreference > 0) {
+    if (resolved.droppedByPreference > 0) {
       logger.info(
         {
           tenantId: deps.tenant.slug,
           broadcastId: input.broadcastId,
-          droppedByPreference: resolvedResult.value.droppedByPreference,
-          recipientCount: resolvedResult.value.recipients.length,
+          droppedByPreference: resolved.droppedByPreference,
+          recipientCount: resolved.recipients.length,
         },
         'broadcasts.dispatch.marketing_opt_out_dropped',
       );
     }
 
-    const contacts: ReadonlyArray<AudienceContact> = resolvedResult.value.recipients.map(
+    const contacts: ReadonlyArray<AudienceContact> = resolved.recipients.map(
       (e) => ({ emailLower: e as string }),
     );
     // Skipped when the resource was already handed to `/send`: re-pushing every
@@ -815,22 +921,15 @@ export async function dispatchScheduledBroadcast(
       } catch (persistErr) {
         if (persistErr instanceof BroadcastConcurrentMutationError) {
           // A sibling tick attached first. It owns the row, the audience and the
-          // send. We touch NOTHING — and we leak the resource we just minted,
-          // because the gateway has no `deleteBroadcast` to reclaim it with.
-          // Logged at error rather than info precisely because nothing collects
-          // it: `cleanup-orphaned-audiences` only deletes the audience the row
-          // points at, which is the winner's.
-          logger.error(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              leakedResendBroadcastId: resendBroadcastId,
-              resendAudienceId,
-              observedStatus: persistErr.observedStatus,
-              severity: 'critical',
-            },
-            'broadcasts.dispatch.broadcast_attach_lost_leaked',
-          );
+          // send. We touch nothing of THEIRS — and reclaim the resource we just
+          // minted, which nothing else references: the CAS told us the row
+          // carries a DIFFERENT id, so ours is orphaned by construction.
+          // (2026-09-10 follow-up 2: this used to log "we leak … because the
+          // gateway has no deleteBroadcast" at critical, every tick.)
+          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
+            why: 'attach_lost',
+            observedStatus: persistErr.observedStatus,
+          });
           return err({
             kind: 'broadcast_invalid_state_transition',
             observedStatus: persistErr.observedStatus,
@@ -859,20 +958,13 @@ export async function dispatchScheduledBroadcast(
         // routing it into the DB-fault arm below would page an operator at
         // critical for a row that can never be retried.
         if (persistErr instanceof BroadcastNotFoundError) {
-          // Log for the same reason its CAS sibling twenty lines up does: we minted
-          // a Resend resource seconds ago and cannot attach it, and nothing
-          // collects it — `cleanup-orphaned-audiences` deletes only the audience
-          // the row points at, and the row is gone. Without this line the id
-          // exists in no log, no row and no metric.
-          logger.warn(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              leakedResendBroadcastId: resendBroadcastId,
-              resendAudienceId,
-            },
-            'broadcasts.dispatch.row_vanished_broadcast_leaked',
-          );
+          // The row is gone, so nothing will ever reference the resource we
+          // minted seconds ago: reclaim it. Same call, same grading, as the CAS
+          // sibling above (2026-09-10 follow-up 6 — the two arms used to grade the
+          // same leak critical and warn respectively).
+          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
+            why: 'row_vanished',
+          });
           return err({
             kind: 'broadcast_not_found',
             broadcastId: input.broadcastId as string,
@@ -892,27 +984,24 @@ export async function dispatchScheduledBroadcast(
         // kind carries `errClass` instead and the route already buckets it
         // `retryable` with its own counter.
         //
-        // **NOT bounded by FR-021, and this comment used to claim it was.** The
-        // budget lives in the enclosing `catch`'s retryable branch, and this
-        // `return` leaves from inside the `try`, so `pastBudget` is never
-        // evaluated. A fault that persists — an RLS/permission problem on the
-        // column, not a blip — therefore keeps the row `approved` for ever while
-        // each tick mints a fresh Resend resource and leaks it, because the
-        // port has no `deleteBroadcast`.
+        // **NOT bounded by FR-021, on purpose.** A DB fault is not budgeted on
+        // either leg: round 4 F3 removed exactly that, because a budget measured
+        // from `scheduled_for` killed a row already an hour late on its FIRST
+        // blip. What made unbounded retry costly HERE was that each tick minted
+        // a fresh Resend resource and leaked it — the port had no
+        // `deleteBroadcast`. It does now (2026-09-10 follow-up 2), so the
+        // retry is bounded by `dispatch_resolve_failed.total{phase=
+        // "persist_broadcast_id"}` alarming, not by a clock.
         //
-        // **That is a PORT GAP, not a Resend limitation** — this branch measured
-        // `'draft'` by creating a broadcast and DELETING it against the live
-        // account, and everything leaked here is a draft by definition (minted,
-        // never sent). So the cheap fix is one port method, not lifting the FR-021
-        // budget out of the catch. Correcting my own claim: I asserted three times
-        // today that the resource could not be reclaimed.
-        //
-        // Scale, also corrected: this leaks BROADCASTS, not audiences — the
-        // audience is minted once and inherited — so the 3-audience Free-plan
-        // ceiling is untouched and the real effect is junk drafts in the
-        // dashboard, roughly 288 a day at a 5-minute cadence. The route's counter
-        // alarms within 15 minutes, i.e. about three of them. Deferrable, and
-        // tracked as a follow-up rather than as an unbounded hazard.
+        // **The reclaim reads the row back FIRST.** This throw cannot say whether
+        // the write landed: a commit whose acknowledgement was lost on the pooler
+        // surfaces exactly like one that never reached the server. If the row
+        // now carries our id, deleting the resource would destroy the id the
+        // next tick inherits — it would probe `not_found`, send, 404, and fail
+        // the broadcast terminally for an admin to look at. So: id landed → keep
+        // it (the next tick inherits and sends); id absent → reclaim; read-back
+        // itself failed → keep it, because a junk draft in the dashboard is the
+        // cheaper wrong.
         const persistFailureReason =
           (persistErr as { code?: string } | null)?.code === '23505'
             ? // Needs Resend to reissue an id, so it is the least likely member of
@@ -935,10 +1024,43 @@ export async function dispatchScheduledBroadcast(
           },
           'broadcasts.dispatch.attach_broadcast_id_failed',
         );
+        let idLanded: boolean | null = null;
+        try {
+          const readBack = await deps.broadcastsRepo.findById(
+            deps.tenant.slug,
+            input.broadcastId,
+          );
+          idLanded = readBack?.resendBroadcastId === resendBroadcastId;
+        } catch (readErr) {
+          logger.warn(
+            {
+              err: errKind(readErr),
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+            },
+            'broadcasts.dispatch.persist_read_back_failed_resource_kept',
+          );
+        }
+        if (idLanded === false) {
+          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
+            why: 'persist_failed',
+          });
+        } else if (idLanded === true) {
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+            },
+            'broadcasts.dispatch.persist_ack_lost_id_kept',
+          );
+        }
         return err({
           kind: 'dispatch.server_error',
           message: persistFailureReason,
           errClass: errKind(persistErr),
+          phase: 'persist_broadcast_id',
         });
       }
     }
@@ -950,6 +1072,20 @@ export async function dispatchScheduledBroadcast(
         buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
       );
     }
+    // Follow-up (7) asked for `verifyAudienceOnReplay` HERE too, on the
+    // probe-positive path, and for one commit it ran. It was REFUTED by the
+    // whole-branch review of that commit, and the refutation holds on this
+    // file's own invariant: an inherited id proves the prior tick's push
+    // completed (push precedes `createBroadcast` precedes `attachBroadcastId`,
+    // all in one try — the same fact the contact-push guard above rests on).
+    // So the question the check answers — "did the prior push reach Resend in
+    // full?" — is already answered YES here, structurally, and the only thing
+    // a count comparison can add is a FALSE `broadcast_resend_audience_drift`
+    // row (append-only, pages at § 22.3) when membership changed between the
+    // two ticks. Delivery truth for a sent broadcast is the webhook-fed
+    // `broadcast_deliveries` aggregate, not an audience count. The 409 arm
+    // keeps its check (pre-existing, and that arm can also be reached by a
+    // resource this tick minted).
   } catch (e) {
     // ---- Round 4 L2 — the audience-attach CAS loss, named ------------
     //
@@ -1024,113 +1160,6 @@ export async function dispatchScheduledBroadcast(
 
     const shape = classifyThrown(e);
 
-    // ---- Retryable: row stays 'approved' for next tick ---------------
-    // Slice D (Phase 8 — FR-021 / AS2 1h retry budget): if the broadcast
-    // is past its 1-hour budget from `scheduled_for`, this retryable
-    // failure converts to a TERMINAL `broadcast_failed_to_dispatch` —
-    // we stop attempting + transition + emit AS2 member notification
-    // email. Within budget: original behaviour (row stays 'approved'
-    // for the next 5-min cron tick).
-    if (shape.kind === 'retryable') {
-      const subKind =
-        (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api';
-      const reason = shape.reason ?? 'retryable';
-
-      // Verify-fix R4 (Simplify-#4, 2026-05-02): hoist scheduledFor +
-      // elapsedMs locals so subsequent uses don't need `!` non-null
-      // assertions (previously 4 instances). pastBudget definition
-      // narrows scheduledFor to non-null implicitly, but TS doesn't
-      // propagate that narrowing across the if-block boundary.
-      //
-      // R6 staff-review W-R1 fix — send-now broadcasts (`scheduledFor`
-      // is null because the admin hit "Approve & send now") MUST also
-      // honor the 1h retry budget. The prior code set
-      // `elapsedMs = 0` for null-scheduledFor, making pastBudget
-      // permanently false — a stuck send-now would retry forever.
-      // Fallback epoch order: scheduledFor → approvedAt → createdAt.
-      // approvedAt is the dispatcher-eligibility moment for send-now
-      // (status transitions submitted → approved → sending happen
-      // synchronously in the admin-approve-send-now use-case so the
-      // fallback approximates "time since dispatch attempt began").
-      const scheduledFor = broadcast.scheduledFor;
-      const epochForBudget =
-        scheduledFor ?? broadcast.approvedAt ?? broadcast.createdAt;
-      const elapsedMs = now.getTime() - epochForBudget.getTime();
-      const pastBudget = elapsedMs > RETRY_BUDGET_MS;
-
-      if (pastBudget) {
-        // R6 W-R1 fix — log both the scheduled epoch (if any) and the
-        // budget epoch actually used. For send-now, scheduledFor is
-        // null and the budget anchors on approvedAt (dispatch-eligibility
-        // moment).
-        const scheduledForIso = scheduledFor?.toISOString() ?? null;
-        const epochForBudgetIso = epochForBudget.toISOString();
-        logger.error(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            subKind,
-            reason,
-            scheduledFor: scheduledForIso,
-            epochForBudget: epochForBudgetIso,
-            sendMode: scheduledFor === null ? 'send_now' : 'scheduled',
-            elapsedMs,
-            severity: 'critical',
-          },
-          'broadcasts.dispatch.retry_budget_exhausted',
-        );
-        // E2 closure (verify-fix 2026-05-02) — explicit metric counter
-        // is the alert-pipeline trigger for AS2 "admin alert is raised".
-        // Steady state = 0; any non-zero count in a 15-minute window
-        // pages on-call. See `docs/observability.md` § F7 alerts.
-        broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, subKind);
-        const budgetReason = `retry_budget_exhausted_after_1h:${subKind}:${reason}`;
-        await failDispatchAndAudit(
-          deps,
-          input,
-          now,
-          budgetReason,
-          'broadcast_failed_to_dispatch',
-          {
-            broadcastId: input.broadcastId,
-            reason: budgetReason,
-            subKind,
-            originalReason: reason,
-            scheduledFor: scheduledForIso,
-            elapsedMs,
-            failedAt: now.toISOString(),
-          },
-          'retry_budget_exhausted',
-          // Round 4 L1, the defect this parameter exists for. `budgetReason`
-          // above is `retry_budget_exhausted_after_1h:{subKind}:{reason}` — good
-          // forensics, and nothing in the message files. The member used to read
-          // "a technical problem prevented delivery" for an hour-long provider
-          // outage; they now read the sentence that names it.
-          'retry_budget_exhausted',
-          broadcast,
-        );
-        return err({
-          kind: 'broadcast_failed_to_dispatch',
-          reason: budgetReason,
-        });
-      }
-
-      logger.warn(
-        {
-          tenantId: deps.tenant.slug,
-          broadcastId: input.broadcastId as string,
-          subKind,
-          reason,
-        },
-        'broadcasts.dispatch.gateway_retryable',
-      );
-      return err({
-        kind: 'gateway_retryable',
-        subKind,
-        reason,
-      });
-    }
-
     // ---- Idempotency conflict: success-replay ------------------------
     // Resend already accepted this broadcast on a prior attempt. Treat
     // as success and fall through to attachResendIds + transition.
@@ -1141,18 +1170,20 @@ export async function dispatchScheduledBroadcast(
     // a conflict, since a conflict means someone got further than us. Before F4
     // an inherited id was invisible here and a replay that could have advanced
     // dropped to permanent instead.
-    if (shape.kind === 'idempotency_conflict') {
-      // NO SEND WAS ATTEMPTED this tick, so a 409 cannot be a replay of ours.
-      // Fall through to permanent and let the next cron tick re-resolve.
-      //
-      // The predicate used to be `resendBroadcastId === ''` and this comment used
-      // to say "nobody has reached createBroadcast". Re-anchoring on
-      // `sendAttempted` made the arm reachable with an INHERITED id on the row —
-      // and the audit summary below went on asserting there was none, into a
-      // table with 5-to-10-year retention that renders on the staff audit viewer.
-      // Two reviewers found it on the very path this branch's own new test walks.
-      // Say what the flag means, and carry the id so the row cannot mislead.
-      if (!sendAttempted) {
+    if (shape.kind === 'idempotency_conflict' && sendAttempted) {
+      // A post-send 409: Resend already accepted a prior attempt's send.
+      // Verify the audience for the record, then FALL THROUGH to Step 4 —
+      // exactly as before; only the check moved into a function so the
+      // probe-positive path could run the same one.
+      await verifyAudienceOnReplay(
+        deps,
+        input,
+        resendAudienceId,
+        resendBroadcastId,
+        resolved.estimatedCount,
+      );
+    } else {
+      if (shape.kind === 'idempotency_conflict') {
         logger.error(
           {
             tenantId: deps.tenant.slug,
@@ -1192,322 +1223,61 @@ export async function dispatchScheduledBroadcast(
             'broadcasts.dispatch.idempotency_conflict_pre_send_audit_emit_failed',
           );
         }
-        // Fall through to permanent handler below.
-      } else {
-        // F7.1-IMP5 (round-4 follow-up) — idempotency_conflict post-send
-        // means Resend accepted a prior attempt's `sendBroadcast`.
-        // Recipients DID receive the email IF the prior attempt's
-        // `addContactsToAudience` completed in full. Verify by querying
-        // the audience contact count and comparing against the expected
-        // recipient count; on mismatch, emit
-        // `broadcast_resend_audience_drift` audit so ops can confirm
-        // partial-delivery scope.
-        const expectedCount = resolvedResult.value.estimatedCount;
-        let actualCount: number | null = null;
-        let countCheckFailed = false;
-        // Whether the count Resend gave us was a COMPLETE read. Carried into the
-        // drift row so an append-only number is never mistaken for exact when it
-        // was a lower bound (FINAL round L-1).
-        let countComplete: boolean | null = null;
-        try {
-          // Discriminated union (review TYPES-2): translate to the
-          // legacy `number | null` shape kept by this use-case so the
-          // downstream drift / unverifiable audit branches stay
-          // unchanged. `audience_missing` maps to null = no count
-          // available; `present` maps to the count.
-          const outcome =
-            await deps.broadcastsGateway.getAudienceContactCount(
-              resendAudienceId,
-            );
-          // Round 4 (whole-branch review #2) — the `complete` flag landed on the
-          // import leg only, which is class 3 in a commit written to fix class 3.
-          //
-          // `complete` is Resend's own `has_more`, inverted: false means the
-          // adapter read only PART of the audience. A truncated count can only
-          // UNDERCOUNT, so it is still usable when it EXCEEDS what we expected —
-          // that excess is proven. Below or equal, it proves nothing, and the
-          // drift comparison further down would file a false
-          // `broadcast_resend_audience_drift` row in an append-only table and
-          // page on § 22.3. `null` routes it to the unverifiable branch instead,
-          // which is what "we could not check" already means here.
-          // FINAL round, MEASURED 2026-09-10 — the zero clause is not defensive
-          // padding. `GET /audiences/{id}/contacts` on an audience that does not
-          // exist answers `200 {"object":"list","has_more":false,"data":[]}`, so a
-          // DELETED audience arrives here as `count: 0` with `complete: true` —
-          // the one shape that makes the count authoritative. Without this clause
-          // the comparison below files "expected 150, actual 0" into an
-          // append-only table and pages § 22.3, which reads as "nobody received
-          // the mail" when the truth is "the audience was removed after the send".
-          //
-          // An audience reporting zero contacts moments after we pushed N is far
-          // more likely gone than genuinely empty, and either way it is not a
-          // verified count. It is also why `outcome.kind === 'not_found'` is dead
-          // code on this path: Resend never 404s the list endpoint.
-          const usable =
-            outcome.kind === 'present' &&
-            (outcome.complete || outcome.count > expectedCount) &&
-            !(outcome.count === 0 && expectedCount > 0);
-          actualCount = usable ? outcome.count : null;
-          countComplete = outcome.kind === 'present' ? outcome.complete : null;
-          // `!usable` rather than `present && !usable`: a `not_found` outcome also
-          // means the check did not happen, and it used to fall through to the
-          // plain `idempotency_replay` log with no metric and no row — the exact
-          // "reads as a completed check" outcome the flag below exists to prevent.
-          // Unreachable today (see the measurement above), which is precisely why
-          // it must not be the one arm left silent if Resend ever changes.
-          if (!usable) {
-            // A partial read is not a FAILURE, so it gets no append-only row —
-            // but it must not fall through to the plain `idempotency_replay`
-            // log either, which would read as a completed check. Flagging it
-            // here routes it away from that branch and gives the catalogued
-            // alert (`drift_check_unverifiable > 1 / 1h`, observability § 22.3)
-            // the same data source the throw path already feeds it.
-            countCheckFailed = true;
-            logger.warn(
-              {
-                tenantId: deps.tenant.slug,
-                broadcastId: input.broadcastId as string,
-                resendBroadcastId,
-                expectedRecipientCount: expectedCount,
-                // Optional because the `not_found` arm carries no count. An
-                // operator needs the three cases separable: a truncated page
-                // (pageCount < expected, countComplete false), a vanished or empty
-                // audience (pageCount 0, countComplete true), and no audience at
-                // all (pageCount absent).
-                pageCount: outcome.kind === 'present' ? outcome.count : undefined,
-                countComplete:
-                  outcome.kind === 'present' ? outcome.complete : undefined,
-              },
-              'broadcasts.dispatch.audience_count_incomplete',
-            );
-            broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
-          }
-        } catch (countErr) {
-          // Round-5 R5-S1 — when the count fetch fails on a non-404
-          // (e.g. Resend 5xx, network), we cannot verify drift. Emit a
-          // dedicated forensic audit event so ops sees the
-          // unverifiable-replay condition (it would otherwise be
-          // silently skipped because actualCount stays null).
-          countCheckFailed = true;
-          logger.error(
-            {
-              err: errKind(countErr),
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-              expectedRecipientCount: expectedCount,
-              severity: 'critical',
-            },
-            'broadcasts.dispatch.audience_count_check_failed',
-          );
-          try {
-            await deps.audit.emit(null, {
-              tenantId: deps.tenant.slug,
-              eventType: 'broadcast_resend_drift_check_unverifiable',
-              actorUserId: 'system:cron',
-              summary: `Broadcast ${input.broadcastId} idempotency replay — audience count unverifiable`,
-              payload: {
-                broadcastId: input.broadcastId,
-                resendBroadcastId,
-                resendAudienceId,
-                expectedRecipientCount: expectedCount,
-                // Round 4 (security finding 6) — this is an `audit_log.payload`,
-                // not a pino line, and the distinction is the whole point:
-                // `REDACT_PATHS` is a pino formatter and never touches a DB
-                // write. The row is append-only with 5–10 year retention, is
-                // emitted with `emit(null, …)` so it goes through the global
-                // `db` as `neondb_owner` (BYPASSRLS) and therefore actually
-                // lands, and it is rendered on the staff audit viewer.
-                //
-                // `countErr` comes from `getAudienceContactCount`, so it is a
-                // `NeonDbError` carrying the failed SQL with its bound
-                // parameters — on this module, member addresses — or Resend's
-                // own message. None of that belongs in a record that cannot be
-                // edited or deleted. The class keeps the forensic value: an
-                // operator asking "why was the drift check unverifiable?" needs
-                // DB-vs-provider, not the statement text.
-                errorReason: errKind(countErr),
-              },
-              requestId: null,
-            });
-          } catch (auditErr) {
-            logger.error(
-              {
-                err: errKind(auditErr),
-                tenantId: deps.tenant.slug,
-                broadcastId: input.broadcastId as string,
-              },
-              'broadcasts.dispatch.unverifiable_audit_emit_failed',
-            );
-          }
-          // Round 3 observability G2 — emit metric so the catalogued
-          // alert at observability.md § 22.3 (drift_check_unverifiable
-          // > 1 / 1h → alarm) actually has a data source.
-          broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
-        }
-        if (actualCount !== null && actualCount !== expectedCount) {
-          // Audience drift detected — emit audit + log error so ops
-          // can investigate. We DO advance to 'sending' because Resend
-          // has already accepted the broadcast (idempotency replay);
-          // the drift is a forensic record, not a blocker.
-          try {
-            await deps.audit.emit(null, {
-              tenantId: deps.tenant.slug,
-              eventType: 'broadcast_resend_audience_drift',
-              actorUserId: 'system:cron',
-              summary: `Broadcast ${input.broadcastId} audience drift on idempotency replay (expected ${expectedCount}, actual ${actualCount})`,
-              payload: {
-                broadcastId: input.broadcastId,
-                resendBroadcastId,
-                resendAudienceId,
-                expectedRecipientCount: expectedCount,
-                actualRecipientCount: actualCount,
-                drift: expectedCount - actualCount,
-                // FINAL round L-1. A row can still reach here on a PARTIAL read:
-                // `usable` accepts `complete: false` when the page already exceeds
-                // what we expected, because truncation cannot fake an excess. In
-                // that case `actualRecipientCount` is a LOWER BOUND and `drift` is
-                // a bound too, not a measurement — and this table is append-only,
-                // so an operator sizing a partial-delivery investigation off an
-                // uncorrectable row needs to know which kind of number it is.
-                countComplete,
-              },
-              requestId: null,
-            });
-          } catch (auditErr) {
-            logger.error(
-              {
-                err: errKind(auditErr),
-                tenantId: deps.tenant.slug,
-                broadcastId: input.broadcastId as string,
-              },
-              'broadcasts.dispatch.audience_drift_audit_emit_failed',
-            );
-          }
-          logger.error(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              expectedRecipientCount: expectedCount,
-              actualRecipientCount: actualCount,
-              severity: 'critical',
-            },
-            'broadcasts.dispatch.audience_drift_detected',
-          );
-          // Round 3 observability G2 — emit metric so the catalogued
-          // alert at observability.md § 22.3 (audience_drift_detected
-          // > 0 / 24h → page) actually has a data source.
-          broadcastsMetrics.audienceDriftDetected(deps.tenant.slug);
-        } else if (!countCheckFailed) {
-          logger.warn(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-              expectedRecipientCount: expectedCount,
-              actualRecipientCount: actualCount,
-            },
-            'broadcasts.dispatch.idempotency_replay',
-          );
-        }
-        // Treat as success — INTENTIONAL fall-through to Step 4
-        // (attach + transition). Control flow:
-        //   - `kind === 'idempotency_conflict'` so the next branch
-        //     `if (shape.kind === 'resource_missing')` is skipped.
-        //   - The permanent-handler condition is
-        //     `shape.kind !== 'idempotency_conflict' || !sendAttempted`
-        //     — both clauses are false here (kind matches AND id is set),
-        //     so the permanent handler is intentionally skipped.
-        //   - Execution exits the catch block and reaches Step 4
-        //     (`attachResendIds` + `applyTransition('sending')` + audit).
-        //
-        // **Maintainer note**: if you add a NEW error kind whose handler
-        // sits between this point and the permanent-handler `if`, gate
-        // it on `shape.kind === '<new kind>'` to keep the success-replay
-        // path intact — DO NOT use `else if` chains that could capture
-        // this case by accident.
-        // Verify-fix R3 (Comments-C1, 2026-05-02): replaced numeric line
-        // refs with structural refs since Slice D + E + G1 added ~250
-        // lines mid-file and the original anchors drifted.
       }
-    }
-
-    // ---- Resource missing: 404 from Resend ---------------------------
-    // NOTE: resource_missing emits a different audit event type
-    // (`broadcast_resend_resource_missing`) so the dispatch-failure
-    // notification email is NOT enqueued here — only `broadcast_failed_to_dispatch`
-    // event-type triggers the Slice E email. resource_missing is an
-    // ops-side issue (admin manually deleted Resend resource) requiring
-    // admin action, not member notification.
-    if (shape.kind === 'resource_missing') {
-      await failDispatchAndAudit(
-        deps,
-        input,
-        now,
-        `resend_resource_missing:${shape.resourceType}`,
-        'broadcast_resend_resource_missing',
-        {
-          broadcastId: input.broadcastId,
-          resourceType: shape.resourceType,
-          resourceId: shape.resourceId,
-          failedAt: now.toISOString(),
-        },
-        'resend_resource_missing',
-        // No member email is sent on this arm — the notification is gated on
-        // `eventType === 'broadcast_failed_to_dispatch'` and this one is
-        // `broadcast_resend_resource_missing`, which the docblock describes as
-        // needing an admin to look at the account. The parameter is required
-        // anyway, and an unused value is still not licence to state a wrong
-        // cause: a resource Resend no longer has IS a permanent gateway refusal.
-        'gateway_permanent',
-        broadcast,
-      );
-      return err({
-        kind: 'broadcast_resend_resource_missing',
-        resourceType: shape.resourceType ?? 'broadcast',
-        resourceId: shape.resourceId ?? (input.broadcastId as string),
-      });
-    }
-
-    // ---- Permanent (and idempotency_conflict_pre_send fall-through) --
-    if (shape.kind !== 'idempotency_conflict' || !sendAttempted) {
-      const reason =
-        shape.reason ??
-        (e instanceof Error ? e.message : 'unknown gateway error');
-      await failDispatchAndAudit(
-        deps,
-        input,
-        now,
-        reason,
-        'broadcast_failed_to_dispatch',
-        {
-          broadcastId: input.broadcastId,
-          reason,
-          code: shape.code,
-          failedAt: now.toISOString(),
-        },
-        'permanent_failure',
-        // The token comes from `shape.KIND`, not `shape.reason`.
-        //
-        // A first draft of this line used `shape.reason ?? 'gateway_unknown'`
-        // and a comment calling it "a real token when the classifier supplied
-        // one". `tsc` rejected it, and the classifier says why:
-        // `_classify-thrown.ts:20` types `reason?: string` and `:37` sets it to
-        // `e.message` — it is free text on every path and never a token. (The
-        // typed `reason` on `GatewayFailure` belongs to `build-audience-tick`'s
-        // own wrapper, which MAPS the classifier's output; different value.)
-        //
-        // `kind` is the classification, so mirror it: `permanent` is a refusal
-        // the adapter recognised, everything else reaching this arm — `unknown`,
-        // and the idempotency-conflict fall-through — is honestly unclassified.
-        shape.kind === 'permanent' ? 'gateway_permanent' : 'gateway_unknown',
-        broadcast,
-      );
-      return err({ kind: 'broadcast_failed_to_dispatch', reason });
+      return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
     }
   }
 
-  // Step 4 + 5: attach Resend ids + transition to 'sending' + audit
+  // Step 4 + 5 live in `advanceToSending` below — the replay path that could
+  // not re-resolve (Step 2) reaches it too, which is why it is a function.
+  return await advanceToSending({
+    deps,
+    input,
+    now,
+    broadcast,
+    resendAudienceId,
+    resendBroadcastId,
+    recipientCount: resolved.estimatedCount,
+    alreadyHandedToSend,
+    observedResendStatus,
+    resendSentAt,
+  });
+}
+
+/**
+ * Step 4 + 5: attach Resend ids + transition to `sending` + audit. Extracted
+ * on 2026-09-10 (follow-up 3) because a SECOND caller appeared: the replay path
+ * whose re-resolve was refused. Everything below is the body that used to sit
+ * at the end of `dispatchScheduledBroadcast`, with `recipientCount` in place of
+ * the resolved count, because on that second path there is no resolved count
+ * and the row's frozen estimate is what gets written.
+ */
+async function advanceToSending(ctx: {
+  readonly deps: DispatchScheduledBroadcastDeps;
+  readonly input: DispatchScheduledBroadcastInput;
+  readonly now: Date;
+  readonly broadcast: Broadcast;
+  readonly resendAudienceId: string;
+  readonly resendBroadcastId: string;
+  readonly recipientCount: number;
+  readonly alreadyHandedToSend: boolean;
+  readonly observedResendStatus: RetrievedBroadcastResource['status'] | null;
+  readonly resendSentAt: string | null;
+}): Promise<
+  Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>
+> {
+  const {
+    deps,
+    input,
+    now,
+    broadcast,
+    resendAudienceId,
+    resendBroadcastId,
+    recipientCount,
+    alreadyHandedToSend,
+    observedResendStatus,
+    resendSentAt,
+  } = ctx;
   try {
     const sentRow = await deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.attachResendIds(
@@ -1538,8 +1308,15 @@ export async function dispatchScheduledBroadcast(
         input.broadcastId,
         'sending',
         {
+          // On a REPLAY this is later than the provider's `sent_at` — the mail
+          // went out on an earlier tick, this is when the row's status caught
+          // up. `sent_at < sending_started_at` is therefore possible on such a
+          // row and is the truth, not a defect (reliability review L-2,
+          // 2026-09-10); the `broadcast_send_started` payload below says which
+          // rows are replays (`handedToSendOnPriorTick`). No CHECK constraint
+          // orders the two columns, on purpose.
           sendingStartedAt: now,
-          estimatedRecipientCount: resolvedResult.value.estimatedCount,
+          estimatedRecipientCount: recipientCount,
         },
         'approved',
       );
@@ -1606,7 +1383,7 @@ export async function dispatchScheduledBroadcast(
           broadcastId: input.broadcastId,
           resendAudienceId,
           resendBroadcastId,
-          recipientCount: resolvedResult.value.estimatedCount,
+          recipientCount: recipientCount,
           // Mirrors the COLUMN this same tx just wrote (`applyTransition` above),
           // and it is deliberately NOT the nullable one. Round 7 fixed
           // `actualSendAt` over-claiming `now` and, by aliasing both names to one
@@ -1657,7 +1434,7 @@ export async function dispatchScheduledBroadcast(
       broadcast: sentRow,
       resendAudienceId,
       resendBroadcastId,
-      recipientCount: resolvedResult.value.estimatedCount,
+      recipientCount: recipientCount,
     });
   } catch (e) {
     // G1 closure (verify-fix 2026-05-02) — concurrent worker won the
@@ -1715,7 +1492,7 @@ export async function dispatchScheduledBroadcast(
     //
     // Round 4 L6 — this arm WAS dead code until the commit that wrote this
     // comment. R2-1 added it citing `attachAudienceId`, which is called in a
-    // different try block (`:524`, catch `:608`); nothing inside THIS try threw
+    // different try block (Step 3's, with its own catch); nothing inside THIS try threw
     // `BroadcastNotFoundError`, because `attachResendIds` still threw a bare
     // `Error` and landed in `db_write_after_resend_success` instead. Making
     // `attachResendIds` use `throwConcurrentMutation` (round 4 F2) is what
@@ -1782,4 +1559,521 @@ export async function dispatchScheduledBroadcast(
   }
 }
 
+/**
+ * FR-021 / AS2 — the 1-hour retry budget for a RETRYABLE gateway throw, in one
+ * place. 2026-09-10 follow-up (4): the budget lived inline in the Step-3 catch,
+ * and when the inherited-id probe moved out of that try (follow-up 3) it needed
+ * the same rule. Two copies of a budget drift; this is the one.
+ *
+ * Within budget → `gateway_retryable` (row stays `approved`). Past it → terminal
+ * `failed_to_dispatch` with the member told (`retry_budget_exhausted`).
+ *
+ * Deliberately NOT applied to the two `dispatch.server_error` returns that sit
+ * inside the Step-3 try / the probe: the unknown-status refusal (a budget would
+ * turn "we do not know whether this was sent" into "it failed" after an hour,
+ * with the member told so — the guess the refusal exists to avoid) and the
+ * persist fault (a DB fault is not budgeted on either leg — round 4 F3 removed
+ * exactly that, because it measured from `scheduled_for` and killed a row an
+ * hour late on its FIRST blip; the leak that made unbounded retry costly there
+ * is closed by `reclaimMintedBroadcast`).
+ */
+async function applyRetryBudget(
+  deps: DispatchScheduledBroadcastDeps,
+  input: DispatchScheduledBroadcastInput,
+  broadcast: Broadcast,
+  now: Date,
+  subKind: 'network' | 'timeout' | 'server_5xx' | 'api',
+  reason: string,
+): Promise<
+  Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>
+> {
+  // ---- Retryable: row stays 'approved' for next tick ---------------
+  // Slice D (Phase 8 — FR-021 / AS2 1h retry budget): if the broadcast
+  // is past its 1-hour budget from `scheduled_for`, this retryable
+  // failure converts to a TERMINAL `broadcast_failed_to_dispatch` —
+  // we stop attempting + transition + emit AS2 member notification
+  // email. Within budget: original behaviour (row stays 'approved'
+  // for the next 5-min cron tick).
+  // Verify-fix R4 (Simplify-#4, 2026-05-02): hoist scheduledFor +
+  // elapsedMs locals so subsequent uses don't need `!` non-null
+  // assertions (previously 4 instances). pastBudget definition
+  // narrows scheduledFor to non-null implicitly, but TS doesn't
+  // propagate that narrowing across the if-block boundary.
+  //
+  // R6 staff-review W-R1 fix — send-now broadcasts (`scheduledFor`
+  // is null because the admin hit "Approve & send now") MUST also
+  // honor the 1h retry budget. The prior code set
+  // `elapsedMs = 0` for null-scheduledFor, making pastBudget
+  // permanently false — a stuck send-now would retry forever.
+  // Fallback epoch order: scheduledFor → approvedAt → createdAt.
+  // approvedAt is the dispatcher-eligibility moment for send-now
+  // (status transitions submitted → approved → sending happen
+  // synchronously in the admin-approve-send-now use-case so the
+  // fallback approximates "time since dispatch attempt began").
+  const scheduledFor = broadcast.scheduledFor;
+  const epochForBudget =
+    scheduledFor ?? broadcast.approvedAt ?? broadcast.createdAt;
+  const elapsedMs = now.getTime() - epochForBudget.getTime();
+  const pastBudget = elapsedMs > RETRY_BUDGET_MS;
 
+  if (pastBudget) {
+    // R6 W-R1 fix — log both the scheduled epoch (if any) and the
+    // budget epoch actually used. For send-now, scheduledFor is
+    // null and the budget anchors on approvedAt (dispatch-eligibility
+    // moment).
+    const scheduledForIso = scheduledFor?.toISOString() ?? null;
+    const epochForBudgetIso = epochForBudget.toISOString();
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        subKind,
+        reason,
+        scheduledFor: scheduledForIso,
+        epochForBudget: epochForBudgetIso,
+        sendMode: scheduledFor === null ? 'send_now' : 'scheduled',
+        elapsedMs,
+        severity: 'critical',
+      },
+      'broadcasts.dispatch.retry_budget_exhausted',
+    );
+    // E2 closure (verify-fix 2026-05-02) — explicit metric counter
+    // is the alert-pipeline trigger for AS2 "admin alert is raised".
+    // Steady state = 0; any non-zero count in a 15-minute window
+    // pages on-call. See `docs/observability.md` § F7 alerts.
+    broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, subKind);
+    const budgetReason = `retry_budget_exhausted_after_1h:${subKind}:${reason}`;
+    await failDispatchAndAudit(
+      deps,
+      input,
+      now,
+      budgetReason,
+      'broadcast_failed_to_dispatch',
+      {
+        broadcastId: input.broadcastId,
+        reason: budgetReason,
+        subKind,
+        originalReason: reason,
+        scheduledFor: scheduledForIso,
+        elapsedMs,
+        failedAt: now.toISOString(),
+      },
+      'retry_budget_exhausted',
+      // Round 4 L1, the defect this parameter exists for. `budgetReason`
+      // above is `retry_budget_exhausted_after_1h:{subKind}:{reason}` — good
+      // forensics, and nothing in the message files. The member used to read
+      // "a technical problem prevented delivery" for an hour-long provider
+      // outage; they now read the sentence that names it.
+      'retry_budget_exhausted',
+      broadcast,
+    );
+    return err({
+      kind: 'broadcast_failed_to_dispatch',
+      reason: budgetReason,
+    });
+  }
+
+  logger.warn(
+    {
+      tenantId: deps.tenant.slug,
+      broadcastId: input.broadcastId as string,
+      subKind,
+      reason,
+    },
+    'broadcasts.dispatch.gateway_retryable',
+  );
+  return err({
+    kind: 'gateway_retryable',
+    subKind,
+    reason,
+  });
+}
+
+/**
+ * Where a classified gateway throw goes when it is NOT the audience-attach CAS
+ * loss and NOT a post-send 409 (the two arms the Step-3 catch keeps for itself).
+ * 2026-09-10 follow-ups (3)/(4): the inherited-id probe moved ahead of Step 2
+ * into its own try, and its throws must be settled by the SAME rules as the
+ * rest of the gateway — one reader, as `_classify-thrown.ts` says.
+ */
+async function settleGatewayThrow(
+  deps: DispatchScheduledBroadcastDeps,
+  input: DispatchScheduledBroadcastInput,
+  broadcast: Broadcast,
+  now: Date,
+  e: unknown,
+  shape: ReturnType<typeof classifyThrown>,
+): Promise<
+  Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>
+> {
+  if (shape.kind === 'retryable') {
+    return await applyRetryBudget(
+      deps,
+      input,
+      broadcast,
+      now,
+      (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api',
+      shape.reason ?? 'retryable',
+    );
+  }
+
+  // ---- Resource missing: 404 from Resend ---------------------------
+  // NOTE: resource_missing emits a different audit event type
+  // (`broadcast_resend_resource_missing`) so the dispatch-failure
+  // notification email is NOT enqueued here — only `broadcast_failed_to_dispatch`
+  // event-type triggers the Slice E email. resource_missing is an
+  // ops-side issue (admin manually deleted Resend resource) requiring
+  // admin action, not member notification.
+  if (shape.kind === 'resource_missing') {
+    await failDispatchAndAudit(
+      deps,
+      input,
+      now,
+      `resend_resource_missing:${shape.resourceType}`,
+      'broadcast_resend_resource_missing',
+      {
+        broadcastId: input.broadcastId,
+        resourceType: shape.resourceType,
+        resourceId: shape.resourceId,
+        failedAt: now.toISOString(),
+      },
+      'resend_resource_missing',
+      // No member email is sent on this arm — the notification is gated on
+      // `eventType === 'broadcast_failed_to_dispatch'` and this one is
+      // `broadcast_resend_resource_missing`, which the docblock describes as
+      // needing an admin to look at the account. The parameter is required
+      // anyway, and an unused value is still not licence to state a wrong
+      // cause: a resource Resend no longer has IS a permanent gateway refusal.
+      'gateway_permanent',
+      broadcast,
+    );
+    return err({
+      kind: 'broadcast_resend_resource_missing',
+      resourceType: shape.resourceType ?? 'broadcast',
+      resourceId: shape.resourceId ?? (input.broadcastId as string),
+    });
+  }
+
+
+  // ---- Permanent (and idempotency_conflict_pre_send fall-through) --
+  // Reached for `permanent`, `unknown`, and the pre-send idempotency conflict
+  // (the caller audits that one first, then sends it here).
+    const reason =
+      shape.reason ??
+      (e instanceof Error ? e.message : 'unknown gateway error');
+    await failDispatchAndAudit(
+      deps,
+      input,
+      now,
+      reason,
+      'broadcast_failed_to_dispatch',
+      {
+        broadcastId: input.broadcastId,
+        reason,
+        code: shape.code,
+        failedAt: now.toISOString(),
+      },
+      'permanent_failure',
+      // The token comes from `shape.KIND`, not `shape.reason`.
+      //
+      // A first draft of this line used `shape.reason ?? 'gateway_unknown'`
+      // and a comment calling it "a real token when the classifier supplied
+      // one". `tsc` rejected it, and the classifier says why:
+      // `_classify-thrown.ts:20` types `reason?: string` and `:37` sets it to
+      // `e.message` — it is free text on every path and never a token. (The
+      // typed `reason` on `GatewayFailure` belongs to `build-audience-tick`'s
+      // own wrapper, which MAPS the classifier's output; different value.)
+      //
+      // `kind` is the classification, so mirror it: `permanent` is a refusal
+      // the adapter recognised, everything else reaching this arm — `unknown`,
+      // and the idempotency-conflict fall-through — is honestly unclassified.
+      shape.kind === 'permanent' ? 'gateway_permanent' : 'gateway_unknown',
+      broadcast,
+    );
+    return err({ kind: 'broadcast_failed_to_dispatch', reason });
+}
+
+/**
+ * A prior tick sent this broadcast; did ITS `addContactsToAudience` reach Resend
+ * in full? Count the audience and compare with what we resolved; a shortfall is
+ * filed as `broadcast_resend_audience_drift`, an unreadable count as
+ * `broadcast_resend_drift_check_unverifiable`. Forensic on both — the row still
+ * advances, because Resend already accepted the send.
+ *
+ * 2026-09-10 follow-up (7) asked for this to run on the probe-positive path as
+ * well; it did for one commit and was refuted in review (see the note at the
+ * send block in Step 3): with an inherited id the prior push is proven complete
+ * by write ordering, so on that path the only possible output of this check is
+ * a false drift row for a membership change between ticks. ONE caller, the
+ * 409 arm — extracted anyway, because the catch reads better without 200 lines
+ * of forensics inline. The comparison here is against THIS tick's re-resolve
+ * (the pushed count is not persisted), so the same false-positive exists on the
+ * 409 arm in principle; it is bounded by the 5-minute cadence and pre-dates
+ * this file's restructure.
+ *
+ * Never throws: every provider or DB failure inside is caught and recorded.
+ */
+async function verifyAudienceOnReplay(
+  deps: DispatchScheduledBroadcastDeps,
+  input: DispatchScheduledBroadcastInput,
+  resendAudienceId: string,
+  resendBroadcastId: string,
+  expectedCount: number,
+): Promise<void> {
+  // F7.1-IMP5 (round-4 follow-up) — idempotency_conflict post-send
+  // means Resend accepted a prior attempt's `sendBroadcast`.
+  // Recipients DID receive the email IF the prior attempt's
+  // `addContactsToAudience` completed in full. Verify by querying
+  // the audience contact count and comparing against the expected
+  // recipient count; on mismatch, emit
+  // `broadcast_resend_audience_drift` audit so ops can confirm
+  // partial-delivery scope.
+  let actualCount: number | null = null;
+  let countCheckFailed = false;
+  // Whether the count Resend gave us was a COMPLETE read. Carried into the
+  // drift row so an append-only number is never mistaken for exact when it
+  // was a lower bound (FINAL round L-1).
+  let countComplete: boolean | null = null;
+  try {
+    // `{ count, complete }` — a plain record since 2026-09-10. The
+    // `not_found` arm this used to branch on was dead: the list endpoint
+    // never 404s (MEASURED), so a missing audience arrives as a
+    // verified-complete ZERO, which the zero clause below is for.
+    const outcome =
+      await deps.broadcastsGateway.getAudienceContactCount(
+        resendAudienceId,
+      );
+    // Round 4 (whole-branch review #2) — the `complete` flag landed on the
+    // import leg only, which is class 3 in a commit written to fix class 3.
+    //
+    // `complete` is Resend's own `has_more`, inverted: false means the
+    // adapter read only PART of the audience. A truncated count can only
+    // UNDERCOUNT, so it is still usable when it EXCEEDS what we expected —
+    // that excess is proven. Below or equal, it proves nothing, and the
+    // drift comparison further down would file a false
+    // `broadcast_resend_audience_drift` row in an append-only table and
+    // page on § 22.3. `null` routes it to the unverifiable branch instead,
+    // which is what "we could not check" already means here.
+    // FINAL round, MEASURED 2026-09-10 — the zero clause is not defensive
+    // padding. `GET /audiences/{id}/contacts` on an audience that does not
+    // exist answers `200 {"object":"list","has_more":false,"data":[]}`, so a
+    // DELETED audience arrives here as `count: 0` with `complete: true` —
+    // the one shape that makes the count authoritative. Without this clause
+    // the comparison below files "expected 150, actual 0" into an
+    // append-only table and pages § 22.3, which reads as "nobody received
+    // the mail" when the truth is "the audience was removed after the send".
+    //
+    // An audience reporting zero contacts moments after we pushed N is far
+    // more likely gone than genuinely empty, and either way it is not a
+    // verified count.
+    const usable =
+      (outcome.complete || outcome.count > expectedCount) &&
+      !(outcome.count === 0 && expectedCount > 0);
+    actualCount = usable ? outcome.count : null;
+    countComplete = outcome.complete;
+    if (!usable) {
+      // A partial read is not a FAILURE, so it gets no append-only row —
+      // but it must not fall through to the plain `idempotency_replay`
+      // log either, which would read as a completed check. Flagging it
+      // here routes it away from that branch and gives the catalogued
+      // alert (`drift_check_unverifiable > 1 / 1h`, observability § 22.3)
+      // the same data source the throw path already feeds it.
+      countCheckFailed = true;
+      logger.warn(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+          resendBroadcastId,
+          expectedRecipientCount: expectedCount,
+          // An operator needs the two cases separable: a truncated page
+          // (pageCount < expected, countComplete false) and a vanished or
+          // empty audience (pageCount 0, countComplete true). "No audience
+          // at all" is not a third case — it is the second one, by
+          // measurement.
+          pageCount: outcome.count,
+          countComplete: outcome.complete,
+        },
+        'broadcasts.dispatch.audience_count_incomplete',
+      );
+      broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
+    }
+  } catch (countErr) {
+    // Round-5 R5-S1 — when the count fetch fails on a non-404
+    // (e.g. Resend 5xx, network), we cannot verify drift. Emit a
+    // dedicated forensic audit event so ops sees the
+    // unverifiable-replay condition (it would otherwise be
+    // silently skipped because actualCount stays null).
+    countCheckFailed = true;
+    logger.error(
+      {
+        err: errKind(countErr),
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        resendBroadcastId,
+        expectedRecipientCount: expectedCount,
+        severity: 'critical',
+      },
+      'broadcasts.dispatch.audience_count_check_failed',
+    );
+    try {
+      await deps.audit.emit(null, {
+        tenantId: deps.tenant.slug,
+        eventType: 'broadcast_resend_drift_check_unverifiable',
+        actorUserId: 'system:cron',
+        summary: `Broadcast ${input.broadcastId} idempotency replay — audience count unverifiable`,
+        payload: {
+          broadcastId: input.broadcastId,
+          resendBroadcastId,
+          resendAudienceId,
+          expectedRecipientCount: expectedCount,
+          // Round 4 (security finding 6) — this is an `audit_log.payload`,
+          // not a pino line, and the distinction is the whole point:
+          // `REDACT_PATHS` is a pino formatter and never touches a DB
+          // write. The row is append-only with 5–10 year retention, is
+          // emitted with `emit(null, …)` so it goes through the global
+          // `db` as `neondb_owner` (BYPASSRLS) and therefore actually
+          // lands, and it is rendered on the staff audit viewer.
+          //
+          // `countErr` comes from `getAudienceContactCount`, so it is a
+          // `NeonDbError` carrying the failed SQL with its bound
+          // parameters — on this module, member addresses — or Resend's
+          // own message. None of that belongs in a record that cannot be
+          // edited or deleted. The class keeps the forensic value: an
+          // operator asking "why was the drift check unverifiable?" needs
+          // DB-vs-provider, not the statement text.
+          errorReason: errKind(countErr),
+        },
+        requestId: null,
+      });
+    } catch (auditErr) {
+      logger.error(
+        {
+          err: errKind(auditErr),
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+        },
+        'broadcasts.dispatch.unverifiable_audit_emit_failed',
+      );
+    }
+    // Round 3 observability G2 — emit metric so the catalogued
+    // alert at observability.md § 22.3 (drift_check_unverifiable
+    // > 1 / 1h → alarm) actually has a data source.
+    broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
+  }
+  if (actualCount !== null && actualCount !== expectedCount) {
+    // Audience drift detected — emit audit + log error so ops
+    // can investigate. We DO advance to 'sending' because Resend
+    // has already accepted the broadcast (idempotency replay);
+    // the drift is a forensic record, not a blocker.
+    try {
+      await deps.audit.emit(null, {
+        tenantId: deps.tenant.slug,
+        eventType: 'broadcast_resend_audience_drift',
+        actorUserId: 'system:cron',
+        summary: `Broadcast ${input.broadcastId} audience drift on idempotency replay (expected ${expectedCount}, actual ${actualCount})`,
+        payload: {
+          broadcastId: input.broadcastId,
+          resendBroadcastId,
+          resendAudienceId,
+          expectedRecipientCount: expectedCount,
+          actualRecipientCount: actualCount,
+          drift: expectedCount - actualCount,
+          // FINAL round L-1. A row can still reach here on a PARTIAL read:
+          // `usable` accepts `complete: false` when the page already exceeds
+          // what we expected, because truncation cannot fake an excess. In
+          // that case `actualRecipientCount` is a LOWER BOUND and `drift` is
+          // a bound too, not a measurement — and this table is append-only,
+          // so an operator sizing a partial-delivery investigation off an
+          // uncorrectable row needs to know which kind of number it is.
+          countComplete,
+        },
+        requestId: null,
+      });
+    } catch (auditErr) {
+      logger.error(
+        {
+          err: errKind(auditErr),
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+        },
+        'broadcasts.dispatch.audience_drift_audit_emit_failed',
+      );
+    }
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        expectedRecipientCount: expectedCount,
+        actualRecipientCount: actualCount,
+        severity: 'critical',
+      },
+      'broadcasts.dispatch.audience_drift_detected',
+    );
+    // Round 3 observability G2 — emit metric so the catalogued
+    // alert at observability.md § 22.3 (audience_drift_detected
+    // > 0 / 24h → page) actually has a data source.
+    broadcastsMetrics.audienceDriftDetected(deps.tenant.slug);
+  } else if (!countCheckFailed) {
+    logger.warn(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        resendBroadcastId,
+        expectedRecipientCount: expectedCount,
+        actualRecipientCount: actualCount,
+      },
+      'broadcasts.dispatch.idempotency_replay',
+    );
+  }
+}
+
+/**
+ * 2026-09-10 follow-ups (2) + (6). Reclaim a broadcast resource THIS TICK minted
+ * and cannot keep. Best-effort, and the grade is decided by whether the reclaim
+ * worked — on every arm alike: reclaimed → info; reclaim failed → error at
+ * critical, because that is the one an operator has to act on (the resource
+ * exists at Resend, no row references it, and no cron will find it —
+ * `cleanup-orphaned-audiences` deletes audiences, not broadcasts).
+ *
+ * The tick's outcome is decided BEFORE this runs; nothing here changes the
+ * return. And per the port docblock: never on an id read from the row.
+ */
+async function reclaimMintedBroadcast(
+  deps: DispatchScheduledBroadcastDeps,
+  input: DispatchScheduledBroadcastInput,
+  resendBroadcastId: string,
+  resendAudienceId: string,
+  ctx: {
+    readonly why: 'attach_lost' | 'row_vanished' | 'persist_failed';
+    readonly observedStatus?: string;
+  },
+): Promise<void> {
+  try {
+    await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
+    logger.info(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        resendBroadcastId,
+        resendAudienceId,
+        why: ctx.why,
+        ...(ctx.observedStatus === undefined ? {} : { observedStatus: ctx.observedStatus }),
+      },
+      'broadcasts.dispatch.minted_broadcast_reclaimed',
+    );
+  } catch (reclaimErr) {
+    logger.error(
+      {
+        err: errKind(reclaimErr),
+        tenantId: deps.tenant.slug,
+        broadcastId: input.broadcastId as string,
+        leakedResendBroadcastId: resendBroadcastId,
+        resendAudienceId,
+        why: ctx.why,
+        ...(ctx.observedStatus === undefined ? {} : { observedStatus: ctx.observedStatus }),
+        severity: 'critical',
+      },
+      'broadcasts.dispatch.minted_broadcast_leaked',
+    );
+  }
+}

@@ -23,10 +23,10 @@ import { logger } from '@/lib/logger';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
+  AudienceContactCount,
   BroadcastsGatewayPort,
   CreateBroadcastInput,
   GatewayRetryableSubKind,
-  GetAudienceContactCountOutcome,
   RetrievedBroadcastResource,
   RetrieveBroadcastOutcome,
   ResendAudienceSummary,
@@ -410,7 +410,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
 
   async getAudienceContactCount(
     audienceId: string,
-  ): Promise<GetAudienceContactCountOutcome> {
+  ): Promise<AudienceContactCount> {
     // IMP-5 — query Resend for the contact count on an audience.
     //
     // Round 4 F1 residual — this said "(paginated). For MVP we list and return
@@ -426,42 +426,41 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // reported as a verified-complete count. Because the field is undeclared, a
     // provider rename cannot fail the build — only this narrowing direction
     // protects the caller, and only the wire-level test protects the narrowing.
-    try {
-      const count = await withRetry(
-        async () => {
-          const sdk = client();
-          const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
-            data: ReadonlyArray<unknown>;
-            has_more?: boolean;
-          }>;
-          if (result.error) {
-            throw classifyResendError(
-              result.error ?? undefined,
-              'audience',
-              audienceId,
-            );
-          }
-          return {
-            // BOTH levels need `?.`: with only the outer one a payload-less 200
-            // threw a TypeError, which `withRetry` retries (it short-circuits
-            // only a `GatewayThrowable`) for 31 s and rethrows as a transport
-            // timeout.
-            n: result.data?.data?.length ?? 0,
-            // True only on positive evidence — `has_more: true`, an absent field
-            // and a missing payload all mean "unverifiable". Pinned per case in
-            // `resend-audience-contact-count.test.ts`.
-            complete: result.data?.has_more === false,
-          };
-        },
-        { method: 'getAudienceContactCount' },
-      );
-      return { kind: 'present', count: count.n, complete: count.complete };
-    } catch (e) {
-      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') {
-        return { kind: 'not_found' };
-      }
-      throw e;
-    }
+    //
+    // No `resource_missing` → `not_found` mapping any more. This endpoint does
+    // not 404 a missing audience (MEASURED 2026-09-10: `200` + empty list), so
+    // the arm that used to sit here had no reachable input, and the callers'
+    // handling of the value it never produced was dead code that read as
+    // covered. If Resend ever changes that, the throw reaches the caller's
+    // unverifiable arm, which is where "we could not count" already goes.
+    return await withRetry(
+      async () => {
+        const sdk = client();
+        const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
+          data: ReadonlyArray<unknown>;
+          has_more?: boolean;
+        }>;
+        if (result.error) {
+          throw classifyResendError(
+            result.error ?? undefined,
+            'audience',
+            audienceId,
+          );
+        }
+        return {
+          // BOTH levels need `?.`: with only the outer one a payload-less 200
+          // threw a TypeError, which `withRetry` retries (it short-circuits
+          // only a `GatewayThrowable`) for 31 s and rethrows as a transport
+          // timeout.
+          count: result.data?.data?.length ?? 0,
+          // True only on positive evidence — `has_more: true`, an absent field
+          // and a missing payload all mean "unverifiable". Pinned per case in
+          // `resend-audience-contact-count.test.ts`.
+          complete: result.data?.has_more === false,
+        };
+      },
+      { method: 'getAudienceContactCount' },
+    );
   },
 
   async retrieveBroadcast(
@@ -641,6 +640,42 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
       },
       { method: 'deleteAudience' },
+    );
+  },
+
+  /**
+   * Reclaim a broadcast resource this tick minted and could not persist. The
+   * exact shape of `deleteAudience` above, for the same reason: 404 and 410
+   * both mean "already gone", which is the goal, so they resolve instead of
+   * falling into `classifyResendError` → `permanent`.
+   *
+   * `DELETE /broadcasts/{id}` was exercised against the live account on
+   * 2026-09-10 (the `'draft'` measurement was taken by creating a broadcast and
+   * deleting it), so unlike the idempotency header this is a call whose happy
+   * path is known to work, not assumed to.
+   */
+  async deleteBroadcast(broadcastId: string): Promise<void> {
+    await withRetry(
+      async () => {
+        const sdk = client();
+        const result = (await sdk.broadcasts.remove(broadcastId)) as ResendSdkResponse<{
+          deleted: boolean;
+          id: string;
+          object: string;
+        }>;
+        if (result.error) {
+          if (
+            result.error.statusCode === 404 ||
+            result.error.statusCode === 410
+          ) {
+            logger.info({ broadcastId }, 'resend.broadcasts.broadcast_already_absent');
+            return; // idempotent: already gone
+          }
+          throw classifyResendError(result.error ?? undefined, 'broadcast', broadcastId);
+        }
+        logger.info({ broadcastId }, 'resend.broadcasts.broadcast_deleted');
+      },
+      { method: 'deleteBroadcast' },
     );
   },
 

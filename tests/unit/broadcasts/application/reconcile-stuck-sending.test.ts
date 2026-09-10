@@ -20,6 +20,7 @@ import { reconcileStuckSending } from '@/modules/broadcasts/application/use-case
 import { asBroadcastId, type Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { asTenantContext } from '@/modules/tenants';
 import { ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 
 import type { AuditEmitInput, AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type {
@@ -96,7 +97,9 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
-    createdAt: FROZEN_NOW,
+    // Two days before `now`, so a provider `sent_at` of 2026-06-14 is INSIDE the
+    // [createdAt, now] sanity range the reconciler enforces (review L-1).
+    createdAt: new Date(FROZEN_NOW.getTime() - 2 * 24 * 60 * 60 * 1000),
     updatedAt: FROZEN_NOW,
     ...overrides,
   };
@@ -177,11 +180,12 @@ function makeGateway(args: {
     async getContactImport() { throw new Error('not used'); },
     async createBroadcast() { throw new Error('not used'); },
     async sendBroadcast() { throw new Error('not used'); },
-    async getAudienceContactCount() { return { kind: 'not_found' as const }; },
+    async getAudienceContactCount() { return { count: 0, complete: false }; },
     async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
     async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience() { throw new Error('not used'); },
+    async deleteBroadcast() { throw new Error('not used'); },
     async listAudiences() { return []; },
     async retrieveBroadcast() {
       retrieveCalls++;
@@ -383,6 +387,161 @@ describe('reconcile-stuck-sending (D1 GREEN)', () => {
     expect(email.memberSends[0]!.payload['delivered']).toBe(5);
     expect(email.memberSends[0]!.payload['bounced']).toBe(1);
     expect(email.memberSends[0]!.payload['viaReconciliation']).toBe(true);
+  });
+
+  /**
+   * 2026-09-10 follow-ups (1) — `markSent` consumed the member's annual quota on
+   * ANY present resource, without reading its status. The round-6 defect on the
+   * dispatch leg reached its harm through exactly this line: a row advanced to
+   * `sending` with nothing sent, and 24 h later this stamped `sent` + burned the
+   * quota + emailed a delivery summary for mail that never went out.
+   *
+   * The runbook (`broadcasts-stuck-sending.md` § Triage step 2) already told an
+   * OPERATOR what each status means — `sent` → complete it; `queued`/`sending`
+   * → the provider's queue is stuck, engage support; `cancelled` → a manual
+   * decision. The code decided `sent` for all of them. Now it decides only what
+   * the runbook decides: `sent` completes; every other status is reported as
+   * UNRESOLVED and left in `sending` for the operator, with no quota touched.
+   *
+   * `sending` is the discriminating case — it went to `markSent` yesterday.
+   */
+  it.each([
+    'draft',
+    'queued',
+    'sending',
+    'cancelled',
+    'unknown',
+  ] as const)('a %s resource after 24 h is UNRESOLVED — no transition, no quota, no email', async (status) => {
+    const repo = makeBroadcastsRepo({ current: baseBroadcast() });
+    const gateway = makeGateway({
+      retrieve: { id: 'rsb-stuck', status, sentAt: null },
+    });
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const result = await reconcileStuckSending(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gateway.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+        notification: {
+          emailTransactional: email.port,
+          membersBridge: makeMembersBridge(),
+          deliveriesRepo: makeDeliveriesRepo(),
+        },
+      },
+      { broadcastId, requestId: 'req-unresolved' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('unresolved_provider_status');
+    if (result.value.kind !== 'unresolved_provider_status') return;
+    // The status is carried out VERBATIM so the cron's log line and the
+    // operator's runbook step read the same word.
+    expect(result.value.observedResendStatus).toBe(status);
+    // Nothing decided: the row stays `sending`, no quota is consumed, and no
+    // append-only row claims otherwise. (Not "reserved": a `sending` row is
+    // in neither quota bucket — whole-branch review 2026-09-10 — so the row is
+    // invisible to the cap until a human completes it; the runbook says so.)
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberSends).toEqual([]);
+  });
+
+  /**
+   * Round 7 M-1 on the dispatch leg, applied here: `markSent` stamped
+   * `sentAt: now`, which on this path is by definition ≥ 24 h after the send.
+   * The provider's `sent_at` was in hand and discarded — into `broadcasts.sent_at`
+   * AND an append-only `broadcast_sent` row.
+   */
+  it('reconciled_sent stamps the PROVIDER send time, not the reconcile time', async () => {
+    const repo = makeBroadcastsRepo({ current: baseBroadcast() });
+    const gateway = makeGateway({
+      retrieve: { id: 'rsb-stuck', status: 'sent', sentAt: '2026-06-14T03:00:00.000Z' },
+    });
+    const audit = makeAudit();
+    const result = await reconcileStuckSending(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gateway.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, requestId: 'req-sent-at' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.kind !== 'reconciled_sent') throw new Error('expected reconciled_sent');
+    expect(result.value.sentAt.toISOString()).toBe('2026-06-14T03:00:00.000Z');
+    const sentTx = repo.transitions.find((t) => t.target === 'sent');
+    expect((sentTx?.fields as { sentAt: Date }).sentAt.toISOString()).toBe('2026-06-14T03:00:00.000Z');
+    const sentAudit = audit.emits.find((e) => e.eventType === 'broadcast_sent');
+    expect(sentAudit?.payload['sentAt']).toBe('2026-06-14T03:00:00.000Z');
+    // The reconcile moment is still recorded, on the key that means it.
+    const completed = audit.emits.find((e) => e.eventType === 'broadcast_send_timeout_completed');
+    expect(completed?.payload['reconciledAt']).toBe(FROZEN_NOW.toISOString());
+  });
+
+  /**
+   * Passes on the pre-branch code too (which always stamped `now`) — it is a
+   * MUTATION GUARD, not a discriminator: remove the `isNaN` check and
+   * `.toISOString()` on an Invalid Date throws inside the tx. Named as such
+   * per reliability review L-4.
+   */
+  it('an unparseable provider sent_at degrades to the reconcile time — it does not throw inside the tx', async () => {
+    const repo = makeBroadcastsRepo({ current: baseBroadcast() });
+    const gateway = makeGateway({
+      retrieve: { id: 'rsb-stuck', status: 'sent', sentAt: '' },
+    });
+    const audit = makeAudit();
+    const result = await reconcileStuckSending(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gateway.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, requestId: 'req-sent-at-bad' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.kind !== 'reconciled_sent') throw new Error('expected reconciled_sent');
+    expect(result.value.sentAt.toISOString()).toBe(FROZEN_NOW.toISOString());
+  });
+
+  /**
+   * Reliability review L-1 — a value that PARSES but cannot be a send time
+   * (before the broadcast existed; in the future) must not reach
+   * `broadcasts.sent_at` or the append-only `broadcast_sent` row.
+   */
+  it.each([
+    ['in the future', '2026-06-16T00:00:00.000Z'],
+    ['before the broadcast existed', '2020-01-01T00:00:00.000Z'],
+  ])('a provider sent_at %s degrades to the reconcile time and is logged', async (_label, providerSentAt) => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const repo = makeBroadcastsRepo({ current: baseBroadcast() });
+    const gateway = makeGateway({
+      retrieve: { id: 'rsb-stuck', status: 'sent', sentAt: providerSentAt },
+    });
+    const audit = makeAudit();
+    const result = await reconcileStuckSending(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gateway.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, requestId: 'req-sent-at-range' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.kind !== 'reconciled_sent') throw new Error('expected reconciled_sent');
+    expect(result.value.sentAt.toISOString()).toBe(FROZEN_NOW.toISOString());
+    const sentAudit = audit.emits.find((e) => e.eventType === 'broadcast_sent');
+    expect(sentAudit?.payload['sentAt']).toBe(FROZEN_NOW.toISOString());
+    expect(warnSpy.mock.calls.map((c) => c[1])).toContain('broadcasts.reconcile.provider_sent_at_out_of_range');
+    warnSpy.mockRestore();
   });
 
   it('concurrent drift out of sending leaves a benign not_stuck_yet, NOT reconcile.server_error (P2 wave-2 #11)', async () => {

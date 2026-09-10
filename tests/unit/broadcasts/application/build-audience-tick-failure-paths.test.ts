@@ -483,7 +483,6 @@ function makeDeps(opts: {
          */
         async getAudienceContactCount() {
           return {
-            kind: 'present' as const,
             count: opts.audienceContactCount ?? RECIPIENTS.length,
             complete: opts.audienceCountComplete ?? true,
           };

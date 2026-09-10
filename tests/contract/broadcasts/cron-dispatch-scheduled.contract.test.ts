@@ -152,7 +152,7 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
       fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
     );
     dispatchScheduledBroadcastMock.mockResolvedValue(
-      err({ kind: 'dispatch.server_error', message: 'recipient resolution unavailable' }),
+      err({ kind: 'dispatch.server_error', message: 'recipient resolution unavailable', phase: 'resolve' }),
     );
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
@@ -173,7 +173,10 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(input).toEqual({ broadcastId: BROADCAST_ID });
     // Review errors HIGH-4 — the alarm for a schedule slipping tick after tick.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledTimes(1);
-    expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant');
+    // 2026-09-10 follow-up (5) — the PHASE label, by value. Without it the
+    // counter said "resolve failed" for a lock fault, a persist fault and the
+    // unknown-status refusal alike.
+    expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant', 'resolve');
   });
 
   /**
@@ -204,6 +207,7 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
         // A realistic Neon message: the bound parameter is a member address.
         message: 'error: relation "contacts" — params: [alice@example.com]',
         errClass: 'NeonDbError',
+        phase: 'resolve',
       }),
     );
 
@@ -213,6 +217,7 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     const body = (await res.json()) as Record<string, number>;
     expect(body['retryable']).toBe(1);
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledTimes(1);
+    expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant', 'resolve');
 
     const warn = vi
       .mocked(logger.warn)

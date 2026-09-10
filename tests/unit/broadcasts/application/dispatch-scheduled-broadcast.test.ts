@@ -144,6 +144,13 @@ interface RepoOpts {
   /** A NON-CAS failure (Neon blip, pooler drop). Mail has not gone out yet. */
   readonly attachBroadcastIdThrows?: Error;
   /**
+   * 2026-09-10 follow-ups (2) — what `findById` answers when the persist arm
+   * reads the row back to learn whether its write landed before deciding to
+   * reclaim the resource. Default `null` (the fixture's historical answer).
+   */
+  readonly findByIdReturns?: Broadcast | null;
+  readonly findByIdThrows?: Error;
+  /**
    * Round 4 F2 / L6 — the erasure cascade removed the row between the claim
    * query and the post-send write. `attachResendIds` threw a BARE Error until
    * this round, so the `BroadcastNotFoundError` arm that handles it was
@@ -185,7 +192,8 @@ function makeRepo(opts: RepoOpts): {
         throw new Error('not used in dispatch-scheduled-broadcast fixture');
       },
       async findById() {
-        return null;
+        if (opts.findByIdThrows !== undefined) throw opts.findByIdThrows;
+        return opts.findByIdReturns ?? null;
       },
       async findByIdInTx() {
         return opts.broadcast ?? null;
@@ -331,6 +339,12 @@ interface GatewayOpts {
   readonly throwOnRetrieveBroadcast?: ThrowSpec;
   /** Round 4 L2 — the reclaim itself fails, which is the leak an operator must see. */
   readonly throwOnDeleteAudience?: boolean;
+  /**
+   * 2026-09-10 follow-ups (2) — the broadcast-resource reclaim fails. Same
+   * shape as the audience one: the tick's outcome is decided before the
+   * reclaim, so a throw here changes the LOG, never the return.
+   */
+  readonly throwOnDeleteBroadcast?: boolean;
 }
 
 function makeGateway(opts: GatewayOpts = {}): {
@@ -341,8 +355,11 @@ function makeGateway(opts: GatewayOpts = {}): {
   sendCalls: Array<{ broadcastId: string; idempotencyKey: string }>;
   /** Round 4 L2 — proves the CAS loser actually reclaims the audience it minted. */
   deleteAudienceCalls: Array<string>;
+  /** 2026-09-10 (2) — proves the three leak arms reclaim the BROADCAST they minted. */
+  deleteBroadcastCalls: Array<string>;
 } {
   const deleteAudienceCalls: Array<string> = [];
+  const deleteBroadcastCalls: Array<string> = [];
   const audienceCalls: Array<string> = [];
   const contactsCalls: Array<{
     audienceId: string;
@@ -363,6 +380,7 @@ function makeGateway(opts: GatewayOpts = {}): {
     createCalls,
     sendCalls,
     deleteAudienceCalls,
+    deleteBroadcastCalls,
     port: {
       async createAudience(name) {
         audienceCalls.push(name);
@@ -411,7 +429,6 @@ function makeGateway(opts: GatewayOpts = {}): {
           maybeThrow(opts.throwOnGetAudienceContactCount);
         }
         return {
-          kind: 'present' as const,
           count: opts.audienceContactCount ?? 2,
           // Round 4 F1 residual — `complete` is Resend's `has_more`, inverted.
           complete: opts.audienceCountComplete ?? true,
@@ -424,6 +441,12 @@ function makeGateway(opts: GatewayOpts = {}): {
         deleteAudienceCalls.push(audienceId);
         if (opts.throwOnDeleteAudience === true) {
           throw new Error('Resend 500 on DELETE /audiences');
+        }
+      },
+      async deleteBroadcast(broadcastId: string) {
+        deleteBroadcastCalls.push(broadcastId);
+        if (opts.throwOnDeleteBroadcast === true) {
+          throw new Error('Resend 500 on DELETE /broadcasts');
         }
       },
       async listAudiences() { return []; },
@@ -2238,10 +2261,11 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     // this module calls normal and self-healing.
     expect(result.error.kind).toBe('broadcast_not_found');
     expect(gw.sendCalls).toEqual([]);
-    // The leaked resource has to appear somewhere. Without this line its id
-    // exists in no log, no row and no metric.
-    const warned = warnSpy.mock.calls.map((c) => c[1]);
-    expect(warned).toContain('broadcasts.dispatch.row_vanished_broadcast_leaked');
+    // 2026-09-10 follow-up (2): the resource no longer has to "appear
+    // somewhere" — it is RECLAIMED, and the assertion moved from the log line
+    // to the delete call. (The leak line this used to look for is gone with
+    // the leak.)
+    expect(gw.deleteBroadcastCalls).toEqual(['bcast-fake-1']);
     warnSpy.mockRestore();
   });
 
@@ -2712,6 +2736,721 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(repo.transitions.map((t) => t.status)).not.toContain('sending');
   });
 
+  // ---- 2026-09-10 follow-ups (3) (4) (7): the probe moves ahead of Step 2 ----
+
+  /**
+   * (3) Step 2's TERMINAL refusals ran before the probe. A row that carried an
+   * inherited id already handed to `/send` — the mail is out, only the status
+   * flip failed — could therefore be marked `failed_to_dispatch` by THIS tick's
+   * re-resolve (a bulk import pushed the segment past the ceiling in the five
+   * minutes since), which releases the quota slot and emails the member that a
+   * delivered broadcast had FAILED. The probe now runs first, and on a positive
+   * answer a refused resolve is recorded, not acted on: the row advances with
+   * the frozen estimate, because the count that was pushed is the one that was
+   * sent, and this tick's count is about a different audience.
+   */
+  it('FOLLOWUP (3) — an inherited id already SENT is not failed by a resolve refused on THIS tick', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        estimatedRecipientCount: 7,
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'sent', retrieveSentAt: '2026-06-15T04:00:00.000Z' });
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com'), recipient('m-r2', 'two@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 1,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // Nothing terminal, nobody told anything went wrong.
+    expect(repo.transitions.map((t) => t.status)).not.toContain('failed_to_dispatch');
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch')).toBeUndefined();
+    expect(email.memberCalls).toEqual([]);
+    // Advanced, with the FROZEN estimate: the resolve was refused, so there is
+    // no count from this tick to write, and the sent count is the pushed one.
+    const sending = repo.transitions.find((t) => t.status === 'sending');
+    expect(sending).toBeDefined();
+    expect((sending?.fields as { estimatedRecipientCount: number }).estimatedRecipientCount).toBe(7);
+    // And still no second send.
+    expect(gw.sendCalls).toEqual([]);
+    expect(gw.contactsCalls).toEqual([]);
+  });
+
+  it('FOLLOWUP (3) — an inherited id already SENT is not failed by a malformed segment either; the resolver is never asked', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        estimatedRecipientCount: 7,
+        segmentType: 'tier',
+        segmentParams: null,
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'sent' });
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const segmentRead = vi.spyOn(bridge, 'getMembersBySegment');
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(segmentRead).not.toHaveBeenCalled();
+    expect(repo.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect((repo.transitions[0]?.fields as { estimatedRecipientCount: number }).estimatedRecipientCount).toBe(7);
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_failed_to_dispatch')).toBeUndefined();
+    expect(email.memberCalls).toEqual([]);
+  });
+
+  /**
+   * The reorder itself, pinned: a probe that cannot be answered returns before
+   * the resolver is asked. Before this the probe sat inside Step 3, so the F3
+   * page walk (up to 20,000 contacts) ran first and its result was thrown away
+   * when the probe then failed.
+   */
+  it('FOLLOWUP (3) — the probe runs BEFORE the resolve: a retryable probe throw leaves the resolver uncalled', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        estimatedRecipientCount: 7,
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      throwOnRetrieveBroadcast: { kind: 'retryable', reason: 'resend 503' },
+    });
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const segmentRead = vi.spyOn(bridge, 'getMembersBySegment');
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('gateway_retryable');
+    expect(segmentRead).not.toHaveBeenCalled();
+    expect(repo.transitions).toEqual([]);
+  });
+
+  /**
+   * (4) The FR-021 budget must bound the probe's throws exactly as it bounds
+   * every other gateway throw — the probe is a gateway call, and it moved out
+   * of the try whose catch owned the budget. Past the hour, a retryable probe
+   * failure is terminal, with the member told, not an unbounded retry.
+   */
+  it('FOLLOWUP (4) — a retryable probe throw PAST the FR-021 budget goes terminal through the same helper', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        scheduledFor: new Date(FROZEN_NOW.getTime() - 2 * 60 * 60 * 1000),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      throwOnRetrieveBroadcast: { kind: 'retryable', reason: 'resend 503' },
+    });
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_failed_to_dispatch');
+    if (result.error.kind !== 'broadcast_failed_to_dispatch') return;
+    expect(result.error.reason).toMatch(/^retry_budget_exhausted_after_1h:/);
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(email.memberCalls).toHaveLength(1);
+  });
+
+  /**
+   * (7), REFUTED in the whole-branch review of the commit that implemented it.
+   * The follow-up asked for the 409 arm's audience check on the probe-positive
+   * path too. But an inherited id PROVES the prior tick's push completed (write
+   * ordering: push → createBroadcast → attachBroadcastId in one try), so the
+   * check's question is already answered here and the only thing a count
+   * comparison can add is a FALSE `broadcast_resend_audience_drift` row —
+   * append-only, pages at § 22.3 — for a member who joined between the two
+   * ticks. This case is the one that implemented it, inverted: the same
+   * mismatch, and NO drift row.
+   */
+  it('FOLLOWUP (7) REFUTED — the probe-positive path does NOT file drift against the re-resolve of this tick', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        estimatedRecipientCount: 7,
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      retrieveStatus: 'sent',
+      audienceContactCount: 1,
+      audienceCountComplete: true,
+    });
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com'), recipient('m-r2', 'two@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // Audience count 1, re-resolve 2 — on the 409 arm that is drift. Here it is
+    // a member who joined after the send, and nothing may be filed.
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_resend_audience_drift')).toBeUndefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_resend_drift_check_unverifiable'),
+    ).toBeUndefined();
+    // The replay itself still advances and is recorded as one.
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    expect((started?.payload as { handedToSendOnPriorTick?: boolean }).handedToSendOnPriorTick).toBe(true);
+  });
+
+  // ---- 2026-09-10 follow-ups (2) (6): the three leak arms reclaim, symmetrically ----
+
+  it('FOLLOWUP (2) — a broadcast-id CAS loss reclaims the resource THIS tick minted, and only that', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdLosesCasWithStatus: 'approved',
+    });
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_invalid_state_transition');
+    // The resource this tick minted is gone; the audience the winner is sending
+    // into is not touched (the #353 BLOCKER, still pinned).
+    expect(gw.deleteBroadcastCalls).toEqual(['bcast-fake-1']);
+    expect(gw.deleteAudienceCalls).toEqual([]);
+  });
+
+  it('FOLLOWUP (2)+(6) — a vanished row reclaims the resource this tick minted, and a SUCCESSFUL reclaim is graded info', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdThrows: new BroadcastNotFoundError(
+        'test-tenant' as unknown as ConstructorParameters<typeof BroadcastNotFoundError>[0],
+        broadcastId,
+      ),
+    });
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_not_found');
+    expect(gw.deleteBroadcastCalls).toEqual(['bcast-fake-1']);
+    // (6) the other half of the symmetry: a reclaim that WORKED is info, and
+    // nothing is logged as leaked (reliability review L-3 — the sibling test
+    // asserted only the failure half).
+    expect(infoSpy.mock.calls.map((c) => c[1])).toContain('broadcasts.dispatch.minted_broadcast_reclaimed');
+    expect(errorSpy.mock.calls.map((c) => c[1])).not.toContain('broadcasts.dispatch.minted_broadcast_leaked');
+    infoSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  /**
+   * The persist-fault arm cannot know from the error alone whether its write
+   * landed: a commit whose acknowledgement was lost on the pooler surfaces as
+   * the same throw as one that never reached the server. Deleting the resource
+   * in the first case destroys the id the row now carries — the next tick would
+   * inherit it, probe `not_found`, send, 404, and fail the broadcast terminally
+   * for the admin to look at. So the arm READS BACK before it reclaims.
+   */
+  it('FOLLOWUP (2) — a persist fault whose write did NOT land reclaims the resource and stays retryable', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const base = { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' };
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: base,
+      attachBroadcastIdThrows: new Error('neon: connection terminated unexpectedly'),
+      findByIdReturns: { ...base, resendBroadcastId: null },
+    });
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('dispatch.server_error');
+    if (result.error.kind !== 'dispatch.server_error') return;
+    expect(result.error.phase).toBe('persist_broadcast_id');
+    expect(gw.deleteBroadcastCalls).toEqual(['bcast-fake-1']);
+    expect(gw.sendCalls).toEqual([]);
+    expect(repo.transitions).toEqual([]);
+  });
+
+  it('FOLLOWUP (2) — a persist fault whose write DID land (ack lost) keeps the resource: the next tick inherits it', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const base = { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' };
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: base,
+      attachBroadcastIdThrows: new Error('neon: connection terminated unexpectedly'),
+      findByIdReturns: { ...base, resendBroadcastId: 'bcast-fake-1' },
+    });
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('dispatch.server_error');
+    // NOT reclaimed: the row points at it.
+    expect(gw.deleteBroadcastCalls).toEqual([]);
+    expect(gw.sendCalls).toEqual([]);
+  });
+
+  it('FOLLOWUP (2) — when the read-back itself fails, the resource is LEFT (a leak beats destroying a live id)', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdThrows: new Error('neon: connection terminated unexpectedly'),
+      findByIdThrows: new Error('neon: still down'),
+    });
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('dispatch.server_error');
+    expect(gw.deleteBroadcastCalls).toEqual([]);
+  });
+
+  /**
+   * (6) Both leak arms used to grade the SAME leak differently — critical on the
+   * CAS loss, warn on the vanished row. With the reclaim in place the grade is
+   * decided by whether the reclaim WORKED, on every arm alike: reclaimed → info,
+   * reclaim failed → error at critical, because that is the one an operator has
+   * to act on.
+   */
+  it('FOLLOWUP (6) — on the CAS-loss arm a FAILED reclaim is logged at error as the leak, and no reclaimed-info line is written', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdLosesCasWithStatus: 'approved',
+    });
+    const gw = makeGateway({ throwOnDeleteBroadcast: true });
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(gw.deleteBroadcastCalls).toEqual(['bcast-fake-1']);
+    const errored = errorSpy.mock.calls.map((c) => c[1]);
+    expect(errored).toContain('broadcasts.dispatch.minted_broadcast_leaked');
+    const infoed = infoSpy.mock.calls.map((c) => c[1]);
+    expect(infoed).not.toContain('broadcasts.dispatch.minted_broadcast_reclaimed');
+    errorSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+
+  // ---- 2026-09-10 follow-up (5): dispatch.server_error names its PHASE ----
+
+  /**
+   * (5) `broadcasts.dispatch_resolve_failed.total` was incremented for every
+   * `dispatch.server_error` the route saw — a Step-1 lock fault, a resolver
+   * fault, the unknown-status refusal, a persist fault — while its name and its
+   * runbook (§ C: F3 pages / Neon / opt-out lookup) described only the second.
+   * The error kind now carries a closed `phase` and the route labels the
+   * counter with it, so the alarm says which subsystem to open.
+   */
+  it('FOLLOWUP (5) — a lock fault is phase `lock`', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const inner = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+    const repo = {
+      port: {
+        ...inner.port,
+        async withTx() {
+          throw new Error('db down');
+        },
+      } as BroadcastsRepo,
+    };
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== 'dispatch.server_error') throw new Error('expected dispatch.server_error');
+    expect(result.error.phase).toBe('lock');
+  });
+
+  it('FOLLOWUP (5) — a resolver fault is phase `resolve`', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+    const gw = makeGateway();
+    const bridge = {
+      ...makeMembersBridge({
+        recipients: [recipient('m-r1', 'one@example.com')],
+        primaryContact: 'sender@example.com',
+      }),
+      async getMembersBySegment(): Promise<never> {
+        throw new Error('neon connection reset');
+      },
+    };
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== 'dispatch.server_error') throw new Error('expected dispatch.server_error');
+    expect(result.error.phase).toBe('resolve');
+  });
+
+  it('FOLLOWUP (5) — the unknown-status refusal is phase `inherited_status`', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        estimatedRecipientCount: 7,
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'unknown' });
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-r1', 'one@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok || result.error.kind !== 'dispatch.server_error') throw new Error('expected dispatch.server_error');
+    expect(result.error.phase).toBe('inherited_status');
+    expect(result.error.errClass).toBe('gate');
+  });
+
   /**
    * FINAL round 2, finding #4 -- the success-replay arm's premise.
    *
@@ -2842,13 +3581,20 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(JSON.stringify(unverifiableEvent?.payload)).not.toContain('503');
   });
 
-  it('TEST-G3 โ€” getAudienceContactCount returns {kind:"audience_missing"} โ’ drift check skipped (no audit, no crash)', async () => {
-    // Round 3 review TYPES-2: getAudienceContactCount is a discriminated
-    // union {kind:'present',count}|{kind:'audience_missing'}. Lock the
-    // positive `audience_missing` outcome path: caller translates to
-    // `actualCount = null`, drift-check branch is skipped (no
-    // broadcast_resend_audience_drift OR broadcast_resend_drift_check_unverifiable
-    // emitted), broadcast still advances to sending.
+  /**
+   * 2026-09-10 follow-ups (8). This case used to feed `{ kind: 'not_found' }`
+   * into the replay arm and assert that NEITHER drift audit fired — pinning a
+   * branch the provider can never reach (the list endpoint answers a missing
+   * audience with `200` + empty list, MEASURED). The arm is gone from the port.
+   *
+   * What replaces it is the path a 404 WOULD take if Resend ever changed: the
+   * adapter's `resource_missing` throw reaches the replay arm's catch, which is
+   * the unverifiable branch — an audit row + the § 22.3 metric, not silence.
+   * That is the honest successor to the deleted case: the impossible input is
+   * no longer modelled, and the input that could replace it is proven to land
+   * somewhere an operator can see.
+   */
+  it('TEST-G3 — a resource_missing THROW from the count lands in the unverifiable arm, never in silence', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -2864,8 +3610,12 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           reason: 'duplicate idempotency key',
         };
       },
-      async getAudienceContactCount() {
-        return { kind: 'not_found' as const };
+      async getAudienceContactCount(): Promise<{ count: number; complete: boolean }> {
+        throw {
+          kind: 'resource_missing',
+          resourceType: 'audience',
+          resourceId: 'aud-fake-1',
+        };
       },
     };
     const result = await dispatchScheduledBroadcast(
@@ -2891,21 +3641,20 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       },
       baseInput,
     );
+    // The replay still advances — a missing audience after the send is a
+    // forensic fact, not a reason to refuse a broadcast Resend already accepted.
     expect(result.ok).toBe(true);
-    // audience_missing means we cannot verify drift; this matches the
-    // "actualCount === null" branch and SHOULD NOT emit either drift
-    // audit. (The `unverifiable` audit only fires on a thrown error,
-    // not on the discriminated union's missing branch.)
+    // Not drift: no count was obtained, so there is nothing to compare.
     expect(
       audit.emits.find(
         (e) => e.eventType === 'broadcast_resend_audience_drift',
       ),
     ).toBeUndefined();
-    expect(
-      audit.emits.find(
-        (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
-      ),
-    ).toBeUndefined();
+    // Unverifiable: the throw is recorded, with the CLASS of what threw.
+    const unverifiable = audit.emits.find(
+      (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
+    );
+    expect(unverifiable).toBeDefined();
   });
 
   // =====================================================================

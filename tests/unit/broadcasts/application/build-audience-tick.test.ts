@@ -228,7 +228,6 @@ function makeDeps(opts: {
          */
         async getAudienceContactCount() {
           return {
-            kind: 'present' as const,
             count: RECIPIENTS.length,
             // REQUIRED on the port. Omitting it does not fail `tsc` here (the
             // mapped type above keeps every VALUE `unknown`), it silently sends
@@ -487,7 +486,7 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
     expect(rec.importsSubmitted).toEqual([]);
     // FINAL round H-1 — "every clause passes" has to include the audience
     // MEMBERSHIP clause, and for one commit it did not. `complete` became a
-    // required field on `GetAudienceContactCountOutcome`; this harness types every
+    // required field on `AudienceContactCount`; this harness types every
     // port as `unknown` and passes `deps as never`, so `tsc` could not see the
     // stub below still omitting it. `undefined || 3 > 3` is false ⇒ the check was
     // skipped, the unverifiable branch fired, the send went out anyway, and all 12

@@ -313,7 +313,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             case 'dispatch.server_error':
               // Transient: the row stays `approved` and the next tick retries.
               summary.retryable++;
-              broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+              broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug, built.error.phase);
               // Round 4 L4 — this arm had NO log line, only the counter. That
               // is the second half of round-3 finding 3-13, and the round-3
               // ledger recorded 3-13 as fully CLOSED when only its first
@@ -425,11 +425,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // could not build its audience slipped `scheduled_for` forever
             // with nothing to alert on. The counter is the alarm; the row
             // still stays `approved` for a clean next-tick retry.
-            broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+            //
+            // 2026-09-10 follow-up (5): labelled by `phase`, because this arm
+            // fires for four different faults and the counter's runbook
+            // described one of them.
+            broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug, result.error.phase);
             logger.warn(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
+                phase: result.error.phase,
                 // Round 4 L3 — was `reason: result.error.message`, and `reason`
                 // is a REDACT_PATH (`logger.ts:332`), deliberately broad because
                 // free text on this module can carry a Neon error's bound
