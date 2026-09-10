@@ -12,15 +12,23 @@
 import { expect, test } from './fixtures';
 import { wipeE2EMemberBroadcasts } from './helpers/broadcasts-seed';
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// Same reason as broadcast-compose-and-submit.spec.ts (2026-09-07): the primary
+// `e2e-member` carries a LAPSED renewal cycle by the F8 fixture, so the compose
+// page redirects away from the form and every `requireMemberContext` route
+// answers 403 `membership_access_restricted` — which is what every case below
+// hit on 2026-09-10 (received [403] against expected [200|201|422]). The
+// form-level cases need the in-good-standing `e2e-member-empty` persona
+// (linked, NO cycle → `full` access; seeded by scripts/seed-e2e-portal-invoices.ts).
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 // Mobile Safari + dev-server cold compile budget — see broadcast-a11y.
 test.describe.configure({ timeout: 180_000 });
 
 test.beforeAll(async ({}, testInfo) => {
   testInfo.setTimeout(240_000);
-  await wipeE2EMemberBroadcasts();
+  // For the persona that signs in (see the MEMBER_EMAIL note above).
+  await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
 });
 
 async function signInAsMember(page: import('@playwright/test').Page): Promise<void> {
@@ -57,7 +65,7 @@ test.describe('@i18n T193 — html-lang-attribute-correct-per-resolved-locale', 
 });
 
 test.describe('@i18n T195 — Tiptap TH IME composition', () => {
-  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_*');
+  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
 
   test('TH text inserted into Tiptap renders correctly + cursor advances', async ({
     page,
@@ -80,7 +88,7 @@ test.describe('@i18n T196 — TH+EN+SV dispatch round-trip', () => {
   // the submit boundary intact. Live Resend dispatch is tested via
   // the gated jcc-test-tenant-fixture (T179). Here we assert the
   // local-DB write preserves bytes.
-  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_*');
+  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
 
   for (const sample of [
     { name: 'TH-only', subject: 'ข่าวสารจากหอการค้า — เมษายน' },
@@ -98,7 +106,7 @@ test.describe('@i18n T196 — TH+EN+SV dispatch round-trip', () => {
 });
 
 test.describe('@i18n T197 — TH locale length-expansion at 320px + 1280px', () => {
-  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_*');
+  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
 
   for (const width of [320, 1280] as const) {
     test(`compose form has no horizontal overflow at ${width}px (TH locale)`, async ({

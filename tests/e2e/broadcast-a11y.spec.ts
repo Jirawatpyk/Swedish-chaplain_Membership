@@ -10,8 +10,15 @@
 import { expect, test } from './fixtures';
 import { wipeE2EMemberBroadcasts } from './helpers/broadcasts-seed';
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// Same reason as broadcast-compose-and-submit.spec.ts (2026-09-07): the primary
+// `e2e-member` carries a LAPSED renewal cycle by the F8 fixture, so the compose
+// page redirects away from the form and every `requireMemberContext` route
+// answers 403 `membership_access_restricted` — which is what every case below
+// hit on 2026-09-10 (received [403] against expected [200|201|422]). The
+// form-level cases need the in-good-standing `e2e-member-empty` persona
+// (linked, NO cycle → `full` access; seeded by scripts/seed-e2e-portal-invoices.ts).
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 // Mobile Safari (WebKit) sign-in via fill+click is ~3-4× slower than
 // Chromium; the dev server's first-compile of the broadcasts route +
@@ -26,8 +33,8 @@ test.beforeAll(async ({ browser }, testInfo) => {
   // compile blows past this; raise hook deadline explicitly.
   testInfo.setTimeout(240_000);
   // Clear leftover seed broadcasts from prior runs so quota_counter
-  // invariant (used + reserved <= cap) holds.
-  await wipeE2EMemberBroadcasts();
+  // invariant (used + reserved <= cap) holds — for the persona that signs in.
+  await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
 
   // Pre-warm the Tiptap chunk so the per-test waitFor doesn't trip
   // over Turbopack's cold compile (~30-60s for the Tiptap chunk in
@@ -76,7 +83,7 @@ async function signInAsMember(page: import('@playwright/test').Page): Promise<vo
 test.describe('@a11y T192 — Tiptap zoom 200%', () => {
   test.skip(
     !MEMBER_EMAIL || !MEMBER_PASSWORD,
-    'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD',
+    'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY (seed-e2e-portal-invoices.ts)',
   );
 
   test('compose form remains usable at 320px viewport (WCAG 2.1 1.4.4 reflow)', async ({
@@ -120,7 +127,7 @@ test.describe('@a11y T192 — Tiptap zoom 200%', () => {
 test.describe('@a11y T194 — prefers-reduced-motion', () => {
   test.skip(
     !MEMBER_EMAIL || !MEMBER_PASSWORD,
-    'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD',
+    'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY (seed-e2e-portal-invoices.ts)',
   );
 
   test('reduced-motion media query is detected by the page', async ({

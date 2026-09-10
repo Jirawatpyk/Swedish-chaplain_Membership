@@ -38,6 +38,12 @@ export async function seedOneAtRiskMember(
   }
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   const memberId = randomUUID();
+  // `members.member_number` is NOT NULL since migration 0209 (055) with no
+  // default — a raw insert must supply it, and this seed did not, so every
+  // at-risk-widget case failed in ~600 ms with a not-null violation
+  // (2026-09-10). High value: never collides with the allocator's low 1..N in
+  // the shared `swecham` tenant; the row is deleted by `cleanup()` below.
+  const memberNumber = 970_000 + Math.floor(Math.random() * 9_000);
   const contactId = randomUUID();
   const cycleId = randomUUID();
   const now = new Date();
@@ -57,7 +63,7 @@ export async function seedOneAtRiskMember(
       // list would couple the fixture to FR-029 weights.
       await tx`
         INSERT INTO members (
-          tenant_id, member_id, company_name, country,
+          tenant_id, member_id, member_number, company_name, country,
           plan_id, plan_year, registration_date, registration_fee_paid,
           status, created_at, last_activity_at,
           risk_score, risk_score_band, risk_score_factors,
@@ -65,6 +71,7 @@ export async function seedOneAtRiskMember(
         )
         VALUES (
           ${TENANT_ID}, ${memberId}::uuid,
+          ${memberNumber},
           ${'E2E At-Risk ' + memberId.slice(0, 8)}, 'TH',
           ${planId}, ${planYear},
           ${registrationDate}::date, true,

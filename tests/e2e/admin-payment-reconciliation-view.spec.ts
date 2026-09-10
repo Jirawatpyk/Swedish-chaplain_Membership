@@ -126,8 +126,20 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     await page.goto('/admin/invoices');
     await page.waitForLoadState('networkidle');
 
+    // Since the 088 invoice filter redesign (`show088Filters`) the paid-online
+    // chip is one of the SECONDARY filters and lives inside the "More filters"
+    // popover (`invoice-filters.tsx` — `collapseSecondary`); it is rendered
+    // inline only on the pre-088 layout. This case asserted the inline chip and
+    // failed on every project on 2026-09-10 (chip never in the DOM). Open the
+    // popover when it exists; the chip's testid is the same in both slots.
+    const openSecondaryFilters = async (): Promise<void> => {
+      const trigger = page.getByTestId('invoice-more-filters-trigger');
+      if (await trigger.isVisible()) await trigger.click();
+    };
+
     // Filter chip must be present (T096 contract).
     // testid is stable across i18n locales and renames.
+    await openSecondaryFilters();
     const chip = page.getByTestId('paid-online-filter-chip');
     await expect(chip).toBeVisible({ timeout: 5_000 });
 
@@ -135,7 +147,9 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     await chip.click();
     await expect(page).toHaveURL(/[?&]paidOnline=1/);
 
-    // Toggle OFF — URL drops the param.
+    // Toggle OFF — URL drops the param. The popover may have closed on the
+    // navigation the toggle caused; reopen it before the second click.
+    if (!(await chip.isVisible())) await openSecondaryFilters();
     await chip.click();
     await expect(page).not.toHaveURL(/[?&]paidOnline=1/);
   });

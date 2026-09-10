@@ -70,7 +70,12 @@ interface Fixtures {
 
 async function resolveFixtures(): Promise<Fixtures | null> {
   if (!DATABASE_URL || !ADMIN_EMAIL) return null;
-  const memberEmail = process.env.E2E_MEMBER_EMAIL;
+  // The PROXIED member must be in good standing: proxy-submit runs the same
+  // membership-access precondition as self-service, and the primary
+  // `e2e-member` carries a LAPSED cycle by the F8 fixture — the form stayed on
+  // /admin/broadcasts/new with a refusal on 2026-09-10. `e2e-member-empty`
+  // (linked, no cycle → full access) is the persona every form-level spec uses.
+  const memberEmail = process.env.E2E_MEMBER_EMAIL_EMPTY;
   if (!memberEmail) return null;
   const sql = postgres(DATABASE_URL, { ssl: 'require', max: 1 });
   try {
@@ -158,8 +163,8 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
     page,
   }) => {
     test.skip(
-      !process.env.E2E_MEMBER_EMAIL,
-      'Set E2E_MEMBER_EMAIL — the proxied member identity',
+      !process.env.E2E_MEMBER_EMAIL_EMPTY,
+      'Set E2E_MEMBER_EMAIL_EMPTY — the proxied member identity (in good standing)',
     );
     test.skip(
       fixtures === null,

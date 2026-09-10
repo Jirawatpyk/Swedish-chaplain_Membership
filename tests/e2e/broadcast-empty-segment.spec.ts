@@ -10,13 +10,20 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// Same reason as broadcast-compose-and-submit.spec.ts (2026-09-07): the primary
+// `e2e-member` carries a LAPSED renewal cycle by the F8 fixture, so the compose
+// page redirects away from the form and every `requireMemberContext` route
+// answers 403 `membership_access_restricted` — which is what every case below
+// hit on 2026-09-10 (received [403] against expected [200|201|422]). The
+// form-level cases need the in-good-standing `e2e-member-empty` persona
+// (linked, NO cycle → `full` access; seeded by scripts/seed-e2e-portal-invoices.ts).
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Broadcast empty segment (T055 — US1 AS4)', () => {
-  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER credentials');
+  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
   test.beforeAll(async () => {
     await clearE2ERateLimits();
   });
