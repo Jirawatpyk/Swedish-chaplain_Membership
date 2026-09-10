@@ -1,7 +1,7 @@
 ---
 name: enterprise-ux-designer
 description: "Use this agent when designing, reviewing, or refining enterprise-grade UX/UI for SaaS admin portals, member self-service surfaces, complex forms, data-dense tables, dashboards, or any user-facing flow that must meet WCAG 2.1 AA, i18n (EN/TH/SV), and the project's `docs/ux-standards.md` playbook. Invoke it proactively whenever a new screen, component, or interaction pattern is being planned or after recently written UI code that affects user-facing behavior."
-model: inherit
+model: opus
 color: blue
 memory: project
 ---

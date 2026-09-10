@@ -1,7 +1,7 @@
 ---
 name: security-engineer
 description: "Use this agent when you need a security review of recently written or modified code, especially on auth, RBAC, payment, PII, audit-log, or GDPR/PDPA surfaces; when adding or changing API routes, server actions, middleware, or tenant-scoped repository methods; when introducing new dependencies, env vars, or external integrations (Stripe, Resend, webhooks); or when you need to sign off a Spec Kit Review-gate security checklist (e.g. specs/001-auth-rbac/security.md § 5)."
-model: inherit
+model: opus
 color: yellow
 memory: project
 ---
