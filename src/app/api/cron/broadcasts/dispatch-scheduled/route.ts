@@ -212,7 +212,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     /**
      * Round 2 R2-1/R2-44 + round 3 finding 3-13 — the row is no longer what the
      * claim query saw: a cancel landed, another worker won the transition, or an
-     * erasure cascade removed it. Normal, self-healing, and NOT a failure of any
+     * row was deleted between the claim and the write. Normal, self-healing,
+     * and NOT a failure of any
      * kind: nothing to retry (the other worker finished the work) and nothing
      * failed (so `permanent_failed`, which reads as "done", would suppress a
      * real alert if this bucket ever did mean trouble).

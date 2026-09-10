@@ -308,6 +308,13 @@ interface GatewayOpts {
    * value that proves the resource was never handed to `/send` (MEASURED
    * 2026-09-10 against the live account with a draft + DELETE).
    */
+  /**
+   * What `retrieveBroadcast` reports as `sent_at`. Until round 8 this was
+   * hardcoded `null` with no way to override, so the branch that reads the
+   * provider clock -- the headline of the previous commit -- was executed by no
+   * test in the repo, and reverting it to `now` survived the whole suite.
+   */
+  readonly retrieveSentAt?: string | null;
   readonly retrieveStatus?:
     | 'draft'
     | 'queued'
@@ -393,7 +400,7 @@ function makeGateway(opts: GatewayOpts = {}): {
             resource: {
               id: 'rb-from-previous-tick',
               status: opts.retrieveStatus,
-              sentAt: null,
+              sentAt: opts.retrieveSentAt ?? null,
             },
           };
         }
@@ -2334,6 +2341,257 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
 
     expect(result.ok).toBe(true);
     // Never handed to /send, so this tick is the one that sends it.
+    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
+  });
+
+  /**
+   * Round 8 — the previous commit's HEADLINE change had no discriminating test.
+   *
+   * It replaced `actualSendAt = now` with the provider's own `sent_at`, because on
+   * a replay the send happened in an earlier tick — up to an hour earlier. Every
+   * `retrieveBroadcast` double in the repo hardcoded `sentAt: null` with no knob,
+   * so that branch was executed by nothing and `const actualSendAt = now` survived
+   * the full suite. Same shape as `default: return 'queued'` surviving 1,557 tests,
+   * which is the defect the commit before it existed to close.
+   *
+   * `sendingStartedAt` is asserted separately and deliberately: it names a COLUMN
+   * the same transaction writes as `now`, and `one-active-broadcast-state.ts`
+   * requires that column non-null for status `sending`. Aliasing both payload keys
+   * to one nullable variable made the append-only row contradict the column it is
+   * named after.
+   */
+  it('FINAL3 -- a replay records the PROVIDER send time, and still mirrors the column', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      retrieveStatus: 'sent',
+      retrieveSentAt: '2026-06-15T04:00:00.000Z',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The audience was already built by the tick that sent it; re-pushing every
+    // contact buys nothing and is what used to 409 into a false failure.
+    expect(gw.contactsCalls).toEqual([]);
+    expect(gw.sendCalls).toEqual([]);
+
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    expect(started).toBeDefined();
+    const payload = started?.payload as {
+      actualSendAt?: string | null;
+      sendingStartedAt?: string | null;
+      handedToSendOnPriorTick?: boolean;
+      observedResendStatus?: string | null;
+    };
+    // The provider clock, NOT this tick's clock. Pinned by value against a time
+    // that is deliberately not FROZEN_NOW, so `= now` cannot pass.
+    expect(payload.actualSendAt).toBe('2026-06-15T04:00:00.000Z');
+    expect(payload.actualSendAt).not.toBe(FROZEN_NOW.toISOString());
+    // ...while the column-named key still mirrors the column this tx wrote.
+    expect(payload.sendingStartedAt).toBe(FROZEN_NOW.toISOString());
+    // And the row says for itself that this was a replay, so a reader never has
+    // to infer it from a timestamp.
+    expect(payload.handedToSendOnPriorTick).toBe(true);
+    expect(payload.observedResendStatus).toBe('sent');
+  });
+
+  /**
+   * `sent_at` is provider text passed through verbatim, and `?? null` does not
+   * catch `''`. `new Date('')` is `Invalid Date`, and `.toISOString()` on it throws
+   * a RangeError INSIDE the Step-4 transaction — rolling back `attachResendIds`,
+   * `applyTransition` and the audit emit together, AFTER the mail has gone out,
+   * and surfacing as "DB write after Resend success", which sends an operator to
+   * Neon rather than to a date parse.
+   */
+  it('FINAL3 -- an unparseable provider timestamp degrades to null, it does not throw', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'sent', retrieveSentAt: '' });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    const payload = started?.payload as {
+      actualSendAt?: string | null;
+      sendingStartedAt?: string | null;
+    };
+    expect(payload.actualSendAt).toBeNull();
+    expect(payload.sendingStartedAt).toBe(FROZEN_NOW.toISOString());
+  });
+
+  /**
+   * `queued` means Resend accepted the send and has not reported it complete, so
+   * any `sent_at` it carries is not a send time we can stand behind. Reading it
+   * would reintroduce the over-claim the previous commit removed, one status over.
+   */
+  it('FINAL3 -- a queued resource contributes no send time, even if it carries one', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      retrieveStatus: 'queued',
+      retrieveSentAt: '2026-06-15T04:00:00.000Z',
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    const started = audit.emits.find((e) => e.eventType === 'broadcast_send_started');
+    const payload = started?.payload as {
+      actualSendAt?: string | null;
+      delaySeconds?: number | null;
+      observedResendStatus?: string | null;
+    };
+    expect(payload.actualSendAt).toBeNull();
+    // Unknown send time means unknown delay -- computing it from `now` would
+    // inflate the reported wait by however long the row sat between ticks.
+    expect(payload.delaySeconds).toBeNull();
+    expect(payload.observedResendStatus).toBe('queued');
+  });
+
+  /**
+   * Round 8 — the contact-push guard, and why it is keyed off the INHERITED id
+   * rather than the probe's answer.
+   *
+   * `'draft'` is the case this whole gate exists for: a prior tick built the
+   * audience, minted the resource, persisted the id, and then failed the send. On
+   * this leg the push precedes `createBroadcast` precedes `attachBroadcastId`, all
+   * in one try — so **a persisted broadcast id proves the push completed**. Keying
+   * the skip off `alreadyHandedToSend` (false for `draft`) re-pushed all 150
+   * contacts, which under the branch's own — and UNMEASURED — premise 409s and
+   * ends as `failed_to_dispatch` plus an FR-021 email, for a broadcast that is
+   * fully prepared and simply needs sending.
+   *
+   * This assertion is what makes the guard's key load-bearing: with the probe-
+   * positive statuses the push is skipped either way, so only `draft` can tell the
+   * two versions apart.
+   */
+  it('FINAL3 -- an inherited id skips the contact re-push even when the resource is still draft', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({ retrieveStatus: 'draft' });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(true);
+    // The audience is already built. Re-pushing is the call that turns a
+    // recoverable unsent broadcast into a terminal one.
+    expect(gw.contactsCalls).toEqual([]);
+    // ...and this tick DOES send, because `draft` is the one status proving it
+    // never was sent.
     expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
   });
 
