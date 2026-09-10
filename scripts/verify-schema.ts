@@ -99,6 +99,22 @@ async function main(): Promise<void> {
         name: 'invoices_enforce_immutability locks pdf_doc_kind (mig 0214)',
         query: `SELECT 1 AS hit FROM pg_proc WHERE proname = 'invoices_enforce_immutability' AND prosrc LIKE '%pdf_doc_kind%'`,
       },
+      // 108 Phase 9 audience-import canaries (migs 0298-0299).
+      //
+      // Added because this list had drifted 84 migrations behind the journal:
+      // every canary above predates 0298, so after the Phase 9 deploy
+      // `db:verify:prod` printed "✓ All 9 canaries present — schema in sync"
+      // while checking nothing that deploy had added. The point of a canary is
+      // to catch a PARTIALLY-applied journal, and it can only do that for
+      // migrations it knows about.
+      {
+        name: 'broadcasts.audience_import_* columns (mig 0298)',
+        query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'broadcasts' AND column_name = 'audience_import_id' AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'broadcasts' AND column_name = 'audience_import_submitted_at') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'broadcasts' AND column_name = 'audience_import_completed_at')`,
+      },
+      {
+        name: 'broadcasts_audience_import_coherent CHECK (mig 0299)',
+        query: `SELECT 1 AS hit FROM pg_constraint WHERE conname = 'broadcasts_audience_import_coherent' AND conrelid = 'public.broadcasts'::regclass`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {
