@@ -59,12 +59,15 @@ function makeDialogStub(testId: string) {
     open: boolean;
     onOpenChange: (next: boolean) => void;
     onConfirm: () => void | Promise<void>;
-    finalFocus?: () => HTMLElement | null;
+    finalFocus?: () => HTMLElement | false | null;
   }) {
     if (!open) return null;
     const applyFinalFocus = () => {
-      // Base UI computes finalFocus at close and focuses the result.
+      // Base UI computes finalFocus at close and focuses the result —
+      // unless the getter answers `false` ("move nothing"): the hook then
+      // focuses the #main-content landmark itself, after Base UI's microtask.
       const target = finalFocus?.() ?? null;
+      if (target === false) return;
       target?.focus();
     };
     return (
