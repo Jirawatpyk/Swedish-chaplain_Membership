@@ -77,20 +77,40 @@ export function useDialogFinalFocus(
   triggerRef?: React.RefObject<HTMLButtonElement | null>,
   fallbackFocusRef?: React.RefObject<HTMLElement | null>,
   closedViaSuccessRef?: React.RefObject<boolean>,
-): () => HTMLElement | null {
-  return useCallback(
-    (): HTMLElement | null =>
-      resolveDialogFinalFocus({
-        closedViaSuccess: closedViaSuccessRef?.current ?? false,
-        trigger: triggerRef?.current ?? null,
-        fallback: fallbackFocusRef?.current ?? null,
-        mainContent:
-          typeof document !== 'undefined'
-            ? document.getElementById('main-content')
-            : null,
-      }),
-    [triggerRef, fallbackFocusRef, closedViaSuccessRef],
-  );
+): () => HTMLElement | false | null {
+  return useCallback((): HTMLElement | false | null => {
+    const mainContent =
+      typeof document !== 'undefined'
+        ? document.getElementById('main-content')
+        : null;
+    const target = resolveDialogFinalFocus({
+      closedViaSuccess: closedViaSuccessRef?.current ?? false,
+      trigger: triggerRef?.current ?? null,
+      fallback: fallbackFocusRef?.current ?? null,
+      mainContent,
+    });
+    if (target !== null && target === mainContent) {
+      // 2026-09-10 (e2e `@bulk` focus case) — Base UI does NOT focus the element
+      // we return. `FloatingFocusManager` applies `returnFocus` as
+      // `getFirstTabbableElement(el)`: "the element, if tabbable, or its FIRST
+      // TABBABLE CHILD". The landmark is `tabIndex={-1}` — focusable, not
+      // tabbable — so every success close on every dialog using this hook
+      // landed on the first link inside <main> (traced: the review queue's
+      // "Templates" header link), not on the landmark F7-A11Y-1 named.
+      //
+      // So focus it ourselves and answer `false` ("move nothing"). Base UI
+      // calls this getter synchronously in its cleanup and queues ITS focus
+      // in one microtask afterwards; our outer microtask is queued first, so
+      // the inner one runs after theirs — deterministic without a timer.
+      queueMicrotask(() => {
+        queueMicrotask(() => {
+          if (mainContent.isConnected) mainContent.focus({ preventScroll: true });
+        });
+      });
+      return false;
+    }
+    return target;
+  }, [triggerRef, fallbackFocusRef, closedViaSuccessRef]);
 }
 
 export interface ReasonConfirmationDialogProps {
@@ -117,7 +137,8 @@ export interface ReasonConfirmationDialogProps {
    */
   readonly onConfirm: (reason: string) => Promise<void>;
   /** Focus-return target on close — build via {@link useDialogFinalFocus}. */
-  readonly finalFocus: () => HTMLElement | null;
+  /** `false` = "Base UI moves nothing" — the hook focuses the landmark itself. */
+  readonly finalFocus: () => HTMLElement | false | null;
 }
 
 export function ReasonConfirmationDialog({

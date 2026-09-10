@@ -48,18 +48,38 @@ test.describe('F6.1 events search toolbar — R3-T2 + R3-T3 @workers=1', () => {
     // 2. Click the native browser X clear button by emulating an
     //    onChange to empty — the toolbar's onChange handler strips
     //    `?q=` from the URL.
-    await searchInput.fill('');
-    // Wait for the server transition to complete (URL change).
+    //
+    //    2026-09-10 — this step was VACUOUS and racing hydration. A `fill('')`
+    //    that lands before React attaches the onChange handler clears the
+    //    input and pushes nothing; the URL assertion below then still passed,
+    //    because `/\/admin\/events(?:\?|$)/` also matches `?q=midsummer`. Back
+    //    therefore left the ONLY events entry and landed on /admin (Dashboard)
+    //    — which is what the failure showed. The assertion now demands that
+    //    `q` is GONE, and the fill is retried until the push happens.
+    await expect(async () => {
+      await searchInput.fill('');
+      await expect(page).not.toHaveURL(/[?&]q=/, { timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
     await expect(page).toHaveURL(/\/admin\/events(?:\?|$)/);
     await expect(searchInput).toHaveValue('');
 
     // 3. Browser Back — URL returns to `?q=midsummer` and the input
     //    value MUST re-populate to "midsummer". Pre-R2-2a the input
     //    stayed empty (stale local state); R2-2a useEffect prop-sync
-    //    + R3-U2 focus-guard fixes this.
+    //    + R3-U2 focus-guard fixes this. Protected pages are `no-store`,
+    //    so Back is a fresh render from the dev server: give it time.
+    //    The toolbar's prop-sync is guarded by R3-U2 (`inputFocused.current`):
+    //    a value the user is TYPING must not be overwritten by a URL change.
+    //    `fill('')` leaves the input focused, and Playwright's `goBack()` —
+    //    unlike a real Back click, which moves focus to the browser chrome —
+    //    fires no blur, so the guard blocked the very sync this case exists to
+    //    prove (received "" after Back, 2026-09-10). Blur first: that is the
+    //    state a real user is in when they press Back.
+    await searchInput.blur();
     await page.goBack();
     await page.waitForLoadState('domcontentloaded');
-    await expect(searchInput).toHaveValue('midsummer');
+    await expect(page).toHaveURL(/[?&]q=midsummer/);
+    await expect(searchInput).toHaveValue('midsummer', { timeout: 15_000 });
   });
 
   test('R3-T3 — live-region announces the result count after submit', async ({

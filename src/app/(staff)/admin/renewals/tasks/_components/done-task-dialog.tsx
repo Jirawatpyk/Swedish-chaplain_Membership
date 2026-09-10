@@ -23,7 +23,7 @@ export interface DoneTaskDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly onSubmit: (outcomeNote: string | undefined) => Promise<void>;
   /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
-  readonly finalFocus?: (() => HTMLElement | null) | undefined;
+  readonly finalFocus?: (() => HTMLElement | false | null) | undefined;
 }
 
 const MAX_NOTE_LENGTH = 1000;

@@ -53,7 +53,7 @@ type Props = {
    * `<body>`. Build via `useDialogFinalFocus`; see the BulkActionBar module
    * header. WCAG 2.1 AA SC 2.4.3.
    */
-  readonly finalFocus?: () => HTMLElement | null;
+  readonly finalFocus?: () => HTMLElement | false | null;
 };
 
 export function ArchiveConfirmDialog({
