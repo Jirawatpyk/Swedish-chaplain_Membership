@@ -35,7 +35,11 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { BrowserContext } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { signInAsAdmin } from './helpers/admin-session';
+// `events.erasure` is `superAdminOnly` in the RBAC v2 catalogue (016), so the
+// page `notFound()`s for the plain admin persona — every admin-side case here
+// failed on 2026-09-10 with the search form absent. Same persona the
+// erasure-log spec uses.
+import { signInAsSuperAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import { signInAsMember } from './helpers/member-session';
 import {
@@ -44,8 +48,8 @@ import {
 } from './helpers/eventcreate-seed';
 import en from '../../src/i18n/messages/en.json';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
@@ -99,7 +103,7 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 });
 test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to run the erasure surface e2e',
+    'Set E2E_SUPER_ADMIN_EMAIL + E2E_SUPER_ADMIN_PASSWORD to run the erasure surface e2e',
   );
 
   // --- 1. @a11y -------------------------------------------------------------
@@ -107,7 +111,7 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
   test('axe-core WCAG 2.1 + 2.2 AA scan — empty erasure page, no violations', async ({
     page,
   }) => {
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
 
     await expect(
@@ -130,7 +134,7 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
       page,
       context,
     }) => {
-      await signInAsAdmin(page);
+      await signInAsSuperAdmin(page);
       await setLocale(context, locale);
       await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
 
@@ -153,7 +157,7 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
 
   // --- 3. RBAC (FR-035, carry-forward #1) -----------------------------------
 
-  test('manager is redirected off the erasure page + never sees the search form', async ({
+  test('manager is denied (notFound) + never sees the search form', async ({
     page,
   }) => {
     test.skip(
@@ -161,25 +165,30 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
       'Set E2E_MANAGER_EMAIL + E2E_MANAGER_PASSWORD',
     );
     await signInAsManager(page);
-
     // STRONGEST security proof — the raw response body served to a MANAGER must
-    // NOT contain the erasure search form. The page's role-check `redirect()`
+    // NOT contain the erasure search form. `requirePagePermission('events.erasure')`
     // fires BEFORE the JSX renders, so the form HTML is never streamed to a
-    // non-admin. This holds whether Next emits an HTTP 3xx OR a 200+RSC
-    // client-side redirect — the latter is exactly why the prior raw-3xx status
-    // assertion was the WRONG mechanism: a page-level `redirect()` behind the
-    // `loading.tsx` Suspense boundary streams a 200 carrying a client redirect
-    // directive, not a 3xx status. Body-content absence is invariant to that.
+    // non-holder of the permission. Body-content absence is invariant to how
+    // the denial is delivered.
     const raw = await page.context().request.get(ROUTE, {
       failOnStatusCode: false,
+      maxRedirects: 0,
     });
-    expect(await raw.text()).not.toContain('erase-by-email-input');
-
-    // Behavioural proof — a real browser navigation follows the client redirect
-    // and lands on /admin/events (NOT the erasure page), with the search form +
-    // the localised page heading both ABSENT from the DOM.
+    const status = raw.status();
+    const body = await raw.text();
+    expect(body).not.toContain('erase-by-email-input');
+    // Since RBAC v2 (016) the denial is `notFound()` — a 404 at the SAME URL,
+    // not a redirect to /admin/events. This case asserted the pre-016 redirect
+    // and failed on 2026-09-10 with the URL unchanged. Same proof the
+    // erasure-log spec uses for its manager case.
+    expect(status).toBeLessThan(500);
+    expect([200, 404]).toContain(status);
+    expect(body).toMatch(
+      /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
+    );
+    // Behavioural proof — a real browser render has the search form + the
+    // localised page heading ABSENT from the DOM (the built-in 404 renders).
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(/\/admin\/events\/?(?:\?.*)?$/);
     await expect(page.locator('#erase-by-email-input')).toHaveCount(0);
     await expect(
       page.getByRole('heading', { name: TITLE_RE.en, level: 1 }),
@@ -219,7 +228,7 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
       return;
     }
 
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(`${ROUTE}?email=${encodeURIComponent(SEEDED_EMAIL)}`, {
       waitUntil: 'domcontentloaded',
     });

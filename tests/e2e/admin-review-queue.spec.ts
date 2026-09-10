@@ -419,27 +419,40 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     // `queue-table-client.tsx`) — empty before any selection so the
     // 0→1 transition is a text MUTATION on an already-mounted node,
     // which is what NVDA/JAWS actually announce.
-    const liveRegion = page.locator(
-      '[role="status"][aria-live="polite"].sr-only',
-    );
+    // By test id, not by role: the bulk-action bar mounts a second
+    // permanently-mounted polite announcer (`7465ae9be`), so the role selector
+    // this used resolved to TWO elements — strict-mode violation, 2026-09-10.
+    const liveRegion = page.getByTestId('queue-selection-announcer');
     await expect(liveRegion).toBeAttached();
 
     const seededRow = page
       .locator('tbody tr')
       .filter({ hasText: SEEDED_SUBJECT });
-    await seededRow.getByRole('checkbox').click();
+    // `check()` rather than `click()`, inside `toPass`: a click that lands
+    // before React has attached the handler toggles nothing, and this case
+    // then read an empty announcer (1 pass / 2 fails across one serial run,
+    // 2026-09-10). `check()` verifies the checked state after its click and
+    // throws when nothing changed, which is the retry signal; it is a no-op
+    // once checked, so a late-arriving first click cannot be undone by it.
+    await expect(async () => {
+      await seededRow.getByRole('checkbox').check({ timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
 
     await expect(liveRegion).toContainText(/1 selected/);
     // The visible fixed-bottom bulk toolbar mounts alongside it — Task 5/6
     // (2026-08-01-broadcast-review-queue-pr2) replaced the old sticky-top
     // `role="region"` bar this assertion originally checked with a
-    // fixed-bottom `role="toolbar"` (`7465ae9be`); its own `aria-live`
-    // span carries the same "N selected" text.
+    // fixed-bottom `role="toolbar"` (`7465ae9be`). Its count is VISIBLE text
+    // and deliberately NOT a live region — the bar's own comment: "No
+    // aria-live here — the permanent role=status announcer … is the live
+    // region for this count; duplicating it would double-announce". This
+    // assertion used to demand an `aria-live` span inside the toolbar and
+    // failed on 2026-09-10 with "element(s) not found" — it was asserting the
+    // duplicate the a11y design removed. The announcement is checked above;
+    // here only the visible count.
     const toolbar = page.getByRole('toolbar');
     await expect(toolbar).toBeVisible();
-    await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
-      /1 selected/,
-    );
+    await expect(toolbar).toContainText(/1 selected/);
   });
 
   // ---------- AS2: approve send-now ----------
@@ -780,9 +793,11 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
 
     const toolbar = page.getByRole('toolbar');
     await expect(toolbar).toBeVisible();
-    await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
-      /1 selected/,
-    );
+    // 2026-09-10 — the toolbar's count is visible text and deliberately NOT a
+    // live region (the permanent queue announcer is; see D3). Asserting an
+    // `aria-live` span inside the toolbar was asserting the duplicate the
+    // a11y design removed.
+    await expect(toolbar).toContainText(/1 selected/);
 
     // Task 9 — `queue-bulk-action-bar.tsx`'s module docstring claims
     // "Plain tab order — no roving-tabindex, matching both precedents
@@ -937,11 +952,19 @@ test.describe(
       await page.locator('h1').first().waitFor({ timeout: 10_000 });
       for (const subject of bulkSeed!.subjects) {
         const row = page.locator('tbody tr').filter({ hasText: subject });
-        await row.getByRole('checkbox').click();
+        // `check()` inside `toPass`, same as D3: a click that lands before
+        // React attached the handler toggles nothing (the last @bulk case read
+        // "1 selected" for two clicks, 2026-09-10). `check()` throws when its
+        // click changed nothing — the retry signal — and is a no-op once checked.
+        await expect(async () => {
+          await row.getByRole('checkbox').check({ timeout: 2_000 });
+        }).toPass({ timeout: 15_000 });
       }
       const toolbar = page.getByRole('toolbar');
       await expect(toolbar).toBeVisible();
-      await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
+      // 2026-09-10 — the toolbar count is visible text, not a live region (see
+      // D3); the permanent queue announcer carries the announcement.
+      await expect(toolbar).toContainText(
         /2 selected/,
       );
     }

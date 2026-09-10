@@ -432,7 +432,17 @@ export function QueueTableClient({
   // announcer.tsx`.
   const selectionAnnouncement = selectedIds.length > 0 ? bulkSelectedLabel : '';
   const selectionAnnouncer = selectionEnabled ? (
-    <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+    // `data-testid`: the bulk-action bar mounts a SECOND permanently-mounted
+    // polite `role="status"` announcer (`7465ae9be`), so a selector on the
+    // role alone resolves to two elements (e2e strict-mode violation,
+    // 2026-09-10). The hook is the stable way to name THIS one.
+    <div
+      className="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="queue-selection-announcer"
+    >
       {selectionAnnouncement}
     </div>
   ) : null;

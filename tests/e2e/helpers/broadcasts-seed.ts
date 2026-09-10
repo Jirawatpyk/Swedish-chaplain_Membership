@@ -80,7 +80,6 @@ export async function seedF7Broadcasts(): Promise<SeedResult | null> {
       SELECT broadcast_id::text AS broadcast_id
       FROM broadcasts
       WHERE tenant_id = ${TENANT_ID}
-        AND requested_by_member_id = ${member.member_id}::uuid
         AND subject = '[E2E SEED] AS2-AS6 fixture broadcast'
       ORDER BY created_at DESC
       LIMIT 1
@@ -93,15 +92,28 @@ export async function seedF7Broadcasts(): Promise<SeedResult | null> {
       // and gives us a clean `submitted` row for the next destructive
       // test. The audit-log entries from the previous run are retained
       // (append-only per Constitution Principle I).
+      // ALL rows with the seed subject in the tenant, not only the newest and
+      // not only the current persona's: a run killed mid-spec leaves a second
+      // row, and a persona re-seed leaves rows under an OLD member_id (the
+      // 2026-09-10 duplicate was dated July, owned by a member id that no
+      // longer resolves from E2E_MEMBER_EMAIL). Either way the review-queue
+      // spec's `tbody tr` filter resolves to two elements (strict-mode
+      // violation). The subject is unique to this seed, so it is the key.
+      // The newest id is still reused below so the exported
+      // E2E_SEED_BROADCAST_ID stays stable across re-seeds.
       await sql`
         DELETE FROM broadcast_deliveries
         WHERE tenant_id = ${TENANT_ID}
-          AND broadcast_id = ${existingId}::uuid
+          AND broadcast_id IN (
+            SELECT broadcast_id FROM broadcasts
+            WHERE tenant_id = ${TENANT_ID}
+              AND subject = '[E2E SEED] AS2-AS6 fixture broadcast'
+          )
       `;
       await sql`
         DELETE FROM broadcasts
         WHERE tenant_id = ${TENANT_ID}
-          AND broadcast_id = ${existingId}::uuid
+          AND subject = '[E2E SEED] AS2-AS6 fixture broadcast'
       `;
       broadcastId = existingId;
       await sql`
@@ -524,10 +536,17 @@ export async function resetF7AckSeed(): Promise<void> {
  * trigger disable, mirrors `tests/integration/helpers/test-tenant.ts`).
  *
  * Skips silently if `DATABASE_URL` is missing.
+ *
+ * `memberEmail` (2026-09-10): the persona to wipe. Defaults to the primary
+ * `e2e-member`; the form-level specs sign in as `e2e-member-empty` (the primary
+ * carries a LAPSED cycle by the F8 fixture and is refused at the compose
+ * routes), so they pass that persona here — wiping the OTHER member's rows
+ * left the in-good-standing one accumulating drafts across runs.
  */
-export async function wipeE2EMemberBroadcasts(): Promise<void> {
+export async function wipeE2EMemberBroadcasts(
+  memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL,
+): Promise<void> {
   const dbUrl = process.env.DATABASE_URL;
-  const memberEmail = process.env.E2E_MEMBER_EMAIL;
   const tenantId = process.env.E2E_TENANT_SLUG ?? 'swecham';
   if (!dbUrl || !memberEmail) return;
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });

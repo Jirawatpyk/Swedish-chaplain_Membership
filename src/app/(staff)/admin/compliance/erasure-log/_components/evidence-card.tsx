@@ -200,6 +200,7 @@ export function EvidenceCard({
               // appear only for post-2026-09-09 rows, so a field moved position
               // and the block changed height from card to card down a list.
               // 2×2 is stable at four.
+              <>
               <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label={t('fields.resendOutcome')}>
                   {row.subprocessorOutcome.resendOutcome}
@@ -232,19 +233,25 @@ export function EvidenceCard({
                 <Field label={t('fields.contactsFailed')}>
                   {row.subprocessorOutcome.contactsFailed}
                 </Field>
-                {/*
-                  Round 4 D9 — the rule lives in
-                  `docs/runbooks/member-erasure.md` ("Cite the FIRST number… Do
-                  not add the second to it") and was absent from the surface where
-                  the DPO actually composes the DSR answer. Three bare integers
-                  side by side read as a decomposition to be summed, which would
-                  overstate the removals — the same Art. 12(3) shape the label
-                  rename was for.
-                */}
-                <p className="col-span-full text-xs text-muted-foreground">
-                  {t('fields.countsNote')}
-                </p>
               </dl>
+              {/*
+                Round 4 D9 — the rule lives in
+                `docs/runbooks/member-erasure.md` ("Cite the FIRST number… Do
+                not add the second to it") and was absent from the surface where
+                the DPO actually composes the DSR answer. Three bare integers
+                side by side read as a decomposition to be summed, which would
+                overstate the removals — the same Art. 12(3) shape the label
+                rename was for.
+
+                2026-09-10 (e2e axe `definition-list`, serious): this note used
+                to sit INSIDE the <dl> as a direct <p> child, which is invalid
+                (`only-dlitems` — a <dl> may directly contain only dt/dd groups,
+                div, script, template). It is the same note, one element out.
+              */}
+              <p className="text-xs text-muted-foreground">
+                {t('fields.countsNote')}
+              </p>
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">{t('subprocessorNone')}</p>
             )}

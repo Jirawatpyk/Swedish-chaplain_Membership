@@ -16,13 +16,18 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// Same reason as broadcast-compose-and-submit.spec.ts: the primary `e2e-member`
+// carries a LAPSED cycle by the F8 fixture, and the benefits page renders no
+// quota counter for a member whose access is restricted (2026-09-10: the
+// counter locator timed out). T053 is about the COUNTER, so it needs the
+// in-good-standing `e2e-member-empty` persona (linked, no cycle → full).
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Broadcast quota counter (T053 — US1 AS2)', () => {
-  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER credentials');
+  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
   test.beforeAll(async () => {
     await clearE2ERateLimits();
   });

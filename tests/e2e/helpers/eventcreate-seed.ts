@@ -913,13 +913,21 @@ export async function seedF6RelinkFixture(
     `;
     let relinkTargetMemberId = existingRelinkTarget[0]?.member_id ?? null;
     if (relinkTargetMemberId === null) {
+      // `members.member_number` is NOT NULL (migration 0209) with no default —
+      // a raw insert must supply it. High value: never collides with the
+      // allocator's low 1..N in the shared tenant (see lapsed-member-seed.ts).
+      // This branch only runs when the fixture row is absent, which is why the
+      // omission stayed latent until 2026-09-10.
+      const relinkMemberNumber = 980_000 + Math.floor(Math.random() * 9_000);
       const insertedRelinkTarget = await client.sql<
         Array<{ member_id: string }>
       >`
         INSERT INTO members (
-          member_id, tenant_id, company_name, country, plan_id, plan_year, status
+          member_id, tenant_id, member_number, company_name, country, plan_id, plan_year, status
         ) VALUES (
-          gen_random_uuid(), ${tenantSlug}, ${RELINK_TARGET_COMPANY}, 'TH',
+          gen_random_uuid(), ${tenantSlug},
+          ${relinkMemberNumber},
+          ${RELINK_TARGET_COMPANY}, 'TH',
           ${relinkPlanId}, 2026, 'active'
         )
         RETURNING member_id::text AS member_id

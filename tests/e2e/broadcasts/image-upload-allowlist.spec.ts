@@ -15,8 +15,13 @@ import { runAxeScan } from '../helpers/axe-scan';
 import { type Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 
-const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
-const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// Same reason as broadcast-compose-and-submit.spec.ts: the primary `e2e-member`
+// carries a LAPSED renewal cycle by the F8 fixture, so the compose page redirects
+// away from the form and the member-side cases below never reached the editor
+// (2026-09-10). Member-side cases need the in-good-standing `e2e-member-empty`
+// persona (linked, no cycle → full access; seed-e2e-portal-invoices.ts).
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
