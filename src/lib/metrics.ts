@@ -2394,22 +2394,40 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts.dispatch_resolve_failed.total{tenant}` — review 2026-09-07
-   * (errors HIGH-4): a dispatch tick that could not BUILD the audience
-   * (`dispatch.server_error`: a failed F3 page / count / opt-out lookup)
-   * leaves the row `approved` for the next tick with NO wall-clock budget —
-   * unlike a Resend failure (FR-021). Until this counter existed that path
-   * was log-only, so a broadcast could slip its `scheduled_for` forever
-   * without a single alertable signal. Alert on any non-zero rate sustained
-   * ≥ 15 min (`docs/observability.md` § 22.1; runbook
+   * `broadcasts.dispatch_resolve_failed.total{tenant, phase}` — review
+   * 2026-09-07 (errors HIGH-4): a dispatch tick that answered
+   * `dispatch.server_error` — the row stays `approved` for the next tick with
+   * NO wall-clock budget, unlike a Resend failure (FR-021). Until this counter
+   * existed that path was log-only, so a broadcast could slip its
+   * `scheduled_for` forever without a single alertable signal. Alert on any
+   * non-zero rate sustained ≥ 15 min (`docs/observability.md` § 22.1; runbook
    * `broadcast-audience-build.md` § C).
+   *
+   * `phase` (2026-09-10 follow-up 5): the NAME says "resolve failed", and the
+   * route incremented it for every `dispatch.server_error` it saw — a Step-1
+   * lock fault, the resolver, the unknown-status refusal, a persist fault, and
+   * on the import leg a gateway retryable within budget — while the runbook's
+   * triage tree (F3 pages / Neon / opt-out lookup) described only the
+   * resolver. The name is kept so the catalogued alert keeps firing; the label
+   * says which subsystem to open. Closed union across both legs:
+   * live leg `lock | resolve | inherited_status | persist_broadcast_id`,
+   * import leg `gateway | resolve | terminal_write`.
    */
-  dispatchResolveFailedTotal(tenantId: string): void {
+  dispatchResolveFailedTotal(
+    tenantId: string,
+    phase:
+      | 'lock'
+      | 'resolve'
+      | 'inherited_status'
+      | 'persist_broadcast_id'
+      | 'gateway'
+      | 'terminal_write',
+  ): void {
     safeMetric(() => {
       counter(
         'broadcasts_dispatch_resolve_failed_total',
-        'Dispatch ticks that could not build the audience (row stays approved; retried next tick)',
-      ).add(1, { tenant: tenantId });
+        'Dispatch ticks that answered dispatch.server_error, by phase (row stays approved; retried next tick)',
+      ).add(1, { tenant: tenantId, phase });
     });
   },
 

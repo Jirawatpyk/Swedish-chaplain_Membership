@@ -219,6 +219,14 @@ export type BuildAudienceTickError =
       readonly message: string;
       /** Round 4 L3 — the loggable class; see `resolve.server_error`'s docblock. */
       readonly errClass?: string;
+      /**
+       * 2026-09-10 follow-up (5) — which step faulted; labels the route's
+       * `dispatch_resolve_failed.total`. `gateway` is the one the live leg does
+       * not have: a retryable Resend throw WITHIN the FR-021 budget is reported
+       * here as `dispatch.server_error`, so without the label every 5xx read as
+       * "could not build the audience".
+       */
+      readonly phase: 'gateway' | 'resolve' | 'terminal_write';
     };
 
 /**
@@ -587,7 +595,7 @@ async function onRetryable(
   const epoch = budgetEpoch(broadcast);
   const elapsedMs = now.getTime() - epoch.getTime();
   if (elapsedMs <= RETRY_BUDGET_MS) {
-    return err({ kind: 'dispatch.server_error', message });
+    return err({ kind: 'dispatch.server_error', message, phase: 'gateway' });
   }
 
   logger.error(
@@ -1554,7 +1562,11 @@ async function failTerminally(
     // cancel is what actually won, that next tick reads a non-`approved` status
     // and reports `concurrent_skip`, which costs one wasted poll and lies to
     // nobody.
-    return err({ kind: 'dispatch.server_error', message: 'terminal_write_failed' });
+    return err({
+      kind: 'dispatch.server_error',
+      message: 'terminal_write_failed',
+      phase: 'terminal_write',
+    });
   }
 
   // FR-021 / AS2, after the tx commits. Best-effort by design — a bounced
@@ -1704,9 +1716,10 @@ function mapResolveError(e: ResolveAudienceError): BuildAudienceTickError {
         kind: 'dispatch.server_error',
         message: e.message,
         ...(e.errClass === undefined ? {} : { errClass: e.errClass }),
+        phase: 'resolve',
       };
     case 'malformed_segment':
-      return { kind: 'dispatch.server_error', message: 'malformed_segment' };
+      return { kind: 'dispatch.server_error', message: 'malformed_segment', phase: 'resolve' };
     default: {
       // `void`, never `return _exhaustive` — that idiom returns the VALUE at
       // runtime, which is truthy, so a genuinely new kind would be silently
@@ -1728,7 +1741,7 @@ function mapResolveError(e: ResolveAudienceError): BuildAudienceTickError {
       // after an hour went with the resolve-side budget in F3.)
       const _exhaustive: never = e;
       void _exhaustive;
-      return { kind: 'dispatch.server_error', message: 'unrouted_resolve_error' };
+      return { kind: 'dispatch.server_error', message: 'unrouted_resolve_error', phase: 'resolve' };
     }
   }
 }
