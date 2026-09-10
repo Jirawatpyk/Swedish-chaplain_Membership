@@ -90,7 +90,7 @@ function makeFakeGateway(counts: {
        */
       async getAudienceContactCount() {
         calls.push('getAudienceContactCount');
-        return { kind: 'present' as const, count: counts.created, complete: true };
+        return { count: counts.created, complete: true };
       },
       async createBroadcast() {
         calls.push('createBroadcast');

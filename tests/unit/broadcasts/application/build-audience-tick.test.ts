@@ -228,7 +228,6 @@ function makeDeps(opts: {
          */
         async getAudienceContactCount() {
           return {
-            kind: 'present' as const,
             count: RECIPIENTS.length,
             // REQUIRED on the port. Omitting it does not fail `tsc` here (the
             // mapped type above keeps every VALUE `unknown`), it silently sends

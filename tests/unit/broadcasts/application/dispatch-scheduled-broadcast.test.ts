@@ -331,6 +331,12 @@ interface GatewayOpts {
   readonly throwOnRetrieveBroadcast?: ThrowSpec;
   /** Round 4 L2 — the reclaim itself fails, which is the leak an operator must see. */
   readonly throwOnDeleteAudience?: boolean;
+  /**
+   * 2026-09-10 follow-ups (2) — the broadcast-resource reclaim fails. Same
+   * shape as the audience one: the tick's outcome is decided before the
+   * reclaim, so a throw here changes the LOG, never the return.
+   */
+  readonly throwOnDeleteBroadcast?: boolean;
 }
 
 function makeGateway(opts: GatewayOpts = {}): {
@@ -341,8 +347,11 @@ function makeGateway(opts: GatewayOpts = {}): {
   sendCalls: Array<{ broadcastId: string; idempotencyKey: string }>;
   /** Round 4 L2 — proves the CAS loser actually reclaims the audience it minted. */
   deleteAudienceCalls: Array<string>;
+  /** 2026-09-10 (2) — proves the three leak arms reclaim the BROADCAST they minted. */
+  deleteBroadcastCalls: Array<string>;
 } {
   const deleteAudienceCalls: Array<string> = [];
+  const deleteBroadcastCalls: Array<string> = [];
   const audienceCalls: Array<string> = [];
   const contactsCalls: Array<{
     audienceId: string;
@@ -363,6 +372,7 @@ function makeGateway(opts: GatewayOpts = {}): {
     createCalls,
     sendCalls,
     deleteAudienceCalls,
+    deleteBroadcastCalls,
     port: {
       async createAudience(name) {
         audienceCalls.push(name);
@@ -411,7 +421,6 @@ function makeGateway(opts: GatewayOpts = {}): {
           maybeThrow(opts.throwOnGetAudienceContactCount);
         }
         return {
-          kind: 'present' as const,
           count: opts.audienceContactCount ?? 2,
           // Round 4 F1 residual — `complete` is Resend's `has_more`, inverted.
           complete: opts.audienceCountComplete ?? true,
@@ -424,6 +433,12 @@ function makeGateway(opts: GatewayOpts = {}): {
         deleteAudienceCalls.push(audienceId);
         if (opts.throwOnDeleteAudience === true) {
           throw new Error('Resend 500 on DELETE /audiences');
+        }
+      },
+      async deleteBroadcast(broadcastId: string) {
+        deleteBroadcastCalls.push(broadcastId);
+        if (opts.throwOnDeleteBroadcast === true) {
+          throw new Error('Resend 500 on DELETE /broadcasts');
         }
       },
       async listAudiences() { return []; },
@@ -2842,13 +2857,20 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(JSON.stringify(unverifiableEvent?.payload)).not.toContain('503');
   });
 
-  it('TEST-G3 โ€” getAudienceContactCount returns {kind:"audience_missing"} โ’ drift check skipped (no audit, no crash)', async () => {
-    // Round 3 review TYPES-2: getAudienceContactCount is a discriminated
-    // union {kind:'present',count}|{kind:'audience_missing'}. Lock the
-    // positive `audience_missing` outcome path: caller translates to
-    // `actualCount = null`, drift-check branch is skipped (no
-    // broadcast_resend_audience_drift OR broadcast_resend_drift_check_unverifiable
-    // emitted), broadcast still advances to sending.
+  /**
+   * 2026-09-10 follow-ups (8). This case used to feed `{ kind: 'not_found' }`
+   * into the replay arm and assert that NEITHER drift audit fired — pinning a
+   * branch the provider can never reach (the list endpoint answers a missing
+   * audience with `200` + empty list, MEASURED). The arm is gone from the port.
+   *
+   * What replaces it is the path a 404 WOULD take if Resend ever changed: the
+   * adapter's `resource_missing` throw reaches the replay arm's catch, which is
+   * the unverifiable branch — an audit row + the § 22.3 metric, not silence.
+   * That is the honest successor to the deleted case: the impossible input is
+   * no longer modelled, and the input that could replace it is proven to land
+   * somewhere an operator can see.
+   */
+  it('TEST-G3 — a resource_missing THROW from the count lands in the unverifiable arm, never in silence', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -2864,8 +2886,12 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           reason: 'duplicate idempotency key',
         };
       },
-      async getAudienceContactCount() {
-        return { kind: 'not_found' as const };
+      async getAudienceContactCount(): Promise<{ count: number; complete: boolean }> {
+        throw {
+          kind: 'resource_missing',
+          resourceType: 'audience',
+          resourceId: 'aud-fake-1',
+        };
       },
     };
     const result = await dispatchScheduledBroadcast(
@@ -2891,21 +2917,20 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       },
       baseInput,
     );
+    // The replay still advances — a missing audience after the send is a
+    // forensic fact, not a reason to refuse a broadcast Resend already accepted.
     expect(result.ok).toBe(true);
-    // audience_missing means we cannot verify drift; this matches the
-    // "actualCount === null" branch and SHOULD NOT emit either drift
-    // audit. (The `unverifiable` audit only fires on a thrown error,
-    // not on the discriminated union's missing branch.)
+    // Not drift: no count was obtained, so there is nothing to compare.
     expect(
       audit.emits.find(
         (e) => e.eventType === 'broadcast_resend_audience_drift',
       ),
     ).toBeUndefined();
-    expect(
-      audit.emits.find(
-        (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
-      ),
-    ).toBeUndefined();
+    // Unverifiable: the throw is recorded, with the CLASS of what threw.
+    const unverifiable = audit.emits.find(
+      (e) => e.eventType === 'broadcast_resend_drift_check_unverifiable',
+    );
+    expect(unverifiable).toBeDefined();
   });
 
   // =====================================================================

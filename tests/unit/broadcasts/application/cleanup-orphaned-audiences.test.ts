@@ -127,7 +127,7 @@ function makeGateway(opts: {
     async createBroadcast() { throw new Error('not used'); },
     async sendBroadcast() { throw new Error('not used'); },
     async retrieveBroadcast() { throw new Error('not used'); },
-    async getAudienceContactCount() { return { kind: 'not_found' as const }; },
+    async getAudienceContactCount() { return { count: 0, complete: false }; },
     async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
     async deleteContactGlobally() { throw new Error('not used'); },
@@ -136,6 +136,7 @@ function makeGateway(opts: {
       const err = opts.throws?.[audienceId];
       if (err !== undefined) throw err;
     },
+    async deleteBroadcast() { throw new Error('not used'); },
     async listAudiences() { return []; },
   };
 
@@ -276,10 +277,11 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
       async createBroadcast() { throw new Error('not used'); },
       async sendBroadcast() { throw new Error('not used'); },
       async retrieveBroadcast() { throw new Error('not used'); },
-      async getAudienceContactCount() { return { kind: 'not_found' as const }; },
+      async getAudienceContactCount() { return { count: 0, complete: false }; },
       async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
       async deleteContactGlobally() { throw new Error('not used'); },
+      async deleteBroadcast() { throw new Error('not used'); },
       async listAudiences() { return []; },
       async deleteAudience() {
         inFlight++;

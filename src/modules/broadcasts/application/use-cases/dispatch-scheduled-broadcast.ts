@@ -1210,11 +1210,10 @@ export async function dispatchScheduledBroadcast(
         // was a lower bound (FINAL round L-1).
         let countComplete: boolean | null = null;
         try {
-          // Discriminated union (review TYPES-2): translate to the
-          // legacy `number | null` shape kept by this use-case so the
-          // downstream drift / unverifiable audit branches stay
-          // unchanged. `audience_missing` maps to null = no count
-          // available; `present` maps to the count.
+          // `{ count, complete }` — a plain record since 2026-09-10. The
+          // `not_found` arm this used to branch on was dead: the list endpoint
+          // never 404s (MEASURED), so a missing audience arrives as a
+          // verified-complete ZERO, which the zero clause below is for.
           const outcome =
             await deps.broadcastsGateway.getAudienceContactCount(
               resendAudienceId,
@@ -1241,20 +1240,12 @@ export async function dispatchScheduledBroadcast(
           //
           // An audience reporting zero contacts moments after we pushed N is far
           // more likely gone than genuinely empty, and either way it is not a
-          // verified count. It is also why `outcome.kind === 'not_found'` is dead
-          // code on this path: Resend never 404s the list endpoint.
+          // verified count.
           const usable =
-            outcome.kind === 'present' &&
             (outcome.complete || outcome.count > expectedCount) &&
             !(outcome.count === 0 && expectedCount > 0);
           actualCount = usable ? outcome.count : null;
-          countComplete = outcome.kind === 'present' ? outcome.complete : null;
-          // `!usable` rather than `present && !usable`: a `not_found` outcome also
-          // means the check did not happen, and it used to fall through to the
-          // plain `idempotency_replay` log with no metric and no row — the exact
-          // "reads as a completed check" outcome the flag below exists to prevent.
-          // Unreachable today (see the measurement above), which is precisely why
-          // it must not be the one arm left silent if Resend ever changes.
+          countComplete = outcome.complete;
           if (!usable) {
             // A partial read is not a FAILURE, so it gets no append-only row —
             // but it must not fall through to the plain `idempotency_replay`
@@ -1269,14 +1260,13 @@ export async function dispatchScheduledBroadcast(
                 broadcastId: input.broadcastId as string,
                 resendBroadcastId,
                 expectedRecipientCount: expectedCount,
-                // Optional because the `not_found` arm carries no count. An
-                // operator needs the three cases separable: a truncated page
-                // (pageCount < expected, countComplete false), a vanished or empty
-                // audience (pageCount 0, countComplete true), and no audience at
-                // all (pageCount absent).
-                pageCount: outcome.kind === 'present' ? outcome.count : undefined,
-                countComplete:
-                  outcome.kind === 'present' ? outcome.complete : undefined,
+                // An operator needs the two cases separable: a truncated page
+                // (pageCount < expected, countComplete false) and a vanished or
+                // empty audience (pageCount 0, countComplete true). "No audience
+                // at all" is not a third case — it is the second one, by
+                // measurement.
+                pageCount: outcome.count,
+                countComplete: outcome.complete,
               },
               'broadcasts.dispatch.audience_count_incomplete',
             );
