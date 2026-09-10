@@ -2177,6 +2177,68 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
   });
 
   /**
+   * Round 7 M-3 — the `BroadcastNotFoundError` arm shipped with no test.
+   *
+   * The previous commit's message listed it among four fixes; the repo knob
+   * covered a CAS loss and a bare `Error`, and nothing ever constructed this
+   * class. That is the same shape as the arm it sits beside, which round 4
+   * recorded as dead code until the commit that wrote its comment.
+   *
+   * It must bucket as `broadcast_not_found` — every other sink in the module
+   * treats a vanished row as a benign `concurrent_skip` at warn, not a critical
+   * page for a row that can never be retried — and it must name the resource we
+   * minted seconds earlier and can no longer attach, because nothing collects it.
+   */
+  it('FINAL2 -- a vanished row is a concurrent skip, and names the resource it leaked', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: { ...makeBroadcast('approved'), resendAudienceId: 'aud-existing' },
+      attachBroadcastIdThrows: new BroadcastNotFoundError(
+        'test-tenant' as unknown as ConstructorParameters<typeof BroadcastNotFoundError>[0],
+        broadcastId,
+      ),
+    });
+    const gw = makeGateway();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // NOT a DB fault, NOT critical: the row is gone, which every other sink in
+    // this module calls normal and self-healing.
+    expect(result.error.kind).toBe('broadcast_not_found');
+    expect(gw.sendCalls).toEqual([]);
+    // The leaked resource has to appear somewhere. Without this line its id
+    // exists in no log, no row and no metric.
+    const warned = warnSpy.mock.calls.map((c) => c[1]);
+    expect(warned).toContain('broadcasts.dispatch.row_vanished_broadcast_leaked');
+    warnSpy.mockRestore();
+  });
+
+  /**
    * FINAL review, the type reviewer's challenge -- and it was a fair one.
    *
    * Reusing an inherited id closes the double-send across two RESOURCES, but the
@@ -2339,7 +2401,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
   });
 
 
-  it('FINAL2 -- a status this build does not know is NOT treated as already-sent', async () => {
+  it('FINAL2 -- a status this build does not know REFUSES, rather than guessing', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -2350,7 +2412,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       },
     });
     const gw = makeGateway({ retrieveStatus: 'unknown' });
-    await dispatchScheduledBroadcast(
+    const result = await dispatchScheduledBroadcast(
       {
         tenant,
         broadcastsRepo: repo.port,
@@ -2374,9 +2436,22 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       baseInput,
     );
 
-    // `normaliseStatus` would map this to 'queued' at the adapter; the gate must
-    // not read a fabricated value as evidence of a send.
-    expect(gw.sendCalls.map((c) => c.broadcastId)).toEqual(['rb-from-previous-tick']);
+    // CONTRACT CHANGE, round 7 -- not an assertion bent to match the code.
+    //
+    // The first version of this test asserted the send happened, on the reasoning
+    // that anything not provably sent should fall through. Two reviewers pointed
+    // out the other half: re-sending on a status we cannot interpret risks a
+    // SECOND delivery to the whole audience, and Resend's answer to a repeat
+    // `/send` is unmeasured -- the same endpoint this file refuses to reason about
+    // everywhere else. Both directions are guesses, so the tie goes to the one a
+    // human can undo: refuse, keep the row `approved`, fire the counter, page in
+    // 15 minutes. A stuck broadcast is recoverable; 150 duplicate emails are not.
+    expect(gw.sendCalls).toEqual([]);
+    // And it must not look like a success either -- no skip-and-advance.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('dispatch.server_error');
+    expect(repo.transitions.map((t) => t.status)).not.toContain('sending');
   });
 
   /**

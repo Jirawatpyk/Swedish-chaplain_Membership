@@ -48,6 +48,7 @@ import {
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
+  RetrievedBroadcastResource,
 } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { AudienceMode } from '../../domain/audience-mode';
@@ -561,7 +562,106 @@ export async function dispatchScheduledBroadcast(
   // ANY endpoint to `idempotency_conflict`. So a pre-send 409 could advance the
   // row to `sending` with nothing ever sent.
   let sendAttempted = false;
+  /**
+   * Set by the probe below when an INHERITED resource was already handed to
+   * `/send` by an earlier tick. Declared out here because Step 4 -- which runs
+   * after the catch -- needs all three to write a truthful record: without them
+   * its audit payload stamped `actualSendAt = now` for a send that happened up
+   * to an hour earlier, and the value was already in hand and discarded.
+   */
+  let alreadyHandedToSend = false;
+  let observedResendStatus: RetrievedBroadcastResource['status'] | null = null;
+  let resendSentAt: string | null = null;
   try {
+    // ---- The probe runs FIRST, before anything else touches Resend --------
+    //
+    // An INHERITED id means a prior tick minted the resource and we do not know
+    // whether its send was accepted. Everything about this file refuses to guess
+    // at Resend's replay semantics -- `Idempotency-Key` is MEASURED inert on
+    // `POST /broadcasts`, and `/send` cannot be probed without sending real mail
+    // -- so ask instead of assuming a 409 will come back.
+    //
+    // **Position is the fix, not just the question.** This sat AFTER
+    // `addContactsToAudience`, and `withRetry` short-circuits a non-retryable
+    // GatewayThrowable immediately -- so a 409 from the first duplicate contact
+    // threw before the probe ever ran. A tick re-entering after a successful send
+    // therefore re-pushed every contact, took the 409, found `sendAttempted`
+    // false, and terminated the row with the FR-021 email telling the member
+    // their broadcast had FAILED. It had not. Asking first also skips the
+    // re-push entirely, which is ~72 s of a 300 s budget for a 150-member
+    // audience at the measured 2.08 req/s.
+    if (inheritedBroadcastId !== '') {
+      const probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
+      if (probe.kind === 'present') {
+        observedResendStatus = probe.resource.status;
+        // POSITIVE, and that is the whole lesson of this gate's first version. It
+        // was `status !== 'draft'`, a negative test over a provider string that
+        // `normaliseStatus` used to close by fabricating `'queued'` -- so
+        // `'cancelled'` and every status this build had never seen read as
+        // "already sent", the send was SKIPPED, the row still advanced to
+        // `sending`, and `reconcile-stuck-sending` later stamped `sent` and burned
+        // the member's annual quota for mail that never went out.
+        if (
+          probe.resource.status === 'queued' ||
+          probe.resource.status === 'sending' ||
+          probe.resource.status === 'sent'
+        ) {
+          alreadyHandedToSend = true;
+          // Carried into Step 4's audit row. `null` for `queued`/`sending` is the
+          // honest answer -- "accepted, not yet reported sent" -- and Step 4 must
+          // then omit `delaySeconds` rather than compute one from `now`.
+          resendSentAt = probe.resource.sentAt;
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+              observedResendStatus: probe.resource.status,
+            },
+            'broadcasts.dispatch.inherited_broadcast_already_handed_to_send',
+          );
+        } else if (probe.resource.status === 'unknown') {
+          // FAIL CLOSED. Re-sending on a status we cannot interpret risks a second
+          // delivery to the whole audience, and skipping the send risks recording a
+          // dispatch that never happened -- and BOTH directions are unmeasured.
+          // Refusing keeps the row `approved`, fires the route's counter, and pages
+          // within 15 minutes. A stuck broadcast is recoverable by a human; a
+          // duplicate send to 150 real members is not.
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+              severity: 'critical',
+            },
+            'broadcasts.dispatch.inherited_resource_unrecognised_status',
+          );
+          return err({
+            kind: 'dispatch.server_error',
+            message: 'inherited_resource_unrecognised_status',
+            errClass: 'gate',
+          });
+        } else {
+          // `'draft'` (never sent -- the case this whole gate exists for) and
+          // `'cancelled'`. Both proceed to the send, where a genuine refusal
+          // reaches the permanent / `resource_missing` arms and is reported as
+          // what it is. Logged HERE because the fall-through is a decision, and
+          // the only other signal for `cancelled` is the absence of one.
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              resendBroadcastId,
+              observedResendStatus: probe.resource.status,
+            },
+            'broadcasts.dispatch.inherited_broadcast_send_attempted',
+          );
+        }
+      }
+      // `not_found` deliberately falls through: the send 404s into the
+      // `resource_missing` arm, which exists for exactly that.
+    }
+
     if (resendAudienceId === '') {
       const audienceResult = await deps.broadcastsGateway.createAudience(
         `broadcast-${deps.tenant.slug}-${input.broadcastId}`,
@@ -623,10 +723,15 @@ export async function dispatchScheduledBroadcast(
     const contacts: ReadonlyArray<AudienceContact> = resolvedResult.value.recipients.map(
       (e) => ({ emailLower: e as string }),
     );
-    await deps.broadcastsGateway.addContactsToAudience(
-      resendAudienceId,
-      contacts,
-    );
+    // Skipped when the resource was already handed to `/send`: re-pushing every
+    // contact is what produced the 409 that used to mislabel a completed send as
+    // a permanent failure, and it buys nothing -- the audience is already built.
+    if (!alreadyHandedToSend) {
+      await deps.broadcastsGateway.addContactsToAudience(
+        resendAudienceId,
+        contacts,
+      );
+    }
 
     // F4 — the same reuse shape as the audience above, one step later. Skipping
     // this when the row already carries an id is what stops a tick that died
@@ -695,11 +800,32 @@ export async function dispatchScheduledBroadcast(
         // The row vanishing under us is NOT a fault. Every other sink in this
         // module calls it `broadcast_not_found` and buckets it `concurrent_skip`
         // at warn — the cron's own comment says "normal, self-healing, and NOT a
-        // failure of any kind" (an erasure cascade can remove the row between the
-        // Step-1 claim and this write). The port docblock promises this class;
+        // failure of any kind".
+        //
+        // This comment used to justify the arm with "an erasure cascade can remove
+        // the row". It cannot: the cascade calls
+        // `cancelInFlightBroadcastsForMember` — cancel, not delete. The only
+        // DELETEs on `broadcasts` are the member draft route, the prune cron
+        // (drafts), and `scripts/reset-broadcast-quota.ts`, which skips rows whose
+        // audience is still live. So the arm is right to exist and rare in
+        // practice — an operator running that script against a live tick. The port docblock promises this class;
         // routing it into the DB-fault arm below would page an operator at
         // critical for a row that can never be retried.
         if (persistErr instanceof BroadcastNotFoundError) {
+          // Log for the same reason its CAS sibling twenty lines up does: we minted
+          // a Resend resource seconds ago and cannot attach it, and nothing
+          // collects it — `cleanup-orphaned-audiences` deletes only the audience
+          // the row points at, and the row is gone. Without this line the id
+          // exists in no log, no row and no metric.
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              leakedResendBroadcastId: resendBroadcastId,
+              resendAudienceId,
+            },
+            'broadcasts.dispatch.row_vanished_broadcast_leaked',
+          );
           return err({
             kind: 'broadcast_not_found',
             broadcastId: input.broadcastId as string,
@@ -725,11 +851,21 @@ export async function dispatchScheduledBroadcast(
         // evaluated. A fault that persists — an RLS/permission problem on the
         // column, not a blip — therefore keeps the row `approved` for ever while
         // each tick mints a fresh Resend resource and leaks it, because the
-        // gateway has no `deleteBroadcast`. Bounding it means lifting the budget
-        // out of that branch into a helper this arm can call. OWED, not done: an
-        // honest unbounded retry is still better than the terminal-plus-member-
-        // email this replaced, and half-extracting the budget here would be the
-        // sixth consecutive fix that broke the fix before it.
+        // port has no `deleteBroadcast`.
+        //
+        // **That is a PORT GAP, not a Resend limitation** — this branch measured
+        // `'draft'` by creating a broadcast and DELETING it against the live
+        // account, and everything leaked here is a draft by definition (minted,
+        // never sent). So the cheap fix is one port method, not lifting the FR-021
+        // budget out of the catch. Correcting my own claim: I asserted three times
+        // today that the resource could not be reclaimed.
+        //
+        // Scale, also corrected: this leaks BROADCASTS, not audiences — the
+        // audience is minted once and inherited — so the 3-audience Free-plan
+        // ceiling is untouched and the real effect is junk drafts in the
+        // dashboard, roughly 288 a day at a 5-minute cadence. The route's counter
+        // alarms within 15 minutes, i.e. about three of them. Deferrable, and
+        // tracked as a follow-up rather than as an unbounded hazard.
         const persistFailureReason =
           (persistErr as { code?: string } | null)?.code === '23505'
             ? // Needs Resend to reissue an id, so it is the least likely member of
@@ -742,7 +878,12 @@ export async function dispatchScheduledBroadcast(
             broadcastId: input.broadcastId as string,
             resendBroadcastId,
             err: errKind(persistErr),
-            reason: persistFailureReason,
+            // NOT `reason` — that key is in `REDACT_PATHS`, so this line printed
+            // `reason:"[REDACTED]"` and the token added specifically so an
+            // operator could name a 23505 reached no one. `logger.ts` prescribes
+            // exactly this: rename a safe operational field to a non-`reason` key.
+            // Proven by running the suite, not by reading the redact list.
+            persistFailureKind: persistFailureReason,
             severity: 'critical',
           },
           'broadcasts.dispatch.attach_broadcast_id_failed',
@@ -752,49 +893,6 @@ export async function dispatchScheduledBroadcast(
           message: persistFailureReason,
           errClass: errKind(persistErr),
         });
-      }
-    }
-
-    // An INHERITED id means a prior tick minted the resource and we do not know
-    // whether its send was accepted. Everything about this file refuses to guess
-    // at Resend's replay semantics — `Idempotency-Key` is MEASURED inert on
-    // `POST /broadcasts`, and `/send` cannot be probed without sending real mail
-    // — so ask instead of assuming a 409 will come back.
-    //
-    // `'draft'` is the only status that proves the resource was never handed to
-    // `/send` (MEASURED 2026-09-10). `not_found` deliberately falls through: the
-    // send will 404 into the `resource_missing` arm, which exists for that.
-    let alreadyHandedToSend = false;
-    if (inheritedBroadcastId !== '') {
-      const probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
-      // POSITIVE, and that is the whole lesson of this gate's first version. It
-      // was `status !== 'draft'`, a negative test over a provider string that
-      // `normaliseStatus` used to close by fabricating `'queued'` — so
-      // `'cancelled'` and every status this build has never seen read as "already
-      // sent", the send was SKIPPED, the row still advanced to `sending`, and
-      // `reconcile-stuck-sending` later stamped `sent` and burned the member's
-      // annual quota for mail that never went out.
-      //
-      // These three are the only values that evidence a send. `'draft'`,
-      // `'cancelled'`, `'unknown'` and `not_found` all fall through TO the send,
-      // where a genuine refusal reaches the permanent / `resource_missing` arms
-      // and gets reported as what it is.
-      if (
-        probe.kind === 'present' &&
-        (probe.resource.status === 'queued' ||
-          probe.resource.status === 'sending' ||
-          probe.resource.status === 'sent')
-      ) {
-        alreadyHandedToSend = true;
-        logger.warn(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            resendBroadcastId,
-            observedResendStatus: probe.resource.status,
-          },
-          'broadcasts.dispatch.inherited_broadcast_already_handed_to_send',
-        );
       }
     }
 
@@ -997,10 +1095,16 @@ export async function dispatchScheduledBroadcast(
     // an inherited id was invisible here and a replay that could have advanced
     // dropped to permanent instead.
     if (shape.kind === 'idempotency_conflict') {
-      // Still empty means NOBODY has reached `createBroadcast` for this row —
-      // not this tick, and not any earlier one — so there is no resource to
-      // advance to. Fall through to permanent and let the next cron tick
-      // re-resolve from scratch.
+      // NO SEND WAS ATTEMPTED this tick, so a 409 cannot be a replay of ours.
+      // Fall through to permanent and let the next cron tick re-resolve.
+      //
+      // The predicate used to be `resendBroadcastId === ''` and this comment used
+      // to say "nobody has reached createBroadcast". Re-anchoring on
+      // `sendAttempted` made the arm reachable with an INHERITED id on the row —
+      // and the audit summary below went on asserting there was none, into a
+      // table with 5-to-10-year retention that renders on the staff audit viewer.
+      // Two reviewers found it on the very path this branch's own new test walks.
+      // Say what the flag means, and carry the id so the row cannot mislead.
       if (!sendAttempted) {
         logger.error(
           {
@@ -1022,7 +1126,7 @@ export async function dispatchScheduledBroadcast(
             tenantId: deps.tenant.slug,
             eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
             actorUserId: 'system:cron',
-            summary: `Broadcast ${input.broadcastId} hit idempotency conflict with no resend_broadcast_id on the row — no tick has reached createBroadcast, so there is no resource to replay onto`,
+            summary: `Broadcast ${input.broadcastId} hit an idempotency conflict BEFORE any send was attempted this tick — the 409 came from an earlier call, not from /send, so there is nothing of ours to replay`,
             payload: {
               broadcastId: input.broadcastId,
               reason: shape.reason,
@@ -1264,7 +1368,7 @@ export async function dispatchScheduledBroadcast(
         //   - `kind === 'idempotency_conflict'` so the next branch
         //     `if (shape.kind === 'resource_missing')` is skipped.
         //   - The permanent-handler condition is
-        //     `shape.kind !== 'idempotency_conflict' || resendBroadcastId === ''`
+        //     `shape.kind !== 'idempotency_conflict' || !sendAttempted`
         //     — both clauses are false here (kind matches AND id is set),
         //     so the permanent handler is intentionally skipped.
         //   - Execution exits the catch block and reaches Step 4
@@ -1401,13 +1505,28 @@ export async function dispatchScheduledBroadcast(
       // late did the cron handler fire" for SC-001 quartile analysis.
       // For "send-now" paths where `scheduledFor === null`,
       // delaySeconds is null (the field is irrelevant).
-      const actualSendAt = now;
+      // Round 7 M-1. `now` is right only when THIS tick sent. On the
+      // probe-positive path the send happened in an earlier tick -- up to an hour
+      // earlier -- and `probe.resource.sentAt` was already in hand and discarded.
+      // That is the round-4 L2 class exactly: a narrowing obtained and not used,
+      // written into a table with 5-year retention that cannot be corrected.
+      //
+      // `null` is the honest answer for `queued`/`sending`: Resend has accepted
+      // the send but not reported it complete, so we do not know when it went.
+      const actualSendAt =
+        alreadyHandedToSend && resendSentAt !== null
+          ? new Date(resendSentAt)
+          : alreadyHandedToSend
+            ? null
+            : now;
       const scheduledForIso =
         broadcast.scheduledFor !== null
           ? broadcast.scheduledFor.toISOString()
           : null;
+      // Unknown send time means unknown delay. Computing it from `now` on a replay
+      // inflates the SC-001 quartiles by however long the row sat between ticks.
       const delaySeconds =
-        broadcast.scheduledFor !== null
+        broadcast.scheduledFor !== null && actualSendAt !== null
           ? Math.round(
               (actualSendAt.getTime() - broadcast.scheduledFor.getTime()) /
                 1000,
@@ -1423,9 +1542,14 @@ export async function dispatchScheduledBroadcast(
           resendAudienceId,
           resendBroadcastId,
           recipientCount: resolvedResult.value.estimatedCount,
-          sendingStartedAt: actualSendAt.toISOString(),
+          sendingStartedAt: actualSendAt !== null ? actualSendAt.toISOString() : null,
+          // The row says for itself whether this tick sent, so a reader never has
+          // to infer it from a timestamp. `observedResendStatus` is what Resend
+          // actually answered -- previously read, acted on, and then dropped.
+          handedToSendOnPriorTick: alreadyHandedToSend,
+          observedResendStatus,
           scheduledFor: scheduledForIso,
-          actualSendAt: actualSendAt.toISOString(),
+          actualSendAt: actualSendAt !== null ? actualSendAt.toISOString() : null,
           delaySeconds,
         },
         requestId: null,
