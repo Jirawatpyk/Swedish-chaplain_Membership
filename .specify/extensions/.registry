@@ -225,6 +225,23 @@
       },
       "registered_skills": [],
       "installed_at": "2026-05-12T04:20:27.870407+00:00"
+    },
+    "speckit-superpowers-bridge": {
+      "version": "1.2.0",
+      "source": "local",
+      "manifest_hash": "sha256:fe7c8d353c87f90f48763c424f24c09bd02e572479b9313900ee341b5a858e89",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.speckit-superpowers-bridge.handoff",
+          "speckit.speckit-superpowers-bridge.guard",
+          "speckit.speckit-superpowers-bridge.execute",
+          "speckit.superpowers-bridge"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-09-10T16:30:10.440794+00:00"
     }
   }
 }
