@@ -68,7 +68,7 @@ function makeRepo(opts: {
     async applyTransition() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
     async attachResendIds() {},
     async attachBroadcastId() {},
-      async attachAudienceId() {},
+    async attachAudienceId() {},
     // Phase 9b (T147) — unused here; present so the stub still satisfies
     // BroadcastsRepo.
     // T086 — unused here; present so the stub still satisfies BroadcastsRepo.

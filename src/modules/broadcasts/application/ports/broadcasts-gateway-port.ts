@@ -82,7 +82,25 @@ export interface CreateBroadcastInput {
 
 export interface RetrievedBroadcastResource {
   readonly id: string;
-  readonly status: 'queued' | 'sending' | 'sent' | 'cancelled';
+  /**
+   * `'draft'` is MEASURED, 2026-09-10: a broadcast created by
+   * `POST /broadcasts` and never handed to `/send` reports
+   * `"status": "draft"` (probed with a draft + DELETE against the live
+   * account — never `/send`). It was missing from this union, so
+   * `normaliseStatus` mapped it through its unknown-status default to
+   * `'queued'` AND logged an error — on the most ordinary state a Resend
+   * broadcast can be in.
+   *
+   * The distinction is load-bearing, not cosmetic: `'draft'` is the only
+   * value that proves a resource was NEVER handed to `/send`. Everything
+   * else means it was. `dispatchScheduledBroadcast` uses that to decide
+   * whether a re-entered tick may send an inherited id, instead of
+   * assuming Resend will answer 409 — an assumption the same file
+   * elsewhere refuses to rely on, because the header is MEASURED inert on
+   * `POST /broadcasts` and `/send` cannot be probed without sending real
+   * mail.
+   */
+  readonly status: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled';
   readonly sentAt: string | null;
 }
 

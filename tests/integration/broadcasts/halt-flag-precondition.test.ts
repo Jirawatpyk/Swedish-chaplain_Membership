@@ -177,7 +177,7 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     },
     async attachResendIds() {},
     async attachBroadcastId() {},
-      async attachAudienceId() {},
+    async attachAudienceId() {},
     // Phase 9b (T147) — unused here; present so the stub still satisfies
     // BroadcastsRepo.
     // T086 — unused here; present so the stub still satisfies BroadcastsRepo.

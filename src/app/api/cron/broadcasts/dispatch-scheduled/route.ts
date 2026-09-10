@@ -36,9 +36,11 @@
  *     `cancelled` with `resend_broadcast_id` NULL, so every webhook 200-acks as
  *     `unknown_resend_broadcast_id`, bounces never reach suppression, and
  *     `reconcile-stuck-sending` cannot see it (the row is not `sending`).
- *     Pre-existing, and in scope for the F4 follow-up PR — the same remedy,
- *     persisting the ids BEFORE the send, closes it and the double-send shape
- *     together.
+ *     **CLOSED by F4 (PR #353).** `resend_broadcast_id` is persisted in its own
+ *     tx before the send, so it survives the transition rollback a landing
+ *     cancel causes, and the webhook can correlate. Note what that does NOT
+ *     do: the mail still goes out if Resend accepted the send. What changed is
+ *     that the row can afterwards say which resource sent it.
  *   - **On the IMPORT leg that lock does NOT span the send** (round 3 finding
  *     3-6). `buildAudienceTick`'s locking tx COMMITS before every gateway call,
  *     so the window covers a poll, a full re-resolve, `createBroadcast` and

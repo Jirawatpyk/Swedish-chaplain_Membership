@@ -1089,6 +1089,11 @@ async function confirmImport(
   // the resource — a change to the two-tick contract, tracked with the flip
   // preconditions rather than ridden along here.
   //
+  // The mechanism now EXISTS: `BroadcastsRepo.attachBroadcastId` was added by F4
+  // (PR #353) and the legacy leg uses it. This leg still calls `attachResendIds`
+  // AFTER the send, so it keeps the window. Wiring it here is a small change and
+  // a flip precondition, not a research task.
+  //
   // This paragraph briefly carried a parenthetical claiming the double-send "is
   // live on `origin/main` today and waits for a failed DB write, not for a flag".
   // That is true of the LEGACY leg and false here: this file does not exist on

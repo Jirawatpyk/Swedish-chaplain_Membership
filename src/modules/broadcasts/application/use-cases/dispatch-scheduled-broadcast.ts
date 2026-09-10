@@ -548,6 +548,10 @@ export async function dispatchScheduledBroadcast(
   // id was inherited from a prior tick and the broadcast id never was, so every
   // re-entered tick called `createBroadcast` again.
   let resendBroadcastId = broadcast.resendBroadcastId ?? '';
+  // Frozen at entry so the send gate below can tell "a prior tick minted this"
+  // from "I minted it a few lines ago" — `resendBroadcastId` is reassigned in
+  // between, and after that the two are indistinguishable.
+  const inheritedBroadcastId = resendBroadcastId;
   try {
     if (resendAudienceId === '') {
       const audienceResult = await deps.broadcastsGateway.createAudience(
@@ -636,20 +640,117 @@ export async function dispatchScheduledBroadcast(
       // one between `sendBroadcast` returning and the transition tx committing:
       // mail is out, and until this write existed nothing on our side knew which
       // resource sent it.
-      await deps.broadcastsRepo.withTx(async (tx) => {
-        await deps.broadcastsRepo.attachBroadcastId(
-          tx,
-          deps.tenant.slug,
-          input.broadcastId,
-          resendBroadcastId,
+      //
+      // **Its own try/catch, and that is the point.** The enclosing `try` is for
+      // GATEWAY errors: its catch reads a `kind` field off the throw, and its
+      // `BroadcastConcurrentMutationError` arm deletes `resendAudienceId` on the
+      // stated premise that `attachAudienceId` is the only thrower in scope. A DB
+      // write in there breaks both. Five reviewers found the same consequence
+      // independently: on a CAS loss here the audience is the row's canonical one
+      // — the WINNER is sending into it — and the arm deleted it, at INFO, under
+      // a bucket the cron calls benign. Handling it here restores that premise
+      // instead of patching around it.
+      try {
+        await deps.broadcastsRepo.withTx(async (tx) => {
+          await deps.broadcastsRepo.attachBroadcastId(
+            tx,
+            deps.tenant.slug,
+            input.broadcastId,
+            resendBroadcastId,
+          );
+        });
+      } catch (persistErr) {
+        if (persistErr instanceof BroadcastConcurrentMutationError) {
+          // A sibling tick attached first. It owns the row, the audience and the
+          // send. We touch NOTHING — and we leak the resource we just minted,
+          // because the gateway has no `deleteBroadcast` to reclaim it with.
+          // Logged at error rather than info precisely because nothing collects
+          // it: `cleanup-orphaned-audiences` only deletes the audience the row
+          // points at, which is the winner's.
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              leakedResendBroadcastId: resendBroadcastId,
+              resendAudienceId,
+              observedStatus: persistErr.observedStatus,
+              severity: 'critical',
+            },
+            'broadcasts.dispatch.broadcast_attach_lost_leaked',
+          );
+          return err({
+            kind: 'broadcast_invalid_state_transition',
+            observedStatus: persistErr.observedStatus,
+          });
+        }
+        // Anything else is a DB fault — a Neon blip, a pooler drop, a timeout.
+        // **No mail has gone out yet.** Falling through to the gateway classifier
+        // made this `unknown` → non-retryable BY DESIGN → the permanent arm: the
+        // row went terminal, a raw driver message landed in an append-only audit
+        // row, and the member was emailed that their broadcast had FAILED. Before
+        // the send the safe direction is the opposite one — stay `approved` and
+        // let the next tick retry, which is the whole reason this write exists.
+        // The FR-021 hour budget still bounds it.
+        logger.error(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            err: errKind(persistErr),
+            // 23505 needs Resend to reissue an id, so it is the least likely
+            // member of this class — but it is the one an operator cannot
+            // otherwise name, and the class is mostly transient DB faults.
+            reason:
+              (persistErr as { code?: string } | null)?.code === '23505'
+                ? 'duplicate_resend_broadcast_id'
+                : 'persist_failed',
+            severity: 'critical',
+          },
+          'broadcasts.dispatch.attach_broadcast_id_failed',
         );
-      });
+        return err({
+          kind: 'gateway_retryable',
+          subKind: 'api',
+          reason:
+            (persistErr as { code?: string } | null)?.code === '23505'
+              ? 'duplicate_resend_broadcast_id'
+              : 'attach_broadcast_id_failed',
+        });
+      }
     }
 
-    await deps.broadcastsGateway.sendBroadcast(
-      resendBroadcastId,
-      buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
-    );
+    // An INHERITED id means a prior tick minted the resource and we do not know
+    // whether its send was accepted. Everything about this file refuses to guess
+    // at Resend's replay semantics — `Idempotency-Key` is MEASURED inert on
+    // `POST /broadcasts`, and `/send` cannot be probed without sending real mail
+    // — so ask instead of assuming a 409 will come back.
+    //
+    // `'draft'` is the only status that proves the resource was never handed to
+    // `/send` (MEASURED 2026-09-10). `not_found` deliberately falls through: the
+    // send will 404 into the `resource_missing` arm, which exists for that.
+    let alreadyHandedToSend = false;
+    if (inheritedBroadcastId !== '' && resendBroadcastId === inheritedBroadcastId) {
+      const probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
+      if (probe.kind === 'present' && probe.resource.status !== 'draft') {
+        alreadyHandedToSend = true;
+        logger.warn(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            observedResendStatus: probe.resource.status,
+          },
+          'broadcasts.dispatch.inherited_broadcast_already_handed_to_send',
+        );
+      }
+    }
+
+    if (!alreadyHandedToSend) {
+      await deps.broadcastsGateway.sendBroadcast(
+        resendBroadcastId,
+        buildIdempotencyKey(deps.tenant.slug, input.broadcastId as string),
+      );
+    }
   } catch (e) {
     // ---- Round 4 L2 — the audience-attach CAS loss, named ------------
     //
@@ -657,6 +758,16 @@ export async function dispatchScheduledBroadcast(
     // `BroadcastConcurrentMutationError`, so reaching here is unambiguous: a
     // sibling tick attached a different audience first. Two overlapping ticks
     // are reachable because `maxDuration` equals the cron cadence.
+    //
+    // **That premise is load-bearing and it has to be RE-EARNED on every
+    // change.** F4 briefly broke it: `attachBroadcastId` throws the same class,
+    // and for one commit it sat in this try. On that path the audience is the
+    // row's canonical one -- the WINNER is sending into it -- so the reclaim
+    // below deleted a live audience and reported it at INFO as a benign skip.
+    // Five reviewers found it independently. It is handled at its own call site
+    // now, so this arm's `resendAudienceId` is once again always this tick's
+    // own mint. Anything else added here that can throw this class must be
+    // handled there, not by widening this arm.
     //
     // Until now this fell to `classifyThrown`, which reads a `kind` field the
     // error class does not have, so it was classified `unknown` → permanent →
@@ -1386,14 +1497,12 @@ export async function dispatchScheduledBroadcast(
     // failed), so the next tick mints a NEW broadcast and sends THAT — a
     // different URL, which no idempotency scheme would collapse anyway.
     //
-    // Left as-is and logged at error severity, which is what actually protects
-    // here today. The fix is to persist the id BEFORE the send so a retry hits
-    // the same resource; that is F4 in the round-4 ledger — a follow-up PR, not a
-    // merge blocker, because the shape predates this branch and is live on
-    // `origin/main` today. It is not a FLIP blocker either: it waits on a failed
-    // DB write, not on a flag. (The same parenthetical was pasted onto
-    // `build-audience-tick.ts`, where the `origin/main` half is false — that leg
-    // does not exist there. Corrected in place.)
+    // Logged at error severity, and **F4 is now FIXED above**: the id is
+    // persisted in its own tx immediately after `createBroadcast` returns, so a
+    // tick that dies in this window leaves the resource recorded and the next
+    // tick reuses it instead of minting a second one. What remains here is the
+    // narrower residual -- this write failing means the STATUS did not advance,
+    // so the row is retried with the same resource rather than a new one.
     logger.error(
       {
         err: errKind(e),

@@ -903,8 +903,13 @@ async function importFetch(
 
 function normaliseStatus(
   raw: string,
-): 'queued' | 'sending' | 'sent' | 'cancelled' {
+): 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled' {
   switch (raw) {
+    // MEASURED 2026-09-10: a broadcast created and never handed to `/send`
+    // reports `draft`. It was absent here, so the single most ordinary state
+    // a resource can be in fell through the unknown-status default below —
+    // reported as `queued` AND logged at error on every retrieve.
+    case 'draft':
     case 'queued':
     case 'sending':
     case 'sent':
