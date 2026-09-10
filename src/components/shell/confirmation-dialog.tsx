@@ -75,7 +75,7 @@ export interface ConfirmationDialogProps {
    * common case where the trigger reliably survives every close path
    * (Base UI's own default — return the trigger — applies).
    */
-  readonly finalFocus?: () => HTMLElement | null;
+  readonly finalFocus?: () => HTMLElement | false | null;
 }
 
 export function ConfirmationDialog({

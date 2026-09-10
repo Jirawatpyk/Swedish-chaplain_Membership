@@ -277,8 +277,17 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ overflow (UX-audit #4
       // null/<body> — because `closedViaSuccessRef` was raised before close.
       const mainContent = document.getElementById('main-content');
       expect(mainContent).not.toBeNull();
-      const resolve = doneCapture.finalFocus as () => HTMLElement | null;
-      expect(resolve()).toBe(mainContent);
+      // 2026-09-10 — the resolver no longer RETURNS the landmark. Base UI
+      // applies a returned element as `getFirstTabbableElement(el)`, and the
+      // `tabIndex={-1}` landmark is not tabbable, so focus landed on its first
+      // link. The hook now focuses the landmark itself (after Base UI's own
+      // microtask) and answers `false` = "move nothing".
+      const resolve = doneCapture.finalFocus as () => HTMLElement | false | null;
+      expect(resolve()).toBe(false);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.activeElement).toBe(mainContent);
     } finally {
       vi.unstubAllGlobals();
     }

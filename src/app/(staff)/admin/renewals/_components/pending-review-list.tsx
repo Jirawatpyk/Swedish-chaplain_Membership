@@ -118,7 +118,7 @@ export interface PendingReviewListProps {
 /** B2 — an inline-Approve launch target: which cycle + the row's focus resolver. */
 interface ApproveTarget {
   readonly cycleId: string;
-  readonly finalFocus: () => HTMLElement | null;
+  readonly finalFocus: () => HTMLElement | false | null;
 }
 
 export function PendingReviewList({
@@ -157,7 +157,7 @@ export function PendingReviewList({
   // and Base UI falls back to its default (return to the vanishing Approve
   // trigger → focus drops to <body>). Keeping the resolver here lets the stable
   // `finalFocus` callback below stay always-defined. No-op default until launch.
-  const activeFinalFocusRef = useRef<() => HTMLElement | null>(() => null);
+  const activeFinalFocusRef = useRef<() => HTMLElement | false | null>(() => null);
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -195,7 +195,7 @@ export function PendingReviewList({
   // Passing `approveTarget?.finalFocus` instead would evaporate to `undefined`
   // at the close commit and leave the whole chain inert (WCAG 2.1 AA SC 2.4.3).
   const finalFocus = useCallback(
-    (): HTMLElement | null => activeFinalFocusRef.current(),
+    (): HTMLElement | false | null => activeFinalFocusRef.current(),
     [],
   );
 

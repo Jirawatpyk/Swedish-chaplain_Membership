@@ -1197,6 +1197,11 @@ test.describe(
         .click();
       await expect(dialog).toBeHidden({ timeout: 15_000 });
 
+      // 2026-09-10 — this case found a real F7-A11Y-1 regression: on a full
+      // success the bar (dialog included) unmounts before the dialog's
+      // `finalFocus` can run, and Base UI's fallback parked focus on the
+      // sidebar "Templates" link. The bar now moves focus to `#main-content`
+      // itself (`queue-bulk-action-bar.tsx`, success branch).
       await expect
         .poll(
           async () => page.evaluate(() => document.activeElement?.id ?? null),

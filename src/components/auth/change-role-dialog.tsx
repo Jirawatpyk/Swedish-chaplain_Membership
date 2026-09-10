@@ -159,7 +159,7 @@ export interface ChangeRoleDialogProps {
   /** Called after a successful role change (parent runs `router.refresh()`). */
   readonly onChanged: () => void;
   /** Focus-return target on close (parent supplies a surviving landmark). */
-  readonly finalFocus?: () => HTMLElement | null;
+  readonly finalFocus?: () => HTMLElement | false | null;
 }
 
 export function ChangeRoleDialog({

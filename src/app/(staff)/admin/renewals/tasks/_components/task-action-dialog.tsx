@@ -85,7 +85,7 @@ export interface TaskActionDialogProps {
    * `activeFinalFocusRef`). `| undefined` stays explicit
    * (exactOptionalPropertyTypes) so callers may still omit the prop entirely.
    */
-  readonly finalFocus?: (() => HTMLElement | null) | undefined;
+  readonly finalFocus?: (() => HTMLElement | false | null) | undefined;
   readonly children: React.ReactNode;
 }
 

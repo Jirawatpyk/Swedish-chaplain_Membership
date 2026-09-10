@@ -322,8 +322,17 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
       // null/<body> — because `closedViaSuccessRef` was raised before close.
       const mainContent = document.getElementById('main-content');
       expect(mainContent).not.toBeNull();
-      const resolve = capturedDialogFinalFocus as () => HTMLElement | null;
-      expect(resolve()).toBe(mainContent);
+      // 2026-09-10 — the resolver no longer RETURNS the landmark. Base UI
+      // applies a returned element as `getFirstTabbableElement(el)`, and the
+      // `tabIndex={-1}` landmark is not tabbable, so focus landed on its first
+      // link. The hook now focuses the landmark itself (after Base UI's own
+      // microtask) and answers `false` = "move nothing".
+      const resolve = capturedDialogFinalFocus as () => HTMLElement | false | null;
+      expect(resolve()).toBe(false);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.activeElement).toBe(mainContent);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -418,9 +427,18 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
       // null/<body> (WCAG 2.1 AA SC 2.4.3).
       const mainContent = document.getElementById('main-content');
       expect(mainContent).not.toBeNull();
+      // 2026-09-10 — the resolver no longer RETURNS the landmark. Base UI
+      // applies a returned element as `getFirstTabbableElement(el)`, and the
+      // `tabIndex={-1}` landmark is not tabbable, so focus landed on its first
+      // link. The hook now focuses the landmark itself (after Base UI's own
+      // microtask) and answers `false` = "move nothing".
       expect(typeof capturedDialogFinalFocus).toBe('function');
-      const resolve = capturedDialogFinalFocus as () => HTMLElement | null;
-      expect(resolve()).toBe(mainContent);
+      const resolve = capturedDialogFinalFocus as () => HTMLElement | false | null;
+      expect(resolve()).toBe(false);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.activeElement).toBe(mainContent);
     } finally {
       vi.unstubAllGlobals();
     }

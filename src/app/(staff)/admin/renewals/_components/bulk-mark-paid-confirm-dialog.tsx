@@ -160,7 +160,7 @@ export interface BulkMarkPaidConfirmDialogProps {
     body: MarkPaidBatchBody,
     notBulkPayable: readonly BulkMarkPaidBatchEntry[],
   ) => Promise<void>;
-  readonly finalFocus?: () => HTMLElement | null;
+  readonly finalFocus?: () => HTMLElement | false | null;
 }
 
 /**

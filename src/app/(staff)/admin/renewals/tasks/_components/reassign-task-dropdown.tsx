@@ -66,7 +66,7 @@ export interface ReassignTaskDropdownProps {
   readonly currentAssigneeUserId: string | null;
   readonly onSubmit: (toUserId: string) => Promise<void>;
   /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
-  readonly finalFocus?: (() => HTMLElement | null) | undefined;
+  readonly finalFocus?: (() => HTMLElement | false | null) | undefined;
 }
 
 export function ReassignTaskDropdown({

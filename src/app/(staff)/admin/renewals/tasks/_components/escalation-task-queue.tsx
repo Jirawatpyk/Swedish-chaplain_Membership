@@ -164,7 +164,7 @@ type AssignmentFilter = 'all' | 'mine' | 'unassigned';
  */
 interface DialogTarget {
   readonly taskId: string;
-  readonly finalFocus: () => HTMLElement | null;
+  readonly finalFocus: () => HTMLElement | false | null;
 }
 
 // Radix/Base UI `Select` FORBIDS an empty-string `SelectItem` value (it
@@ -238,7 +238,7 @@ export function EscalationTaskQueue({
   // is read, and Base UI falls back to its default (return to the vanishing ⋯
   // trigger → focus drops to <body>). Set by all three open handlers below;
   // read by the stable `stableFinalFocus` callback. No-op default until launch.
-  const activeFinalFocusRef = useRef<() => HTMLElement | null>(() => null);
+  const activeFinalFocusRef = useRef<() => HTMLElement | false | null>(() => null);
   // useId() per-instance, mirroring `TierFilterSelect` — guarantees
   // uniqueness if this component is ever rendered twice on one page.
   const taskTypeFilterLabelId = `task-type-filter-label-${useId()}`;
@@ -452,7 +452,7 @@ export function EscalationTaskQueue({
   // `…DialogTarget?.finalFocus` instead would evaporate to `undefined` at the
   // close commit and leave the whole chain inert (WCAG 2.1 AA SC 2.4.3).
   const stableFinalFocus = useCallback(
-    (): HTMLElement | null => activeFinalFocusRef.current(),
+    (): HTMLElement | false | null => activeFinalFocusRef.current(),
     [],
   );
 

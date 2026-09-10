@@ -88,7 +88,7 @@ vi.mock('next/navigation', () => ({
 // dialog content; this only taps the one prop.
 const { alertDialogCapture } = vi.hoisted(() => ({
   alertDialogCapture: {
-    finalFocus: undefined as (() => HTMLElement | null) | undefined,
+    finalFocus: undefined as (() => HTMLElement | false | null) | undefined,
   },
 }));
 
@@ -104,7 +104,7 @@ vi.mock('@/components/ui/alert-dialog', async (importOriginal) => {
       // callback) — `BulkApproveConfirmDialog` only ever passes the
       // `useDialogFinalFocus` callback shape, so narrow it for the capture.
       alertDialogCapture.finalFocus = props.finalFocus as
-        | (() => HTMLElement | null)
+        | (() => HTMLElement | false | null)
         | undefined;
       return <actual.AlertDialogContent {...props} />;
     },

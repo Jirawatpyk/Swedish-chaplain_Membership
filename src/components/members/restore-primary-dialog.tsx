@@ -72,7 +72,7 @@ type Props = {
   readonly onContactAdded?: () => void;
   readonly submitting: boolean;
   /** Focus-return target on close. */
-  readonly finalFocus?: () => HTMLElement | null;
+  readonly finalFocus?: () => HTMLElement | false | null;
 };
 
 export function RestorePrimaryDialog({
