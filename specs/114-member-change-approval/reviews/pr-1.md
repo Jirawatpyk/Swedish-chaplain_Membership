@@ -28,7 +28,7 @@ Verdicts: no Critical-in-dark-state from five reviewers; UX raised three Critica
 table labels, the `/privacy` dead link, a DB failure rendered as an empty queue). Five of six said
 **With fixes**, UX said **No** until its three Critical closed.
 
-### Fixed in this round (commit `<round-1 sha>`)
+### Fixed in this round (commit `0a2cbf1ec`)
 
 | # | Lens | Finding | Fix |
 |---|---|---|---|
@@ -85,6 +85,42 @@ table labels, the `/privacy` dead link, a DB failure rendered as an empty queue)
 | Privacy M-8 (raw `userId` in four new page logs — pre-existing pattern), M-9 (`member_change_approval_setting_changed` i18n lands with PR-3), M-10 (`ON DELETE CASCADE` vs FR-030 accountability — a documented trade-off) | recorded |
 | Mig M-2 (unindexed FK columns `decided_by_user_id`, `submitted_by_contact_id`, `replaced_by_request_id`), M-5 (per-field UPDATE loop in `decideInTx`) | PR-2 migration follow-up |
 | Whole-branch seam pass (`whole-branch-reviewer`) | runs after round 1 lands |
+
+## Round 2 — the same six lenses re-review the FIXES (`b22f9209b..0a2cbf1ec`), 2026-09-11
+
+108 rule 1: a fix is re-reviewed by the lens that found the defect, against the assertion, not the
+sentence. Each reviewer read its own round-1 rows, opened the fix, and said CLOSED / PARTIAL / NOT
+CLOSED per finding, then looked for regressions the fixes introduced. Verdicts: security **With
+fixes** (3 residuals), privacy **With fixes** (I-1 residual + 2 new), reliability **With fixes**
+(1 regression + 3 new), migration **Ready (dark)** with 2 parity notes, tax **With fixes** (3 copy
++ 1 rule), UX **No** until the `unknownReviewer` key lands where the page reads it, then With fixes.
+
+### Per-lens outcome
+
+| Lens | Round-1 rows | Round-2 verdict | What round 2 changed |
+|---|---|---|---|
+| Security | 25–28 all CLOSED | residuals R-1 / R-2 / R-3 | R-1 `listActiveUsersByRole` throws → the tick's tx rolled back with `attempts` unbumped (the same class as Rel I-3) → wrapped, a throw → `null`; R-2 `viewerContactId` was OPTIONAL so a new caller silently read as "unresolvable = drop everything" → REQUIRED `string \| null`, every staff caller passes `null` explicitly; R-3 the FR-029 projection ran AFTER `redactEvents` → moved before it, so a future deny-list entry for `contact_id` cannot fail it open. I-5 (cross-tenant roster) stays documented: cross-tenant by construction, no `tenants` table to tripwire on. |
+| Privacy | 14–18 CLOSED; I-1 PARTIAL | I-1 residual + M-7 residual + I-3 residual | I-1: the projection only dropped `own_contact`; a colleague's MIXED row still carried `field_keys` naming their own fields → mixed rows keep the company part, lose `field_keys` / `fields` for anyone but the submitter; `decided` + `withdrawn` rows are projected too (they carry `scope` + `contact_id` now — audit-port contract, 0301 header, T078 / T082 updated). I-3 residual: the SQL arm of `gdpr-audit-subset-repo.ts` never matched `related_member_id` (only the app predicate did) → SQL arm added. M-7 residual: `member-self-update.ts` still wrote unbounded attacker-named keys → `boundForbiddenKeys` at both sinks + `attempted_fields_truncated`. |
+| Reliability | 5–9 CLOSED | N-1 / N-2 / N-3 + one regression | Regression (from I-1's fix): the conflict re-read answered `already_pending` even when the winner's proposal DIFFERED → `sameProposal` check; a different proposal takes one bounded retry through the replace path; the re-read failing is logged (`conflict_reread_failed`) and falls through to `server_error`. N-1 the miss-path metric label was hardcoded `no_template_handler` while the audit row carried the true reason → `permanentFailure(type, miss ?? 'no_template_handler')`, union widened. N-2 `acknowledge` not-owner refusal was invisible (no audit, no metric) → `refused{reason='not_owner'}`. N-3 the recipient was matched by the FROZEN address → outbox `context_data.reviewerUserId`, matched by id at send time, sent to the CURRENT address; rows without an id fall back to the address. |
+| Migration | 19–24 CLOSED | 2 parity notes | Drizzle `schema-change-requests.ts` still declared the field-row FK single-column and the queue index without `.desc()` → composite `foreignKey()` in the table extras, `.desc()` on `submitted_at`; `scripts/verify-schema.ts` gains 0300 canaries (UNIQUE `(tenant_id, id)`, both composite FKs incl. `condeferrable`, the tenant settings column). `fillLines` stored `''` for a blank line, which the group CHECK counts as present → `''` → `null`. |
+| Tax | 10–13 CLOSED | rule + copy | Rule: `resultingHasBillingAddress` treated a proposal that ADDS a billing group as "on record" — staff may reject the billing part and approve the registered address → narrowing rule: only a CLEAR changes the answer (registered flagged when the member has none, whatever the proposal adds); M7's billing-less case is now a unit test. Copy: Thai script removed from EN / SV `taxHint`; TH `billingIncomplete` / `billingAddressSection` / the diff label / both email builders say ที่อยู่สำหรับออกใบกำกับ; the hint names ภ.พ.20 in all three locales. |
+| UX | 29–38 CLOSED except M3 | Blocker + 4 | Blocker: the round-1 script inserted `unknownReviewer` under `admin.plans.toast` (the first `"deactivated"` key) while both pages read `admin.changeRequests.review.unknownReviewer` → moved (×3 locales). `ConfirmationDialog` rendered an empty scroll box for `children={false}` → `Children.toArray().length > 0`. Decision table: no-permission rows used `aria-disabled` + `opacity-50` (a focusable, half-visible control) → native `disabled` for `!canDecide`; `aria-disabled` + `aria-describedby` only for `contact_removed`; e2e assertion → `toBeDisabled()`. In-dialog `role="alert"` mounted WITH its text → always-mounted region + `scrollIntoView`. Queue: `EmptyState` stacked under a deep-link notice → suppressed. Rate limit: the bucket counted ATTEMPTS while FR-008 counts created requests → `peek` before the use case, `check` only on `submitted`. TH `rateLimited` politeness aligned. |
+
+### Objections to round-1 deferrals
+
+None sustained. Tax M7 (billing-less member case) is closed by the new unit case instead of
+waiting for PR-2. Everything else in the deferred table above keeps its owner; two operator gates
+were added to `quickstart.md § 3` (`TENANT_PRIVACY_POLICY_URL`, the palette entry) and the
+idempotency 24 h note sits under the T078 row.
+
+### Verification (this round)
+
+`pnpm typecheck` · `eslint` on the 35 touched files · `check:i18n` (5416 keys × 3) ·
+`check:layout` / `api-route-guard` / `staff-page-guard` / `actor-role-truth` / `audit-events` /
+`fixme` / `dates` · unit + contract suites for change-requests, timeline, the dialog, nav parity ·
+live-Neon: `change-requests-{repo,submit-atomicity,staff-email-dispatch(+recipient_gone),concurrency,tenant-isolation}`,
+`timeline{,-multisource}`, `f3-timeline-integration` (`timeline-perf` skips without its perf env).
+e2e still unrun (no dev server).
 
 Checklist checkboxes in `checklists/{security,privacy,tax}.md` remain reviewer-owned and are
 ticked only at `/speckit.review` (T112); each reviewer's per-CHK evidence is in its round-1

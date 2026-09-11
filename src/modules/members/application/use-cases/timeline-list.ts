@@ -100,7 +100,7 @@ export type TimelineListDeps = {
    * for a member-role viewer such rows are dropped unless the contact is the
    * viewer. Staff viewers (members.read) see everything; omit for them.
    */
-  readonly viewerContactId?: string | null;
+  readonly viewerContactId: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -199,12 +199,33 @@ function carriesMoney(e: TimelineEvent): boolean {
 }
 
 /** FR-029 — a colleague's own-contact change request (its keys + contact) stays theirs. */
-function isAnotherContactsOwnFieldRequest(e: TimelineEvent, viewerContactId: string | null): boolean {
-  if (e.source !== 'audit' || !e.eventType.startsWith('member_change_request_')) return false;
-  const payload = e.payload;
-  if (!payload || payload['scope'] !== 'own_contact') return false;
-  const contactId = payload['contact_id'];
-  return typeof contactId === 'string' && contactId !== viewerContactId;
+function isChangeRequestRow(e: TimelineEvent): boolean {
+  return e.source === 'audit' && e.eventType.startsWith('member_change_request_');
+}
+
+const CHANGE_REQUEST_FIELD_KEYS_IN_PAYLOAD = ['field_keys', 'fields'] as const;
+
+function projectChangeRequestRowsForViewer(events: readonly TimelineEvent[], viewerContactId: string | null): TimelineEvent[] {
+  const out: TimelineEvent[] = [];
+  for (const e of events) {
+    if (!isChangeRequestRow(e) || !e.payload) {
+      out.push(e);
+      continue;
+    }
+    const contactId = e.payload['contact_id'];
+    const mine = typeof contactId === 'string' && contactId === viewerContactId;
+    const scope = e.payload['scope'];
+    if (mine || (scope !== 'own_contact' && scope !== 'mixed')) {
+      out.push(e);
+      continue;
+    }
+    if (scope === 'own_contact') continue; // a colleague's own-field request is not this viewer's business
+    // mixed: the company part is visible (FR-029) — the field list is not
+    const stripped: Record<string, unknown> = { ...e.payload };
+    for (const key of CHANGE_REQUEST_FIELD_KEYS_IN_PAYLOAD) delete stripped[key];
+    out.push({ ...e, payload: stripped });
+  }
+  return out;
 }
 
 function redactEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
@@ -332,9 +353,16 @@ export async function timelineList(
   const { events, nextCursor, total } = timelineResult.value;
   // rbac-portal-identity-ok: selects the member's own-history projection; the
   // permission decisions are the route gate above and `invoicingRead` below.
+  // The FR-029 projection runs on the RAW rows (before redaction — round 2,
+  // security R-3: a future deny-list entry for `contact_id` must not fail it
+  // open) and covers all three change-request events: `submitted`, `decided`
+  // and `withdrawn` all carry `scope` + `contact_id`. A colleague's
+  // own_contact row is DROPPED; a mixed row (company keys + the primary's own
+  // keys) is kept with its per-field keys stripped for anyone but its
+  // submitter (round 2, privacy I-1 residual).
   const roleProjected =
     meta.actorRole === 'member'
-      ? redactEvents(events).filter((e) => !isAnotherContactsOwnFieldRequest(e, deps.viewerContactId ?? null))
+      ? redactEvents(projectChangeRequestRowsForViewer(events, deps.viewerContactId))
       : events;
   // 016 review (security I-1) — money rows need `invoicing.read` on top of the
   // `members.read` that admitted the request. `!== true` rather than

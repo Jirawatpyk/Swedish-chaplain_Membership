@@ -90,6 +90,7 @@ export async function TimelinePreviewSection({
         // response; admission is the page guard above. 016 final review B2 —
         // this SSR path was missed when the gate landed, so a super_admin's
         // first page showed no invoices while the API-driven "load more" did.
+        viewerContactId: null, // staff viewer — the FR-029 projection is member-only
         invoicingRead: canPerform(
           actorRole,
           'invoicing.read',

@@ -192,7 +192,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
       // 016 final review B2 — the money gate is REQUIRED now. These cases
       // assert F4 invoice/payment rows APPEAR on the timeline, so they are
       // holders by construction.
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -212,7 +212,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
       // 016 final review B2 — the money gate is REQUIRED now. These cases
       // assert F4 invoice/payment rows APPEAR on the timeline, so they are
       // holders by construction.
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -280,7 +280,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
       // 016 final review B2 — the money gate is REQUIRED now. These cases
       // assert F4 invoice/payment rows APPEAR on the timeline, so they are
       // holders by construction.
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     const elapsedMs = Date.now() - start;
     expect(r.ok).toBe(true);
@@ -302,7 +302,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
       // 016 final review B2 — the money gate is REQUIRED now. These cases
       // assert F4 invoice/payment rows APPEAR on the timeline, so they are
       // holders by construction.
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -331,7 +331,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
         // 016 final review B2 — the money gate is REQUIRED now. These cases
       // assert F4 invoice/payment rows APPEAR on the timeline, so they are
       // holders by construction.
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
       );
       // Member doesn't exist in this tenant → not_found (or empty
       // events). Either way the F4 rows seeded on tenantA MUST NOT

@@ -167,11 +167,14 @@ describe('submitChangeRequest — atomicity on live Neon (T034)', () => {
     ]);
     for (const o of outbox) {
       expect(o.status).toBe('pending');
+      const reviewer = REVIEWERS.find((x) => x.email === o.toEmail);
+      expect(reviewer).toBeDefined();
       expect(o.contextData).toEqual({
         tenantId: tenant.ctx.slug,
         requestId: r.value.request.id,
         memberId,
         submitterUserId: user.userId,
+        reviewerUserId: reviewer!.userId,
         fieldKeys: ['phone', 'billing_address'],
       });
     }

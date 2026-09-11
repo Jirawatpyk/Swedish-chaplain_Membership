@@ -963,7 +963,6 @@
         "updated": "Paketet “{planName}” uppdaterades.",
         "activated": "Paketet “{planName}” aktiverades.",
         "deactivated": "Paketet “{planName}” inaktiverades.",
-        "unknownReviewer": "en medarbetare",
         "deleted": "Paketet “{planName}” togs bort.",
         "undeleted": "Paketet “{planName}” återställdes.",
         "cloned": "{count} paket klonade till {targetYear}.",
@@ -1026,6 +1025,7 @@
         },
         "decidedBy": "Beslutad av {name} den {decidedAt}",
         "deactivated": "(inaktiverad)",
+        "unknownReviewer": "en medarbetare",
         "decisionReason": "Motivering som visas för medlemmen",
         "decisionNote": "Intern anteckning",
         "backToMember": "Medlemsuppgifter",
@@ -1045,8 +1045,8 @@
           "taxAffecting": "Påverkar skattedokument"
         },
         "taxHint": {
-          "buyer_name": "köparens namn på skattefakturor (ใบกำกับภาษี) och kvitton",
-          "buyer_address": "köparens adress på skattefakturor (ใบกำกับภาษี) och kvitton — kontrollera huvudkontor/filial",
+          "buyer_name": "köparens namn på skattefakturor och kvitton",
+          "buyer_address": "köparens adress på skattefakturor och kvitton — kontrollera huvudkontor/filial",
           "buyer_contact": "köparens kontaktperson på skattedokument",
           "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial"
         }
@@ -6064,7 +6064,7 @@
         "companySection": "Företagsuppgifter",
         "registeredAddressSection": "Registrerad adress",
         "billingAddressSection": "Faktureringsadress",
-        "billingAddressHint": "Endast om fakturor ska gå till en annan adress. Lämna alla rader tomma för att inte ange någon.",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
         "fields": {
           "firstName": "Förnamn",
           "lastName": "Efternamn",

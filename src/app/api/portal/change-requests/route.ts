@@ -58,8 +58,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Interim per-person cap until the durable 10 / 24 h cap + 1 h staff-email
   // coalescing land (US5 T087): every submit fans one outbox row out per
   // reviewer, so an unbounded caller is a mailbox / reputation problem
-  // (review: security I-1). Same window and count as the durable rule.
-  const rl = await rateLimiter.check(`f114:submit:${ctx.tenant.slug}:${ctx.current.user.id}`, SUBMISSIONS_PER_WINDOW_CAP, SUBMISSION_WINDOW_HOURS * 3600);
+  // (review: security I-1). The window and count mirror T087's numbers, but
+  // this bucket counts ATTEMPTS while the durable rule counts CREATED
+  // requests (FR-008) — so the bucket is peeked here and consumed only on
+  // `outcome === 'submitted'` (round 2, UX + security: a validation error,
+  // `nothing_to_submit`, `already_pending` or an idempotent replay must not
+  // spend one of the member's ten). Peek-then-consume is safe for THIS
+  // gate: the resource it protects (staff fan-out) is bounded by the
+  // partial unique index (one pending request per submitter), not by the
+  // bucket — see `docs/ux-standards.md` and the change-password precedent.
+  const rateLimitKey = `f114:submit:${ctx.tenant.slug}:${ctx.current.user.id}`;
+  const rl = await rateLimiter.peek(rateLimitKey, SUBMISSIONS_PER_WINDOW_CAP, SUBMISSION_WINDOW_HOURS * 3600);
   if (!rl.success) {
     const retryAfterSeconds = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000));
     logger.warn({ requestId: ctx.requestId, tenantId: ctx.tenant.slug, memberId: ctx.memberId, reset: rl.reset }, 'change-requests.submit rate-limited');
@@ -142,6 +151,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       isMe: true,
     };
     const v = result.value;
+    if (v.outcome === 'submitted') {
+      // consume ONE unit for the request that was actually created; the
+      // result is bookkeeping (the request exists either way)
+      await rateLimiter.check(rateLimitKey, SUBMISSIONS_PER_WINDOW_CAP, SUBMISSION_WINDOW_HOURS * 3600);
+    }
     const { status, body } =
       v.outcome === 'submitted'
         ? {

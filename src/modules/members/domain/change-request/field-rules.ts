@@ -159,7 +159,12 @@ function fillLines<L extends string>(
   value: Partial<Record<L, string | null | undefined>>,
 ): Record<L, string | null> {
   const out = {} as Record<L, string | null>;
-  for (const line of lines) out[line] = value[line] ?? null;
+  // '' is an EMPTY line (the DB group CHECK and the staff rule both reason in
+  // NULLs) — never store a blank string that the CHECK then counts as present
+  for (const line of lines) {
+    const v = value[line];
+    out[line] = typeof v === 'string' && v.trim() === '' ? null : (v ?? null);
+  }
   return out;
 }
 

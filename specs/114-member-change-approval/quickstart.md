@@ -65,7 +65,7 @@ pnpm vitest run tests/unit/members/change-requests tests/contract/portal/change-
 pnpm test:integration tests/integration/members/change-requests-tenant-isolation.test.ts
 pnpm test:integration tests/integration/members/change-requests-concurrency.test.ts
 pnpm test:integration tests/integration/members/change-requests-decide-rollback.test.ts
-pnpm test:integration tests/integration/members/change-requests-erasure-scrub.test.ts
+pnpm test:integration tests/integration/members/change-requests-erasure-scrub.test.ts   # PR-2 (T070) — does not exist yet
 # e2e (local only, workers=1 mandatory) — ≤ 10-min foreground chunks
 pnpm test:e2e --grep "@change-requests" --workers=1
 pnpm test:e2e --grep "@a11y" --workers=1
@@ -89,11 +89,13 @@ moment the flag is set:
 
 | Gate | Why it blocks | Closes in |
 |---|---|---|
-| **T078 + T070** — the FR-030 erasure scrub adapter wired into `eraseMember` (+ its live-Neon test + table-scoped guard) | Until it merges, `member_change_request_fields.seen_value` / `proposed_value` and `member_change_requests.decision_reason` / `decision_note` are OUTSIDE the GDPR Art. 17 / PDPA §33 path — an erasure leaves the subject's proposed name / phone / addresses and the reviewer's reason intact. The `ChangeRequestScrubPort` exists; nothing implements or calls it. Also cancel pending outbox rows of the two new `notification_type`s by `context_data->>'memberId'`, not only by `to_email`. | PR-2 (US4) |
+| **T078 + T070** — the FR-030 erasure scrub adapter wired into `eraseMember` (+ its live-Neon test + table-scoped guard) | Until it merges, `member_change_request_fields.seen_value` / `proposed_value` and `member_change_requests.decision_reason` / `decision_note` are OUTSIDE the GDPR Art. 17 / PDPA §33 path — an erasure leaves the subject's proposed name / phone / addresses and the reviewer's reason intact. The `ChangeRequestScrubPort` exists; nothing implements or calls it. Also cancel pending outbox rows of the two new `notification_type`s by `context_data->>'memberId'`, not only by `to_email`. Note for the RoPA / erasure runbook: a remembered `Idempotency-Key` response on `POST /api/portal/change-requests` carries the serialised request view (proposed values) for the record's 24 h TTL; the scrub does not reach it, so an erasure completes fully only after that window — document it, or purge the tenant's keys in the adapter. | PR-2 (US4) |
 | **T087** — the durable 10 / 24 h cap + 1 h staff-email coalescing | PR-1 carries an interim Upstash cap (10 / 24 h per tenant + user) on `POST /api/portal/change-requests`, but no coalescing: every submit still fans one email out per reviewer. | PR-2 (US5) |
 | **T102** — the pending-count / oldest-age gauges | FR-037's > 7 d warning / > 14 d page alerts cannot fire until the gauges have a caller. | PR-3 (US6) |
 | **T072 / T074** — the real queue (filters, cursor paging, overdue flag) | The PR-1 `/admin/change-requests` page lists 50 pending rows with no paging; row 51 is invisible. | PR-2 (US4) |
 | e2e `tests/e2e/change-requests.spec.ts` run green against a dev server with the flag ON | Written for US1–US3, never executed in PR-1 (no dev server in the session). | before flip |
+| `TENANT_PRIVACY_POLICY_URL` set in Vercel | The FR-010 privacy link on the portal form hides when the variable is unset (review round 1, UX Critical: a dead `/privacy` link); with it unset the member is asked to propose PII changes with no link to the policy — PDPA §23 notice. | before flip (operator) |
+| Command-palette entry for `/admin/change-requests` (the navigate registry in `src/modules/plans/application/search-plans.ts`) | The queue is reachable from the Membership nav (round 1, UX I7) but not from the palette; staff who live in it will not find the queue. | PR-2 UX pass |
 
 1. Merge → prod auto-migrates 0300 on deploy (`vercel-build`); `pnpm db:verify:prod`.
 2. Set `FEATURE_MEMBER_CHANGE_APPROVAL=true` in Vercel **only when ready to redeploy immediately**

@@ -115,6 +115,17 @@ async function main(): Promise<void> {
         name: 'broadcasts_audience_import_coherent CHECK (mig 0299)',
         query: `SELECT 1 AS hit FROM pg_constraint WHERE conname = 'broadcasts_audience_import_coherent' AND conrelid = 'public.broadcasts'::regclass`,
       },
+      // F114 (mig 0300, edited in place before its first prod run) — the
+      // database half of Principle I for the change-request tables: the
+      // composite parent key and BOTH composite child FKs must exist.
+      {
+        name: 'member_change_requests UNIQUE (tenant_id, id) + composite child FKs (mig 0300)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_requests_tenant_id_uniq' AND conrelid = 'public.member_change_requests'::regclass AND contype = 'u') AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_request_fields_request_fk' AND conrelid = 'public.member_change_request_fields'::regclass AND contype = 'f' AND array_length(conkey, 1) = 2) AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_requests_replaced_by_fk' AND conrelid = 'public.member_change_requests'::regclass AND contype = 'f' AND array_length(conkey, 1) = 2 AND condeferrable)`,
+      },
+      {
+        name: 'tenant_member_settings.member_change_approval_enabled column (mig 0300)',
+        query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'tenant_member_settings' AND column_name = 'member_change_approval_enabled'`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

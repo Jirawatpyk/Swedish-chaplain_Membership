@@ -59,8 +59,13 @@ export interface InMemoryChangeRequestRepo extends ChangeRequestRepo {
     users: Map<string, { displayName: string; deactivated: boolean }>;
   };
   /** Make the next call of a method fail (fault injection). */
-  failNext(method: keyof ChangeRequestRepo, error?: { code: 'repo.unexpected' | 'repo.not_found' }): void;
+  failNext(method: keyof ChangeRequestRepo, error?: FakeRepoFault): void;
 }
+
+/** The faults the in-memory repo can inject — incl. the unique-index race the real repo maps to `repo.conflict`. */
+export type FakeRepoFault =
+  | { code: 'repo.unexpected' | 'repo.not_found' }
+  | { code: 'repo.conflict'; reason: 'change_request_pending_exists' };
 
 export function makeInMemoryChangeRequestRepo(seed: readonly ChangeRequest[] = []): InMemoryChangeRequestRepo {
   const rows = new Map<string, ChangeRequest>(seed.map((r) => [r.id, r]));
@@ -68,7 +73,7 @@ export function makeInMemoryChangeRequestRepo(seed: readonly ChangeRequest[] = [
     members: new Map<string, ChangeRequestListRow['member']>(),
     users: new Map<string, { displayName: string; deactivated: boolean }>(),
   };
-  const faults = new Map<string, { code: 'repo.unexpected' | 'repo.not_found' }>();
+  const faults = new Map<string, FakeRepoFault>();
   const takeFault = (method: string) => {
     const f = faults.get(method);
     if (f) faults.delete(method);

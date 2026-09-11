@@ -12,6 +12,7 @@
  */
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { ChangeRequest, ChangeRequestId } from '../../../domain/change-request/change-request';
@@ -79,6 +80,8 @@ export async function acknowledgeChangeRequest(
     return ok({ request });
   } catch (e) {
     if (e instanceof Refusal) {
+      // an in-tenant "not yours" is not a probe, but it must not be silent either
+      if (e.error.type === 'not_found' && !e.probe) membersMetrics.changeRequests.refused(deps.tenant.slug, 'not_owner');
       if (e.error.type === 'not_found' && e.probe) {
         await auditChangeRequestProbe(deps.audit, deps.tenant, {
           changeRequestId: input.changeRequestId,

@@ -526,6 +526,12 @@ export const outboxMetrics = {
       | 'max_retries'
       | 'invalid_recipient'
       | 'no_template_handler'
+      // F114 — deterministic misses of the two change-request arms
+      // (review round 2, reliability N-1: the audit row carried the true
+      // reason while this label was hardcoded to no_template_handler).
+      | 'request_gone'
+      | 'recipient_gone'
+      | 'request_superseded'
       // R17-02 — void two-phase-commit Phase 2 sync failure: Blob
       // prefetch bytes don't match the sha256 committed by Phase 1.
       // Emitted alongside the dual `email_dispatch_failed` +
@@ -6040,7 +6046,11 @@ export type ChangeRequestRefusedReason =
   | 'forbidden'
   | 'archived'
   | 'already_decided'
-  | 'validation';
+  | 'validation'
+  // F114 review round 2 — a member acknowledging a COLLEAGUE's decision
+  // (same tenant, row visible): refused as not_found without a probe audit,
+  // counted here so an in-tenant IDOR attempt is not invisible.
+  | 'not_owner';
 
 /**
  * F114 (contracts/notifications-and-audit.md § 4; docs/observability.md § 14).

@@ -98,11 +98,14 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
           {deepLinkNotice}
         </InlineAlert>
       ) : null}
-      {items.length === 0 ? (
+      {/* round 2 (UX): a deep-link notice already says what happened to the
+          request the reader came for; stacking "No requests awaiting a
+          decision" under it read as two contradicting states. */}
+      {items.length === 0 && !deepLinkNotice ? (
         <div data-testid="queue-empty">
           <EmptyState icon={InboxIcon} title={t('empty')} description={t('emptyHint')} bordered />
         </div>
-      ) : (
+      ) : items.length === 0 ? null : (
         <ul className="divide-y divide-border rounded-md border" data-testid="queue-list">
           {items.map((row) => (
             <li key={row.request.id} className="flex flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">

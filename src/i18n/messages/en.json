@@ -963,7 +963,6 @@
         "updated": "Plan “{planName}” updated.",
         "activated": "Plan “{planName}” activated.",
         "deactivated": "Plan “{planName}” deactivated.",
-        "unknownReviewer": "a staff member",
         "deleted": "Plan “{planName}” deleted.",
         "undeleted": "Plan “{planName}” restored.",
         "cloned": "{count} plans cloned to {targetYear}.",
@@ -1026,6 +1025,7 @@
         },
         "decidedBy": "Decided by {name} on {decidedAt}",
         "deactivated": "(deactivated)",
+        "unknownReviewer": "a staff member",
         "decisionReason": "Reason shown to the member",
         "decisionNote": "Internal note",
         "backToMember": "Member record",
@@ -1045,8 +1045,8 @@
           "taxAffecting": "Affects tax documents"
         },
         "taxHint": {
-          "buyer_name": "the buyer name printed on tax invoices (ใบกำกับภาษี) and receipts",
-          "buyer_address": "the buyer address printed on tax invoices (ใบกำกับภาษี) and receipts — check the head-office / branch designation",
+          "buyer_name": "the buyer name printed on tax invoices and receipts",
+          "buyer_address": "the buyer address printed on tax invoices and receipts — check the head-office / branch designation",
           "buyer_contact": "the buyer's contact person printed on tax documents",
           "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation"
         }
@@ -6064,7 +6064,7 @@
         "companySection": "Company details",
         "registeredAddressSection": "Registered address",
         "billingAddressSection": "Billing address",
-        "billingAddressHint": "Only if invoices should go to a different address. Leave every line empty to keep none.",
+        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none.",
         "fields": {
           "firstName": "First name",
           "lastName": "Last name",

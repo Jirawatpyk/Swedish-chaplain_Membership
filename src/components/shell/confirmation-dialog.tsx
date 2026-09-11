@@ -14,7 +14,7 @@
  * The title, description, and button labels are passed as props so
  * callers can localise them via `useTranslations` at the call site.
  */
-import { useRef, useState, type RefObject, type MouseEvent, type ReactNode } from 'react';
+import { Children, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import {
@@ -147,7 +147,7 @@ export function ConfirmationDialog({
             (two textareas + help + counters) on a short viewport pushed the
             footer off-screen with no way to scroll to it. Bound the BODY, not
             the popup, so Cancel / Confirm stay reachable. */}
-        {children !== undefined && children !== null ? <div className="max-h-[50vh] overflow-y-auto">{children}</div> : null}
+        {Children.toArray(children).length > 0 ? <div className="max-h-[50vh] space-y-4 overflow-y-auto">{children}</div> : null}
         <AlertDialogFooter>
           <AlertDialogCancel ref={cancelRef} disabled={submitting}>
             {cancelLabel}

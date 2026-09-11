@@ -440,6 +440,8 @@ export async function decideChangeRequest(
         payload: {
           related_member_id: request.memberId,
           request_id: request.id,
+          contact_id: request.submittedByContactId,
+          scope: request.scope,
           outcome: overall,
           fields: request.fields.map((f) => ({ key: f.key, outcome: outcomeByKey.get(f.key) })),
           reason_length: reason?.length ?? 0,

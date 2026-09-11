@@ -11,8 +11,8 @@
 -- Retention 5 years (F3 default — not tax-document events).
 --
 --   member_change_request_submitted        member user   { member_id, request_id, contact_id, scope, field_keys[], replaced_request_id, coalesced }
---   member_change_request_decided          reviewer      { related_member_id, request_id, outcome, fields: [{key, outcome}], reason_length }
---   member_change_request_withdrawn        member/system { member_id | related_member_id, request_id, reason }
+--   member_change_request_decided          reviewer      { related_member_id, request_id, contact_id, scope, outcome, fields: [{key, outcome}], reason_length }
+--   member_change_request_withdrawn        member/system { member_id | related_member_id, request_id, contact_id, scope, withdrawn_reason }
 --   member_change_request_rate_limited     member user   { member_id, window_count, retry_after_seconds }
 --   member_change_approval_setting_changed staff         { previous, next }
 --

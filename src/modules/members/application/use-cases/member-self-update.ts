@@ -34,6 +34,7 @@ import {
   type PortalSelfUpdateMemberField,
 } from '../../domain/portal-self-update-fields';
 import { asPhone } from '../../domain/value-objects/phone';
+import { boundForbiddenKeys } from './change-requests/submit-change-request';
 import type { MemberRepo, MemberPatch, RepoError } from '../ports/member-repo';
 import type { ContactRepo, ContactPatch } from '../ports/contact-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -208,6 +209,8 @@ export async function memberSelfUpdate(
     // sends Group B keys the immediate whitelist used to accept; that is a
     // gate refusal, not a forgery, and the audit trail must say which.
     const refusal = gate === 'approval' && detectForbiddenFields(input.rawBody, 'immediate').length === 0 ? 'gate_narrowed' : 'forged';
+    // key NAMES are attacker-controlled; bound them before the append-only sink (review round 2, privacy M-7)
+    const boundedForbidden = boundForbiddenKeys(forbidden);
     // W-4: Audit the forgery attempt (FR-014). The forged payload is rejected
     // (403) REGARDLESS of audit success — an audit-write failure here is logged
     // (so SREs can detect an un-audited forgery attempt) but never opens the
@@ -217,10 +220,11 @@ export async function memberSelfUpdate(
       type: 'member_self_update_forbidden',
       actorUserId: input.actorUserId,
       requestId: input.requestId,
-      summary: `${refusal === 'gate_narrowed' ? 'gate-narrowed' : 'forged'} fields: ${forbidden.join(', ')}`,
+      summary: `${refusal === 'gate_narrowed' ? 'gate-narrowed' : 'forged'} fields: ${boundedForbidden.fields.join(', ')}`,
       payload: {
         member_id: input.memberId,
-        attempted_fields: forbidden,
+        attempted_fields: boundedForbidden.fields,
+        attempted_fields_truncated: boundedForbidden.truncated,
         refusal,
       },
     });

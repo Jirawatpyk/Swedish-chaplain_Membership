@@ -365,6 +365,10 @@ describe('submitChangeRequest — the happy path in ONE transaction', () => {
         requestId: request.id,
         memberId: MEMBER,
         submitterUserId: USER,
+        // round 2 (reliability N-3): the dispatcher matches the reviewer by
+        // id at send time so an address change between enqueue and send
+        // still reaches them — at the CURRENT address
+        reviewerUserId: `00000000-0000-4000-8000-00000000000${i + 1}`,
         fieldKeys: ['phone', 'billing_address'],
       });
       expect(JSON.stringify(e.contextData)).not.toContain('Stockholm');
@@ -510,6 +514,28 @@ describe('submitChangeRequest — the tax flag reads the RESULTING billing state
     expect(byKey).toEqual({ registered_address: true, billing_address: true });
   });
 
+  // round 2 (tax): the flag reads the state the approval would LEAVE, and a
+  // proposal that ADDS a billing group is not yet on record — staff may
+  // reject the billing part and approve the registered address, which then
+  // IS the §86/4 buyer address. Narrowing rule: only a CLEAR of the group
+  // changes the answer; an add does not.
+  it('a member with NO billing address proposing a full billing group + a registered address: BOTH flagged tax-affecting', async () => {
+    const { deps, repo } = makeDeps();
+    const r = await submitChangeRequest(
+      deps,
+      input({
+        company: {
+          registered_address: { line1: '2 Main Rd', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110' },
+          billing_address: { line1: 'Box 9', line2: null, sub_district: null, city: 'Stockholm', province: null, postal_code: '11122', country: 'SE' },
+        },
+      }),
+    );
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const row = [...repo.rows.values()][0]!;
+    const byKey = Object.fromEntries(row.fields.map((f) => [f.key, f.affectsTaxDocuments]));
+    expect(byKey).toEqual({ registered_address: true, billing_address: true });
+  });
+
   it('with a billing address that STAYS on record, a registered-address change is not tax-affecting', async () => {
     const withBilling = member({
       billingAddressLine1: '1 Old Billing St',
@@ -525,5 +551,65 @@ describe('submitChangeRequest — the tax flag reads the RESULTING billing state
     expect(r.ok && r.value.outcome).toBe('submitted');
     const row = [...repo.rows.values()][0]!;
     expect(row.fields.map((f) => [f.key, f.affectsTaxDocuments])).toEqual([['registered_address', false]]);
+  });
+});
+
+describe('submitChangeRequest — the unique-index loser of a concurrent first submit (review reliability I-1, round 2)', () => {
+  /** The race: the FOR UPDATE read sees NO pending row (the winner has not committed yet), then the insert trips the partial unique index. */
+  function raceOnce(repo: ReturnType<typeof makeInMemoryChangeRequestRepo>, times = 1) {
+    const orig = repo.findPendingBySubmitterInTx.bind(repo);
+    let left = times;
+    repo.findPendingBySubmitterInTx = async (tx, userId) => {
+      if (left > 0) {
+        left -= 1;
+        return ok(null);
+      }
+      return orig(tx, userId);
+    };
+  }
+
+  it("the loser's proposal IS the winner's → already_pending from a fresh read, never a 500", async () => {
+    const { deps, repo, emails } = makeDeps();
+    const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(first.ok && first.value.outcome).toBe('submitted');
+    raceOnce(repo);
+    const loser = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(loser.ok && loser.value.outcome).toBe('already_pending');
+    expect(loser.ok && loser.value.outcome === 'already_pending' && loser.value.request.id).toBe(first.ok && first.value.outcome === 'submitted' ? first.value.request.id : 'x');
+    expect(repo.rows.size).toBe(1);
+    expect(emails.enqueued).toHaveLength(2); // the winner's fan-out only
+    expect(loggerError).not.toHaveBeenCalled();
+  });
+
+  it('a DIFFERENT proposal lost the race → one bounded retry takes the replace path (FR-008)', async () => {
+    const { deps, repo } = makeDeps();
+    const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : 'x';
+    raceOnce(repo);
+    const loser = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    expect(loser.ok && loser.value.outcome).toBe('submitted');
+    expect(loser.ok && loser.value.outcome === 'submitted' && loser.value.replaced).toBe(firstId);
+    expect(repo.rows.get(firstId)?.state).toBe('withdrawn');
+    expect(repo.rows.get(firstId)?.withdrawnReason).toBe('replaced');
+  });
+
+  it('the retry is bounded: a second consecutive conflict is a server_error, not a loop', async () => {
+    const { deps, repo } = makeDeps();
+    await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    raceOnce(repo, 2);
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.conflict' }), 'change-request.submit.tx_aborted');
+  });
+
+  it('the conflict re-read itself failing is logged and falls through to server_error (never a swallowed success)', async () => {
+    const { deps, repo } = makeDeps();
+    repo.failNext('insertInTx', { code: 'repo.conflict', reason: 'change_request_pending_exists' });
+    vi.mocked(runInTenant)
+      .mockImplementationOnce(async (_ctx, fn) => (fn as (tx: unknown) => Promise<unknown>)({ __tx: true }) as never)
+      .mockRejectedValueOnce(new Error('neon down'));
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ err: 'Error' }), 'change-request.submit.conflict_reread_failed');
   });
 });

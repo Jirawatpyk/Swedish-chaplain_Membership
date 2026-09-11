@@ -53,7 +53,12 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
       {fields.map((f) => {
         const label = tDiff(`labels.${f.key}`);
         const undecidable = f.undecidable === 'contact_removed';
-        const disabled = !canDecide || undecidable;
+        // Two different "cannot toggle" cases (round 2, UX + a11y):
+        //  - no decide permission → a NATIVE disabled control (out of the tab
+        //    order; the page-level read-only notice already explains why);
+        //  - a contact_removed row → `aria-disabled` + inert so the row STAYS
+        //    reachable and its explanation is announced via aria-describedby.
+        const inert = undecidable;
         const approved = selected[f.key] === true;
         return (
           <li
@@ -127,13 +132,13 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                   <Checkbox
                     id={`decide-${f.key}`}
                     aria-label={t('approveCheckbox', { field: label })}
-                    aria-describedby={undecidable ? `decide-${f.key}-why` : undefined}
+                    aria-describedby={inert ? `decide-${f.key}-why` : undefined}
                     checked={approved}
-                    aria-disabled={disabled || undefined}
-                    data-disabled={disabled ? '' : undefined}
-                    className={disabled ? 'cursor-not-allowed opacity-50' : undefined}
+                    disabled={!canDecide}
+                    aria-disabled={inert || undefined}
+                    className={inert ? 'cursor-not-allowed border-muted-foreground/40 bg-muted' : undefined}
                     onCheckedChange={(c) => {
-                      if (disabled) return;
+                      if (inert || !canDecide) return;
                       onToggle(f.key, c === true);
                     }}
                     data-testid={`approve-${f.key}`}

@@ -122,7 +122,7 @@ const COPY: Record<EmailLocale, Copy> = {
       website: 'เว็บไซต์',
       description: 'คำอธิบาย',
       registered_address: 'ที่อยู่จดทะเบียน',
-      billing_address: 'ที่อยู่ออกใบแจ้งหนี้',
+      billing_address: 'ที่อยู่สำหรับออกใบกำกับ',
     },
     addressLines: {
       line1: 'ที่อยู่บรรทัด 1',

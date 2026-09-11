@@ -263,7 +263,7 @@ test.describe('@change-requests US2 — staff decides per field', () => {
     await page.goto(`/admin/change-requests/${seeded!.requestId}`);
     await expect(page.getByTestId('review-notice')).toContainText(adminCopy.review.readOnly);
     await expect(page.getByTestId('confirm-decision')).toHaveCount(0);
-    await expect(page.getByTestId('approve-phone')).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByTestId('approve-phone')).toBeDisabled();
   });
 
   test('@a11y axe: review page at 320 px and desktop', async ({ page }, testInfo) => {

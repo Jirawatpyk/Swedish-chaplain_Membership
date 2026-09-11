@@ -416,9 +416,25 @@ async function buildPayload(
       if (request.value.state !== 'pending') return { miss: 'request_superseded' };
       // The recipient must STILL be an active reviewer at send time: an
       // admin disabled between enqueue and dispatch gets no member PII
-      // (review: security I-4).
-      const reviewers = await listActiveUsersByRole(reviewerRoles());
-      if (!reviewers.some((r) => r.email.toLowerCase() === row.toEmail.toLowerCase())) return { miss: 'recipient_gone' };
+      // (review: security I-4). The roster read throws (no Result): a
+      // transient fault stays on the retry ladder (round 2, reliability
+      // R-1 — the same class I-3 closed nine lines below). The reviewer is
+      // matched by USER ID when the row carries it, so an admin who changed
+      // their address between enqueue and send is still reached — at the
+      // CURRENT address (round 2, reliability N-3); rows without an id
+      // (enqueued before this change) fall back to the frozen address.
+      let reviewers: Awaited<ReturnType<typeof listActiveUsersByRole>>;
+      try {
+        reviewers = await listActiveUsersByRole(reviewerRoles());
+      } catch {
+        return null;
+      }
+      const reviewerUserId = typeof ctx.reviewerUserId === 'string' ? ctx.reviewerUserId : null;
+      const reviewer =
+        reviewerUserId !== null
+          ? reviewers.find((r) => r.id === reviewerUserId)
+          : reviewers.find((r) => r.email.toLowerCase() === row.toEmail.toLowerCase());
+      if (!reviewer) return { miss: 'recipient_gone' };
       const member = await drizzleMemberRepo.findById(tenantCtx, request.value.memberId);
       if (!member.ok) return member.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
       const contact = await drizzleContactRepo.findById(tenantCtx, request.value.submittedByContactId);
@@ -432,7 +448,7 @@ async function buildPayload(
       } catch {
         return null;
       }
-      return buildChangeRequestSubmittedStaffEmail({
+      const staffEmail = buildChangeRequestSubmittedStaffEmail({
         locale,
         companyName: member.value.companyName,
         memberNumber: formatMemberNumber(prefix, member.value.memberNumber),
@@ -447,6 +463,7 @@ async function buildPayload(
           affectsTaxDocuments: f.affectsTaxDocuments,
         })),
       });
+      return { ...staffEmail, toEmail: reviewer.email };
     }
     case 'member_change_request_decided_member': {
       // F114 FR-023 (research R8 / § V3) — read-at-send under the row's
@@ -1045,10 +1062,7 @@ async function dispatchOne(
             },
           });
         }
-        outboxMetrics.permanentFailure(
-          row.notificationType,
-          'no_template_handler',
-        );
+        outboxMetrics.permanentFailure(row.notificationType, miss ?? 'no_template_handler');
         if (row.notificationType === 'invoice_auto_email') {
           invoicingMetrics.autoEmailBounce('no_template_handler');
         }

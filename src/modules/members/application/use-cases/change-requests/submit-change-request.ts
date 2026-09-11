@@ -171,6 +171,17 @@ export function detectForbiddenProposalKeys(raw: unknown): string[] {
   return forbidden;
 }
 
+const FORGED_KEYS_MAX = 20;
+const FORGED_KEY_MAX_LENGTH = 64;
+
+/** Attacker-controlled key names are bounded before they reach ANY sink (audit, response, idempotency cache). */
+export function boundForbiddenKeys(fields: readonly string[]): { readonly fields: string[]; readonly truncated: boolean } {
+  return {
+    fields: fields.slice(0, FORGED_KEYS_MAX).map((k) => (k.length > FORGED_KEY_MAX_LENGTH ? `${k.slice(0, FORGED_KEY_MAX_LENGTH)}…` : k)),
+    truncated: fields.length > FORGED_KEYS_MAX,
+  };
+}
+
 function companyKeysIn(raw: unknown): CompanyFieldKey[] {
   if (!isRecord(raw) || !isRecord(raw['company'])) return [];
   return Object.keys(raw['company']).filter(isCompanyFieldKey);
@@ -218,10 +229,16 @@ export function memberHasBillingAddress(member: Member): boolean {
   return (member.billingAddressLine1 ?? null) !== null;
 }
 
-/** The billing state AFTER this proposal would be approved (the group is one unit — a proposed group replaces it whole). */
+/**
+ * The billing state the approval could LEAVE — a NARROWING of today's state,
+ * never a replacement: a proposal that CLEARS the group makes the registered
+ * address the §86/4 buyer address (flag it), while a proposal that ADDS a
+ * group to a member without one may be rejected field-by-field, so the
+ * registered address must stay flagged (review round 2, tax R1).
+ */
 export function resultingHasBillingAddress(member: Member, proposal: GroupBProposal): boolean {
   const proposed = proposal.company?.billing_address;
-  if (proposed !== undefined) return proposed.line1 !== null;
+  if (proposed !== undefined && proposed.line1 === null) return false;
   return memberHasBillingAddress(member);
 }
 
@@ -241,15 +258,17 @@ function sameProposal(pending: ChangeRequest, fields: readonly Omit<ProposedFiel
 export async function submitChangeRequest(
   deps: SubmitChangeRequestDeps,
   input: SubmitChangeRequestInput,
+  opts: { readonly retriedAfterConflict?: boolean } = {},
 ): Promise<Result<SubmitChangeRequestOutcome, SubmitChangeRequestError>> {
   const tenantId = deps.tenant.slug;
 
   // 1. forged keys — refuse + audit BEFORE parsing (FR-002 / FR-003).
-  const forbidden = detectForbiddenProposalKeys(input.rawBody);
-  if (forbidden.length > 0) {
-    await auditForged(deps, input, forbidden);
+  const forbiddenRaw = detectForbiddenProposalKeys(input.rawBody);
+  if (forbiddenRaw.length > 0) {
+    const bounded = boundForbiddenKeys(forbiddenRaw);
+    await auditForged(deps, input, bounded);
     membersMetrics.changeRequests.refused(tenantId, 'forbidden');
-    return err({ type: 'forbidden', reason: 'forged_fields', fields: forbidden });
+    return err({ type: 'forbidden', reason: 'forged_fields', fields: bounded.fields });
   }
 
   // 2. the caller's own contact (IDOR guard) + who-may-propose (FR-002).
@@ -263,10 +282,10 @@ export async function submitChangeRequest(
   const submitterIsPrimary = contact.isPrimary;
   const companyKeys = companyKeysIn(input.rawBody);
   if (companyKeys.length > 0 && !submitterIsPrimary) {
-    const fields = companyKeys.map((k) => `company.${k}`);
-    await auditForged(deps, input, fields);
+    const bounded = boundForbiddenKeys(companyKeys.map((k) => `company.${k}`));
+    await auditForged(deps, input, bounded);
     membersMetrics.changeRequests.refused(tenantId, 'forbidden');
-    return err({ type: 'forbidden', reason: 'company_fields_require_primary', fields });
+    return err({ type: 'forbidden', reason: 'company_fields_require_primary', fields: bounded.fields });
   }
 
   // 3. the staff rules (FR-006).
@@ -356,6 +375,8 @@ export async function submitChangeRequest(
           payload: {
             related_member_id: input.memberId,
             request_id: pending.id,
+            contact_id: pending.submittedByContactId,
+            scope: pending.scope,
             withdrawn_reason: 'replaced',
             replaced_by_request_id: newId,
             actor_role: input.actorRole,
@@ -409,6 +430,7 @@ export async function submitChangeRequest(
             requestId: newId,
             memberId: input.memberId,
             submitterUserId: input.actorUserId,
+            reviewerUserId: reviewer.userId,
             fieldKeys,
           },
         });
@@ -437,8 +459,20 @@ export async function submitChangeRequest(
       if (re.code === 'repo.conflict' && re.reason === 'change_request_pending_exists') {
         const raced = await runInTenant(deps.tenant, (tx) =>
           deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId),
-        ).catch(() => null);
-        if (raced && raced.ok && raced.value) return ok({ outcome: 'already_pending', request: raced.value });
+        ).catch((e: unknown) => {
+          logger.warn(
+            { tenantId, memberId: input.memberId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
+            'change-request.submit.conflict_reread_failed',
+          );
+          return null;
+        });
+        if (raced && raced.ok && raced.value) {
+          // the winner's proposal IS this one → the harmless answer
+          if (sameProposal(raced.value, fields)) return ok({ outcome: 'already_pending', request: raced.value });
+          // a DIFFERENT proposal lost the race: one bounded retry now finds the
+          // winner's pending row FOR UPDATE and takes the replace path (FR-008)
+          if (!opts.retriedAfterConflict) return submitChangeRequest(deps, input, { retriedAfterConflict: true });
+        }
       }
       logger.error(
         { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code },
@@ -470,23 +504,19 @@ function mapLoadError(error: RepoError): SubmitChangeRequestError {
  * emits today. Best-effort: the refusal is fail-closed regardless; a failed
  * audit write is logged so an un-audited forgery attempt is detectable.
  */
-const FORGED_KEYS_MAX = 20;
-const FORGED_KEY_MAX_LENGTH = 64;
-
-async function auditForged(deps: SubmitChangeRequestDeps, input: SubmitChangeRequestInput, fields: readonly string[]): Promise<void> {
+async function auditForged(deps: SubmitChangeRequestDeps, input: SubmitChangeRequestInput, bounded: ReturnType<typeof boundForbiddenKeys>): Promise<void> {
   // Key NAMES are attacker-controlled text landing in an append-only table
-  // that erasure never scrubs — bound them (review: privacy M-7).
-  const bounded = fields.slice(0, FORGED_KEYS_MAX).map((k) => (k.length > FORGED_KEY_MAX_LENGTH ? `${k.slice(0, FORGED_KEY_MAX_LENGTH)}…` : k));
+  // that erasure never scrubs — the caller bounded them (review: privacy M-7).
   const audited = await deps.audit.record(deps.tenant, {
     type: 'member_self_update_forbidden',
     actorUserId: input.actorUserId,
     requestId: input.requestId,
-    summary: `forged change-request fields: ${bounded.join(', ')}`,
+    summary: `forged change-request fields: ${bounded.fields.join(', ')}`,
     payload: {
       member_id: input.memberId,
       contact_id: input.contactId,
-      attempted_fields: bounded,
-      attempted_fields_truncated: fields.length > FORGED_KEYS_MAX,
+      attempted_fields: bounded.fields,
+      attempted_fields_truncated: bounded.truncated,
       actor_role: input.actorRole,
     },
   });

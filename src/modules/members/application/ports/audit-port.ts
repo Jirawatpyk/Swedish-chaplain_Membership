@@ -156,12 +156,14 @@ export type F3AuditEventType =
   //       replaced_request_id | null, coalesced: bool, actor_role }
   | 'member_change_request_submitted'
   //   member_change_request_decided:
-  //     { related_member_id, request_id, outcome, fields: [{key, outcome}],
-  //       reason_length, actor_role }
+  //     { related_member_id, request_id, contact_id, scope, outcome,
+  //       fields: [{key, outcome}], reason_length, actor_role }
   | 'member_change_request_decided'
   //   member_change_request_withdrawn:
-  //     { member_id | related_member_id, request_id,
-  //       reason: 'member' | 'replaced' | 'erasure', actor_role }
+  //     { member_id | related_member_id, request_id, contact_id, scope,
+  //       withdrawn_reason: 'member' | 'replaced' | 'erasure', actor_role }
+  //     (`withdrawn_reason`, never `reason` — the bare key is on the F9
+  //     redaction deny-list and this closed enum must survive projection)
   | 'member_change_request_withdrawn'
   //   member_change_request_rate_limited:
   //     { member_id, window_count, retry_after_seconds, actor_role }

@@ -17,6 +17,19 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+const metricRefused = vi.fn();
+vi.mock('@/lib/metrics', () => ({
+  membersMetrics: {
+    changeRequests: {
+      refused: (...a: unknown[]) => metricRefused(...a),
+      submitted: vi.fn(),
+      decided: vi.fn(),
+      decideDurationMs: vi.fn(),
+      pendingCount: vi.fn(),
+      oldestAgeSeconds: vi.fn(),
+    },
+  },
+}));
 
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId, asContactId } from '@/modules/members';
@@ -90,6 +103,9 @@ describe('acknowledgeChangeRequest', () => {
     expect(await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: OTHER, actorRole: 'member', requestId: 'req-ack' })).toEqual({ ok: false, error: { type: 'not_found' } });
     expect(repo.rows.get(REQ)?.outcomeAcknowledgedAt).toBeNull();
     expect(audit.events).toHaveLength(0);
+    // round 2: not audited (no probe) but COUNTED, so an in-tenant IDOR
+    // attempt is not invisible
+    expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'not_owner');
   });
 
   it('a repo miss (unknown id, or another tenant\'s row hidden by RLS) → not_found + a member_cross_tenant_probe audit', async () => {
@@ -103,6 +119,7 @@ describe('acknowledgeChangeRequest', () => {
         payload: { attempted_change_request_id: id, actor_tenant_id: 'test-tenant', action: 'acknowledge', actor_role: 'member' },
       }),
     ]);
+    expect(metricRefused).not.toHaveBeenCalled();
   });
 
   it('an unknown id → not_found', async () => {

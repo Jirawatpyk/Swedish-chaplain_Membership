@@ -30,7 +30,7 @@ vi.mock('@/modules/auth/infrastructure/email/resend-client', () => ({
 }));
 
 import { db, runInTenant } from '@/lib/db';
-import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { auditLog, notificationsOutbox, users } from '@/modules/auth/infrastructure/db/schema';
 import { GET as outboxDispatch } from '@/app/api/cron/outbox-dispatch/route';
 import {
   asContactId,
@@ -191,6 +191,21 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     expect(sentRow?.status).toBe('sent');
     expect(sent.some((m) => m.text.includes('+66866666666'))).toBe(true);
     expect(sent.some((m) => m.text.includes('+66855555555'))).toBe(false);
+  });
+
+  it('a reviewer DISABLED between enqueue and send gets nothing: the row permanently fails as recipient_gone (review security I-4 / round 2 R-1)', async () => {
+    const r = await submit({ contact: { phone: '+66888888888' } });
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const requestId = r.ok && r.value.outcome === 'submitted' ? r.value.request.id : '';
+    await db.update(users).set({ status: 'disabled' }).where(eq(users.id, reviewer.userId));
+    try {
+      const gone = await tickUntilSettled(requestId);
+      expect(gone?.status).toBe('permanently_failed');
+      expect(gone?.lastError).toBe('recipient_gone');
+      expect(sent.some((m) => m.text.includes('+66888888888'))).toBe(false);
+    } finally {
+      await db.update(users).set({ status: 'active' }).where(eq(users.id, reviewer.userId));
+    }
   });
 
   it('a hard-deleted request row permanently fails the outbox row on the first tick with reason request_gone', async () => {

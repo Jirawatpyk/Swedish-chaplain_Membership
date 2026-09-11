@@ -125,6 +125,7 @@ export async function GET(
       // (security I-1): `marketing` holds `members.read`, and the timeline's
       // payment rows carry `amount_satang` while its F4 audit rows carry
       // `total_satang` / `credit_amount_satang`.
+      viewerContactId: null, // staff viewer — the FR-029 projection is member-only
       invoicingRead: canPerform(
         ctx.current.user.role,
         'invoicing.read',

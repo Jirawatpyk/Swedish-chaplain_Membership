@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  foreignKey,
   index,
   jsonb,
   pgTable,
@@ -60,7 +61,7 @@ export const memberChangeRequests = pgTable(
     index('member_change_requests_tenant_member_idx').on(
       table.tenantId,
       table.memberId,
-      table.submittedAt,
+      table.submittedAt.desc(),
     ),
     index('member_change_requests_rate_window_idx').on(
       table.tenantId,
@@ -75,9 +76,10 @@ export const memberChangeRequestFields = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     tenantId: text('tenant_id').notNull(),
-    requestId: uuid('request_id')
-      .notNull()
-      .references(() => memberChangeRequests.id, { onDelete: 'cascade' }),
+    // composite (tenant_id, request_id) → the parent's UNIQUE (tenant_id, id):
+    // declared in the table's extras below, never as a single-column
+    // `.references()` (review round 1, migration I-1 — RI bypasses RLS)
+    requestId: uuid('request_id').notNull(),
     fieldKey: text('field_key').notNull(),
     target: text('target').notNull(),
     seenValue: jsonb('seen_value'),
@@ -87,6 +89,11 @@ export const memberChangeRequestFields = pgTable(
     affectsTaxDocuments: boolean('affects_tax_documents').notNull(),
   },
   (table) => [
+    foreignKey({
+      name: 'member_change_request_fields_request_fk',
+      columns: [table.tenantId, table.requestId],
+      foreignColumns: [memberChangeRequests.tenantId, memberChangeRequests.id],
+    }).onDelete('cascade'),
     uniqueIndex('member_change_request_fields_request_key_uniq').on(table.requestId, table.fieldKey),
     index('member_change_request_fields_tenant_request_idx').on(table.tenantId, table.requestId),
   ],

@@ -16,7 +16,7 @@
  * `member_archived`, `member_erasing`) are shown as user-facing copy and the
  * page is re-fetched; success navigates to the member record.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -64,6 +64,15 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
   // Shown INSIDE the dialog while it stays open: a toast is portalled outside
   // the modal's focus trap and is aria-hidden to assistive tech (review: UX I1).
   const [dialogError, setDialogError] = useState<string | null>(null);
+  // The alert region is ALWAYS mounted (round 2, a11y): a `role="alert"`
+  // that mounts together with its text is announced inconsistently across
+  // screen readers, while text inserted into a live region that already
+  // exists is announced reliably. The bounded, scrollable dialog body may
+  // have the error above the fold — scroll it into view when it appears.
+  const dialogErrorRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (dialogError) dialogErrorRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [dialogError]);
 
   const counts = useMemo(() => {
     const approved = fields.filter((f) => selected[f.key] === true).length;
@@ -180,11 +189,13 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
         {...(reasonRequired ? { initialFocusRef: reasonRef } : {})}
       >
         <div className="space-y-4">
-          {dialogError ? (
-            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive-surface px-3 py-2 text-sm text-destructive" data-testid="decision-error">
-              {dialogError}
-            </p>
-          ) : null}
+          <div ref={dialogErrorRef} role="alert" aria-atomic="true" data-testid="decision-error-region">
+            {dialogError ? (
+              <p className="rounded-md border border-destructive/30 bg-destructive-surface px-3 py-2 text-sm text-destructive" data-testid="decision-error">
+                {dialogError}
+              </p>
+            ) : null}
+          </div>
           <div className="space-y-2">
             <Label htmlFor="decision-reason">
               {t('reasonLabel')}
