@@ -140,7 +140,35 @@ export type F3AuditEventType =
   // does) so it stays on the member timeline without touching recency
   // (108 security review MEDIUM-1). 5y retention (F3 default).
   | 'contact_marketing_opted_out'
-  | 'contact_marketing_opted_in';
+  | 'contact_marketing_opted_in'
+  // F114 member change requests (migration 0301; contracts/notifications-
+  // and-audit.md § 2). All on the same tx as the state change; payloads carry
+  // ids, keys and outcomes — NEVER a proposed or seen value (the audit log is
+  // the one store erasure cannot reach). The member key decides recency:
+  // `member_id` (snake_case — the 0009 trigger key) on submit / withdraw-by-
+  // member because that IS member activity; `related_member_id` on decide,
+  // replaced and erasure closure (staff / system action) so the member's
+  // `last_activity_at` is not refreshed by someone else's act (#337 rule).
+  // `actor_role` in the payload is the SESSION role, never a literal
+  // (check:actor-role-truth). 5y retention (F3 default).
+  //   member_change_request_submitted:
+  //     { member_id, request_id, contact_id, scope, field_keys[],
+  //       replaced_request_id | null, coalesced: bool, actor_role }
+  | 'member_change_request_submitted'
+  //   member_change_request_decided:
+  //     { related_member_id, request_id, outcome, fields: [{key, outcome}],
+  //       reason_length, actor_role }
+  | 'member_change_request_decided'
+  //   member_change_request_withdrawn:
+  //     { member_id | related_member_id, request_id,
+  //       reason: 'member' | 'replaced' | 'erasure', actor_role }
+  | 'member_change_request_withdrawn'
+  //   member_change_request_rate_limited:
+  //     { member_id, window_count, retry_after_seconds, actor_role }
+  | 'member_change_request_rate_limited'
+  //   member_change_approval_setting_changed:
+  //     { previous: bool, next: bool, actor_role } (no member key)
+  | 'member_change_approval_setting_changed';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

@@ -136,6 +136,20 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // ADD VALUE would 500 both surfaces in prod.
     'contact_marketing_opted_out',
     'contact_marketing_opted_in',
+    // F114 (0301) — `submitChangeRequest` / `decideChangeRequest` /
+    // `withdrawChangeRequest` / `setMemberChangeApprovalEnabled` INSERT these
+    // in the same tx as the state change; a non-persisting ADD VALUE would
+    // 500 every submit and decide in prod instead of failing the deploy here.
+    'member_change_request_submitted',
+    'member_change_request_decided',
+    'member_change_request_withdrawn',
+    'member_change_request_rate_limited',
+    'member_change_approval_setting_changed',
+  ],
+  // F114 (0301) — the two outbox row types the same use cases INSERT.
+  notification_type: [
+    'member_change_request_submitted_staff',
+    'member_change_request_decided_member',
   ],
 };
 

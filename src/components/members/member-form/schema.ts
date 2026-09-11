@@ -28,27 +28,15 @@ import { LEGAL_ENTITY_TYPES } from '@/modules/members/domain/value-objects/legal
 // helpers + the Domain-only tenants module, no framework deps).
 import { BILLING_CYCLES } from '@/modules/members/domain/member';
 import { type Translator } from '@/lib/zod-i18n';
+// F114 R14 — the website normaliser is single-sourced in the Domain field-rules
+// module (pure TS, same deep-import rationale as `phone` above).
+import { normalizeWebsiteUrl } from '@/modules/members/domain/change-request/field-rules';
 
 // --- Form shape --------------------------------------------------------------
 
-/**
- * PR-B task 7 — normalises a bare domain (e.g. "facebook.com/x") into a full
- * URL by prefixing `https://` BEFORE the `.url()` check below runs. Without
- * this, `z.string().url()` rejects anything the admin didn't already type
- * `https://` in front of — the single most common thing an admin pastes into
- * a "Website" field is a bare domain or a Facebook page slug.
- *
- * Runs via `z.preprocess` (executes ahead of the inner schema), so an
- * already-complete `http(s)://` URL passes through byte-for-byte unchanged,
- * and a non-string / blank value is left alone so the downstream
- * `.optional().or(z.literal(''))` branches still see what they expect.
- */
-function normalizeWebsiteUrl(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  const trimmed = value.trim();
-  if (trimmed === '' || /^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
+// PR-B task 7 — `normalizeWebsiteUrl` (imported above) prefixes `https://` to a
+// bare domain BEFORE the `.url()` check runs, so "facebook.com/x" — the single
+// most common thing an admin pastes into a "Website" field — is accepted.
 
 // A2 — schema is built per-render via this factory so zod validation messages
 // resolve through the active-locale translator (TH/SV previously saw hardcoded

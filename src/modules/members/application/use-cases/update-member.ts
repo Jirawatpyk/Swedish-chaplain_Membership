@@ -14,7 +14,6 @@
  */
 
 import { z } from 'zod';
-import { hasDangerousUrlScheme } from '@/lib/safe-url';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -28,6 +27,13 @@ import { asTaxId } from '../../domain/value-objects/tax-id';
 // full rationale).
 import { LEGAL_ENTITY_TYPES } from '../../domain/value-objects/legal-entity-type';
 import { BILLING_CYCLES, type Member, type MemberId } from '../../domain/member';
+// F114 R14 — the Group B rules are shared with the member change-request path
+// (one zod object per key; see the schema comment below).
+import {
+  BILLING_ADDRESS_LINE_RULES,
+  MEMBER_FIELD_RULES,
+  REGISTERED_ADDRESS_LINE_RULES,
+} from '../../domain/change-request/field-rules';
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
@@ -37,7 +43,12 @@ import { UseCaseAbort } from '../tx-abort';
 
 export const updateMemberSchema = z
   .object({
-    company_name: z.string().trim().min(1).max(200).optional(),
+    // F114 FR-006 / research R14 — the Group B entries below are the SHARED
+    // rule objects from `domain/change-request/field-rules.ts`, so the member
+    // change-request path validates with the very same zod objects a staff
+    // edit is held to (reference-equality pinned by
+    // tests/unit/members/change-requests/field-rules-parity.test.ts).
+    company_name: MEMBER_FIELD_RULES.company_name,
     // Review fix (Finding 1) — closed to the 12-code catalogue, mirroring
     // create-member.ts + the client's buildMemberFormSchema. Accepts a
     // valid code, `null`, or "unset" (`undefined` / `''`) — an edit to an
@@ -53,37 +64,30 @@ export const updateMemberSchema = z
     // update (mirrors is_vat_registered): absent from a partial patch means
     // unchanged; the DB column is NOT NULL so an existing row always has one.
     billing_cycle: z.enum(BILLING_CYCLES).optional(),
-    // `.url()` accepts javascript:/data:; block hostile schemes since this is
-    // rendered as an <a href> on the member-detail page (safe-url.ts sink is
-    // the guarantee, this is the early boundary error).
-    website: z
-      .string()
-      .max(200)
-      .url()
-      .refine((v) => !hasDangerousUrlScheme(v), { message: 'website scheme not allowed' })
-      .nullable()
-      .optional()
-      .or(z.literal('')),
-    description: z.string().max(2000).nullable().optional(),
-    address_line1: z.string().max(200).nullable().optional(),
-    address_line2: z.string().max(200).nullable().optional(),
-    city: z.string().max(100).nullable().optional(),
-    province: z.string().max(100).nullable().optional(),
-    postal_code: z.string().max(20).nullable().optional(),
-    sub_district: z.string().max(100).nullable().optional(),
+    // `.url()` accepts javascript:/data:; the shared rule blocks hostile
+    // schemes since this is rendered as an <a href> on the member-detail page
+    // (safe-url.ts sink is the guarantee, this is the early boundary error).
+    website: MEMBER_FIELD_RULES.website,
+    description: MEMBER_FIELD_RULES.description,
+    address_line1: REGISTERED_ADDRESS_LINE_RULES.line1,
+    address_line2: REGISTERED_ADDRESS_LINE_RULES.line2,
+    city: REGISTERED_ADDRESS_LINE_RULES.city,
+    province: REGISTERED_ADDRESS_LINE_RULES.province,
+    postal_code: REGISTERED_ADDRESS_LINE_RULES.postal_code,
+    sub_district: REGISTERED_ADDRESS_LINE_RULES.sub_district,
     // member-billing-address (0284) — the optional tax-document address
     // group, field types mirroring the company address above. The
     // all-or-nothing group rule (any present ⇒ line1 + city + postal +
     // country required) is enforced against the RESULTING state in the
     // use-case body (same partial-patch reasoning as the §86/4 invariants
     // below); the DB `members_billing_address_group_ck` is the backstop.
-    billing_address_line1: z.string().max(200).nullable().optional(),
-    billing_address_line2: z.string().max(200).nullable().optional(),
-    billing_city: z.string().max(100).nullable().optional(),
-    billing_province: z.string().max(100).nullable().optional(),
-    billing_postal_code: z.string().max(20).nullable().optional(),
-    billing_sub_district: z.string().max(100).nullable().optional(),
-    billing_country: z.string().length(2).nullable().optional(),
+    billing_address_line1: BILLING_ADDRESS_LINE_RULES.line1,
+    billing_address_line2: BILLING_ADDRESS_LINE_RULES.line2,
+    billing_city: BILLING_ADDRESS_LINE_RULES.city,
+    billing_province: BILLING_ADDRESS_LINE_RULES.province,
+    billing_postal_code: BILLING_ADDRESS_LINE_RULES.postal_code,
+    billing_sub_district: BILLING_ADDRESS_LINE_RULES.sub_district,
+    billing_country: BILLING_ADDRESS_LINE_RULES.country,
     founded_year: z.number().int().min(1800).max(2100).nullable().optional(),
     turnover_thb: z.number().int().nonnegative().nullable().optional(),
     registered_capital_thb: z.number().int().nonnegative().nullable().optional(),

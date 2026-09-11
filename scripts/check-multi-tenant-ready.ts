@@ -58,6 +58,10 @@ const SCOPED_TABLES = [
   'members',
   'contacts',
   'email_change_tokens',
+  // F114 member change requests (migration 0300) — RLS ENABLE + FORCE +
+  // the strict 0209 policy on both tables.
+  'member_change_requests',
+  'member_change_request_fields',
   // F4 invoicing
   'invoices',
   'invoice_lines',

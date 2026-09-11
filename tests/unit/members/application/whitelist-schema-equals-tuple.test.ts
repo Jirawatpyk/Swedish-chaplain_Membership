@@ -10,6 +10,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  PORTAL_IMMEDIATE_CONTACT_FIELDS,
+  PORTAL_IMMEDIATE_MEMBER_FIELDS,
   PORTAL_SELF_UPDATE_CONTACT_FIELDS,
   PORTAL_SELF_UPDATE_MEMBER_FIELDS,
 } from '@/modules/members/domain/portal-self-update-fields';
@@ -43,5 +45,21 @@ describe('FR-014a: whitelist schema keys === Domain tuples (T116)', () => {
       'website',
       'description',
     ]);
+  });
+
+  // F114 FR-004 / R6 — Group A (immediate while the gate is on) is a strict
+  // subset of the flag-OFF set: the contact's own notification language only.
+  it('Group A (gate = approval) is exactly the contact preferredLanguage, and a subset of the flag-OFF set', () => {
+    expect(PORTAL_IMMEDIATE_CONTACT_FIELDS).toEqual(['preferredLanguage']);
+    expect(PORTAL_IMMEDIATE_MEMBER_FIELDS).toEqual([]);
+    for (const key of PORTAL_IMMEDIATE_CONTACT_FIELDS) {
+      expect(PORTAL_SELF_UPDATE_CONTACT_FIELDS).toContain(key);
+    }
+    // Every flag-OFF contact key outside Group A is a Group B key while the
+    // gate is on (firstName / lastName / phone become change-request fields).
+    const groupB = PORTAL_SELF_UPDATE_CONTACT_FIELDS.filter(
+      (k) => !(PORTAL_IMMEDIATE_CONTACT_FIELDS as readonly string[]).includes(k),
+    );
+    expect(groupB).toEqual(['firstName', 'lastName', 'phone']);
   });
 });

@@ -154,7 +154,12 @@ export type RepoConflictReason =
   // 108 PR-B — migration 0293's deferred trigger refused the COMMIT because
   // the member would have ended with zero live primaries.
   | 'no_primary_contact'
-  | 'user_email_already_taken';
+  | 'user_email_already_taken'
+  // F114 — the partial unique index `member_change_requests_one_pending_per_
+  // submitter` refused a second `pending` row for the same submitter (R3);
+  // the submit use case serialises on the FOR UPDATE read first, so this is
+  // the loser of a race that slipped past it, not a normal path.
+  | 'change_request_pending_exists';
 
 export type RepoError =
   | { code: 'repo.not_found' }

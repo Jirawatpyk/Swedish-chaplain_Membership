@@ -58,6 +58,112 @@ export {
   type PortalState,
 } from './domain/portal-state';
 
+// --- F114 member change requests (Domain) -----------------------------------
+// Group A vs Group B (FR-002 / FR-004): the immediate set while the gate is
+// on, and the proposable set with its targets + address-group line tuples.
+export {
+  PORTAL_IMMEDIATE_CONTACT_FIELDS,
+  PORTAL_IMMEDIATE_MEMBER_FIELDS,
+  type PortalImmediateContactField,
+} from './domain/portal-self-update-fields';
+export {
+  PROPOSABLE_FIELD_KEYS,
+  PROPOSABLE_FIELD_TARGET,
+  CONTACT_FIELD_KEYS,
+  COMPANY_FIELD_KEYS,
+  REGISTERED_ADDRESS_LINES,
+  BILLING_ADDRESS_LINES,
+  ADDRESS_GROUP_KEYS,
+  isProposableFieldKey,
+  isContactFieldKey,
+  isCompanyFieldKey,
+  isAddressGroupKey,
+  type ProposableFieldKey,
+  type ContactFieldKey,
+  type CompanyFieldKey,
+  type ProposedFieldTarget,
+  type RegisteredAddress,
+  type BillingAddress,
+  type AddressGroupKey,
+} from './domain/change-request/proposable-fields';
+export {
+  CHANGE_REQUEST_STATES,
+  CHANGE_REQUEST_OUTCOMES,
+  CHANGE_REQUEST_SCOPES,
+  WITHDRAWN_REASONS,
+  FIELD_OUTCOMES,
+  SUBMITTER_ROLES,
+  DECISION_REASON_MAX_LENGTH,
+  DECISION_NOTE_MAX_LENGTH,
+  SUBMISSIONS_PER_WINDOW_CAP,
+  SUBMISSION_WINDOW_HOURS,
+  STAFF_NOTIFICATION_COALESCE_HOURS,
+  OVERDUE_AFTER_DAYS,
+  type ChangeRequest,
+  type ChangeRequestId,
+  type ChangeRequestState,
+  type ChangeRequestOutcome,
+  type ChangeRequestScope,
+  type WithdrawnReason,
+  type FieldOutcome,
+  type SubmitterRole,
+  type ProposedField,
+  type ProposedValue,
+} from './domain/change-request/change-request';
+export {
+  deriveOutcome,
+  deriveScope,
+  diffAgainstRecord,
+  affectsTaxDocuments,
+  changedSinceSubmitted,
+  proposedValuesEqual,
+  type GroupBRecord,
+  type GroupBProposal,
+  type GroupBContactFields,
+  type GroupBCompanyFields,
+  type TaxAffectingContext,
+  type DeriveScopeError,
+} from './domain/change-request/policies';
+export {
+  validateProposal,
+  normalizeWebsiteUrl,
+  proposalSchema,
+  type ProposalInput,
+} from './domain/change-request/field-rules';
+// F114 ports + the gate resolver (Application) and the two Infrastructure
+// singletons the `src/lib` composition root wires (same pattern as
+// `drizzleMemberRepo` / `f3DrizzleAuditAdapter` below).
+export type {
+  ChangeRequestRepo,
+  ChangeRequestDraft,
+  ChangeRequestDecision,
+  ChangeRequestListFilter,
+  ChangeRequestListRow,
+  ChangeRequestListResult,
+  ChangeRequestCursor,
+  ChangeRequestPage,
+  PendingStats,
+} from './application/ports/change-request-repo';
+export type { Reviewer, ReviewerDirectoryPort } from './application/ports/reviewer-directory-port';
+export type {
+  ChangeRequestScrubPort,
+  ChangeRequestScrubResult,
+} from './application/ports/change-request-scrub-port';
+export type {
+  TenantMemberChangeSettings,
+  TenantMemberChangeSettingsPort,
+} from './application/ports/tenant-member-change-settings-port';
+export {
+  makeMemberChangeGateResolver,
+  resolveMemberChangeGate,
+  type MemberChangeGate,
+  type MemberChangeGateDeps,
+  type MemberChangeGateResolver,
+  type MemberChangeFlagPort,
+} from './application/use-cases/change-requests/resolve-member-change-gate';
+export { drizzleChangeRequestRepo } from './infrastructure/db/drizzle-change-request-repo';
+export { drizzleTenantMemberChangeSettingsRepo } from './infrastructure/repos/drizzle-tenant-member-change-settings-repo';
+
 export {
   assertNeverAuditEvent,
   type F3AuditEventType,

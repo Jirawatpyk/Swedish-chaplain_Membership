@@ -342,3 +342,89 @@ are rewritten after analyze; closing first is cheaper.
 - **V4** — prod read-only count of `contacts.linked_user_id IS NOT NULL AND is_primary = false`
   (secondary contacts with a login) — 0 on 2026-09-10 (108 cutover), which makes the per-person
   scope (FR-029) vacuous until the secondary import; the tests must not rely on prod shape.
+
+---
+
+## Verified before tasks (2026-09-11, bridge session — T005 / T006 / T007)
+
+### § V1 — canonical Group B validation rule (T005)
+
+**Measured** (`update-member.ts:38-98`, `contact-crud.ts:84-109`, `member-form/schema.ts:95-140`,
+`member-self-update.ts:44-66`):
+
+- The **server** staff-edit rules are `updateMemberSchema` (company_name `trim().min(1).max(200)`;
+  website `max(200).url().refine(!hasDangerousUrlScheme).nullable().optional().or('')`;
+  description `max(2000).nullable().optional()`; address lines `max(200)` / sub_district, city,
+  province `max(100)` / postal_code `max(20)`; billing_* the same shapes + billing_country
+  `length(2)`) and `updateContactFieldsSchema` (first/last `trim().min(1).max(100)`; phone
+  `max(20).nullable()` then `asPhone` in the use case; role_title `max(100).nullable()`).
+- The **client** `buildMemberFormSchema` is a per-render FACTORY over translator functions
+  (`tf`, `tv`): a new zod object every call, so no rule in it can be reference-shared with
+  anything. It adds only localised messages and a bare-domain normaliser
+  (`normalizeWebsiteUrl`, prefixes `https://`) ahead of the same `.url()` check.
+- The **portal** immediate path (`member-self-update.ts`) validates website with the scheme
+  refine but **without `.url()`** — this is the divergence the panel (#8) measured.
+
+**Decision**: the canonical rule is the **server staff-edit schema**. FR-006 binds the member
+path to "the validation that applies to a staff edit", and the server schema is the rule a staff
+edit is actually held to; the client factory is presentation sugar over it. Mechanism (R14 — parity
+is a mechanism, not a sentence): `domain/change-request/field-rules.ts` exports one zod rule per
+Group B key (address groups as per-line rules), and `update-member.ts` + `contact-crud.ts` build
+their Group B shape entries FROM those exports, so the parity test (T018) asserts
+**reference-equality** (`toBe`) between `FIELD_RULES.<key>` and the staff schema's shape entry —
+unwrapping `updateMemberSchema`'s `ZodEffects` (it ends in `superRefine`) via `innerType()`.
+`normalizeWebsiteUrl` moves to the Domain file too so the portal change-request form can apply the
+same bare-domain courtesy the staff form applies. Consequence for the portal: a Group B website
+proposal must now pass `.url()` (the staff rule) — stricter than today's immediate path, exactly
+as FR-006 requires; the flag-OFF immediate path is untouched.
+
+**Company-name uniqueness**: NONE exists on any staff path — no zod rule, no repo check, no DB
+unique index or constraint (`rg -i "company_name.*uniq|companyName.*unique|duplicate.*company"`
+over `src/modules/members` + `drizzle/migrations` → 0 hits). Spec § Edge Cases "Company name
+identical to another member's" is therefore satisfied vacuously: T036 / T051 call no uniqueness
+check because a staff edit performs none. If one is ever added to the staff path it must be added
+to `field-rules.ts` first, so the parity test drags the member path along.
+
+### § V3 — dispatcher read-at-send under the tenant tx (T006)
+
+**Measured** (`outbox-dispatch/route.ts:384-560` `dispatchReceiptPdfRender`, `:705-760` the
+`invoice_auto_email` receipt-PDF gate, `:133-180` `buildPayload`):
+
+- The dispatcher claims a row `FOR UPDATE SKIP LOCKED` inside ITS OWN `db.transaction` (owner
+  role, no tenant GUC). Every tenant-scoped read then opens a **separate**
+  `runInTenant(asTenantContext(row.tenantId), …)` scope — `receipt_pdf_render` for the render
+  use case, the auto-email gate for `SELECT receipt_pdf_status FROM invoices`. Both first guard
+  `row.tenantId` against `/^[a-z0-9-]{1,64}$/` (S9 closure) and permanent-fail a malformed value.
+- `buildPayload(row)` is already `async`, switches on `row.notificationType`, and returns `null`
+  for an unrenderable row; `null` is routed to the existing permanent-failure path with its own
+  audit, so a missing request row does not vanish silently.
+
+**Decision rule** (binding on T037 / T053): the two new arms render INSIDE
+`runInTenant(asTenantContext(row.tenantId), (tx) => …)` — read `member_change_requests` +
+`member_change_request_fields` (+ the member's company name / member number, the submitter's
+current contact row for the decided-member email) through the tenant tx, build the diff at send
+time, and return the payload. `context_data` carries **ids and field keys only**; copying names /
+phones / addresses into the outbox row is NOT an allowed fallback (privacy CHK006/CHK011). A
+request row that no longer exists (or a contact removed/erased for the member email) returns
+`null` from the arm so the row takes the dispatcher's existing unrenderable-row exit, with the
+reason (`request_gone` / `recipient_gone`) carried in the `email_dispatch_failed` audit payload.
+
+### § V4 — prod shape the per-person scope depends on (T007)
+
+**Measured 2026-09-11 (read-only, `--env-file=.env.production`, tenant `swecham`, counts only)**:
+
+| count | value |
+|---|---|
+| contacts with a login that are NOT primary (`linked_user_id IS NOT NULL AND is_primary = false AND removed_at IS NULL`) | **0** |
+| primary contacts with a login | 1 |
+| members with a billing address set (`billing_address_line1 IS NOT NULL`) | **0** |
+| members (not erased) | 150 |
+| active users holding `members.write` today (`admin` / `super_admin`) | 3 |
+
+Consequences: (1) the FR-029 per-person scope and the secondary-vs-primary refusal
+(`company_fields_require_primary`) are exercised **only by seeded data** — T033 / T069 / T081 seed
+a secondary contact with a login themselves and never rely on prod shape; (2) with 0 billing
+addresses the `registered_address` row is tax-affecting for every SweCham member today (FR-019
+"registered address is the buyer address when no billing address is set") — the review page will
+show the flag on every registered-address proposal until members get billing addresses, which is
+correct, not a bug; (3) the reviewer fan-out is 3 outbox rows per submission (≤ 5 assumed).

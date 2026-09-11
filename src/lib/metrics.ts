@@ -6031,3 +6031,96 @@ export const insightsMetrics = {
     });
   },
 } as const;
+
+// --- F114 members — change-request approval workflow -------------------------
+
+/** Bounded refusal reasons for `members.change_request_refused.total` (contracts § 4). */
+export type ChangeRequestRefusedReason =
+  | 'rate_limited'
+  | 'forbidden'
+  | 'archived'
+  | 'already_decided'
+  | 'validation';
+
+/**
+ * F114 (contracts/notifications-and-audit.md § 4; docs/observability.md § 14).
+ * Labels are bounded enums + `tenant`; never a user id, an email or a value.
+ */
+export const membersMetrics = {
+  changeRequests: {
+    /**
+     * `members.change_requests_pending_count{tenant}` — async gauge over
+     * `member_change_requests WHERE state = 'pending'`, emitted by the
+     * per-tenant gauges tick (research R12 / V2). Alert: see oldest age.
+     */
+    pendingCount(tenantId: string, count: number): void {
+      safeMetric(() => {
+        observeGauge(
+          'members_change_requests_pending_count',
+          'Member change requests awaiting a staff decision',
+          { tenant: tenantId },
+          count,
+        );
+      });
+    },
+    /**
+     * `members.change_request_oldest_age_seconds{tenant}` — age of the oldest
+     * pending request. Alert: > 7 d warning, > 14 d page (FR-037 — both
+     * inside the 30-day data-subject-request clock).
+     */
+    oldestAgeSeconds(tenantId: string, seconds: number): void {
+      safeMetric(() => {
+        observeGauge(
+          'members_change_request_oldest_age_seconds',
+          'Age in seconds of the oldest pending member change request',
+          { tenant: tenantId },
+          seconds,
+        );
+      });
+    },
+    /** `members.change_request_submitted.total{tenant,scope,coalesced}` — one per created request. */
+    submitted(
+      tenantId: string,
+      scope: 'company' | 'own_contact' | 'mixed',
+      coalesced: boolean,
+    ): void {
+      safeMetric(() => {
+        counter(
+          'members_change_request_submitted_total',
+          'Member change requests created, by scope; coalesced = no new staff email queued',
+        ).add(1, { tenant: tenantId, scope, coalesced: coalesced ? 'true' : 'false' });
+      });
+    },
+    /** `members.change_request_decided.total{tenant,outcome}` — one per recorded decision. */
+    decided(
+      tenantId: string,
+      outcome: 'approved' | 'partially_approved' | 'rejected',
+    ): void {
+      safeMetric(() => {
+        counter(
+          'members_change_request_decided_total',
+          'Member change requests decided, by outcome',
+        ).add(1, { tenant: tenantId, outcome });
+      });
+    },
+    /** `members.change_request_refused.total{tenant,reason}` — a submit or decide refused before any write. */
+    refused(tenantId: string, reason: ChangeRequestRefusedReason): void {
+      safeMetric(() => {
+        counter(
+          'members_change_request_refused_total',
+          'Member change-request submits/decides refused, by bounded reason',
+        ).add(1, { tenant: tenantId, reason });
+      });
+    },
+    /** `members.change_request_decide_ms{tenant}` — decide use-case wall time (budget p95 < 400 ms). */
+    decideDurationMs(tenantId: string, ms: number): void {
+      safeMetric(() => {
+        histogram(
+          'members_change_request_decide_ms',
+          'decideChangeRequest transaction wall time',
+          'ms',
+        ).record(ms, { tenant: tenantId });
+      });
+    },
+  },
+} as const;
