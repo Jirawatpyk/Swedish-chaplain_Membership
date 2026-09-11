@@ -26,10 +26,13 @@ import {
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
+import { rateLimiter } from '@/lib/auth-deps';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
-import { submitChangeRequest } from '@/modules/members';
+import { SUBMISSION_WINDOW_HOURS, SUBMISSIONS_PER_WINDOW_CAP, submitChangeRequest, type SubmitChangeRequestError } from '@/modules/members';
+
+type SubmitRefusalError = SubmitChangeRequestError;
 import { serialiseChangeRequestForPortal } from './_serialise';
 
 export const runtime = 'nodejs';
@@ -51,6 +54,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // in-route guard every mutating route carries — T116).
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
+
+  // Interim per-person cap until the durable 10 / 24 h cap + 1 h staff-email
+  // coalescing land (US5 T087): every submit fans one outbox row out per
+  // reviewer, so an unbounded caller is a mailbox / reputation problem
+  // (review: security I-1). Same window and count as the durable rule.
+  const rl = await rateLimiter.check(`f114:submit:${ctx.tenant.slug}:${ctx.current.user.id}`, SUBMISSIONS_PER_WINDOW_CAP, SUBMISSION_WINDOW_HOURS * 3600);
+  if (!rl.success) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000));
+    logger.warn({ requestId: ctx.requestId, tenantId: ctx.tenant.slug, memberId: ctx.memberId, reset: rl.reset }, 'change-requests.submit rate-limited');
+    return NextResponse.json(
+      { error: 'rate_limited', retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
+    );
+  }
 
   const deps = buildChangeRequestDeps(ctx.tenant);
 
@@ -81,6 +98,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Optional Idempotency-Key — same semantics as the profile endpoint's
   // classify / reserve / remember flow (FR-038).
   const keyCheck = parseIdempotencyKey(request.headers);
+  // The header is optional here, but a PRESENT malformed key is a client
+  // bug that must not silently run un-deduplicated (review: security M-3).
+  if (!keyCheck.ok && keyCheck.reason !== 'missing') {
+    return NextResponse.json({ error: 'invalid_idempotency_key', message: 'Idempotency-Key is malformed.' }, { status: 400 });
+  }
   const idem = keyCheck.ok ? { key: keyCheck.key, bodyHash: hashRequestBody(rawBody, 'POST /portal/change-requests') } : null;
   if (idem) {
     const classification = await classifyIdempotencyRequest(ctx.tenant, idem.key, idem.bodyHash);
@@ -138,36 +160,47 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(body, { status });
   }
 
+  // A deterministic refusal is remembered under the key too — otherwise a
+  // retry with the same key + body reads the reserved-but-empty record as a
+  // CONFLICT and answers 422 `idempotency-key-reused` forever (review:
+  // security M-2). Transient 5xx / 429 are NOT remembered so the retry can
+  // succeed.
+  const refusal = mapRefusal(result.error);
+  if (refusal) {
+    if (idem) await rememberIdempotentResponse(ctx.tenant, idem.key, idem.bodyHash, refusal);
+    return NextResponse.json(refusal.body, { status: refusal.status });
+  }
   const error = result.error;
+  if (error.type === 'rate_limited') {
+    return NextResponse.json(
+      { error: 'rate_limited', retryAfterSeconds: error.retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(error.retryAfterSeconds) } },
+    );
+  }
+  logger.error(
+    { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type },
+    'change-requests.submit: use case failed',
+  );
+  return NextResponse.json({ error: 'server_error' }, { status: 500 });
+}
+
+type Refusal = { readonly status: number; readonly body: Record<string, unknown> };
+
+/** The 4xx arms the client can act on — stable for a given body, hence rememberable. */
+function mapRefusal(error: SubmitRefusalError): Refusal | null {
   switch (error.type) {
     case 'forbidden':
-      return NextResponse.json(
-        {
-          error: error.reason === 'company_fields_require_primary' ? 'company_fields_require_primary' : 'forbidden',
-          fields: error.fields,
-        },
-        { status: 403 },
-      );
+      return {
+        status: 403,
+        body: { error: error.reason === 'company_fields_require_primary' ? 'company_fields_require_primary' : 'forbidden', fields: error.fields },
+      };
     case 'validation_error':
-      return NextResponse.json({ error: 'validation_error', issues: error.issues }, { status: 422 });
+      return { status: 422, body: { error: 'validation_error', issues: error.issues } };
     case 'member_archived':
-      return NextResponse.json(
-        { error: 'member_archived', message: 'An archived membership cannot be edited.' },
-        { status: 403 },
-      );
+      return { status: 403, body: { error: 'member_archived', message: 'An archived membership cannot be edited.' } };
     case 'not_found':
-      return NextResponse.json({ error: 'not_found' }, { status: 404 });
-    case 'rate_limited':
-      return NextResponse.json(
-        { error: 'rate_limited', retryAfterSeconds: error.retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(error.retryAfterSeconds) } },
-      );
-    case 'server_error':
+      return { status: 404, body: { error: 'not_found' } };
     default:
-      logger.error(
-        { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type },
-        'change-requests.submit: use case failed',
-      );
-      return NextResponse.json({ error: 'server_error' }, { status: 500 });
+      return null;
   }
 }

@@ -67,6 +67,10 @@ vi.mock('@/modules/members', async () => {
     submitChangeRequest: (...args: unknown[]) => submitMock(...args),
   };
 });
+const rateLimitCheckMock = vi.fn(async () => ({ success: true, reset: Date.now() + 60_000 }));
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: { check: (...args: unknown[]) => rateLimitCheckMock(...(args as [])) },
+}));
 vi.mock('@/lib/idempotency', () => ({
   parseIdempotencyKey: (headers: Headers) => {
     const key = headers.get('idempotency-key');
@@ -350,5 +354,69 @@ describe('POST /api/portal/change-requests — READ_ONLY_MODE (T116)', () => {
     expect(await res.json()).toMatchObject({ error: { code: 'read_only_mode' } });
     expect(reserveMock).not.toHaveBeenCalled();
     expect(submitMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Review round 1 — security I-1 (interim per-person cap), M-2 (a
+ * deterministic refusal is remembered under the Idempotency-Key so a retry
+ * gets the same answer, never `idempotency-key-reused`), M-3 (a PRESENT but
+ * malformed key is a 400, not silently un-deduplicated).
+ */
+describe('POST /api/portal/change-requests — review round 1', () => {
+  afterEach(() => {
+    rateLimitCheckMock.mockReset();
+    rateLimitCheckMock.mockResolvedValue({ success: true, reset: Date.now() + 60_000 });
+  });
+
+  it('is rate-limited per tenant + user at the durable cap (10 / 24 h) → 429 rate_limited + Retry-After, before the gate / use case', async () => {
+    rateLimitCheckMock.mockResolvedValueOnce({ success: false, reset: Date.now() + 3_600_000 });
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    const { POST } = await import('@/app/api/portal/change-requests/route');
+    const res = await POST(
+      new NextRequest('http://localhost/api/portal/change-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contact: { phone: '+66899999999' } }),
+      }),
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toMatch(/^\d+$/);
+    const body = await res.json();
+    expect(body.error).toBe('rate_limited');
+    expect(body.retryAfterSeconds).toBeGreaterThan(3500);
+    expect(rateLimitCheckMock).toHaveBeenCalledWith(`f114:submit:test-swecham:${USER}`, 10, 86_400);
+    expect(resolveGateMock).not.toHaveBeenCalled();
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it('a 422 validation refusal is remembered under the Idempotency-Key (a retry replays it instead of 422 idempotency-key-reused)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    submitMock.mockResolvedValueOnce(err({ type: 'validation_error', issues: [{ path: ['contact', 'phone'], message: 'bad' }] }));
+    const { POST } = await import('@/app/api/portal/change-requests/route');
+    const res = await POST(
+      new NextRequest('http://localhost/api/portal/change-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'idem-422' },
+        body: JSON.stringify({ contact: { phone: 'nope' } }),
+      }),
+    );
+    expect(res.status).toBe(422);
+    expect(rememberMock).toHaveBeenCalledWith(expect.anything(), 'idem-422', 'hash', { status: 422, body: expect.objectContaining({ error: 'validation_error' }) });
+  });
+
+  it('a server_error is NOT remembered (the retry must be able to succeed)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    submitMock.mockResolvedValueOnce(err({ type: 'server_error', message: 'boom' }));
+    const { POST } = await import('@/app/api/portal/change-requests/route');
+    const res = await POST(
+      new NextRequest('http://localhost/api/portal/change-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'idem-500' },
+        body: JSON.stringify({ contact: { phone: '+66899999999' } }),
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(rememberMock).not.toHaveBeenCalled();
   });
 });

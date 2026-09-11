@@ -10,6 +10,7 @@ import {
   UsersIcon,
   UserCircleIcon,
   BuildingIcon,
+  ClipboardCheckIcon,
   ReceiptIcon,
   FileMinusIcon,
   FileCog2Icon,
@@ -91,7 +92,10 @@ export type NavVisibilityFlag =
   // top-level nav item is dropped so the sidebar never shows a link that
   // would 503 (F7 proxy) / 404 (F6 page `notFound()`) on click.
   | 'broadcastsEnabled'
-  | 'eventsEnabled';
+  | 'eventsEnabled'
+  // F114 — `env.features.memberChangeApproval`: the change-request queue
+  // 404s while the platform flag is OFF, so its nav item is dropped too.
+  | 'memberChangeApproval';
 
 export type NavVisibilityFlags = Readonly<
   Partial<Record<NavVisibilityFlag, boolean>>
@@ -231,6 +235,18 @@ export const staffNavConfig: NavConfig = {
           href: '/admin/members',
           guard: defineGuard('members.read'),
           activePattern: '/admin/members',
+        },
+        // F114 — member change requests awaiting a decision (FR-027). Keyed
+        // `members.read` like the member record (manager / marketing read-only,
+        // FR-026); deciding is gated inside the page on `members.write`.
+        // Reachable from the sidebar, not only from the staff email deep link.
+        {
+          titleKey: 'nav.staff.changeRequests',
+          icon: ClipboardCheckIcon,
+          href: '/admin/change-requests',
+          guard: defineGuard('members.read'),
+          activePattern: '/admin/change-requests',
+          visibilityFlag: 'memberChangeApproval',
         },
         {
           titleKey: 'nav.staff.plans',

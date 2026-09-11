@@ -93,6 +93,13 @@ export function isInMemberAuditSubset(
   }
   if (payloadRef(row.payload, 'member_id') === scope.memberId) return true;
   if (payloadRef(row.payload, 'subject_member_id') === scope.memberId) return true;
+  // F114 review (privacy I-3) — a staff action ABOUT the member
+  // (`member_change_request_decided`, the replace/erasure withdrawals, and
+  // the pre-existing `auto_email_skipped_no_recipient` / marketing opt-out
+  // rows) keys `related_member_id` so the 0009 activity trigger stays quiet;
+  // the subject's Art. 15 / PDPA §30 export must still include it — the
+  // timeline view already COALESCEs both keys.
+  if (payloadRef(row.payload, 'related_member_id') === scope.memberId) return true;
   return false;
 }
 

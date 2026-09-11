@@ -81,9 +81,24 @@ non-sentinel value in `member_change_request_fields` after `eraseMember`.
 
 ## 3. Cutover (prod)
 
+### Pre-flip gates (PR-1 review round 1 — each one MUST be merged before step 2)
+
+Everything in PR-1 ships dark, and on this repo setting the env var IS the deploy. These are
+not "nice to have before launch"; each converts a documented deferral into a live defect the
+moment the flag is set:
+
+| Gate | Why it blocks | Closes in |
+|---|---|---|
+| **T078 + T070** — the FR-030 erasure scrub adapter wired into `eraseMember` (+ its live-Neon test + table-scoped guard) | Until it merges, `member_change_request_fields.seen_value` / `proposed_value` and `member_change_requests.decision_reason` / `decision_note` are OUTSIDE the GDPR Art. 17 / PDPA §33 path — an erasure leaves the subject's proposed name / phone / addresses and the reviewer's reason intact. The `ChangeRequestScrubPort` exists; nothing implements or calls it. Also cancel pending outbox rows of the two new `notification_type`s by `context_data->>'memberId'`, not only by `to_email`. | PR-2 (US4) |
+| **T087** — the durable 10 / 24 h cap + 1 h staff-email coalescing | PR-1 carries an interim Upstash cap (10 / 24 h per tenant + user) on `POST /api/portal/change-requests`, but no coalescing: every submit still fans one email out per reviewer. | PR-2 (US5) |
+| **T102** — the pending-count / oldest-age gauges | FR-037's > 7 d warning / > 14 d page alerts cannot fire until the gauges have a caller. | PR-3 (US6) |
+| **T072 / T074** — the real queue (filters, cursor paging, overdue flag) | The PR-1 `/admin/change-requests` page lists 50 pending rows with no paging; row 51 is invisible. | PR-2 (US4) |
+| e2e `tests/e2e/change-requests.spec.ts` run green against a dev server with the flag ON | Written for US1–US3, never executed in PR-1 (no dev server in the session). | before flip |
+
 1. Merge → prod auto-migrates 0300 on deploy (`vercel-build`); `pnpm db:verify:prod`.
 2. Set `FEATURE_MEMBER_CHANGE_APPROVAL=true` in Vercel **only when ready to redeploy immediately**
-   (setting the env var IS the flip on this repo — no `ignoreCommand`).
+   (setting the env var IS the flip on this repo — no `ignoreCommand`) **and only after every
+   pre-flip gate above is merged**.
 3. Update the record of processing (RoPA) entry for member data with the new purpose ("review of
    member-proposed changes; accountable history") and the new disclosure (staff notification
    emails) — FR-040 makes this a precondition of the switch.

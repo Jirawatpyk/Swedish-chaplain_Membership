@@ -98,6 +98,12 @@ export default async function PortalTimelinePage({
     {
       memberRepo: deps.memberRepo,
       timeline: deps.timeline,
+      // F114 (privacy I-1) — see /api/portal/timeline
+      viewerContactId: await (async () => {
+        const contacts = await deps.contactRepo.listByMember(tenant, member.memberId);
+        if (!contacts.ok) return null;
+        return contacts.value.find((c) => String(c.linkedUserId) === user.id && !c.removedAt)?.contactId ?? null;
+      })(),
       // 016 final review B2 — the member OWNS this billing history. The gate
       // exists to stop STAFF without `invoicing.read` reading someone else's;
       // omitting it here hid the member's own invoices from page 1 while the

@@ -415,7 +415,7 @@ describe('submitChangeRequest — the happy path in ONE transaction', () => {
       'member_change_request_submitted',
     ]);
     expect(audit.events[1]).toMatchObject({
-      payload: { related_member_id: MEMBER, request_id: firstId, reason: 'replaced', actor_role: 'member' },
+      payload: { related_member_id: MEMBER, request_id: firstId, withdrawn_reason: 'replaced', actor_role: 'member' },
     });
     expect(audit.events[2]).toMatchObject({ payload: { replaced_request_id: firstId } });
     expect(emails.enqueued).toHaveLength(4);
@@ -483,5 +483,47 @@ describe('submitChangeRequest — throw-to-rollback after the first write', () =
     expect(await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }))).toEqual({ ok: false, error: { type: 'not_found' } });
     memberRepo.findById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
     expect(await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }))).toMatchObject({ ok: false, error: { type: 'server_error' } });
+  });
+});
+
+describe('submitChangeRequest — the tax flag reads the RESULTING billing state (review tax I-1)', () => {
+  it('clearing the billing group in the same proposal flags the registered address (it becomes the §86/4 buyer address)', async () => {
+    const withBilling = member({
+      billingAddressLine1: '1 Old Billing St',
+      billingCity: 'Bangkok',
+      billingPostalCode: '10110',
+      billingCountry: 'TH',
+    } as Partial<Member>);
+    const { deps, repo } = makeDeps({ member: withBilling });
+    const r = await submitChangeRequest(
+      deps,
+      input({
+        company: {
+          registered_address: { line1: '2 Main Rd', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110' },
+          billing_address: { line1: null, line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null },
+        },
+      }),
+    );
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const row = [...repo.rows.values()][0]!;
+    const byKey = Object.fromEntries(row.fields.map((f) => [f.key, f.affectsTaxDocuments]));
+    expect(byKey).toEqual({ registered_address: true, billing_address: true });
+  });
+
+  it('with a billing address that STAYS on record, a registered-address change is not tax-affecting', async () => {
+    const withBilling = member({
+      billingAddressLine1: '1 Old Billing St',
+      billingCity: 'Bangkok',
+      billingPostalCode: '10110',
+      billingCountry: 'TH',
+    } as Partial<Member>);
+    const { deps, repo } = makeDeps({ member: withBilling });
+    const r = await submitChangeRequest(
+      deps,
+      input({ company: { registered_address: { line1: '2 Main Rd', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110' } } }),
+    );
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const row = [...repo.rows.values()][0]!;
+    expect(row.fields.map((f) => [f.key, f.affectsTaxDocuments])).toEqual([['registered_address', false]]);
   });
 });

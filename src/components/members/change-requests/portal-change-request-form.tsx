@@ -20,7 +20,7 @@
  */
 import { useId, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Controller, useForm, type Path } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -34,6 +34,7 @@ import { Label } from '@/components/ui/label';
 import { RequiredMark } from '@/components/ui/required-mark';
 import { Textarea } from '@/components/ui/textarea';
 import { boundedText, requiredText, type Translator } from '@/lib/zod-i18n';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
 import { normalizeWebsiteUrl } from '@/modules/members/domain/change-request/field-rules';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
@@ -124,6 +125,13 @@ function buildSchema(tv: Translator, tf: (key: string) => string, canProposeComp
     billProvince: line(100),
     billPostalCode: line(20),
     billCountry: z.string().refine((v) => v === '' || /^[A-Za-z]{2}$/.test(v), { message: tf('errors.country') }),
+  }).superRefine((v, ctx) => {
+    // the billing group is ONE unit: any line ⇒ line1 + city + postal code + country
+    const lines = [v.billLine1, v.billLine2, v.billSubDistrict, v.billCity, v.billProvince, v.billPostalCode, v.billCountry];
+    if (!lines.some((l) => l.trim() !== '')) return;
+    for (const key of ['billLine1', 'billCity', 'billPostalCode', 'billCountry'] as const) {
+      if (v[key].trim() === '') ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: tf('errors.billingIncomplete') });
+    }
   });
 }
 
@@ -198,7 +206,8 @@ export interface PortalChangeRequestFormProps {
   readonly canProposeCompanyFields: boolean;
   /** The caller's own pending request, when one exists (the form starts from its values — US5 AS5). */
   readonly pending: ChangeRequestView | null;
-  readonly privacyNoticeHref: string;
+  /** The TENANT's privacy notice URL; null when unset — the notice text still renders, the link does not (never a dead link). */
+  readonly privacyNoticeHref: string | null;
   /** US3 — the decided request being resubmitted (reason shown above the form). */
   readonly resubmitOf?: ChangeRequestView | null;
 }
@@ -216,6 +225,7 @@ export function PortalChangeRequestForm({
   const tStatus = useTranslations('portal.changeRequests.status');
   const tErrors = useTranslations('portal.changeRequests.errors');
   const tv = useTranslations('shared.validation');
+  const locale = useLocale();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<{ kind: StatusKind; retryAt?: string }>({ kind: null });
@@ -264,7 +274,8 @@ export function PortalChangeRequestForm({
           const path = Array.isArray(issue.path) ? issue.path.join('.') : '';
           const field = PATH_TO_FIELD[path];
           if (field) {
-            form.setError(field, { type: 'server', message: tErrors('field') });
+            const message = (issue as { message?: unknown }).message === 'billing_address_incomplete' ? t('errors.billingIncomplete') : tErrors('field');
+            form.setError(field, { type: 'server', message });
             if (!focused) {
               form.setFocus(field);
               focused = true;
@@ -275,9 +286,15 @@ export function PortalChangeRequestForm({
         return;
       }
       if (res.status === 429) {
-        const seconds = typeof data?.retryAfterSeconds === 'number' ? data.retryAfterSeconds : 3600;
-        const retryAt = new Date(Date.now() + seconds * 1000).toLocaleTimeString();
-        setStatus({ kind: 'rate_limited', retryAt });
+        // date + time in the app locale / Asia/Bangkok — the window is a
+        // rolling 24 h, so a bare clock time was wrong by up to a day
+        // (review: UX I5); no retry hint at all when the server sent none
+        const seconds = typeof data?.retryAfterSeconds === 'number' ? data.retryAfterSeconds : null;
+        const retryAt =
+          seconds === null
+            ? undefined
+            : formatLocalisedDate(new Date(Date.now() + seconds * 1000).toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
+        setStatus(retryAt === undefined ? { kind: 'rate_limited' } : { kind: 'rate_limited', retryAt });
         return;
       }
       if (res.status === 409 && data?.error === 'approval_not_required') {
@@ -332,7 +349,7 @@ export function PortalChangeRequestForm({
       : status.kind === 'already_pending'
         ? tStatus('alreadyPending')
         : status.kind === 'rate_limited'
-          ? tStatus('rateLimited', { retryAt: status.retryAt ?? '' })
+          ? (status.retryAt ? tStatus('rateLimited', { retryAt: status.retryAt }) : tStatus('rateLimitedGeneric'))
           : '';
 
   return (
@@ -346,9 +363,9 @@ export function PortalChangeRequestForm({
         ) : null}
 
         {pending ? (
-          <p className="text-sm text-muted-foreground" data-testid="pending-hint">
+          <InlineAlert tone="warning" role="none" data-testid="pending-hint">
             {t('pendingHint')}
-          </p>
+          </InlineAlert>
         ) : null}
 
         <Card>
@@ -437,10 +454,15 @@ export function PortalChangeRequestForm({
 
         {/* FR-010 — GDPR Art. 13 / PDPA § 23 notice */}
         <p className="text-caption text-muted-foreground" data-testid="review-notice">
-          {t('notice')}{' '}
-          <a href={privacyNoticeHref} className="text-primary underline-offset-4 hover:underline" target="_blank" rel="noreferrer">
-            {t('privacyLink')}
-          </a>
+          {t('notice')}
+          {privacyNoticeHref ? (
+            <>
+              {' '}
+              <a href={privacyNoticeHref} className="text-primary underline underline-offset-4 hover:no-underline" target="_blank" rel="noreferrer">
+                {t('privacyLink')}
+              </a>
+            </>
+          ) : null}
         </p>
 
         {/* FR-034 — outcome messages announced through a live region, not a toast */}

@@ -211,10 +211,12 @@ describe('change requests — concurrency on live Neon (T049)', () => {
     const values = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
     const submitted = values.filter((v) => v?.ok && v.value.outcome === 'submitted');
     const alreadyPending = values.filter((v) => v?.ok && v.value.outcome === 'already_pending');
-    // exactly one created it; the rest either saw it pending (FOR UPDATE) or
-    // lost the unique-index race (server_error) — never a second pending row
+    // exactly one created it; EVERY other caller is told `already_pending` —
+    // the unique-index loser re-reads the winner's row (review: reliability
+    // I-1: a double-click is never a 500)
     expect(submitted).toHaveLength(1);
-    expect(submitted.length + alreadyPending.length + values.filter((v) => v && !v.ok).length).toBe(CONCURRENT_SUBMITS);
+    expect(alreadyPending).toHaveLength(CONCURRENT_SUBMITS - 1);
+    expect(values.filter((v) => v && !v.ok)).toEqual([]);
     const pending = await pendingRows();
     expect(pending).toHaveLength(1);
     expect(pending[0]?.submittedByUserId).toBe(member.userId);

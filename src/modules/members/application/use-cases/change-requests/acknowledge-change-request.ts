@@ -44,7 +44,15 @@ export type AcknowledgeChangeRequestError =
   | { readonly type: 'not_decided' }
   | { readonly type: 'server_error'; readonly message: string };
 
-class Refusal extends UseCaseAbort<AcknowledgeChangeRequestError> {}
+class Refusal extends UseCaseAbort<AcknowledgeChangeRequestError> {
+  constructor(
+    error: AcknowledgeChangeRequestError,
+    /** false = the row was FOUND in this tenant (another contact's request) — not a cross-tenant probe. */
+    readonly probe = true,
+  ) {
+    super(error);
+  }
+}
 
 export async function acknowledgeChangeRequest(
   deps: AcknowledgeChangeRequestDeps,
@@ -58,7 +66,10 @@ export async function acknowledgeChangeRequest(
         if (found.error.code === 'repo.not_found') throw new Refusal({ type: 'not_found' });
         throw new UseCaseAbort<RepoError>(found.error);
       }
-      if (found.value.submittedByUserId !== input.actorUserId) throw new Refusal({ type: 'not_found' });
+      // Another contact of the SAME member: refuse as not_found (no
+      // existence leak, FR-029) but do NOT audit it as a cross-tenant probe —
+      // the row is visible in this tenant (review: reliability I-5 / security M-1).
+      if (found.value.submittedByUserId !== input.actorUserId) throw new Refusal({ type: 'not_found' }, false);
       if (found.value.state !== 'decided') throw new Refusal({ type: 'not_decided' });
       if (found.value.outcomeAcknowledgedAt !== null) return found.value;
       const stamped = await deps.changeRequestRepo.acknowledgeInTx(tx, found.value.id, now);
@@ -68,7 +79,7 @@ export async function acknowledgeChangeRequest(
     return ok({ request });
   } catch (e) {
     if (e instanceof Refusal) {
-      if (e.error.type === 'not_found') {
+      if (e.error.type === 'not_found' && e.probe) {
         await auditChangeRequestProbe(deps.audit, deps.tenant, {
           changeRequestId: input.changeRequestId,
           actorUserId: input.actorUserId,

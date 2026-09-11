@@ -192,7 +192,7 @@ function makeDeps(opts: { request?: ChangeRequest; member?: Member; contacts?: C
   const cs = opts.contacts ?? [contact()];
   const memberRepo = {
     findByIdInTx: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
-    findErasedAtById: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: opts.erasedAt ?? null })),
+    findErasedAtByIdInTx: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: opts.erasedAt ?? null })),
     updateFieldsInTx: vi.fn(async (_tx: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
   };
   const contactRepo = {
@@ -495,7 +495,7 @@ describe('decideChangeRequest — throw-to-rollback after the first write (FR-01
     c.contactRepo.listByMemberInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
     expect(await decideChangeRequest(c.deps, input(ALL_APPROVED))).toMatchObject({ ok: false, error: { type: 'server_error' } });
     const d = makeDeps();
-    d.memberRepo.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
+    d.memberRepo.findErasedAtByIdInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
     expect(await decideChangeRequest(d.deps, input(ALL_APPROVED))).toMatchObject({ ok: false, error: { type: 'server_error' } });
     const e = makeDeps();
     e.repo.failNext('findByIdInTx');

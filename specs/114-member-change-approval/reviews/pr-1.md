@@ -1,0 +1,91 @@
+# PR-1 — foundation + US1 submit → US2 decide → US3 reject / resubmit
+
+Branch `114-member-change-approval`. Range reviewed: `d6c5028aa..b22f9209b` (the four
+implementation commits after the last spec-only commit). Everything dark behind
+`FEATURE_MEMBER_CHANGE_APPROVAL` (default OFF, variable ABSENT from Vercel) and the per-tenant
+switch (default false).
+
+## Gate output at `b22f9209b` (before round 1)
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | clean |
+| `pnpm lint` (full) | clean |
+| `pnpm vitest run tests/contract/` | 193 files, 2,008 passed, 2 todo |
+| members unit + contract + portal + lib + architecture | 278 files / 2,785 passed |
+| integration (live Neon `dev`, by path) | repo 8 · submit-atomicity 2 · staff-email-dispatch 2 · decide-rollback 2 · concurrency 2 (2 decides + 50 submits) · member-email-dispatch 2 · tax-document-immutability 1 · tenant-isolation 4 (both directions) — all green |
+| `check:i18n` 5,413 keys · `check:layout` · `check:staff-page-guard` (49 guarded) · `check:api-route-guard` (121) · `check:actor-role-truth` (0 fabricated) · `check:portal-guard` · `check:audit-events` · `check:audit-counts` · `check:multi-tenant` (28 tables) · `check:fixme` · `check:dates` · `check:env-example` | all OK |
+| `tests/contract/rbac` (baseline 49 pages / 133 APIs, frozen marketing set 51) | 147/147 |
+| e2e `tests/e2e/change-requests.spec.ts` (US1–US3, axe) | WRITTEN, NOT RUN — no dev server in the session; the server env needs the flag ON |
+
+## Round 1 — six read-only reviewers (Opus) on `d6c5028aa..b22f9209b`, 2026-09-11
+
+Reviewer stack per `README.md`: `security-engineer`, `pdpa-gdpr-compliance-officer`,
+`reliability-guardian`, `drizzle-migration-reviewer`, `thai-tax-compliance-auditor`,
+`enterprise-ux-designer` — concurrent, read-only, no subagents. Every finding below was
+confirmed against the code before it was fixed (108 rule 2: grep the assertion, not the sentence).
+Verdicts: no Critical-in-dark-state from five reviewers; UX raised three Critical (WCAG 1.3.1
+table labels, the `/privacy` dead link, a DB failure rendered as an empty queue). Five of six said
+**With fixes**, UX said **No** until its three Critical closed.
+
+### Fixed in this round (commit `<round-1 sha>`)
+
+| # | Lens | Finding | Fix |
+|---|---|---|---|
+| 1 | UX C1 | diff / decision tables: per-cell labels `sm:hidden` = absent from the accessibility tree ≥ 640 px (WCAG 1.3.1); the header row is `aria-hidden` | `sm:sr-only` on the cell labels in both tables |
+| 2 | UX C2 · Privacy I-2 | FR-010 privacy-notice link hardcoded `/privacy` — no such route (404) | link sourced from `env.broadcasts.privacyPolicyUrl` (`TENANT_PRIVACY_POLICY_URL`), hidden when unset; the notice text always renders |
+| 3 | UX C3 | `/admin/change-requests` rendered a repo failure as "no change requests are awaiting a decision" (and the deep link as "no request") | every read fault throws to the error boundary with an `M114.admin.queue_page.<arm>` errorId |
+| 4 | Rel I-2 · Sec I-2 | `decideChangeRequest` read `erased_at` through `findErasedAtById` (its own `runInTenant` = a second pool connection while holding `FOR UPDATE`; and BEFORE the member lock — an erasure committing in between was invisible → PII written back into an erased record) | new `MemberRepo.findErasedAtByIdInTx`; read AFTER `findByIdInTx` on the same tx |
+| 5 | Rel I-1 | two concurrent first submits: the `FOR UPDATE` read locks nothing when no pending row exists; the unique-index loser surfaced as a 500 — and the concurrency test called that acceptable | the conflict re-reads the winner's row and answers `already_pending`; the 50-submit test now asserts 1 submitted + 49 `already_pending`, zero `server_error` |
+| 6 | Rel I-3 | staff arm: `resolveMemberNumberPrefix` throws (no Result) → the tick's tx rolled back with `attempts` unbumped → an outbox row retried forever | wrapped: a throw → `null` (transient ladder) |
+| 7 | Rel I-4 | a request REPLACED before its staff row was sent still emailed the reviewer the stale diff | staff arm refuses any non-pending request as `request_superseded` (permanent on tick 1, audited); integration case added |
+| 8 | Sec I-4 | staff email did not re-check the recipient at send time — an admin disabled between enqueue and dispatch still received member PII | the arm re-reads the active reviewer roster (`listActiveUsersByRole(reviewerRoles())`); a non-member → `recipient_gone` |
+| 9 | Rel I-5 · Sec M-1 | `acknowledgeChangeRequest` audited another contact's request (same tenant, row visible) as `member_cross_tenant_probe` | ownership refusal is `not_found` WITHOUT the probe; a repo miss keeps it |
+| 10 | Tax I-1 | `affectsTaxDocuments('registered_address')` read the billing state at submission; a proposal that CLEARS the billing group in the same request under-flagged the registered address (the future §86/4 buyer address) | `resultingHasBillingAddress(member, proposal)` — the flag reads the state the approval would leave |
+| 11 | Tax I-2 | the billing-group all-or-nothing rule lived only in `update-member.ts`; an incomplete group submitted fine and could never be approved (DB CHECK 23514 → opaque 500) | `validateProposal` refuses a partial group at the missing required lines (`billing_address_incomplete`); the client schema mirrors it with field-level copy |
+| 12 | Tax I-3 / I-4 | `billing_country` hint dropped the FR-019 head-office / branch reminder; the TH copy said "the country that issues the invoice" (seller) | all three locales carry the reminder; TH reads "ที่อยู่เรียกเก็บเงินของผู้ซื้ออยู่นอกประเทศไทย …" |
+| 13 | Tax M5 | hints never named ใบกำกับภาษี | buyer-name / buyer-address hints do, in all three locales |
+| 14 | Privacy I-1 | `member_timeline_v` + the portal timeline surfaced a colleague's `own_contact` request (`contact_id`, `field_keys`) to every portal user of the member — FR-029 / U4; T077 mandated the defect | `timelineList` drops such rows for a member-role viewer whose `viewerContactId` ≠ the row's contact (fail closed when unresolvable); the portal route + page thread the viewer's own contact; T077 amended |
+| 15 | Privacy I-3 | `isInMemberAuditSubset` never read `related_member_id` — the subject's DSAR export omitted every decision about their proposal | one more key matched (also closes the pre-existing gap for `auto_email_skipped_no_recipient` / marketing rows) |
+| 16 | Privacy I-5 | a gate-narrowed Group B edit was audited identically to a forged Group C key | `member_self_update_forbidden` payload carries `refusal: 'gate_narrowed' \| 'forged'` |
+| 17 | Privacy M-6 | the withdraw audit key `reason` sits on the manager redaction deny-list — the closed enum (`member \| replaced \| erasure`) would be redacted, including the Art. 17 closure | key renamed `withdrawn_reason` |
+| 18 | Privacy M-7 | forged key NAMES landed unbounded in an append-only table erasure never scrubs | capped at 20 keys × 64 chars, `attempted_fields_truncated` marker |
+| 19 | Mig I-1 · Sec M-4 | field-row FK + the replaced-by self-FK were single-column: RI bypasses RLS, so a row of tenant B could reference a request of tenant A | `UNIQUE (tenant_id, id)` on the parent; both FKs composite `(tenant_id, …)`; dev branch converged by ALTER; regression test in `change-requests-repo.test.ts` (23503) |
+| 20 | Mig I-2 · Sec I-3 · Priv I-4 · Rel M-8 | migration header claimed the FR-030 erasure scrub "is" done; `ChangeRequestScrubPort` has no implementation or caller (T078, PR-2) | header rewritten in the future tense; `quickstart.md § 3` gained a **pre-flip gates** table naming T078/T070, T087, T102, T072/T074 and the e2e run |
+| 21 | Mig M-7 | app-only invariants | DB CHECKs `reason_iff_rejected_ck`, `ack_iff_decided_ck` |
+| 22 | Mig M-3 / M-1 | queue index lacked the keyset tiebreak `id`; Drizzle index drifted from the migration | `(tenant_id, state, submitted_at DESC, id DESC)` in both |
+| 23 | Mig M-4 | one `mapDbError` catch covered both inserts | the field-row insert has its own catch (`repo.unexpected`) |
+| 24 | Mig M-6 | stale test name "count is 37" asserting 42 | renamed |
+| 25 | Sec I-1 | `POST /api/portal/change-requests` had NO rate limit; every submit fans one email per reviewer | interim Upstash cap 10 / 24 h per tenant + user (the durable cap's numbers) → 429 `rate_limited` + `Retry-After`; T087 stays the durable rule |
+| 26 | Sec M-2 | a deterministic 4xx was not remembered under the Idempotency-Key → a retry answered `idempotency-key-reused` forever | 403 / 404 / 422 refusals are remembered; 429 / 5xx are not |
+| 27 | Sec M-3 | a PRESENT but malformed key silently ran un-deduplicated | 400 `invalid_idempotency_key` |
+| 28 | Rel M-3 | dispatcher slug guard `{1,64}` vs `asTenantContext` `{1,63}` (a 64-char slug → throw → forever-retry) | `{1,63}` on both new arms |
+| 29 | Rel M-6 | contact patch silently dropped when the contact is null | `UseCaseAbort` |
+| 30 | Rel M-7 | the decision banner treated 409 `not_decided` as success | 409 → `router.refresh()`; other failures → toast |
+| 31 | UX I1 | every dialog error path used a toast while the modal was open (aria-hidden outside the focus trap) | in-dialog `role="alert"` for the arms that keep the dialog open |
+| 32 | UX I2 | `AlertDialogContent` has no max-height; the tall reason + note body pushed the footer off-screen | `ConfirmationDialog` bounds its body (`max-h-[50vh] overflow-y-auto`) |
+| 33 | UX I3 | initial focus on Cancel while Confirm was disabled by the empty required reason | `ConfirmationDialog.initialFocusRef` (default unchanged); the reason textarea takes focus when a rejection is selected |
+| 34 | UX I4 / I9 | reject-only checkbox `disabled` (out of the tab order, its explanation unreachable); accessible name announced twice | `aria-disabled` + inert toggle + `aria-describedby` → the marker; the visible caption is `aria-hidden` |
+| 35 | UX I5 | rate-limit copy: browser-locale clock time without a date for a rolling 24 h window; fallback 3600 s; "for today" | `formatLocalisedDate` (date + time, Asia/Bangkok); no time when the server sends none; copy says "the last 24 hours" |
+| 36 | UX I6 | focus fell to `<body>` after the 409 / success closes (the trigger unmounts on refresh) | `closedViaSuccessRef` → the `#main-content` fallback |
+| 37 | UX I7 | `/admin/change-requests` reachable only from the email deep link | nav item under Membership (`members.read`, hidden while the platform flag is OFF via `visibilityFlag: 'memberChangeApproval'`); nav pins updated |
+| 38 | UX I8 / M3 / M6 / M7 / M15 / M16 / M2 | empty state anatomy; "Decided by  on …"; pending hint in muted text; focus lost on Dismiss; ⊘ glyph on Dismiss; banner diff text inheriting the info colour; 6 dead `portal.changeRequests.resubmit.*` keys | `EmptyState` on the queue; `unknownReviewer` fallback; `InlineAlert` warning; focus → `#main-content`; `XIcon`; `text-foreground`; dead keys deleted |
+
+### Deferred with a written owner (not silently dropped)
+
+| Finding | Where it lives now |
+|---|---|
+| Privacy I-4 / Sec I-3 / Mig I-2 — FR-030 erasure scrub (T078 + T070) + outbox cancel by `memberId` | `quickstart.md § 3` pre-flip gate (PR-2) |
+| Sec I-1 durable cap + coalescing (T087) | pre-flip gate (PR-2) |
+| Sec I-5 — reviewer directory is cross-tenant by construction (F10 `user_tenants`); no `tenants` table exists to build a runtime tripwire on today | documented in `active-users-by-role-repo.ts` + `members-change-request-deps.ts`; F10 follow-up |
+| Tax M7 — FR-022 test covers the billing-address branch only; add a billing-less member case | PR-2 test follow-up |
+| Tax M6 / M8 — a billing CLEAR hint; primary-ness frozen at submission | PR-2 UX follow-up (M8 is a courtesy line, not a §86/4 particular) |
+| UX M1 (edit page tab title), M4 (review loading skeleton height), M5 (persistent link underline on two links), M8 (list `aria-label` / no h2 above the table), M9 / M10 (portal form headings vs fieldsets), M11 (`RequiredMark`), M12 (server 422 copy per rule), M13 (queue `limit: 50`, no paging — T072/T074), M14 (route-level `error.tsx`), M17 (SV dash consistency), M18 (language field moved unflagged — documented in the PR description) | PR-2 UX pass |
+| Rel M-1 (no refused metric for `not_pending` / `member_erasing` / `contact_removed` / `not_found`), M-2 (`deriveOutcome` throws), M-4 (idempotency remember — closed here), M-5 (read paths use the `FOR UPDATE` finder) | Rel M-5 → PR-2 (a non-locking `findPendingBySubmitter`); M-1 / M-2 accepted as-is (bounded label set; unreachable after `checkCoverage`) |
+| Privacy M-8 (raw `userId` in four new page logs — pre-existing pattern), M-9 (`member_change_approval_setting_changed` i18n lands with PR-3), M-10 (`ON DELETE CASCADE` vs FR-030 accountability — a documented trade-off) | recorded |
+| Mig M-2 (unindexed FK columns `decided_by_user_id`, `submitted_by_contact_id`, `replaced_by_request_id`), M-5 (per-field UPDATE loop in `decideInTx`) | PR-2 migration follow-up |
+| Whole-branch seam pass (`whole-branch-reviewer`) | runs after round 1 lands |
+
+Checklist checkboxes in `checklists/{security,privacy,tax}.md` remain reviewer-owned and are
+ticked only at `/speckit.review` (T112); each reviewer's per-CHK evidence is in its round-1
+report (see the co-sign footer template in `README.md`).

@@ -54,7 +54,8 @@ export const memberChangeRequests = pgTable(
     index('member_change_requests_tenant_state_submitted_idx').on(
       table.tenantId,
       table.state,
-      table.submittedAt,
+      table.submittedAt.desc(),
+      table.id.desc(),
     ),
     index('member_change_requests_tenant_member_idx').on(
       table.tenantId,

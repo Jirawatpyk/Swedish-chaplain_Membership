@@ -18,14 +18,21 @@
 -- unset -> zero rows visible (secure-by-default). Both tables are registered
 -- in scripts/check-multi-tenant-ready.ts SCOPED_TABLES.
 --
--- FKs: the member FK is composite (tenant_id, member_id) like every other
--- member-child table. ON DELETE CASCADE on the member + contact FKs: production
--- never hard-deletes either (erasure SCRUBS in place — the requests are
--- sentinelised by the erasure adapter, rows kept, FR-030); a hard delete only
--- happens for test tenants and dummy rows, and a proposal about a row that no
--- longer exists has nothing to refer to. The two user FKs stay RESTRICT:
--- staff accounts are disabled, never deleted (FR-026), and the recorded
--- reviewer / submitter must survive.
+-- FKs: EVERY child FK is composite on tenant_id — the member and contact
+-- FKs like every other member-child table, and (review round 1) the field
+-- rows' FK + the replaced_by self-FK too, through UNIQUE (tenant_id, id) on
+-- the parent: referential-integrity checks BYPASS row security, so a
+-- single-column FK would let a row of tenant B reference a request of
+-- tenant A; the composite form makes the DB refuse it. ON DELETE CASCADE on
+-- the member + contact FKs: production never hard-deletes either — FR-030
+-- erasure SCRUBS in place (the values are sentinelised, rows kept). NOTE:
+-- that scrub adapter is US4 / T078 (PR-2) and is NOT yet implemented in
+-- PR-1; until it merges, `seen_value` / `proposed_value` / `decision_reason`
+-- / `decision_note` are outside the erasure path — quickstart § 3 makes T078
+-- a precondition of the flag flip. A hard delete only happens for test
+-- tenants and dummy rows. The two user FKs stay RESTRICT: staff accounts
+-- are disabled, never deleted (FR-026), and the recorded reviewer /
+-- submitter must survive.
 --
 -- The seven enum values this feature needs (audit_event_type +5,
 -- notification_type +2) live in the ENUM-ONLY file 0301 — the run-migrations
@@ -79,13 +86,17 @@ CREATE TABLE "member_change_requests" (
     FOREIGN KEY ("submitted_by_user_id") REFERENCES "users" ("id"),
   CONSTRAINT "member_change_requests_decided_by_user_fk"
     FOREIGN KEY ("decided_by_user_id") REFERENCES "users" ("id"),
+  -- the composite target for the two child FKs (see header)
+  CONSTRAINT "member_change_requests_tenant_id_uniq"
+    UNIQUE ("tenant_id", "id"),
   -- DEFERRABLE: the replace path (R3) must (1) close the old pending row with
   -- reason 'replaced' + the pointer to the new id — the CHECK below demands
   -- the pointer at that instant — and (2) insert the new pending row; the
   -- partial unique index forbids doing (2) first, and an immediate FK forbids
   -- doing (1) first. Checked at COMMIT, both orders are consistent.
   CONSTRAINT "member_change_requests_replaced_by_fk"
-    FOREIGN KEY ("replaced_by_request_id") REFERENCES "member_change_requests" ("id")
+    FOREIGN KEY ("tenant_id", "replaced_by_request_id")
+    REFERENCES "member_change_requests" ("tenant_id", "id")
     DEFERRABLE INITIALLY DEFERRED,
   -- state machine (data-model § 4): the decision columns exist iff decided,
   -- the withdrawn reason iff withdrawn, the replacement pointer iff replaced.
@@ -98,7 +109,13 @@ CREATE TABLE "member_change_requests" (
   CONSTRAINT "member_change_requests_withdrawn_at_iff_withdrawn_ck"
     CHECK (("state" = 'withdrawn') = ("withdrawn_at" IS NOT NULL)),
   CONSTRAINT "member_change_requests_replaced_iff_reason_ck"
-    CHECK (("withdrawn_reason" IS NOT DISTINCT FROM 'replaced') = ("replaced_by_request_id" IS NOT NULL))
+    CHECK (("withdrawn_reason" IS NOT DISTINCT FROM 'replaced') = ("replaced_by_request_id" IS NOT NULL)),
+  -- FR-014: a rejection carries a reason; FR-010: only a decision can be
+  -- dismissed (both enforced in the use cases — the DB is the last line).
+  CONSTRAINT "member_change_requests_reason_iff_rejected_ck"
+    CHECK ("outcome" IS DISTINCT FROM 'rejected' OR "decision_reason" IS NOT NULL),
+  CONSTRAINT "member_change_requests_ack_iff_decided_ck"
+    CHECK ("outcome_acknowledged_at" IS NULL OR "state" = 'decided')
 );--> statement-breakpoint
 
 GRANT SELECT, INSERT, UPDATE ON TABLE "member_change_requests" TO chamber_app;--> statement-breakpoint
@@ -110,9 +127,10 @@ CREATE UNIQUE INDEX "member_change_requests_one_pending_per_submitter"
   ON "member_change_requests" ("tenant_id", "submitted_by_user_id")
   WHERE "state" = 'pending';--> statement-breakpoint
 
--- queue (pending oldest-first), pending count, oldest age (FR-027 / FR-033)
+-- queue (pending oldest-first), pending count, oldest age (FR-027 / FR-033);
+-- `id` is the keyset tiebreak the query orders by
 CREATE INDEX "member_change_requests_tenant_state_submitted_idx"
-  ON "member_change_requests" ("tenant_id", "state", "submitted_at" DESC);--> statement-breakpoint
+  ON "member_change_requests" ("tenant_id", "state", "submitted_at" DESC, "id" DESC);--> statement-breakpoint
 
 -- per-member history (FR-026)
 CREATE INDEX "member_change_requests_tenant_member_idx"
@@ -142,8 +160,7 @@ CREATE POLICY "tenant_isolation_on_member_change_requests"
 CREATE TABLE "member_change_request_fields" (
   "id"                    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   "tenant_id"             text        NOT NULL,
-  "request_id"            uuid        NOT NULL
-                            REFERENCES "member_change_requests" ("id") ON DELETE CASCADE,
+  "request_id"            uuid        NOT NULL,
   "field_key"             text        NOT NULL
                             CHECK ("field_key" IN ('first_name', 'last_name', 'phone', 'role_title', 'company_name', 'website', 'description', 'registered_address', 'billing_address')),
   "target"                text        NOT NULL
@@ -154,6 +171,9 @@ CREATE TABLE "member_change_request_fields" (
                             CHECK ("outcome" IN ('approved', 'rejected')),
   "applied_at"            timestamptz NULL,
   "affects_tax_documents" boolean     NOT NULL,
+  CONSTRAINT "member_change_request_fields_request_fk"
+    FOREIGN KEY ("tenant_id", "request_id")
+    REFERENCES "member_change_requests" ("tenant_id", "id") ON DELETE CASCADE,
   CONSTRAINT "member_change_request_fields_request_key_uniq"
     UNIQUE ("request_id", "field_key"),
   CONSTRAINT "member_change_request_fields_applied_iff_approved_ck"

@@ -41,6 +41,7 @@ describe('staffNavConfig', () => {
     expect(membership.titleKey).toBe('nav.staff.sections.membership');
     expect(membership.items.map((i) => i.titleKey)).toEqual([
       'nav.staff.members',
+      'nav.staff.changeRequests',
       'nav.staff.plans',
       'nav.staff.renewals',
       'nav.staff.directory',

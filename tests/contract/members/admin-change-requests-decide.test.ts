@@ -49,7 +49,7 @@ let fakes: {
   memberRepo: {
     findById: ReturnType<typeof vi.fn>;
     findByIdInTx: ReturnType<typeof vi.fn>;
-    findErasedAtById: ReturnType<typeof vi.fn>;
+    findErasedAtByIdInTx: ReturnType<typeof vi.fn>;
     updateFieldsInTx: ReturnType<typeof vi.fn>;
   };
   contactRepo: { listByMember: ReturnType<typeof vi.fn>; listByMemberInTx: ReturnType<typeof vi.fn>; updateInTx: ReturnType<typeof vi.fn> };
@@ -200,7 +200,7 @@ function seed(opts: { request?: ChangeRequest; member?: Member; contacts?: Conta
     memberRepo: {
       findById: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
       findByIdInTx: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
-      findErasedAtById: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: opts.erasedAt ?? null })),
+      findErasedAtByIdInTx: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: opts.erasedAt ?? null })),
       updateFieldsInTx: vi.fn(async (_tx: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
     },
     contactRepo: {

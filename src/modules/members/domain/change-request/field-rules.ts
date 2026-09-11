@@ -113,7 +113,28 @@ const contactProposalSchema = z
     }
   });
 const registeredAddressSchema = z.object(REGISTERED_ADDRESS_LINE_RULES).strict();
-const billingAddressSchema = z.object(BILLING_ADDRESS_LINE_RULES).strict();
+/**
+ * The billing group is ONE unit (member-billing-address 0284,
+ * `members_billing_address_group_ck`): any line present ⇒ line1 + city +
+ * postal_code + country present. The staff path enforces the same rule in
+ * `update-member.ts` against the resulting row; here it runs at the proposal
+ * boundary so an incomplete group is refused with field-level issues at
+ * SUBMIT instead of the DB refusing it at APPROVE (review: tax I-2).
+ */
+export const BILLING_GROUP_REQUIRED_LINES = ['line1', 'city', 'postal_code', 'country'] as const;
+const billingAddressSchema = z
+  .object(BILLING_ADDRESS_LINE_RULES)
+  .strict()
+  .superRefine((group, ctx) => {
+    const present = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+    const anyPresent = BILLING_ADDRESS_LINES.some((line) => present(group[line]));
+    if (!anyPresent) return;
+    for (const line of BILLING_GROUP_REQUIRED_LINES) {
+      if (!present(group[line])) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [line], message: 'billing_address_incomplete' });
+      }
+    }
+  });
 const companyProposalSchema = z
   .object({
     company_name: MEMBER_FIELD_RULES.company_name,
@@ -189,6 +210,7 @@ export function validateProposal(raw: unknown): Result<GroupBProposal, z.ZodIssu
     if (c.billing_address !== undefined) {
       company.billing_address = fillLines(BILLING_ADDRESS_LINES, c.billing_address);
     }
+
     out.company = company;
   }
 

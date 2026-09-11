@@ -112,6 +112,7 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     findPendingInvitationsForPrimaryContacts: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
+    findErasedAtByIdInTx: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     // Typed off the real port (same rationale as `FindManyArgs` above) so
     // the empty-set default cannot silently drift from the signature.

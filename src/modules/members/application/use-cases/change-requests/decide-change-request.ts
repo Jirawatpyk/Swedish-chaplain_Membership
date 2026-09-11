@@ -96,7 +96,7 @@ export type DecideChangeRequestInput = {
 export type DecideChangeRequestDeps = {
   readonly tenant: TenantContext;
   readonly changeRequestRepo: ChangeRequestRepo;
-  readonly memberRepo: Pick<MemberRepo, 'findByIdInTx' | 'findErasedAtById' | 'updateFieldsInTx'>;
+  readonly memberRepo: Pick<MemberRepo, 'findByIdInTx' | 'findErasedAtByIdInTx' | 'updateFieldsInTx'>;
   readonly contactRepo: Pick<ContactRepo, 'listByMemberInTx' | 'updateInTx'>;
   readonly audit: AuditPort;
   readonly emails: EmailPort;
@@ -365,13 +365,17 @@ export async function decideChangeRequest(
       const approvedKeys = approvedFields.map((f) => f.key);
       const rejectedKeys = rejectedFields.map((f) => f.key);
 
-      // 4. the member: under erasure / archived → refused (FR-020).
-      const erased = await deps.memberRepo.findErasedAtById(deps.tenant, request.memberId);
-      if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
-      if (erased.value.erasedAt !== null) throw new Refusal({ type: 'member_erasing' });
+      // 4. the member: FOR UPDATE first, THEN the erasure check on the same
+      //    tx — an erasure that commits between the two reads is seen (it
+      //    waits on our lock); a check-before-lock on another connection
+      //    would let a decision write PII back into an erased record
+      //    (review: reliability I-2 / security I-2). Archived → refused (FR-020).
       const memberResult = await deps.memberRepo.findByIdInTx(tx, request.memberId);
       if (!memberResult.ok) throw new UseCaseAbort<RepoError>(memberResult.error);
       const member: Member = memberResult.value;
+      const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, request.memberId);
+      if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
+      if (erased.value.erasedAt !== null) throw new Refusal({ type: 'member_erasing' });
       if (member.status === 'archived') throw new Refusal({ type: 'member_archived' });
 
       // 5. the submitting contact — gone ⇒ its rows may only be rejected.
@@ -391,8 +395,12 @@ export async function decideChangeRequest(
       const patches = patchesOf(validated.value, approvedKeys, record);
       if (!patches.ok) throw new Refusal(patches.error);
 
-      // 7. apply (FR-015) — contact first, then member.
-      if (Object.keys(patches.value.contact).length > 0 && contact !== null) {
+      // 7. apply (FR-015) — contact first, then member. A contact patch with
+      //    no contact cannot happen (step 5 refuses approved contact keys when
+      //    the contact is gone); if it ever does, abort loudly rather than
+      //    silently dropping the approved values (review: reliability M-6).
+      if (Object.keys(patches.value.contact).length > 0) {
+        if (contact === null) throw new UseCaseAbort<RepoError>({ code: 'repo.unexpected', cause: 'contact patch without a contact' });
         const updated = await deps.contactRepo.updateInTx(tx, contact.contactId, patches.value.contact);
         if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
       }

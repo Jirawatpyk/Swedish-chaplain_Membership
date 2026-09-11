@@ -68,7 +68,8 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     // other test in this file pass vacuously. Update deliberately when the
     // sidebar gains or loses an entry.
     // 108 PR-D: +1 — the Marketing audience page under Engagement.
-    expect(STAFF_ITEMS).toHaveLength(17);
+    // F114: +1 — the change-request queue under Membership.
+    expect(STAFF_ITEMS).toHaveLength(18);
   });
 
   it('every staff nav item declares a guard', () => {
@@ -148,7 +149,7 @@ describe('every staff nav entry matches its target page guard (T063)', () => {
 });
 
 describe('filterNavConfig filters on the server-computed allow-list (T063)', () => {
-  const ALL_FLAGS = { broadcastsEnabled: true, eventsEnabled: true };
+  const ALL_FLAGS = { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true };
 
   function hrefsFor(allowed: readonly string[] | undefined): readonly string[] {
     const filtered = filterNavConfig(
@@ -203,7 +204,7 @@ describe('filterNavConfig filters on the server-computed allow-list (T063)', () 
  * invoice, credit-note, plan, renewal and settings link on the staff sidebar.
  */
 describe('ON-leg sidebar per role (T063)', () => {
-  const ALL_FLAGS = { broadcastsEnabled: true, eventsEnabled: true };
+  const ALL_FLAGS = { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true };
 
   function sidebarFor(role: Parameters<typeof staffNavAllowedHrefs>[0]): readonly string[] {
     return flattenNavItems(
@@ -218,6 +219,9 @@ describe('ON-leg sidebar per role (T063)', () => {
     expect(sidebarFor('marketing')).toEqual([
       '/admin',
       '/admin/members',
+      // F114 — the change-request queue is `members.read` (FR-026: read-only
+      // for manager / marketing); deciding is gated inside on `members.write`.
+      '/admin/change-requests',
       '/admin/broadcasts',
       '/admin/events',
       // 108 PR-D — the pre-flight surface (FR-027a / FR-035), keyed

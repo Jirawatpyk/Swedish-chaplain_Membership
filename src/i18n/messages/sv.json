@@ -963,6 +963,7 @@
         "updated": "Paketet “{planName}” uppdaterades.",
         "activated": "Paketet “{planName}” aktiverades.",
         "deactivated": "Paketet “{planName}” inaktiverades.",
+        "unknownReviewer": "en medarbetare",
         "deleted": "Paketet “{planName}” togs bort.",
         "undeleted": "Paketet “{planName}” återställdes.",
         "cloned": "{count} paket klonade till {targetYear}.",
@@ -1000,6 +1001,7 @@
         "title": "Ändringsbegäranden",
         "subtitle": "Ändringar som medlemmar föreslagit och som väntar på personalens beslut, äldst först.",
         "empty": "Inga ändringsbegäranden väntar på beslut.",
+        "emptyHint": "Nya medlemsförslag visas här så snart de skickas in; personalens e-post länkar direkt till begäran.",
         "noPendingForSubmitter": "Den här personen har ingen begäran som väntar på beslut — den senaste beslutades av {name} den {decidedAt}.",
         "noRequestForSubmitter": "Den här personen har ingen ändringsbegäran.",
         "rowMeta": "Inskickad av {submitter} · {count, plural, one {# fält} other {# fält}} · {submittedAt}",
@@ -1043,10 +1045,10 @@
           "taxAffecting": "Påverkar skattedokument"
         },
         "taxHint": {
-          "buyer_name": "köparens namn på fakturor och kvitton",
-          "buyer_address": "köparens adress på fakturor och kvitton — kontrollera huvudkontor/filial",
+          "buyer_name": "köparens namn på skattefakturor (ใบกำกับภาษี) och kvitton",
+          "buyer_address": "köparens adress på skattefakturor (ใบกำกับภาษี) och kvitton — kontrollera huvudkontor/filial",
           "buyer_contact": "köparens kontaktperson på skattedokument",
-          "billing_country": "ett faktureringsland utanför Thailand — bedöm momshanteringen"
+          "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial"
         }
       },
       "decision": {
@@ -5353,6 +5355,7 @@
   "nav": {
     "staff": {
       "dashboard": "Instrumentpanel",
+      "changeRequests": "Ändringsbegäranden",
       "plans": "Paket",
       "users": "Användare",
       "settings": "Inställningar",
@@ -6089,14 +6092,16 @@
         "errors": {
           "phone": "Ange ett telefonnummer i internationellt format, t.ex. +46 70 123 45 67.",
           "website": "Ange en giltig webbadress, t.ex. https://example.com.",
-          "country": "Ange en landskod med två bokstäver, t.ex. SE."
+          "country": "Ange en landskod med två bokstäver, t.ex. SE.",
+          "billingIncomplete": "En faktureringsadress behöver minst rad 1, stad, postnummer och land — eller lämna alla rader tomma."
         }
       },
       "status": {
         "submitted": "Dina ändringar har skickats för granskning.",
         "nothingToSubmit": "Inget att skicka – alla värden matchar dina nuvarande uppgifter.",
         "alreadyPending": "Dessa ändringar väntar redan på granskning.",
-        "rateLimited": "Du har nått gränsen för antal inskick i dag. Försök igen efter {retryAt}.",
+        "rateLimited": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen efter {retryAt}.",
+        "rateLimitedGeneric": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen senare.",
         "approvalNotRequired": "Ändringar behöver inte längre godkännas – dina redigeringar sparas nu direkt."
       },
       "errors": {
@@ -6126,10 +6131,6 @@
         "resubmit": "Redigera och skicka igen",
         "dismiss": "Stäng",
         "dismissError": "Meddelandet kunde inte stängas. Försök igen."
-      },
-      "resubmit": {
-        "title": "Rätta och skicka igen",
-        "hint": "Värdena som inte godkändes är förifyllda nedan. Alla fält kan redigeras igen; att skicka skapar en ny begäran."
       },
       "diff": {
         "field": "Fält",

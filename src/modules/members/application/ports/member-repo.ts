@@ -903,6 +903,18 @@ export interface MemberRepo {
   ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
 
   /**
+   * F114 review (reliability I-2 / security I-2) — the in-tx twin, read on
+   * the CALLER's `tx` so a use case holding `FOR UPDATE` on the member row
+   * sees the erasure it is racing against instead of a second connection's
+   * older snapshot (and never opens a nested `runInTenant` while holding a
+   * lock — the pool-exhaustion class F4/F8 hit).
+   */
+  findErasedAtByIdInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
+
+  /**
    * COMP-1 US2d — reconciler candidate query. Returns erased members
    * (`erased_at IS NOT NULL`) that lack the `member_erased` completion audit
    * (a post-commit cascade failed AFTER the durable scrub tx committed),

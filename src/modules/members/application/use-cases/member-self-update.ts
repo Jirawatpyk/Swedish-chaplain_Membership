@@ -201,8 +201,13 @@ export async function memberSelfUpdate(
 > {
   // 1. Detect forbidden fields BEFORE parsing — reject forged payloads
   //    (and, with the F114 gate on, every Group B key — FR-001).
-  const forbidden = detectForbiddenFields(input.rawBody, input.gate ?? 'immediate');
+  const gate = input.gate ?? 'immediate';
+  const forbidden = detectForbiddenFields(input.rawBody, gate);
   if (forbidden.length > 0) {
+    // F114 review (privacy I-5) — a stale tab under a newly-switched tenant
+    // sends Group B keys the immediate whitelist used to accept; that is a
+    // gate refusal, not a forgery, and the audit trail must say which.
+    const refusal = gate === 'approval' && detectForbiddenFields(input.rawBody, 'immediate').length === 0 ? 'gate_narrowed' : 'forged';
     // W-4: Audit the forgery attempt (FR-014). The forged payload is rejected
     // (403) REGARDLESS of audit success — an audit-write failure here is logged
     // (so SREs can detect an un-audited forgery attempt) but never opens the
@@ -212,10 +217,11 @@ export async function memberSelfUpdate(
       type: 'member_self_update_forbidden',
       actorUserId: input.actorUserId,
       requestId: input.requestId,
-      summary: `forged fields: ${forbidden.join(', ')}`,
+      summary: `${refusal === 'gate_narrowed' ? 'gate-narrowed' : 'forged'} fields: ${forbidden.join(', ')}`,
       payload: {
         member_id: input.memberId,
         attempted_fields: forbidden,
+        refusal,
       },
     });
     if (!auditResult.ok) {

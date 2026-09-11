@@ -39,7 +39,7 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
           <p className="text-sm">{t('body', { submittedAt })}</p>
         </div>
       </div>
-      <ChangeRequestDiffTable fields={request.fields} className="bg-background" />
+      <ChangeRequestDiffTable fields={request.fields} className="bg-background text-foreground" />
       {showEditLink ? (
         <p className="text-sm">
           <Link href="/portal/edit" className="text-primary underline-offset-4 hover:underline">

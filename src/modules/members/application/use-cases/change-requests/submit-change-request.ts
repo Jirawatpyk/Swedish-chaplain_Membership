@@ -218,6 +218,13 @@ export function memberHasBillingAddress(member: Member): boolean {
   return (member.billingAddressLine1 ?? null) !== null;
 }
 
+/** The billing state AFTER this proposal would be approved (the group is one unit — a proposed group replaces it whole). */
+export function resultingHasBillingAddress(member: Member, proposal: GroupBProposal): boolean {
+  const proposed = proposal.company?.billing_address;
+  if (proposed !== undefined) return proposed.line1 !== null;
+  return memberHasBillingAddress(member);
+}
+
 function sameProposal(pending: ChangeRequest, fields: readonly Omit<ProposedField, 'outcome' | 'appliedAt'>[]): boolean {
   if (pending.fields.length !== fields.length) return false;
   const byKey = new Map(pending.fields.map((f) => [f.key, f]));
@@ -279,9 +286,14 @@ export async function submitChangeRequest(
     return err({ type: 'member_archived' });
   }
 
-  // 5. the diff against the CURRENT record (FR-005 / FR-007).
+  // 5. the diff against the CURRENT record (FR-005 / FR-007). The
+  //    tax-affecting flag reads the billing state the approval would LEAVE
+  //    (FR-019 "a member with no billing address on record"): a proposal that
+  //    clears the billing group makes the registered address the §86/4 buyer
+  //    address, so it is flagged even though a billing address exists today
+  //    (review: tax I-1 — the update-member rule evaluates `resulting(k)` too).
   const fields = diffAgainstRecord(groupBRecordOf(member, contact), proposal, {
-    memberHasBillingAddress: memberHasBillingAddress(member),
+    memberHasBillingAddress: resultingHasBillingAddress(member, proposal),
     submitterIsPrimary,
   });
   if (fields.length === 0) return ok({ outcome: 'nothing_to_submit' });
@@ -338,10 +350,13 @@ export async function submitChangeRequest(
           actorUserId: input.actorUserId,
           requestId: input.requestId,
           summary: `change request ${pending.id} replaced by ${newId}`,
+          // `withdrawn_reason`, not `reason`: the bare key is on the audit
+          // redaction deny-list (free-text reasons), and this is a closed enum
+          // the manager projection + the member's own archive must keep.
           payload: {
             related_member_id: input.memberId,
             request_id: pending.id,
-            reason: 'replaced',
+            withdrawn_reason: 'replaced',
             replaced_by_request_id: newId,
             actor_role: input.actorRole,
           },
@@ -414,6 +429,17 @@ export async function submitChangeRequest(
     }
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
+      // The partial unique index refused a second pending row: two submits
+      // raced past the (empty) FOR UPDATE read. The loser's proposal is
+      // already pending — answer `already_pending` from a fresh read, never
+      // a 500 (review: reliability I-1). Falls through when the re-read
+      // finds nothing (the winner withdrew in between).
+      if (re.code === 'repo.conflict' && re.reason === 'change_request_pending_exists') {
+        const raced = await runInTenant(deps.tenant, (tx) =>
+          deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId),
+        ).catch(() => null);
+        if (raced && raced.ok && raced.value) return ok({ outcome: 'already_pending', request: raced.value });
+      }
       logger.error(
         { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code },
         'change-request.submit.tx_aborted',
@@ -444,16 +470,23 @@ function mapLoadError(error: RepoError): SubmitChangeRequestError {
  * emits today. Best-effort: the refusal is fail-closed regardless; a failed
  * audit write is logged so an un-audited forgery attempt is detectable.
  */
+const FORGED_KEYS_MAX = 20;
+const FORGED_KEY_MAX_LENGTH = 64;
+
 async function auditForged(deps: SubmitChangeRequestDeps, input: SubmitChangeRequestInput, fields: readonly string[]): Promise<void> {
+  // Key NAMES are attacker-controlled text landing in an append-only table
+  // that erasure never scrubs — bound them (review: privacy M-7).
+  const bounded = fields.slice(0, FORGED_KEYS_MAX).map((k) => (k.length > FORGED_KEY_MAX_LENGTH ? `${k.slice(0, FORGED_KEY_MAX_LENGTH)}…` : k));
   const audited = await deps.audit.record(deps.tenant, {
     type: 'member_self_update_forbidden',
     actorUserId: input.actorUserId,
     requestId: input.requestId,
-    summary: `forged change-request fields: ${fields.join(', ')}`,
+    summary: `forged change-request fields: ${bounded.join(', ')}`,
     payload: {
       member_id: input.memberId,
       contact_id: input.contactId,
-      attempted_fields: fields,
+      attempted_fields: bounded,
+      attempted_fields_truncated: fields.length > FORGED_KEYS_MAX,
       actor_role: input.actorRole,
     },
   });

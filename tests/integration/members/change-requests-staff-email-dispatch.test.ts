@@ -57,6 +57,7 @@ const mu = (id: string): UserId => id as unknown as UserId;
 
 let tenant: TestTenant;
 let user: TestUser;
+let reviewer: TestUser;
 let memberId: string;
 let contactId: string;
 let memberNumber: number;
@@ -96,7 +97,10 @@ async function submit(rawBody: unknown) {
     contactRepo: drizzleContactRepo,
     audit: f3DrizzleAuditAdapter,
     emails: resendEmailPort,
-    reviewers: { listReviewers: async () => [{ userId: mu('00000000-0000-4000-8000-0000000000a1'), email: 'reviewer-a@staff.example', locale: 'en' }] },
+    // review round 1 (security I-4): the dispatcher re-checks the recipient
+    // against the ACTIVE reviewer roster at send time, so the reviewer is a
+    // real active admin, not a fake address
+    reviewers: { listReviewers: async () => [{ userId: mu(reviewer.userId), email: reviewer.email, locale: 'en' }] },
     clock: { now: () => new Date() },
     newRequestId: () => randomUUID() as ChangeRequestId,
   };
@@ -115,6 +119,7 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     vi.stubEnv('CRON_SECRET', process.env.CRON_SECRET ?? 'test-f114-dispatch-secret');
     tenant = await createTestTenant('test-swecham');
     user = await createActiveTestUser('member');
+    reviewer = await createActiveTestUser('admin');
     const planId = `cr-dispatch-${randomUUID().slice(0, 8)}`;
     await seedPortalPlan(tenant.ctx.slug, user.userId, planId);
     memberId = randomUUID();
@@ -150,6 +155,7 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     vi.unstubAllEnvs();
     await tenant.cleanup().catch(() => {});
     await deleteTestUser(user).catch(() => {});
+    await deleteTestUser(reviewer).catch(() => {});
   });
 
   it('renders the diff from the request rows and marks the outbox row sent', async () => {
@@ -158,7 +164,7 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     const row = await tickUntilSettled(r.ok && r.value.outcome === 'submitted' ? r.value.request.id : '');
     expect(row?.status, JSON.stringify({ attempts: row?.attempts, lastError: row?.lastError, sentCount: sent.length })).toBe('sent');
     expect(row?.sentMessageId).toMatch(/^msg-/);
-    const msg = sent.find((m) => m.to === 'reviewer-a@staff.example');
+    const msg = sent.find((m) => m.to === reviewer.email);
     expect(msg).toBeDefined();
     expect(msg?.subject).toContain('Dispatch & Co');
     expect(msg?.subject).toContain(`-${String(memberNumber).padStart(4, '0')}`);
@@ -171,6 +177,22 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     expect(JSON.stringify(row?.contextData)).not.toContain('+668');
   });
 
+  it('a request REPLACED before its staff row was sent permanently fails that row as request_superseded; the replacement is sent (review reliability I-4)', async () => {
+    const first = await submit({ contact: { phone: '+66855555555' } });
+    expect(first.ok && first.value.outcome).toBe('submitted');
+    const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : '';
+    const second = await submit({ contact: { phone: '+66866666666' } });
+    expect(second.ok && second.value.outcome).toBe('submitted');
+    const secondId = second.ok && second.value.outcome === 'submitted' ? second.value.request.id : '';
+    const superseded = await tickUntilSettled(firstId);
+    expect(superseded?.status).toBe('permanently_failed');
+    expect(superseded?.lastError).toBe('request_superseded');
+    const sentRow = await tickUntilSettled(secondId);
+    expect(sentRow?.status).toBe('sent');
+    expect(sent.some((m) => m.text.includes('+66866666666'))).toBe(true);
+    expect(sent.some((m) => m.text.includes('+66855555555'))).toBe(false);
+  });
+
   it('a hard-deleted request row permanently fails the outbox row on the first tick with reason request_gone', async () => {
     // Withdraw the pending one first so a fresh request can be created, then
     // delete that fresh request's row before the dispatcher sees its outbox row.
@@ -181,8 +203,10 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     // owner-role delete (the app never hard-deletes; fields cascade). The
     // request from the first test was withdrawn/replaced and POINTS at this
     // one (`replaced_by_request_id`), so it goes first.
-    if (replacedId) await db.delete(memberChangeRequests).where(eq(memberChangeRequests.id, replacedId));
-    await db.delete(memberChangeRequests).where(eq(memberChangeRequests.id, requestId));
+    // the replace chain (A→B→C→D) is one self-FK per hop: delete the whole
+    // member's requests in ONE statement (RI is checked at statement end)
+    void replacedId;
+    await db.delete(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId));
     const gone = await tickUntilSettled(requestId);
     expect(gone?.status).toBe('permanently_failed');
     expect(gone?.attempts).toBe(1);

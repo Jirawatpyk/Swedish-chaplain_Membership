@@ -85,15 +85,22 @@ describe('acknowledgeChangeRequest', () => {
     expect(again.ok && again.value.request.outcomeAcknowledgedAt).toEqual(NOW);
   });
 
-  it('another user (even another contact of the same member) → not_found, nothing stamped, a member_cross_tenant_probe audit', async () => {
+  it('another user (another contact of the same member) → not_found, nothing stamped — and NOT a cross-tenant probe (the row is visible in-tenant)', async () => {
     const { deps, repo, audit } = makeDeps();
     expect(await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: OTHER, actorRole: 'member', requestId: 'req-ack' })).toEqual({ ok: false, error: { type: 'not_found' } });
     expect(repo.rows.get(REQ)?.outcomeAcknowledgedAt).toBeNull();
+    expect(audit.events).toHaveLength(0);
+  });
+
+  it('a repo miss (unknown id, or another tenant\'s row hidden by RLS) → not_found + a member_cross_tenant_probe audit', async () => {
+    const { deps, audit } = makeDeps();
+    const id = '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId;
+    expect(await acknowledgeChangeRequest(deps, { changeRequestId: id, actorUserId: OTHER, actorRole: 'member', requestId: 'req-ack' })).toEqual({ ok: false, error: { type: 'not_found' } });
     expect(audit.events).toEqual([
       expect.objectContaining({
         type: 'member_cross_tenant_probe',
         actorUserId: OTHER,
-        payload: { attempted_change_request_id: REQ, actor_tenant_id: 'test-tenant', action: 'acknowledge', actor_role: 'member' },
+        payload: { attempted_change_request_id: id, actor_tenant_id: 'test-tenant', action: 'acknowledge', actor_role: 'member' },
       }),
     ]);
   });

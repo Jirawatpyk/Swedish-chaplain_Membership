@@ -963,6 +963,7 @@
         "updated": "Plan “{planName}” updated.",
         "activated": "Plan “{planName}” activated.",
         "deactivated": "Plan “{planName}” deactivated.",
+        "unknownReviewer": "a staff member",
         "deleted": "Plan “{planName}” deleted.",
         "undeleted": "Plan “{planName}” restored.",
         "cloned": "{count} plans cloned to {targetYear}.",
@@ -1000,6 +1001,7 @@
         "title": "Change requests",
         "subtitle": "Member-proposed changes awaiting a staff decision, oldest first.",
         "empty": "No change requests are awaiting a decision.",
+        "emptyHint": "New member proposals appear here as soon as they are submitted; the staff email links straight to the request.",
         "noPendingForSubmitter": "This person has no request awaiting a decision — their last request was decided by {name} on {decidedAt}.",
         "noRequestForSubmitter": "This person has no change request.",
         "rowMeta": "Submitted by {submitter} · {count, plural, one {# field} other {# fields}} · {submittedAt}",
@@ -1043,10 +1045,10 @@
           "taxAffecting": "Affects tax documents"
         },
         "taxHint": {
-          "buyer_name": "the buyer name printed on invoices and receipts",
-          "buyer_address": "the buyer address printed on invoices and receipts — check the head-office / branch designation",
+          "buyer_name": "the buyer name printed on tax invoices (ใบกำกับภาษี) and receipts",
+          "buyer_address": "the buyer address printed on tax invoices (ใบกำกับภาษี) and receipts — check the head-office / branch designation",
           "buyer_contact": "the buyer's contact person printed on tax documents",
-          "billing_country": "a non-Thai billing country — judge the VAT treatment"
+          "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation"
         }
       },
       "decision": {
@@ -5353,6 +5355,7 @@
   "nav": {
     "staff": {
       "dashboard": "Dashboard",
+      "changeRequests": "Change requests",
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",
@@ -6089,14 +6092,16 @@
         "errors": {
           "phone": "Enter a phone number in international format, e.g. +66 81 234 5678.",
           "website": "Enter a valid web address, e.g. https://example.com.",
-          "country": "Enter a 2-letter country code, e.g. TH."
+          "country": "Enter a 2-letter country code, e.g. TH.",
+          "billingIncomplete": "A billing address needs at least line 1, city, postal code and country — or leave every line empty."
         }
       },
       "status": {
         "submitted": "Your changes were sent for review.",
         "nothingToSubmit": "Nothing to submit — every value matches your current record.",
         "alreadyPending": "These changes are already awaiting review.",
-        "rateLimited": "You have reached the limit of submissions for today. Try again after {retryAt}.",
+        "rateLimited": "You have reached the limit of submissions for the last 24 hours. Try again after {retryAt}.",
+        "rateLimitedGeneric": "You have reached the limit of submissions for the last 24 hours. Try again later.",
         "approvalNotRequired": "Changes no longer need approval — your edits now save directly."
       },
       "errors": {
@@ -6126,10 +6131,6 @@
         "resubmit": "Edit and resubmit",
         "dismiss": "Dismiss",
         "dismissError": "Could not dismiss this notice. Please try again."
-      },
-      "resubmit": {
-        "title": "Correct and resubmit",
-        "hint": "The values that were not approved are prefilled below. Every field can be edited again; submitting creates a new request."
       },
       "diff": {
         "field": "Field",

@@ -41,6 +41,21 @@ const querySchema = z.object({
 
 const EMPTY = { items: [], next_cursor: null, total: 0 } as const;
 
+async function ownContactIdOf(
+  deps: ReturnType<typeof buildMembersDeps>,
+  tenant: ReturnType<typeof resolveTenantFromRequest>,
+  memberId: Parameters<typeof deps.contactRepo.listByMember>[1],
+  userId: string,
+): Promise<string | null> {
+  try {
+    const contacts = await deps.contactRepo.listByMember(tenant, memberId);
+    if (!contacts.ok) return null;
+    return contacts.value.find((c) => String(c.linkedUserId) === userId && !c.removedAt)?.contactId ?? null;
+  } catch {
+    return null; // fail closed: every own-contact row is dropped for this viewer
+  }
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest(request);
@@ -150,6 +165,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     {
       memberRepo: deps.memberRepo,
       timeline: deps.timeline,
+      // F114 (privacy I-1) — the viewer's OWN contact, so a colleague's
+      // own-field change request never reaches this person's timeline
+      viewerContactId: await ownContactIdOf(deps, tenant, member.memberId, user.id),
       // 016 review (security I-1) — the member's OWN billing history. The
       // money gate exists to stop STAFF without `invoicing.read` reading
       // someone else's invoices; the subject's own rows are the point of this

@@ -68,6 +68,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
           navVisibilityFlags={{
             broadcastsEnabled: env.features.f7Broadcasts,
             eventsEnabled: env.features.f6EventCreate,
+            memberChangeApproval: env.features.memberChangeApproval,
           }}
         />
 

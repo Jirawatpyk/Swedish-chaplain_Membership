@@ -96,11 +96,11 @@ export function ChangeRequestDiffTable({ fields, showOutcome = false, className 
             ) : null}
           </div>
           <div>
-            <span className="text-caption text-muted-foreground sm:hidden">{t('current')}: </span>
+            <span className="text-caption text-muted-foreground sm:sr-only">{t('current')}: </span>
             {renderValue(f.key, f.seen)}
           </div>
           <div>
-            <span className="text-caption text-muted-foreground sm:hidden">{t('proposed')}: </span>
+            <span className="text-caption text-muted-foreground sm:sr-only">{t('proposed')}: </span>
             {renderValue(f.key, f.proposed)}
           </div>
         </li>

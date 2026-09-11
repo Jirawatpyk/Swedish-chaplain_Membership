@@ -281,7 +281,12 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         })
         .returning();
       if (!row) return err({ code: 'repo.unexpected', cause: 'insert returned no row' });
-      const fieldRows =
+      // A unique violation from here on is the (request_id, field_key)
+      // uniqueness of the field rows — a caller bug, never the one-pending
+      // race the outer catch maps (review: migration M-4).
+      let fieldRows: MemberChangeRequestFieldRow[];
+      try {
+        fieldRows =
         draft.fields.length === 0
           ? []
           : await tx
@@ -298,6 +303,9 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
                 })),
               )
               .returning();
+      } catch (e) {
+        return err(unexpected(e));
+      }
       return ok(rowToDomain(row, fieldRows));
     } catch (e) {
       return err(mapDbError(e, 'change_request_pending_exists'));

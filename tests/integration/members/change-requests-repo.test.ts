@@ -27,6 +27,7 @@ import type { ChangeRequestId } from '@/modules/members/domain/change-request/ch
 import { drizzleChangeRequestRepo } from '@/modules/members/infrastructure/db/drizzle-change-request-repo';
 import { UseCaseAbort } from '@/modules/members/application/tx-abort';
 import type { ChangeRequestDraft } from '@/modules/members/application/ports/change-request-repo';
+import { memberChangeRequestFields, memberChangeRequests } from '@/modules/members/infrastructure/db/schema-change-requests';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
@@ -347,6 +348,34 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     expect(queue.ok && queue.value.items.map((r) => r.request.id)).toEqual([second.id]);
     const filtered = await drizzleChangeRequestRepo.listQueue(a.tenant.ctx, { state: 'decided', outcome: 'partially_approved' }, { cursor: null, limit: 10 });
     expect(filtered.ok && filtered.value.items.length).toBe(1);
+  });
+
+  it('PR-1 review (migration I-1) — the composite child FK refuses a field row of tenant B that points at a request of tenant A (RI bypasses RLS; the FK must not)', async () => {
+    // any request of tenant A will do (the submitter already holds a pending row from the cases above)
+    const rows = await runInTenant(a.tenant.ctx, (tx) => tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).limit(1));
+    const target = rows[0];
+    expect(target).toBeDefined();
+    if (!target) return;
+    const own = { value: { id: target.id } };
+    let code: string | undefined;
+    try {
+      await runInTenant(b.tenant.ctx, (tx) =>
+        tx.insert(memberChangeRequestFields).values({
+          tenantId: b.tenant.ctx.slug,
+          requestId: own.value.id,
+          // a key the seeded drafts never carry, so the (request_id, field_key)
+          // uniqueness cannot fire before the FK check
+          fieldKey: 'website',
+          target: 'member',
+          seenValue: null,
+          proposedValue: 'https://probe.example',
+          affectsTaxDocuments: false,
+        }),
+      );
+    } catch (e) {
+      code = (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
+    }
+    expect(code).toBe('23503');
   });
 });
 

@@ -117,9 +117,31 @@ describe('validateProposal (the member-side gate over the same rules)', () => {
     });
     expect(bad.ok).toBe(false);
     if (bad.ok) return;
-    expect(bad.error.map((i) => i.path.join('.'))).toEqual(['company.billing_address.country']);
+    // the malformed country AND (review tax I-2) the group rule's missing
+    // required lines are collected in ONE pass (zod 4 keeps refining)
+    expect(bad.error.map((i) => i.path.join('.'))).toEqual([
+      'company.billing_address.country',
+      'company.billing_address.city',
+      'company.billing_address.postal_code',
+    ]);
     const unknownLine = validateProposal({ company: { registered_address: { street: 'x' } } });
     expect(unknownLine.ok).toBe(false);
+  });
+
+  it('the billing group is one unit (tax I-2): a partial group is refused at the missing required lines; a blank group is a clear', () => {
+    const partial = validateProposal({ company: { billing_address: { line1: 'Box 9' } } });
+    expect(partial.ok).toBe(false);
+    if (partial.ok) return;
+    expect(partial.error.map((i) => [i.path.join('.'), i.message])).toEqual([
+      ['company.billing_address.city', 'billing_address_incomplete'],
+      ['company.billing_address.postal_code', 'billing_address_incomplete'],
+      ['company.billing_address.country', 'billing_address_incomplete'],
+    ]);
+    // a CLEAR is an all-null group (the portal form sends '' as null — `buildProposalBody`)
+    const nulls = validateProposal({ company: { billing_address: { line1: null, line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null } } });
+    expect(nulls.ok).toBe(true);
+    if (!nulls.ok) return;
+    expect(nulls.value.company?.billing_address).toEqual({ line1: null, line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null });
   });
 
   it('a null phone clears it without E.164 parsing; an empty company name is refused', () => {

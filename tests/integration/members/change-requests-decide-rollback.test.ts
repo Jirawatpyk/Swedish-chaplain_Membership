@@ -158,7 +158,7 @@ describe('decideChangeRequest — throw-to-rollback on live Neon (T048)', () => 
     expect(before.request?.state).toBe('pending');
     const faulty: DecideChangeRequestDeps['memberRepo'] = {
       findByIdInTx: drizzleMemberRepo.findByIdInTx,
-      findErasedAtById: drizzleMemberRepo.findErasedAtById,
+      findErasedAtByIdInTx: drizzleMemberRepo.findErasedAtByIdInTx,
       async updateFieldsInTx() {
         throw new Error('injected member write failure');
       },

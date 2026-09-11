@@ -86,7 +86,9 @@ describe('memberSelfUpdate gate = approval (FR-001 / FR-004)', () => {
       tenant,
       expect.objectContaining({
         type: 'member_self_update_forbidden',
-        payload: expect.objectContaining({ member_id: memberId, attempted_fields: [dotted] }),
+        // review privacy I-5 — a Group B key under the approval gate is a GATE
+        // refusal, distinguishable from a forged Group C key
+        payload: expect.objectContaining({ member_id: memberId, attempted_fields: [dotted], refusal: 'gate_narrowed' }),
       }),
     );
     expect(contactRepo.updateInTx).not.toHaveBeenCalled();

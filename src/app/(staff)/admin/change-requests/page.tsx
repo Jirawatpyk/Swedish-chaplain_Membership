@@ -20,8 +20,12 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import type { ChangeRequestListRow, UserId } from '@/modules/members';
+import { InboxIcon } from 'lucide-react';
+import { logger } from '@/lib/logger';
+import { requestIdFromHeaders } from '@/lib/request-id';
 import { buttonVariants } from '@/components/ui/button';
 import { InlineAlert } from '@/components/ui/inline-alert';
+import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -45,25 +49,35 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   await requirePagePermission('members.read');
   const h = await headers();
   const tenant = resolveTenantFromHeaders(h);
+  const requestId = requestIdFromHeaders(h);
   const deps = buildChangeRequestDeps(tenant);
+  // A repo failure must reach the error boundary — never render as "no
+  // change requests are awaiting a decision" (review: UX C3).
+  const fail = (arm: string, code: string): never => {
+    logger.error({ errorId: `M114.admin.queue_page.${arm}`, requestId, tenantId: tenant.slug, err: code }, 'change-requests.queue page: read failed');
+    throw new Error('change-requests.queue: load failed');
+  };
   const sp = await searchParams;
   const submitterRaw = one(sp.submitter);
   const submitter = submitterRaw && UUID_RE.test(submitterRaw) ? (submitterRaw as UserId) : undefined;
   const t = await getTranslations('admin.changeRequests.queue');
+  const tReview = await getTranslations('admin.changeRequests.review');
   const locale = await getLocale();
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
 
   let deepLinkNotice: string | null = null;
   if (submitter) {
     const pending = await deps.changeRequestRepo.listQueue(tenant, { state: 'pending', submitterUserId: submitter }, { cursor: null, limit: 2 });
+    if (!pending.ok) fail('deep_link_pending_read_failed', pending.error.code);
     const rows = pending.ok ? pending.value.items : [];
     if (rows.length === 1 && rows[0]) redirect(`/admin/change-requests/${rows[0].request.id}`);
     if (rows.length === 0) {
       const decided = await deps.changeRequestRepo.listQueue(tenant, { state: 'decided', submitterUserId: submitter }, { cursor: null, limit: 1 });
+      if (!decided.ok) fail('deep_link_decided_read_failed', decided.error.code);
       const last = decided.ok ? decided.value.items[0] : undefined;
       deepLinkNotice =
         last && last.request.decidedAt
-          ? t('noPendingForSubmitter', { name: last.decidedBy?.displayName ?? '', decidedAt: fmt(last.request.decidedAt) })
+          ? t('noPendingForSubmitter', { name: last.decidedBy?.displayName || tReview('unknownReviewer'), decidedAt: fmt(last.request.decidedAt) })
           : t('noRequestForSubmitter');
     }
   }
@@ -73,6 +87,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     submitter ? { state: 'pending', submitterUserId: submitter } : { state: 'pending' },
     { cursor: null, limit: 50 },
   );
+  if (!queue.ok) fail('queue_read_failed', queue.error.code);
   const items: readonly ChangeRequestListRow[] = queue.ok ? queue.value.items : [];
 
   return (
@@ -84,8 +99,8 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </InlineAlert>
       ) : null}
       {items.length === 0 ? (
-        <div className="rounded-md border p-8 text-center text-sm text-muted-foreground" data-testid="queue-empty">
-          {t('empty')}
+        <div data-testid="queue-empty">
+          <EmptyState icon={InboxIcon} title={t('empty')} description={t('emptyHint')} bordered />
         </div>
       ) : (
         <ul className="divide-y divide-border rounded-md border" data-testid="queue-list">

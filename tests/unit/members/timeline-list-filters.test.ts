@@ -499,3 +499,37 @@ describe('timelineList — money is gated on invoicing.read (security I-1)', () 
     }
   });
 });
+
+describe('timelineList — F114 own-contact change requests stay per person (privacy I-1 / FR-029)', () => {
+  const submitted = (contactId: string, scope: 'own_contact' | 'company' | 'mixed') => ({
+    id: `cr-${contactId}-${scope}`,
+    timestamp: new Date('2026-09-11T08:00:00Z'),
+    source: 'audit' as const,
+    eventType: 'member_change_request_submitted',
+    actorKind: 'member' as const,
+    actorUserId: 'u-x',
+    actorDisplayName: null,
+    payload: { member_id: MEMBER, request_id: `r-${contactId}`, contact_id: contactId, scope, field_keys: ['phone'] },
+  });
+
+  it("a member viewer sees their OWN own_contact request and every company/mixed one, but not a colleague's own_contact request", async () => {
+    const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'own_contact'), submitted('c-other', 'company'), submitted('c-other', 'mixed')]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true, viewerContactId: 'c-me' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).toEqual(['cr-c-me-own_contact', 'cr-c-other-company', 'cr-c-other-mixed']);
+    expect(r.value.total).toBe(3);
+  });
+
+  it('with no viewer contact (unresolvable) every own_contact request is dropped for a member viewer — fail closed', async () => {
+    const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'company')]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true });
+    expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-c-other-company']);
+  });
+
+  it('a staff viewer is not filtered', async () => {
+    const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'own_contact')]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, { ...deps, invoicingRead: true });
+    expect(r.ok && r.value.events).toHaveLength(2);
+  });
+});

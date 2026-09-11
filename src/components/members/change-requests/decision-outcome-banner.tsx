@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { CheckCircle2Icon, CircleSlashIcon, ListChecksIcon, XCircleIcon } from 'lucide-react';
+import { CheckCircle2Icon, ListChecksIcon, XCircleIcon, XIcon } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { InlineAlert } from '@/components/ui/inline-alert';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
@@ -47,11 +47,17 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
     startTransition(async () => {
       try {
         const res = await fetch(`/api/portal/change-requests/${request.id}/acknowledge`, { method: 'POST' });
-        if (!res.ok && res.status !== 409) {
-          toast.error(t('dismissError'));
+        if (!res.ok) {
+          // 409 `not_decided` means the state moved under us — re-fetch rather
+          // than pretend the dismiss stuck (review: reliability M-7)
+          if (res.status === 409) router.refresh();
+          else toast.error(t('dismissError'));
           return;
         }
         setDismissed(true);
+        // the banner (and the button holding focus) unmounts — land on the
+        // page landmark instead of <body> (review: UX M7)
+        document.getElementById('main-content')?.focus({ preventScroll: true });
         router.refresh();
       } catch {
         toast.error(t('dismissError'));
@@ -84,7 +90,7 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
           </Link>
         ) : null}
         <Button type="button" variant="outline" size="sm" className="h-9" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
-          <CircleSlashIcon className="mr-1 h-4 w-4" aria-hidden="true" />
+          <XIcon className="mr-1 h-4 w-4" aria-hidden="true" />
           {t('dismiss')}
         </Button>
       </div>

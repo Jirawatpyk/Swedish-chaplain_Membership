@@ -55,7 +55,15 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const finalFocus = useDialogFinalFocus(triggerRef);
+  const reasonRef = useRef<HTMLTextAreaElement | null>(null);
+  // Raised before every close that `router.refresh()`es the trigger away
+  // (success, 409, contact_removed) so focus lands on the #main-content
+  // landmark instead of <body> (review: UX I6).
+  const closedViaSuccessRef = useRef<boolean>(false);
+  const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
+  // Shown INSIDE the dialog while it stays open: a toast is portalled outside
+  // the modal's focus trap and is aria-hidden to assistive tech (review: UX I1).
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     const approved = fields.filter((f) => selected[f.key] === true).length;
@@ -86,6 +94,7 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
       reason: reasonTrimmed.length > 0 ? reasonTrimmed : null,
       note: note.trim().length > 0 ? note.trim() : null,
     };
+    setDialogError(null);
     let res: Response;
     try {
       res = await fetch(`/api/admin/change-requests/${request.id}/decide`, {
@@ -94,13 +103,14 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
         body: JSON.stringify(body),
       });
     } catch {
-      toast.error(t('toast.error'));
+      setDialogError(t('toast.error'));
       return;
     }
     if (res.ok) {
       const data = (await res.json()) as { repeated: boolean; request: StaffChangeRequestView };
       const outcome = data.request.outcome ?? 'approved';
       toast.success(data.repeated ? t('toast.repeated') : t(`toast.${outcome}`));
+      closedViaSuccessRef.current = true;
       setOpen(false);
       router.push(`/admin/members/${request.memberId}`);
       router.refresh();
@@ -110,21 +120,22 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
     const kind = problemKind(problem);
     if (res.status === 409) {
       toast.error(t(`toast.${kind === 'already_decided' || kind === 'not_pending' || kind === 'member_archived' || kind === 'member_erasing' ? kind : 'error'}`));
+      closedViaSuccessRef.current = true;
       setOpen(false);
       router.refresh();
       return;
     }
-    if (res.status === 422 && (kind === 'contact_removed' || kind === 'validation_error' || kind === 'reason_required')) {
-      toast.error(t(`toast.${kind}`));
-      if (kind === 'contact_removed') {
-        const keys = (problem as DecideProblem).keys ?? [];
-        setSelected((prev) => ({ ...prev, ...Object.fromEntries(keys.map((k) => [k, false])) }));
-        setOpen(false);
-        router.refresh();
-      }
+    if (res.status === 422 && kind === 'contact_removed') {
+      toast.error(t('toast.contact_removed'));
+      const keys = (problem as DecideProblem).keys ?? [];
+      setSelected((prev) => ({ ...prev, ...Object.fromEntries(keys.map((k) => [k, false])) }));
+      closedViaSuccessRef.current = true;
+      setOpen(false);
+      router.refresh();
       return;
     }
-    toast.error(t('toast.error'));
+    // every arm that keeps the dialog open announces INSIDE it
+    setDialogError(t(`toast.${kind === 'validation_error' || kind === 'reason_required' ? kind : 'error'}`));
   }
 
   return (
@@ -153,6 +164,8 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
           if (next) {
             setReason('');
             setNote('');
+            setDialogError(null);
+            closedViaSuccessRef.current = false;
           }
         }}
         title={title}
@@ -164,8 +177,14 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
         closeOnConfirm={false}
         onConfirm={onConfirm}
         finalFocus={finalFocus}
+        {...(reasonRequired ? { initialFocusRef: reasonRef } : {})}
       >
         <div className="space-y-4">
+          {dialogError ? (
+            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive-surface px-3 py-2 text-sm text-destructive" data-testid="decision-error">
+              {dialogError}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="decision-reason">
               {t('reasonLabel')}
@@ -173,6 +192,7 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
             </Label>
             <Textarea
               id="decision-reason"
+              ref={reasonRef}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder={t('reasonPlaceholder')}

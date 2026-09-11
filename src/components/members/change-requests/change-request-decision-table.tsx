@@ -74,7 +74,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                 </span>
               ) : null}
               {undecidable ? (
-                <span className="flex items-center gap-1 text-caption font-normal text-destructive" data-testid="marker-contact-removed">
+                <span id={`decide-${f.key}-why`} className="flex items-center gap-1 text-caption font-normal text-destructive" data-testid="marker-contact-removed">
                   <UserXIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   {t('markers.contactRemoved')}
                 </span>
@@ -87,7 +87,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
               ) : null}
             </div>
             <div className="space-y-1">
-              <span className="text-caption text-muted-foreground sm:hidden">{tDiff('current')}: </span>
+              <span className="text-caption text-muted-foreground sm:sr-only">{tDiff('current')}: </span>
               <ProposedValueDisplay fieldKey={f.key} value={f.current} />
               {f.changedSinceSubmitted ? (
                 <div className="rounded-sm border border-amber-300/60 bg-amber-50 p-2 text-caption text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200" data-testid="marker-changed-since-submitted">
@@ -102,7 +102,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
               ) : null}
             </div>
             <div>
-              <span className="text-caption text-muted-foreground sm:hidden">{tDiff('proposed')}: </span>
+              <span className="text-caption text-muted-foreground sm:sr-only">{tDiff('proposed')}: </span>
               <ProposedValueDisplay fieldKey={f.key} value={f.proposed} />
             </div>
             <div className="flex items-center gap-2 sm:justify-end">
@@ -119,16 +119,26 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                 </span>
               ) : (
                 <>
+                  {/* `aria-disabled` (not `disabled`): a reject-only row stays in the
+                      tab order so a keyboard / screen-reader user reaches the row AND
+                      its "contact removed" explanation (`aria-describedby`); the
+                      toggle is simply inert. The visible caption is aria-hidden so the
+                      accessible name is announced once (review: UX I4 / I9). */}
                   <Checkbox
                     id={`decide-${f.key}`}
                     aria-label={t('approveCheckbox', { field: label })}
+                    aria-describedby={undecidable ? `decide-${f.key}-why` : undefined}
                     checked={approved}
-                    disabled={disabled}
                     aria-disabled={disabled || undefined}
-                    onCheckedChange={(c) => onToggle(f.key, c === true)}
+                    data-disabled={disabled ? '' : undefined}
+                    className={disabled ? 'cursor-not-allowed opacity-50' : undefined}
+                    onCheckedChange={(c) => {
+                      if (disabled) return;
+                      onToggle(f.key, c === true);
+                    }}
                     data-testid={`approve-${f.key}`}
                   />
-                  <span className="text-caption text-muted-foreground sm:sr-only">{t('approveCheckbox', { field: label })}</span>
+                  <span className="text-caption text-muted-foreground sm:hidden" aria-hidden="true">{t('approveCheckbox', { field: label })}</span>
                 </>
               )}
             </div>

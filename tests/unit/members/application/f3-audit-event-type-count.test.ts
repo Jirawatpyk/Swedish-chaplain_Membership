@@ -90,7 +90,7 @@ type _AssertF3Coverage = typeof F3_AUDIT_EVENTS extends
 const _: _AssertF3Coverage = true;
 
 describe('F3AuditEventType count guard', () => {
-  it('F3 audit event type count is 37 (35 prior + contact_marketing_opted_out + contact_marketing_opted_in)', () => {
+  it('F3 audit event type count is 42 (37 prior + the five F114 change-request events)', () => {
     // Reference `_` so the compile-time proof is not tree-shaken / unused.
     expect(_).toBe(true);
     expect(F3_AUDIT_EVENTS.length).toBe(42);

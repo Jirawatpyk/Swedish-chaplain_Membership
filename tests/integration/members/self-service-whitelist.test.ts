@@ -88,6 +88,7 @@ const auditEvents: F3AuditEvent[] = [];
 
 function makeStubDeps(): MemberSelfUpdateDeps {
   const memberRepo: MemberRepo = {
+    findErasedAtByIdInTx: async () => ok({ erasedAt: null }),
     findById: async () => ok(baseMember),
     findByIdInTx: async () => ok(baseMember),
     findRiskById: async () => ok({ riskScore: null, riskScoreBand: null }),

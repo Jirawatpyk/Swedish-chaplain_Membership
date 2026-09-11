@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
+import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -198,7 +199,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
         initialValues={initialValues}
         canProposeCompanyFields={ownContact.isPrimary}
         pending={pending}
-        privacyNoticeHref="/privacy"
+        privacyNoticeHref={env.broadcasts.privacyPolicyUrl ?? null}
         resubmitOf={resubmitOf}
       />
     </FormContainer>

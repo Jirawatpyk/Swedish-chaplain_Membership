@@ -92,6 +92,15 @@ export type TimelineListDeps = {
    * and has zero misses; this follows it.
    */
   readonly invoicingRead: boolean;
+  /**
+   * F114 review (privacy I-1) — the PORTAL viewer's own contact id. A
+   * `member_change_request_submitted` row with `scope: 'own_contact'` names
+   * the colleague who proposed a change to THEIR OWN phone / name / title
+   * (`contact_id` + `field_keys`); FR-029 / spec U4 keep that per person, so
+   * for a member-role viewer such rows are dropped unless the contact is the
+   * viewer. Staff viewers (members.read) see everything; omit for them.
+   */
+  readonly viewerContactId?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -187,6 +196,15 @@ function carriesMoney(e: TimelineEvent): boolean {
   if (MONEY_SOURCES.has(e.source)) return true;
   if (MONEY_AUDIT_PREFIXES.some((p) => e.eventType.startsWith(p))) return true;
   return hasMoneyShapedPayload(e.payload);
+}
+
+/** FR-029 — a colleague's own-contact change request (its keys + contact) stays theirs. */
+function isAnotherContactsOwnFieldRequest(e: TimelineEvent, viewerContactId: string | null): boolean {
+  if (e.source !== 'audit' || !e.eventType.startsWith('member_change_request_')) return false;
+  const payload = e.payload;
+  if (!payload || payload['scope'] !== 'own_contact') return false;
+  const contactId = payload['contact_id'];
+  return typeof contactId === 'string' && contactId !== viewerContactId;
 }
 
 function redactEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
@@ -314,7 +332,10 @@ export async function timelineList(
   const { events, nextCursor, total } = timelineResult.value;
   // rbac-portal-identity-ok: selects the member's own-history projection; the
   // permission decisions are the route gate above and `invoicingRead` below.
-  const roleProjected = meta.actorRole === 'member' ? redactEvents(events) : events;
+  const roleProjected =
+    meta.actorRole === 'member'
+      ? redactEvents(events).filter((e) => !isAnotherContactsOwnFieldRequest(e, deps.viewerContactId ?? null))
+      : events;
   // 016 review (security I-1) — money rows need `invoicing.read` on top of the
   // `members.read` that admitted the request. `!== true` rather than
   // `=== false` so an omitted dep fails CLOSED.
@@ -332,6 +353,9 @@ export async function timelineList(
     // remains as belt-and-braces for any residue the broader app-side probe
     // catches that the SQL twin somehow missed, so the header can never
     // disclose more than the rows on screen.
-    total: Math.max(0, total - (roleProjected.length - moneyFiltered.length)),
+    // F114 — `events.length`, not `roleProjected.length`: the member projection
+    // now also drops a colleague's own-contact request rows, and the header
+    // count must never exceed the rows on screen.
+    total: Math.max(0, total - (events.length - moneyFiltered.length)),
   });
 }

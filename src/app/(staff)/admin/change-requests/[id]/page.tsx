@@ -119,7 +119,7 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
           <CardHeader>
             <CardTitle className="text-base">
               {t('decidedBy', {
-                name: request.decidedBy?.displayName ?? '',
+                name: request.decidedBy?.displayName || t('unknownReviewer'),
                 decidedAt: fmt(request.decidedAt),
               })}
               {request.decidedBy?.deactivated ? <span className="ml-1 text-muted-foreground">{t('deactivated')}</span> : null}

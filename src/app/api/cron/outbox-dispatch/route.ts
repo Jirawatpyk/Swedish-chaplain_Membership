@@ -55,6 +55,8 @@ import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/em
 import type { EmailLocale } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { isRole } from '@/modules/auth/domain/role';
+import { listActiveUsersByRole } from '@/modules/auth';
+import { reviewerRoles } from '@/lib/members-change-request-deps';
 // F114 — the change-request staff email is rendered AT SEND TIME from the
 // request rows (research R8 / § V3): the outbox row carries ids + field keys
 // only. Read through the members barrel (Principle III).
@@ -153,7 +155,7 @@ interface BuiltPayload {
  * `email_dispatch_failed` audit payload, so an operator sees WHY.
  */
 interface PayloadMiss {
-  readonly miss: 'request_gone' | 'recipient_gone';
+  readonly miss: 'request_gone' | 'recipient_gone' | 'request_superseded';
 }
 
 function isPayloadMiss(v: BuiltPayload | PayloadMiss | null): v is PayloadMiss {
@@ -404,15 +406,32 @@ async function buildPayload(
       // so a scrubbed request renders scrubbed. Same tenant-id shape guard as
       // the receipt_pdf_render arm (S9 closure).
       const requestId = typeof ctx.requestId === 'string' ? ctx.requestId : '';
-      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,64}$/.test(row.tenantId)) return null;
+      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,63}$/.test(row.tenantId)) return null;
       const tenantCtx = asTenantContext(row.tenantId);
       const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
       if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      // A request replaced (or otherwise closed) before this row was sent
+      // must not reach the reviewer — the replacement queued its own rows
+      // (review: reliability I-4).
+      if (request.value.state !== 'pending') return { miss: 'request_superseded' };
+      // The recipient must STILL be an active reviewer at send time: an
+      // admin disabled between enqueue and dispatch gets no member PII
+      // (review: security I-4).
+      const reviewers = await listActiveUsersByRole(reviewerRoles());
+      if (!reviewers.some((r) => r.email.toLowerCase() === row.toEmail.toLowerCase())) return { miss: 'recipient_gone' };
       const member = await drizzleMemberRepo.findById(tenantCtx, request.value.memberId);
       if (!member.ok) return member.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
       const contact = await drizzleContactRepo.findById(tenantCtx, request.value.submittedByContactId);
       if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
-      const prefix = await resolveMemberNumberPrefix(tenantCtx, drizzleMemberSettingsRepo);
+      // The prefix read throws (no Result); a transient failure must stay on
+      // the retry ladder, not escape the tick with `attempts` unbumped
+      // (review: reliability I-3).
+      let prefix: Awaited<ReturnType<typeof resolveMemberNumberPrefix>>;
+      try {
+        prefix = await resolveMemberNumberPrefix(tenantCtx, drizzleMemberSettingsRepo);
+      } catch {
+        return null;
+      }
       return buildChangeRequestSubmittedStaffEmail({
         locale,
         companyName: member.value.companyName,
@@ -437,7 +456,7 @@ async function buildPayload(
       // CURRENT address; a removed / unlinked contact is a deterministic
       // `recipient_gone` miss (permanent on the first tick, audited).
       const requestId = typeof ctx.requestId === 'string' ? ctx.requestId : '';
-      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,64}$/.test(row.tenantId)) return null;
+      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,63}$/.test(row.tenantId)) return null;
       const tenantCtx = asTenantContext(row.tenantId);
       const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
       if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;

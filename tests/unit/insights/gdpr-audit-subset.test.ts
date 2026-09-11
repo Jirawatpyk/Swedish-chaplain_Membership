@@ -166,3 +166,17 @@ describe('buildMemberAuditSubset — filter + redact', () => {
     expect(out[0]).not.toHaveProperty('targetUserId');
   });
 });
+
+describe('isInMemberAuditSubset — related_member_id (F114 review privacy I-3)', () => {
+  it('a staff action ABOUT the member keyed related_member_id is in the subject\'s subset', () => {
+    const scope = { memberId: 'm-1', memberUserIds: ['u-1'] };
+    const row = {
+      actorUserId: 'staff-9',
+      targetUserId: null,
+      payload: { related_member_id: 'm-1', request_id: 'r-1', outcome: 'rejected' },
+    } as unknown as Parameters<typeof isInMemberAuditSubset>[0];
+    expect(isInMemberAuditSubset(row, scope as unknown as Parameters<typeof isInMemberAuditSubset>[1])).toBe(true);
+    const other = { ...row, payload: { related_member_id: 'm-2' } } as unknown as Parameters<typeof isInMemberAuditSubset>[0];
+    expect(isInMemberAuditSubset(other, scope as unknown as Parameters<typeof isInMemberAuditSubset>[1])).toBe(false);
+  });
+});
