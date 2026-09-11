@@ -102,7 +102,8 @@ Guards on `decide`: member not archived, member not under erasure; a `contact`-t
 contact is removed/unlinked is reject-only (FR-020); setting OFF does **not** block (FR-032). Races:
 first committed transition wins — withdraw vs decide, replace vs decide (FR-017).
 `acknowledge` (submitter dismisses the shown decision) sets `outcome_acknowledged_at` on a decided
-request; it is not a state. Guards on `submit`: flag on + setting on (else the immediate path), member not archived,
+request; it is not a state. Glossary: the spec's and the UI's **"dismiss"** (FR-010) is the API's and
+the column's **`acknowledge`** — one concept, two audiences. Guards on `submit`: flag on + setting on (else the immediate path), member not archived,
 submitter linked + not removed, ≤ 9 requests in the trailing 24 h (R9).
 
 ## 5. `tenant_member_settings` (existing) — one new column

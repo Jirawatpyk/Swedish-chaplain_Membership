@@ -53,7 +53,7 @@ tick; **no new cron job** (37 of 40 in use)
 App Router presentation in `src/app/(member)/portal/**` and `src/app/(staff)/admin/**`)
 **Performance Goals**: submit p95 < 400 ms (one tx: FOR UPDATE + count + insert + audit + ≤ N outbox
 rows, N = reviewers ≤ 5 at SweCham); decide p95 < 400 ms; queue list p95 < 400 ms at 5,000 rows
-(indexed keyset); review page LCP < 2.5 s; dashboard count is one indexed `count/min` (< 20 ms);
+(indexed keyset — measured by the seeded pagination test, tasks T119); review page LCP < 2.5 s; dashboard count is one indexed `count/min` (< 20 ms);
 staff notification within 5 min (SC-002) rides the existing 1-min outbox cadence
 **Constraints**: prod is live with real members; every new query threads the `runInTenant` tx +
 RLS FORCE; no PII in logs, audit payloads or sent outbox rows (ids + keys only; diff rendered at
@@ -61,8 +61,8 @@ send from the request rows); actor role = session role (`check:actor-role-truth`
 returned inside a `runInTenant` callback (throw-to-rollback); flag OFF and setting OFF both leave
 the F3 self-service path byte-identical; Buddhist Era display-only; issued tax documents never
 change (buyer block frozen at issue — the feature only writes `members`/`contacts`)
-**Scale/Scope**: 2 tables (+ `outcome_acknowledged_at`) · 1 settings column · 7 enum values · 1 migration · 5 use cases (submit, withdraw, decide, acknowledge, set-setting) + 1 gate resolver
-+ 4 Domain policies · 9 route handlers (4 portal, 5 staff) · 1 narrowed endpoint · 4 staff pages
+**Scale/Scope**: 2 tables (+ `outcome_acknowledged_at`) · 1 settings column · 7 enum values · 1 migration · 8 use cases (submit, withdraw, decide, acknowledge, list, get-review, set-setting, count-pending) + 1 gate resolver
++ 4 Domain policies · 10 route handlers (5 portal, 5 staff) · 1 narrowed endpoint · 4 staff pages
 (queue, review, settings card, member-record section) · 3 portal surfaces (edit-form gate mode,
 pending/decision banner, history page) + 1 form move (language → account page) · 2 email
 templates × 3 locales · 5 audit events · ~70 i18n keys × 3 · 1 nav item + badge slot · 1 dashboard
@@ -214,8 +214,10 @@ src/modules/members/
 │       │   ├── submit-change-request.ts      # R3, R8 coalescing, R9 cap
 │       │   ├── withdraw-change-request.ts
 │       │   ├── decide-change-request.ts      # R4 one tx, throw-to-rollback
+│       │   ├── acknowledge-change-request.ts # R18 — submitter dismisses the shown decision
 │       │   ├── list-change-requests.ts       # queue / per-member / portal (FR-029 scope in SQL)
-│       │   ├── get-change-request-review.ts  # live current values + changedSinceSubmitted
+│       │   ├── get-change-request-review.ts  # live current values + changedSinceSubmitted / alreadyCurrent / undecidable
+│       │   ├── count-pending-change-requests.ts # dashboard item + nav badge (live count, oldest age)
 │       │   └── set-member-change-approval-enabled.ts
 │       ├── member-self-update.ts             # gate-aware whitelist (R6)
 │       └── erase-member.ts                   # + scrub step (R10)
@@ -243,6 +245,7 @@ src/app/api/
 │   ├── gate/route.ts                         # GET
 │   ├── route.ts                              # POST submit · GET history
 │   ├── [id]/route.ts                         # GET
+│   ├── [id]/acknowledge/route.ts             # POST dismiss the shown decision (FR-010)
 │   └── current/route.ts                      # DELETE withdraw
 ├── portal/profile/route.ts                   # PATCH narrowed to Group A when gate = approval
 ├── admin/change-requests/
@@ -272,6 +275,7 @@ src/components/
 ├── members/change-requests/
 │   ├── portal-change-request-form.tsx        # Group B form (react-hook-form + zod from field-rules)
 │   ├── pending-request-banner.tsx
+│   ├── decision-outcome-banner.tsx           # last decision until acknowledged (FR-010)
 │   ├── change-request-diff-table.tsx         # shared read-only diff (portal + staff)
 │   ├── change-request-decision-table.tsx     # staff: pre-selected rows + dynamic confirm
 │   └── change-request-status-badge.tsx
@@ -284,11 +288,13 @@ docs/observability.md                         # § 14 metrics + alerts
 docs/runbooks/member-change-requests.md       # stuck queue, coalescing, cap, rollback
 
 tests/
-├── unit/members/change-requests/             # domain policies, field-rule parity, 5 use cases (100% branches)
+├── helpers/change-request-fakes.ts           # in-memory doubles for every port (an unstubbed method is an unexercised branch)
+├── unit/members/change-requests/             # domain policies, field-rule parity, 8 use cases + gate resolver (100% branches on the six security-critical ones)
 ├── unit/auth/domain/audit-event.test.ts      # pinned count 37 → 42
-├── contract/portal/change-requests-*.test.ts # + profile.test.ts gains Group-B-forbidden cases
-├── contract/members/admin-change-requests-*.test.ts
-├── integration/members/change-requests-{tenant-isolation,concurrency,decide-rollback,erasure-scrub,rate-cap}.test.ts
+├── unit/architecture/change-requests-no-server-actions.test.ts  # FR-038 guard with positive control
+├── contract/portal/change-requests-*.test.ts # submit · gate · history · withdraw · replace · acknowledge · setting-off · flag-off; + profile.test.ts gains Group-B-forbidden cases
+├── contract/members/admin-change-requests-*.test.ts · admin-member-changes-setting.test.ts
+├── integration/members/change-requests-{repo,tenant-isolation,submit-atomicity,concurrency,decide-rollback,erasure-scrub,rate-cap,tax-document-immutability,queue-pagination}.test.ts
 └── e2e/change-requests.spec.ts (@change-requests, @a11y, @i18n)
 ```
 
@@ -325,7 +331,7 @@ No Principle I–IV, VIII or X deviation.
 metrics · V3 dispatcher read-at-send under the tenant tx · V4 the per-person scope is vacuous on
 prod until the secondary import (tests seed it).
 
-**Checklist-gate closure (2026-09-11)**: the six domain checklists raised 30 requirement-text gaps;
+**Checklist-gate closure (2026-09-11)**: the six domain checklists raised 31 requirement-text gaps;
 all are closed in the spec (Clarifications session "gap closure — AMENDMENT", FR-038–FR-040, FR-009/
 010/014/015/017/019/020/022/023/026/030/034 amended) and in the plan artefacts: `outcome_acknowledged_at`
 + `POST …/acknowledge` (decision dismissal), `contact_removed` reject-only rows + `alreadyCurrent` +
