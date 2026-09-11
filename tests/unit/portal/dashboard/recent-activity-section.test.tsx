@@ -64,7 +64,10 @@ vi.mock('@/lib/request-id', () => ({
 }));
 
 vi.mock('@/modules/members/members-deps', () => ({
-  buildMembersDeps: () => ({ memberRepo: {}, timeline: {} }),
+  // F114 (round 5): the section resolves the viewer's own contact through
+  // `resolveOwnContactId`, which LOGS a warning on a read fault — an absent
+  // double would read as that fault and pollute the B2 assertions below
+  buildMembersDeps: () => ({ memberRepo: {}, timeline: {}, contactRepo: { listByMember: async () => ({ ok: true, value: [] }) } }),
 }));
 
 // `timelineList` is the read whose failure we drive. Default = a server_error
