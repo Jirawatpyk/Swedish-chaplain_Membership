@@ -49,7 +49,7 @@ import type {
   SubmitterRole,
   WithdrawnReason,
 } from '../../domain/change-request/change-request';
-import type { ProposableFieldKey, ProposedFieldTarget } from '../../domain/change-request/proposable-fields';
+import { PROPOSABLE_FIELD_KEYS, type ProposableFieldKey, type ProposedFieldTarget } from '../../domain/change-request/proposable-fields';
 import type { ContactId } from '../../domain/contact';
 import type { UserId } from '../../domain/value-objects/user-id';
 import type { MemberId, TenantId } from '../../domain/member';
@@ -80,17 +80,10 @@ function fieldRowToDomain(f: MemberChangeRequestFieldRow): ProposedField {
 }
 
 /** Field rows in a stable, Group-B order (the CHECK list order), never insertion order. */
-const FIELD_ORDER: readonly string[] = [
-  'first_name',
-  'last_name',
-  'phone',
-  'role_title',
-  'company_name',
-  'website',
-  'description',
-  'registered_address',
-  'billing_address',
-];
+// ONE source (round 5, types F1): a hand-copied list typed `string[]` let a
+// tenth Group B key compile clean and sort to -1 (ahead of first_name) in
+// every read — the review table, both emails.
+const FIELD_ORDER: readonly string[] = PROPOSABLE_FIELD_KEYS;
 
 function rowToDomain(r: MemberChangeRequestRow, fieldRows: readonly MemberChangeRequestFieldRow[]): ChangeRequest {
   const fields = [...fieldRows]

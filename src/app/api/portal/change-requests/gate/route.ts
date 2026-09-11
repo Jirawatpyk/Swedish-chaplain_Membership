@@ -54,7 +54,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   ).catch((e: unknown) => ({ ok: false as const, error: { code: 'repo.unexpected' as const, cause: e } }));
   if (!pending.ok) {
     logger.error(
-      { errorId: `${ERROR_ID}.pending_read_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: pending.error.code },
+      {
+        errorId: `${ERROR_ID}.pending_read_failed`,
+        requestId: ctx.requestId,
+        tenantId: ctx.tenant.slug,
+        err: pending.error.code,
+        // the cause the .catch above captured (round 5, silent-failure #10)
+        cause: errKind('cause' in pending.error ? pending.error.cause : undefined),
+      },
       'change-requests.gate: pending read failed',
     );
     return NextResponse.json({ error: 'server_error' }, { status: 500 });

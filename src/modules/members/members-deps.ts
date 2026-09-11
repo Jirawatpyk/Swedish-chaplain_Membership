@@ -172,7 +172,7 @@ export type MembersDeps = {
   };
 };
 
-/** F114 — the env-backed `MemberChangeFlagPort` (the only reader of the flag). */
+/** F114 — the env-backed `MemberChangeFlagPort` (the Application-facing reader; routes, pages and the dispatcher read `env.features` directly — see `env.ts`). */
 export const memberChangeApprovalFlag = {
   memberChangeApproval: (): boolean => env.features.memberChangeApproval,
 } as const;

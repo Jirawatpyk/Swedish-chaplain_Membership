@@ -98,7 +98,10 @@ export type TimelineListDeps = {
    * the colleague who proposed a change to THEIR OWN phone / name / title
    * (`contact_id` + `field_keys`); FR-029 / spec U4 keep that per person, so
    * for a member-role viewer such rows are dropped unless the contact is the
-   * viewer. Staff viewers (members.read) see everything; omit for them.
+   * viewer. Staff viewers (members.read) see everything and pass `null`
+   * EXPLICITLY — the field is required (round 2 security R-2: an optional
+   * field let a new caller read as "unresolvable = drop every own-contact
+   * row" without anyone noticing).
    */
   readonly viewerContactId: string | null;
 };

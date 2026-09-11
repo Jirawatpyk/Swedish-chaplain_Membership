@@ -62,7 +62,9 @@ export function ChangeRequestDiffTable({ fields, showOutcome = false, className 
     <ul className={cn('divide-y divide-border rounded-md border', className)} data-testid="change-request-diff">
       <li className="hidden gap-4 px-3 py-2 text-caption font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.4fr)]" aria-hidden="true">
         <span>{t('field')}</span>
-        <span>{t('current')}</span>
+        {/* `seen` is the value AT SUBMISSION, not the live record — the staff
+            table shows the live one under `current` (round 5, code #1) */}
+        <span>{t('seen')}</span>
         <span>{t('proposed')}</span>
       </li>
       {fields.map((f) => (
@@ -96,7 +98,7 @@ export function ChangeRequestDiffTable({ fields, showOutcome = false, className 
             ) : null}
           </div>
           <div>
-            <span className="text-caption text-muted-foreground sm:sr-only">{t('current')}: </span>
+            <span className="text-caption text-muted-foreground sm:sr-only">{t('seen')}: </span>
             {renderValue(f.key, f.seen)}
           </div>
           <div>

@@ -30,7 +30,8 @@
 -- PR-1; until it merges, `seen_value` / `proposed_value` / `decision_reason`
 -- / `decision_note` are outside the erasure path — quickstart § 3 makes T078
 -- a precondition of the flag flip. A hard delete only happens for test
--- tenants and dummy rows. The two user FKs stay RESTRICT: staff accounts
+-- tenants and dummy rows. The two user FKs carry no ON DELETE clause
+-- (NO ACTION — the default; equivalent to RESTRICT at commit): staff accounts
 -- are disabled, never deleted (FR-026), and the recorded reviewer /
 -- submitter must survive.
 --
@@ -127,8 +128,9 @@ CREATE UNIQUE INDEX "member_change_requests_one_pending_per_submitter"
   ON "member_change_requests" ("tenant_id", "submitted_by_user_id")
   WHERE "state" = 'pending';--> statement-breakpoint
 
--- queue (pending oldest-first), pending count, oldest age (FR-027 / FR-033);
--- `id` is the keyset tiebreak the query orders by
+-- queue (pending oldest-first — the query orders ASC, ASC and walks this
+-- index backwards), pending count, oldest age (FR-027 / FR-033); `id` is the
+-- keyset tiebreak the query orders by
 CREATE INDEX "member_change_requests_tenant_state_submitted_idx"
   ON "member_change_requests" ("tenant_id", "state", "submitted_at" DESC, "id" DESC);--> statement-breakpoint
 
@@ -136,7 +138,8 @@ CREATE INDEX "member_change_requests_tenant_state_submitted_idx"
 CREATE INDEX "member_change_requests_tenant_member_idx"
   ON "member_change_requests" ("tenant_id", "member_id", "submitted_at" DESC);--> statement-breakpoint
 
--- R9 — the durable 24 h cap count per submitter
+-- R9 — the durable 24 h cap count per submitter (`countSubmittedSince` in the
+-- repo; its use-case caller is T087, PR-2 — PR-1 uses an interim Upstash cap)
 CREATE INDEX "member_change_requests_rate_window_idx"
   ON "member_change_requests" ("tenant_id", "submitted_by_user_id", "submitted_at");--> statement-breakpoint
 

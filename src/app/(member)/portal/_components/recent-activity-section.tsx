@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { resolveOwnContactId } from '@/lib/portal-own-contact';
 import { logger } from '@/lib/logger';
 import { errKind, rootCause } from '@/lib/log-id';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
@@ -52,15 +53,7 @@ export async function RecentActivitySection({
       timeline: deps.timeline,
       // F114 (privacy I-1, round 2 R-2) — the viewer's OWN contact so their
       // own change requests show while a colleague's own-field ones do not
-      viewerContactId: await (async () => {
-        try {
-          const contacts = await deps.contactRepo.listByMember(tenant, memberId as Parameters<typeof deps.contactRepo.listByMember>[1]);
-          if (!contacts.ok) return null;
-          return contacts.value.find((c) => String(c.linkedUserId) === userId && !c.removedAt)?.contactId ?? null;
-        } catch {
-          return null;
-        }
-      })(),
+      viewerContactId: await resolveOwnContactId(deps.contactRepo, tenant, memberId, userId, requestId),
       // 016 final review B2 — the member OWNS this billing history. The gate
       // exists to stop STAFF without `invoicing.read` reading someone else's;
       // omitting it here hid the member's own invoices from page 1 while the

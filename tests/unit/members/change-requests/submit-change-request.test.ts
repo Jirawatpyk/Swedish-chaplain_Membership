@@ -36,11 +36,13 @@ vi.mock('@/lib/logger', () => ({
 }));
 const metricSubmitted = vi.fn();
 const metricRefused = vi.fn();
+const metricNoReviewers = vi.fn();
 vi.mock('@/lib/metrics', () => ({
   membersMetrics: {
     changeRequests: {
       submitted: (...a: unknown[]) => metricSubmitted(...a),
       refused: (...a: unknown[]) => metricRefused(...a),
+      noReviewers: (...a: unknown[]) => metricNoReviewers(...a),
       decided: vi.fn(),
       decideDurationMs: vi.fn(),
       pendingCount: vi.fn(),
@@ -430,6 +432,8 @@ describe('submitChangeRequest — the happy path in ONE transaction', () => {
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     expect(r.ok && r.value.outcome === 'submitted' && r.value.staffNotified).toBe(false);
     expect(repo.rows.size).toBe(1);
+    // round 5 (silent-failure #5): alertable without waiting on the T102 gauges
+    expect(metricNoReviewers).toHaveBeenCalledWith('test-tenant');
     expect(emails.enqueued).toHaveLength(0);
     expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'test-tenant' }), expect.stringMatching(/no_reviewers/));
   });
@@ -611,5 +615,42 @@ describe('submitChangeRequest — the unique-index loser of a concurrent first s
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
     expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ err: 'Error' }), 'change-request.submit.conflict_reread_failed');
+  });
+});
+
+describe('submitChangeRequest — attacker-controlled key names are BOUNDED before the append-only sink (privacy M-7, round 5 tests I-1)', () => {
+  it('a forged body with 25 keys, one of them 100 chars, is audited with 20 keys, the long one cut at 64 + "…", truncated: true', async () => {
+    const { deps, audit } = makeDeps();
+    const long = 'x'.repeat(100);
+    const body: Record<string, unknown> = { [long]: 1 };
+    for (let i = 0; i < 24; i += 1) body[`forged_${i}`] = i;
+    const r = await submitChangeRequest(deps, input(body));
+    expect(r).toMatchObject({ ok: false, error: { type: 'forbidden', reason: 'forged_fields' } });
+    const forged = audit.events.find((e) => e.type === 'member_self_update_forbidden');
+    const payload = forged?.payload as { attempted_fields: string[]; attempted_fields_truncated: boolean };
+    expect(payload.attempted_fields).toHaveLength(20);
+    expect(payload.attempted_fields_truncated).toBe(true);
+    expect(payload.attempted_fields.some((k) => k.length > 65)).toBe(false);
+    expect(payload.attempted_fields.find((k) => k.startsWith('xxxx'))).toBe(`${'x'.repeat(64)}…`);
+    expect(JSON.stringify(forged?.payload)).not.toContain(long);
+  });
+});
+
+describe('submitChangeRequest — the conflict re-read failing as a Result (not a throw) is logged too (round 5 silent-failure #11)', () => {
+  it('logs conflict_reread_failed with the repo code and falls through to server_error', async () => {
+    const { deps, repo } = makeDeps();
+    await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    // the race: the FOR UPDATE read sees nothing, the insert conflicts, the re-read then FAILS as a Result
+    const orig = repo.findPendingBySubmitterInTx.bind(repo);
+    let calls = 0;
+    repo.findPendingBySubmitterInTx = async (tx, userId) => {
+      calls += 1;
+      if (calls === 1) return ok(null);
+      if (calls === 2) return err({ code: 'repo.unexpected' as const });
+      return orig(tx, userId);
+    };
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected' }), 'change-request.submit.conflict_reread_failed');
   });
 });

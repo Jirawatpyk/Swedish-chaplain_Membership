@@ -37,6 +37,7 @@
 import type { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -445,6 +446,12 @@ export async function decideChangeRequest(
           outcome: overall,
           fields: request.fields.map((f) => ({ key: f.key, outcome: outcomeByKey.get(f.key) })),
           reason_length: reason?.length ?? 0,
+          // round 5 (silent-failure #3) — a decision nobody was told about is
+          // a fact on the trail (DSAR-visible via related_member_id), not an
+          // info line: FR-023's email is skipped only when the submitting
+          // contact is gone / unlinked
+          member_notified: !contactGone,
+          ...(contactGone ? { member_notification_skipped: 'recipient_gone' } : {}),
           actor_role: input.actorRole,
         },
       });
@@ -456,6 +463,7 @@ export async function decideChangeRequest(
           { tenantId, changeRequestId: request.id, memberId: request.memberId, requestId: input.requestId, reason: 'recipient_gone' },
           'change-request.decide.member_email_skipped',
         );
+        membersMetrics.changeRequests.decisionEmailSkipped(tenantId, 'recipient_gone');
       } else {
         const queued = await deps.emails.enqueueInTx(tx, deps.tenant, {
           type: 'member_change_request_decided_member',
@@ -497,7 +505,10 @@ export async function decideChangeRequest(
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
       logger.error(
-        { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: re.code },
+        // `re.code` is the constant `repo.unexpected` for every non-conflict
+        // fault; the CAUSE (SQLSTATE / constraint / driver) is what on-call
+        // needs (round 5, silent-failure #9 — the set-contact-marketing precedent)
+        { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: re.code, cause: errKind('cause' in re ? re.cause : undefined) },
         'change-request.decide.tx_aborted',
       );
       return err({ type: 'server_error', message: `decide: ${re.code}` });

@@ -34,6 +34,7 @@
 import type { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -336,6 +337,8 @@ export async function submitChangeRequest(
       { tenantId, memberId: input.memberId, requestId: input.requestId },
       'change-request.submit.no_reviewers — request will be created but nobody is notified',
     );
+    // alertable without the T102 gauges (round 5, silent-failure #5)
+    membersMetrics.changeRequests.noReviewers(tenantId);
   }
 
   const now = deps.clock.now();
@@ -466,6 +469,15 @@ export async function submitChangeRequest(
           );
           return null;
         });
+        // the re-read can also fail as a Result (a throw is caught above) —
+        // log that arm too, or the operator reads the original conflict as the
+        // whole story (round 5, silent-failure #11)
+        if (raced && !raced.ok) {
+          logger.warn(
+            { tenantId, memberId: input.memberId, requestId: input.requestId, err: raced.error.code },
+            'change-request.submit.conflict_reread_failed',
+          );
+        }
         if (raced && raced.ok && raced.value) {
           // the winner's proposal IS this one → the harmless answer
           if (sameProposal(raced.value, fields)) return ok({ outcome: 'already_pending', request: raced.value });
@@ -475,7 +487,7 @@ export async function submitChangeRequest(
         }
       }
       logger.error(
-        { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code },
+        { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code, cause: errKind('cause' in re ? re.cause : undefined) },
         'change-request.submit.tx_aborted',
       );
       return err({ type: 'server_error', message: `submit: ${re.code}` });

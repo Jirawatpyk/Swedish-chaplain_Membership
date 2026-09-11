@@ -13,7 +13,7 @@ no PII.
 | field | value |
 |---|---|
 | `to_email` | reviewer's `users.email` (every active `admin` / `super_admin`) |
-| `locale` | reviewer's `users.preferred_locale` ?? tenant default |
+| `locale` | the tenant default (`users` carries no locale column — `members-change-request-deps.ts`); a per-reviewer locale is a follow-up |
 | `context_data` | `{ tenantId, requestId, memberId, submitterUserId, fieldKeys: string[] }` |
 
 Rendered content (EN/TH/SV): subject `"[SweCham] Change request — <company> (<member no.>)"`;
@@ -51,8 +51,8 @@ payloads carry **ids, keys and outcomes — never values**.
 | event | actor | payload | timeline | bumps `last_activity_at` |
 |---|---|---|---|---|
 | `member_change_request_submitted` | member user | `{ member_id, request_id, contact_id, scope, field_keys[], replaced_request_id\|null, coalesced: bool }` | yes (`timeline.audit.member_change_request_submitted`) | yes (`member_id`) |
-| `member_change_request_decided` | reviewer (staff) | `{ related_member_id, request_id, outcome, fields: [{key, outcome}], reason_length }` | yes | **no** (`related_member_id` — staff action) |
-| `member_change_request_withdrawn` | member user, or system on erasure | `{ member_id \| related_member_id, request_id, reason: member\|replaced\|erasure }` | yes for `member` (member activity); `replaced` and `erasure` use `related_member_id` | member: yes; others: no |
+| `member_change_request_decided` | reviewer (staff) | `{ related_member_id, request_id, contact_id, scope, outcome, fields: [{key, outcome}], reason_length, member_notified: bool, member_notification_skipped?: 'recipient_gone' }` | yes | **no** (`related_member_id` — staff action) |
+| `member_change_request_withdrawn` | member user, or system on erasure | `{ member_id \| related_member_id, request_id, contact_id, scope, withdrawn_reason: member\|replaced\|erasure, replaced_by_request_id? }` — `withdrawn_reason`, never `reason` (the bare key is on the F9 redaction deny-list) | yes for `member` (member activity); `replaced` and `erasure` use `related_member_id` | member: yes; others: no |
 | `member_change_request_rate_limited` | member user | `{ member_id, window_count, retry_after_seconds }` | no (filtered like other refusals) | no |
 | `member_change_approval_setting_changed` | staff | `{ previous: bool, next: bool }` (no `member_id`) | n/a | n/a |
 
@@ -60,8 +60,8 @@ Cross-tenant probes on any change-request route reuse the existing `member_cross
 event (FR-035); forged Group C keys reuse `member_self_update_forbidden`.
 
 The five places: `AUDIT_EVENT_TYPES` (domain, pinned 37 → 42), `auditEventTypeEnum` + migration
-0300, members `AuditPort` union, `audit.eventType.*` EN/TH/SV labels (Thai script asserted),
-`check:audit-events`.
+0301 (the enum-only file — 0300 carries the tables), members `AuditPort` union, `audit.eventType.*`
+EN/TH/SV labels (Thai script asserted), `check:audit-events`.
 
 ## 3. Timeline
 

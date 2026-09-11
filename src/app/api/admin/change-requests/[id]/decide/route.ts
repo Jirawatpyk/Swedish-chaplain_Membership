@@ -5,7 +5,9 @@
  *
  * Platform flag OFF → 404 before any session work. Gate:
  * `requireApiPermission('members.write')` (denial → 403 + `permission_denied`
- * audit, the gate's own contract). Read-only mode is the proxy's 503. Body:
+ * audit, the gate's own contract) → the in-route READ_ONLY_MODE 503 (T116 —
+ * the proxy short-circuits too; this guard is the one every mutating route
+ * carries). Body:
  * `{ decisions: [{ key, outcome }], reason?, note? }` (zod). Status mapping
  * from the use case: 200 (incl. `repeated: true` on an identical repeat);
  * 422 `decisions_incomplete` / `reason_required` / `reason_too_long` /
@@ -56,6 +58,8 @@ const bodySchema = z
           })
           .strict(),
       )
+      // a zero-field decision must never reach the use case (round 5, types F5)
+      .min(1)
       .max(20),
     reason: z.string().max(DECISION_REASON_MAX_LENGTH * 4).nullable().optional(),
     note: z.string().max(DECISION_NOTE_MAX_LENGTH * 4).nullable().optional(),
@@ -106,10 +110,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (result.ok) {
     const view = await staffView(deps, result.value.request, ctx.requestId);
     return NextResponse.json({
-      request: view,
+      request: view.request,
       applied: result.value.applied,
       rejected: result.value.rejected,
       repeated: result.value.repeated,
+      // the decision is committed; only the joined display names could not
+      // be re-read (round 5, silent-failure #8 — never a fabricated member)
+      ...(view.viewUnavailable ? { viewUnavailable: true } : {}),
     });
   }
 
@@ -135,6 +142,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       });
     case 'already_decided': {
       const recorded = await deps.changeRequestRepo.findListRowById(deps.tenant, changeRequestId);
+      if (!recorded.ok) {
+        logger.warn(
+          { errorId: `${ERROR_ID}.already_decided_read_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, changeRequestId, err: recorded.error.code },
+          'change-requests.decide: already_decided but the recorded decision could not be read',
+        );
+      }
       const row: ChangeRequestListRow | null = recorded.ok ? recorded.value : null;
       return problemResponse(409, 'already_decided', 'This request was already decided', undefined, {
         extras: {
@@ -163,18 +176,44 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   }
 }
 
-/** The joined row (display names) after the commit; falls back to the bare request on a read fault. */
-async function staffView(deps: ChangeRequestDeps, request: ChangeRequest, requestId: string): Promise<StaffChangeRequestView> {
+/**
+ * The joined row (display names) after the commit. On a read fault the
+ * response carries the BARE request (id / state / outcome / timestamps — what
+ * the client needs to toast and navigate) plus `viewUnavailable: true`; it
+ * used to fabricate a member (`companyName: ''`, `memberNumber: 0`,
+ * `archived: false`) and hand it back as fact (round 5, silent-failure #8).
+ */
+async function staffView(
+  deps: ChangeRequestDeps,
+  request: ChangeRequest,
+  requestId: string,
+): Promise<{ request: StaffChangeRequestView | BareDecidedRequest; viewUnavailable: boolean }> {
   const row = await deps.changeRequestRepo.findListRowById(deps.tenant, request.id);
-  if (row.ok) return serialiseChangeRequestForStaff(row.value);
+  if (row.ok) return { request: serialiseChangeRequestForStaff(row.value), viewUnavailable: false };
   logger.error(
     { errorId: `${ERROR_ID}.view_read_failed`, requestId, tenantId: deps.tenant.slug, changeRequestId: request.id, err: row.error.code },
     'change-requests.decide: decision committed but the view re-read failed',
   );
-  return serialiseChangeRequestForStaff({
-    request,
-    member: { companyName: '', memberNumber: 0, status: '', archived: false },
-    submitter: { displayName: '' },
-    decidedBy: request.decidedByUserId === null ? null : { displayName: '', deactivated: false },
-  });
+  return {
+    request: {
+      id: request.id,
+      memberId: request.memberId,
+      scope: request.scope,
+      state: request.state,
+      outcome: request.outcome,
+      submittedAt: request.submittedAt.toISOString(),
+      decidedAt: request.decidedAt?.toISOString() ?? null,
+    },
+    viewUnavailable: true,
+  };
 }
+
+type BareDecidedRequest = {
+  readonly id: string;
+  readonly memberId: string;
+  readonly scope: ChangeRequest['scope'];
+  readonly state: ChangeRequest['state'];
+  readonly outcome: ChangeRequest['outcome'];
+  readonly submittedAt: string;
+  readonly decidedAt: string | null;
+};

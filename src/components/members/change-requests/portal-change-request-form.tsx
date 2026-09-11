@@ -264,7 +264,14 @@ export function PortalChangeRequestForm({
           setStatus({ kind: 'already_pending' });
           return;
         }
-        setStatus({ kind: 'nothing_to_submit' });
+        if (data?.outcome === 'nothing_to_submit') {
+          setStatus({ kind: 'nothing_to_submit' });
+          return;
+        }
+        // a 2xx whose body is not one of the three outcomes (an interstitial,
+        // a truncated stream) must not be announced as "nothing to submit" —
+        // the request may well exist (round 5, silent-failure #4)
+        toast.error(tErrors('generic'));
         return;
       }
 

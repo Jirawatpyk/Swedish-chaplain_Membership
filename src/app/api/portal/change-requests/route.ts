@@ -5,14 +5,18 @@
  *
  * Order of checks is the contract: platform flag (404, dark ship — before any
  * session work) → member context (member role only; the proxy already applied
- * the CSRF Origin allow-list and read-only 503) → tenant gate (409
- * `approval_not_required` when `immediate` — a race guard, the form resolves
- * the gate first) → body JSON → optional `Idempotency-Key` (same key + same
- * body → the stored response; same key + different body → 422
- * `idempotency-key-reused`; reservation outage → 503) → use case.
+ * the CSRF Origin allow-list) → in-route READ_ONLY_MODE 503 (T116) → the
+ * interim rate-limit PEEK (429, review round 1 security I-1; consumed only on
+ * `submitted`) → tenant gate (409 `approval_not_required` when `immediate` — a
+ * race guard, the form resolves the gate first) → body JSON → optional
+ * `Idempotency-Key` (a PRESENT malformed key → 400; same key + same body → the
+ * stored response; same key + different body → 422 `idempotency-key-reused`;
+ * reservation outage → 503) → use case.
  *
  * Error envelope: `{ error: <code>, message?, issues?, fields?, retryAfterSeconds? }`.
- * Every failing arm names itself in the errorId taxonomy (`M114.portal.submit.<arm>`).
+ * The two arms that can only be a FAULT (a throwing gate resolver, a failed
+ * use case) name themselves in the errorId taxonomy (`M114.portal.submit.<arm>`);
+ * the deterministic 4xx refusals are logged by the use case (or not at all).
  * `GET` (own history, FR-029) lands in US4 (T073) in this same file.
  */
 import { NextResponse, type NextRequest } from 'next/server';
@@ -63,10 +67,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // requests (FR-008) — so the bucket is peeked here and consumed only on
   // `outcome === 'submitted'` (round 2, UX + security: a validation error,
   // `nothing_to_submit`, `already_pending` or an idempotent replay must not
-  // spend one of the member's ten). Peek-then-consume is safe for THIS
-  // gate: the resource it protects (staff fan-out) is bounded by the
-  // partial unique index (one pending request per submitter), not by the
-  // bucket — see `docs/ux-standards.md` and the change-password precedent.
+  // spend one of the member's ten). Peek-then-consume leaves the classic
+  // race open (N concurrent submits can all pass the peek), but every
+  // SEQUENTIAL replace still consumes one unit, so the fan-out this cap
+  // exists for stays bounded at ten per day per person; the precedent is
+  // change-password's peek-then-consume (`change-password.ts`, review B2).
   const rateLimitKey = `f114:submit:${ctx.tenant.slug}:${ctx.current.user.id}`;
   const rl = await rateLimiter.peek(rateLimitKey, SUBMISSIONS_PER_WINDOW_CAP, SUBMISSION_WINDOW_HOURS * 3600);
   if (!rl.success) {

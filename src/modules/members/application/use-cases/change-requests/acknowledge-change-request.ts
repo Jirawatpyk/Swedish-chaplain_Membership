@@ -12,6 +12,7 @@
  */
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -94,8 +95,9 @@ export async function acknowledgeChangeRequest(
       return err(e.error);
     }
     const code = e instanceof UseCaseAbort ? (e.error as RepoError).code : e instanceof Error ? e.name : String(e);
+    const cause = e instanceof UseCaseAbort ? errKind('cause' in e.error ? (e.error as { cause?: unknown }).cause : undefined) : undefined;
     logger.error(
-      { tenantId: deps.tenant.slug, changeRequestId: input.changeRequestId, requestId: input.requestId, err: code },
+      { tenantId: deps.tenant.slug, changeRequestId: input.changeRequestId, requestId: input.requestId, err: code, cause },
       'change-request.acknowledge.failed',
     );
     return err({ type: 'server_error', message: `acknowledge: ${code}` });

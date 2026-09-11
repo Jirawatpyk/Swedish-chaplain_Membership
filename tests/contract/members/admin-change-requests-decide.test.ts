@@ -231,6 +231,27 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 
+describe('POST /api/admin/change-requests/[id]/decide — round 5 (toolkit review)', () => {
+  it('an EMPTY decisions array is a 422 at the body schema (types F5: a zero-field decision must never reach the use case)', async () => {
+    const res = await call({ decisions: [], reason: null, note: null });
+    expect(res.status).toBe(422);
+    expect(fakes.repo.rows.get(REQ)?.state).toBe('pending');
+  });
+
+  it('a view re-read fault AFTER the commit answers 200 with the bare request and viewUnavailable: true — never a fabricated member', async () => {
+    fakes.repo.failNext('findListRowById');
+    const res = await call(APPROVE_ALL);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { request: { id: string; outcome: string | null; member?: unknown }; viewUnavailable?: boolean };
+    expect(body.viewUnavailable).toBe(true);
+    expect(body.request.id).toBe(REQ);
+    expect(body.request.outcome).toBe('approved');
+    expect(JSON.stringify(body)).not.toContain('"memberNumber":0');
+    expect(JSON.stringify(body)).not.toContain('"companyName":""');
+    expect(fakes.repo.rows.get(REQ)?.state).toBe('decided');
+  });
+});
+
 describe('POST /api/admin/change-requests/[id]/decide — gates', () => {
   it('404 while the platform flag is off — before the permission gate runs (FR-039)', async () => {
     flagOn = false;

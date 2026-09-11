@@ -3,7 +3,9 @@
  * requests-api.md § queue deep link). The staff email links here with
  * `?submitter=<userId>&state=pending`: exactly one pending request for that
  * person → redirect to its review page; none → "no pending request — decided
- * by X at T" (the coalescing case, FR-011). Without a submitter the page
+ * by X at T" (the request was decided or withdrawn before the reviewer opened
+ * the email — FR-011's link points at the PERSON, never a request id). Without a
+ * submitter the page
  * lists the pending requests oldest-first; the full queue with filters,
  * cursor paging and the overdue flag lands in US4 (T072 / T074).
  *

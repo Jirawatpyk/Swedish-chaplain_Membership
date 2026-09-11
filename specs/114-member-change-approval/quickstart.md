@@ -8,8 +8,11 @@ over. Implementation detail lives in `tasks.md`; shapes in `data-model.md` and `
 - `.env.local` → the **dev** Neon branch (`pnpm db:verify` green); prod is never touched by these steps.
 - `FEATURE_MEMBER_CHANGE_APPROVAL=true` in `.env.local` (default OFF — with it off every new route
   is 404 and the portal edit form behaves exactly as today).
-- The tenant switch ON for the dev tenant: `PATCH /api/admin/settings/member-changes
-  { "approvalEnabled": true }` as an admin, or the card at `/admin/settings/member-changes`.
+- The tenant switch ON for the dev tenant. Until US6 (PR-3) ships the admin card +
+  `PATCH /api/admin/settings/member-changes`, flip the column directly — the e2e seed does exactly
+  this (`tests/e2e/helpers/change-request-seed.ts` `ensureApprovalSetting`):
+  `INSERT INTO tenant_member_settings (tenant_id, member_change_approval_enabled) VALUES ('swecham', true)
+  ON CONFLICT (tenant_id) DO UPDATE SET member_change_approval_enabled = true`.
 - Personas: `e2e-member-empty` (a primary contact with a portal login — the `e2e-member` persona is
   LAPSED by the F8 fixture; see memory), an `admin`, a `manager`, and one secondary contact with a
   login (seed via "Invite colleague" from the primary; prod has none, so the seed is the only source).
@@ -17,9 +20,9 @@ over. Implementation detail lives in `tasks.md`; shapes in `data-model.md` and `
 
 ```bash
 pnpm db:migrate                                  # applies 0300 to the dev branch
-pnpm db:verify                                   # confirm the two tables + 7 enum values landed (a duplicate `when` makes migrate a silent no-op)
+pnpm db:verify                                   # canaries: the two tables' composite keys + the settings column (0300); the 7 enum values (0301) are asserted by scripts/lib/enum-migration-guard.ts at deploy (a duplicate `when` makes migrate a silent no-op)
 pnpm check:multi-tenant                          # both new tables registered in SCOPED_TABLES
-pnpm check:audit-events && pnpm check:i18n       # 5 events × 5 places; ~70 keys × 3 locales
+pnpm check:audit-events && pnpm check:i18n       # 5 events × 5 places; ~160 leaf keys × 3 locales
 ```
 
 ## 1. Story walkthroughs (each is the RED acceptance test's manual twin)
@@ -93,7 +96,7 @@ moment the flag is set:
 | **T087** — the durable 10 / 24 h cap + 1 h staff-email coalescing | PR-1 carries an interim Upstash cap (10 / 24 h per tenant + user) on `POST /api/portal/change-requests`, but no coalescing: every submit still fans one email out per reviewer. | PR-2 (US5) |
 | **T102** — the pending-count / oldest-age gauges | FR-037's > 7 d warning / > 14 d page alerts cannot fire until the gauges have a caller. | PR-3 (US6) |
 | **T072 / T074** — the real queue (filters, cursor paging, overdue flag) | The PR-1 `/admin/change-requests` page lists 50 pending rows with no paging; row 51 is invisible. | PR-2 (US4) |
-| e2e `tests/e2e/change-requests.spec.ts` green on every Playwright project with the flag ON | **Run 2026-09-11 on chromium + mobile-safari: 8 passed, 1 skipped** (the secondary-contact case waits for an `E2E_MEMBER_SECONDARY_*` persona — research § V4). Four fixture defects fixed on the way (staff sessions probing the member gate, the `page.request` POST without an Origin, the required-mark label, a pre-hydration click) and ONE product defect: Base UI's Checkbox renders `disabled` as `data-disabled` only, so a manager's read-only row carried no `aria-disabled` (fixed). Note for anyone re-running locally: the dev roster must be sane — the shared `dev` branch had 3,774 leaked `createActiveTestUser` admins and every submit fanned one outbox row out to each (a 3-minute transaction); they are now `disabled`. | before flip (re-run on the release branch) |
+| e2e `tests/e2e/change-requests.spec.ts` green on every Playwright project with the flag ON | **Run 2026-09-11 on chromium + mobile-safari: 8 passed, 1 skipped** (the secondary-contact case waits for an `E2E_MEMBER_SECONDARY_*` persona — research § V4). Five fixture defects fixed on the way (staff sessions probing the member gate, the `page.request` POST without an Origin, the required-mark label, a pre-hydration click) and ONE product defect: Base UI's Checkbox renders `disabled` as `data-disabled` only, so a manager's read-only row carried no `aria-disabled` (fixed). Note for anyone re-running locally: the dev roster must be sane — the shared `dev` branch had 3,774 leaked `createActiveTestUser` admins and every submit fanned one outbox row out to each (a 3-minute transaction); they are now `disabled`. | before flip (re-run on the release branch) |
 | `TENANT_PRIVACY_POLICY_URL` set in Vercel | The FR-010 privacy link on the portal form hides when the variable is unset (review round 1, UX Critical: a dead `/privacy` link); with it unset the member is asked to propose PII changes with no link to the policy — PDPA §23 notice. | before flip (operator) |
 | Command-palette entry for `/admin/change-requests` (the navigate registry in `src/modules/plans/application/search-plans.ts`) | The queue is reachable from the Membership nav (round 1, UX I7) but not from the palette; staff who live in it will not find the queue. | PR-2 UX pass |
 
@@ -131,11 +134,13 @@ final tree after review rounds 1–3; the review rounds themselves added the las
   export gains the rows keyed that way, including pre-existing `auto_email_skipped_no_recipient`
   and marketing opt-out rows. A correct fix (review privacy I-3); tell the DPO;
 - **`ConfirmationDialog`** wraps every non-empty body in a bounded, scrollable `space-y-4` container
-  (review UX I2) — 9 existing dialogs gain vertical spacing + nested scroll on short viewports;
+  (review UX I2) — the 3 existing dialogs that pass children gain vertical spacing + nested scroll
+  on short viewports (the 9 self-closing call sites are untouched);
 - **`member_self_update_forbidden`** (the forged-edit audit on `PATCH /api/portal/profile`, both
   gates) carries `refusal: 'gate_narrowed' | 'forged'` and a BOUNDED `attempted_fields` (20 keys ×
-  64 chars, `attempted_fields_truncated`); its `summary` prefix changed — a dashboard keyed on the
-  old text drifts (review privacy I-5 / M-7);
+  64 chars, `attempted_fields_truncated`) — on the flag-OFF path the `summary` prefix is unchanged
+  (`forged fields: …`), so a dashboard keyed on it does not drift; what changed is the payload
+  shape and the bound (review privacy I-5 / M-7);
 - the portal timeline route / page / recent-activity resolve the viewer's own contact (one extra
   `contactRepo.listByMember` per render — perf only); `MembersDeps` gains three members; the
   `verify-schema` + `check-multi-tenant-ready` canaries; the test-tenant helper deletes the new

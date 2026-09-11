@@ -173,6 +173,48 @@ skipped** (the secondary-contact case has no persona yet — research § V4). Wh
 The fan-out itself is O(reviewers) inside ONE transaction; fine for SweCham's staff count, and
 US5's coalescing (T087, PR-2) is the owner of any bound.
 
+## Round 5 — `/pr-review-toolkit:review-pr` on PR #360 (five read-only reviewers, Opus), 2026-09-11
+
+code-reviewer · pr-test-analyzer · silent-failure-hunter · comment-analyzer · type-design-analyzer,
+each briefed with rounds 1–4 so nothing already closed was re-raised. No Critical logic defect;
+the blockers were silent failures and comment rot. Every claim below was verified against the
+code before it was fixed (108 rule 2).
+
+### Fixed in this round
+
+| # | Lens | Finding | Fix |
+|---|---|---|---|
+| 1 | silent-failure #1 | `/portal/edit` read a pending-request FAULT as "no pending request", prefilled from the live record, and the member's next submit REPLACED their proposal (staff row closed as `request_superseded`, silently) | `readOwnPendingRequest` (`src/lib/portal-own-pending.ts`, unit-tested): a fault → the page's load error, never null |
+| 2 | silent-failure #3 | a decision whose member email was skipped (contact gone / unlinked) left only an `info` line | the decided audit event carries `member_notified` + `member_notification_skipped: 'recipient_gone'` (DSAR-visible); `members_change_request_decision_email_skipped_total{tenant,reason}` |
+| 3 | silent-failure #4 | a 2xx whose body is not one of the three outcomes was announced as "nothing to submit" | only `outcome === 'nothing_to_submit'` says so; anything else on a 2xx is the generic error (unit case, real fetch stub) |
+| 4 | silent-failure #2 | the dispatcher's two new `catch {}` blocks discarded the error; every fault reached the operator as `no_template_handler` | both log `err: errKind(e)` under `cron.outbox_dispatch.change_request.{roster,prefix}_read_failed` (the file's own R-3 rule) |
+| 5 | silent-failure #5 | zero reviewers → 201, no email, no signal (the T102 gauges have no caller) | `members_change_request_no_reviewers_total{tenant}` (alert: any non-zero rate); unit-pinned |
+| 6 | silent-failure #6 · tests I-3 | three hand-copied viewer-contact resolvers, all fail-closed to null with no log (the viewer lost their OWN rows too); one had no try/catch | ONE `resolveOwnContactId` (`src/lib/portal-own-contact.ts`) used by the route, the page and the dashboard section; logs on both fault arms; 4 unit cases |
+| 7 | silent-failure #8 | the decide route answered a committed decision with a FABRICATED member (`companyName: ''`, `memberNumber: 0`, `archived: false`) when the view re-read failed; the 409 arm dropped its repo error | 200 with the bare request + `viewUnavailable: true` (contract case); the 409 arm logs `already_decided_read_failed` |
+| 8 | silent-failure #9 / #10 / #11 | `tx_aborted` logs carried only `re.code` (= `repo.unexpected`); the gate route built a `cause` and logged the wrapper; the conflict re-read's Result-err arm was unlogged (round 2 said it was) | `cause: errKind(…)` on all four; the Result arm logs `conflict_reread_failed` (unit case) |
+| 9 | code #1 | the portal diff table labelled `seen` (the value AT SUBMISSION) "Current" in three locales — staff who edit the record after the submit make the member's "current" a lie | `portal.changeRequests.diff.seen` ("Value when you submitted" / "ค่าตอนที่คุณส่ง" / "Värde när du skickade in"); `current` stays the staff table's live value |
+| 10 | types F1 | `FIELD_ORDER` hand-copied as `string[]` (a tenth key sorts to −1) | `= PROPOSABLE_FIELD_KEYS` |
+| 11 | types F5 | `{ decisions: [] }` reached the use case (stopped only by coverage) | `.min(1)` on the body schema (contract case) |
+| 12 | tests I-1 / I-2 / I-4 / I-5 / I-6 | round-2/3 fixes that survived a revert: `boundForbiddenKeys` (0 tests), `refusal: 'forged'` unasserted, "sent to the CURRENT address" (both arms), the member-arm kill-switch, the nav dark-ship entry | pinned: 25-key forged body → 20 keys / 64 chars / truncated; forged-under-approval; reviewer + contact address change between enqueue and send (live Neon); flag-OFF on `member_change_request_decided_member`; `/admin/change-requests` hidden while the flag is absent |
+| 13 | comments C1–C3, I1–I15, S1–S10 | prose written before rounds 1–3 and never re-derived: the flag-reader inventory ("one place" → twelve), the decide docblock's "proxy 503", the matrix's dialog count (3, not 9) and summary-prefix claim, "Order of checks" missing two arms, `viewerContactId` "omit", the tax context "at submission", the Drizzle docblock, coalescing in the present tense ×3, the missing `/admin/settings/member-changes` surface, `db:verify` "7 enum values", `contracts/notifications-and-audit.md` (`reason` → `withdrawn_reason`, `contact_id`/`scope`, users locale, 0300 → 0301), `replaced_by_request_id` missing from two payload contracts, the peek-then-consume rationale, the superseded semantics, line/count rot | all rewritten to what the code does |
+
+### Deferred with a written owner (the Suggestions — deferred on the maintainer's call)
+
+| Finding | Owner |
+|---|---|
+| code #3 — the remembered `Idempotency-Key` response carries proposed values for 24 h in Redis, outside the FR-030 scrub | T078 (PR-2) with the DPO — quickstart § 3 already carries the note |
+| code #2 — `get-change-request-review` compares the RAW live value with the normalised `seen` (a `'CEO '` record reads "changed since submitted") | PR-2 — route `groupBRecordOf` / `liveValueOf` through `normaliseText` |
+| code #5 — `nothing_to_submit` answers before the pending row is read (a member cannot "withdraw by reverting") | US5 T089 (withdraw) |
+| code #4 · types F11 · tests I-7 · comments S10 — `rate_limited` has no audit / metric emitter; the 429 is unobservable | T087 (PR-2) durable cap |
+| types F2 / F6 / F3 / F8 — `overlayFields` exhaustiveness, a `state`-discriminated `ChangeRequest`, `key`↔`target` tie, `jsonb` parse on read | PR-2 before US4 adds consumers (F6 is the one worth scheduling) |
+| types F4 — typed per-event audit payloads for the five F114 events | PR-2 (overload on `recordInTx`) |
+| types F7 — `decideInTx` does not assert the affected row count | PR-2 |
+| types F9 / F10 — `UseCaseAbort` tag; `member.status: string` widening | PR-2 |
+| silent-failure #7 (account page contact-language Result-err unlogged), #12–#22 (bare client catches, one toast for four statuses, `outcome ?? 'approved'` vs `?? 'rejected'`, `mapError` collapsing three reads to 404, `taxHintFor` default, timeline `scope` fail-open, `request_gone` for a missing member/contact, `as unknown as Contact` stand-ins, empty `issues` on the re-validation 422) | PR-2 UX / reliability pass — each one line, none reachable with the flag off |
+| tests Q-1..Q-5 (test-name overclaim, dead-branch contract case, `staffView` degrade, route-level loser arm, keyset tiebreak) | PR-2 test follow-up (Q-5 with T072/T074) |
+| tests I-8 / I-9 (erasure-read order pin, `contacts: []` in decide) | PR-2 test follow-up |
+| comments I6 / I11 — the six `membersMetrics` rows + FR-037 alert rules in `observability.md`; an enum canary in `verify-schema` | T102 (PR-3) · PR-2 |
+
 Checklist checkboxes in `checklists/{security,privacy,tax}.md` remain reviewer-owned and are
 ticked only at `/speckit.review` (T112); each reviewer's per-CHK evidence is in its round-1
 report (see the co-sign footer template in `README.md`).

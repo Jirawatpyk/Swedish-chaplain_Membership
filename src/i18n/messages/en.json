@@ -6134,6 +6134,7 @@
       },
       "diff": {
         "field": "Field",
+        "seen": "Value when you submitted",
         "current": "Current",
         "proposed": "Proposed",
         "empty": "(empty)",

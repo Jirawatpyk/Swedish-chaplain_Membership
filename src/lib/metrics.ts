@@ -546,10 +546,12 @@ export const outboxMetrics = {
   },
 
   /**
-   * F114 — a change-request staff row closed because the member REPLACED
-   * the request before it was sent (whole-branch review F-4). A normal
-   * flow, not a failure: its own counter so the `outbox_permanent_failures_total`
-   * alarm stays clean, and a rate here that tracks resubmits is expected.
+   * F114 — a change-request staff row closed because its request was no
+   * longer PENDING at send time: the member replaced it, or a reviewer who
+   * reached the queue from the nav decided it before the next cron tick
+   * (whole-branch review F-4). A normal flow, not a failure: its own counter
+   * so the `outbox_permanent_failures_total` alarm stays clean; a rate here
+   * tracks resubmits + decide-before-dispatch.
    * Alert: none (watch only). `docs/observability.md § 14.1`.
    */
   superseded(notificationType: string): void {
@@ -6091,8 +6093,10 @@ export const membersMetrics = {
     },
     /**
      * `members.change_request_oldest_age_seconds{tenant}` — age of the oldest
-     * pending request. Alert: > 7 d warning, > 14 d page (FR-037 — both
-     * inside the 30-day data-subject-request clock).
+     * pending request. NO caller yet (Phase 8, T102 — with `pendingCount`);
+     * the FR-037 alerts (> 7 d warning, > 14 d page, both inside the 30-day
+     * data-subject-request clock) are written into `docs/observability.md`
+     * by T102 together with the gauges' catalogue rows.
      */
     oldestAgeSeconds(tenantId: string, seconds: number): void {
       safeMetric(() => {
@@ -6129,7 +6133,7 @@ export const membersMetrics = {
         ).add(1, { tenant: tenantId, outcome });
       });
     },
-    /** `members.change_request_refused.total{tenant,reason}` — a submit or decide refused before any write. */
+    /** `members.change_request_refused.total{tenant,reason}` — a submit or decide refused with nothing persisted (a decide's `already_decided` can fire after a rolled-back write). */
     refused(tenantId: string, reason: ChangeRequestRefusedReason): void {
       safeMetric(() => {
         counter(
@@ -6146,6 +6150,35 @@ export const membersMetrics = {
           'decideChangeRequest transaction wall time',
           'ms',
         ).record(ms, { tenant: tenantId });
+      });
+    },
+    /**
+     * `members.change_request_no_reviewers_total{tenant}` — a submit found
+     * NO active reviewer (round 5, silent-failure #5): the request is
+     * created, nobody is emailed, and until the T102 gauges land this counter
+     * is the only signal. Alert: any non-zero rate (a roster misconfiguration
+     * blackholes every request of the tenant).
+     */
+    noReviewers(tenantId: string): void {
+      safeMetric(() => {
+        counter('members_change_request_no_reviewers_total', 'Change-request submits that found no active reviewer').add(1, {
+          tenant: tenantId,
+        });
+      });
+    },
+    /**
+     * `members.change_request_decision_email_skipped_total{tenant, reason}` —
+     * a decision committed but the member could not be told (round 5,
+     * silent-failure #3): the submitting contact is gone or unlinked. The
+     * decided audit event carries the same fact (`member_notified: false`).
+     * Alert: watch only; a rate that tracks contact removals is expected.
+     */
+    decisionEmailSkipped(tenantId: string, reason: 'recipient_gone'): void {
+      safeMetric(() => {
+        counter('members_change_request_decision_email_skipped_total', 'Change-request decisions whose member email was skipped').add(1, {
+          tenant: tenantId,
+          reason,
+        });
       });
     },
   },

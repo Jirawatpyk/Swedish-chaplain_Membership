@@ -4,12 +4,12 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
-import { runInTenant } from '@/lib/db';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asMembersUserId } from '@/lib/members-change-request-deps';
+import { readOwnPendingRequest } from '@/lib/portal-own-pending';
 import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
 import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
@@ -135,29 +135,24 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   }
 
   // approval — the caller's own pending request (never another contact's)
-  let pending: ChangeRequestView | null = null;
-  try {
-    const pendingResult = await runInTenant(tenant, (tx) =>
-      deps.changeRequestRepo.findPendingBySubmitterInTx(tx, asMembersUserId(user.id)),
+  // A read FAULT is a load error, never "no pending request": prefilling from
+  // the live record would make the next submit REPLACE the pending proposal
+  // (round 5, silent-failure #1 — the same rule the gate resolver follows).
+  const pendingRead = await readOwnPendingRequest(deps.changeRequestRepo, tenant, asMembersUserId(user.id));
+  if (!pendingRead.ok) {
+    logger.error(
+      { errorId: 'M114.portal.edit.pending_read_failed', err: pendingRead.error.code, tenantId: tenant.slug, userId: user.id },
+      'portal.edit.pending_read_failed',
     );
-    if (pendingResult.ok && pendingResult.value) {
-      pending = serialiseChangeRequestForPortal(pendingResult.value, {
+    return loadFailed(t('pageTitle'), t('loadError'));
+  }
+  const pending: ChangeRequestView | null = pendingRead.value
+    ? serialiseChangeRequestForPortal(pendingRead.value, {
         contactId: ownContact.contactId,
         displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
         isMe: true,
-      });
-    } else if (!pendingResult.ok) {
-      logger.error(
-        { errorId: 'M114.portal.edit.pending_read_failed', err: pendingResult.error.code, tenantId: tenant.slug, userId: user.id },
-        'portal.edit.pending_read_failed',
-      );
-    }
-  } catch (e) {
-    logger.error(
-      { errorId: 'M114.portal.edit.pending_read_failed', err: errKind(e), tenantId: tenant.slug, userId: user.id },
-      'portal.edit.pending_read_failed',
-    );
-  }
+      })
+    : null;
 
   // US3 (FR-023) — `?resubmit=<id>`: the caller's OWN decided request, else
   // ignored (an unknown id, another person's request or a pending one is

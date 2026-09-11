@@ -41,6 +41,7 @@ vi.mock('@/lib/logger', () => ({
 const metricDecided = vi.fn();
 const metricRefused = vi.fn();
 const metricDuration = vi.fn();
+const metricEmailSkipped = vi.fn();
 vi.mock('@/lib/metrics', () => ({
   membersMetrics: {
     changeRequests: {
@@ -48,6 +49,7 @@ vi.mock('@/lib/metrics', () => ({
       refused: (...a: unknown[]) => metricRefused(...a),
       decided: (...a: unknown[]) => metricDecided(...a),
       decideDurationMs: (...a: unknown[]) => metricDuration(...a),
+      decisionEmailSkipped: (...a: unknown[]) => metricEmailSkipped(...a),
       pendingCount: vi.fn(),
       oldestAgeSeconds: vi.fn(),
     },
@@ -302,7 +304,7 @@ describe('decideChangeRequest — refusals before any write (FR-017 / FR-020)', 
   });
 
   it('an UNLINKED contact counts as removed for its rows; rejecting them is allowed and the email is skipped', async () => {
-    const { deps, emails, repo } = makeDeps({ contacts: [contact({ linkedUserId: null })] });
+    const { deps, emails, repo, audit } = makeDeps({ contacts: [contact({ linkedUserId: null })] });
     const r = await decideChangeRequest(
       deps,
       input([{ key: 'phone', outcome: 'rejected' }, { key: 'description', outcome: 'approved' }, { key: 'billing_address', outcome: 'approved' }], 'contact left'),
@@ -311,6 +313,21 @@ describe('decideChangeRequest — refusals before any write (FR-017 / FR-020)', 
     expect(repo.rows.get(REQ)?.outcome).toBe('partially_approved');
     expect(emails.enqueued).toHaveLength(0);
     expect(loggerInfo).toHaveBeenCalledWith(expect.objectContaining({ reason: 'recipient_gone' }), expect.any(String));
+    // round 5 (silent-failure #3): a decision nobody was told about is a FACT
+    // on the audit trail (the decided event carries it — DSAR-visible via
+    // related_member_id) and a counter, not an info line
+    const decided = audit.events.find((e) => e.type === 'member_change_request_decided');
+    expect(decided?.payload).toMatchObject({ member_notified: false, member_notification_skipped: 'recipient_gone' });
+    expect(metricEmailSkipped).toHaveBeenCalledWith('test-tenant', 'recipient_gone');
+  });
+
+  it('when the member IS emailed the decided event says so (member_notified: true, no skip key)', async () => {
+    const { deps, audit } = makeDeps();
+    await decideChangeRequest(deps, input([{ key: 'phone', outcome: 'approved' }, { key: 'description', outcome: 'approved' }, { key: 'billing_address', outcome: 'approved' }]));
+    const decided = audit.events.find((e) => e.type === 'member_change_request_decided');
+    expect(decided?.payload).toMatchObject({ member_notified: true });
+    expect(decided?.payload).not.toHaveProperty('member_notification_skipped');
+    expect(metricEmailSkipped).not.toHaveBeenCalled();
   });
 
   it('approval-time re-validation with the staff rules refuses an approved field that no longer passes (validation_error names the key)', async () => {

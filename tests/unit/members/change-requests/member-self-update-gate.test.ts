@@ -118,5 +118,15 @@ describe('memberSelfUpdate gate = immediate (byte-identical F3 path, SC-011)', (
     const r = await call(deps, { plan_id: 'x' }, 'immediate');
     expect(r).toEqual({ ok: false, error: { type: 'forbidden', reason: 'forbidden fields: plan_id' } });
     expect(audit.record).toHaveBeenCalledTimes(1);
+    expect(audit.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ payload: expect.objectContaining({ refusal: 'forged' }) }));
+  });
+
+  // round 5 (tests I-2): the discriminator's SECOND condition — a Group C key
+  // under the approval gate is a forgery, not a stale tab
+  it('a Group C key under the APPROVAL gate is audited as forged (never gate_narrowed)', async () => {
+    const { deps, audit } = makeDeps();
+    const r = await call(deps, { plan_id: 'x', primary_contact: { phone: '+66812345678' } }, 'approval');
+    expect(r.ok).toBe(false);
+    expect(audit.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ payload: expect.objectContaining({ refusal: 'forged' }) }));
   });
 });

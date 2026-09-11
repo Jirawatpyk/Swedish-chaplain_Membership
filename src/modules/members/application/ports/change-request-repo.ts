@@ -41,7 +41,7 @@ export type ChangeRequestDraft = {
   readonly submitterRoleAtSubmission: SubmitterRole;
   readonly scope: ChangeRequestScope;
   readonly submittedAt: Date;
-  /** Inherited from a replaced request when the staff email is coalesced (R8), else `now` or null. */
+  /** `now` when at least one staff row was queued, null when the roster was empty; T087 (PR-2) will inherit it from a replaced request when the staff email is coalesced (R8). */
   readonly staffNotifiedAt: Date | null;
   readonly fields: readonly Omit<ProposedField, 'outcome' | 'appliedAt'>[];
 };

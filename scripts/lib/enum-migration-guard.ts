@@ -136,10 +136,10 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // ADD VALUE would 500 both surfaces in prod.
     'contact_marketing_opted_out',
     'contact_marketing_opted_in',
-    // F114 (0301) — `submitChangeRequest` / `decideChangeRequest` /
-    // `withdrawChangeRequest` / `setMemberChangeApprovalEnabled` INSERT these
-    // in the same tx as the state change; a non-persisting ADD VALUE would
-    // 500 every submit and decide in prod instead of failing the deploy here.
+    // F114 (0301) — `submitChangeRequest` / `decideChangeRequest` (PR-1) and
+    // the US5 withdraw + US6 setting use cases (PR-2 / PR-3) INSERT these in
+    // the same tx as the state change; a non-persisting ADD VALUE would 500
+    // every submit and decide in prod instead of failing the deploy here.
     'member_change_request_submitted',
     'member_change_request_decided',
     'member_change_request_withdrawn',

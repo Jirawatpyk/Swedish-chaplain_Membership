@@ -157,11 +157,14 @@ export type F3AuditEventType =
   | 'member_change_request_submitted'
   //   member_change_request_decided:
   //     { related_member_id, request_id, contact_id, scope, outcome,
-  //       fields: [{key, outcome}], reason_length, actor_role }
+  //       fields: [{key, outcome}], reason_length, actor_role,
+  //       member_notified: boolean,
+  //       member_notification_skipped?: 'recipient_gone' }   (only when false)
   | 'member_change_request_decided'
   //   member_change_request_withdrawn:
   //     { member_id | related_member_id, request_id, contact_id, scope,
-  //       withdrawn_reason: 'member' | 'replaced' | 'erasure', actor_role }
+  //       withdrawn_reason: 'member' | 'replaced' | 'erasure', actor_role,
+  //       replaced_by_request_id? }   (only on 'replaced')
   //     (`withdrawn_reason`, never `reason` — the bare key is on the F9
   //     redaction deny-list and this closed enum must survive projection)
   | 'member_change_request_withdrawn'

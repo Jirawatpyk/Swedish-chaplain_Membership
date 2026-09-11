@@ -46,6 +46,7 @@ import {
  
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
  
@@ -418,7 +419,7 @@ async function buildPayload(
       // admin disabled between enqueue and dispatch gets no member PII
       // (review: security I-4). The roster read throws (no Result): a
       // transient fault stays on the retry ladder (round 2, reliability
-      // R-1 — the same class I-3 closed nine lines below). The reviewer is
+      // R-1 — the same class I-3 closed at the prefix read below). The reviewer is
       // matched by USER ID when the row carries it, so an admin who changed
       // their address between enqueue and send is still reached — at the
       // CURRENT address (round 2, reliability N-3); rows without an id
@@ -426,7 +427,11 @@ async function buildPayload(
       let reviewers: Awaited<ReturnType<typeof listActiveUsersByRole>>;
       try {
         reviewers = await listActiveUsersByRole(reviewerRoles());
-      } catch {
+      } catch (e) {
+        // R-3 rule (this file, the blob prefetch): log before returning null
+        // so ops can tell a roster read failure from every other transient
+        // null the ladder labels `no_template_handler` (round 5, silent-failure #2)
+        logger.warn({ outboxRowId: row.id, tenantId: row.tenantId, err: errKind(e) }, 'cron.outbox_dispatch.change_request.roster_read_failed');
         return null;
       }
       const reviewerUserId = typeof ctx.reviewerUserId === 'string' ? ctx.reviewerUserId : null;
@@ -445,7 +450,8 @@ async function buildPayload(
       let prefix: Awaited<ReturnType<typeof resolveMemberNumberPrefix>>;
       try {
         prefix = await resolveMemberNumberPrefix(tenantCtx, drizzleMemberSettingsRepo);
-      } catch {
+      } catch (e) {
+        logger.warn({ outboxRowId: row.id, tenantId: row.tenantId, err: errKind(e) }, 'cron.outbox_dispatch.change_request.prefix_read_failed');
         return null;
       }
       const staffEmail = buildChangeRequestSubmittedStaffEmail({

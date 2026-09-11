@@ -54,7 +54,13 @@ export type GroupBProposal = {
 
 /** Inputs to the FR-019 tax-affecting rule. */
 export type TaxAffectingContext = {
-  /** `true` when the member has a billing address on record at submission. */
+  /**
+   * `true` when the member would have a billing address AFTER the approval
+   * — the state the decision could LEAVE, not the state at submission
+   * (round 1 tax I-1 / round 2 tax R1: `resultingHasBillingAddress` — only a
+   * CLEAR of the group changes the answer; an added group is not on record
+   * until approved).
+   */
   readonly memberHasBillingAddress: boolean;
   /** `true` when the submitting contact is the member's primary contact. */
   readonly submitterIsPrimary: boolean;

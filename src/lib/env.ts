@@ -670,8 +670,14 @@ const schema = z.object({
   // TENANT by `tenant_member_settings.member_change_approval_enabled`
   // (FR-031 — flag first, then setting; a tenant with the setting off keeps
   // the immediate path). Stored requests survive a flag-off untouched and
-  // are decidable again when it returns. Read in exactly one place (the
-  // members composition roots), never in Domain or Application.
+  // are decidable again when it returns. Never read in Domain or
+  // Application; the readers are the two composition roots
+  // (`members-deps.ts`, `members-change-request-deps.ts`), every
+  // `/api/{portal,admin}/change-requests/**` route + the two admin pages
+  // (404 / notFound before session work), the portal profile page, the
+  // admin layout (nav) and the outbox dispatcher (query-time containment of
+  // the two arms) — `grep -rn features.memberChangeApproval src/` is the
+  // inventory to re-check before a revert.
   // Setting this variable IS the flip on this repo (no `ignoreCommand`) —
   // add it only when ready to redeploy immediately (quickstart § 3).
   FEATURE_MEMBER_CHANGE_APPROVAL: booleanFromString.default(false),

@@ -13,6 +13,7 @@ import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { resolveOwnContactId } from '@/lib/portal-own-contact';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
@@ -98,12 +99,8 @@ export default async function PortalTimelinePage({
     {
       memberRepo: deps.memberRepo,
       timeline: deps.timeline,
-      // F114 (privacy I-1) — see /api/portal/timeline
-      viewerContactId: await (async () => {
-        const contacts = await deps.contactRepo.listByMember(tenant, member.memberId);
-        if (!contacts.ok) return null;
-        return contacts.value.find((c) => String(c.linkedUserId) === user.id && !c.removedAt)?.contactId ?? null;
-      })(),
+      // F114 (privacy I-1) — the shared, logging resolver (round 5)
+      viewerContactId: await resolveOwnContactId(deps.contactRepo, tenant, member.memberId, user.id, requestId),
       // 016 final review B2 — the member OWNS this billing history. The gate
       // exists to stop STAFF without `invoicing.read` reading someone else's;
       // omitting it here hid the member's own invoices from page 1 while the

@@ -9,7 +9,8 @@
  * + note fields as its body: title / description / confirm label are derived
  * from the selection (ICU plurals — "Approve all N", "Approve A, reject R",
  * "Reject all N"), `destructive` and `reasonRequired` iff any field is
- * rejected, initial focus on Cancel, the confirm button disabled while the
+ * rejected, initial focus on the REQUIRED reason when a field is rejected
+ * (review round 1 UX I3) and on Cancel otherwise, the confirm button disabled while the
  * reason is missing / over the cap, both buttons disabled while in flight
  * (the dialog stays open until the response), `finalFocus` back to the
  * confirm trigger. Concurrency answers (`already_decided`, `not_pending`,

@@ -247,6 +247,24 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     expect(drained?.status).toBe('sent');
   });
 
+  it('a reviewer who CHANGED their address between enqueue and send is reached at the NEW address (round 2 N-3; round 5 tests I-4)', async () => {
+    const r = await submit({ contact: { phone: '+66822222222' } });
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const requestId = r.ok && r.value.outcome === 'submitted' ? r.value.request.id : '';
+    const oldEmail = reviewer.email;
+    const newEmail = `moved-${randomUUID().slice(0, 8)}@swecham.test`;
+    await db.update(users).set({ email: newEmail }).where(eq(users.id, reviewer.userId));
+    try {
+      const row = await tickUntilSettled(requestId);
+      expect(row?.status).toBe('sent');
+      const msg = sent.find((m) => m.text.includes('+66822222222'));
+      expect(msg?.to).toBe(newEmail); // matched by reviewerUserId, sent to the roster's CURRENT address
+      expect(msg?.to).not.toBe(oldEmail);
+    } finally {
+      await db.update(users).set({ email: oldEmail }).where(eq(users.id, reviewer.userId));
+    }
+  });
+
   it('a reviewer DISABLED between enqueue and send gets nothing: the row permanently fails as recipient_gone (review security I-4 / round 2 R-1)', async () => {
     const r = await submit({ contact: { phone: '+66888888888' } });
     expect(r.ok && r.value.outcome).toBe('submitted');

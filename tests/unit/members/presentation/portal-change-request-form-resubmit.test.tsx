@@ -19,6 +19,8 @@ import { overlayResubmit, type ChangeRequestFormValues } from '@/lib/change-requ
 import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+const toastError = vi.fn();
+vi.mock('sonner', () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: vi.fn(), info: vi.fn() } }));
 
 const LIVE: ChangeRequestFormValues = {
   firstName: 'Anna',
@@ -118,5 +120,27 @@ describe('PortalChangeRequestForm in resubmit mode', () => {
       expect(screen.getByLabelText(label, { exact: false })).toBeEnabled();
     }
     expect(screen.getAllByLabelText(labels.line1).every((el) => !(el as HTMLInputElement).disabled)).toBe(true);
+  });
+});
+
+describe('PortalChangeRequestForm — a 2xx whose body cannot be parsed (round 5, silent-failure #4)', () => {
+  it('is reported as an error, never announced as "nothing to submit" (the request may well exist)', async () => {
+    const { fireEvent, waitFor } = await import('@testing-library/react');
+    // the shared setup installs fake timers; `waitFor` needs real ones here
+    // (the bulk-action-bar-enrol-toast precedent)
+    vi.useRealTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>edge interstitial</html>', { status: 201, headers: { 'content-type': 'text/html' } })));
+    try {
+      render(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <PortalChangeRequestForm initialValues={LIVE} canProposeCompanyFields pending={null} privacyNoticeHref="/privacy" resubmitOf={null} />
+        </NextIntlClientProvider>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: enMessages.portal.changeRequests.form.submit }));
+      await waitFor(() => expect(toastError).toHaveBeenCalledWith(enMessages.portal.changeRequests.errors.generic));
+      expect(screen.queryByText(enMessages.portal.changeRequests.status.nothingToSubmit)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

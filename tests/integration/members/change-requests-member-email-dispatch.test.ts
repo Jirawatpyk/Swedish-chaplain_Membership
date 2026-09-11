@@ -23,7 +23,7 @@ const sent: Array<{ to: string; subject: string; html: string; text: string }> =
 // flag is OFF (whole-branch review F-1: kill-switch containment, the F4 R7-B4
 // precedent). `.env.local` does not carry the flag, so the suite pins it ON
 // and flips it OFF for the containment case.
-const changeApprovalFlag = true; // the containment case lives in the staff-dispatch suite
+let changeApprovalFlag = true;
 vi.mock('@/lib/env', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/env')>();
   return {
@@ -220,6 +220,46 @@ describe('outbox dispatcher — member_change_request_decided_member arm (T053)'
     // ids-only outbox row: no value / reason ever sat in context_data
     expect(JSON.stringify(row?.contextData)).not.toContain('registered');
     expect(row?.contextData).toEqual({ tenantId: tenant.ctx.slug, requestId, memberId, submitterUserId: memberUser.userId });
+  }, 120_000);
+
+  it('platform flag OFF: the decision row is NOT picked up — pending, attempts 0, nothing sent; it drains when the flag returns (round 3 F-1, the second arm; round 5 tests I-5)', async () => {
+    const requestId = await submitAndDecide({ contact: { phone: '+66833333333' } }, [{ key: 'phone', outcome: 'approved' }], null);
+    changeApprovalFlag = false;
+    try {
+      await tick();
+      await tick();
+      const rows = await db
+        .select()
+        .from(notificationsOutbox)
+        .where(and(eq(notificationsOutbox.tenantId, tenant.ctx.slug), eq(notificationsOutbox.notificationType, 'member_change_request_decided_member')));
+      const mine = rows.find((x) => (x.contextData as { requestId?: string }).requestId === requestId);
+      expect(mine?.status).toBe('pending');
+      expect(mine?.attempts).toBe(0);
+      expect(sent.some((m) => m.text.includes('+66833333333'))).toBe(false);
+    } finally {
+      changeApprovalFlag = true;
+    }
+    const drained = await tickUntilSettled(requestId);
+    expect(drained?.status).toBe('sent');
+  }, 120_000);
+
+  it('a contact whose address CHANGED after the decision is reached at the NEW address (FR-023 "current address"; round 5 tests I-4)', async () => {
+    const requestId = await submitAndDecide({ contact: { phone: '+66844444444' } }, [{ key: 'phone', outcome: 'approved' }], null);
+    const newEmail = `moved-${randomUUID().slice(0, 8)}@example.com`;
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.update(contacts).set({ email: newEmail }).where(eq(contacts.contactId, contactId));
+    });
+    try {
+      const row = await tickUntilSettled(requestId);
+      expect(row?.status).toBe('sent');
+      const msg = sent.find((m) => m.text.includes('+66844444444'));
+      expect(msg?.to).toBe(newEmail);
+      expect(msg?.to).not.toBe(contactEmail);
+    } finally {
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.update(contacts).set({ email: contactEmail }).where(eq(contacts.contactId, contactId));
+      });
+    }
   }, 120_000);
 
   it('a contact removed after the decision permanently fails the row on the first tick with reason recipient_gone', async () => {

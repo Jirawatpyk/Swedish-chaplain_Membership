@@ -6134,6 +6134,7 @@
       },
       "diff": {
         "field": "Fält",
+        "seen": "Värde när du skickade in",
         "current": "Nuvarande",
         "proposed": "Föreslaget",
         "empty": "(tomt)",
