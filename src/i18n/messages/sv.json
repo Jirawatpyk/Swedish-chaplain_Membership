@@ -6111,6 +6111,26 @@
         "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu – kammaren meddelar beslutet via e-post.",
         "editLink": "Redigera din begäran"
       },
+      "outcome": {
+        "title": {
+          "approved": "Dina ändringar godkändes",
+          "partially_approved": "Några av dina ändringar godkändes",
+          "rejected": "Dina ändringar godkändes inte"
+        },
+        "body": {
+          "approved": "Beslutat {decidedAt}. Alla ändringar finns nu i dina uppgifter.",
+          "partially_approved": "Beslutat {decidedAt}. De godkända ändringarna finns i dina uppgifter; övriga infördes inte.",
+          "rejected": "Beslutat {decidedAt}. Inget ändrades i dina uppgifter."
+        },
+        "reasonLabel": "Motivering från kammaren",
+        "resubmit": "Redigera och skicka igen",
+        "dismiss": "Stäng",
+        "dismissError": "Meddelandet kunde inte stängas. Försök igen."
+      },
+      "resubmit": {
+        "title": "Rätta och skicka igen",
+        "hint": "Värdena som inte godkändes är förifyllda nedan. Alla fält kan redigeras igen; att skicka skapar en ny begäran."
+      },
       "diff": {
         "field": "Fält",
         "current": "Nuvarande",

@@ -22,6 +22,7 @@ import { makeInMemoryChangeRequestRepo, type InMemoryChangeRequestRepo } from '.
 
 const requireApiPermissionMock = vi.fn();
 let flagOn = true;
+let readOnly = false;
 let fakes: {
   repo: InMemoryChangeRequestRepo;
   memberRepo: { findById: ReturnType<typeof vi.fn>; findErasedAtById: ReturnType<typeof vi.fn> };
@@ -36,6 +37,9 @@ vi.mock('@/lib/env', async () => {
       ...actual.env,
       features: new Proxy(actual.env.features, {
         get: (target, prop) => (prop === 'memberChangeApproval' ? flagOn : Reflect.get(target, prop)),
+      }),
+      flags: new Proxy(actual.env.flags, {
+        get: (target, prop) => (prop === 'readOnlyMode' ? readOnly : Reflect.get(target, prop)),
       }),
     },
   };
@@ -182,6 +186,7 @@ function call(id = REQ): Promise<Response> {
 
 beforeEach(() => {
   flagOn = true;
+  readOnly = false;
   seed();
   requireApiPermissionMock.mockResolvedValue(staffContext('admin'));
 });
@@ -247,6 +252,11 @@ describe('GET /api/admin/change-requests/[id]', () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ type: expect.stringMatching(/not_found$/), status: 404 });
     expect((await call('nope')).status).toBe(404);
+  });
+
+  it('READ_ONLY_MODE leaves the read untouched — 200 (FR-036 / T116)', async () => {
+    readOnly = true;
+    expect((await call()).status).toBe(200);
   });
 
   it('a repo fault → 500 problem', async () => {

@@ -32,6 +32,7 @@ const reserveMock = vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as 
 const rememberMock = vi.fn(async () => undefined);
 const loggerError = vi.fn();
 let flagOn = true;
+let readOnly = false;
 
 vi.mock('@/lib/env', async () => {
   const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
@@ -41,6 +42,9 @@ vi.mock('@/lib/env', async () => {
       ...actual.env,
       features: new Proxy(actual.env.features, {
         get: (target, prop) => (prop === 'memberChangeApproval' ? flagOn : Reflect.get(target, prop)),
+      }),
+      flags: new Proxy(actual.env.flags, {
+        get: (target, prop) => (prop === 'readOnlyMode' ? readOnly : Reflect.get(target, prop)),
       }),
     },
   };
@@ -314,6 +318,37 @@ describe('contract: POST /api/portal/change-requests (F114 T029)', () => {
     const res = await POST(makeRequest({ contact: { phone: '+66899999999' } }));
     expect(res.status).toBe(500);
     expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ errorId: 'M114.portal.submit.gate_failed' }), expect.any(String));
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * FR-036 / T116 — READ_ONLY_MODE: the in-route guard answers 503
+ * `read_only_mode` + `Retry-After: 5` AFTER the member context and BEFORE the
+ * idempotency reservation and the use case (the proxy short-circuits the same
+ * way one layer earlier). Reads are untouched — the gate route's own suite
+ * covers GET.
+ */
+describe('POST /api/portal/change-requests — READ_ONLY_MODE (T116)', () => {
+  afterEach(() => {
+    readOnly = false;
+  });
+
+  it('503 read_only_mode with Retry-After: 5; no reservation, no use-case call', async () => {
+    readOnly = true;
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    const { POST } = await import('@/app/api/portal/change-requests/route');
+    const res = await POST(
+      new NextRequest('http://localhost/api/portal/change-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'ro-1' },
+        body: JSON.stringify({ contact: { phone: '+66899999999' } }),
+      }),
+    );
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(await res.json()).toMatchObject({ error: { code: 'read_only_mode' } });
+    expect(reserveMock).not.toHaveBeenCalled();
     expect(submitMock).not.toHaveBeenCalled();
   });
 });

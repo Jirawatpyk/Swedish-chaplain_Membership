@@ -183,6 +183,12 @@ export {
   type FieldDecision,
 } from './application/use-cases/change-requests/decide-change-request';
 export {
+  acknowledgeChangeRequest,
+  type AcknowledgeChangeRequestDeps,
+  type AcknowledgeChangeRequestError,
+  type AcknowledgeChangeRequestInput,
+} from './application/use-cases/change-requests/acknowledge-change-request';
+export {
   getChangeRequestReview,
   taxHintFor,
   type ChangeRequestReview,

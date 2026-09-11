@@ -41,6 +41,7 @@ import {
 const requireApiPermissionMock = vi.fn();
 const loggerError = vi.fn();
 let flagOn = true;
+let readOnly = false;
 let fakes: {
   repo: InMemoryChangeRequestRepo;
   audit: AuditPortFake;
@@ -62,6 +63,9 @@ vi.mock('@/lib/env', async () => {
       ...actual.env,
       features: new Proxy(actual.env.features, {
         get: (target, prop) => (prop === 'memberChangeApproval' ? flagOn : Reflect.get(target, prop)),
+      }),
+      flags: new Proxy(actual.env.flags, {
+        get: (target, prop) => (prop === 'readOnlyMode' ? readOnly : Reflect.get(target, prop)),
       }),
     },
   };
@@ -221,6 +225,7 @@ const PARTIAL = { decisions: [{ key: 'phone', outcome: 'approved' }, { key: 'des
 
 beforeEach(() => {
   flagOn = true;
+  readOnly = false;
   seed();
   requireApiPermissionMock.mockResolvedValue(staffContext('admin'));
 });
@@ -240,6 +245,17 @@ describe('POST /api/admin/change-requests/[id]/decide — gates', () => {
     expect(res.status).toBe(403);
     expect(requireApiPermissionMock).toHaveBeenCalledWith(expect.anything(), 'members.write');
     expect(fakes.repo.rows.get(REQ)?.state).toBe('pending');
+  });
+
+  it('READ_ONLY_MODE → 503 read_only_mode after the gate, nothing decided (FR-036 / T116)', async () => {
+    readOnly = true;
+    const res = await call(APPROVE_ALL);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(await res.json()).toMatchObject({ error: { code: 'read_only_mode' } });
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(expect.anything(), 'members.write');
+    expect(fakes.repo.rows.get(REQ)?.state).toBe('pending');
+    expect(fakes.audit.events).toHaveLength(0);
   });
 
   it('a malformed id → 404 problem; a non-JSON body → 400; a body failing the schema → 422 validation_error', async () => {

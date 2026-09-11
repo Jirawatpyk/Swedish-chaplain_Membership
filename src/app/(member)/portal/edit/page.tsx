@@ -11,12 +11,10 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asMembersUserId } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
-import {
-  PortalChangeRequestForm,
-  type ChangeRequestFormValues,
-} from '@/components/members/change-requests/portal-change-request-form';
+import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
 import { PendingRequestBanner } from '@/components/members/change-requests/pending-request-banner';
-import type { Contact, Member } from '@/modules/members';
+import { changeRequestInitialValues, overlayPending, overlayResubmit } from '@/lib/change-request-form-values';
+import type { ChangeRequestId } from '@/modules/members';
 
 /**
  * Portal edit page — US5 AS2 (T124) + F114 US1 (T040).
@@ -48,66 +46,17 @@ function loadFailed(title: string, message: string) {
   );
 }
 
-/** The Group B record → form strings (nulls → ''). */
-export function changeRequestInitialValues(member: Member, contact: Contact): ChangeRequestFormValues {
-  return {
-    firstName: contact.firstName,
-    lastName: contact.lastName,
-    phone: contact.phone ?? '',
-    roleTitle: contact.roleTitle ?? '',
-    companyName: member.companyName,
-    website: member.website ?? '',
-    description: member.description ?? '',
-    regLine1: member.addressLine1 ?? '',
-    regLine2: member.addressLine2 ?? '',
-    regSubDistrict: member.subDistrict ?? '',
-    regCity: member.city ?? '',
-    regProvince: member.province ?? '',
-    regPostalCode: member.postalCode ?? '',
-    billLine1: member.billingAddressLine1 ?? '',
-    billLine2: member.billingAddressLine2 ?? '',
-    billSubDistrict: member.billingSubDistrict ?? '',
-    billCity: member.billingCity ?? '',
-    billProvince: member.billingProvince ?? '',
-    billPostalCode: member.billingPostalCode ?? '',
-    billCountry: member.billingCountry ?? '',
-  };
+// The form's starting values are pure helpers in `@/lib/change-request-form-values`
+// (shared with the resubmit unit test); re-exported here for existing importers.
+export { changeRequestInitialValues, overlayPending, overlayResubmit } from '@/lib/change-request-form-values';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface PageProps {
+  readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-/** US5 AS5 — a pending request's proposed values are the starting point. */
-export function overlayPending(values: ChangeRequestFormValues, pending: ChangeRequestView | null): ChangeRequestFormValues {
-  if (!pending) return values;
-  const out = { ...values };
-  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-  for (const f of pending.fields) {
-    const p = f.proposed as Record<string, string | null> | string | null;
-    switch (f.key) {
-      case 'first_name': out.firstName = str(p); break;
-      case 'last_name': out.lastName = str(p); break;
-      case 'phone': out.phone = str(p); break;
-      case 'role_title': out.roleTitle = str(p); break;
-      case 'company_name': out.companyName = str(p); break;
-      case 'website': out.website = str(p); break;
-      case 'description': out.description = str(p); break;
-      case 'registered_address':
-        if (p && typeof p === 'object') {
-          out.regLine1 = p.line1 ?? ''; out.regLine2 = p.line2 ?? ''; out.regSubDistrict = p.sub_district ?? '';
-          out.regCity = p.city ?? ''; out.regProvince = p.province ?? ''; out.regPostalCode = p.postal_code ?? '';
-        }
-        break;
-      case 'billing_address':
-        if (p && typeof p === 'object') {
-          out.billLine1 = p.line1 ?? ''; out.billLine2 = p.line2 ?? ''; out.billSubDistrict = p.sub_district ?? '';
-          out.billCity = p.city ?? ''; out.billProvince = p.province ?? ''; out.billPostalCode = p.postal_code ?? '';
-          out.billCountry = p.country ?? '';
-        }
-        break;
-    }
-  }
-  return out;
-}
-
-export default async function PortalEditPage() {
+export default async function PortalEditPage({ searchParams }: PageProps) {
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.edit');
   const tCr = await getTranslations('portal.changeRequests.form');
@@ -209,7 +158,33 @@ export default async function PortalEditPage() {
     );
   }
 
-  const initialValues = overlayPending(changeRequestInitialValues(member, ownContact), pending);
+  // US3 (FR-023) — `?resubmit=<id>`: the caller's OWN decided request, else
+  // ignored (an unknown id, another person's request or a pending one is
+  // simply not a resubmit source — no error, no existence leak). A pending
+  // request wins: its proposal is the live starting point (US5 AS5).
+  let resubmitOf: ChangeRequestView | null = null;
+  const sp = await searchParams;
+  const resubmitRaw = Array.isArray(sp.resubmit) ? sp.resubmit[0] : sp.resubmit;
+  if (!pending && resubmitRaw && UUID_RE.test(resubmitRaw)) {
+    try {
+      const decided = await deps.changeRequestRepo.findById(tenant, resubmitRaw as ChangeRequestId);
+      if (decided.ok && decided.value.state === 'decided' && decided.value.submittedByUserId === asMembersUserId(user.id)) {
+        resubmitOf = serialiseChangeRequestForPortal(decided.value, {
+          contactId: ownContact.contactId,
+          displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
+          isMe: true,
+        });
+      }
+    } catch (e) {
+      logger.error(
+        { errorId: 'M114.portal.edit.resubmit_read_failed', err: errKind(e), tenantId: tenant.slug, userId: user.id },
+        'portal.edit.resubmit_read_failed',
+      );
+    }
+  }
+
+  const live = changeRequestInitialValues(member, ownContact);
+  const initialValues = pending ? overlayPending(live, pending) : overlayResubmit(live, resubmitOf);
 
   return (
     <FormContainer>
@@ -224,6 +199,7 @@ export default async function PortalEditPage() {
         canProposeCompanyFields={ownContact.isPrimary}
         pending={pending}
         privacyNoticeHref="/privacy"
+        resubmitOf={resubmitOf}
       />
     </FormContainer>
   );

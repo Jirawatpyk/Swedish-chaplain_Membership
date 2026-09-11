@@ -27,6 +27,7 @@ import {
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireMemberContext } from '@/lib/member-context';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { submitChangeRequest } from '@/modules/members';
 import { serialiseChangeRequestForPortal } from './_serialise';
@@ -44,6 +45,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const ctx = await requireMemberContext(request);
   if ('response' in ctx) return ctx.response;
+
+  // FR-036 — READ_ONLY_MODE: 503 after auth, before the idempotency
+  // reservation and the use case (the proxy short-circuits too; this is the
+  // in-route guard every mutating route carries — T116).
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   const deps = buildChangeRequestDeps(ctx.tenant);
 

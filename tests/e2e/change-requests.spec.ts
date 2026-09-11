@@ -282,3 +282,124 @@ test.describe('@change-requests US2 — staff decides per field', () => {
     await runAxeScan(page, testInfo);
   });
 });
+
+/**
+ * US3 (T066): the reject path as the MEMBER sees it. A pending request
+ * (phone + description) is seeded; the admin rejects BOTH rows with a reason
+ * through the decide API (the review-page UI is US2's spec); the member then
+ * sees the decision banner on /portal/profile (role=status, reason verbatim,
+ * record unchanged), follows "edit and resubmit" to /portal/edit?resubmit=<id>
+ * (reason shown, the rejected values prefilled, every field editable), and
+ * finally dismisses the banner — it does not come back.
+ */
+test.describe('@change-requests US3 — member sees the rejection, resubmits, dismisses', () => {
+  test.skip(
+    !MEMBER_EMAIL || !MEMBER_PASSWORD || !ADMIN_EMAIL || !ADMIN_PASSWORD || !DATABASE_URL,
+    'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY + E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD + DATABASE_URL',
+  );
+
+  let member: PortalMemberRef | null = null;
+  let previousSetting: boolean | null = null;
+  let originalPhone: string | null = null;
+  let originalDescription: string | null = null;
+  const REASON = 'Please use the registered phone number and description.';
+
+  test.beforeAll(async () => {
+    previousSetting = await ensureApprovalSetting(true);
+    member = await resolvePortalMember(MEMBER_EMAIL!);
+    if (member) {
+      originalPhone = await readContactPhone(member.contactId);
+      originalDescription = await readMemberDescription(member.memberId);
+    }
+  });
+
+  test.afterAll(async () => {
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    if (previousSetting !== null) await ensureApprovalSetting(previousSetting);
+  });
+
+  test('reject all with a reason → decision banner, record unchanged, resubmit prefilled, dismiss sticks', async ({ page }) => {
+    test.skip(!member, 'persona is not linked to a member — run scripts/seed-e2e-user.ts');
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    const seeded = await seedPendingRequest(member!, {
+      phone: originalPhone === '+66855555555' ? '+66866666666' : '+66855555555',
+      description: `e2e rejected description ${Date.now()}`,
+      seenPhone: originalPhone,
+      seenDescription: originalDescription,
+    });
+    test.skip(!seeded, 'could not seed a pending request');
+
+    // the admin rejects both rows through the API (US2's spec drives the UI)
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+    const decideRes = await page.request.post(`/api/admin/change-requests/${seeded!.requestId}/decide`, {
+      data: {
+        decisions: [
+          { key: 'phone', outcome: 'rejected' },
+          { key: 'description', outcome: 'rejected' },
+        ],
+        reason: REASON,
+        note: null,
+      },
+    });
+    expect(decideRes.status()).toBe(200);
+    expect(((await decideRes.json()) as { request: { outcome: string } }).request.outcome).toBe('rejected');
+    // FR-015 / US3 AS2 — nothing applied
+    expect(await readContactPhone(member!.contactId)).toBe(originalPhone);
+    expect(await readMemberDescription(member!.memberId)).toBe(originalDescription);
+
+    // the member: decision banner on the profile
+    await page.context().clearCookies();
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+    await page.goto('/portal/profile');
+    const banner = page.getByTestId('decision-outcome-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('role', 'status');
+    await expect(banner).toHaveAttribute('data-outcome', 'rejected');
+    await expect(banner).toContainText(copy.outcome.title.rejected);
+    await expect(banner.getByTestId('decision-reason')).toContainText(REASON);
+    await expect(banner.getByTestId('change-request-diff')).toContainText(copy.diff.outcome.rejected);
+
+    // edit and resubmit → prefilled with exactly the rejected values, reason shown
+    await banner.getByTestId('resubmit-link').click();
+    await page.waitForURL(`**/portal/edit?resubmit=${seeded!.requestId}`);
+    await expect(page.getByTestId('resubmit-reason')).toContainText(REASON);
+    await expect(page.getByLabel(copy.form.fields.phone, { exact: true })).toHaveValue(seeded!.proposedPhone);
+    await expect(page.getByLabel(copy.form.fields.description, { exact: true })).toHaveValue(seeded!.proposedDescription);
+    await expect(page.getByLabel(copy.form.fields.companyName, { exact: true })).toBeEditable();
+
+    // dismiss → the banner is gone and stays gone after a reload
+    await page.goto('/portal/profile');
+    await page.getByTestId('dismiss-decision').click();
+    await expect(page.getByTestId('decision-outcome-banner')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('decision-outcome-banner')).toHaveCount(0);
+  });
+
+  test('@a11y axe: profile with the decision banner + the resubmit form at 320 px', async ({ page }, testInfo) => {
+    test.skip(!member, 'persona is not linked to a member');
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    const seeded = await seedPendingRequest(member!, {
+      phone: '+66877777777',
+      description: `e2e a11y description ${Date.now()}`,
+      seenPhone: originalPhone,
+      seenDescription: originalDescription,
+    });
+    test.skip(!seeded, 'could not seed a pending request');
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+    const decideRes = await page.request.post(`/api/admin/change-requests/${seeded!.requestId}/decide`, {
+      data: { decisions: [{ key: 'phone', outcome: 'rejected' }, { key: 'description', outcome: 'rejected' }], reason: REASON, note: null },
+    });
+    expect(decideRes.status()).toBe(200);
+    await page.context().clearCookies();
+    await page.setViewportSize({ width: 320, height: 720 });
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+    await page.goto('/portal/profile');
+    await expect(page.getByTestId('decision-outcome-banner')).toBeVisible();
+    await runAxeScan(page, testInfo, { include: 'main' });
+    await page.goto(`/portal/edit?resubmit=${seeded!.requestId}`);
+    await expect(page.getByTestId('resubmit-reason')).toBeVisible();
+    await runAxeScan(page, testInfo, { include: 'main' });
+  });
+});

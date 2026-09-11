@@ -6111,6 +6111,26 @@
         "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
         "editLink": "Edit your request"
       },
+      "outcome": {
+        "title": {
+          "approved": "Your changes were approved",
+          "partially_approved": "Some of your changes were approved",
+          "rejected": "Your changes were not approved"
+        },
+        "body": {
+          "approved": "Decided {decidedAt}. Every change is now on your record.",
+          "partially_approved": "Decided {decidedAt}. The approved changes are on your record; the rest were not applied.",
+          "rejected": "Decided {decidedAt}. Nothing was changed on your record."
+        },
+        "reasonLabel": "Reason from the chamber",
+        "resubmit": "Edit and resubmit",
+        "dismiss": "Dismiss",
+        "dismissError": "Could not dismiss this notice. Please try again."
+      },
+      "resubmit": {
+        "title": "Correct and resubmit",
+        "hint": "The values that were not approved are prefilled below. Every field can be edited again; submitting creates a new request."
+      },
       "diff": {
         "field": "Field",
         "current": "Current",

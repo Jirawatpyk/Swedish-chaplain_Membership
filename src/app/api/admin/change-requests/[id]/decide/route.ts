@@ -23,6 +23,7 @@ import { env } from '@/lib/env';
 import { problemResponse } from '@/lib/http/problem-response';
 import { logger } from '@/lib/logger';
 import { requireApiPermission } from '@/lib/rbac';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { serialiseChangeRequestForStaff, type StaffChangeRequestView } from '@/lib/change-request-staff-view';
@@ -69,6 +70,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   const ctx = await requireApiPermission(request, 'members.write');
   if ('response' in ctx) return ctx.response;
   const extras = { requestId: ctx.requestId };
+
+  // FR-036 — READ_ONLY_MODE (T116): 503 after the gate, before any write.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   const { id } = await context.params;
   if (!UUID_RE.test(id)) return problemResponse(404, 'not_found', 'Change request not found', undefined, { extras });
