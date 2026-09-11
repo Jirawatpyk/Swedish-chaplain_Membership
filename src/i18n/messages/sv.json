@@ -995,6 +995,97 @@
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
       "loading": "Läser in…"
     },
+    "changeRequests": {
+      "queue": {
+        "title": "Ändringsbegäranden",
+        "subtitle": "Ändringar som medlemmar föreslagit och som väntar på personalens beslut, äldst först.",
+        "empty": "Inga ändringsbegäranden väntar på beslut.",
+        "noPendingForSubmitter": "Den här personen har ingen begäran som väntar på beslut — den senaste beslutades av {name} den {decidedAt}.",
+        "noRequestForSubmitter": "Den här personen har ingen ändringsbegäran.",
+        "rowMeta": "Inskickad av {submitter} · {count, plural, one {# fält} other {# fält}} · {submittedAt}",
+        "open": "Granska"
+      },
+      "review": {
+        "title": "Granska ändringsbegäran",
+        "subtitle": "{company} · inskickad av {submitter} ({role}) den {submittedAt}",
+        "roles": {
+          "primary": "primär kontakt",
+          "secondary": "sekundär kontakt"
+        },
+        "state": {
+          "pending": "Väntar på beslut",
+          "decided": "Beslutad",
+          "withdrawn": "Återkallad"
+        },
+        "outcome": {
+          "approved": "Godkänd",
+          "partially_approved": "Delvis godkänd",
+          "rejected": "Inte godkänd"
+        },
+        "decidedBy": "Beslutad av {name} den {decidedAt}",
+        "deactivated": "(inaktiverad)",
+        "decisionReason": "Motivering som visas för medlemmen",
+        "decisionNote": "Intern anteckning",
+        "backToMember": "Medlemsuppgifter",
+        "backToMembers": "Medlemmar",
+        "readOnly": "Du kan se den här begäran. Endast personal som kan redigera medlemmar kan besluta om den.",
+        "archived": "Medlemmen är arkiverad. Avslå begäran, eller avarkivera medlemmen först och godkänn sedan.",
+        "erasing": "Medlemmen håller på att raderas. Begäran kan inte godkännas.",
+        "notPending": "Den här begäran väntar inte längre på beslut.",
+        "columns": {
+          "decision": "Godkänn"
+        },
+        "approveCheckbox": "Godkänn {field}",
+        "markers": {
+          "changedSinceSubmitted": "Ändrat sedan medlemmen skickade in — de såg:",
+          "alreadyCurrent": "Redan aktuellt — ett godkännande registrerar beslutet utan att ändra uppgifterna",
+          "contactRemoved": "Kontakten är borttagen — fältet kan bara avslås",
+          "taxAffecting": "Påverkar skattedokument"
+        },
+        "taxHint": {
+          "buyer_name": "köparens namn på fakturor och kvitton",
+          "buyer_address": "köparens adress på fakturor och kvitton — kontrollera huvudkontor/filial",
+          "buyer_contact": "köparens kontaktperson på skattedokument",
+          "billing_country": "ett faktureringsland utanför Thailand — bedöm momshanteringen"
+        }
+      },
+      "decision": {
+        "confirm": "Bekräfta beslut",
+        "selectionSummary": "{approved, plural, =0 {Inga fält} one {# fält} other {# fält}} att godkänna, {rejected, plural, =0 {inga} one {# fält} other {# fält}} att avslå",
+        "titleApproveAll": "Godkänna alla {count, plural, one {# fält} other {# fält}}?",
+        "titleMixed": "Godkänna {approved, plural, one {# fält} other {# fält}} och avslå {rejected, plural, one {# fält} other {# fält}}?",
+        "titleRejectAll": "Avslå alla {count, plural, one {# fält} other {# fält}}?",
+        "descriptionApprove": "De godkända värdena förs in i medlemsuppgifterna direkt och medlemmen får beslutet per e-post.",
+        "descriptionReject": "Avslagna fält förs inte in. Medlemmen får din motivering ordagrant per e-post.",
+        "confirmApproveAll": "Godkänn alla",
+        "confirmMixed": "Godkänn {approved}, avslå {rejected}",
+        "confirmRejectAll": "Avslå alla",
+        "cancel": "Avbryt",
+        "reasonLabel": "Motivering som visas för medlemmen",
+        "reasonPlaceholder": "Förklara vad som inte godkändes och vad medlemmen kan göra i stället…",
+        "reasonHelpRequired": "Krävs när ett fält avslås. Skickas ordagrant till medlemmen.",
+        "reasonHelpOptional": "Valfritt. Skickas ordagrant till medlemmen.",
+        "noteLabel": "Intern anteckning (valfritt)",
+        "noteHelp": "Endast för personal — visas aldrig för medlemmen. Högst {max} tecken.",
+        "errors": {
+          "tooLong": "Får vara högst {max} tecken."
+        },
+        "toast": {
+          "approved": "Beslutet är registrerat — alla fält infördes.",
+          "partially_approved": "Beslutet är registrerat — de godkända fälten infördes.",
+          "rejected": "Beslutet är registrerat — inget infördes.",
+          "repeated": "Det här beslutet är redan registrerat.",
+          "already_decided": "En annan granskare har redan beslutat om den här begäran. Sidan har uppdaterats.",
+          "not_pending": "Den här begäran väntar inte längre på beslut. Sidan har uppdaterats.",
+          "member_archived": "Medlemmen är arkiverad — avslå begäran eller avarkivera medlemmen först.",
+          "member_erasing": "Medlemmen håller på att raderas — begäran kan inte godkännas.",
+          "contact_removed": "Kontakten som skickade in är borttagen — dess fält kan bara avslås.",
+          "validation_error": "Ett godkänt värde klarar inte längre valideringen. Avslå det fältet i stället.",
+          "reason_required": "Ange en motivering för de avslagna fälten.",
+          "error": "Beslutet kunde inte registreras. Försök igen."
+        }
+      }
+    },
     "members": {
       "title": "Medlemmar",
       "overrideReason": {

@@ -29,13 +29,13 @@ import type { Role } from '@/modules/auth/domain/role';
 const allowed = (role: Role, s: ObservedSurface): boolean => hasPermission(role, s.key);
 
 describe('T015 baseline integrity', () => {
-  it('captured 47 guarded pages + 1 exemption = the pinned 48-page inventory (108: +/admin/marketing/audience)', () => {
-    expect(OBSERVED_PAGES).toHaveLength(47);
+  it('captured 49 guarded pages + 1 exemption = the pinned 50-page inventory (108: +/admin/marketing/audience; F114: +2 change-request pages)', () => {
+    expect(OBSERVED_PAGES).toHaveLength(49);
     expect(GUARD_EXEMPT_PAGES).toHaveLength(1);
   });
 
   it('captured every staff API handler', () => {
-    expect(OBSERVED_API.length).toBeGreaterThanOrEqual(131);
+    expect(OBSERVED_API.length).toBeGreaterThanOrEqual(133);
   });
 
   it('declares no surface twice', () => {
@@ -234,6 +234,14 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     '/admin/broadcasts/templates',
     '/admin/broadcasts/templates/[id]/edit',
     '/admin/broadcasts/templates/new',
+    // F114 US2 — the change-request queue + review page are keyed
+    // `members.read` (FR-026: manager and marketing see history read-only);
+    // deciding is `members.write`, which marketing does not hold, so the
+    // decide route stays out of this list by omission. Reachability only:
+    // the review payload carries proposed contact/company values, the same
+    // data marketing already reaches on `/admin/members/[memberId]`.
+    '/admin/change-requests',
+    '/admin/change-requests/[id]',
     '/admin/events',
     '/admin/events/[eventId]',
     '/admin/events/import',
@@ -258,6 +266,8 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/admin/broadcasts/recipient-count',
     'GET /api/admin/broadcasts/sla-stats',
     'GET /api/admin/broadcasts/templates',
+    // F114 US2 — see the two pages above (`members.read`).
+    'GET /api/admin/change-requests/[id]',
     'GET /api/admin/events',
     'GET /api/admin/events/[eventId]',
     'GET /api/admin/events/import/[recordId]/error-csv',
@@ -298,7 +308,8 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   // with the batch dispatch path (`ca51f59a1`). Both halves of this comparison
   // were stale in the same direction, so this test passed while naming two
   // routes that no longer exist; only `api-route-exhaustiveness` caught them.
-  it('reaches EXACTLY the frozen 48-surface set — nothing more, nothing less', () => {
+  // F114 US2 — 48 → 51: two `members.read` pages + the review payload route.
+  it('reaches EXACTLY the frozen 51-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

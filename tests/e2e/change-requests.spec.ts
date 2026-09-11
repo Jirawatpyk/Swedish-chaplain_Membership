@@ -25,12 +25,18 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { fillField } from './fixtures';
 import { runAxeScan } from './helpers/axe-scan';
+import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsManager } from './helpers/manager-session';
 import {
   ensureApprovalSetting,
   readContactPhone,
+  readMemberDescription,
   resolvePortalMember,
+  seedPendingRequest,
   wipeChangeRequestsForUser,
+  writeContactPhone,
   type PortalMemberRef,
+  type SeededPendingRequest,
 } from './helpers/change-request-seed';
 import en from '../../src/i18n/messages/en.json';
 
@@ -39,8 +45,13 @@ const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 const SECONDARY_EMAIL = process.env.E2E_MEMBER_SECONDARY_EMAIL;
 const SECONDARY_PASSWORD = process.env.E2E_MEMBER_SECONDARY_PASSWORD;
 const DATABASE_URL = process.env.DATABASE_URL;
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
+const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
 const copy = en.portal.changeRequests;
+const adminCopy = en.admin.changeRequests;
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -153,5 +164,121 @@ test.describe('@change-requests US1 — member submits, nothing applied, staff n
     await expect(page.getByTestId('secondary-note')).toContainText(copy.form.secondaryNote);
     await expect(page.getByLabel(copy.form.fields.companyName, { exact: true })).toHaveCount(0);
     await expect(page.getByLabel(copy.form.fields.phone, { exact: true })).toBeVisible();
+  });
+});
+
+/**
+ * US2 (T058): the staff decision. A pending request is seeded straight into
+ * the tables (phone + description) for the `e2e-member-empty` persona; the
+ * admin opens the EMAIL deep link (`?submitter=…&state=pending` → redirect to
+ * the review page), de-selects the description row, enters a reason and
+ * confirms → lands on the member record with the approved phone applied and
+ * the description untouched (partial approval, FR-014–FR-016); a manager
+ * sees the review page read-only (FR-013); axe at 320 px and desktop.
+ */
+test.describe('@change-requests US2 — staff decides per field', () => {
+  test.skip(
+    !MEMBER_EMAIL || !ADMIN_EMAIL || !ADMIN_PASSWORD || !DATABASE_URL,
+    'Set E2E_MEMBER_EMAIL_EMPTY + E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD + DATABASE_URL',
+  );
+
+  let member: PortalMemberRef | null = null;
+  let previousSetting: boolean | null = null;
+  let originalPhone: string | null = null;
+  let originalDescription: string | null = null;
+
+  async function seed(): Promise<SeededPendingRequest | null> {
+    if (!member) return null;
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    const proposedPhone = originalPhone === '+66833333333' ? '+66844444444' : '+66833333333';
+    return seedPendingRequest(member, {
+      phone: proposedPhone,
+      description: `e2e proposed description ${Date.now()}`,
+      seenPhone: originalPhone,
+      seenDescription: originalDescription,
+    });
+  }
+
+  test.beforeAll(async () => {
+    previousSetting = await ensureApprovalSetting(true);
+    member = await resolvePortalMember(MEMBER_EMAIL!);
+    if (member) {
+      originalPhone = await readContactPhone(member.contactId);
+      originalDescription = await readMemberDescription(member.memberId);
+    }
+  });
+
+  test.afterAll(async () => {
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    if (member) await writeContactPhone(member.contactId, originalPhone);
+    if (previousSetting !== null) await ensureApprovalSetting(previousSetting);
+  });
+
+  test('admin: email deep link → review page → de-select one row + reason → member record shows the approved value only', async ({ page }) => {
+    test.skip(!member, 'persona is not linked to a member — run scripts/seed-e2e-user.ts');
+    const seeded = await seed();
+    test.skip(!seeded, 'could not seed a pending request');
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+
+    // FR-011 — the staff email links to the submitter, never a request id
+    await page.goto(`/admin/change-requests?submitter=${member!.userId}&state=pending`);
+    await page.waitForURL(`**/admin/change-requests/${seeded!.requestId}`, { timeout: 60_000 });
+    await expect(page.getByRole('heading', { level: 1, name: adminCopy.review.title })).toBeVisible();
+    const table = page.getByTestId('change-request-decision-table');
+    await expect(table.locator('[data-field-key="phone"]')).toContainText(seeded!.proposedPhone);
+    await expect(table.locator('[data-field-key="description"]')).toContainText(seeded!.proposedDescription);
+
+    // de-select the description row (Space / click both toggle the checkbox)
+    const descriptionBox = page.getByTestId('approve-description');
+    await expect(descriptionBox).toHaveAttribute('aria-checked', 'true');
+    await descriptionBox.click();
+    await expect(descriptionBox).toHaveAttribute('aria-checked', 'false');
+
+    await page.getByTestId('confirm-decision').click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible();
+    // focus starts on Cancel; the confirm is disabled until a reason is typed
+    await expect(dialog.getByRole('button', { name: adminCopy.decision.cancel })).toBeFocused();
+    const confirm = dialog.getByRole('button', { name: /^Approve 1, reject 1$/ });
+    await expect(confirm).toBeDisabled();
+    await fillField(page.getByTestId('decision-reason'), 'Please keep the registered description.');
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+
+    await page.waitForURL(`**/admin/members/${member!.memberId}`, { timeout: 60_000 });
+    await expect(page.getByText(seeded!.proposedPhone).first()).toBeVisible();
+    // the record: phone applied, description untouched (FR-015 / FR-016)
+    expect(await readContactPhone(member!.contactId)).toBe(seeded!.proposedPhone);
+    expect(await readMemberDescription(member!.memberId)).toBe(originalDescription);
+  });
+
+  test('manager: the review page is read-only — no decision controls, checkboxes disabled', async ({ page }) => {
+    test.skip(!member, 'persona is not linked to a member');
+    test.skip(!MANAGER_EMAIL || !MANAGER_PASSWORD, 'Set E2E_MANAGER_EMAIL + E2E_MANAGER_PASSWORD');
+    const seeded = await seed();
+    test.skip(!seeded, 'could not seed a pending request');
+    await signInAsManager(page);
+    await skipUnlessFlagOn(page);
+    await page.goto(`/admin/change-requests/${seeded!.requestId}`);
+    await expect(page.getByTestId('review-notice')).toContainText(adminCopy.review.readOnly);
+    await expect(page.getByTestId('confirm-decision')).toHaveCount(0);
+    await expect(page.getByTestId('approve-phone')).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  test('@a11y axe: review page at 320 px and desktop', async ({ page }, testInfo) => {
+    test.skip(!member, 'persona is not linked to a member');
+    const seeded = await seed();
+    test.skip(!seeded, 'could not seed a pending request');
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto(`/admin/change-requests/${seeded!.requestId}`);
+    await expect(page.getByTestId('change-request-decision-table')).toBeVisible();
+    await runAxeScan(page, testInfo, { include: 'main' });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByTestId('confirm-decision').click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await runAxeScan(page, testInfo);
   });
 });

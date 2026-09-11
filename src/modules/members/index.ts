@@ -174,12 +174,36 @@ export {
   type SubmitChangeRequestInput,
   type SubmitChangeRequestOutcome,
 } from './application/use-cases/change-requests/submit-change-request';
+export {
+  decideChangeRequest,
+  type DecideChangeRequestDeps,
+  type DecideChangeRequestError,
+  type DecideChangeRequestInput,
+  type DecideChangeRequestOutcome,
+  type FieldDecision,
+} from './application/use-cases/change-requests/decide-change-request';
+export {
+  getChangeRequestReview,
+  taxHintFor,
+  type ChangeRequestReview,
+  type ChangeRequestReviewField,
+  type GetChangeRequestReviewDeps,
+  type GetChangeRequestReviewError,
+  type GetChangeRequestReviewInput,
+  type TaxHint,
+} from './application/use-cases/change-requests/get-change-request-review';
 // F114 email builders — rendered by the outbox dispatcher at send time (R8).
 export {
   buildChangeRequestSubmittedStaffEmail,
   type ChangeRequestEmailField,
   type ChangeRequestSubmittedStaffEmailInput,
 } from './infrastructure/email/change-request-submitted-staff-email';
+export {
+  buildChangeRequestDecidedMemberEmail,
+  resubmitLinkFor,
+  type ChangeRequestDecidedEmailField,
+  type ChangeRequestDecidedMemberEmailInput,
+} from './infrastructure/email/change-request-decided-member-email';
 
 export {
   assertNeverAuditEvent,

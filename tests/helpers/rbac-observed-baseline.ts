@@ -65,6 +65,11 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin/invoices/registers', kind: 'page', key: 'invoicing.receipt' },
   { surface: '/admin/invoices/[invoiceId]/void', kind: 'page', key: 'invoicing.void' },
   { surface: '/admin/invoices/[invoiceId]/credit-notes/new', kind: 'page', key: 'credit_notes.write' },
+  // F114 US2 — the change-request queue deep link + the review page. Both
+  // `members.read` (manager / marketing read-only, FR-026); the decision
+  // controls are gated inside the page on `canPerform(role, 'members.write')`.
+  { surface: '/admin/change-requests', kind: 'page', key: 'members.read' },
+  { surface: '/admin/change-requests/[id]', kind: 'page', key: 'members.read' },
   { surface: '/admin/members/new', kind: 'page', key: 'members.write' },
   { surface: '/admin/members/[memberId]/edit', kind: 'page', key: 'members.write' },
   { surface: '/admin/plans/new', kind: 'page', key: 'plans.write' },
@@ -108,6 +113,8 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/admin/invoices/export.csv', kind: 'api', key: 'invoicing.read' },
   { surface: 'GET /api/admin/members/export.zip', kind: 'api', key: 'members.bulk' },
   { surface: 'GET /api/admin/members/[id]/data-export/[jobId]/download', kind: 'api', key: 'members.bulk' },
+  // F114 US2 — review payload (`members.read`) + decide (`members.write`).
+  { surface: 'GET /api/admin/change-requests/[id]', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/members/search', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/renewals', kind: 'api', key: 'renewals.read' },
   { surface: 'GET /api/admin/renewals/at-risk', kind: 'api', key: 'renewals.read' },
@@ -153,6 +160,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/plans/[year]/[planId]/affected-members', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/tenant-invoice-settings', kind: 'api', key: 'settings.invoicing' },
   { surface: 'PATCH /api/admin/broadcasts/templates/[id]', kind: 'api', key: 'broadcasts.write' },
+  { surface: 'POST /api/admin/change-requests/[id]/decide', kind: 'api', key: 'members.write' },
   { surface: 'PATCH /api/admin/members/[id]/preferred-locale', kind: 'api', key: 'members.write' },
   { surface: 'PATCH /api/members/[memberId]', kind: 'api', key: 'members.write' },
   { surface: 'PATCH /api/members/[memberId]/contacts/[contactId]', kind: 'api', key: 'contacts.write' },

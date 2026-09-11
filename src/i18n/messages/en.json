@@ -995,6 +995,97 @@
       "errorToast": "Could not save preference. Please try again.",
       "loading": "Loading…"
     },
+    "changeRequests": {
+      "queue": {
+        "title": "Change requests",
+        "subtitle": "Member-proposed changes awaiting a staff decision, oldest first.",
+        "empty": "No change requests are awaiting a decision.",
+        "noPendingForSubmitter": "This person has no request awaiting a decision — their last request was decided by {name} on {decidedAt}.",
+        "noRequestForSubmitter": "This person has no change request.",
+        "rowMeta": "Submitted by {submitter} · {count, plural, one {# field} other {# fields}} · {submittedAt}",
+        "open": "Review"
+      },
+      "review": {
+        "title": "Review change request",
+        "subtitle": "{company} · submitted by {submitter} ({role}) on {submittedAt}",
+        "roles": {
+          "primary": "primary contact",
+          "secondary": "secondary contact"
+        },
+        "state": {
+          "pending": "Awaiting decision",
+          "decided": "Decided",
+          "withdrawn": "Withdrawn"
+        },
+        "outcome": {
+          "approved": "Approved",
+          "partially_approved": "Partially approved",
+          "rejected": "Not approved"
+        },
+        "decidedBy": "Decided by {name} on {decidedAt}",
+        "deactivated": "(deactivated)",
+        "decisionReason": "Reason shown to the member",
+        "decisionNote": "Internal note",
+        "backToMember": "Member record",
+        "backToMembers": "Members",
+        "readOnly": "You can view this request. Only staff who can edit members can decide it.",
+        "archived": "This member is archived. Reject the request, or unarchive the member first and then approve.",
+        "erasing": "This member is being erased. The request cannot be approved.",
+        "notPending": "This request is no longer awaiting a decision.",
+        "columns": {
+          "decision": "Approve"
+        },
+        "approveCheckbox": "Approve {field}",
+        "markers": {
+          "changedSinceSubmitted": "Changed since the member submitted — they saw:",
+          "alreadyCurrent": "Already current — approving records the decision without changing the record",
+          "contactRemoved": "Contact removed — this field can only be rejected",
+          "taxAffecting": "Affects tax documents"
+        },
+        "taxHint": {
+          "buyer_name": "the buyer name printed on invoices and receipts",
+          "buyer_address": "the buyer address printed on invoices and receipts — check the head-office / branch designation",
+          "buyer_contact": "the buyer's contact person printed on tax documents",
+          "billing_country": "a non-Thai billing country — judge the VAT treatment"
+        }
+      },
+      "decision": {
+        "confirm": "Confirm decision",
+        "selectionSummary": "{approved, plural, =0 {No fields} one {# field} other {# fields}} to approve, {rejected, plural, =0 {none} one {# field} other {# fields}} to reject",
+        "titleApproveAll": "Approve all {count, plural, one {# field} other {# fields}}?",
+        "titleMixed": "Approve {approved, plural, one {# field} other {# fields}} and reject {rejected, plural, one {# field} other {# fields}}?",
+        "titleRejectAll": "Reject all {count, plural, one {# field} other {# fields}}?",
+        "descriptionApprove": "The approved values are applied to the member record immediately and the member is emailed the decision.",
+        "descriptionReject": "Rejected fields are not applied. The member is emailed your reason word for word.",
+        "confirmApproveAll": "Approve all",
+        "confirmMixed": "Approve {approved}, reject {rejected}",
+        "confirmRejectAll": "Reject all",
+        "cancel": "Cancel",
+        "reasonLabel": "Reason shown to the member",
+        "reasonPlaceholder": "Explain what was not approved and what to do instead…",
+        "reasonHelpRequired": "Required when a field is rejected. Sent to the member word for word.",
+        "reasonHelpOptional": "Optional. Sent to the member word for word.",
+        "noteLabel": "Internal note (optional)",
+        "noteHelp": "Staff only — never shown to the member. Up to {max} characters.",
+        "errors": {
+          "tooLong": "Must be at most {max} characters."
+        },
+        "toast": {
+          "approved": "Decision recorded — every field was applied.",
+          "partially_approved": "Decision recorded — the approved fields were applied.",
+          "rejected": "Decision recorded — nothing was applied.",
+          "repeated": "This decision was already recorded.",
+          "already_decided": "Another reviewer already decided this request. The page has been refreshed.",
+          "not_pending": "This request is no longer awaiting a decision. The page has been refreshed.",
+          "member_archived": "This member is archived — reject the request or unarchive the member first.",
+          "member_erasing": "This member is being erased — the request cannot be approved.",
+          "contact_removed": "The submitting contact was removed — their fields can only be rejected.",
+          "validation_error": "An approved value no longer passes validation. Reject that field instead.",
+          "reason_required": "Add a reason for the rejected fields.",
+          "error": "Could not record the decision. Please try again."
+        }
+      }
+    },
     "members": {
       "title": "Members",
       "overrideReason": {

@@ -161,6 +161,13 @@ export function makeInMemoryChangeRequestRepo(seed: readonly ChangeRequest[] = [
       return row ? ok(row) : err({ code: 'repo.not_found' });
     },
 
+    async findListRowById(_ctx, id) {
+      const f = takeFault('findListRowById');
+      if (f) return err(f);
+      const row = rows.get(id);
+      return row ? ok(toRow(row)) : err({ code: 'repo.not_found' });
+    },
+
     async findPendingBySubmitterInTx(_tx, userId) {
       const f = takeFault('findPendingBySubmitterInTx');
       if (f) return err(f);

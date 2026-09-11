@@ -59,6 +59,7 @@ import { isRole } from '@/modules/auth/domain/role';
 // request rows (research R8 / § V3): the outbox row carries ids + field keys
 // only. Read through the members barrel (Principle III).
 import {
+  buildChangeRequestDecidedMemberEmail,
   buildChangeRequestSubmittedStaffEmail,
   drizzleChangeRequestRepo,
   drizzleContactRepo,
@@ -124,6 +125,12 @@ interface BuiltPayload {
   subject: string;
   html: string;
   text: string;
+  /**
+   * F114 FR-023 — the member decision email goes to the submitting contact's
+   * CURRENT address, re-read at dispatch; when set it replaces the address
+   * frozen on the outbox row at decide time.
+   */
+  toEmail?: string;
   /**
    * FR-036 — optional file attachments. Currently populated only for
    * `invoice_voided` (VOID-stamped invoice PDF) so the member's
@@ -421,6 +428,36 @@ async function buildPayload(
           affectsTaxDocuments: f.affectsTaxDocuments,
         })),
       });
+    }
+    case 'member_change_request_decided_member': {
+      // F114 FR-023 (research R8 / § V3) — read-at-send under the row's
+      // tenant: the outcome, the per-field outcomes, the proposed values and
+      // the reviewer's reason come from the request rows NOW (a scrubbed
+      // request renders scrubbed). The recipient is the submitting contact's
+      // CURRENT address; a removed / unlinked contact is a deterministic
+      // `recipient_gone` miss (permanent on the first tick, audited).
+      const requestId = typeof ctx.requestId === 'string' ? ctx.requestId : '';
+      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,64}$/.test(row.tenantId)) return null;
+      const tenantCtx = asTenantContext(row.tenantId);
+      const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
+      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      if (request.value.state !== 'decided' || request.value.outcome === null || request.value.decidedAt === null) {
+        return { miss: 'request_gone' };
+      }
+      const contact = await drizzleContactRepo.findById(tenantCtx, request.value.submittedByContactId);
+      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'recipient_gone' } : null;
+      if (contact.value.removedAt !== null || contact.value.linkedUserId === null) return { miss: 'recipient_gone' };
+      const built = buildChangeRequestDecidedMemberEmail({
+        locale,
+        requestId: request.value.id,
+        outcome: request.value.outcome,
+        decidedAt: request.value.decidedAt,
+        reason: request.value.decisionReason,
+        fields: request.value.fields
+          .filter((f): f is typeof f & { outcome: 'approved' | 'rejected' } => f.outcome !== null)
+          .map((f) => ({ key: f.key, proposed: f.proposed, outcome: f.outcome })),
+      });
+      return { ...built, toEmail: contact.value.email };
     }
     default:
       return null;
@@ -1026,7 +1063,7 @@ async function dispatchOne(
     // bottleneck we can switch to a claim+release pattern where the tx
     // only claims the row and the send happens outside.
     const result = await emailSender.send({
-      to: row.toEmail,
+      to: payload.toEmail ?? row.toEmail,
       subject: payload.subject,
       html: payload.html,
       text: payload.text,

@@ -106,3 +106,67 @@ export async function readContactPhone(contactId: string): Promise<string | null
     await end();
   }
 }
+
+/** Owner-role write of the persona's own LIVE contact phone (restore after a US2 approval). */
+export async function writeContactPhone(contactId: string, phone: string | null): Promise<void> {
+  const client = openSeedClient(LABEL);
+  if (!client) return;
+  const { sql, end } = client;
+  try {
+    await sql`UPDATE contacts SET phone = ${phone}, updated_at = now() WHERE contact_id = ${contactId}::uuid`;
+  } finally {
+    await end();
+  }
+}
+
+/** The member's LIVE description (to assert a rejected field stayed untouched). */
+export async function readMemberDescription(memberId: string): Promise<string | null> {
+  const client = openSeedClient(LABEL);
+  if (!client) return null;
+  const { sql, end } = client;
+  try {
+    const rows = await sql<Array<{ description: string | null }>>`SELECT description FROM members WHERE member_id = ${memberId}::uuid`;
+    return rows[0]?.description ?? null;
+  } finally {
+    await end();
+  }
+}
+
+export interface SeededPendingRequest {
+  readonly requestId: string;
+  readonly proposedPhone: string;
+  readonly proposedDescription: string;
+}
+
+/**
+ * Seeds ONE pending request for the persona directly (US2 / US3 specs start
+ * from "a request is awaiting review" without driving the portal form):
+ * a contact `phone` row + a company `description` row, `mixed` scope.
+ */
+export async function seedPendingRequest(
+  ref: PortalMemberRef,
+  proposal: { readonly phone: string; readonly description: string; readonly seenPhone: string | null; readonly seenDescription: string | null },
+): Promise<SeededPendingRequest | null> {
+  const client = openSeedClient(LABEL);
+  if (!client) return null;
+  const { sql, end } = client;
+  try {
+    const rows = await sql<Array<{ id: string }>>`
+      INSERT INTO member_change_requests
+        (tenant_id, member_id, submitted_by_user_id, submitted_by_contact_id, submitter_role_at_submission, scope, state, submitted_at, staff_notified_at)
+      VALUES
+        (${TENANT_ID}, ${ref.memberId}::uuid, ${ref.userId}::uuid, ${ref.contactId}::uuid, ${ref.isPrimary ? 'primary' : 'secondary'}, 'mixed', 'pending', now(), now())
+      RETURNING id
+    `;
+    const requestId = rows[0]!.id;
+    await sql`
+      INSERT INTO member_change_request_fields (tenant_id, request_id, field_key, target, seen_value, proposed_value, affects_tax_documents)
+      VALUES
+        (${TENANT_ID}, ${requestId}::uuid, 'phone', 'contact', ${JSON.stringify(proposal.seenPhone)}::jsonb, ${JSON.stringify(proposal.phone)}::jsonb, false),
+        (${TENANT_ID}, ${requestId}::uuid, 'description', 'member', ${JSON.stringify(proposal.seenDescription)}::jsonb, ${JSON.stringify(proposal.description)}::jsonb, false)
+    `;
+    return { requestId, proposedPhone: proposal.phone, proposedDescription: proposal.description };
+  } finally {
+    await end();
+  }
+}

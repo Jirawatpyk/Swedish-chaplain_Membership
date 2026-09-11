@@ -320,6 +320,20 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
     }
   },
 
+  async findListRowById(ctx, id) {
+    try {
+      return await runInTenant(ctx, async (tx) => {
+        const rows = await joinedSelect(tx).where(eq(memberChangeRequests.id, id)).limit(1);
+        const j = rows[0];
+        if (!j) return err({ code: 'repo.not_found' });
+        const fields = await loadFields(tx, [j.request.id]);
+        return ok(toListRow(j, fields.get(j.request.id) ?? []));
+      });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findPendingBySubmitterInTx(tx, userId) {
     try {
       const rows = await tx

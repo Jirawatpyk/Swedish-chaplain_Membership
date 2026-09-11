@@ -119,6 +119,9 @@ export interface ChangeRequestRepo {
   /** Plain read (no lock) for review / detail pages; `repo.not_found` outside the tenant (RLS). */
   findById(ctx: TenantContext, id: ChangeRequestId): Promise<Result<ChangeRequest, RepoError>>;
 
+  /** The review / staff-detail projection: the request plus member, submitter and reviewer display facts. */
+  findListRowById(ctx: TenantContext, id: ChangeRequestId): Promise<Result<ChangeRequestListRow, RepoError>>;
+
   /** The submitter's pending request, `FOR UPDATE`, or `null` (R3 replace path). */
   findPendingBySubmitterInTx(
     tx: TenantTx,
