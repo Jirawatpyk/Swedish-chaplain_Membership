@@ -56,6 +56,7 @@
     "db:migrate:prod": "node --env-file=.env.production --import tsx scripts/run-migrations.ts",
     "db:repair-enums": "node --env-file=.env.local --import tsx scripts/repair-enum-drift.ts",
     "db:verify": "node --env-file=.env.local --import tsx scripts/verify-schema.ts",
+    "db:sweep-test-users": "node --env-file=.env.local --import tsx scripts/sweep-leaked-test-users.ts",
     "db:verify:prod": "node --env-file=.env.production --import tsx scripts/verify-schema.ts",
     "db:seed-admin": "node --env-file=.env.local --import tsx scripts/seed-bootstrap-admin.ts",
     "seed:f5-e2e": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-payment-settings.ts",

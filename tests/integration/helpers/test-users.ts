@@ -73,10 +73,53 @@ export async function createActiveTestUser(role: Role = 'admin'): Promise<TestUs
   };
 }
 
+/** Postgres SQLSTATE 23503 — foreign_key_violation. */
+const FOREIGN_KEY_VIOLATION = '23503';
+
+function foreignKeyViolation(e: unknown): { constraint: string; table: string } | null {
+  // drizzle wraps the driver error as `cause`; postgres.js exposes `code`
+  let cur: unknown = e;
+  for (let depth = 0; depth < 4 && cur && typeof cur === 'object'; depth += 1) {
+    const rec = cur as { code?: unknown; constraint_name?: unknown; table_name?: unknown; cause?: unknown };
+    if (rec.code === FOREIGN_KEY_VIOLATION) {
+      return {
+        constraint: typeof rec.constraint_name === 'string' ? rec.constraint_name : '?',
+        table: typeof rec.table_name === 'string' ? rec.table_name : '?',
+      };
+    }
+    cur = rec.cause;
+  }
+  return null;
+}
+
 /**
  * Delete a test user. Sessions/tokens/invitations cascade; audit_log
  * rows are preserved by the append-only trigger.
+ *
+ * Eighteen FKs point at `users` and nine of them are RESTRICT / NO ACTION
+ * (`invitations.invited_by_user_id`, `payments.actor_user_id`,
+ * `invoices.draft_by_user_id`, `member_change_requests.decided_by_user_id`,
+ * `membership_plans.created_by`, …), so a user that issued an invitation,
+ * recorded a payment or decided a request cannot be deleted while that
+ * row exists. This used to throw — and 116 teardowns wrapped the call in
+ * `.catch(() => {})`, so the row silently stayed ACTIVE: by 2026-09-11 the
+ * shared `dev` branch held 3,774 such admins and every per-reviewer
+ * fan-out took minutes. Now a blocked delete DISABLES the user instead
+ * (`listActiveUsersByRole` and every roster read filter on
+ * `status = 'active'`), warns once with the blocking constraint so the
+ * suite can be fixed at its source, and never throws for that case. Any
+ * other error still propagates.
  */
 export async function deleteTestUser(user: TestUser): Promise<void> {
-  await db.delete(users).where(eq(users.id, user.userId));
+  try {
+    await db.delete(users).where(eq(users.id, user.userId));
+  } catch (e) {
+    const fk = foreignKeyViolation(e);
+    if (!fk) throw e;
+    await db.update(users).set({ status: 'disabled' }).where(eq(users.id, user.userId));
+    console.warn(
+      `[test-users] deleteTestUser: ${user.rawEmail} is referenced by ${fk.table} (${fk.constraint}) — ` +
+        'disabled instead of deleted; delete that dependent in the suite teardown to remove the row',
+    );
+  }
 }
