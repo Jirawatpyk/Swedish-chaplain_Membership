@@ -2,7 +2,8 @@
 
 **Feature Branch**: `114-member-change-approval`
 **Created**: 2026-09-11
-**Status**: Draft — clarified 2026-09-11 · `spec-review-panel` 2026-09-11: GO WITH AMENDMENTS, amendments applied (`reviews/spec-review-panel-20260911.md`) · planned 2026-09-11 · checklist-gate gaps closed 2026-09-11 (FR-038–FR-040 added) · ready for `/speckit-tasks`
+**Status**: Tasked
+**History**: specified + clarified 2026-09-11 · `spec-review-panel` 2026-09-11: GO WITH AMENDMENTS, amendments applied (`reviews/spec-review-panel-20260911.md`) · planned 2026-09-11 · checklist-gate gaps closed 2026-09-11 (FR-038–FR-040 added) · tasked 2026-09-11 (118 tasks; `/speckit.superb.review` added T115–T118)
 **Input**: User description: "Member Portal – Approval Workflow for Member Changes. When a member edits their own info in the Member Portal, the change must NOT save immediately. Member submits a change → system sends email notification (who changed what). SweCham reviews the request in CRM → can Approve or Reject (with a reason if rejected). If Approved → Member Portal and CRM both update immediately with the new info (must stay in sync). If Rejected → change does not apply, member is notified with the reason. Also required: a history log of all changes — who changed what, when, and SweCham's approve/reject decision. This log should also be visible to SweCham so they can check it themselves."
 
 ## Overview *(context, non-normative)*
