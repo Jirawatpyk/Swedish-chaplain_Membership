@@ -147,8 +147,16 @@ describe('findMissingEnumValues', () => {
           // 0295 (108-contact-recipient-rules PR-D):
           'contact_marketing_opted_out',
           'contact_marketing_opted_in',
+          // 0301 (F114 member-change-approval PR-1):
+          'member_change_request_submitted',
+          'member_change_request_decided',
+          'member_change_request_withdrawn',
+          'member_change_request_rate_limited',
+          'member_change_approval_setting_changed',
         ]),
       ],
+      // 0301 (F114): the two outbox row types the use cases INSERT.
+      ['notification_type', new Set(['member_change_request_submitted_staff', 'member_change_request_decided_member'])],
     ]);
     expect(findMissingEnumValues(present)).toEqual([]);
   });
@@ -192,8 +200,16 @@ describe('findMissingEnumValues', () => {
           // 0295 (108-contact-recipient-rules PR-D):
           'contact_marketing_opted_out',
           'contact_marketing_opted_in',
+          // 0301 (F114 member-change-approval PR-1):
+          'member_change_request_submitted',
+          'member_change_request_decided',
+          'member_change_request_withdrawn',
+          'member_change_request_rate_limited',
+          'member_change_approval_setting_changed',
         ]),
       ],
+      // 0301 (F114): the two outbox row types the use cases INSERT.
+      ['notification_type', new Set(['member_change_request_submitted_staff', 'member_change_request_decided_member'])],
     ]);
     expect(findMissingEnumValues(present)).toEqual<MissingEnumValues[]>([
       { enumType: 'document_type', typeExists: true, missing: ['bill', 'receipt_105'] },
@@ -205,6 +221,8 @@ describe('findMissingEnumValues', () => {
       ['document_type', new Set(['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'])],
       // 016: role fully present so this test isolates audit_event_type absence.
       ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
+      // 0301 (F114): the two outbox row types the use cases INSERT.
+      ['notification_type', new Set(['member_change_request_submitted_staff', 'member_change_request_decided_member'])],
     ]);
     expect(findMissingEnumValues(present)).toEqual<MissingEnumValues[]>([
       {
@@ -245,6 +263,12 @@ describe('findMissingEnumValues', () => {
           // 0295 (108-contact-recipient-rules PR-D):
           'contact_marketing_opted_out',
           'contact_marketing_opted_in',
+          // 0301 (F114 member-change-approval PR-1):
+          'member_change_request_submitted',
+          'member_change_request_decided',
+          'member_change_request_withdrawn',
+          'member_change_request_rate_limited',
+          'member_change_approval_setting_changed',
         ],
       },
     ]);
