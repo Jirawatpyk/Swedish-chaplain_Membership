@@ -531,7 +531,7 @@ export const outboxMetrics = {
       // reason while this label was hardcoded to no_template_handler).
       | 'request_gone'
       | 'recipient_gone'
-      | 'request_superseded'
+      // (`request_superseded` is NOT a failure — see `superseded` below)
       // R17-02 — void two-phase-commit Phase 2 sync failure: Blob
       // prefetch bytes don't match the sha256 committed by Phase 1.
       // Emitted alongside the dual `email_dispatch_failed` +
@@ -543,6 +543,20 @@ export const outboxMetrics = {
       'outbox_permanent_failures_total',
       'Outbox rows permanently failed — alert on any non-zero rate',
     ).add(1, { notification_type: notificationType, reason });
+  },
+
+  /**
+   * F114 — a change-request staff row closed because the member REPLACED
+   * the request before it was sent (whole-branch review F-4). A normal
+   * flow, not a failure: its own counter so the `outbox_permanent_failures_total`
+   * alarm stays clean, and a rate here that tracks resubmits is expected.
+   * Alert: none (watch only). `docs/observability.md § 14.1`.
+   */
+  superseded(notificationType: string): void {
+    counter(
+      'outbox_superseded_total',
+      'Outbox rows closed because their request was replaced before send (F114)',
+    ).add(1, { notification_type: notificationType });
   },
 
   /**
@@ -6053,15 +6067,17 @@ export type ChangeRequestRefusedReason =
   | 'not_owner';
 
 /**
- * F114 (contracts/notifications-and-audit.md § 4; docs/observability.md § 14).
- * Labels are bounded enums + `tenant`; never a user id, an email or a value.
+ * F114 (contracts/notifications-and-audit.md § 4; docs/observability.md § 14.1
+ * "F114 rows"). Labels are bounded enums + `tenant`; never a user id, an
+ * email or a value.
  */
 export const membersMetrics = {
   changeRequests: {
     /**
      * `members.change_requests_pending_count{tenant}` — async gauge over
-     * `member_change_requests WHERE state = 'pending'`, emitted by the
-     * per-tenant gauges tick (research R12 / V2). Alert: see oldest age.
+     * `member_change_requests WHERE state = 'pending'`. NO caller yet: the
+     * per-tenant gauges tick is wired in Phase 8 (research R12 / V2, T102 —
+     * a pre-flip gate in quickstart § 3). Alert: see oldest age.
      */
     pendingCount(tenantId: string, count: number): void {
       safeMetric(() => {

@@ -122,6 +122,39 @@ live-Neon: `change-requests-{repo,submit-atomicity,staff-email-dispatch(+recipie
 `timeline{,-multisource}`, `f3-timeline-integration` (`timeline-perf` skips without its perf env).
 e2e still unrun (no dev server).
 
+## Round 3 — whole-branch seam pass (`whole-branch-reviewer`, fable) on `cf1495550..23be93038`, 2026-09-11
+
+The last pass that sees every commit at once. Baseline correction first: `git merge-base
+origin/main HEAD` is `cf1495550`, not `d6c5028aa` — the eight spec / chore commits before the
+foundation commit are NOT on `main` and merge with this PR (161 files, +18690/−494). No BLOCKER.
+Verdict **With fixes**: the "dark" claim was false on the flip-then-unflip path, and the rollback
+matrix omitted three unflagged behaviour changes the review rounds themselves introduced.
+
+| # | Sev | Finding | Verified | Outcome |
+|---|---|---|---|---|
+| 1 | MEDIUM | kill-switch did not contain the two F114 outbox arms: rows queued while the flag was ON kept dispatching member PII to staff after the operator flipped it OFF (F4 has the R7-B4 query-time filter; F114 had zero flag reads in the dispatcher) | grep `memberChangeApproval` in `outbox-dispatch/route.ts` = 0 → RED integration case (flag OFF → row `sent`) | **fixed** — `baseReadyFilters` excludes both types while `!env.features.memberChangeApproval`; rows stay `pending`, attempts 0, and drain when the flag returns; integration case `platform flag OFF …` in `change-requests-staff-email-dispatch.test.ts` (both dispatch suites now pin the flag via an `env` mock — `.env.local` does not carry it) |
+| 2 | MEDIUM | unflagged + undisclosed: the DSAR audit subset matches `related_member_id` for every member on merge (also closes the pre-existing `auto_email_skipped_no_recipient` / marketing gap) | ledger row 15 + `quickstart.md` matrix | **disclosed** — matrix "Unflagged and live on merge" re-derived from the final tree (bullets, incl. a DPO note) |
+| 3 | MEDIUM | two more unflagged hunks: (a) `ConfirmationDialog` body wrapper on 9 existing dialogs; (b) `member_self_update_forbidden` payload/summary shape on the flag-OFF path, contradicting the "byte-identical (SC-011)" docblocks | diff count = 9; `member-self-update.ts:16,108` | **disclosed + reworded** — both in the matrix; the docblocks now say the WRITE path is byte-identical and name the audit-sink change; the bounded keys are kept in both modes on purpose (privacy M-7 protects the append-only table regardless of gate) |
+| 4 | MEDIUM (dark) | `request_superseded` was a `permanently_failed` + `email_dispatch_failed` audit + `outbox_permanent_failures_total` increment — an on-call page (`observability.md` alarm `rate > 0` / 5 min) for a member fixing a typo, until US5 coalescing (PR-2) | read; reachable only with the flag ON | **fixed** — silent skip: terminal status + `last_error` kept for the operator, NO audit (the replacement is already `member_change_request_withdrawn{replaced}`), its own `outbox_superseded_total{notification_type}` counter (watch only, not alerted); `request_superseded` removed from the `permanentFailure` union; integration case asserts no `email_dispatch_failed` row |
+| 5 | MEDIUM | docs written in `ddb37903b` never re-derived after rounds 1–2: the matrix; `observability.md` reason set; `metrics.ts` "§ 14" pointer | grep | **fixed** — matrix re-derived; `outbox_permanent_failures_total` reason set lists `attachment_sha_mismatch`, `request_gone`, `recipient_gone`; `outbox_superseded_total` row added; the pointer names § 14.1 |
+| 6 | LOW | `pendingCount` / `oldestAgeSeconds` docblock claimed a gauges tick that has no caller | grep = 0 in `src/` | **fixed** — docblock says "NO caller yet: Phase 8 (T102, pre-flip gate)" |
+| 7 | LOW | the staff schemas accept `''` / untrimmed text for description, role_title and address lines while the form sends `nullable(trim())`; a record holding `''` produced a spurious "(empty) → (empty)" row on every submit | logic read; prod values unmeasured | **fixed** — `normaliseText` applied to BOTH sides of the diff (`seenFor`, `proposedFor`, `normaliseAddress`): trim, `''` → null; three unit cases in `domain-policies.test.ts` (RED first) |
+| 8 | LOW | the profile page and the gate GET read the pending row with the `FOR UPDATE` finder (tail latency against a concurrent decide; no correctness issue) | read | **deferred** — already Rel M-5 in the round-1 table: a non-locking `findPendingBySubmitter` in PR-2 |
+| 9 | LOW | 0300 edited in place: if the first version was journaled on the shared `dev` branch, dev ≠ prod | ASSUMED by the reviewer | **refuted** — `pnpm db:verify` against dev: "13 canaries present", incl. `member_change_requests UNIQUE (tenant_id, id) + composite child FKs (mig 0300)` (dev was converged by ALTER in round 1) |
+| 10 | LOW | `listVisibleToUser` (dead in PR-1 — the US4 history route) returns a `mixed` row's contact-target VALUES to a non-submitter; FR-029 | read; no caller in `src/app` | **deferred to PR-2 (US4)** — strip contact-target fields from `mixed` rows for non-submitters in the history serialiser; noted on T072 |
+| 11 | LOW | branch scope: the eight pre-foundation commits (`.claude/workflows/spec-review-panel.js`, `.gitattributes`, `.specify/.gitignore`, the spec artefacts) ride along | `git merge-base` | **disclosed** in the PR body |
+
+Refuted by the reviewer (kept here so the next pass does not re-open them): no `err()` after a
+write inside `runInTenant`; lock order submit (pending → member) / decide (request → member →
+contacts) consistent; no nested `runInTenant` under a lock; RLS `ENABLE + FORCE` on both tables and
+every `*InTx` threads `tx`; round-2 contract consumers all updated (5 `timelineList` call sites,
+`reviewerUserId` ×2 + fallback, `not_owner`, widened `permanentFailure` union, conflict retry ×2);
+audit truth (`check:actor-role-truth` green; `member_id` on submit / forged, `related_member_id`
+on decide / replaced, `member_timeline_v` COALESCEs both); the 5-places rule for the seven enum
+values; three-way field rules (submit superRefine / decide re-validate / DB CHECK); every new route
+404s before session work and both admin pages `notFound()` before the permission gate;
+`patchesOf` is fail-closed (`void _exhaustive`); `reason-confirmation-dialog` move byte-identical.
+
 Checklist checkboxes in `checklists/{security,privacy,tax}.md` remain reviewer-owned and are
 ticked only at `/speckit.review` (T112); each reviewer's per-CHK evidence is in its round-1
 report (see the co-sign footer template in `README.md`).

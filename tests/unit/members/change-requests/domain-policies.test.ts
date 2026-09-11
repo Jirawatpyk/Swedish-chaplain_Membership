@@ -117,6 +117,38 @@ describe('PROPOSABLE_FIELD_KEYS (FR-002 compile-time constant)', () => {
   });
 });
 
+describe('diffAgainstRecord — text normalisation (whole-branch review F-7)', () => {
+  // The staff schemas accept `''` and untrimmed text for description /
+  // role_title / address lines; the portal form sends `nullable(trim())`.
+  // Without normalising BOTH sides a record holding `''` produced a spurious
+  // "(empty) → (empty)" row on every submit from that member.
+  it("a record holding '' or whitespace equals a proposal of null — no row", () => {
+    const record: GroupBRecord = {
+      ...RECORD,
+      contact: { ...RECORD.contact, role_title: '   ' },
+      company: { ...RECORD.company, description: '', registered_address: { ...RECORD.company.registered_address, line2: ' ' } },
+    };
+    const rows = diffAgainstRecord(
+      record,
+      { contact: { role_title: null }, company: { description: null, registered_address: { ...RECORD.company.registered_address, line2: null } } },
+      TAX_CTX,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it('surrounding whitespace never makes a diff, and a stored proposed value is trimmed', () => {
+    const record: GroupBRecord = { ...RECORD, contact: { ...RECORD.contact, role_title: 'CFO' } };
+    expect(diffAgainstRecord(record, { contact: { role_title: ' CFO ' } }, TAX_CTX)).toEqual([]);
+    const rows = diffAgainstRecord(record, { contact: { role_title: ' Chief Financial Officer ' } }, TAX_CTX);
+    expect(rows.map((r) => [r.key, r.seen, r.proposed])).toEqual([['role_title', 'CFO', 'Chief Financial Officer']]);
+  });
+
+  it("a proposed '' is stored as null (the same rule as fillLines on the address lines)", () => {
+    const rows = diffAgainstRecord({ ...RECORD, contact: { ...RECORD.contact, role_title: 'CFO' } }, { contact: { role_title: '' } }, TAX_CTX);
+    expect(rows.map((r) => [r.key, r.seen, r.proposed])).toEqual([['role_title', 'CFO', null]]);
+  });
+});
+
 describe('deriveOutcome (FR-016)', () => {
   it('all approved → approved', () => {
     expect(deriveOutcome(['approved', 'approved'])).toBe('approved');

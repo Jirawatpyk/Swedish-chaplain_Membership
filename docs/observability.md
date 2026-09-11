@@ -412,7 +412,8 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `members.email_change.count` | counter | `{event}` (`initiated`/`verified`/`reverted`/`failed`) | email-change lifecycle events |
 | `members.bundle_warning.latency_ms` | histogram | `{plan_id}` | `/api/plans/[year]/[planId]/affected-members` |
 | `outbox.dispatch.latency_ms` | histogram | `{notification_type, attempt}` | member-email outbox cron dispatcher |
-| `outbox_permanent_failures_total` | counter | `{notification_type, reason}` where `reason ∈ {max_retries, invalid_recipient, no_template_handler}` | `permanently_failed` flips after 5 retries or unrenderable payload |
+| `outbox_permanent_failures_total` | counter | `{notification_type, reason}` where `reason ∈ {max_retries, invalid_recipient, no_template_handler, attachment_sha_mismatch, request_gone, recipient_gone}` (the last two: F114 deterministic misses, first tick) | `permanently_failed` flips after 5 retries or unrenderable payload |
+| `outbox_superseded_total` | counter (watch only, NOT alerted) | `{notification_type}` | F114 — a `member_change_request_submitted_staff` row closed because the member replaced the request before send; a normal flow, tracks resubmits until US5 coalescing (PR-2) |
 | `outbox_stuck_rows_total` | counter (rate-alerted) | — | pending rows > 30 min past `next_retry_at` at cron tick time; rate > 0 = cron is down or lost `CRON_SECRET` |
 | `members.invite.count` | counter | `{outcome}` (`sent`/`already_linked`/`no_email`) | portal invite events |
 | `members.archive.count` | counter | `{cascade_sessions}` (`0`/`1`/`2+`) | archive cascade cardinality signal |

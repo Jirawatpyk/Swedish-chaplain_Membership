@@ -19,6 +19,27 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 
+// The dispatcher filters the two F114 arms at query time while the platform
+// flag is OFF (whole-branch review F-1: kill-switch containment, the F4 R7-B4
+// precedent). `.env.local` does not carry the flag, so the suite pins it ON
+// and flips it OFF for the containment case.
+let changeApprovalFlag = true;
+vi.mock('@/lib/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/env')>();
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      features: {
+        ...actual.env.features,
+        get memberChangeApproval() {
+          return changeApprovalFlag;
+        },
+      },
+    },
+  };
+});
+
 const sent: Array<{ to: string; subject: string; html: string; text: string }> = [];
 vi.mock('@/modules/auth/infrastructure/email/resend-client', () => ({
   emailSender: {
@@ -187,10 +208,43 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     const superseded = await tickUntilSettled(firstId);
     expect(superseded?.status).toBe('permanently_failed');
     expect(superseded?.lastError).toBe('request_superseded');
+    // whole-branch review F-4: a resubmit is a NORMAL flow (US5 coalescing is
+    // PR-2) — the superseded row is a silent skip: no `email_dispatch_failed`
+    // audit (the replacement is already audited as `withdrawn{replaced}`) and
+    // NOT counted on `outbox_permanent_failures_total`, which pages on-call.
+    const failedAudits = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.eventType, 'email_dispatch_failed')));
+    expect(failedAudits.some((a) => (a.payload as { outbox_row_id?: string }).outbox_row_id === superseded?.id)).toBe(false);
     const sentRow = await tickUntilSettled(secondId);
     expect(sentRow?.status).toBe('sent');
     expect(sent.some((m) => m.text.includes('+66866666666'))).toBe(true);
     expect(sent.some((m) => m.text.includes('+66855555555'))).toBe(false);
+  });
+
+  it('platform flag OFF: the staff row is NOT picked up — it stays pending, attempts 0, nothing sent (kill-switch containment, whole-branch F-1)', async () => {
+    const r = await submit({ contact: { phone: '+66811111111' } });
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const requestId = r.ok && r.value.outcome === 'submitted' ? r.value.request.id : '';
+    changeApprovalFlag = false;
+    try {
+      await tick();
+      await tick();
+      const rows = await db
+        .select()
+        .from(notificationsOutbox)
+        .where(and(eq(notificationsOutbox.tenantId, tenant.ctx.slug), eq(notificationsOutbox.notificationType, 'member_change_request_submitted_staff')));
+      const mine = rows.find((x) => (x.contextData as { requestId?: string }).requestId === requestId);
+      expect(mine?.status).toBe('pending');
+      expect(mine?.attempts).toBe(0);
+      expect(sent.some((m) => m.text.includes('+66811111111'))).toBe(false);
+    } finally {
+      changeApprovalFlag = true;
+    }
+    // the row is untouched, so it drains once the flag returns
+    const drained = await tickUntilSettled(requestId);
+    expect(drained?.status).toBe('sent');
   });
 
   it('a reviewer DISABLED between enqueue and send gets nothing: the row permanently fails as recipient_gone (review security I-4 / round 2 R-1)', async () => {

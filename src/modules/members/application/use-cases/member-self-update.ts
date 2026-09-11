@@ -15,7 +15,11 @@
  * Group A — the contact's own `preferredLanguage` — is accepted here; every
  * Group B key becomes a change request through `submitChangeRequest` and is
  * refused on this endpoint with the same forged-edit audit. `gate:
- * 'immediate'` (the default) is byte-identical to the F3 behaviour.
+ * 'immediate'` (the default) keeps the F3 WRITE path byte-identical (SC-011);
+ * the forged-edit audit sink is the one deliberate change in both modes —
+ * `member_self_update_forbidden` now carries `refusal` and a BOUNDED
+ * `attempted_fields` (+ `attempted_fields_truncated`), review privacy M-7 —
+ * disclosed in quickstart § 3 "Unflagged and live on merge".
  */
 
 import { z } from 'zod';
@@ -105,7 +109,7 @@ export type MemberSelfUpdateInput = {
   readonly requestId: string;
   /**
    * F114 FR-001 / R6 — which set this immediate endpoint may write:
-   *   'immediate' (default, the F3 path, byte-identical) → the full flag-OFF
+   *   'immediate' (default, the F3 write path, byte-identical) → the full flag-OFF
    *   whitelist; 'approval' → Group A ONLY (`PORTAL_IMMEDIATE_CONTACT_FIELDS`
    *   = the contact's own notification language); every Group B key is then
    *   refused with the same `member_self_update_forbidden` audit a forged

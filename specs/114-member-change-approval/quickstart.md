@@ -115,15 +115,33 @@ moment the flag is set:
 | Layer | Action | Pending rows | Portal | Nav / dashboard | `PATCH /api/portal/profile` | Time |
 |---|---|---|---|---|---|---|
 | 1 — tenant setting OFF | admin toggles at `/admin/settings/member-changes` (audited) | kept, still decidable | no new requests; existing pending banner stays | count stays while rows pending | Group B saves immediately again | seconds |
-| 2 — platform flag OFF | remove `FEATURE_MEMBER_CHANGE_APPROVAL` in Vercel + redeploy | kept untouched, decidable again when the flag returns | no pending/decision state shown | hidden | widened back to today's field set | one deploy |
+| 2 — platform flag OFF | remove `FEATURE_MEMBER_CHANGE_APPROVAL` in Vercel + redeploy | kept untouched, decidable again when the flag returns; **queued outbox rows** of the two F114 types stay `pending` — the dispatcher filters them at query time while the flag is off (the F4 R7-B4 precedent) and drains them when it returns | no pending/decision state shown | hidden | widened back to today's field set | one deploy |
 | 3 — code revert | revert the PR | kept (see below) | — | — | — | one deploy |
 
-**Unflagged and live on merge** — none of the layers above undoes these: migration `0300` (two
-tables, `outcome_acknowledged_at`, the `tenant_member_settings` column), the seven enum values
-(`ADD VALUE` is irreversible), the `ReasonConfirmationDialog` promotion to `components/shell/` (the
-old path re-exports), the nav item type's optional `badgeCount` slot, and the relocation of the
-contact's language setting to the account page (save semantics unchanged). Rolling any of these back
-is a new migration / code change, not a flag flip.
+**Unflagged and live on merge** — none of the layers above undoes these (re-derived from the
+final tree after review rounds 1–3; the review rounds themselves added the last four):
+
+- migration `0300` (two tables, `outcome_acknowledged_at`, the `tenant_member_settings` column) and
+  the seven enum values in `0301` (`ADD VALUE` is irreversible);
+- the `ReasonConfirmationDialog` promotion to `components/shell/` (the old path re-exports), the nav
+  item type's optional `badgeCount` slot, and the relocation of the contact's language setting to
+  the account page (save semantics unchanged);
+- **GDPR Art. 15 / PDPA §30 audit subset** (`isInMemberAuditSubset` + the SQL arm in
+  `gdpr-audit-subset-repo.ts`) now matches `payload->>'related_member_id'` — every member's DSAR
+  export gains the rows keyed that way, including pre-existing `auto_email_skipped_no_recipient`
+  and marketing opt-out rows. A correct fix (review privacy I-3); tell the DPO;
+- **`ConfirmationDialog`** wraps every non-empty body in a bounded, scrollable `space-y-4` container
+  (review UX I2) — 9 existing dialogs gain vertical spacing + nested scroll on short viewports;
+- **`member_self_update_forbidden`** (the forged-edit audit on `PATCH /api/portal/profile`, both
+  gates) carries `refusal: 'gate_narrowed' | 'forged'` and a BOUNDED `attempted_fields` (20 keys ×
+  64 chars, `attempted_fields_truncated`); its `summary` prefix changed — a dashboard keyed on the
+  old text drifts (review privacy I-5 / M-7);
+- the portal timeline route / page / recent-activity resolve the viewer's own contact (one extra
+  `contactRepo.listByMember` per render — perf only); `MembersDeps` gains three members; the
+  `verify-schema` + `check-multi-tenant-ready` canaries; the test-tenant helper deletes the new
+  tables.
+
+Rolling any of these back is a new migration / code change, not a flag flip.
 
 ## 4. Watch after cutover
 

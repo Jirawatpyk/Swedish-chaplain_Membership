@@ -151,13 +151,27 @@ export function changedSinceSubmitted(field: ProposedField, liveValue: ProposedV
 // diffAgainstRecord (FR-005 / FR-007)
 // ---------------------------------------------------------------------------
 
+/**
+ * One rule for BOTH sides of the diff (whole-branch review F-7): the staff
+ * schemas accept `''` and untrimmed text for description / role_title /
+ * address lines while the portal form sends `nullable(trim())`. Compared
+ * post-normalisation, a record holding `''` no longer yields a spurious
+ * "(empty) → (empty)" row on every submit, and a stored proposed value is
+ * the trimmed one (`''` → null — the same rule as `fillLines`).
+ */
+function normaliseText(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 function normaliseAddress(
   key: 'registered_address' | 'billing_address',
   value: Partial<Readonly<Record<string, string | null>>>,
 ): RegisteredAddress | BillingAddress {
   const lines = key === 'billing_address' ? BILLING_ADDRESS_LINES : REGISTERED_ADDRESS_LINES;
   const out: Record<string, string | null> = {};
-  for (const line of lines) out[line] = value[line] ?? null;
+  for (const line of lines) out[line] = normaliseText(value[line]);
   return out as RegisteredAddress | BillingAddress;
 }
 
@@ -167,20 +181,20 @@ function proposedFor(proposal: GroupBProposal, key: ProposableFieldKey): Propose
     if (company === undefined || !(key in company)) return undefined;
     const raw = company[key];
     if (raw === undefined) return undefined;
-    return isAddressGroupKey(key) ? normaliseAddress(key, raw as Partial<Record<string, string | null>>) : (raw as string | null);
+    return isAddressGroupKey(key) ? normaliseAddress(key, raw as Partial<Record<string, string | null>>) : normaliseText(raw as string | null);
   }
   const contact = proposal.contact;
   if (contact === undefined || !(key in contact)) return undefined;
   const raw = contact[key as ContactFieldKey];
-  return raw === undefined ? undefined : raw;
+  return raw === undefined ? undefined : normaliseText(raw);
 }
 
 function seenFor(record: GroupBRecord, key: ProposableFieldKey): ProposedValue {
   if (isCompanyFieldKey(key)) {
     const raw = record.company[key];
-    return isAddressGroupKey(key) ? normaliseAddress(key, raw as Partial<Record<string, string | null>>) : (raw as string | null);
+    return isAddressGroupKey(key) ? normaliseAddress(key, raw as Partial<Record<string, string | null>>) : normaliseText(raw as string | null);
   }
-  return record.contact[key as ContactFieldKey];
+  return normaliseText(record.contact[key as ContactFieldKey]);
 }
 
 /**

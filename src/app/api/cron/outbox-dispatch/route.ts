@@ -1010,6 +1010,27 @@ async function dispatchOne(
       const isPermanent = miss !== null || nextAttempt >= MAX_ATTEMPTS;
       const failReason: string = miss ?? 'no_template_handler';
 
+      // F114 — a request REPLACED by a resubmit before its staff row was
+      // sent is a NORMAL flow, not an incident (whole-branch review F-4;
+      // US5 coalescing is PR-2). The row is closed as a silent skip: terminal
+      // status + `last_error` for the operator, its own counter, and no
+      // `email_dispatch_failed` audit (the replacement is already audited as
+      // `member_change_request_withdrawn{replaced}`) — so the on-call alarm
+      // on `outbox_permanent_failures_total` does not fire for a typo fix.
+      if (miss === 'request_superseded') {
+        await tx
+          .update(notificationsOutbox)
+          .set({
+            attempts: nextAttempt,
+            status: 'permanently_failed' as const,
+            lastError: failReason,
+            updatedAt: now,
+          })
+          .where(eq(notificationsOutbox.id, row.id));
+        outboxMetrics.superseded(row.notificationType);
+        return 'permanent';
+      }
+
       if (isPermanent) {
         await tx
           .update(notificationsOutbox)
@@ -1062,7 +1083,7 @@ async function dispatchOne(
             },
           });
         }
-        outboxMetrics.permanentFailure(row.notificationType, miss ?? 'no_template_handler');
+        outboxMetrics.permanentFailure(row.notificationType, miss === 'request_gone' || miss === 'recipient_gone' ? miss : 'no_template_handler');
         if (row.notificationType === 'invoice_auto_email') {
           invoicingMetrics.autoEmailBounce('no_template_handler');
         }
@@ -1287,6 +1308,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   ];
   if (!env.features.f4Invoicing) {
     baseReadyFilters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
+  }
+  // F114 — the same containment for the two change-request arms (whole-
+  // branch review F-1). With FEATURE_MEMBER_CHANGE_APPROVAL off the rows
+  // enqueued while it was on MUST NOT keep dispatching member PII to staff
+  // (or decisions to members) after the operator flips the switch: they
+  // stay `pending`, untouched, and drain when the flag returns
+  // (quickstart § 3, rollback matrix row 2).
+  if (!env.features.memberChangeApproval) {
+    baseReadyFilters.push(
+      ne(notificationsOutbox.notificationType, 'member_change_request_submitted_staff'),
+      ne(notificationsOutbox.notificationType, 'member_change_request_decided_member'),
+    );
   }
   // R1-I3 — kill-switch parity for the T166 async render branch.
   // When `FEATURE_F5_ASYNC_RECEIPT_PDF` is off, the dispatcher must

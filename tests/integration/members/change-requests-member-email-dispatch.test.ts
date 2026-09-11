@@ -19,6 +19,27 @@ import { and, eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 
 const sent: Array<{ to: string; subject: string; html: string; text: string }> = [];
+// The dispatcher filters the two F114 arms at query time while the platform
+// flag is OFF (whole-branch review F-1: kill-switch containment, the F4 R7-B4
+// precedent). `.env.local` does not carry the flag, so the suite pins it ON
+// and flips it OFF for the containment case.
+const changeApprovalFlag = true; // the containment case lives in the staff-dispatch suite
+vi.mock('@/lib/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/env')>();
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      features: {
+        ...actual.env.features,
+        get memberChangeApproval() {
+          return changeApprovalFlag;
+        },
+      },
+    },
+  };
+});
+
 vi.mock('@/modules/auth/infrastructure/email/resend-client', () => ({
   emailSender: {
     send: vi.fn(async (message: { to: string; subject: string; html: string; text: string }) => {
