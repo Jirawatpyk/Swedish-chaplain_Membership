@@ -54,11 +54,18 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
         const label = tDiff(`labels.${f.key}`);
         const undecidable = f.undecidable === 'contact_removed';
         // Two different "cannot toggle" cases (round 2, UX + a11y):
-        //  - no decide permission → a NATIVE disabled control (out of the tab
-        //    order; the page-level read-only notice already explains why);
-        //  - a contact_removed row → `aria-disabled` + inert so the row STAYS
-        //    reachable and its explanation is announced via aria-describedby.
+        //  - no decide permission → `disabled` (out of the tab order; the
+        //    page-level read-only notice already explains why);
+        //  - a contact_removed row → inert so the row STAYS reachable and its
+        //    explanation is announced via aria-describedby.
+        // Base UI's Checkbox renders a <span role="checkbox">: `disabled`
+        // becomes `data-disabled` + tabindex=-1 and NOT `aria-disabled`, so
+        // assistive tech would read a disabled row as toggleable — the e2e
+        // run caught it (`toBeDisabled` saw "enabled"). Both cases therefore
+        // ALSO carry aria-disabled; only the permission case leaves the tab
+        // order.
         const inert = undecidable;
+        const cannotToggle = !canDecide || inert;
         const approved = selected[f.key] === true;
         return (
           <li
@@ -135,7 +142,7 @@ export function ChangeRequestDecisionTable({ fields, selected, onToggle, canDeci
                     aria-describedby={inert ? `decide-${f.key}-why` : undefined}
                     checked={approved}
                     disabled={!canDecide}
-                    aria-disabled={inert || undefined}
+                    aria-disabled={cannotToggle || undefined}
                     className={inert ? 'cursor-not-allowed border-muted-foreground/40 bg-muted' : undefined}
                     onCheckedChange={(c) => {
                       if (inert || !canDecide) return;

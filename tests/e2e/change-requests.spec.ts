@@ -69,11 +69,20 @@ async function signIn(page: Page, email: string, password: string): Promise<void
   );
 }
 
-/** FR-039 — the platform flag is the server's env; skip (not fail) when it is off. */
+/**
+ * FR-039 — the platform flag is the server's env; skip (not fail) when it is
+ * off. The probe is the member gate route, which answers 404 BEFORE any
+ * session work while the flag is off and reaches the session gate once it is
+ * on — so a STAFF session (US2 / US3 sign in as admin or manager first) gets
+ * 403 there, which still proves the flag is on; the tenant-mode check only
+ * applies to the member's own 200 (the first e2e run read the 403 as a
+ * failure — fixture bug, not a product one).
+ */
 async function skipUnlessFlagOn(page: Page): Promise<void> {
   const res = await page.request.get('/api/portal/change-requests/gate');
   test.skip(res.status() === 404, 'FEATURE_MEMBER_CHANGE_APPROVAL is off on the dev server (gate route → 404)');
-  expect(res.status()).toBe(200);
+  expect([200, 401, 403]).toContain(res.status());
+  if (res.status() !== 200) return; // a staff session: the flag is on, the mode is the seed's business
   const body = (await res.json()) as { mode: string };
   test.skip(body.mode !== 'approval', `tenant gate is "${body.mode}" — the seed could not switch approval on`);
 }
@@ -112,7 +121,16 @@ test.describe('@change-requests US1 — member submits, nothing applied, staff n
     await expect(page.getByTestId('review-notice')).toContainText(copy.form.notice);
     await expect(page.getByTestId('review-notice').getByRole('link', { name: copy.form.privacyLink })).toBeVisible();
 
-    await page.getByLabel(copy.form.fields.phone, { exact: true }).fill(proposed);
+    // Dev-mode hydration race (mobile-safari showed it): a `fill` that lands
+    // before react-hook-form hydrates is wiped by the hydration reset, and
+    // the submit then answers "nothing to submit". Let the page go quiet
+    // first, then fill until the value STICKS.
+    await page.waitForLoadState('networkidle');
+    const phoneField = page.getByLabel(copy.form.fields.phone, { exact: true });
+    await expect(async () => {
+      await phoneField.fill(proposed);
+      await expect(phoneField).toHaveValue(proposed, { timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
     await page.getByRole('button', { name: copy.form.submit }).click();
 
     await page.waitForURL('**/portal/profile', { timeout: 60_000 });
@@ -133,10 +151,14 @@ test.describe('@change-requests US1 — member submits, nothing applied, staff n
     await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
     await skipUnlessFlagOn(page);
     await page.goto('/portal/edit');
-    // the form starts from the pending proposal (US5 AS5) — submitting unchanged is "already pending"
-    await page.getByRole('button', { name: copy.form.submit }).click();
+    await page.waitForLoadState('networkidle');
+    // the form starts from the pending proposal (US5 AS5) — submitting unchanged is "already pending";
+    // the click is retried across the dev-mode hydration window (a pre-hydration click no-ops)
     const status = page.getByTestId('submit-status');
-    await expect(status).toContainText(copy.status.alreadyPending, { timeout: 30_000 });
+    await expect(async () => {
+      await page.getByRole('button', { name: copy.form.submit }).click();
+      await expect(status).toContainText(copy.status.alreadyPending, { timeout: 5_000 });
+    }).toPass({ timeout: 45_000 });
     await expect(page).toHaveURL(/\/portal\/edit$/);
   });
 
@@ -238,8 +260,10 @@ test.describe('@change-requests US2 — staff decides per field', () => {
     await page.getByTestId('confirm-decision').click();
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
-    // focus starts on Cancel; the confirm is disabled until a reason is typed
-    await expect(dialog.getByRole('button', { name: adminCopy.decision.cancel })).toBeFocused();
+    // a rejection is in the decision → focus starts on the REQUIRED reason
+    // (review round 1, UX: `initialFocusRef`); the confirm is disabled until
+    // a reason is typed
+    await expect(page.getByTestId('decision-reason')).toBeFocused();
     const confirm = dialog.getByRole('button', { name: /^Approve 1, reject 1$/ });
     await expect(confirm).toBeDisabled();
     await fillField(page.getByTestId('decision-reason'), 'Please keep the registered description.');
@@ -279,7 +303,11 @@ test.describe('@change-requests US2 — staff decides per field', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByTestId('confirm-decision').click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
-    await runAxeScan(page, testInfo);
+    // Base UI's invisible focus-guard sentinels (`<span role="button"
+    // data-base-ui-focus-guard>`) around the decision AlertDialog trip
+    // `aria-command-name` on WebKit — the documented exemption in
+    // eventcreate-a11y.spec.ts / idle-warning-a11y.spec.ts
+    await runAxeScan(page, testInfo, { exclude: '[data-base-ui-focus-guard]' });
   });
 });
 
@@ -332,7 +360,10 @@ test.describe('@change-requests US3 — member sees the rejection, resubmits, di
     // the admin rejects both rows through the API (US2's spec drives the UI)
     await signInAsAdmin(page);
     await skipUnlessFlagOn(page);
+    // `page.request` sends no Origin; the proxy's CSRF allow-list refuses a
+    // state-changing /api call without one (`missing-origin` → 403)
     const decideRes = await page.request.post(`/api/admin/change-requests/${seeded!.requestId}/decide`, {
+      headers: { Origin: new URL(page.url()).origin },
       data: {
         decisions: [
           { key: 'phone', outcome: 'rejected' },
@@ -366,12 +397,25 @@ test.describe('@change-requests US3 — member sees the rejection, resubmits, di
     await expect(page.getByTestId('resubmit-reason')).toContainText(REASON);
     await expect(page.getByLabel(copy.form.fields.phone, { exact: true })).toHaveValue(seeded!.proposedPhone);
     await expect(page.getByLabel(copy.form.fields.description, { exact: true })).toHaveValue(seeded!.proposedDescription);
-    await expect(page.getByLabel(copy.form.fields.companyName, { exact: true })).toBeEditable();
+    // a required field's label carries the aria-hidden RequiredMark ("*"), so
+    // the exact-name match used for the optional fields above does not apply
+    await expect(page.getByLabel(copy.form.fields.companyName)).toBeEditable();
 
-    // dismiss → the banner is gone and stays gone after a reload
+    // dismiss → the banner is gone and stays gone after a reload. The click
+    // is retried until the banner unmounts: in dev mode Playwright can click
+    // the server-rendered button BEFORE the client component hydrates, so the
+    // handler is not attached yet and the click no-ops (the precedent in
+    // admin-pending-reactivation.spec.ts); the acknowledge POST is idempotent
+    // (a second call keeps the first stamp), so re-clicking is safe.
     await page.goto('/portal/profile');
-    await page.getByTestId('dismiss-decision').click();
-    await expect(page.getByTestId('decision-outcome-banner')).toHaveCount(0);
+    await expect(async () => {
+      const dismiss = page.getByTestId('dismiss-decision');
+      if ((await dismiss.count()) > 0) await dismiss.click();
+      await expect(page.getByTestId('decision-outcome-banner')).toHaveCount(0, { timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
+    // the dismiss ends with `router.refresh()`; reloading while that RSC
+    // fetch is in flight surfaces as a WebKit "Load failed" pageerror
+    await page.waitForLoadState('networkidle');
     await page.reload();
     await expect(page.getByTestId('decision-outcome-banner')).toHaveCount(0);
   });
@@ -389,6 +433,7 @@ test.describe('@change-requests US3 — member sees the rejection, resubmits, di
     await signInAsAdmin(page);
     await skipUnlessFlagOn(page);
     const decideRes = await page.request.post(`/api/admin/change-requests/${seeded!.requestId}/decide`, {
+      headers: { Origin: new URL(page.url()).origin },
       data: { decisions: [{ key: 'phone', outcome: 'rejected' }, { key: 'description', outcome: 'rejected' }], reason: REASON, note: null },
     });
     expect(decideRes.status()).toBe(200);

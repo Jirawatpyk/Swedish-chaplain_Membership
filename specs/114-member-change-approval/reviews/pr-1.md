@@ -155,6 +155,24 @@ values; three-way field rules (submit superRefine / decide re-validate / DB CHEC
 404s before session work and both admin pages `notFound()` before the permission gate;
 `patchesOf` is fail-closed (`void _exhaustive`); `reason-confirmation-dialog` move byte-identical.
 
+## Round 4 — the e2e run (dev server, flag ON), 2026-09-11
+
+`tests/e2e/change-requests.spec.ts`, `--workers=1`, chromium + mobile-safari: **8 passed, 1
+skipped** (the secondary-contact case has no persona yet — research § V4). What the run found:
+
+| # | Kind | Finding | Outcome |
+|---|---|---|---|
+| 1 | product (a11y) | Base UI's `Checkbox` renders `disabled` as `data-disabled` + `tabindex=-1` on a `<span role="checkbox">` — NO `aria-disabled` — so round 2's switch from `aria-disabled` to native `disabled` for a manager's read-only row left assistive tech reading it as toggleable (`toBeDisabled` saw "enabled") | fixed — both cannot-toggle cases carry `aria-disabled`; only the permission case leaves the tab order |
+| 2 | fixture | `skipUnlessFlagOn` probed the MEMBER gate route after a STAFF sign-in (US2 / US3) and read the 403 as a failure | 401 / 403 now prove "flag on"; the tenant-mode check applies to the member's 200 only |
+| 3 | fixture | `page.request.post(…/decide)` sent no `Origin`; the proxy's CSRF allow-list answers `missing-origin` → 403 | `headers: { Origin }` as the other specs do |
+| 4 | fixture | `getByLabel('Company name', { exact: true })` — a required field's label carries the aria-hidden `RequiredMark` | non-exact match for required fields |
+| 5 | fixture | the Dismiss click landed before hydration (dev mode) and no-oped | `toPass` retry around an idempotent click (the `admin-pending-reactivation` precedent) |
+| 6 | fixture | the dialog-focus assertion expected Cancel; round 1 moved initial focus to the REQUIRED reason when a rejection is present | assertion follows the round-1 design |
+| 7 | environment | the shared `dev` branch held **3,774 ACTIVE admin users leaked by `createActiveTestUser`** (`deleteTestUser` is a bare `db.delete(users)` whose FK failures are swallowed by `.catch(() => {})` at 116 call sites); every submit fanned one outbox row out to each — a ~3 min transaction holding the member row lock, so the browser timed out | operator-approved cleanup: those users are now `status = 'disabled'` (ids kept for reversal); the leak's root cause (the helper) is a repo-wide chore, not F114 — see the PR body |
+
+The fan-out itself is O(reviewers) inside ONE transaction; fine for SweCham's staff count, and
+US5's coalescing (T087, PR-2) is the owner of any bound.
+
 Checklist checkboxes in `checklists/{security,privacy,tax}.md` remain reviewer-owned and are
 ticked only at `/speckit.review` (T112); each reviewer's per-CHK evidence is in its round-1
 report (see the co-sign footer template in `README.md`).
