@@ -30,6 +30,7 @@ One row per request. **One `pending` row per submitting person** (partial unique
 | `decision_reason` | `text NULL CHECK (char_length BETWEEN 1 AND 1000)` | required iff any field rejected (app-enforced; DB CHECK on length only) |
 | `decision_note` | `text NULL CHECK (char_length <= 1000)` | optional |
 | `withdrawn_at` | `timestamptz NULL` | |
+| `outcome_acknowledged_at` | `timestamptz NULL` | set when the submitting person dismisses the decision on their profile (FR-010); one submitter per request, so per-request = per-person |
 | `created_at` / `updated_at` | `timestamptz NOT NULL DEFAULT now()` | |
 
 **Indexes**
@@ -56,7 +57,9 @@ submission are stored (FR-005, FR-007).
 | `proposed_value` | `jsonb NULL` | `null` = clear the field (nullable fields only) |
 | `outcome` | `text NULL CHECK IN ('approved','rejected')` | set when the request is decided |
 | `applied_at` | `timestamptz NULL` | set iff `outcome='approved'` |
-| `affects_tax_documents` | `boolean NOT NULL` | computed at submit: `company_name`, `billing_address`, or `registered_address` when the member has no billing address (FR-019) |
+| `affects_tax_documents` | `boolean NOT NULL` | computed at submit: `company_name`, `billing_address`, `registered_address` when the member has no billing address, and `first_name` / `last_name` when the submitter is the primary contact — the buyer block (`MemberIdentitySnapshot.legal_name` / `address` / `primary_contact_name`) is built from these at issue time (FR-019, FR-022) |
+
+Computed **at review time**, never stored: `undecidable = 'contact_removed'` for a `contact`-target row whose contact is removed or unlinked (reject-only, FR-020); `already_current = proposed_value = live value` (approve is a no-op write, still recorded, FR-015).
 
 **Indexes**: `UNIQUE (request_id, field_key)`; `(tenant_id, request_id)`.
 
@@ -68,7 +71,8 @@ submission are stored (FR-005, FR-007).
 
 | key | target | column(s) | tax flag |
 |---|---|---|---|
-| `first_name`, `last_name`, `phone`, `role_title` | contact (own) | `contacts.*` | no |
+| `first_name`, `last_name` | contact (own) | `contacts.*` | **yes iff** the submitter is the primary contact (buyer's contact person) |
+| `phone`, `role_title` | contact (own) | `contacts.*` | no |
 | `company_name` | member | `members.company_name` | **yes** |
 | `website`, `description` | member | | no |
 | `registered_address` | member | `address_line1, address_line2, sub_district, city, province, postal_code` | **yes iff** billing address unset |
@@ -94,8 +98,11 @@ submitter's contact `is_primary = true` at submission; contact keys only for the
    decided | withdrawn are terminal: decide → `already_decided` (no-op if identical), withdraw → `not_pending`
 ```
 
-Guards on `decide`: member not archived, member not under erasure; setting OFF does **not** block
-(FR-032). Guards on `submit`: flag on + setting on (else the immediate path), member not archived,
+Guards on `decide`: member not archived, member not under erasure; a `contact`-target row whose
+contact is removed/unlinked is reject-only (FR-020); setting OFF does **not** block (FR-032). Races:
+first committed transition wins — withdraw vs decide, replace vs decide (FR-017).
+`acknowledge` (submitter dismisses the shown decision) sets `outcome_acknowledged_at` on a decided
+request; it is not a state. Guards on `submit`: flag on + setting on (else the immediate path), member not archived,
 submitter linked + not removed, ≤ 9 requests in the trailing 24 h (R9).
 
 ## 5. `tenant_member_settings` (existing) — one new column

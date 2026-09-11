@@ -86,3 +86,8 @@ generalised: `M114.<route>.<arm>`).
 
 Logs: pino with `requestId`, `tenantId`, hashed user id, `requestChangeId`; **never** field values,
 reasons or emails (`docs/observability.md` § 3 forbidden fields).
+
+Traces (`@vercel/otel`): spans `members.change_request.submit` and `members.change_request.decide`
+wrapping the use-case transaction, attributes limited to `tenant.slug`, `change_request.id`,
+`change_request.scope`, `change_request.outcome`, `change_request.field_count` — never values.
+The dispatcher arms reuse the existing outbox span with `notification_type` as an attribute.

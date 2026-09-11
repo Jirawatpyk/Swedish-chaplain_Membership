@@ -311,6 +311,25 @@ statuses), `admin.changeRequests.*` (queue, filters, review page, decision dialo
 `timeline.audit.member_change_request_*`, `email.changeRequest.*` (two templates × 3 locales).
 Dates render through `formatLocalisedDate` (BE display-only for `th-TH`).
 
+## R18 — Checklist-gate closures (2026-09-11)
+
+**D**: The 30 requirement-text gaps the six domain checklists raised are closed with defaults
+consistent with R1–R17; the spec's Clarifications session "gap closure — AMENDMENT" is the index.
+Three closures add design, all small: (1) `member_change_requests.outcome_acknowledged_at` +
+`POST /api/portal/change-requests/[id]/acknowledge` — the last decision stays on the profile until
+the submitter dismisses it (server-side, like the dashboard `insight-dismiss-button`), so a member
+who was away still sees the outcome; (2) a `contact`-target row whose contact was removed/unlinked
+after submission is reject-only (`undecidable: 'contact_removed'`), computed at review time — no
+column, no new state; (3) the primary contact's first/last name joins the tax-affecting set, because
+`MemberIdentitySnapshot.primary_contact_name` is built from it at issue (`issue-invoice.ts:765`).
+Measured for the closures: no read-audit event type exists for member detail views (so change-request
+reads are not audited either); staff `users.status` is `active | disabled` (never deleted); the buyer
+block is snapshotted at *issue*, not at draft creation.
+**R**: Each gap had one obvious default given the recorded decisions; opening a clarify round for
+them would have cost a session for no new information.
+**A**: leaving them to `/speckit.analyze` — rejected: tasks generated from a spec with known holes
+are rewritten after analyze; closing first is cheaper.
+
 ## Carried to `/speckit.tasks` as verify-before-task items
 
 - **V1** — `buildMemberFormSchema`'s website rule vs the portal `hasDangerousUrlScheme` refine:

@@ -61,8 +61,8 @@ send from the request rows); actor role = session role (`check:actor-role-truth`
 returned inside a `runInTenant` callback (throw-to-rollback); flag OFF and setting OFF both leave
 the F3 self-service path byte-identical; Buddhist Era display-only; issued tax documents never
 change (buyer block frozen at issue — the feature only writes `members`/`contacts`)
-**Scale/Scope**: 2 tables · 1 column · 7 enum values · 1 migration · 4 use cases + 1 gate resolver
-+ 4 Domain policies · 8 route handlers (3 portal, 5 staff) · 1 narrowed endpoint · 4 staff pages
+**Scale/Scope**: 2 tables (+ `outcome_acknowledged_at`) · 1 settings column · 7 enum values · 1 migration · 5 use cases (submit, withdraw, decide, acknowledge, set-setting) + 1 gate resolver
++ 4 Domain policies · 9 route handlers (4 portal, 5 staff) · 1 narrowed endpoint · 4 staff pages
 (queue, review, settings card, member-record section) · 3 portal surfaces (edit-form gate mode,
 pending/decision banner, history page) + 1 form move (language → account page) · 2 email
 templates × 3 locales · 5 audit events · ~70 i18n keys × 3 · 1 nav item + badge slot · 1 dashboard
@@ -325,5 +325,13 @@ No Principle I–IV, VIII or X deviation.
 metrics · V3 dispatcher read-at-send under the tenant tx · V4 the per-person scope is vacuous on
 prod until the secondary import (tests seed it).
 
+**Checklist-gate closure (2026-09-11)**: the six domain checklists raised 30 requirement-text gaps;
+all are closed in the spec (Clarifications session "gap closure — AMENDMENT", FR-038–FR-040, FR-009/
+010/014/015/017/019/020/022/023/026/030/034 amended) and in the plan artefacts: `outcome_acknowledged_at`
++ `POST …/acknowledge` (decision dismissal), `contact_removed` reject-only rows + `alreadyCurrent` +
+`taxHint` on the review payload, the primary contact's name added to the tax-affecting set (the buyer
+block's `primary_contact_name` is built at issue time), OTel span names, and the RoPA step + rollback
+matrix in `quickstart.md` § 3. Lawful basis now lives in the spec (FR-040), not only here.
+
 **Gate decision**: Constitution Check PASS on all 10 principles; two deviations justified.
-Ready for `/speckit.checklist` (security, privacy, a11y, i18n, tax) then `/speckit.tasks`.
+Checklist gate complete — ready for `/speckit.tasks`.

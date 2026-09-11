@@ -33,13 +33,17 @@ none (the coalescing case).
 
 ```json
 200 { "request": StaffChangeRequestView,
-      "fields": [ { "key", "target", "seen", "proposed", "current", "changedSinceSubmitted": false, "affectsTaxDocuments": false,
-                    "outcome": null, "appliedAt": null } ],
+      "fields": [ { "key", "target", "seen", "proposed", "current", "changedSinceSubmitted": false, "alreadyCurrent": false,
+                    "affectsTaxDocuments": false, "taxHint": "buyer_name"|"buyer_address"|"buyer_contact"|"billing_country"|null,
+                    "undecidable": null | "contact_removed", "outcome": null, "appliedAt": null } ],
       "member": { "id", "companyName", "memberNumber", "status", "archived": false, "erasing": false, "hasBillingAddress": true },
       "canDecide": true }
 ```
 
-`current` is read live; `changedSinceSubmitted = current ≠ seen` (deep-equal for address groups).
+`current` is read live; `changedSinceSubmitted = current ≠ seen` (deep-equal for address groups);
+`alreadyCurrent = proposed = current` (approve is a recorded no-op, FR-015); `undecidable =
+'contact_removed'` when a contact-target row's contact is removed/unlinked (the row is reject-only,
+FR-020); `taxHint` names what the flag feeds so the reviewer knows what to check (FR-019).
 `canDecide` = state pending ∧ `members.write` ∧ not archived ∧ not erasing.
 
 ## `POST /api/admin/change-requests/[id]/decide` (FR-013–FR-018) · `members.write`
@@ -57,8 +61,9 @@ a *different* decision on a decided request → **409 `already_decided`** with `
 outcome }`; withdrawn → 409 `not_pending`; concurrent loser → 409 `already_decided`.
 
 Refusals before any write: member archived → 409 `member_archived`; erasing → 409 `member_erasing`;
-approval-time re-validation of an approved field fails → 422 `validation_error` naming the key (the
-reviewer may reject that field instead).
+approving a row whose contact is removed/unlinked → 422 `contact_removed` naming the key (reject it
+instead); approval-time re-validation of an approved field fails → 422 `validation_error` naming the
+key (the reviewer may reject that field instead). A withdrawal that commits first → 409 `not_pending`.
 
 Success:
 
@@ -92,8 +97,9 @@ when switching off with requests pending (they stay decidable — FR-032).
 
 `ChangeRequestView` (portal contract) plus `submitter: { userId, contactId, displayName, email?,
 roleAtSubmission }` (email shown only to `members.pii_sensitive` holders, matching the member page),
-`decidedBy: { userId, displayName }`, `decisionNote`, `withdrawnReason`, `replacedByRequestId`,
-`staffNotifiedAt`.
+`decidedBy: { userId, displayName, deactivated: boolean }` (staff accounts are disabled, never
+deleted — the recorded name stays, FR-026), `decisionNote`, `withdrawnReason`,
+`replacedByRequestId`, `staffNotifiedAt`.
 
 ## Contract tests (`tests/contract/members/admin-change-requests-*.test.ts`)
 

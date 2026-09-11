@@ -84,13 +84,29 @@ non-sentinel value in `member_change_request_fields` after `eraseMember`.
 1. Merge → prod auto-migrates 0300 on deploy (`vercel-build`); `pnpm db:verify:prod`.
 2. Set `FEATURE_MEMBER_CHANGE_APPROVAL=true` in Vercel **only when ready to redeploy immediately**
    (setting the env var IS the flip on this repo — no `ignoreCommand`).
-3. As a SweCham admin, switch the tenant setting ON at `/admin/settings/member-changes`
+3. Update the record of processing (RoPA) entry for member data with the new purpose ("review of
+   member-proposed changes; accountable history") and the new disclosure (staff notification
+   emails) — FR-040 makes this a precondition of the switch.
+4. As a SweCham admin, switch the tenant setting ON at `/admin/settings/member-changes`
    (audited). Before that moment the portal behaves exactly as before.
-4. First-submission observation: one real member submits → confirm the staff email arrives, the
+5. First-submission observation: one real member submits → confirm the staff email arrives, the
    queue shows it, the dashboard count is 1, and `members.change_requests_pending_count{tenant}` = 1
    on the gauge. Record the observation in `reviews/cutover.md`.
-5. Rollback = switch the tenant setting OFF (immediate, audited, no deploy); pending requests remain
-   decidable. Removing the env var is the deeper rollback (routes 404, form reverts).
+
+### Rollback matrix (FR-039)
+
+| Layer | Action | Pending rows | Portal | Nav / dashboard | `PATCH /api/portal/profile` | Time |
+|---|---|---|---|---|---|---|
+| 1 — tenant setting OFF | admin toggles at `/admin/settings/member-changes` (audited) | kept, still decidable | no new requests; existing pending banner stays | count stays while rows pending | Group B saves immediately again | seconds |
+| 2 — platform flag OFF | remove `FEATURE_MEMBER_CHANGE_APPROVAL` in Vercel + redeploy | kept untouched, decidable again when the flag returns | no pending/decision state shown | hidden | widened back to today's field set | one deploy |
+| 3 — code revert | revert the PR | kept (see below) | — | — | — | one deploy |
+
+**Unflagged and live on merge** — none of the layers above undoes these: migration `0300` (two
+tables, `outcome_acknowledged_at`, the `tenant_member_settings` column), the seven enum values
+(`ADD VALUE` is irreversible), the `ReasonConfirmationDialog` promotion to `components/shell/` (the
+old path re-exports), the nav item type's optional `badgeCount` slot, and the relocation of the
+contact's language setting to the account page (save semantics unchanged). Rolling any of these back
+is a new migration / code change, not a flag flip.
 
 ## 4. Watch after cutover
 

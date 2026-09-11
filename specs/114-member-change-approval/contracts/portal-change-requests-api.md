@@ -79,6 +79,13 @@ Withdraws the caller's pending request. **200** `{ "request": ChangeRequestView 
 `withdrawn/member`), **404 `no_pending_request`** if none. Audit `member_change_request_withdrawn
 { reason: 'member' }`. Idempotent: a second call is 404.
 
+## `POST /api/portal/change-requests/[id]/acknowledge` — dismiss a shown decision (FR-010)
+
+Only the request's submitter; request must be `decided`. Sets `outcome_acknowledged_at`
+(idempotent — a second call returns the same view). **200** `{ "request": ChangeRequestView }`;
+**404** outside the caller's scope; **409 `not_decided`** for pending/withdrawn. No audit event (a
+UI preference, not a data change).
+
 ## `PATCH /api/portal/profile` — narrowed (R6)
 
 Unchanged contract while the gate is `immediate`. While the gate is `approval` the accepted body is
@@ -97,7 +104,7 @@ case per Group B key).
   "withdrawnReason": "member"|"replaced"|"erasure"|null,
   "submittedAt": "ISO-8601 UTC", "submittedBy": { "contactId": "uuid", "displayName": "…", "isMe": true },
   "decidedAt": "…"|null, "decidedBy": "organisation",           // portal never exposes the reviewer's name (FR-029)
-  "decisionReason": string|null,
+  "decisionReason": string|null, "outcomeAcknowledgedAt": "…"|null,
   "fields": [ { "key": "phone", "target": "contact", "seen": "+66…", "proposed": "+66…",
                 "affectsTaxDocuments": false, "outcome": "approved"|"rejected"|null, "appliedAt": "…"|null } ]
 }
