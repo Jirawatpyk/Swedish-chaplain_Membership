@@ -24,15 +24,13 @@
  *
  * Routes import from here; Application code never reaches into `src/lib`.
  */
-import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { randomUUID } from 'node:crypto';
 import { canPerform } from '@/lib/rbac';
 import { defaultLocale } from '@/i18n/config';
 import type { TenantContext } from '@/modules/tenants';
-import { ROLES, type Role } from '@/modules/auth';
-// The F1 `users` table binding — Infrastructure of auth, reached from the
-// composition layer only (same documented exception the outbox adapters use).
-import { users } from '@/modules/auth/infrastructure/db/schema';
+// The F1 read is exported through the auth BARREL (`listActiveUsersByRole`) —
+// no `users`-table deep import from here (auth-barrel baseline pin).
+import { ROLES, listActiveUsersByRole, type Role } from '@/modules/auth';
 import {
   drizzleChangeRequestRepo,
   drizzleContactRepo,
@@ -40,6 +38,7 @@ import {
   drizzleTenantMemberChangeSettingsRepo,
   f3DrizzleAuditAdapter,
   makeMemberChangeGateResolver,
+  type ChangeRequestId,
   type ChangeRequestRepo,
   type ContactRepo,
   type MemberChangeGateResolver,
@@ -55,27 +54,32 @@ import type { ClockPort } from '@/modules/members/application/ports/clock-port';
 import { resendEmailPort } from '@/modules/members/infrastructure/adapters/resend-email-port';
 import { memberChangeApprovalFlag } from '@/modules/members/members-deps';
 
+/**
+ * The F1 session carries the AUTH-branded user id; the members module brands
+ * the same uuid its own way (`value-objects/user-id`). One named cast at the
+ * composition seam instead of `as unknown as` scattered through the routes.
+ */
+export function asMembersUserId(id: string): UserId {
+  return id as UserId;
+}
+
 /** The roles that hold `members.write` — asked of the evaluator, never listed. */
 export function reviewerRoles(): readonly Role[] {
   return ROLES.filter((role) => canPerform(role, 'members.write'));
 }
 
 /**
- * `ReviewerDirectoryPort` over the auth `users` table: `status = 'active'`
- * and `role` in the evaluator-derived set. The `users` table is cross-tenant
- * by design (F1 — no tenant_id, no RLS), which is why this read uses the
- * plain `db` client and not `runInTenant`; F10's `user_tenants` scopes it.
+ * `ReviewerDirectoryPort` over the auth `users` table (`listActiveUsersByRole`,
+ * auth barrel): `status = 'active'` and `role` in the evaluator-derived set.
+ * The `users` table is cross-tenant by design (F1 — no tenant_id, no RLS), so
+ * the read is not tenant-scoped; F10's `user_tenants` scopes it.
  */
 export function makeReviewerDirectory(): ReviewerDirectoryPort {
   return {
     async listReviewers(): Promise<readonly Reviewer[]> {
       const roles = reviewerRoles();
       if (roles.length === 0) return [];
-      const rows = await db
-        .select({ id: users.id, email: users.email })
-        .from(users)
-        .where(and(eq(users.status, 'active'), inArray(users.role, [...roles])))
-        .orderBy(users.email);
+      const rows = await listActiveUsersByRole(roles);
       return rows.map((r) => ({ userId: r.id as UserId, email: r.email, locale: defaultLocale }));
     },
   };
@@ -92,9 +96,12 @@ export type ChangeRequestDeps = {
   readonly tenantMemberChangeSettings: TenantMemberChangeSettingsPort;
   readonly memberChangeGate: MemberChangeGateResolver;
   readonly clock: ClockPort;
+  /** Fresh request id (uuid v4) — the use case mints it BEFORE the tx so the replaced row can point at it. */
+  readonly newRequestId: () => ChangeRequestId;
 };
 
 const systemClock: ClockPort = { now: () => new Date() };
+const newRequestId = (): ChangeRequestId => randomUUID() as ChangeRequestId;
 
 /** Production composition for every change-request route (portal + staff). */
 export function buildChangeRequestDeps(tenant: TenantContext): ChangeRequestDeps {
@@ -112,5 +119,6 @@ export function buildChangeRequestDeps(tenant: TenantContext): ChangeRequestDeps
       tenantMemberSettings: drizzleTenantMemberChangeSettingsRepo,
     }),
     clock: systemClock,
+    newRequestId,
   };
 }

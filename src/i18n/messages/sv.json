@@ -5431,6 +5431,13 @@
       }
     },
     "account": {
+      "contactLanguage": {
+        "title": "Språk för e-post till dig",
+        "description": "Används för meddelanden som riktas till dig personligen, till exempel beslutet om en ändring du föreslagit. E-post till företaget följer inställningen ovan.",
+        "save": "Spara språk",
+        "savedToast": "E-postspråket har uppdaterats.",
+        "errorToast": "Det gick inte att spara språket. Försök igen."
+      },
       "title": "Kontoinställningar",
       "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
       "forgotPassword": "Glömt ditt lösenord?",
@@ -5953,6 +5960,96 @@
         "registrationDate": "Registreringsdatum",
         "lastActivityAt": "Senaste aktivitet",
         "status": "Status"
+      }
+    },
+    "changeRequests": {
+      "form": {
+        "pageTitle": "Föreslå ändringar",
+        "pageSubtitle": "Dina ändringar granskas av kammaren innan de träder i kraft.",
+        "contactSection": "Dina kontaktuppgifter",
+        "companySection": "Företagsuppgifter",
+        "registeredAddressSection": "Registrerad adress",
+        "billingAddressSection": "Faktureringsadress",
+        "billingAddressHint": "Endast om fakturor ska gå till en annan adress. Lämna alla rader tomma för att inte ange någon.",
+        "fields": {
+          "firstName": "Förnamn",
+          "lastName": "Efternamn",
+          "phone": "Telefon",
+          "roleTitle": "Befattning",
+          "companyName": "Företagsnamn",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "line1": "Adressrad 1",
+          "line2": "Adressrad 2",
+          "subDistrict": "Stadsdel",
+          "city": "Stad",
+          "province": "Provins",
+          "postalCode": "Postnummer",
+          "country": "Land (tvåbokstavskod)"
+        },
+        "submit": "Skicka för granskning",
+        "submitting": "Skickar…",
+        "cancel": "Avbryt",
+        "secondaryNote": "Endast företagets primära kontakt kan föreslå ändringar av företagsuppgifterna. Kontakta hen om något behöver uppdateras.",
+        "notice": "Ditt förslag granskas av kammarens personal, skickas till dem via e-post och sparas tillsammans med din medlemspost.",
+        "privacyLink": "Integritetspolicy",
+        "pendingHint": "Du har redan en begäran som väntar på granskning. Skickar du igen ersätts den med dessa värden.",
+        "resubmitTitle": "Kammaren godkände inte hela din förra begäran:",
+        "errors": {
+          "phone": "Ange ett telefonnummer i internationellt format, t.ex. +46 70 123 45 67.",
+          "website": "Ange en giltig webbadress, t.ex. https://example.com.",
+          "country": "Ange en landskod med två bokstäver, t.ex. SE."
+        }
+      },
+      "status": {
+        "submitted": "Dina ändringar har skickats för granskning.",
+        "nothingToSubmit": "Inget att skicka – alla värden matchar dina nuvarande uppgifter.",
+        "alreadyPending": "Dessa ändringar väntar redan på granskning.",
+        "rateLimited": "Du har nått gränsen för antal inskick i dag. Försök igen efter {retryAt}.",
+        "approvalNotRequired": "Ändringar behöver inte längre godkännas – dina redigeringar sparas nu direkt."
+      },
+      "errors": {
+        "field": "Kontrollera det här värdet.",
+        "validation": "Kontrollera de markerade fälten.",
+        "forbidden": "Du får inte ändra detta.",
+        "archived": "Det här medlemskapet är arkiverat och kan inte längre redigeras.",
+        "generic": "Det gick inte att skicka dina ändringar. Försök igen."
+      },
+      "pending": {
+        "title": "Väntar på kammarens granskning",
+        "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu – kammaren meddelar beslutet via e-post.",
+        "editLink": "Redigera din begäran"
+      },
+      "diff": {
+        "field": "Fält",
+        "current": "Nuvarande",
+        "proposed": "Föreslaget",
+        "empty": "(tomt)",
+        "taxAffecting": "Påverkar skattedokument",
+        "labels": {
+          "first_name": "Förnamn",
+          "last_name": "Efternamn",
+          "phone": "Telefon",
+          "role_title": "Befattning",
+          "company_name": "Företagsnamn",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "registered_address": "Registrerad adress",
+          "billing_address": "Faktureringsadress"
+        },
+        "lines": {
+          "line1": "Rad 1",
+          "line2": "Rad 2",
+          "sub_district": "Stadsdel",
+          "city": "Stad",
+          "province": "Provins",
+          "postal_code": "Postnummer",
+          "country": "Land"
+        },
+        "outcome": {
+          "approved": "Godkänd",
+          "rejected": "Ej godkänd"
+        }
       }
     },
     "edit": {

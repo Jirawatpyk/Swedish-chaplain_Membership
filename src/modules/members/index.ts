@@ -163,6 +163,23 @@ export {
 } from './application/use-cases/change-requests/resolve-member-change-gate';
 export { drizzleChangeRequestRepo } from './infrastructure/db/drizzle-change-request-repo';
 export { drizzleTenantMemberChangeSettingsRepo } from './infrastructure/repos/drizzle-tenant-member-change-settings-repo';
+// F114 use cases (one export block per story as they land).
+export {
+  submitChangeRequest,
+  detectForbiddenProposalKeys,
+  groupBRecordOf,
+  memberHasBillingAddress,
+  type SubmitChangeRequestDeps,
+  type SubmitChangeRequestError,
+  type SubmitChangeRequestInput,
+  type SubmitChangeRequestOutcome,
+} from './application/use-cases/change-requests/submit-change-request';
+// F114 email builders — rendered by the outbox dispatcher at send time (R8).
+export {
+  buildChangeRequestSubmittedStaffEmail,
+  type ChangeRequestEmailField,
+  type ChangeRequestSubmittedStaffEmailInput,
+} from './infrastructure/email/change-request-submitted-staff-email';
 
 export {
   assertNeverAuditEvent,

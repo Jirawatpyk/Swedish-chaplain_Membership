@@ -5431,6 +5431,13 @@
       }
     },
     "account": {
+      "contactLanguage": {
+        "title": "Language for emails to you",
+        "description": "Used for messages addressed to you personally, such as the decision on a change you proposed. Emails to the company follow the setting above.",
+        "save": "Save language",
+        "savedToast": "Email language updated.",
+        "errorToast": "Could not save the language. Please try again."
+      },
       "title": "Account settings",
       "subtitle": "Manage your password and notification language.",
       "forgotPassword": "Forgot your password?",
@@ -5953,6 +5960,96 @@
         "registrationDate": "Registration Date",
         "lastActivityAt": "Last activity",
         "status": "Status"
+      }
+    },
+    "changeRequests": {
+      "form": {
+        "pageTitle": "Propose changes",
+        "pageSubtitle": "Your changes are reviewed by the chamber before they take effect.",
+        "contactSection": "Your contact details",
+        "companySection": "Company details",
+        "registeredAddressSection": "Registered address",
+        "billingAddressSection": "Billing address",
+        "billingAddressHint": "Only if invoices should go to a different address. Leave every line empty to keep none.",
+        "fields": {
+          "firstName": "First name",
+          "lastName": "Last name",
+          "phone": "Phone",
+          "roleTitle": "Job title",
+          "companyName": "Company name",
+          "website": "Website",
+          "description": "Description",
+          "line1": "Address line 1",
+          "line2": "Address line 2",
+          "subDistrict": "Sub-district",
+          "city": "City",
+          "province": "Province",
+          "postalCode": "Postal code",
+          "country": "Country (2-letter code)"
+        },
+        "submit": "Submit for review",
+        "submitting": "Submitting…",
+        "cancel": "Cancel",
+        "secondaryNote": "Only your company's primary contact can propose changes to the company details. Contact them if something needs updating.",
+        "notice": "Your proposal is reviewed by chamber staff, emailed to them, and kept with your member record.",
+        "privacyLink": "Privacy notice",
+        "pendingHint": "You already have a request awaiting review. Submitting again replaces it with these values.",
+        "resubmitTitle": "The chamber did not approve part of your last request:",
+        "errors": {
+          "phone": "Enter a phone number in international format, e.g. +66 81 234 5678.",
+          "website": "Enter a valid web address, e.g. https://example.com.",
+          "country": "Enter a 2-letter country code, e.g. TH."
+        }
+      },
+      "status": {
+        "submitted": "Your changes were sent for review.",
+        "nothingToSubmit": "Nothing to submit — every value matches your current record.",
+        "alreadyPending": "These changes are already awaiting review.",
+        "rateLimited": "You have reached the limit of submissions for today. Try again after {retryAt}.",
+        "approvalNotRequired": "Changes no longer need approval — your edits now save directly."
+      },
+      "errors": {
+        "field": "Please check this value.",
+        "validation": "Please check the highlighted fields.",
+        "forbidden": "You are not allowed to change this.",
+        "archived": "This membership is archived and can no longer be edited.",
+        "generic": "Could not submit your changes. Please try again."
+      },
+      "pending": {
+        "title": "Awaiting chamber review",
+        "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
+        "editLink": "Edit your request"
+      },
+      "diff": {
+        "field": "Field",
+        "current": "Current",
+        "proposed": "Proposed",
+        "empty": "(empty)",
+        "taxAffecting": "Affects tax documents",
+        "labels": {
+          "first_name": "First name",
+          "last_name": "Last name",
+          "phone": "Phone",
+          "role_title": "Job title",
+          "company_name": "Company name",
+          "website": "Website",
+          "description": "Description",
+          "registered_address": "Registered address",
+          "billing_address": "Billing address"
+        },
+        "lines": {
+          "line1": "Line 1",
+          "line2": "Line 2",
+          "sub_district": "Sub-district",
+          "city": "City",
+          "province": "Province",
+          "postal_code": "Postal code",
+          "country": "Country"
+        },
+        "outcome": {
+          "approved": "Approved",
+          "rejected": "Not approved"
+        }
       }
     },
     "edit": {

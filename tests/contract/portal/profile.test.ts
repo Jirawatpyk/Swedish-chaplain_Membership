@@ -124,10 +124,15 @@ const memberContext = {
   requestId: 'req-1',
 };
 
+// F114 T031 — the route asks the per-request gate resolver which mode the
+// tenant is in and passes it to the use case (R6 narrowing). Default 'immediate'
+// keeps every pre-F114 assertion byte-identical (SC-011).
+const resolveGateMock = vi.fn(async () => 'immediate' as 'immediate' | 'approval');
 const mockDeps = {
   memberRepo: {},
   contactRepo: {},
   audit: {},
+  memberChangeGate: { resolve: (...args: unknown[]) => resolveGateMock(...(args as [])) },
 };
 
 // --- Helpers -----------------------------------------------------------------
@@ -266,5 +271,55 @@ describe('contract: PATCH /api/portal/profile (T114)', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error.code).toBe('validation_error');
+  });
+
+  // --- F114 T031 — the gate narrows the immediate path (FR-001 / FR-004 / R6) ---
+
+  it('passes gate: immediate to the use case when the tenant gate is immediate (F3 path unchanged)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    buildMembersDepsMock.mockReturnValueOnce(mockDeps);
+    memberSelfUpdateMock.mockResolvedValueOnce(ok({ member: memberContext.member, contact: memberContext.ownContact }));
+    const { PATCH } = await import('@/app/api/portal/profile/route');
+    const res = await PATCH(makePatchRequest({ website: 'https://new.com' }));
+    expect(res.status).toBe(200);
+    expect(memberSelfUpdateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ rawBody: { website: 'https://new.com' }, gate: 'immediate' }),
+    );
+  });
+
+  it('passes gate: approval when the tenant requires approval — the use case then accepts Group A only', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    buildMembersDepsMock.mockReturnValueOnce(mockDeps);
+    resolveGateMock.mockResolvedValueOnce('approval');
+    memberSelfUpdateMock.mockResolvedValueOnce(ok({ member: memberContext.member, contact: memberContext.ownContact }));
+    const { PATCH } = await import('@/app/api/portal/profile/route');
+    const res = await PATCH(makePatchRequest({ primary_contact: { preferredLanguage: 'th' } }));
+    expect(res.status).toBe(200);
+    expect(memberSelfUpdateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ rawBody: { primary_contact: { preferredLanguage: 'th' } }, gate: 'approval' }),
+    );
+  });
+
+  it('with the gate on, a Group B key comes back 403 forbidden (the use case refuses + audits member_self_update_forbidden)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    buildMembersDepsMock.mockReturnValueOnce(mockDeps);
+    resolveGateMock.mockResolvedValueOnce('approval');
+    memberSelfUpdateMock.mockResolvedValueOnce(err({ type: 'forbidden', reason: 'forbidden fields: website' }));
+    const { PATCH } = await import('@/app/api/portal/profile/route');
+    const res = await PATCH(makePatchRequest({ website: 'https://new.com' }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe('forbidden');
+  });
+
+  it('a throwing gate resolver is a 500 (never a guessed mode)', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    buildMembersDepsMock.mockReturnValueOnce(mockDeps);
+    resolveGateMock.mockRejectedValueOnce(new Error('tenant_member_settings read failed'));
+    const { PATCH } = await import('@/app/api/portal/profile/route');
+    const res = await PATCH(makePatchRequest({ website: 'https://new.com' }));
+    expect(res.status).toBe(500);
+    expect(memberSelfUpdateMock).not.toHaveBeenCalled();
   });
 });

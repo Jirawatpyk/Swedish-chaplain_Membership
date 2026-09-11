@@ -31,6 +31,13 @@ import {
 import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
 import { PortalMarketingToggle } from '@/components/members/portal-marketing-toggle';
 import { env } from '@/lib/env';
+// F114 — the caller's OWN pending change request (never another contact's).
+import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
+import { asMembersUserId } from '@/lib/members-change-request-deps';
+import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
+import { PendingRequestBanner } from '@/components/members/change-requests/pending-request-banner';
 
 /**
  * 057 G4 — member-facing member-detail (design §4.2, Option C structure
@@ -160,6 +167,38 @@ export async function PortalProfileBody({
     ownMarketingState = deriveMarketingState(ownContact.marketing, suppressed);
   }
 
+  // F114 US1 (FR-010) — the pending banner: the caller's OWN pending request,
+  // only while the flag is on AND the tenant requires approval. Best-effort:
+  // a read failure logs and the profile still renders (never-500 contract).
+  let pendingRequest: ChangeRequestView | null = null;
+  if (ownContact && env.features.memberChangeApproval) {
+    try {
+      const gate = await deps.memberChangeGate.resolve(tenant);
+      if (gate === 'approval') {
+        const pending = await runInTenant(tenant, (tx) =>
+          deps.changeRequestRepo.findPendingBySubmitterInTx(tx, asMembersUserId(user.id)),
+        );
+        if (pending.ok && pending.value) {
+          pendingRequest = serialiseChangeRequestForPortal(pending.value, {
+            contactId: ownContact.contactId,
+            displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
+            isMe: true,
+          });
+        } else if (!pending.ok) {
+          logger.error(
+            { errorId: 'M114.portal.profile.pending_read_failed', err: pending.error.code, tenantId: tenant.slug },
+            'portal.profile.pending_read_failed',
+          );
+        }
+      }
+    } catch (e) {
+      logger.error(
+        { errorId: 'M114.portal.profile.pending_read_failed', err: errKind(e), tenantId: tenant.slug },
+        'portal.profile.pending_read_failed',
+      );
+    }
+  }
+
   // Both reads are independent (plan lookup vs. member-settings row) —
   // collapse to ~1 RTT. Mirrors the Promise.all on the admin detail page.
   const [planLookup, memberPrefix] = await Promise.all([
@@ -251,6 +290,9 @@ export async function PortalProfileBody({
           </Link>
         }
       />
+
+      {/* F114 — awaiting-review banner (role=status), above the record it will change. */}
+      {pendingRequest ? <PendingRequestBanner request={pendingRequest} /> : null}
 
       {/* Organisation — who the member is. */}
       <section aria-labelledby="portal-profile-org-heading">

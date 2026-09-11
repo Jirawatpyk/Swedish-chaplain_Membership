@@ -11,20 +11,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const selectRows = vi.fn();
-const whereSpy = vi.fn();
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: (...args: unknown[]) => {
-          whereSpy(...args);
-          return { orderBy: async () => selectRows() };
-        },
-      }),
-    }),
-  },
-  runInTenant: vi.fn(),
-}));
+const listActiveUsersByRoleMock = vi.fn(async (_roles: readonly string[]) => selectRows());
+vi.mock('@/lib/db', () => ({ db: {}, runInTenant: vi.fn() }));
+vi.mock('@/modules/auth', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/auth')>('@/modules/auth');
+  return {
+    ...actual,
+    listActiveUsersByRole: (...args: [readonly string[]]) => listActiveUsersByRoleMock(...args),
+  };
+});
 
 import { ROLES } from '@/modules/auth';
 import { asTenantContext } from '@/modules/tenants';
@@ -46,7 +41,7 @@ const tenant = asTenantContext('test-tenant');
 
 beforeEach(() => {
   selectRows.mockReset();
-  whereSpy.mockReset();
+  listActiveUsersByRoleMock.mockClear();
 });
 
 describe('reviewerRoles', () => {
@@ -71,7 +66,9 @@ describe('makeReviewerDirectory', () => {
       { userId: '00000000-0000-4000-8000-000000000001', email: 'a@staff.example', locale: 'en' },
       { userId: '00000000-0000-4000-8000-000000000002', email: 'b@staff.example', locale: 'en' },
     ]);
-    expect(whereSpy).toHaveBeenCalledTimes(1);
+    // the evaluator-derived role set is what reaches the read — never a literal
+    expect(listActiveUsersByRoleMock).toHaveBeenCalledTimes(1);
+    expect([...(listActiveUsersByRoleMock.mock.calls[0]![0] as readonly string[])].sort()).toEqual(['admin', 'super_admin']);
   });
 
   it('an empty roster is a valid answer (misconfigured tenant — the use case warns, never throws)', async () => {

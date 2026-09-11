@@ -28,7 +28,6 @@ const INITIAL = {
   firstName: 'Jane',
   lastName: 'Doe',
   phone: '',
-  preferredLanguage: 'en' as const,
   website: '',
   description: '',
 };

@@ -55,6 +55,19 @@ import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/em
 import type { EmailLocale } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { isRole } from '@/modules/auth/domain/role';
+// F114 — the change-request staff email is rendered AT SEND TIME from the
+// request rows (research R8 / § V3): the outbox row carries ids + field keys
+// only. Read through the members barrel (Principle III).
+import {
+  buildChangeRequestSubmittedStaffEmail,
+  drizzleChangeRequestRepo,
+  drizzleContactRepo,
+  drizzleMemberRepo,
+  drizzleMemberSettingsRepo,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+  type ChangeRequestId,
+} from '@/modules/members';
  
 import {
   buildInvoiceAutoEmail,
@@ -125,16 +138,33 @@ interface BuiltPayload {
 }
 
 /**
+ * F114 — a DETERMINISTIC miss: the row can never render because the thing
+ * it refers to no longer exists (the request row was hard-deleted, or the
+ * submitting contact was removed / erased). Unlike `null` (transient — the
+ * template inputs could not be resolved this tick) a miss permanent-fails
+ * the row on the FIRST tick with the reason in `last_error` + the
+ * `email_dispatch_failed` audit payload, so an operator sees WHY.
+ */
+interface PayloadMiss {
+  readonly miss: 'request_gone' | 'recipient_gone';
+}
+
+function isPayloadMiss(v: BuiltPayload | PayloadMiss | null): v is PayloadMiss {
+  return v !== null && 'miss' in v;
+}
+
+/**
  * Translate an outbox row into a ready-to-send email. Returns `null`
  * when the row's notification_type + context_data do not produce a
  * renderable payload; the dispatcher then treats this as a permanent-
  * failure path with an explicit audit event so unrenderable rows do
- * not disappear silently.
+ * not disappear silently. Returns a `PayloadMiss` for the F114 arms when
+ * the referenced request / recipient is gone (see above).
  */
 async function buildPayload(
   row: NotificationsOutboxRow,
   prefetchedBytes?: Uint8Array,
-): Promise<BuiltPayload | null> {
+): Promise<BuiltPayload | PayloadMiss | null> {
   const locale: Locale = isLocale(row.locale) ? row.locale : 'en';
   const ctx = row.contextData as Record<string, unknown>;
 
@@ -357,6 +387,39 @@ async function buildPayload(
         scheduledFor,
         reason,
         locale,
+      });
+    }
+    case 'member_change_request_submitted_staff': {
+      // F114 FR-011 (research R8 / § V3) — read-at-send under the row's
+      // tenant. `context_data` = { tenantId, requestId, memberId,
+      // submitterUserId, fieldKeys } — ids only; the diff, the company name,
+      // the member number and the submitter's name come from the rows NOW,
+      // so a scrubbed request renders scrubbed. Same tenant-id shape guard as
+      // the receipt_pdf_render arm (S9 closure).
+      const requestId = typeof ctx.requestId === 'string' ? ctx.requestId : '';
+      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,64}$/.test(row.tenantId)) return null;
+      const tenantCtx = asTenantContext(row.tenantId);
+      const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
+      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      const member = await drizzleMemberRepo.findById(tenantCtx, request.value.memberId);
+      if (!member.ok) return member.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      const contact = await drizzleContactRepo.findById(tenantCtx, request.value.submittedByContactId);
+      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      const prefix = await resolveMemberNumberPrefix(tenantCtx, drizzleMemberSettingsRepo);
+      return buildChangeRequestSubmittedStaffEmail({
+        locale,
+        companyName: member.value.companyName,
+        memberNumber: formatMemberNumber(prefix, member.value.memberNumber),
+        submitterName: `${contact.value.firstName} ${contact.value.lastName}`.trim(),
+        submitterRole: request.value.submitterRoleAtSubmission,
+        submittedAt: request.value.submittedAt,
+        submitterUserId: request.value.submittedByUserId,
+        fields: request.value.fields.map((f) => ({
+          key: f.key,
+          current: f.seen,
+          proposed: f.proposed,
+          affectsTaxDocuments: f.affectsTaxDocuments,
+        })),
       });
     }
     default:
@@ -863,11 +926,16 @@ async function dispatchOne(
       return 'permanent';
     }
 
-    const payload = await buildPayload(row, prefetchedBytes);
+    const built = await buildPayload(row, prefetchedBytes);
+    // F114 — a deterministic miss (request / recipient gone) permanent-fails
+    // on the first tick; `null` keeps the transient retry ladder below.
+    const miss = isPayloadMiss(built) ? built.miss : null;
+    const payload = isPayloadMiss(built) ? null : built;
 
     if (!payload) {
       const nextAttempt = row.attempts + 1;
-      const isPermanent = nextAttempt >= MAX_ATTEMPTS;
+      const isPermanent = miss !== null || nextAttempt >= MAX_ATTEMPTS;
+      const failReason: string = miss ?? 'no_template_handler';
 
       if (isPermanent) {
         await tx
@@ -875,7 +943,7 @@ async function dispatchOne(
           .set({
             attempts: nextAttempt,
             status: 'permanently_failed' as const,
-            lastError: 'no_template_handler',
+            lastError: failReason,
             updatedAt: now,
           })
           .where(eq(notificationsOutbox.id, row.id));
@@ -890,14 +958,14 @@ async function dispatchOne(
         await tx.insert(auditLog).values({
           eventType: 'email_dispatch_failed',
           actorUserId: 'system:cron',
-          summary: `outbox row ${row.id} permanently failed (no_template_handler) after ${nextAttempt} attempts`,
+          summary: `outbox row ${row.id} permanently failed (${failReason}) after ${nextAttempt} attempts`,
           requestId,
           tenantId: row.tenantId,
           payload: {
             outbox_row_id: row.id,
             notification_type: row.notificationType,
             attempts: nextAttempt,
-            reason: 'no_template_handler',
+            reason: failReason,
           },
         });
         // T106 — dual-emit the F4-specific `auto_email_delivery_failed`

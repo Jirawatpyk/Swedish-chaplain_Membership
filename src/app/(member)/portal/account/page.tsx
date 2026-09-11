@@ -7,6 +7,8 @@ import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
+// F114 FR-004 / R6 — the contact's OWN email language (Group A) lives here.
+import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 import { DataExportPanel } from '@/components/data-export/data-export-panel';
 import {
   buildDataExportLabels,
@@ -111,6 +113,7 @@ export default async function MemberAccountPage() {
   const { user } = await requireSession('member');
   const tPage = await getTranslations('portal.account');
   const tLocale = await getTranslations('portal.preferredLocale');
+  const tContactLang = await getTranslations('portal.account.contactLanguage');
   const tShell = await getTranslations('shell.roleBadge');
   const tExport = await getTranslations('dataExport');
   const locale = await getLocale();
@@ -125,6 +128,9 @@ export default async function MemberAccountPage() {
   let initialLocale: 'en' | 'th' | 'sv' | null | undefined;
   let initialOptedOut = false;
   let memberId: MemberId | null = null;
+  // F114 — the caller's own contact language (Group A). `null` = no linked
+  // contact (the form is then not rendered).
+  let contactLanguage: 'en' | 'th' | 'sv' | null = null;
   try {
     const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
       tenant,
@@ -136,6 +142,20 @@ export default async function MemberAccountPage() {
       // `MemberId | null` inside the closure).
       const linkedMemberId = memberLookup.value.memberId;
       memberId = linkedMemberId;
+
+      // F114 — the caller's own contact row carries the email language.
+      try {
+        const contactsResult = await membersDeps.contactRepo.listByMember(tenant, linkedMemberId);
+        if (contactsResult.ok) {
+          const own = contactsResult.value.find((c) => String(c.linkedUserId) === user.id && !c.removedAt);
+          contactLanguage = own?.preferredLanguage ?? null;
+        }
+      } catch (err) {
+        logger.warn(
+          { errKind: errKind(err), tenantId: tenant.slug, userIdHash: hashId(user.id) },
+          'portal.account.contact_language_read_failed',
+        );
+      }
 
       const localeResult = await getMemberPreferredLocale(
         { tenant, memberRepo: f3DrizzleMemberRepo },
@@ -272,6 +292,16 @@ export default async function MemberAccountPage() {
       >
         <p className="text-sm text-muted-foreground">{tLocale('description')}</p>
         <PreferredLocaleForm initialValue={initialLocale} />
+        {/* F114 FR-004 — the contact's OWN email language (Group A): saves
+            immediately, and is the ONE body the narrowed profile endpoint still
+            accepts while the tenant requires approval for member changes. */}
+        {contactLanguage ? (
+          <div className="mt-6 space-y-2 border-t pt-6" id="contact-language">
+            <h3 className="text-sm font-medium">{tContactLang('title')}</h3>
+            <p className="text-sm text-muted-foreground">{tContactLang('description')}</p>
+            <ContactLanguageForm initialValue={contactLanguage} />
+          </div>
+        ) : null}
       </HubCard>
 
       {/*
