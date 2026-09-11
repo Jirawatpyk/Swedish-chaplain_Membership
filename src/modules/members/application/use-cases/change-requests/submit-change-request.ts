@@ -45,8 +45,7 @@ import {
   diffAgainstRecord,
   proposedValuesEqual,
   type GroupBProposal,
-  type GroupBRecord,
-} from '../../../domain/change-request/policies';
+  type GroupBRecord, normaliseText } from '../../../domain/change-request/policies';
 import {
   BILLING_ADDRESS_LINES,
   COMPANY_FIELD_KEYS,
@@ -58,12 +57,12 @@ import {
 import type { Contact, ContactId } from '../../../domain/contact';
 import type { Member, MemberId, TenantId } from '../../../domain/member';
 import type { UserId } from '../../../domain/value-objects/user-id';
-import type { AuditPort } from '../../ports/audit-port';
+import type { AuditPort, ChangeRequestAuditPayload } from '../../ports/audit-port';
 import type { ChangeRequestDraft, ChangeRequestRepo } from '../../ports/change-request-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { ContactRepo } from '../../ports/contact-repo';
 import type { EmailPort } from '../../ports/email-port';
-import type { MemberRepo, RepoError } from '../../ports/member-repo';
+import { isRepoError, type MemberRepo, type RepoError } from '../../ports/member-repo';
 import type { ReviewerDirectoryPort } from '../../ports/reviewer-directory-port';
 import { UseCaseAbort } from '../../tx-abort';
 
@@ -115,7 +114,8 @@ export type SubmitChangeRequestError =
   | { readonly type: 'validation_error'; readonly issues: z.ZodIssue[] }
   | { readonly type: 'member_archived' }
   | { readonly type: 'not_found' }
-  | { readonly type: 'rate_limited'; readonly retryAfterSeconds: number; readonly windowCount: number }
+  // (no `rate_limited` arm: PR-1's interim cap lives in the route; T087's
+  // durable cap adds the use-case arm together with its audit event)
   | { readonly type: 'server_error'; readonly message: string };
 
 // ---------------------------------------------------------------------------
@@ -192,34 +192,39 @@ function companyKeysIn(raw: unknown): CompanyFieldKey[] {
 // Record projection (Member + Contact → the Group B view)
 // ---------------------------------------------------------------------------
 
+// The record is read NORMALISED (trim, '' → null — `normaliseText`, the rule
+// both sides of the diff apply) so the review page's `changedSinceSubmitted`
+// / `alreadyCurrent` compare like with like: a record holding 'CEO ' against a
+// seen 'CEO' is not a change (round 6, code #2).
 export function groupBRecordOf(member: Member, contact: Contact): GroupBRecord {
+  const n = normaliseText;
   return {
     contact: {
-      first_name: contact.firstName,
-      last_name: contact.lastName,
-      phone: contact.phone,
-      role_title: contact.roleTitle,
+      first_name: n(contact.firstName) ?? '',
+      last_name: n(contact.lastName) ?? '',
+      phone: n(contact.phone),
+      role_title: n(contact.roleTitle),
     },
     company: {
-      company_name: member.companyName,
-      website: member.website,
-      description: member.description,
+      company_name: n(member.companyName) ?? '',
+      website: n(member.website),
+      description: n(member.description),
       registered_address: {
-        line1: member.addressLine1,
-        line2: member.addressLine2,
-        sub_district: member.subDistrict,
-        city: member.city,
-        province: member.province,
-        postal_code: member.postalCode,
+        line1: n(member.addressLine1),
+        line2: n(member.addressLine2),
+        sub_district: n(member.subDistrict),
+        city: n(member.city),
+        province: n(member.province),
+        postal_code: n(member.postalCode),
       },
       billing_address: {
-        line1: member.billingAddressLine1 ?? null,
-        line2: member.billingAddressLine2 ?? null,
-        sub_district: member.billingSubDistrict ?? null,
-        city: member.billingCity ?? null,
-        province: member.billingProvince ?? null,
-        postal_code: member.billingPostalCode ?? null,
-        country: member.billingCountry ?? null,
+        line1: n(member.billingAddressLine1),
+        line2: n(member.billingAddressLine2),
+        sub_district: n(member.billingSubDistrict),
+        city: n(member.billingCity),
+        province: n(member.billingProvince),
+        postal_code: n(member.billingPostalCode),
+        country: n(member.billingCountry),
       },
     },
   };
@@ -316,8 +321,12 @@ export async function submitChangeRequest(
     memberHasBillingAddress: resultingHasBillingAddress(member, proposal),
     submitterIsPrimary,
   });
-  if (fields.length === 0) return ok({ outcome: 'nothing_to_submit' });
-  const scopeResult = deriveScope(
+  // "nothing differs from the RECORD" is answered inside the tx, after the
+  // pending read: while a proposal is pending the honest answer is
+  // `already_pending` (the member cannot silently "revert" it — withdrawing
+  // is US5), never "nothing to submit" (round 6, code #5)
+  const nothingDiffers = fields.length === 0;
+  const scopeResult = nothingDiffers ? ok('company' as ChangeRequestScope) : deriveScope(
     fields.map((f) => f.key),
     submitterIsPrimary,
   );
@@ -350,6 +359,9 @@ export async function submitChangeRequest(
       const pendingResult = await deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId);
       if (!pendingResult.ok) throw new UseCaseAbort<RepoError>(pendingResult.error);
       const pending = pendingResult.value;
+      if (nothingDiffers) {
+        return pending !== null ? { outcome: 'already_pending', request: pending } : { outcome: 'nothing_to_submit' };
+      }
       if (pending !== null && sameProposal(pending, fields)) {
         return { outcome: 'already_pending', request: pending };
       }
@@ -375,7 +387,7 @@ export async function submitChangeRequest(
           // `withdrawn_reason`, not `reason`: the bare key is on the audit
           // redaction deny-list (free-text reasons), and this is a closed enum
           // the manager projection + the member's own archive must keep.
-          payload: {
+          payload: ({
             related_member_id: input.memberId,
             request_id: pending.id,
             contact_id: pending.submittedByContactId,
@@ -383,7 +395,7 @@ export async function submitChangeRequest(
             withdrawn_reason: 'replaced',
             replaced_by_request_id: newId,
             actor_role: input.actorRole,
-          },
+          } satisfies ChangeRequestAuditPayload['member_change_request_withdrawn']),
         });
         if (!wa.ok) throw new UseCaseAbort<RepoError>(wa.error);
       }
@@ -410,7 +422,7 @@ export async function submitChangeRequest(
         actorUserId: input.actorUserId,
         requestId: input.requestId,
         summary: `change request ${newId} submitted (${scope}: ${fieldKeys.join(', ')})`,
-        payload: {
+        payload: ({
           member_id: input.memberId,
           request_id: newId,
           contact_id: input.contactId,
@@ -419,7 +431,7 @@ export async function submitChangeRequest(
           replaced_request_id: replaced,
           coalesced: false,
           actor_role: input.actorRole,
-        },
+        } satisfies ChangeRequestAuditPayload['member_change_request_submitted']),
       });
       if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
 
@@ -452,8 +464,8 @@ export async function submitChangeRequest(
       membersMetrics.changeRequests.refused(tenantId, 'archived');
       return err({ type: 'member_archived' });
     }
-    if (e instanceof UseCaseAbort) {
-      const re = e.error as RepoError;
+    if (e instanceof UseCaseAbort && isRepoError(e.error)) {
+      const re = e.error;
       // The partial unique index refused a second pending row: two submits
       // raced past the (empty) FOR UPDATE read. The loser's proposal is
       // already pending — answer `already_pending` from a fresh read, never

@@ -35,13 +35,16 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
   const router = useRouter();
   const [dismissed, setDismissed] = useState(false);
   const [pending, startTransition] = useTransition();
-  const outcome = request.outcome ?? 'rejected';
+  // a decided request always carries an outcome (0300 `outcome_iff_decided_ck`);
+  // the null arm renders NOTHING rather than guess (the staff toast guesses
+  // nothing either — round 6, silent-failure #15)
+  const outcome = request.outcome;
   const anyRejected = request.fields.some((f) => f.outcome === 'rejected');
   const decidedAt = request.decidedAt
     ? formatLocalisedDate(request.decidedAt, locale, { dateStyle: 'medium', timeStyle: 'short' })
     : '';
 
-  if (dismissed) return null;
+  if (dismissed || outcome === null) return null;
 
   function dismiss(): void {
     startTransition(async () => {

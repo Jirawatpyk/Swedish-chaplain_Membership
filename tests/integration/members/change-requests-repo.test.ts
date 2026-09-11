@@ -20,8 +20,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { inArray, sql } from 'drizzle-orm';
+import { db, runInTenant } from '@/lib/db';
 import { asMemberId, asContactId, type UserId } from '@/modules/members';
 import type { ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
 import { drizzleChangeRequestRepo } from '@/modules/members/infrastructure/db/drizzle-change-request-repo';
@@ -294,6 +294,40 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     expect(thrown).not.toBeNull();
     const cause = (thrown as { cause?: { constraint_name?: string } }).cause;
     expect(cause?.constraint_name).toMatch(/member_change_requests_(outcome|decision)_iff_decided_ck/);
+  });
+
+  it('keyset paging with EQUAL submitted_at: the id tiebreak (round 1 #22) yields no duplicate and no gap (round 6 tests Q-5)', async () => {
+    const at = new Date('2026-09-11T12:00:00Z');
+    const older = draft(a, { submittedAt: at });
+    const newer = draft(a, { submittedAt: at });
+    // two rows at the SAME instant: the first is replaced by the second (one pending per submitter)
+    const seeded = await runInTenant(a.tenant.ctx, async (tx) => {
+      const i1 = await drizzleChangeRequestRepo.insertInTx(tx, older);
+      if (!i1.ok) return i1;
+      const w = await drizzleChangeRequestRepo.withdrawInTx(tx, older.id, { reason: 'replaced', withdrawnAt: at, replacedByRequestId: newer.id });
+      if (!w.ok) return w;
+      return drizzleChangeRequestRepo.insertInTx(tx, newer);
+    });
+    expect(seeded.ok).toBe(true);
+    const all = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor: null, limit: 50 });
+    expect(all.ok).toBe(true);
+    if (!all.ok) return;
+    const ids = all.value.items.map((r) => r.request.id);
+    const seen: string[] = [];
+    let cursor: typeof all.value.nextCursor = null;
+    for (let i = 0; i < 20; i += 1) {
+      const page = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor, limit: 1 });
+      expect(page.ok).toBe(true);
+      if (!page.ok) return;
+      seen.push(...page.value.items.map((r) => r.request.id));
+      cursor = page.value.nextCursor;
+      if (cursor === null) break;
+    }
+    expect(seen).toEqual(ids); // same order, every row once
+    expect(new Set(seen).size).toBe(ids.length);
+    // clean up the two rows so the sibling cases keep their counts
+    // owner-role delete (chamber_app has no DELETE grant; the app never hard-deletes)
+    await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, [older.id, newer.id]));
   });
 
   it('withdrawInTx: pending → withdrawn/replaced with the pointer; list projections carry member + submitter facts', async () => {

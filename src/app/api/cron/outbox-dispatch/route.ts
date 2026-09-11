@@ -46,6 +46,7 @@ import {
  
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { isDecided } from '@/modules/members/domain/change-request/change-request';
 import { errKind } from '@/lib/log-id';
 import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -156,6 +157,12 @@ interface BuiltPayload {
  * `email_dispatch_failed` audit payload, so an operator sees WHY.
  */
 interface PayloadMiss {
+  /**
+   * `request_gone` — the request, its member OR its submitting contact no
+   * longer exists (all three make the email unrenderable); `recipient_gone`
+   * — the addressee (an active reviewer / the live contact) is gone;
+   * `request_superseded` — the request left `pending` before send.
+   */
   readonly miss: 'request_gone' | 'recipient_gone' | 'request_superseded';
 }
 
@@ -483,19 +490,22 @@ async function buildPayload(
       const tenantCtx = asTenantContext(row.tenantId);
       const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
       if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
-      if (request.value.state !== 'decided' || request.value.outcome === null || request.value.decidedAt === null) {
-        return { miss: 'request_gone' };
-      }
-      const contact = await drizzleContactRepo.findById(tenantCtx, request.value.submittedByContactId);
+      // a decided row always carries outcome + decidedAt (F6 narrowing; a
+      // contradicting row never reaches here — the repo throws on it). A
+      // request that is NOT decided (withdrawn / pending again) has nothing
+      // to tell the member: closed as superseded, not "gone".
+      const decidedRequest = request.value;
+      if (!isDecided(decidedRequest)) return { miss: 'request_superseded' };
+      const contact = await drizzleContactRepo.findById(tenantCtx, decidedRequest.submittedByContactId);
       if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'recipient_gone' } : null;
       if (contact.value.removedAt !== null || contact.value.linkedUserId === null) return { miss: 'recipient_gone' };
       const built = buildChangeRequestDecidedMemberEmail({
         locale,
-        requestId: request.value.id,
-        outcome: request.value.outcome,
-        decidedAt: request.value.decidedAt,
-        reason: request.value.decisionReason,
-        fields: request.value.fields
+        requestId: decidedRequest.id,
+        outcome: decidedRequest.outcome,
+        decidedAt: decidedRequest.decidedAt,
+        reason: decidedRequest.decisionReason,
+        fields: decidedRequest.fields
           .filter((f): f is typeof f & { outcome: 'approved' | 'rejected' } => f.outcome !== null)
           .map((f) => ({ key: f.key, proposed: f.proposed, outcome: f.outcome })),
       });

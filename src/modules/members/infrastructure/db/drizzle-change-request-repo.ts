@@ -19,6 +19,7 @@
  * Context queue budget; T119 proves it at 5,000 rows).
  */
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, sql } from 'drizzle-orm';
+import type { Member } from '../../domain/member';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -37,19 +38,8 @@ import type {
   PendingStats,
 } from '../../application/ports/change-request-repo';
 import type { RepoError } from '../../application/ports/member-repo';
-import type {
-  ChangeRequest,
-  ChangeRequestId,
-  ChangeRequestOutcome,
-  ChangeRequestScope,
-  ChangeRequestState,
-  FieldOutcome,
-  ProposedField,
-  ProposedValue,
-  SubmitterRole,
-  WithdrawnReason,
-} from '../../domain/change-request/change-request';
-import { PROPOSABLE_FIELD_KEYS, type ProposableFieldKey, type ProposedFieldTarget } from '../../domain/change-request/proposable-fields';
+import { changeRequestInvariantViolation, type ChangeRequest, type ChangeRequestId, type ChangeRequestOutcome, type ChangeRequestScope, type ChangeRequestState, type FieldOutcome, type ProposedField, type ProposedValue, type SubmitterRole, type WithdrawnReason } from '../../domain/change-request/change-request';
+import { PROPOSABLE_FIELD_KEYS, PROPOSABLE_FIELD_TARGET, type ProposableFieldKey, type ProposedFieldTarget } from '../../domain/change-request/proposable-fields';
 import type { ContactId } from '../../domain/contact';
 import type { UserId } from '../../domain/value-objects/user-id';
 import type { MemberId, TenantId } from '../../domain/member';
@@ -67,12 +57,33 @@ import {
 // Row → Domain
 // ---------------------------------------------------------------------------
 
+/**
+ * `jsonb` is unconstrained: a value must be a string, null, or an address
+ * object of string / null lines — anything else is a corrupt row and throws
+ * (→ `repo.unexpected`), never a `number` handed to `.trim()` on the review
+ * page (round 6, types F8).
+ */
+function parseProposedValue(raw: unknown, key: string, column: string): ProposedValue {
+  if (raw === null || raw === undefined || typeof raw === 'string') return (raw ?? null) as ProposedValue;
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [line, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (v !== null && typeof v !== 'string') throw new Error(`member_change_request_fields.${column} for ${key}: line ${line} is not text`);
+    }
+    return raw as ProposedValue;
+  }
+  throw new Error(`member_change_request_fields.${column} for ${key}: not a text or address value`);
+}
+
 function fieldRowToDomain(f: MemberChangeRequestFieldRow): ProposedField {
+  const key = f.fieldKey as ProposableFieldKey;
   return {
-    key: f.fieldKey as ProposableFieldKey,
-    target: f.target as ProposedFieldTarget,
-    seen: (f.seenValue ?? null) as ProposedValue,
-    proposed: (f.proposedValue ?? null) as ProposedValue,
+    key,
+    // the target is DERIVED from the key (one source, round 6 types F3); the
+    // stored column stays for query convenience and a contradicting row is a
+    // corrupt row, not a second opinion
+    target: PROPOSABLE_FIELD_TARGET[key] ?? (f.target as ProposedFieldTarget),
+    seen: parseProposedValue(f.seenValue, key, 'seen_value'),
+    proposed: parseProposedValue(f.proposedValue, key, 'proposed_value'),
     affectsTaxDocuments: f.affectsTaxDocuments,
     outcome: (f.outcome ?? null) as FieldOutcome | null,
     appliedAt: f.appliedAt ?? null,
@@ -89,7 +100,7 @@ function rowToDomain(r: MemberChangeRequestRow, fieldRows: readonly MemberChange
   const fields = [...fieldRows]
     .sort((x, y) => FIELD_ORDER.indexOf(x.fieldKey) - FIELD_ORDER.indexOf(y.fieldKey))
     .map(fieldRowToDomain);
-  return {
+  const request: ChangeRequest = {
     id: r.id as ChangeRequestId,
     tenantId: r.tenantId as TenantId,
     memberId: r.memberId as MemberId,
@@ -111,6 +122,12 @@ function rowToDomain(r: MemberChangeRequestRow, fieldRows: readonly MemberChange
     outcomeAcknowledgedAt: r.outcomeAcknowledgedAt ?? null,
     fields,
   };
+  // the DB → Domain seam PARSES the state machine (round 6, types F6): a row
+  // that contradicts its state is a corrupt row → repo.unexpected, never a
+  // Domain object that every consumer must null-check again
+  const violation = changeRequestInvariantViolation(request);
+  if (violation !== null) throw new Error(`member_change_requests: ${violation}`);
+  return request;
 }
 
 async function loadFields(
@@ -184,7 +201,7 @@ function toListRow(j: JoinedRow, fieldRows: readonly MemberChangeRequestFieldRow
     member: {
       companyName: j.companyName,
       memberNumber: j.memberNumber,
-      status: j.memberStatus,
+      status: j.memberStatus as Member['status'],
       archived: j.memberStatus === 'archived',
     },
     submitter: { displayName: `${j.submitterFirstName} ${j.submitterLastName}`.trim() },
@@ -392,12 +409,16 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         .returning();
       if (!row) return err({ code: 'repo.not_found' });
       for (const f of decision.fields) {
-        await tx
+        const touched = await tx
           .update(memberChangeRequestFields)
           .set({ outcome: f.outcome, appliedAt: f.appliedAt })
           .where(
             and(eq(memberChangeRequestFields.requestId, row.id), eq(memberChangeRequestFields.fieldKey, f.key)),
-          );
+          )
+          .returning({ id: memberChangeRequestFields.id });
+        // a decision naming a key with no row would leave a `decided` request
+        // with an undecided field (round 6, types F7) — the tx rolls back
+        if (touched.length !== 1) throw new Error(`decideInTx: ${touched.length} field rows for key ${f.key} on ${row.id}`);
       }
       const fields = await loadFields(tx, [row.id]);
       return ok(rowToDomain(row, fields.get(row.id) ?? []));

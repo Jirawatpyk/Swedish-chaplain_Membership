@@ -165,7 +165,7 @@ export function changedSinceSubmitted(field: ProposedField, liveValue: ProposedV
  * "(empty) → (empty)" row on every submit, and a stored proposed value is
  * the trimmed one (`''` → null — the same rule as `fillLines`).
  */
-function normaliseText(value: string | null | undefined): string | null {
+export function normaliseText(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;

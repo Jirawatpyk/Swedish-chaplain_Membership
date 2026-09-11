@@ -258,3 +258,17 @@ describe('getChangeRequestReview', () => {
     expect(await getChangeRequestReview(e.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR })).toMatchObject({ ok: false, error: { type: 'server_error' } });
   });
 });
+
+describe('getChangeRequestReview — the live value is normalised like `seen` (round 6, code #2)', () => {
+  it("a record holding 'CEO ' against a seen 'CEO' is NOT 'changed since submitted'", async () => {
+    const { deps } = makeDeps({
+      request: request({ fields: [{ key: 'role_title', target: 'contact', seen: 'CEO', proposed: 'CTO', affectsTaxDocuments: false, outcome: null, appliedAt: null }] }),
+      contacts: [contact({ roleTitle: 'CEO ' })],
+    });
+    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const row = r.value.fields.find((f) => f.key === 'role_title');
+    expect(row).toMatchObject({ current: 'CEO', changedSinceSubmitted: false, alreadyCurrent: false });
+  });
+});

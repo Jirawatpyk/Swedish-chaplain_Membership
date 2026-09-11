@@ -12,6 +12,7 @@
  * `pendingStats`, `findById`) open their own tenant tx via `ctx`.
  */
 import type { TenantTx } from '@/lib/db';
+import type { Member } from '../../domain/member';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type {
@@ -87,7 +88,7 @@ export type ChangeRequestListRow = {
   readonly member: {
     readonly companyName: string;
     readonly memberNumber: number;
-    readonly status: string;
+    readonly status: Member['status'];
     readonly archived: boolean;
   };
   readonly submitter: {

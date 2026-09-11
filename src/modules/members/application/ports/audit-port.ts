@@ -197,6 +197,49 @@ export function assertNeverAuditEvent(event: never): never {
   );
 }
 
+/**
+ * F114 — the payload each change-request event carries, as a TYPE (round 6,
+ * types F4). The emit sites write `payload: { … } satisfies
+ * ChangeRequestAuditPayload['<type>']`, so the snake_case `member_id` /
+ * `related_member_id` split that drives migration 0009's `last_activity_at`
+ * trigger, the `withdrawn_reason` key (never `reason`), and "ids and keys —
+ * never a value" are checked by the compiler, not by a reviewer.
+ */
+export type ChangeRequestAuditPayload = {
+  member_change_request_submitted: {
+    readonly member_id: string;
+    readonly request_id: string;
+    readonly contact_id: string;
+    readonly scope: 'own_contact' | 'company' | 'mixed';
+    readonly field_keys: readonly string[];
+    readonly replaced_request_id: string | null;
+    readonly coalesced: boolean;
+    readonly actor_role: string;
+  };
+  member_change_request_decided: {
+    readonly related_member_id: string;
+    readonly request_id: string;
+    readonly contact_id: string;
+    readonly scope: 'own_contact' | 'company' | 'mixed';
+    readonly outcome: 'approved' | 'partially_approved' | 'rejected';
+    readonly fields: readonly { readonly key: string; readonly outcome: 'approved' | 'rejected' | undefined }[];
+    readonly reason_length: number;
+    readonly actor_role: string;
+    readonly member_notified: boolean;
+    readonly member_notification_skipped?: 'recipient_gone';
+  };
+  member_change_request_withdrawn: {
+    readonly member_id?: string;
+    readonly related_member_id?: string;
+    readonly request_id: string;
+    readonly contact_id: string;
+    readonly scope: 'own_contact' | 'company' | 'mixed';
+    readonly withdrawn_reason: 'member' | 'replaced' | 'erasure';
+    readonly replaced_by_request_id?: string;
+    readonly actor_role: string;
+  };
+};
+
 export type F3AuditEvent = {
   readonly type: F3AuditEventType;
   readonly actorUserId: string;

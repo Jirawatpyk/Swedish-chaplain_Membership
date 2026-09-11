@@ -17,6 +17,7 @@
  * it in. Plain reads, no lock: the decision itself re-reads FOR UPDATE.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { ChangeRequestId, ProposedField, ProposedValue } from '../../../domain/change-request/change-request';
 import { proposedValuesEqual, type GroupBRecord } from '../../../domain/change-request/policies';
@@ -30,6 +31,7 @@ import type { ContactRepo } from '../../ports/contact-repo';
 import type { MemberRepo, RepoError } from '../../ports/member-repo';
 import { auditChangeRequestProbe } from './decide-change-request';
 import { groupBRecordOf, memberHasBillingAddress } from './submit-change-request';
+import { removedContactStandIn } from './removed-contact-stand-in';
 
 export type TaxHint = 'buyer_name' | 'buyer_address' | 'buyer_contact' | 'billing_country';
 
@@ -48,7 +50,7 @@ export type ChangeRequestReview = {
     readonly id: MemberId;
     readonly companyName: string;
     readonly memberNumber: number;
-    readonly status: string;
+    readonly status: Member['status'];
     readonly archived: boolean;
     readonly erasing: boolean;
     readonly hasBillingAddress: boolean;
@@ -93,8 +95,18 @@ export function taxHintFor(field: ProposedField, ctx: { readonly submitterIsPrim
     case 'first_name':
     case 'last_name':
       return ctx.submitterIsPrimary ? 'buyer_contact' : null;
-    default:
+    case 'phone':
+    case 'role_title':
+    case 'website':
+    case 'description':
+      return null; // never tax-affecting (FR-019)
+    default: {
+      // a key that later gains `affectsTaxDocuments` must fail the build here,
+      // not render the flag with no hint (round 6, silent-failure #18)
+      const _exhaustive: never = field.key;
+      void _exhaustive;
       return null;
+    }
   }
 }
 
@@ -119,10 +131,23 @@ export async function getChangeRequestReview(
   const request = row.request;
 
   const memberResult = await deps.memberRepo.findById(deps.tenant, request.memberId);
-  if (!memberResult.ok) return err(mapError(memberResult.error));
+  if (!memberResult.ok) {
+    // the 404 is deliberate (no existence leak) — but a request whose MEMBER
+    // is unreadable is a data fault worth a line, not a silent "not found"
+    // (round 6, silent-failure #17)
+    if (memberResult.error.code === 'repo.not_found') {
+      logger.warn({ tenantId: deps.tenant.slug, changeRequestId: request.id, requestId: input.actor.requestId }, 'change-request.review.member_missing');
+    }
+    return err(mapError(memberResult.error));
+  }
   const member: Member = memberResult.value;
   const erased = await deps.memberRepo.findErasedAtById(deps.tenant, request.memberId);
-  if (!erased.ok) return err(mapError(erased.error));
+  if (!erased.ok) {
+    if (erased.error.code === 'repo.not_found') {
+      logger.warn({ tenantId: deps.tenant.slug, changeRequestId: request.id, requestId: input.actor.requestId }, 'change-request.review.member_missing');
+    }
+    return err(mapError(erased.error));
+  }
   const erasing = erased.value.erasedAt !== null;
 
   // Removed contacts included: a removed submitting contact still has to be
@@ -132,7 +157,7 @@ export async function getChangeRequestReview(
   const contact: Contact | null = contactsResult.value.find((c) => c.contactId === request.submittedByContactId) ?? null;
   const contactGone = contact === null || contact.removedAt !== null || contact.linkedUserId === null;
 
-  const record = groupBRecordOf(member, contact ?? emptyContactFor(request.submittedByContactId, request.memberId));
+  const record = groupBRecordOf(member, contact ?? removedContactStandIn(request));
   const submitterIsPrimary = request.submitterRoleAtSubmission === 'primary';
   const fields: ChangeRequestReviewField[] = request.fields.map((f) => {
     const current = liveValueOf(record, f.key);
@@ -168,7 +193,4 @@ function mapError(error: RepoError): GetChangeRequestReviewError {
   return { type: 'server_error', message: error.code };
 }
 
-/** A gone contact renders its rows as `contact_removed`; the current value shown is "(empty)". */
-function emptyContactFor(contactId: Contact['contactId'], memberId: MemberId): Contact {
-  return { contactId, memberId, firstName: '', lastName: '', phone: null, roleTitle: null } as unknown as Contact;
-}
+

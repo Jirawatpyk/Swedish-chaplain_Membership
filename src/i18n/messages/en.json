@@ -1084,6 +1084,7 @@
           "contact_removed": "The submitting contact was removed — their fields can only be rejected.",
           "validation_error": "An approved value no longer passes validation. Reject that field instead.",
           "reason_required": "Add a reason for the rejected fields.",
+          "recorded": "Decision recorded.",
           "error": "Could not record the decision. Please try again."
         }
       }
@@ -5530,7 +5531,9 @@
         "description": "Used for messages addressed to you personally, such as the decision on a change you proposed. Emails to the company follow the setting above.",
         "save": "Save language",
         "savedToast": "Email language updated.",
-        "errorToast": "Could not save the language. Please try again."
+        "errorToast": "Could not save the language. Please try again.",
+        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly.",
+        "rateLimitedToast": "Too many changes in a short time. Please wait a minute and try again."
       },
       "title": "Account settings",
       "subtitle": "Manage your password and notification language.",

@@ -232,6 +232,24 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('POST /api/admin/change-requests/[id]/decide — round 5 (toolkit review)', () => {
+  it('the lock-race LOSER (decideInTx finds no pending row) → 409 already_decided filled from the recorded row (FR-018), the use case having only nulls (round 6, tests Q-4)', async () => {
+    fakes.repo.failNext('decideInTx', { code: 'repo.not_found' });
+    const winnerRow = { ...fakes.repo.rows.get(REQ)!, state: 'decided' as const, outcome: 'approved' as const, decidedAt: new Date('2026-09-11T09:00:00Z'), decidedByUserId: REVIEWER as ChangeRequest['decidedByUserId'] };
+    const original = fakes.repo.findListRowById.bind(fakes.repo);
+    fakes.repo.findListRowById = async (tenant, id) => {
+      const r = await original(tenant, id);
+      return r.ok ? ok({ ...r.value, request: winnerRow, decidedBy: { displayName: 'Sven Reviewer', deactivated: false } }) : r;
+    };
+    const res = await call(APPROVE_ALL);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      type: expect.stringMatching(/already_decided$/),
+      decidedBy: { displayName: 'Sven Reviewer' },
+      decidedAt: '2026-09-11T09:00:00.000Z',
+      outcome: 'approved',
+    });
+  });
+
   it('an EMPTY decisions array is a 422 at the body schema (types F5: a zero-field decision must never reach the use case)', async () => {
     const res = await call({ decisions: [], reason: null, note: null });
     expect(res.status).toBe(422);

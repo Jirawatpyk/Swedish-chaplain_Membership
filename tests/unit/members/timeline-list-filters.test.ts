@@ -560,6 +560,15 @@ describe('timelineList — F114 own-contact change requests stay per person (pri
     expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-c-other-company']);
   });
 
+  it("a row with NO scope (or an unrecognised one) is treated as own_contact: dropped unless it is the viewer's own (round 6, silent-failure #19 — a privacy control fails closed)", async () => {
+    const noScope = { ...submitted('c-other', 'company'), id: 'cr-noscope', payload: { member_id: MEMBER, request_id: 'r-x', contact_id: 'c-other', field_keys: ['phone'] } };
+    const weird = { ...submitted('c-other', 'company'), id: 'cr-weird', payload: { member_id: MEMBER, request_id: 'r-y', contact_id: 'c-other', scope: 'everything', field_keys: ['phone'] } };
+    const mineNoScope = { ...submitted('c-me', 'company'), id: 'cr-mine-noscope', payload: { member_id: MEMBER, request_id: 'r-z', contact_id: 'c-me', field_keys: ['phone'] } };
+    const { deps } = makeDeps([noScope, weird, mineNoScope]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true, viewerContactId: 'c-me' });
+    expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-mine-noscope']);
+  });
+
   it('a staff viewer is not filtered', async () => {
     const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'own_contact')]);
     const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, { ...deps, invoicingRead: true });

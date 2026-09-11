@@ -198,22 +198,35 @@ code before it was fixed (108 rule 2).
 | 12 | tests I-1 / I-2 / I-4 / I-5 / I-6 | round-2/3 fixes that survived a revert: `boundForbiddenKeys` (0 tests), `refusal: 'forged'` unasserted, "sent to the CURRENT address" (both arms), the member-arm kill-switch, the nav dark-ship entry | pinned: 25-key forged body → 20 keys / 64 chars / truncated; forged-under-approval; reviewer + contact address change between enqueue and send (live Neon); flag-OFF on `member_change_request_decided_member`; `/admin/change-requests` hidden while the flag is absent |
 | 13 | comments C1–C3, I1–I15, S1–S10 | prose written before rounds 1–3 and never re-derived: the flag-reader inventory ("one place" → twelve), the decide docblock's "proxy 503", the matrix's dialog count (3, not 9) and summary-prefix claim, "Order of checks" missing two arms, `viewerContactId` "omit", the tax context "at submission", the Drizzle docblock, coalescing in the present tense ×3, the missing `/admin/settings/member-changes` surface, `db:verify` "7 enum values", `contracts/notifications-and-audit.md` (`reason` → `withdrawn_reason`, `contact_id`/`scope`, users locale, 0300 → 0301), `replaced_by_request_id` missing from two payload contracts, the peek-then-consume rationale, the superseded semantics, line/count rot | all rewritten to what the code does |
 
-### Deferred with a written owner (the Suggestions — deferred on the maintainer's call)
+### Round 6 — the Suggestions, closed (the maintainer asked for all of them)
 
-| Finding | Owner |
+| Finding | Closure |
 |---|---|
-| code #3 — the remembered `Idempotency-Key` response carries proposed values for 24 h in Redis, outside the FR-030 scrub | T078 (PR-2) with the DPO — quickstart § 3 already carries the note |
-| code #2 — `get-change-request-review` compares the RAW live value with the normalised `seen` (a `'CEO '` record reads "changed since submitted") | PR-2 — route `groupBRecordOf` / `liveValueOf` through `normaliseText` |
-| code #5 — `nothing_to_submit` answers before the pending row is read (a member cannot "withdraw by reverting") | US5 T089 (withdraw) |
-| code #4 · types F11 · tests I-7 · comments S10 — `rate_limited` has no audit / metric emitter; the 429 is unobservable | T087 (PR-2) durable cap |
-| types F2 / F6 / F3 / F8 — `overlayFields` exhaustiveness, a `state`-discriminated `ChangeRequest`, `key`↔`target` tie, `jsonb` parse on read | PR-2 before US4 adds consumers (F6 is the one worth scheduling) |
-| types F4 — typed per-event audit payloads for the five F114 events | PR-2 (overload on `recordInTx`) |
-| types F7 — `decideInTx` does not assert the affected row count | PR-2 |
-| types F9 / F10 — `UseCaseAbort` tag; `member.status: string` widening | PR-2 |
-| silent-failure #7 (account page contact-language Result-err unlogged), #12–#22 (bare client catches, one toast for four statuses, `outcome ?? 'approved'` vs `?? 'rejected'`, `mapError` collapsing three reads to 404, `taxHintFor` default, timeline `scope` fail-open, `request_gone` for a missing member/contact, `as unknown as Contact` stand-ins, empty `issues` on the re-validation 422) | PR-2 UX / reliability pass — each one line, none reachable with the flag off |
-| tests Q-1..Q-5 (test-name overclaim, dead-branch contract case, `staffView` degrade, route-level loser arm, keyset tiebreak) | PR-2 test follow-up (Q-5 with T072/T074) |
-| tests I-8 / I-9 (erasure-read order pin, `contacts: []` in decide) | PR-2 test follow-up |
-| comments I6 / I11 — the six `membersMetrics` rows + FR-037 alert rules in `observability.md`; an enum canary in `verify-schema` | T102 (PR-3) · PR-2 |
+| code #2 — the review compared a RAW live value with the normalised `seen` (a `'CEO '` record read "changed since submitted") | `groupBRecordOf` reads the record through `normaliseText` (trim, `''` → null) — the same rule both sides of the diff apply; unit case |
+| code #3 — the remembered `Idempotency-Key` response carried proposed values for 24 h in Redis, outside the FR-030 scrub | the remembered body is ids + outcome only (`rememberableBody`); a replay answers the reduced body (the client reads `outcome` only); contract case asserts no value in it |
+| code #4 · types F11 · tests I-7 · tests Q-2 — `rate_limited` had no metric, a dead use-case arm, a dead route handler and a dead contract case | the route's 429 emits `refused{rate_limited}`; the arm, the handler and the test are gone (T087 adds the use-case arm with its audit event) |
+| code #5 — "nothing differs" answered `nothing_to_submit` while a proposal was pending | answered inside the tx after the pending read: `already_pending` with the pending request (withdrawing is US5); unit cases both ways |
+| silent-failure #7 — the account page's Result-err arm hid the language form silently | the arm logs `portal.account.contact_language_read_failed` like its catch twin |
+| silent-failure #12 / #13 — bare client catches; one toast for four statuses; a radio that disagreed with the record after a failed save | `console.error` on both catches; the language form reverts to the last SAVED value and names 503 / 429 (`readOnlyToast` / `rateLimitedToast` ×3 locales) |
+| silent-failure #14 / #15 — an unparseable 200 after a COMMITTED decision reached `queueMicrotask(throw)`; `outcome ?? 'approved'` vs `?? 'rejected'` | the success path parses with `.catch(() => null)` and toasts the neutral `toast.recorded` (×3 locales) when the outcome is unknown; the banner renders nothing for a null outcome instead of guessing |
+| silent-failure #16 · types F2 — `overlayFields` had no exhaustiveness arm | `default: never` — a tenth key fails the build |
+| silent-failure #17 — three reads collapsed to a silent 404 | a missing member / erasure row is logged (`change-request.review.member_missing`) before the deliberate 404 |
+| silent-failure #18 — `taxHintFor` `default: return null` | the four never-tax-affecting keys are explicit; `default: never` |
+| silent-failure #19 — a change-request row with an ABSENT / unknown `scope` passed the projection unstripped | fail closed: only `company` is everyone's, `mixed` is stripped, anything else is dropped for anyone but its own contact; unit case |
+| silent-failure #20 — `request_gone` for a missing member / submitting contact | the `PayloadMiss` docblock states the semantics (request, member or submitting contact gone); the decided arm now closes a NON-decided request as `request_superseded`, not "gone" |
+| silent-failure #21 — `as unknown as Contact` stand-ins | `removedContactStandIn`: a FULL `Contact` (removed, unlinked, non-primary, empty text, no opt-out) shared by decide + review |
+| silent-failure #22 — `validation_error` with empty `issues` | the two re-validation refusals name the field (`contact.phone`, `company.billing_address.country`) |
+| types F3 — `key` / `target` independent | the repo DERIVES `target` from the key (`PROPOSABLE_FIELD_TARGET`); the stored column is query convenience |
+| types F4 — audit payload contracts were comments | `ChangeRequestAuditPayload` type map; the three emit sites write `payload: { … } satisfies …` — the `member_id` / `related_member_id` split and `withdrawn_reason` are compiler-checked |
+| types F6 — the state machine lived only in the DB | `DecidedChangeRequest` / `WithdrawnChangeRequest` + `isDecided` / `isWithdrawn`; `changeRequestInvariantViolation` PARSES every row at the DB → Domain seam (a contradicting row → `repo.unexpected`); the three consumers that re-derived the invariant (decide's `already_decided`, the metric, the dispatcher's decided arm) narrow instead. The full discriminated union was NOT adopted on purpose: every fixture and serialiser would have to build one variant at a time, for no invariant the seam parse does not already enforce |
+| types F7 — `decideInTx` ignored the affected row count | each field UPDATE asserts exactly one row, else the tx rolls back |
+| types F8 — `jsonb` cast on read | `parseProposedValue`: a string, null or an address of string / null lines, else a corrupt row |
+| types F9 — `as RepoError` at three catch sites | `isRepoError` (checked narrowing) at all three |
+| types F10 — `member.status: string` | `Member['status']` on both view types |
+| tests Q-1 / Q-4 / Q-5 / I-8 / I-9 | test title honest about the fake; the lock-race loser's 409 filled from the recorded row (FR-018); keyset paging on EQUAL `submitted_at` (live Neon); the lock-then-erasure order pinned; `contacts: []` both ways |
+| comments I6 / I11 | the six `membersMetrics` rows (the two gauges marked "no emitter until T102") + the FR-037 alert rows in `observability.md`; a 0301 enum canary in `verify-schema` (14 canaries) |
+
+Not closed, and why: types F6's full discriminated union (above) — the seam parse + the guards give the same guarantee without the fixture churn.
 
 Checklist checkboxes in `checklists/{security,privacy,tax}.md` remain reviewer-owned and are
 ticked only at `/speckit.review` (T112); each reviewer's per-CHK evidence is in its round-1

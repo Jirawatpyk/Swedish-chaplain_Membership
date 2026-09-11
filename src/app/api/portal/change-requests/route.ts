@@ -31,6 +31,7 @@ import {
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { rateLimiter } from '@/lib/auth-deps';
+import { membersMetrics } from '@/lib/metrics';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
@@ -77,6 +78,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!rl.success) {
     const retryAfterSeconds = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000));
     logger.warn({ requestId: ctx.requestId, tenantId: ctx.tenant.slug, memberId: ctx.memberId, reset: rl.reset }, 'change-requests.submit rate-limited');
+    // observable (round 6, code #4); the audit event `member_change_request_rate_limited` is T087's
+    membersMetrics.changeRequests.refused(ctx.tenant.slug, 'rate_limited');
     return NextResponse.json(
       { error: 'rate_limited', retryAfterSeconds },
       { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
@@ -175,7 +178,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : v.outcome === 'already_pending'
           ? { status: 200, body: { outcome: 'already_pending' as const, request: serialiseChangeRequestForPortal(v.request, me) } }
           : { status: 200, body: { outcome: 'nothing_to_submit' as const } };
-    if (idem) await rememberIdempotentResponse(ctx.tenant, idem.key, idem.bodyHash, { status, body });
+    // The remembered body carries ids + outcome ONLY: the Redis record lives
+    // 24 h outside the FR-030 scrub, so proposed values must not sit in it
+    // (round 6, code #3). A replay answers the reduced body — the client only
+    // reads `outcome` (and navigates) on a retry.
+    if (idem) await rememberIdempotentResponse(ctx.tenant, idem.key, idem.bodyHash, { status, body: rememberableBody(body) });
     return NextResponse.json(body, { status });
   }
 
@@ -190,12 +197,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(refusal.body, { status: refusal.status });
   }
   const error = result.error;
-  if (error.type === 'rate_limited') {
-    return NextResponse.json(
-      { error: 'rate_limited', retryAfterSeconds: error.retryAfterSeconds },
-      { status: 429, headers: { 'Retry-After': String(error.retryAfterSeconds) } },
-    );
-  }
   logger.error(
     { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type },
     'change-requests.submit: use case failed',
@@ -204,6 +205,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 }
 
 type Refusal = { readonly status: number; readonly body: Record<string, unknown> };
+
+/** Ids + outcome only — never a field value (the idempotency store outlives the erasure scrub). */
+function rememberableBody(body: Record<string, unknown>): Record<string, unknown> {
+  const request = body['request'];
+  if (!request || typeof request !== 'object') return body;
+  const r = request as { id?: unknown; state?: unknown; scope?: unknown; submittedAt?: unknown };
+  return { ...body, request: { id: r.id, state: r.state, scope: r.scope, submittedAt: r.submittedAt } };
+}
 
 /** The 4xx arms the client can act on — stable for a given body, hence rememberable. */
 function mapRefusal(error: SubmitRefusalError): Refusal | null {

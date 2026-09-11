@@ -1084,6 +1084,7 @@
           "contact_removed": "Kontakten som skickade in är borttagen — dess fält kan bara avslås.",
           "validation_error": "Ett godkänt värde klarar inte längre valideringen. Avslå det fältet i stället.",
           "reason_required": "Ange en motivering för de avslagna fälten.",
+          "recorded": "Beslutet har registrerats.",
           "error": "Beslutet kunde inte registreras. Försök igen."
         }
       }
@@ -5530,7 +5531,9 @@
         "description": "Används för meddelanden som riktas till dig personligen, till exempel beslutet om en ändring du föreslagit. E-post till företaget följer inställningen ovan.",
         "save": "Spara språk",
         "savedToast": "E-postspråket har uppdaterats.",
-        "errorToast": "Det gick inte att spara språket. Försök igen."
+        "errorToast": "Det gick inte att spara språket. Försök igen.",
+        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund.",
+        "rateLimitedToast": "För många ändringar på kort tid. Vänta en minut och försök igen."
       },
       "title": "Kontoinställningar",
       "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",

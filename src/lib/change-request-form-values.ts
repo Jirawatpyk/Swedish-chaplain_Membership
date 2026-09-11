@@ -69,6 +69,12 @@ export function overlayFields(values: ChangeRequestFormValues, fields: readonly 
           out.billCountry = p.country ?? '';
         }
         break;
+      default: {
+        // a tenth Group B key must fail the build here, not fall through and
+        // silently prefill the resubmit form from the LIVE record (round 6)
+        const _exhaustive: never = f.key;
+        void _exhaustive;
+      }
     }
   }
   return out;

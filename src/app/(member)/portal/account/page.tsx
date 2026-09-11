@@ -149,6 +149,14 @@ export default async function MemberAccountPage() {
         if (contactsResult.ok) {
           const own = contactsResult.value.find((c) => String(c.linkedUserId) === user.id && !c.removedAt);
           contactLanguage = own?.preferredLanguage ?? null;
+        } else {
+          // the Result arm of the same fault the catch below logs (round 6,
+          // silent-failure #7): without it "read failed" and "not linked"
+          // both hid the language form with no trace
+          logger.warn(
+            { err: contactsResult.error.code, tenantId: tenant.slug, userIdHash: hashId(user.id) },
+            'portal.account.contact_language_read_failed',
+          );
         }
       } catch (err) {
         logger.warn(

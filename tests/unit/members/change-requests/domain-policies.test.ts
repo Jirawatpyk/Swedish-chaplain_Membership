@@ -36,7 +36,7 @@ import {
   proposedValuesEqual,
   type GroupBRecord,
 } from '@/modules/members/domain/change-request/policies';
-import type { ProposedField, ProposedValue } from '@/modules/members/domain/change-request/change-request';
+import { changeRequestInvariantViolation, isDecided, isWithdrawn, type ChangeRequest, type ProposedField, type ProposedValue } from '@/modules/members/domain/change-request/change-request';
 
 const RECORD: GroupBRecord = {
   contact: { first_name: 'Anna', last_name: 'Svensson', phone: '+66812345678', role_title: null },
@@ -341,5 +341,48 @@ describe('changedSinceSubmitted / proposedValuesEqual (FR-019)', () => {
     expect(proposedValuesEqual(null, null)).toBe(true);
     expect(proposedValuesEqual(null, '')).toBe(false);
     expect(proposedValuesEqual('a', { line1: 'a' } as unknown as ProposedValue)).toBe(false);
+  });
+});
+
+describe('state-machine narrowing + the seam check (round 6, types F6)', () => {
+  const base: ChangeRequest = {
+    id: 'r1' as ChangeRequest['id'],
+    tenantId: 't' as ChangeRequest['tenantId'],
+    memberId: 'm' as ChangeRequest['memberId'],
+    submittedByUserId: 'u' as ChangeRequest['submittedByUserId'],
+    submittedByContactId: 'c' as ChangeRequest['submittedByContactId'],
+    submitterRoleAtSubmission: 'primary',
+    scope: 'company',
+    state: 'pending',
+    outcome: null,
+    withdrawnReason: null,
+    replacedByRequestId: null,
+    submittedAt: new Date('2026-09-11T08:00:00Z'),
+    staffNotifiedAt: null,
+    decidedAt: null,
+    decidedByUserId: null,
+    decisionReason: null,
+    decisionNote: null,
+    withdrawnAt: null,
+    outcomeAcknowledgedAt: null,
+    fields: [],
+  };
+
+  it('a consistent pending / decided / withdrawn row passes and narrows', () => {
+    expect(changeRequestInvariantViolation(base)).toBeNull();
+    const decided: ChangeRequest = { ...base, state: 'decided', outcome: 'approved', decidedAt: new Date(), decidedByUserId: 'rev' as ChangeRequest['decidedByUserId'] };
+    expect(changeRequestInvariantViolation(decided)).toBeNull();
+    expect(isDecided(decided)).toBe(true);
+    const withdrawn: ChangeRequest = { ...base, state: 'withdrawn', withdrawnReason: 'member', withdrawnAt: new Date() };
+    expect(changeRequestInvariantViolation(withdrawn)).toBeNull();
+    expect(isWithdrawn(withdrawn)).toBe(true);
+    expect(isDecided(withdrawn)).toBe(false);
+  });
+
+  it('a row that contradicts its state is named (the DB CHECKs make these unreachable; the seam still refuses them)', () => {
+    expect(changeRequestInvariantViolation({ ...base, state: 'decided' })).toMatch(/lacks outcome/);
+    expect(changeRequestInvariantViolation({ ...base, state: 'withdrawn' })).toMatch(/lacks withdrawnReason/);
+    expect(changeRequestInvariantViolation({ ...base, outcome: 'approved' })).toMatch(/pending request .* carries/);
+    expect(changeRequestInvariantViolation({ ...base, state: 'decided', outcome: 'rejected', decidedAt: new Date(), decidedByUserId: 'rev' as ChangeRequest['decidedByUserId'], withdrawnAt: new Date() })).toMatch(/carries withdrawal/);
   });
 });

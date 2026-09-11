@@ -292,6 +292,34 @@ describe('decideChangeRequest — refusals before any write (FR-017 / FR-020)', 
     expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'archived');
   });
 
+  it('the erasure check runs AFTER the member FOR UPDATE, on the same tx (round 1 #4; round 6 tests I-8)', async () => {
+    const order: string[] = [];
+    const { deps, memberRepo } = makeDeps();
+    (memberRepo.findByIdInTx as unknown as { mockImplementation: (fn: (tx: unknown) => Promise<unknown>) => void }).mockImplementation(async (tx: unknown) => {
+      order.push(`findByIdInTx:${JSON.stringify(tx)}`);
+      return ok(member());
+    });
+    (memberRepo.findErasedAtByIdInTx as unknown as { mockImplementation: (fn: (tx: unknown) => Promise<unknown>) => void }).mockImplementation(async (tx: unknown) => {
+      order.push(`findErasedAtByIdInTx:${JSON.stringify(tx)}`);
+      return ok({ erasedAt: null });
+    });
+    await decideChangeRequest(deps, input([{ key: 'phone', outcome: 'approved' }, { key: 'description', outcome: 'approved' }, { key: 'billing_address', outcome: 'approved' }]));
+    expect(order).toEqual(['findByIdInTx:{"__tx":true}', 'findErasedAtByIdInTx:{"__tx":true}']);
+  });
+
+  it('a submitting contact whose row is GONE (not merely unlinked): approving its rows → contact_removed; rejecting them → decided, email skipped (round 6 tests I-9)', async () => {
+    const refused = makeDeps({ contacts: [] });
+    const a = await decideChangeRequest(refused.deps, input([{ key: 'phone', outcome: 'approved' }, { key: 'description', outcome: 'approved' }, { key: 'billing_address', outcome: 'approved' }]));
+    expect(a).toMatchObject({ ok: false, error: { type: 'contact_removed', keys: ['phone'] } });
+    const allowed = makeDeps({ contacts: [] });
+    const b = await decideChangeRequest(
+      allowed.deps,
+      input([{ key: 'phone', outcome: 'rejected' }, { key: 'description', outcome: 'approved' }, { key: 'billing_address', outcome: 'approved' }], 'contact gone'),
+    );
+    expect(b.ok).toBe(true);
+    expect(allowed.emails.enqueued).toHaveLength(0);
+  });
+
   it('a member under erasure → member_erasing', async () => {
     const { deps } = makeDeps({ erasedAt: NOW });
     expect(await decideChangeRequest(deps, input(ALL_APPROVED))).toEqual({ ok: false, error: { type: 'member_erasing' } });

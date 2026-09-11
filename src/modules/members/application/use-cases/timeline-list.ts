@@ -218,11 +218,15 @@ function projectChangeRequestRowsForViewer(events: readonly TimelineEvent[], vie
     const contactId = e.payload['contact_id'];
     const mine = typeof contactId === 'string' && contactId === viewerContactId;
     const scope = e.payload['scope'];
-    if (mine || (scope !== 'own_contact' && scope !== 'mixed')) {
+    // a privacy control fails CLOSED: only a row that says `company` is
+    // everyone's; `mixed` is stripped; `own_contact`, an ABSENT or an
+    // unrecognised scope is dropped for anyone but its own contact
+    // (round 6, silent-failure #19)
+    if (mine || scope === 'company') {
       out.push(e);
       continue;
     }
-    if (scope === 'own_contact') continue; // a colleague's own-field request is not this viewer's business
+    if (scope !== 'mixed') continue; // own_contact / absent / unknown: not this viewer's business
     // mixed: the company part is visible (FR-029) — the field list is not
     const stripped: Record<string, unknown> = { ...e.payload };
     for (const key of CHANGE_REQUEST_FIELD_KEYS_IN_PAYLOAD) delete stripped[key];

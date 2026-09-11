@@ -67,6 +67,21 @@ vi.mock('@/modules/members', async () => {
     submitChangeRequest: (...args: unknown[]) => submitMock(...args),
   };
 });
+const metricRefused = vi.fn();
+vi.mock('@/lib/metrics', () => ({
+  membersMetrics: {
+    changeRequests: {
+      refused: (...a: unknown[]) => metricRefused(...a),
+      submitted: vi.fn(),
+      noReviewers: vi.fn(),
+      decided: vi.fn(),
+      decideDurationMs: vi.fn(),
+      decisionEmailSkipped: vi.fn(),
+      pendingCount: vi.fn(),
+      oldestAgeSeconds: vi.fn(),
+    },
+  },
+}));
 const rateLimitCheckMock = vi.fn(async () => ({ success: true, reset: Date.now() + 60_000 }));
 const rateLimitPeekMock = vi.fn(async () => ({ success: true, reset: Date.now() + 60_000 }));
 vi.mock('@/lib/auth-deps', () => ({
@@ -239,6 +254,20 @@ describe('contract: POST /api/portal/change-requests (F114 T029)', () => {
     expect(await b.json()).toMatchObject({ outcome: 'already_pending', request: { id: REQUEST_ID } });
   });
 
+  it('the remembered 201 carries ids and outcome only — never the proposed values (round 6, code #3: the Redis record outlives the FR-030 scrub)', async () => {
+    submitMock.mockResolvedValueOnce(ok({ outcome: 'submitted', request, replaced: null, staffNotified: true }));
+    const { POST } = await loadRoute();
+    const res = await POST(makeRequest({ contact: { phone: '+66899999999' } }, { key: 'idem-pii' }));
+    expect(res.status).toBe(201);
+    expect(rememberMock).toHaveBeenCalledTimes(1);
+    const remembered = (rememberMock.mock.calls as unknown as unknown[][])[0]![3] as { status: number; body: { outcome: string; request?: Record<string, unknown> } };
+    expect(remembered.status).toBe(201);
+    expect(remembered.body.outcome).toBe('submitted');
+    expect(remembered.body.request).toBeDefined();
+    expect(remembered.body.request).not.toHaveProperty('fields');
+    expect(JSON.stringify(remembered.body)).not.toContain('+66899999999');
+  });
+
   it('Idempotency-Key: same key + same body replays the stored response with NO second use-case call', async () => {
     classifyMock.mockResolvedValueOnce({ kind: 'replay', previousResponse: { status: 201, body: { outcome: 'submitted', request: { id: REQUEST_ID } } } });
     const { POST } = await loadRoute();
@@ -298,15 +327,6 @@ describe('contract: POST /api/portal/change-requests (F114 T029)', () => {
     const res = await POST(makeRequest({ contact: { phone: 'nope' } }));
     expect(res.status).toBe(422);
     expect(await res.json()).toEqual({ error: 'validation_error', issues });
-  });
-
-  it('429 rate_limited carries Retry-After + retryAfterSeconds (FR-008; the durable cap lands in US5)', async () => {
-    submitMock.mockResolvedValueOnce(err({ type: 'rate_limited', retryAfterSeconds: 3600, windowCount: 10 }));
-    const { POST } = await loadRoute();
-    const res = await POST(makeRequest({ contact: { phone: '+66899999999' } }));
-    expect(res.status).toBe(429);
-    expect(res.headers.get('Retry-After')).toBe('3600');
-    expect(await res.json()).toMatchObject({ error: 'rate_limited', retryAfterSeconds: 3600 });
   });
 
   it('500 on server_error names itself in the errorId taxonomy (M114.portal.submit.*) and never leaks the message', async () => {
@@ -395,6 +415,8 @@ describe('POST /api/portal/change-requests — review round 1', () => {
     expect(rateLimitPeekMock).toHaveBeenCalledWith(`f114:submit:test-swecham:${USER}`, 10, 86_400);
     // the refusal is a PEEK: an exhausted bucket is not decremented further
     expect(rateLimitCheckMock).not.toHaveBeenCalled();
+    // round 6 (code #4): the interim cap is observable
+    expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'rate_limited');
     expect(resolveGateMock).not.toHaveBeenCalled();
     expect(submitMock).not.toHaveBeenCalled();
   });

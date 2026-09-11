@@ -123,6 +123,12 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_requests_tenant_id_uniq' AND conrelid = 'public.member_change_requests'::regclass AND contype = 'u') AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_request_fields_request_fk' AND conrelid = 'public.member_change_request_fields'::regclass AND contype = 'f' AND array_length(conkey, 1) = 2) AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_requests_replaced_by_fk' AND conrelid = 'public.member_change_requests'::regclass AND contype = 'f' AND array_length(conkey, 1) = 2 AND condeferrable)`,
       },
       {
+        // 0301 is the enum-only migration — the one a duplicate `when` turns
+        // into a silent no-op with no table to notice (round 6, comments I11)
+        name: 'audit_event_type + notification_type carry the seven F114 values (mig 0301)',
+        query: `SELECT 1 AS hit WHERE (SELECT count(*) FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel IN ('member_change_request_submitted','member_change_request_decided','member_change_request_withdrawn','member_change_request_rate_limited','member_change_approval_setting_changed')) = 5 AND (SELECT count(*) FROM pg_enum WHERE enumtypid = 'notification_type'::regtype AND enumlabel IN ('member_change_request_submitted_staff','member_change_request_decided_member')) = 2`,
+      },
+      {
         name: 'tenant_member_settings.member_change_approval_enabled column (mig 0300)',
         query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'tenant_member_settings' AND column_name = 'member_change_approval_enabled'`,
       },

@@ -41,16 +41,7 @@ import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import {
-  DECISION_NOTE_MAX_LENGTH,
-  DECISION_REASON_MAX_LENGTH,
-  type ChangeRequest,
-  type ChangeRequestId,
-  type ChangeRequestOutcome,
-  type FieldOutcome,
-  type ProposedField,
-  type ProposedValue,
-} from '../../../domain/change-request/change-request';
+import { isDecided, DECISION_NOTE_MAX_LENGTH, DECISION_REASON_MAX_LENGTH, type ChangeRequest, type ChangeRequestId, type ChangeRequestOutcome, type FieldOutcome, type ProposedField, type ProposedValue } from '../../../domain/change-request/change-request';
 import { validateProposal } from '../../../domain/change-request/field-rules';
 import { deriveOutcome, proposedValuesEqual, type GroupBProposal, type GroupBRecord } from '../../../domain/change-request/policies';
 import {
@@ -58,19 +49,19 @@ import {
   type ProposableFieldKey,
   type RegisteredAddress,
 } from '../../../domain/change-request/proposable-fields';
-import type { Contact } from '../../../domain/contact';
 import type { Member } from '../../../domain/member';
 import { asIsoCountryCode } from '../../../domain/value-objects/iso-country-code';
 import { asPhone } from '../../../domain/value-objects/phone';
 import type { UserId } from '../../../domain/value-objects/user-id';
-import type { AuditPort } from '../../ports/audit-port';
+import type { AuditPort, ChangeRequestAuditPayload } from '../../ports/audit-port';
 import type { ChangeRequestDecision, ChangeRequestRepo } from '../../ports/change-request-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { ContactPatch, ContactRepo } from '../../ports/contact-repo';
 import type { EmailPort } from '../../ports/email-port';
-import type { MemberPatch, MemberRepo, RepoError } from '../../ports/member-repo';
+import { isRepoError, type MemberPatch, type MemberRepo, type RepoError } from '../../ports/member-repo';
 import { UseCaseAbort } from '../../tx-abort';
 import { groupBRecordOf } from './submit-change-request';
+import { removedContactStandIn } from './removed-contact-stand-in';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -238,7 +229,7 @@ function patchesOf(
           break;
         }
         const phone = asPhone(v);
-        if (!phone.ok) return err({ type: 'validation_error', issues: [] });
+        if (!phone.ok) return err({ type: 'validation_error', issues: [namedIssue(['contact', 'phone'], `phone.${phone.error.code}`)] });
         contact.phone = phone.value;
         break;
       }
@@ -281,6 +272,11 @@ function patchesOf(
   return ok({ contact, member });
 }
 
+/** The 422 names the field the reviewer must reject (round 6, silent-failure #22) — never an empty `issues`. */
+function namedIssue(path: readonly string[], message: string): z.ZodIssue {
+  return { code: 'custom', path: [...path], message };
+}
+
 function registeredPatch(v: RegisteredAddress): MemberPatch {
   return {
     addressLine1: v.line1,
@@ -296,7 +292,7 @@ function billingPatch(v: BillingAddress): Result<MemberPatch, DecideChangeReques
   let country: MemberPatch['billingCountry'] = null;
   if (v.country !== null) {
     const parsed = asIsoCountryCode(v.country);
-    if (!parsed.ok) return err({ type: 'validation_error', issues: [] });
+    if (!parsed.ok) return err({ type: 'validation_error', issues: [namedIssue(['company', 'billing_address', 'country'], 'country.invalid')] });
     country = parsed.value;
   }
   return ok({
@@ -345,10 +341,11 @@ export async function decideChangeRequest(
 
       // 2. state (FR-017).
       if (request.state === 'withdrawn') throw new Refusal({ type: 'not_pending' });
-      if (request.state === 'decided') {
+      if (isDecided(request)) {
         if (sameDecision(request, input)) {
           return { request, repeated: true, applied: [], rejected: [] };
         }
+        // narrowed: a decided row always carries who / when / what (F6)
         throw new Refusal({
           type: 'already_decided',
           decidedByUserId: request.decidedByUserId,
@@ -392,7 +389,7 @@ export async function decideChangeRequest(
       // 6. approved values re-validated with the staff rules (FR-006).
       const validated = validateProposal(proposalOf(approvedFields));
       if (!validated.ok) throw new Refusal({ type: 'validation_error', issues: validated.error });
-      const record = groupBRecordOf(member, contact ?? emptyContact(request));
+      const record = groupBRecordOf(member, contact ?? removedContactStandIn(request));
       const patches = patchesOf(validated.value, approvedKeys, record);
       if (!patches.ok) throw new Refusal(patches.error);
 
@@ -438,7 +435,7 @@ export async function decideChangeRequest(
         actorUserId: input.actorUserId,
         requestId: input.requestId,
         summary: `change request ${request.id} ${overall} (${approvedKeys.length} approved, ${rejectedKeys.length} rejected)`,
-        payload: {
+        payload: ({
           related_member_id: request.memberId,
           request_id: request.id,
           contact_id: request.submittedByContactId,
@@ -453,7 +450,7 @@ export async function decideChangeRequest(
           member_notified: !contactGone,
           ...(contactGone ? { member_notification_skipped: 'recipient_gone' } : {}),
           actor_role: input.actorRole,
-        },
+        } satisfies ChangeRequestAuditPayload['member_change_request_decided']),
       });
       if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
 
@@ -482,7 +479,7 @@ export async function decideChangeRequest(
       return { request: decided.value, repeated: false, applied: approvedKeys, rejected: rejectedKeys };
     });
 
-    if (!outcome.repeated && outcome.request.outcome !== null) {
+    if (!outcome.repeated && isDecided(outcome.request)) {
       membersMetrics.changeRequests.decided(tenantId, outcome.request.outcome);
       membersMetrics.changeRequests.decideDurationMs(tenantId, Date.now() - startedAt);
     }
@@ -502,8 +499,8 @@ export async function decideChangeRequest(
       }
       return err(e.error);
     }
-    if (e instanceof UseCaseAbort) {
-      const re = e.error as RepoError;
+    if (e instanceof UseCaseAbort && isRepoError(e.error)) {
+      const re = e.error;
       logger.error(
         // `re.code` is the constant `repo.unexpected` for every non-conflict
         // fault; the CAUSE (SQLSTATE / constraint / driver) is what on-call
@@ -576,20 +573,4 @@ function refusedMetricReason(error: DecideChangeRequestError): 'archived' | 'alr
 
 function emailLocale(preferred: string | null | undefined): 'en' | 'th' | 'sv' {
   return preferred === 'th' || preferred === 'sv' ? preferred : 'en';
-}
-
-/**
- * When the submitting contact is gone, every contact-target row is rejected
- * (guarded above), so the contact side of the Group B record is never read
- * for a write — an all-null stand-in keeps `groupBRecordOf` total.
- */
-function emptyContact(request: ChangeRequest): Contact {
-  return {
-    contactId: request.submittedByContactId,
-    memberId: request.memberId,
-    firstName: '',
-    lastName: '',
-    phone: null,
-    roleTitle: null,
-  } as unknown as Contact;
 }

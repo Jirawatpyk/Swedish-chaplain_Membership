@@ -117,9 +117,13 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
       return;
     }
     if (res.ok) {
-      const data = (await res.json()) as { repeated: boolean; request: StaffChangeRequestView };
-      const outcome = data.request.outcome ?? 'approved';
-      toast.success(data.repeated ? t('toast.repeated') : t(`toast.${outcome}`));
+      // the decision is COMMITTED at this point: an unparseable body (or a
+      // decided row with no outcome, which the DB CHECK forbids) still
+      // toasts a success — the neutral "recorded" copy, never a guessed
+      // outcome (round 6, silent-failure #14 / #15)
+      const data = (await res.json().catch(() => null)) as { repeated?: boolean; request?: Pick<StaffChangeRequestView, 'outcome'> } | null;
+      const outcome = data?.request?.outcome ?? null;
+      toast.success(data?.repeated ? t('toast.repeated') : outcome ? t(`toast.${outcome}`) : t('toast.recorded'));
       closedViaSuccessRef.current = true;
       setOpen(false);
       router.push(`/admin/members/${request.memberId}`);

@@ -93,6 +93,66 @@ export type ChangeRequest = {
   readonly fields: readonly ProposedField[];
 };
 
+/**
+ * The state machine's two terminal shapes, as TYPES (round 6, types F6). The
+ * flat `ChangeRequest` keeps every nullable column nullable — a full
+ * discriminated union would force every fixture and serialiser to build one
+ * variant at a time, so the invariants are instead PARSED once, at the DB →
+ * Domain seam (`rowToDomain` throws on a row that contradicts them, exactly
+ * as migration 0300's `outcome_iff_decided_ck` / `decision_iff_decided_ck` /
+ * `reason_iff_withdrawn_ck` / `withdrawn_at_iff_withdrawn_ck` forbid one),
+ * and narrowed once, here, so no consumer re-derives "decided ⇒ has an
+ * outcome" with its own null checks and its own fallback.
+ */
+export type DecidedChangeRequest = ChangeRequest & {
+  readonly state: 'decided';
+  readonly outcome: ChangeRequestOutcome;
+  readonly decidedAt: Date;
+  readonly decidedByUserId: UserId;
+};
+
+export type WithdrawnChangeRequest = ChangeRequest & {
+  readonly state: 'withdrawn';
+  readonly withdrawnReason: WithdrawnReason;
+  readonly withdrawnAt: Date;
+};
+
+export function isDecided(r: ChangeRequest): r is DecidedChangeRequest {
+  return r.state === 'decided' && r.outcome !== null && r.decidedAt !== null && r.decidedByUserId !== null;
+}
+
+export function isWithdrawn(r: ChangeRequest): r is WithdrawnChangeRequest {
+  return r.state === 'withdrawn' && r.withdrawnReason !== null && r.withdrawnAt !== null;
+}
+
+/**
+ * The seam check: a row whose columns contradict its `state` is corrupt (the
+ * DB CHECKs make it unreachable; this is what makes the guards above TOTAL).
+ * Returns the message, or null when the row is consistent.
+ */
+export function changeRequestInvariantViolation(r: ChangeRequest): string | null {
+  switch (r.state) {
+    case 'pending':
+      if (r.outcome !== null || r.decidedAt !== null || r.decidedByUserId !== null || r.withdrawnAt !== null || r.withdrawnReason !== null) {
+        return `pending request ${r.id} carries decision / withdrawal columns`;
+      }
+      return null;
+    case 'decided':
+      if (!isDecided(r)) return `decided request ${r.id} lacks outcome / decidedAt / decidedByUserId`;
+      if (r.withdrawnAt !== null || r.withdrawnReason !== null) return `decided request ${r.id} carries withdrawal columns`;
+      return null;
+    case 'withdrawn':
+      if (!isWithdrawn(r)) return `withdrawn request ${r.id} lacks withdrawnReason / withdrawnAt`;
+      if (r.outcome !== null || r.decidedAt !== null) return `withdrawn request ${r.id} carries decision columns`;
+      return null;
+    default: {
+      const _exhaustive: never = r.state;
+      void _exhaustive;
+      return `request ${r.id} has an unknown state`;
+    }
+  }
+}
+
 /** Reason / note bounds (FR-014). Plain text, rendered escaped, never as markup. */
 export const DECISION_REASON_MAX_LENGTH = 1000;
 export const DECISION_NOTE_MAX_LENGTH = 1000;

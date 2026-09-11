@@ -166,6 +166,13 @@ export type RepoError =
   | { code: 'repo.conflict'; reason: RepoConflictReason }
   | { code: 'repo.unexpected'; cause?: unknown };
 
+/** Checked narrowing for a caught `UseCaseAbort<unknown>` — an `as RepoError` cast reads `code` off anything (round 6, types F9). */
+export function isRepoError(value: unknown): value is RepoError {
+  if (!value || typeof value !== 'object') return false;
+  const code = (value as { code?: unknown }).code;
+  return code === 'repo.not_found' || code === 'repo.conflict' || code === 'repo.unexpected';
+}
+
 /**
  * Narrow single-member risk read (B18 / FR-007a). The F8 risk columns live on
  * the members table but are NOT carried on the `Member` aggregate (only the

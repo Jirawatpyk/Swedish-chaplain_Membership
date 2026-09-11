@@ -21,7 +21,7 @@ import type { UserId } from '../../../domain/value-objects/user-id';
 import type { AuditPort } from '../../ports/audit-port';
 import type { ChangeRequestRepo } from '../../ports/change-request-repo';
 import type { ClockPort } from '../../ports/clock-port';
-import type { RepoError } from '../../ports/member-repo';
+import { isRepoError, type RepoError } from '../../ports/member-repo';
 import { UseCaseAbort } from '../../tx-abort';
 import { auditChangeRequestProbe } from './decide-change-request';
 
@@ -94,8 +94,8 @@ export async function acknowledgeChangeRequest(
       }
       return err(e.error);
     }
-    const code = e instanceof UseCaseAbort ? (e.error as RepoError).code : e instanceof Error ? e.name : String(e);
-    const cause = e instanceof UseCaseAbort ? errKind('cause' in e.error ? (e.error as { cause?: unknown }).cause : undefined) : undefined;
+    const code = e instanceof UseCaseAbort && isRepoError(e.error) ? e.error.code : e instanceof Error ? e.name : String(e);
+    const cause = e instanceof UseCaseAbort && isRepoError(e.error) ? errKind('cause' in e.error ? e.error.cause : undefined) : undefined;
     logger.error(
       { tenantId: deps.tenant.slug, changeRequestId: input.changeRequestId, requestId: input.requestId, err: code, cause },
       'change-request.acknowledge.failed',

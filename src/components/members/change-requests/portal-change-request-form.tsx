@@ -317,7 +317,10 @@ export function PortalChangeRequestForm({
             ? tErrors('forbidden')
             : tErrors('generic'),
       );
-    } catch {
+    } catch (e) {
+      // a client-side bug in this block must not be indistinguishable from a
+      // network drop (round 6, silent-failure #12)
+      console.error('[change-request-form] submit failed', e);
       toast.error(tErrors('generic'));
     } finally {
       setSubmitting(false);

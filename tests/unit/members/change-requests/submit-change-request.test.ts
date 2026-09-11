@@ -440,7 +440,7 @@ describe('submitChangeRequest — the happy path in ONE transaction', () => {
 });
 
 describe('submitChangeRequest — throw-to-rollback after the first write', () => {
-  it('an audit write failure aborts the transaction (nothing committed) and surfaces server_error', async () => {
+  it('an audit write failure surfaces server_error (the fake cannot roll back — atomicity is pinned on live Neon in change-requests-submit-atomicity.test.ts)', async () => {
     const { deps, audit } = makeDeps();
     audit.failNext();
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
@@ -652,5 +652,23 @@ describe('submitChangeRequest — the conflict re-read failing as a Result (not 
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
     expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
     expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected' }), 'change-request.submit.conflict_reread_failed');
+  });
+});
+
+describe('submitChangeRequest — "nothing differs" while a request is PENDING (round 6, code #5)', () => {
+  it('answers already_pending with the pending request, never nothing_to_submit (the member cannot silently "revert" a pending proposal)', async () => {
+    const { deps, repo } = makeDeps();
+    const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(first.ok && first.value.outcome).toBe('submitted');
+    // the record's own phone — nothing differs from the RECORD, but a proposal is pending
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66812345678' } }));
+    expect(r.ok && r.value.outcome).toBe('already_pending');
+    expect(repo.rows.size).toBe(1);
+  });
+
+  it('with no pending request, unchanged values are still nothing_to_submit', async () => {
+    const { deps } = makeDeps();
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66812345678' } }));
+    expect(r.ok && r.value.outcome).toBe('nothing_to_submit');
   });
 });

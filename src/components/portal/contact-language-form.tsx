@@ -30,6 +30,9 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
   const t = useTranslations('portal.account.contactLanguage');
   const tLang = useTranslations('common');
   const [value, setValue] = useState<ContactLanguage>(initialValue);
+  // the last value the SERVER accepted — a failed save reverts to it so the
+  // radio never disagrees with the record (round 6, silent-failure #13)
+  const [saved, setSaved] = useState<ContactLanguage>(initialValue);
   const [saving, setSaving] = useState(false);
   const { announcement, announce } = useAriaAnnounce();
 
@@ -44,13 +47,20 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
         body: JSON.stringify({ primary_contact: { preferredLanguage: value } }),
       });
       if (res.ok) {
+        setSaved(value);
         toast.success(t('savedToast'));
         announce(t('savedToast'));
       } else {
-        toast.error(t('errorToast'));
-        announce(t('errorToast'));
+        setValue(saved);
+        // 503 = the write freeze, 429 = the profile rate limit: both are
+        // "try later", not "something broke"
+        const message = res.status === 503 ? t('readOnlyToast') : res.status === 429 ? t('rateLimitedToast') : t('errorToast');
+        toast.error(message);
+        announce(message);
       }
-    } catch {
+    } catch (e) {
+      console.error('[contact-language-form] save failed', e);
+      setValue(saved);
       toast.error(t('errorToast'));
       announce(t('errorToast'));
     } finally {
