@@ -59,6 +59,7 @@ vi.mock('@/lib/members-change-request-deps', () => ({
     changeRequestRepo: fakes.repo,
     memberRepo: fakes.memberRepo,
     contactRepo: fakes.contactRepo,
+    audit: { record: vi.fn(async () => ({ ok: true, value: undefined })) },
   })),
 }));
 vi.mock('@/lib/tenant-context', () => ({

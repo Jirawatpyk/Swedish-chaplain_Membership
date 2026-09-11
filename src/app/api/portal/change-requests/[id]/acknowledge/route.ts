@@ -43,6 +43,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   const result = await acknowledgeChangeRequest(deps, {
     changeRequestId: id as ChangeRequestId,
     actorUserId: asMembersUserId(ctx.current.user.id),
+    actorRole: ctx.current.user.role,
+    requestId: ctx.requestId,
   });
 
   if (result.ok) {

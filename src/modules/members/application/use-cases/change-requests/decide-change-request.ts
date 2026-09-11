@@ -473,6 +473,15 @@ export async function decideChangeRequest(
     if (e instanceof Refusal) {
       const refusedReason = refusedMetricReason(e.error);
       if (refusedReason !== null) membersMetrics.changeRequests.refused(tenantId, refusedReason);
+      if (e.error.type === 'not_found') {
+        await auditProbe(deps.audit, deps.tenant, {
+          changeRequestId: input.changeRequestId,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          requestId: input.requestId,
+          action: 'decide',
+        });
+      }
       return err(e.error);
     }
     if (e instanceof UseCaseAbort) {
@@ -494,6 +503,39 @@ export async function decideChangeRequest(
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+export { auditProbe as auditChangeRequestProbe };
+
+/**
+ * Constitution I.3 — a miss on a change-request id is audited as
+ * `member_cross_tenant_probe` (the get-member rule: under RLS a foreign
+ * tenant's id and an unknown id look the same, so every miss is recorded).
+ * Best-effort: the refusal stands regardless; a failed audit write is logged.
+ */
+async function auditProbe(
+  audit: Pick<AuditPort, 'record'>,
+  tenant: TenantContext,
+  p: { changeRequestId: ChangeRequestId; actorUserId: UserId; actorRole: string | null; requestId: string; action: 'decide' | 'acknowledge' | 'review' },
+): Promise<void> {
+  const audited = await audit.record(tenant, {
+    type: 'member_cross_tenant_probe',
+    actorUserId: p.actorUserId,
+    requestId: p.requestId,
+    summary: `change-request probe (${p.action}) on ${p.changeRequestId}`,
+    payload: {
+      attempted_change_request_id: p.changeRequestId,
+      actor_tenant_id: tenant.slug,
+      action: p.action,
+      actor_role: p.actorRole,
+    },
+  });
+  if (!audited.ok) {
+    logger.error(
+      { tenantId: tenant.slug, changeRequestId: p.changeRequestId, requestId: p.requestId, err: audited.error.code },
+      'change-request.probe_audit_failed',
+    );
+  }
+}
 
 function refusedMetricReason(error: DecideChangeRequestError): 'archived' | 'already_decided' | 'validation' | null {
   switch (error.type) {

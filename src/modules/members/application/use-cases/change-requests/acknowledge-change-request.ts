@@ -16,20 +16,27 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { ChangeRequest, ChangeRequestId } from '../../../domain/change-request/change-request';
 import type { UserId } from '../../../domain/value-objects/user-id';
+import type { AuditPort } from '../../ports/audit-port';
 import type { ChangeRequestRepo } from '../../ports/change-request-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { RepoError } from '../../ports/member-repo';
 import { UseCaseAbort } from '../../tx-abort';
+import { auditChangeRequestProbe } from './decide-change-request';
 
 export type AcknowledgeChangeRequestDeps = {
   readonly tenant: TenantContext;
   readonly changeRequestRepo: Pick<ChangeRequestRepo, 'findByIdInTx' | 'acknowledgeInTx'>;
+  /** `record` only — the miss probe (Constitution I.3); a successful acknowledge writes NO audit row. */
+  readonly audit: Pick<AuditPort, 'record'>;
   readonly clock: ClockPort;
 };
 
 export type AcknowledgeChangeRequestInput = {
   readonly changeRequestId: ChangeRequestId;
   readonly actorUserId: UserId;
+  /** The SESSION role — recorded on the probe audit only. */
+  readonly actorRole: string;
+  readonly requestId: string;
 };
 
 export type AcknowledgeChangeRequestError =
@@ -60,10 +67,21 @@ export async function acknowledgeChangeRequest(
     });
     return ok({ request });
   } catch (e) {
-    if (e instanceof Refusal) return err(e.error);
+    if (e instanceof Refusal) {
+      if (e.error.type === 'not_found') {
+        await auditChangeRequestProbe(deps.audit, deps.tenant, {
+          changeRequestId: input.changeRequestId,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          requestId: input.requestId,
+          action: 'acknowledge',
+        });
+      }
+      return err(e.error);
+    }
     const code = e instanceof UseCaseAbort ? (e.error as RepoError).code : e instanceof Error ? e.name : String(e);
     logger.error(
-      { tenantId: deps.tenant.slug, changeRequestId: input.changeRequestId, err: code },
+      { tenantId: deps.tenant.slug, changeRequestId: input.changeRequestId, requestId: input.requestId, err: code },
       'change-request.acknowledge.failed',
     );
     return err({ type: 'server_error', message: `acknowledge: ${code}` });

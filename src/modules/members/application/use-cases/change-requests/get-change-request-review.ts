@@ -23,9 +23,12 @@ import { proposedValuesEqual, type GroupBRecord } from '../../../domain/change-r
 import { isContactFieldKey, type ProposableFieldKey } from '../../../domain/change-request/proposable-fields';
 import type { Contact } from '../../../domain/contact';
 import type { Member, MemberId } from '../../../domain/member';
+import type { UserId } from '../../../domain/value-objects/user-id';
+import type { AuditPort } from '../../ports/audit-port';
 import type { ChangeRequestListRow, ChangeRequestRepo } from '../../ports/change-request-repo';
 import type { ContactRepo } from '../../ports/contact-repo';
 import type { MemberRepo, RepoError } from '../../ports/member-repo';
+import { auditChangeRequestProbe } from './decide-change-request';
 import { groupBRecordOf, memberHasBillingAddress } from './submit-change-request';
 
 export type TaxHint = 'buyer_name' | 'buyer_address' | 'buyer_contact' | 'billing_country';
@@ -58,12 +61,15 @@ export type GetChangeRequestReviewDeps = {
   readonly changeRequestRepo: Pick<ChangeRequestRepo, 'findListRowById'>;
   readonly memberRepo: Pick<MemberRepo, 'findById' | 'findErasedAtById'>;
   readonly contactRepo: Pick<ContactRepo, 'listByMember'>;
+  /** `record` only — the miss probe (Constitution I.3); staff reads are otherwise not audited (FR-026). */
+  readonly audit: Pick<AuditPort, 'record'>;
 };
 
 export type GetChangeRequestReviewInput = {
   readonly changeRequestId: ChangeRequestId;
   /** The caller's `members.write` answer from the permission evaluator. */
   readonly canWrite: boolean;
+  readonly actor: { readonly userId: UserId; readonly role: string; readonly requestId: string };
 };
 
 export type GetChangeRequestReviewError = { readonly type: 'not_found' } | { readonly type: 'server_error'; readonly message: string };
@@ -97,7 +103,18 @@ export async function getChangeRequestReview(
   input: GetChangeRequestReviewInput,
 ): Promise<Result<ChangeRequestReview, GetChangeRequestReviewError>> {
   const rowResult = await deps.changeRequestRepo.findListRowById(deps.tenant, input.changeRequestId);
-  if (!rowResult.ok) return err(mapError(rowResult.error));
+  if (!rowResult.ok) {
+    if (rowResult.error.code === 'repo.not_found') {
+      await auditChangeRequestProbe(deps.audit, deps.tenant, {
+        changeRequestId: input.changeRequestId,
+        actorUserId: input.actor.userId,
+        actorRole: input.actor.role,
+        requestId: input.actor.requestId,
+        action: 'review',
+      });
+    }
+    return err(mapError(rowResult.error));
+  }
   const row = rowResult.value;
   const request = row.request;
 

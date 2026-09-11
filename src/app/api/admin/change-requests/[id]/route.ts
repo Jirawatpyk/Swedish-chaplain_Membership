@@ -13,7 +13,7 @@ import { env } from '@/lib/env';
 import { problemResponse } from '@/lib/http/problem-response';
 import { logger } from '@/lib/logger';
 import { canPerform, requireApiPermission } from '@/lib/rbac';
-import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
+import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { serialiseChangeRequestForStaff, serialiseReviewField } from '@/lib/change-request-staff-view';
 import { getChangeRequestReview, type ChangeRequestId } from '@/modules/members';
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     // (members.read) response — a manager reads the payload with canDecide
     // false; admission is the requireApiPermission call above.
     canWrite: canPerform(ctx.current.user.role, 'members.write'),
+    actor: { userId: asMembersUserId(ctx.current.user.id), role: ctx.current.user.role, requestId: ctx.requestId },
   });
 
   if (!result.ok) {

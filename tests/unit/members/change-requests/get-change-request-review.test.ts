@@ -17,7 +17,7 @@ import type { UserId } from '@/modules/members/domain/value-objects/user-id';
 import type { RepoError } from '@/modules/members/application/ports/member-repo';
 import type { ChangeRequest, ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
 import { getChangeRequestReview } from '@/modules/members/application/use-cases/change-requests/get-change-request-review';
-import { makeInMemoryChangeRequestRepo } from '../../../helpers/change-request-fakes';
+import { makeAuditPortFake, makeInMemoryChangeRequestRepo } from '../../../helpers/change-request-fakes';
 
 const tenant = asTenantContext('test-tenant');
 const MEMBER = asMemberId('11111111-1111-4111-8111-111111111111');
@@ -129,8 +129,11 @@ function makeDeps(opts: { request?: ChangeRequest; member?: Member; contacts?: C
   const contactRepo = {
     listByMember: vi.fn(async (): Promise<Result<Contact[], RepoError>> => ok(cs)),
   };
-  return { deps: { tenant, changeRequestRepo: repo, memberRepo, contactRepo }, repo, memberRepo, contactRepo };
+  const audit = makeAuditPortFake();
+  return { deps: { tenant, changeRequestRepo: repo, memberRepo, contactRepo, audit }, repo, memberRepo, contactRepo, audit };
 }
+
+const ACTOR = { userId: 'a6c5b1a2-0000-4000-8000-00000000aaaa' as UserId, role: 'admin', requestId: 'req-review' };
 
 describe('getChangeRequestReview', () => {
   it('reads current values LIVE and flags changedSinceSubmitted / alreadyCurrent per field', async () => {
@@ -139,7 +142,7 @@ describe('getChangeRequestReview', () => {
       member: member({ companyName: 'Nordic Company' }),
       contacts: [contact({ phone: '+66800000000' as Contact['phone'] })],
     });
-    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true });
+    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const byKey = new Map(r.value.fields.map((f) => [f.key, f]));
@@ -156,7 +159,7 @@ describe('getChangeRequestReview', () => {
 
   it('taxHint names what each tax-affecting flag feeds (FR-019)', async () => {
     const { deps } = makeDeps();
-    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true });
+    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     if (!r.ok) throw new Error('expected ok');
     const hints = Object.fromEntries(r.value.fields.map((f) => [f.key, f.taxHint]));
     expect(hints).toEqual({
@@ -192,14 +195,14 @@ describe('getChangeRequestReview', () => {
       ],
     });
     const { deps } = makeDeps({ request: req });
-    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true });
+    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     expect(r.ok && r.value.fields[0]?.taxHint).toBe('buyer_address');
   });
 
   it('a removed OR unlinked submitting contact makes its contact-target rows undecidable (contact_removed); member rows stay decidable', async () => {
     for (const gone of [contact({ removedAt: NOW, isPrimary: false } as Partial<Contact>), contact({ linkedUserId: null })]) {
       const { deps } = makeDeps({ contacts: [gone] });
-      const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true });
+      const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
       if (!r.ok) throw new Error('expected ok');
       const byKey = new Map(r.value.fields.map((f) => [f.key, f]));
       expect(byKey.get('phone')?.undecidable).toBe('contact_removed');
@@ -211,40 +214,47 @@ describe('getChangeRequestReview', () => {
 
   it('canDecide = pending ∧ canWrite ∧ not archived ∧ not erasing', async () => {
     const pendingWrite = makeDeps();
-    expect((await getChangeRequestReview(pendingWrite.deps, { changeRequestId: REQ, canWrite: true })).ok && true).toBe(true);
-    const a = await getChangeRequestReview(pendingWrite.deps, { changeRequestId: REQ, canWrite: true });
+    expect((await getChangeRequestReview(pendingWrite.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR })).ok && true).toBe(true);
+    const a = await getChangeRequestReview(pendingWrite.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     expect(a.ok && a.value.canDecide).toBe(true);
-    const readOnly = await getChangeRequestReview(pendingWrite.deps, { changeRequestId: REQ, canWrite: false });
+    const readOnly = await getChangeRequestReview(pendingWrite.deps, { changeRequestId: REQ, canWrite: false, actor: ACTOR });
     expect(readOnly.ok && readOnly.value.canDecide).toBe(false);
     const archived = makeDeps({ member: member({ status: 'archived', archivedAt: NOW } as Partial<Member>) });
-    const b = await getChangeRequestReview(archived.deps, { changeRequestId: REQ, canWrite: true });
+    const b = await getChangeRequestReview(archived.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     expect(b.ok && b.value.canDecide).toBe(false);
     expect(b.ok && b.value.member.archived).toBe(true);
     const erasing = makeDeps({ erasedAt: NOW });
-    const c = await getChangeRequestReview(erasing.deps, { changeRequestId: REQ, canWrite: true });
+    const c = await getChangeRequestReview(erasing.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     expect(c.ok && c.value.canDecide).toBe(false);
     expect(c.ok && c.value.member.erasing).toBe(true);
     const decided = makeDeps({ request: request({ state: 'decided', outcome: 'approved', decidedAt: NOW, decidedByUserId: 'a6c5b1a2-0000-4000-8000-00000000aaaa' as UserId }) });
-    const d = await getChangeRequestReview(decided.deps, { changeRequestId: REQ, canWrite: true });
+    const d = await getChangeRequestReview(decided.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     expect(d.ok && d.value.canDecide).toBe(false);
     expect(d.ok && d.value.row.decidedBy).toEqual({ displayName: 'Reviewer', deactivated: false });
   });
 
-  it('an unknown id → not_found; a repo fault → server_error', async () => {
-    const { deps, repo } = makeDeps();
-    const nf = await getChangeRequestReview(deps, { changeRequestId: '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId, canWrite: true });
+  it('an unknown id → not_found + a member_cross_tenant_probe audit (Constitution I.3); a repo fault → server_error', async () => {
+    const { deps, repo, audit } = makeDeps();
+    const nf = await getChangeRequestReview(deps, { changeRequestId: '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId, canWrite: true, actor: ACTOR });
     expect(nf).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(audit.events).toEqual([
+      expect.objectContaining({
+        type: 'member_cross_tenant_probe',
+        actorUserId: ACTOR.userId,
+        payload: { attempted_change_request_id: '00000000-0000-4000-8000-0000000000ff', actor_tenant_id: 'test-tenant', action: 'review', actor_role: 'admin' },
+      }),
+    ]);
     repo.failNext('findListRowById');
-    const se = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true });
+    const se = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
     expect(se).toMatchObject({ ok: false, error: { type: 'server_error' } });
     const m = makeDeps();
     m.memberRepo.findById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
-    expect(await getChangeRequestReview(m.deps, { changeRequestId: REQ, canWrite: true })).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(await getChangeRequestReview(m.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR })).toMatchObject({ ok: false, error: { type: 'server_error' } });
     const c = makeDeps();
     c.contactRepo.listByMember.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
-    expect(await getChangeRequestReview(c.deps, { changeRequestId: REQ, canWrite: true })).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(await getChangeRequestReview(c.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR })).toMatchObject({ ok: false, error: { type: 'server_error' } });
     const e = makeDeps();
     e.memberRepo.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
-    expect(await getChangeRequestReview(e.deps, { changeRequestId: REQ, canWrite: true })).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(await getChangeRequestReview(e.deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR })).toMatchObject({ ok: false, error: { type: 'server_error' } });
   });
 });

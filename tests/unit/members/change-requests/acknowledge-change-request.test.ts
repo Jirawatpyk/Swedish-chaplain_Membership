@@ -70,7 +70,7 @@ beforeEach(() => vi.clearAllMocks());
 describe('acknowledgeChangeRequest', () => {
   it('the submitter dismisses a decided request → outcomeAcknowledgedAt stamped; no audit row', async () => {
     const { deps, repo, audit } = makeDeps();
-    const r = await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: SUBMITTER });
+    const r = await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' });
     expect(r.ok && r.value.request.outcomeAcknowledgedAt).toEqual(NOW);
     expect(repo.rows.get(REQ)?.outcomeAcknowledgedAt).toEqual(NOW);
     expect(audit.events).toHaveLength(0);
@@ -79,21 +79,28 @@ describe('acknowledgeChangeRequest', () => {
 
   it('a second call is idempotent — the first stamp is kept', async () => {
     const { deps, clock } = makeDeps();
-    await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: SUBMITTER });
+    await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' });
     clock.set(LATER);
-    const again = await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: SUBMITTER });
+    const again = await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' });
     expect(again.ok && again.value.request.outcomeAcknowledgedAt).toEqual(NOW);
   });
 
-  it('another user (even another contact of the same member) → not_found, nothing stamped', async () => {
-    const { deps, repo } = makeDeps();
-    expect(await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: OTHER })).toEqual({ ok: false, error: { type: 'not_found' } });
+  it('another user (even another contact of the same member) → not_found, nothing stamped, a member_cross_tenant_probe audit', async () => {
+    const { deps, repo, audit } = makeDeps();
+    expect(await acknowledgeChangeRequest(deps, { changeRequestId: REQ, actorUserId: OTHER, actorRole: 'member', requestId: 'req-ack' })).toEqual({ ok: false, error: { type: 'not_found' } });
     expect(repo.rows.get(REQ)?.outcomeAcknowledgedAt).toBeNull();
+    expect(audit.events).toEqual([
+      expect.objectContaining({
+        type: 'member_cross_tenant_probe',
+        actorUserId: OTHER,
+        payload: { attempted_change_request_id: REQ, actor_tenant_id: 'test-tenant', action: 'acknowledge', actor_role: 'member' },
+      }),
+    ]);
   });
 
   it('an unknown id → not_found', async () => {
     const { deps } = makeDeps();
-    expect(await acknowledgeChangeRequest(deps, { changeRequestId: '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId, actorUserId: SUBMITTER })).toEqual({
+    expect(await acknowledgeChangeRequest(deps, { changeRequestId: '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' })).toEqual({
       ok: false,
       error: { type: 'not_found' },
     });
@@ -101,17 +108,17 @@ describe('acknowledgeChangeRequest', () => {
 
   it('pending / withdrawn → not_decided', async () => {
     const pending = makeDeps(request({ state: 'pending', outcome: null, decidedAt: null, decidedByUserId: null, decisionReason: null }));
-    expect(await acknowledgeChangeRequest(pending.deps, { changeRequestId: REQ, actorUserId: SUBMITTER })).toEqual({ ok: false, error: { type: 'not_decided' } });
+    expect(await acknowledgeChangeRequest(pending.deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' })).toEqual({ ok: false, error: { type: 'not_decided' } });
     const withdrawn = makeDeps(request({ state: 'withdrawn', outcome: null, decidedAt: null, decidedByUserId: null, decisionReason: null, withdrawnReason: 'member', withdrawnAt: NOW }));
-    expect(await acknowledgeChangeRequest(withdrawn.deps, { changeRequestId: REQ, actorUserId: SUBMITTER })).toEqual({ ok: false, error: { type: 'not_decided' } });
+    expect(await acknowledgeChangeRequest(withdrawn.deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' })).toEqual({ ok: false, error: { type: 'not_decided' } });
   });
 
   it('repo faults → server_error (read and write)', async () => {
     const a = makeDeps();
     a.repo.failNext('findByIdInTx');
-    expect(await acknowledgeChangeRequest(a.deps, { changeRequestId: REQ, actorUserId: SUBMITTER })).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(await acknowledgeChangeRequest(a.deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' })).toMatchObject({ ok: false, error: { type: 'server_error' } });
     const b = makeDeps();
     b.repo.failNext('acknowledgeInTx');
-    expect(await acknowledgeChangeRequest(b.deps, { changeRequestId: REQ, actorUserId: SUBMITTER })).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(await acknowledgeChangeRequest(b.deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' })).toMatchObject({ ok: false, error: { type: 'server_error' } });
   });
 });

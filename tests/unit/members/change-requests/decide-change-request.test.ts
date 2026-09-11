@@ -269,10 +269,17 @@ describe('decideChangeRequest — refusals before any write (FR-017 / FR-020)', 
     expect(audit.events).toHaveLength(0);
   });
 
-  it('an unknown id → not_found', async () => {
-    const { deps } = makeDeps();
+  it('an unknown id → not_found + a member_cross_tenant_probe audit with the reviewer as actor (Constitution I.3)', async () => {
+    const { deps, audit } = makeDeps();
     const r = await decideChangeRequest(deps, { ...input(ALL_APPROVED), changeRequestId: '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId });
     expect(r).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(audit.events).toEqual([
+      expect.objectContaining({
+        type: 'member_cross_tenant_probe',
+        actorUserId: REVIEWER,
+        payload: { attempted_change_request_id: '00000000-0000-4000-8000-0000000000ff', actor_tenant_id: 'test-tenant', action: 'decide', actor_role: 'admin' },
+      }),
+    ]);
   });
 
   it('an archived member → member_archived (reject or unarchive first)', async () => {

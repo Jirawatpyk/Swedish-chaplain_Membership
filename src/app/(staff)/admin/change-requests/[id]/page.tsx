@@ -20,7 +20,7 @@ import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
+import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForStaff, serialiseReviewField } from '@/lib/change-request-staff-view';
 import { getChangeRequestReview, type ChangeRequestId } from '@/modules/members';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +56,7 @@ export default async function ChangeRequestReviewPage({ params }: PageProps) {
   const result = await getChangeRequestReview(buildChangeRequestDeps(tenant), {
     changeRequestId: id as ChangeRequestId,
     canWrite,
+    actor: { userId: asMembersUserId(session.user.id), role: session.user.role, requestId },
   });
   if (!result.ok) {
     if (result.error.type === 'not_found') notFound();
