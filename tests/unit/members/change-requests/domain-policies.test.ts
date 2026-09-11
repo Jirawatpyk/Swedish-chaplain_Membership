@@ -143,6 +143,14 @@ describe('diffAgainstRecord — text normalisation (whole-branch review F-7)', (
     expect(rows.map((r) => [r.key, r.seen, r.proposed])).toEqual([['role_title', 'CFO', 'Chief Financial Officer']]);
   });
 
+  it('a key present with an UNDEFINED value (a hand-built proposal object) is "not mentioned" — no row', () => {
+    const record: GroupBRecord = { ...RECORD, contact: { ...RECORD.contact, role_title: 'CFO' } };
+    // `exactOptionalPropertyTypes` forbids this shape statically — which is
+    // exactly why the runtime guard exists: a caller outside the type system
+    const handBuilt = { company: { website: undefined }, contact: { role_title: undefined } } as unknown as Parameters<typeof diffAgainstRecord>[1];
+    expect(diffAgainstRecord(record, handBuilt, TAX_CTX)).toEqual([]);
+  });
+
   it("a proposed '' is stored as null (the same rule as fillLines on the address lines)", () => {
     const rows = diffAgainstRecord({ ...RECORD, contact: { ...RECORD.contact, role_title: 'CFO' } }, { contact: { role_title: '' } }, TAX_CTX);
     expect(rows.map((r) => [r.key, r.seen, r.proposed])).toEqual([['role_title', 'CFO', null]]);

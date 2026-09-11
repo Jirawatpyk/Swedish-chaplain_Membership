@@ -20,6 +20,7 @@ import {
   REGISTERED_ADDRESS_LINE_RULES,
   BILLING_ADDRESS_LINE_RULES,
   normalizeWebsiteUrl,
+  normalisePhoneValue,
   validateProposal,
 } from '@/modules/members/domain/change-request/field-rules';
 import { updateMemberSchema } from '@/modules/members/application/use-cases/update-member';
@@ -148,6 +149,32 @@ describe('validateProposal (the member-side gate over the same rules)', () => {
     expect(validateProposal({ contact: { phone: null } }).ok).toBe(true);
     const bad = validateProposal({ company: { company_name: '   ' } });
     expect(bad.ok).toBe(false);
+  });
+
+  it('normalisePhoneValue: E.164 for an accepted value, the input UNCHANGED for one asPhone refuses (never invents)', () => {
+    expect(normalisePhoneValue('+66 81-234-5678')).toBe('+66812345678');
+    expect(normalisePhoneValue('not a phone')).toBe('not a phone');
+  });
+
+  it('address lines: an omitted or whitespace-only line is stored as null, a value is kept, a null stays null (the group CHECK reasons in NULLs)', () => {
+    const r = validateProposal({
+      company: { registered_address: { line1: '1 Main Rd', line2: '   ', sub_district: null, city: 'Bangkok', postal_code: '10110' } },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.company?.registered_address).toEqual({ line1: '1 Main Rd', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110' });
+  });
+
+  it('company_name is trimmed like the staff rule (the one Group B key no other case proposed with a VALID value)', () => {
+    const r = validateProposal({ company: { company_name: '  Nordic Co  ' } });
+    expect(r.ok && r.value.company?.company_name).toBe('Nordic Co');
+  });
+
+  it('website: null clears, a value is kept as normalised', () => {
+    const cleared = validateProposal({ company: { website: null } });
+    expect(cleared.ok && cleared.value.company?.website).toBeNull();
+    const kept = validateProposal({ company: { website: 'https://nordic.example' } });
+    expect(kept.ok && kept.value.company?.website).toBe('https://nordic.example');
   });
 
   it('is strict: keys outside Group B are validation issues (the use case refuses them earlier as forged)', () => {

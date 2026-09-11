@@ -40,6 +40,17 @@ import {
  * form so the portal change-request form and `validateProposal` apply the same
  * courtesy the staff form applies. A non-string / blank value is left alone.
  */
+/**
+ * E.164 form of an accepted phone; a value `asPhone` cannot parse is
+ * returned UNCHANGED (never null, never invented) — `validateProposal`'s
+ * superRefine has already refused it, so this arm is the helper's own
+ * fail-safe contract, pinned directly in field-rules-parity.test.ts.
+ */
+export function normalisePhoneValue(value: string): string {
+  const phone = asPhone(value);
+  return phone.ok ? phone.value : value;
+}
+
 export function normalizeWebsiteUrl(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
@@ -189,10 +200,10 @@ export function validateProposal(raw: unknown): Result<GroupBProposal, z.ZodIssu
     if (c.last_name !== undefined) contact.last_name = c.last_name;
     if (c.role_title !== undefined) contact.role_title = c.role_title;
     if (c.phone !== undefined) {
-      // The superRefine above already refused a malformed value; `asPhone`
-      // here only NORMALISES the accepted one ("+66 81-234-5678" → E.164).
-      const phone = c.phone === null ? null : asPhone(c.phone);
-      contact.phone = phone === null ? null : phone.ok ? phone.value : c.phone;
+      // The superRefine above already refused a malformed value; the
+      // normaliser here only NORMALISES the accepted one ("+66 81-234-5678"
+      // → E.164) and never invents a value.
+      contact.phone = c.phone === null ? null : normalisePhoneValue(c.phone);
     }
     out.contact = contact;
   }
