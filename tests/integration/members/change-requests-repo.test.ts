@@ -226,6 +226,10 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     });
     expect(plan).toContain(indexName);
     expect(plan).not.toMatch(/Seq Scan on member_change_requests/);
+    // the qual must be the index CONDITION, not a Filter under an index scan —
+    // EXPLAIN prints the index name in both cases, and the demoted-to-Filter
+    // shape is exactly the pre-fix (tenant-first) behaviour guarded here
+    expect(plan).toMatch(/Index Cond:/);
   });
 
   it('findPendingBySubmitter (PR-1 review, Rel M-5) is a PLAIN read: it returns while another tx holds the row FOR UPDATE — the locking finder blocks behind the same holder (positive control)', async () => {

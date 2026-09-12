@@ -29,6 +29,13 @@
 -- it. Plain CREATE INDEX (not CONCURRENTLY): the migration runner wraps the
 -- pending batch in ONE transaction (CONCURRENTLY would error), and the table
 -- is empty in production until the flag flips.
+--
+-- The migrator skips by `created_at < folderMillis` only (the hash is stored,
+-- never compared), so a database that ran this file's FIRST cut — a
+-- `preview/*` Neon branch created between the two pushes — would never
+-- re-run it: the first statement drops that cut's tenant-first index so the
+-- file is idempotent across both cuts (a no-op on a fresh database).
+DROP INDEX IF EXISTS "member_change_requests_tenant_decided_by_idx";--> statement-breakpoint
 CREATE INDEX "member_change_requests_decided_by_tenant_idx"
   ON "member_change_requests" ("decided_by_user_id", "tenant_id")
   WHERE "decided_by_user_id" IS NOT NULL;--> statement-breakpoint

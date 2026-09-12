@@ -157,7 +157,12 @@ tenant-first (both columns are equalities in their RI check); the Drizzle schema
 follow, and the canary now also checks the leading column. On dev the old index was dropped and
 the two new ones created by hand (the runner records `0302` as applied). A live positive control
 `EXPLAIN … WHERE <column> = $1` under `enable_seqscan = off` names the index for both columns —
-the name-counting canary cannot see column order. **L1:** `decideInTx` refuses duplicate keys
+the name-counting canary cannot see column order (tightened on the reviewer's confirmation:
+the plan must show `Index Cond:`, since an index scan with the qual demoted to `Filter` prints
+the index name too). The reviewer's one residual on the confirmation: the migrator skips by
+`created_at < folderMillis` only (the hash is stored, never compared), so a `preview/*` branch that
+ran the first cut would never re-run the file — `0302` now opens with `DROP INDEX IF EXISTS` on
+the first cut's index (idempotent across both cuts; a no-op on a fresh database). **L1:** `decideInTx` refuses duplicate keys
 before building the VALUES list (defence-in-depth — the use case already refuses them). **L2:**
 the no-row live case picks a key the fixture does not propose from `PROPOSABLE_FIELD_KEYS`.
 Verified OK by the reviewer: VALUES-batch under RLS FORCE, the two CHECKs per row, the real
