@@ -19,11 +19,20 @@ Query: `state?=pending|decided|withdrawn` (default `pending`), `outcome?`, `memb
 Default order: pending first by `submitted_at ASC` (oldest waiting on top), else `submitted_at DESC`.
 
 ```json
-200 { "items": [ { "id", "member": { "id", "companyName", "memberNumber", "status" }, "submitter": { "displayName", "roleAtSubmission" },
-                   "scope", "state", "outcome", "fieldCount": 3, "affectsTaxDocuments": true,
-                   "submittedAt", "waitingSeconds": 86400, "overdue": true /* > 3 days */, "decidedAt", "decidedBy": { "displayName" } } ],
+200 { "items": [ { "id", "member": { "id", "companyName", "memberNumber", "status", "archived" }, "submitter": { "displayName", "roleAtSubmission" },
+                   "scope", "state", "outcome", "withdrawnReason", "fieldCount": 3, "affectsTaxDocuments": true,
+                   "submittedAt", "waitingSeconds": 86400, "overdue": true /* pending > 3 days */, "decidedAt",
+                   "decidedBy": { "displayName", "deactivated" } | null } ],
       "nextCursor": string|null, "pendingCount": 4, "oldestPendingAgeSeconds": 259200 }
 ```
+
+A list row carries display facts ONLY — never a field value and never the staff note (those are
+the review payload's). `waitingSeconds` counts to now while pending and to the decision /
+withdrawal otherwise; `overdue` is pending-only. `pendingCount` / `oldestPendingAgeSeconds` are
+the TENANT's (not the filtered page's) — the dashboard / nav facts (FR-033). `cursor` is opaque
+(base64url of the keyset); a malformed cursor, limit or filter value → **400 problem
+`invalid_query`**, never page one silently. `from` / `to` are ISO-8601 instants (the page turns
+its `YYYY-MM-DD` inputs into Asia/Bangkok day bounds). A repo fault → 500 `M114.admin.queue.<arm>`.
 
 `?submitter=<userId>&state=pending` with exactly one row is what the staff email links to; the page
 redirects to `/admin/change-requests/[id]`, or shows "no pending request — decided by X at T" when
@@ -84,9 +93,19 @@ Side effects in ONE transaction (`research.md` R4): approved fields applied via
 written; audit `member_change_request_decided`; outbox `member_change_request_decided_member` for
 the submitter. Any failure → nothing persisted, request stays pending, 500 with an `errorId`.
 
-## `GET /api/admin/members/[memberId]/change-requests` — per-member history (FR-026) · `members.read`
+## `GET /api/admin/members/[id]/change-requests` — per-member history (FR-026) · `members.read`
 
-Same item shape as the queue, all states, newest first, `cursor`/`limit`.
+Same item shape as the queue, all states, newest first, `cursor`/`limit ≤ 100`. The segment is
+`[id]` (every `/api/admin/members/[id]/*` sibling names it so — Next.js refuses two slug names on
+one path). The member must exist in the caller's tenant: another tenant's member is invisible
+under RLS → **404 problem `not_found`** (never a 403 that confirms existence), audited
+`member_cross_tenant_probe { attempted_member_id, actor_tenant_id, actor_role, action:
+'change_request_history' }` with the true actor (Constitution I.4 — the get-member rule); a
+malformed id → 404 before any read (not a probe). `M114.admin.member_history.<arm>` on the 500s.
+The member record page mounts this as the
+"Change requests" section (10 newest, per-field outcomes through the shared diff table, the
+reviewer with the "deactivated" marker, the reason as plain text) and links to the queue with
+`?memberId=`.
 
 ## `PATCH /api/admin/settings/member-changes` (FR-031) · `members.write`
 
@@ -112,7 +131,23 @@ deleted — the recorded name stays, FR-026), `decisionNote`, `withdrawnReason`,
 ## Contract tests (`tests/contract/members/admin-change-requests-*.test.ts`)
 
 - RBAC pins per route: manager → 200 on GET, 403 on decide/settings; marketing same; admin +
-  super_admin → 200 everywhere; member session → 403.
+  super_admin → 200 everywhere; member session → 403. The frozen marketing surface set
+  (`role-endpoint-matrix.test.ts`) is 53 with the queue + per-member history routes.
+- queue (`admin-change-requests-queue.test.ts`): default pending oldest-first, every filter, the
+  overdue flag, keyset paging, 400 on a malformed cursor / limit / filter, the item shape carries
+  no value and no note; per-member history (`admin-member-change-requests.test.ts`): all states
+  newest-first, the other tenant's member → 404.
+- 5,000-row budget (`tests/integration/members/change-requests-queue-pagination.test.ts`, live
+  Neon): 50 keyset pages, no gap / duplicate, p95 page latency < `ciScaled(400)` ms after one
+  warm-up page, `EXPLAIN` names `member_change_requests_tenant_state_submitted_idx`. The frozen marketing surface set
+  (`role-endpoint-matrix.test.ts`) is 53 with the queue + per-member history routes.
+- queue (`admin-change-requests-queue.test.ts`): default pending oldest-first, every filter, the
+  overdue flag, keyset paging, 400 on a malformed cursor / limit / filter, the item shape carries
+  no value and no note; per-member history (`admin-member-change-requests.test.ts`): all states
+  newest-first, the other tenant's member → 404.
+- 5,000-row budget (`tests/integration/members/change-requests-queue-pagination.test.ts`, live
+  Neon): 50 keyset pages, no gap / duplicate, p95 page latency < `ciScaled(400)` ms after one
+  warm-up page, `EXPLAIN` names `member_change_requests_tenant_state_submitted_idx`.
 - decide: incomplete decisions → 422; rejected without reason → 422; identical repeat → 200
   `repeated`; different repeat → 409; archived → 409; second concurrent → 409.
 - settings: unchanged value emits no audit; change emits one with `{previous,next}`.

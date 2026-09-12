@@ -86,6 +86,8 @@ import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import { MemberDataExportSection } from './_components/member-data-export-section';
 import { MemberDataExportSkeleton } from './_components/member-data-export-skeleton';
+// F114 US4 — the member's change-request history section (FR-026).
+import { MemberChangeRequestsSection, MemberChangeRequestsSkeleton } from './_components/member-change-requests-section';
 import {
   MemberRenewalHealthSection,
   MemberRenewalHealthSkeleton,
@@ -1471,6 +1473,17 @@ export default async function MemberDetailPage({
             actorRole={session.user.role}
           />
         </Suspense>
+
+        {/* F114 US4 (FR-026) — the member's change-request history: every
+            state, newest first, per-field outcomes, the reviewer with the
+            deactivated marker. `members.read` (the page guard) suffices —
+            deciding is the review page's `members.write`. Hidden while the
+            platform flag is off (FR-039: no request state shown when dark). */}
+        {env.features.memberChangeApproval && (
+          <Suspense fallback={<MemberChangeRequestsSkeleton />}>
+            <MemberChangeRequestsSection tenant={tenant} memberId={member.memberId} />
+          </Suspense>
+        )}
 
         {/* F9 US6 (FR-031) — admin on-behalf GDPR data export. Admin-only
             (GDPR export is an admin/DPO action; the read-only manager is

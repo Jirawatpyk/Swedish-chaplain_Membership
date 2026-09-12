@@ -267,11 +267,14 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/admin/broadcasts/sla-stats',
     'GET /api/admin/broadcasts/templates',
     // F114 US2 — see the two pages above (`members.read`).
+    'GET /api/admin/change-requests',
     'GET /api/admin/change-requests/[id]',
     'GET /api/admin/events',
     'GET /api/admin/events/[eventId]',
     'GET /api/admin/events/import/[recordId]/error-csv',
     'GET /api/admin/events/import/history',
+    // F114 US4 — the per-member history (`members.read`, PR-2).
+    'GET /api/admin/members/[id]/change-requests',
     'GET /api/admin/members/search',
     'GET /api/geo/postal/[code]',
     'GET /api/members',
@@ -309,7 +312,8 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   // were stale in the same direction, so this test passed while naming two
   // routes that no longer exist; only `api-route-exhaustiveness` caught them.
   // F114 US2 — 48 → 51: two `members.read` pages + the review payload route.
-  it('reaches EXACTLY the frozen 51-surface set — nothing more, nothing less', () => {
+  // F114 US4 (PR-2) — 51 → 53: the queue + the per-member history routes.
+  it('reaches EXACTLY the frozen 53-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

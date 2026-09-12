@@ -73,6 +73,17 @@ export const memberChangeRequests = pgTable(
       table.submittedByUserId,
       table.submittedAt,
     ),
+    // 0302 (PR-1 review, Mig M-2) — the four FK columns 0300 left unindexed.
+    // The single-column FKs to users(id) LEAD with the FK column: the RI
+    // check is an equality on that column alone (see the migration header).
+    index('member_change_requests_decided_by_tenant_idx')
+      .on(table.decidedByUserId, table.tenantId)
+      .where(sql`decided_by_user_id IS NOT NULL`),
+    index('member_change_requests_submitted_by_user_idx').on(table.submittedByUserId),
+    index('member_change_requests_tenant_submitted_by_contact_idx').on(table.tenantId, table.submittedByContactId),
+    index('member_change_requests_tenant_replaced_by_idx')
+      .on(table.tenantId, table.replacedByRequestId)
+      .where(sql`replaced_by_request_id IS NOT NULL`),
   ],
 );
 

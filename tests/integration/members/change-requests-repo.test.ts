@@ -24,6 +24,7 @@ import { inArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asMemberId, asContactId, type UserId } from '@/modules/members';
 import type { ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
+import { PROPOSABLE_FIELD_KEYS } from '@/modules/members/domain/change-request/proposable-fields';
 import { drizzleChangeRequestRepo } from '@/modules/members/infrastructure/db/drizzle-change-request-repo';
 import { UseCaseAbort } from '@/modules/members/application/tx-abort';
 import type { ChangeRequestDraft } from '@/modules/members/application/ports/change-request-repo';
@@ -211,6 +212,87 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
       drizzleChangeRequestRepo.countSubmittedSince(tx, mu(a.user.userId), new Date('2026-09-11T09:00:00Z')),
     );
     expect(outside.ok && outside.value).toEqual({ count: 0, oldestSubmittedAt: null });
+  });
+
+  it.each([
+    ['decided_by_user_id', 'member_change_requests_decided_by_tenant_idx'],
+    ['submitted_by_user_id', 'member_change_requests_submitted_by_user_idx'],
+  ])('migration 0302: the RI check on the single-column users FK (%s) is an index probe, never a seq scan — a positive control the name-counting canary cannot give (migration re-review, M1 / M2)', async (column, indexName) => {
+    const plan = await runInTenant(a.tenant.ctx, async (tx) => {
+      // a tiny table would seq-scan on cost alone; force the planner to show whether an index CAN serve the lookup
+      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+      const rows = (await tx.execute(sql`EXPLAIN SELECT 1 FROM member_change_requests WHERE ${sql.raw(column)} = ${randomUUID()}`)) as unknown as Array<Record<string, string>>;
+      return rows.map((r) => Object.values(r).join(' ')).join('\n');
+    });
+    expect(plan).toContain(indexName);
+    expect(plan).not.toMatch(/Seq Scan on member_change_requests/);
+    // the qual must be the index CONDITION, not a Filter under an index scan —
+    // EXPLAIN prints the index name in both cases, and the demoted-to-Filter
+    // shape is exactly the pre-fix (tenant-first) behaviour guarded here
+    expect(plan).toMatch(/Index Cond:/);
+  });
+
+  it('findPendingBySubmitter (PR-1 review, Rel M-5) is a PLAIN read: it returns while another tx holds the row FOR UPDATE — the locking finder blocks behind the same holder (positive control)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const holder = runInTenant(a.tenant.ctx, async (tx) => {
+      const locked = await drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId));
+      expect(locked.ok && locked.value?.submittedByUserId).toBe(a.user.userId);
+      await gate;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    const blocked = (ms: number) => new Promise<'blocked'>((r) => setTimeout(() => r('blocked'), ms));
+    try {
+      // the read the profile page + the gate route make: never waits on a decide / submit holding the row
+      const plain = await Promise.race([drizzleChangeRequestRepo.findPendingBySubmitter(a.tenant.ctx, mu(a.user.userId)), blocked(5_000)]);
+      expect(plain).not.toBe('blocked');
+      expect(plain !== 'blocked' && plain.ok && plain.value?.submittedByUserId).toBe(a.user.userId);
+      // positive control: the FOR UPDATE finder DOES queue behind the holder
+      const locking = runInTenant(a.tenant.ctx, (tx) => drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId)));
+      expect(await Promise.race([locking, blocked(1_500)])).toBe('blocked');
+      release();
+      await holder;
+      const after = await locking;
+      expect(after.ok && after.value?.submittedByUserId).toBe(a.user.userId);
+    } finally {
+      release();
+      await holder.catch(() => {});
+    }
+    const stranger = await drizzleChangeRequestRepo.findPendingBySubmitter(a.tenant.ctx, mu(b.user.userId));
+    expect(stranger).toEqual({ ok: true, value: null });
+  }, 60_000);
+
+  it('decideInTx (PR-1 review, Mig M-5 — ONE statement for every field row): a decision naming a key with NO row rolls the tx back and the request stays pending', async () => {
+    const pending = await runInTenant(a.tenant.ctx, (tx) => drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId)));
+    const id = pending.ok && pending.value ? pending.value.id : ('' as ChangeRequestId);
+    const keys = pending.ok && pending.value ? pending.value.fields.map((f) => f.key) : [];
+    // a key the fixture does NOT propose — chosen, not hardcoded, so a fixture
+    // change cannot turn this into the duplicate-key path (migration re-review, L2)
+    const absentKey = PROPOSABLE_FIELD_KEYS.find((k) => !keys.includes(k));
+    if (!absentKey) throw new Error('fixture proposes every key');
+    const reviewer = await createActiveTestUser('admin');
+    try {
+      await expect(
+        runInTenant(a.tenant.ctx, async (tx) => {
+          const r = await drizzleChangeRequestRepo.decideInTx(tx, id, {
+            decidedAt: new Date('2026-09-11T09:31:00Z'),
+            decidedByUserId: mu(reviewer.userId),
+            outcome: 'rejected',
+            reason: 'one key too many',
+            note: null,
+            fields: [...keys.map((key) => ({ key, outcome: 'rejected' as const, appliedAt: null })), { key: absentKey, outcome: 'rejected' as const, appliedAt: null }],
+          });
+          if (!r.ok) throw new UseCaseAbort(r.error);
+          return r;
+        }),
+      ).rejects.toBeInstanceOf(UseCaseAbort);
+      const [row] = await db.select().from(memberChangeRequests).where(inArray(memberChangeRequests.id, [id]));
+      expect(row?.state).toBe('pending');
+      const fieldRows = await db.select().from(memberChangeRequestFields).where(inArray(memberChangeRequestFields.requestId, [id]));
+      expect(fieldRows.every((f) => f.outcome === null)).toBe(true);
+    } finally {
+      await deleteTestUser(reviewer).catch(() => {});
+    }
   });
 
   it('decideInTx writes per-field outcomes + decision columns atomically; a decided row refuses a second decide', async () => {

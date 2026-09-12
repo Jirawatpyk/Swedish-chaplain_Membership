@@ -33,7 +33,7 @@ import { auditChangeRequestProbe } from './decide-change-request';
 import { groupBRecordOf, memberHasBillingAddress } from './submit-change-request';
 import { removedContactStandIn } from './removed-contact-stand-in';
 
-export type TaxHint = 'buyer_name' | 'buyer_address' | 'buyer_contact' | 'billing_country';
+export type TaxHint = 'buyer_name' | 'buyer_address' | 'buyer_contact' | 'billing_country' | 'billing_cleared';
 
 export type ChangeRequestReviewField = ProposedField & {
   readonly current: ProposedValue;
@@ -89,7 +89,16 @@ export function taxHintFor(field: ProposedField, ctx: { readonly submitterIsPrim
     case 'registered_address':
       return 'buyer_address';
     case 'billing_address': {
-      const country = field.proposed !== null && typeof field.proposed === 'object' && 'country' in field.proposed ? field.proposed.country : null;
+      // a CLEAR switches the SOURCE of the buyer address (§86/4(3)): the
+      // registered address is printed from here on (PR-1 review, Tax M6).
+      // It arrives as the all-null GROUP (the form always sends the seven
+      // lines, '' → null; `normaliseAddress` never yields null), so the
+      // predicate is `line1 === null` — the same one `resultingHasBillingAddress`
+      // and migration 0284's CHECK use (the tax re-review: a `=== null` test
+      // alone was dead code).
+      const group = field.proposed !== null && typeof field.proposed === 'object' ? (field.proposed as Readonly<Record<string, string | null>>) : null;
+      if (group === null || (group['line1'] ?? null) === null) return 'billing_cleared';
+      const country = group['country'] ?? null;
       return country !== null && country.trim().toUpperCase() !== 'TH' ? 'billing_country' : 'buyer_address';
     }
     case 'first_name':

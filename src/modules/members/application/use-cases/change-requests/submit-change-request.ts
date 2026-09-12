@@ -19,14 +19,22 @@
  *      known: `nothing_to_submit` (FR-007), or `already_pending` +
  *      `unchanged: true` when a different proposal is pending (round 6 code #5);
  *   6. ONE `runInTenant`: the submitter's pending row FOR UPDATE → identical
- *      → `already_pending` (no write) · different → withdrawn/replaced (R3);
- *      member FOR UPDATE re-check; insert; audit; one outbox row PER REVIEWER
- *      (FR-011 / FR-012). Every failure after the first write is a
- *      `UseCaseAbort` throw — never `return err()` inside the callback.
+ *      → `already_pending` (no write) · then the DURABLE cap (US5, R9): ≥ 10
+ *      rows by this person in the trailing 24 h → `rate_limited` before any
+ *      write (counted from the request table — replaced rows count; no
+ *      rate-limiting service is consulted, so the cap holds with Upstash
+ *      down or absent) · different → withdrawn/replaced (R3); member FOR
+ *      UPDATE re-check; insert; audit; one outbox row PER REVIEWER (FR-011 /
+ *      FR-012) — UNLESS the replaced request's `staff_notified_at` is within
+ *      1 h (US5, R8): then the new row INHERITS that timestamp, no row is
+ *      queued and the audit says `coalesced: true` (the earlier email's link
+ *      resolves to the person's CURRENT pending request). Every failure after
+ *      the first write is a `UseCaseAbort` throw — never `return err()`
+ *      inside the callback.
  *
- * US5 (T087) adds the durable 10/24 h cap and the 1 h staff-email coalescing
- * INSIDE step 6; this file already carries `replaced` / `coalesced` in its
- * result and audit payload so that change is additive.
+ * The rate-limit refusal is a throw inside the tx (the tx wrote nothing) and
+ * its audit row `member_change_request_rate_limited` is recorded AFTER the
+ * tx with `audit.record` — inside it the rollback would erase it.
  *
  * Audit payloads carry ids, keys and outcomes — never a value (R7). The
  * `member_id` key (snake_case) bumps `last_activity_at` on submit: this IS
@@ -40,7 +48,15 @@ import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { ChangeRequest, ChangeRequestId, ChangeRequestScope, ProposedField } from '../../../domain/change-request/change-request';
+import {
+  STAFF_NOTIFICATION_COALESCE_HOURS,
+  SUBMISSIONS_PER_WINDOW_CAP,
+  SUBMISSION_WINDOW_HOURS,
+  type ChangeRequest,
+  type ChangeRequestId,
+  type ChangeRequestScope,
+  type ProposedField,
+} from '../../../domain/change-request/change-request';
 import { validateProposal } from '../../../domain/change-request/field-rules';
 import {
   deriveScope,
@@ -88,7 +104,7 @@ export type SubmitChangeRequestInput = {
 export type SubmitChangeRequestDeps = {
   readonly tenant: TenantContext;
   readonly changeRequestRepo: ChangeRequestRepo;
-  readonly memberRepo: Pick<MemberRepo, 'findById' | 'findByIdInTx'>;
+  readonly memberRepo: Pick<MemberRepo, 'findById' | 'findByIdInTx' | 'findErasedAtByIdInTx'>;
   readonly contactRepo: Pick<ContactRepo, 'findById'>;
   readonly audit: AuditPort;
   readonly emails: EmailPort;
@@ -105,6 +121,8 @@ export type SubmitChangeRequestOutcome =
       readonly replaced: ChangeRequestId | null;
       /** false when zero reviewers exist (misconfigured tenant) or the email was coalesced (US5). */
       readonly staffNotified: boolean;
+      /** true when the replaced request's staff email is < 1 h old, so none was queued (FR-011). */
+      readonly coalesced: boolean;
     }
   | { readonly outcome: 'nothing_to_submit' }
   | {
@@ -128,8 +146,8 @@ export type SubmitChangeRequestError =
   | { readonly type: 'validation_error'; readonly issues: z.ZodIssue[] }
   | { readonly type: 'member_archived' }
   | { readonly type: 'not_found' }
-  // (no `rate_limited` arm: PR-1's interim cap lives in the route; T087's
-  // durable cap adds the use-case arm together with its audit event)
+  /** FR-008 — ≥ 10 CREATED requests in the trailing 24 h; `retryAfterSeconds` = when the oldest leaves the window. */
+  | { readonly type: 'rate_limited'; readonly retryAfterSeconds: number; readonly windowCount: number }
   | { readonly type: 'server_error'; readonly message: string };
 
 // ---------------------------------------------------------------------------
@@ -388,11 +406,41 @@ export async function submitChangeRequest(
         return { outcome: 'already_pending', request: pending, unchanged: false };
       }
 
+      // The durable cap (FR-008, R9) — counted from the rows themselves,
+      // replaced ones included, BEFORE the first write. `retryAfterSeconds`
+      // is when the OLDEST row in the window falls out of it.
+      const windowStart = new Date(now.getTime() - SUBMISSION_WINDOW_HOURS * 3_600_000);
+      const inWindow = await deps.changeRequestRepo.countSubmittedSince(tx, input.actorUserId, windowStart);
+      if (!inWindow.ok) throw new UseCaseAbort<RepoError>(inWindow.error);
+      if (inWindow.value.count >= SUBMISSIONS_PER_WINDOW_CAP) {
+        const oldest = inWindow.value.oldestSubmittedAt ?? now;
+        const retryAfterSeconds = Math.max(1, Math.ceil((oldest.getTime() + SUBMISSION_WINDOW_HOURS * 3_600_000 - now.getTime()) / 1000));
+        throw new RateLimitedAbort(inWindow.value.count, retryAfterSeconds);
+      }
+
       const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
       if (!fresh.ok) throw new UseCaseAbort<RepoError>(fresh.error);
       if (fresh.value.status === 'archived') throw new MemberArchivedAbort();
+      // An erasure keeps `status` and stamps only `erased_at`, so the FOR
+      // UPDATE re-read above sees an unchanged row once an erase tx that we
+      // waited on has committed — and this submit would land a pending
+      // request with live PII on an erased record, after the erasure's
+      // scrub + outbox cancel already ran. Read `erased_at` on the SAME tx
+      // (decide's rule — the seam review of PR-2, #2). Refused as
+      // `member_archived`: the member is gone either way, and the contact's
+      // session is revoked by the same erasure.
+      const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, input.memberId);
+      if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
+      if (erased.value.erasedAt !== null) throw new MemberArchivedAbort();
 
       let replaced: ChangeRequestId | null = null;
+      // FR-011 coalescing (R8): no new staff email within 1 h of the last one
+      // for this person — the replaced row carries that time (itself
+      // inherited along a chain of replacements, so a burst of resubmits
+      // yields ONE email per hour, never one per resubmit).
+      const lastNotifiedAt = pending?.staffNotifiedAt ?? null;
+      const coalesced =
+        lastNotifiedAt !== null && now.getTime() - lastNotifiedAt.getTime() < STAFF_NOTIFICATION_COALESCE_HOURS * 3_600_000;
       if (pending !== null) {
         const w = await deps.changeRequestRepo.withdrawInTx(tx, pending.id, {
           reason: 'replaced',
@@ -422,7 +470,7 @@ export async function submitChangeRequest(
         if (!wa.ok) throw new UseCaseAbort<RepoError>(wa.error);
       }
 
-      const staffNotified = reviewers.length > 0;
+      const staffNotified = !coalesced && reviewers.length > 0;
       const draft: ChangeRequestDraft = {
         id: newId,
         tenantId: tenantId as TenantId,
@@ -432,7 +480,8 @@ export async function submitChangeRequest(
         submitterRoleAtSubmission: submitterIsPrimary ? 'primary' : 'secondary',
         scope,
         submittedAt: now,
-        staffNotifiedAt: staffNotified ? now : null,
+        // inherited when coalesced (the earlier email already leads here)
+        staffNotifiedAt: coalesced ? lastNotifiedAt : staffNotified ? now : null,
         fields,
       };
       const inserted = await deps.changeRequestRepo.insertInTx(tx, draft);
@@ -451,13 +500,13 @@ export async function submitChangeRequest(
           scope,
           field_keys: fieldKeys,
           replaced_request_id: replaced,
-          coalesced: false,
+          coalesced,
           actor_role: input.actorRole,
         } satisfies ChangeRequestAuditPayload['member_change_request_submitted']),
       });
       if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
 
-      for (const reviewer of reviewers) {
+      for (const reviewer of coalesced ? [] : reviewers) {
         const queued = await deps.emails.enqueueInTx(tx, deps.tenant, {
           type: 'member_change_request_submitted_staff',
           toEmail: reviewer.email,
@@ -474,11 +523,11 @@ export async function submitChangeRequest(
         if (!queued.ok) throw new UseCaseAbort<RepoError>(queued.error);
       }
 
-      return { outcome: 'submitted', request: inserted.value, replaced, staffNotified };
+      return { outcome: 'submitted', request: inserted.value, replaced, staffNotified, coalesced };
     });
 
     if (outcome.outcome === 'submitted') {
-      membersMetrics.changeRequests.submitted(tenantId, scope, false);
+      membersMetrics.changeRequests.submitted(tenantId, scope, outcome.coalesced);
       if (reviewers.length === 0) {
         // a CREATED request nobody will be told about (round 5, silent-failure
         // #5; moved here in round 7 so a no-op submit does not count)
@@ -494,6 +543,33 @@ export async function submitChangeRequest(
     if (e instanceof MemberArchivedAbort) {
       membersMetrics.changeRequests.refused(tenantId, 'archived');
       return err({ type: 'member_archived' });
+    }
+    if (e instanceof RateLimitedAbort) {
+      // the tx wrote nothing; the refusal itself is recorded OUTSIDE it
+      // (FR-008 "recorded in the audit trail as a rate-limit refusal") —
+      // best-effort like the forgery trail: the refusal stands regardless
+      membersMetrics.changeRequests.refused(tenantId, 'rate_limited');
+      const audited = await deps.audit.record(deps.tenant, {
+        type: 'member_change_request_rate_limited',
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        summary: `change request refused: ${e.windowCount} submissions in ${SUBMISSION_WINDOW_HOURS} h`,
+        // a REFUSED attempt is not member activity: `related_member_id`, never
+        // the 0009 trigger key `member_id` (review round 1, REL-3 / P-7)
+        payload: {
+          related_member_id: input.memberId,
+          window_count: e.windowCount,
+          retry_after_seconds: e.retryAfterSeconds,
+          actor_role: input.actorRole,
+        } satisfies ChangeRequestAuditPayload['member_change_request_rate_limited'],
+      });
+      if (!audited.ok) {
+        logger.error(
+          { tenantId, memberId: input.memberId, requestId: input.requestId, err: audited.error.code },
+          'change-request.submit: audit write failed on rate_limited path',
+        );
+      }
+      return err({ type: 'rate_limited', retryAfterSeconds: e.retryAfterSeconds, windowCount: e.windowCount });
     }
     if (e instanceof UseCaseAbort && isRepoError(e.error)) {
       const re = e.error;
@@ -548,6 +624,16 @@ export async function submitChangeRequest(
 // ---------------------------------------------------------------------------
 
 class MemberArchivedAbort extends Error {}
+
+/** FR-008 — the durable cap refused the submission; carries what the audit row and the 429 need. */
+class RateLimitedAbort extends Error {
+  constructor(
+    readonly windowCount: number,
+    readonly retryAfterSeconds: number,
+  ) {
+    super('rate_limited');
+  }
+}
 
 function mapLoadError(error: RepoError): SubmitChangeRequestError {
   if (error.code === 'repo.not_found') return { type: 'not_found' };

@@ -158,13 +158,19 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
 
   return (
     <div className="space-y-4">
-      <ChangeRequestDecisionTable
-        fields={fields}
-        selected={selected}
-        onToggle={(key, approved) => setSelected((prev) => ({ ...prev, [key]: approved }))}
-        canDecide={canDecide && !decided}
-        decided={decided}
-      />
+      {/* the page's primary content gets a real heading (the h1 was the only one — PR-1 review, UX M8) */}
+      <section aria-labelledby="cr-fields-heading" className="space-y-3">
+        <h2 id="cr-fields-heading" className="font-heading text-base font-medium leading-snug">
+          {t('fieldsHeading')}
+        </h2>
+        <ChangeRequestDecisionTable
+          fields={fields}
+          selected={selected}
+          onToggle={(key, approved) => setSelected((prev) => ({ ...prev, [key]: approved }))}
+          canDecide={canDecide && !decided}
+          decided={decided}
+        />
+      </section>
       {canDecide && !decided ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground" aria-live="polite" data-testid="selection-summary">

@@ -180,6 +180,29 @@ describe('getChangeRequestReview', () => {
     });
   });
 
+  it.each([
+    // the WIRE shape: the form always sends the seven-line group, '' → null, and `normaliseAddress` never yields null
+    ['the all-null group (what the form actually sends)', { line1: null, line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null }],
+    ['a literal null (defensive — no producer today)', null],
+  ])('a proposal that CLEARS the billing address — %s — hints billing_cleared: the registered address becomes the buyer address (PR-1 review, Tax M6)', async (_label, proposed) => {
+    const req = request({
+      fields: [
+        {
+          key: 'billing_address',
+          target: 'member',
+          seen: { line1: '1 Old Billing St', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110', country: 'TH' },
+          proposed,
+          affectsTaxDocuments: true,
+          outcome: null,
+          appliedAt: null,
+        },
+      ],
+    });
+    const { deps } = makeDeps({ request: req });
+    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
+    expect(r.ok && r.value.fields[0]?.taxHint).toBe('billing_cleared');
+  });
+
   it('a billing address proposed with a TH country (or no country) hints buyer_address, not billing_country', async () => {
     const req = request({
       fields: [

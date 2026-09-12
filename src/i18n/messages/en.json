@@ -996,17 +996,56 @@
       "loading": "Loading…"
     },
     "changeRequests": {
+        "filters": {
+          "label": "Filter change requests",
+          "state": "Status",
+          "outcome": "Outcome",
+          "anyOutcome": "Any outcome",
+          "from": "Submitted from",
+          "to": "Submitted until",
+          "apply": "Apply",
+          "clear": "Clear filters",
+          "memberChip": "Showing requests for {company}.",
+          "removeMember": "Show all members",
+          "submitterChip": "Showing one person's requests.",
+          "removeSubmitter": "Show everyone's requests",
+          "unknownMember": "a member that could not be found"
+        },
       "queue": {
+          "emptyFiltered": "No change requests match these filters.",
+          "pendingSummary": "{count, plural, one {# request waiting} other {# requests waiting}} · oldest {oldestDays, plural, =0 {today} one {# day} other {# days}}",
+          "columns": {
+            "member": "Member",
+            "submitter": "Submitted by",
+            "fields": "Fields",
+            "submitted": "Submitted",
+            "waiting": "Waiting",
+            "status": "Status"
+          },
+          "fieldCount": "{count, plural, one {# field} other {# fields}}",
+          "waitingDays": "{count, plural, one {# day} other {# days}}",
+          "waitingHours": "{count, plural, =0 {under an hour} one {# hour} other {# hours}}",
+          "overdue": "Overdue",
+          "archivedMember": "Archived",
+          "view": "View",
+          "nextPage": "Next page",
         "title": "Change requests",
         "subtitle": "Member-proposed changes awaiting a staff decision, oldest first.",
         "empty": "No change requests are awaiting a decision.",
         "emptyHint": "New member proposals appear here as soon as they are submitted; the staff email links straight to the request.",
         "noPendingForSubmitter": "This person has no request awaiting a decision — their last request was decided by {name} on {decidedAt}.",
         "noRequestForSubmitter": "This person has no change request.",
-        "rowMeta": "Submitted by {submitter} · {count, plural, one {# field} other {# fields}} · {submittedAt}",
+        "tableCaption": "Change requests — one row per request: the member, who submitted it, the fields, when it was submitted, how long it has waited and its status.",
+        "reviewFor": "Review the request from {company}",
+        "viewFor": "View the request from {company}",
         "open": "Review"
       },
       "review": {
+          "withdrawn": {
+            "member": "Withdrawn by the member",
+            "replaced": "Replaced by a newer request",
+            "erasure": "Closed — member erased"
+          },
         "title": "Review change request",
         "subtitle": "{company} · submitted by {submitter} ({role}) on {submittedAt}",
         "roles": {
@@ -1048,12 +1087,14 @@
           "buyer_name": "the buyer name printed on tax invoices and receipts",
           "buyer_address": "the buyer address printed on tax invoices and receipts — check the head-office / branch designation",
           "buyer_contact": "the buyer's contact person printed on tax documents",
-          "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation"
+          "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation",
+          "billing_cleared": "the billing address is being removed — the registered address becomes the buyer address printed on tax invoices; check the head-office / branch designation"
         }
       },
       "decision": {
         "confirm": "Confirm decision",
         "selectionSummary": "{approved, plural, =0 {No fields} one {# field} other {# fields}} to approve, {rejected, plural, =0 {none} one {# field} other {# fields}} to reject",
+        "fieldsHeading": "Proposed changes",
         "titleApproveAll": "Approve all {count, plural, one {# field} other {# fields}}?",
         "titleMixed": "Approve {approved, plural, one {# field} other {# fields}} and reject {rejected, plural, one {# field} other {# fields}}?",
         "titleRejectAll": "Reject all {count, plural, one {# field} other {# fields}}?",
@@ -1090,6 +1131,16 @@
       }
     },
     "members": {
+        "changeRequests": {
+            "title": "Change requests",
+          "viewQueue": "Open in queue",
+          "loadFailed": "Change requests could not be loaded. Reload the page to try again.",
+          "empty": "No change requests for this member yet.",
+          "submittedBy": "Submitted by {name} ({role})",
+          "submittedOn": "Submitted {submittedAt}",
+          "review": "Review",
+          "open": "Open"
+        },
       "title": "Members",
       "overrideReason": {
         "warnings": {
@@ -5329,6 +5380,7 @@
       "rerenderTaxReceipt": "Re-render tax receipt"
     },
     "navigate": {
+        "changeRequests": "Change requests",
       "plansList": "Plans list",
       "invoiceSettings": "Invoice settings",
       "usersList": "Users list",
@@ -6059,6 +6111,41 @@
       }
     },
     "changeRequests": {
+      "history": {
+          "pageTitle": "Change request history",
+          "title": "Change request history",
+          "subtitle": "Every change you proposed to your member record and what the chamber decided.",
+          "notLinked": "Your account is not linked to a member.",
+          "empty": "No change requests yet.",
+          "emptyHint": "Changes you propose on the edit page appear here with the chamber’s decision.",
+          "listLabel": "Change requests, newest first",
+          "submittedOn": "Submitted {submittedAt}",
+          "submittedBy": "Submitted by {name}",
+          "submittedByYou": "Submitted by you",
+          "decidedOn": "decided {decidedAt}",
+          "loadMore": "Show older requests",
+          "backToProfile": "Back to profile",
+          "state": {
+            "pending": "Awaiting review",
+            "decided": "Decided",
+            "withdrawn": "Withdrawn"
+          },
+          "outcome": {
+            "approved": "Approved",
+            "partially_approved": "Partially approved",
+            "rejected": "Not approved"
+          },
+          "withdrawn": {
+            "member": "Withdrawn by you",
+            "replaced": "Replaced by a newer request",
+            "erasure": "Closed"
+          },
+          "profileCard": {
+            "title": "Change request history",
+            "subtitle": "See every change you proposed and what the chamber decided.",
+            "link": "View history"
+          }
+        },
       "form": {
         "pageTitle": "Propose changes",
         "pageSubtitle": "Your changes are reviewed by the chamber before they take effect.",
@@ -6066,7 +6153,8 @@
         "companySection": "Company details",
         "registeredAddressSection": "Registered address",
         "billingAddressSection": "Billing address",
-        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none.",
+        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none. The registered address then becomes the address printed on your tax invoices.",
+        "requiredNote": "* fields are required",
         "fields": {
           "firstName": "First name",
           "lastName": "Last name",
@@ -6118,6 +6206,20 @@
         "title": "Awaiting chamber review",
         "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
         "editLink": "Edit your request"
+      },
+      "withdraw": {
+        "button": "Withdraw request",
+        "title": "Withdraw this request?",
+        "description": "Nothing has been applied yet. The chamber will no longer review these values; you can submit a new request at any time.",
+        "confirm": "Withdraw",
+        "cancel": "Keep request",
+        "done": "Your request was withdrawn. Nothing on your record has changed.",
+        "gone": "There is no request awaiting review any more — it may already have been decided or withdrawn.",
+        "error": "Could not withdraw your request. Please try again.",
+        "readOnly": "The system is in read-only mode for a moment, so your request cannot be withdrawn right now. Please try again later."
+      },
+      "replaced": {
+        "status": "Your changes were sent for review and replace the request you sent earlier."
       },
       "outcome": {
         "title": {
@@ -7084,6 +7186,7 @@
         "events": "events.json — events you attended.",
         "broadcasts": "broadcasts.json — E-Blast / broadcast records relevant to you.",
         "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
+        "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation.",
         "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."
       },
       "truncationWarning": "⚠ PARTIAL EXPORT — Some categories contain only your most recent records; older entries were omitted to keep the archive a manageable size: {files}. To request your complete history for these categories, contact the chamber. The manifest checksums cover only the records included here.",

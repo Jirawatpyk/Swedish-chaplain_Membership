@@ -177,6 +177,16 @@ describe('isStuckProcessing (reclaim window, critique E2)', () => {
   });
 });
 
+describe('exportJobIdempotencyInput — F114 T079: two people asking for the same member in the same minute get two jobs', () => {
+  it('differs by requestedBy', () => {
+    const base = { tenantId: 'swecham', kind: 'gdpr_member_archive' as const, subjectMemberId: 'm-1', requestedForPeriod: '2026-09-12T09:34' };
+    const anna = exportJobIdempotencyInput({ ...base, requestedBy: 'u-anna' });
+    const bo = exportJobIdempotencyInput({ ...base, requestedBy: 'u-bo' });
+    expect(anna).not.toBe(bo);
+    expect(exportJobIdempotencyInput({ ...base, requestedBy: 'u-anna' })).toBe(anna);
+  });
+});
+
 describe('exportJobIdempotencyInput (Principle VIII)', () => {
   it('is deterministic for identical components', () => {
     const a = exportJobIdempotencyInput({

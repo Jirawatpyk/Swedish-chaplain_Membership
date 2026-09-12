@@ -996,17 +996,56 @@
       "loading": "Läser in…"
     },
     "changeRequests": {
+        "filters": {
+          "label": "Filtrera ändringsbegäranden",
+          "state": "Status",
+          "outcome": "Beslut",
+          "anyOutcome": "Alla beslut",
+          "from": "Skickad från",
+          "to": "Skickad till och med",
+          "apply": "Tillämpa",
+          "clear": "Rensa filter",
+          "memberChip": "Visar begäranden för {company}.",
+          "removeMember": "Visa alla medlemmar",
+          "submitterChip": "Visar en persons begäranden.",
+          "removeSubmitter": "Visa allas begäranden",
+          "unknownMember": "en medlem som inte kunde hittas"
+        },
       "queue": {
+          "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
+          "pendingSummary": "{count, plural, one {# begäran väntar} other {# begäranden väntar}} · äldsta {oldestDays, plural, =0 {i dag} one {# dag} other {# dagar}}",
+          "columns": {
+            "member": "Medlem",
+            "submitter": "Skickad av",
+            "fields": "Fält",
+            "submitted": "Skickad",
+            "waiting": "Väntetid",
+            "status": "Status"
+          },
+          "fieldCount": "{count, plural, one {# fält} other {# fält}}",
+          "waitingDays": "{count, plural, one {# dag} other {# dagar}}",
+          "waitingHours": "{count, plural, =0 {under en timme} one {# timme} other {# timmar}}",
+          "overdue": "Försenad",
+          "archivedMember": "Arkiverad",
+          "view": "Visa",
+          "nextPage": "Nästa sida",
         "title": "Ändringsbegäranden",
         "subtitle": "Ändringar som medlemmar föreslagit och som väntar på personalens beslut, äldst först.",
         "empty": "Inga ändringsbegäranden väntar på beslut.",
         "emptyHint": "Nya medlemsförslag visas här så snart de skickas in; personalens e-post länkar direkt till begäran.",
         "noPendingForSubmitter": "Den här personen har ingen begäran som väntar på beslut — den senaste beslutades av {name} den {decidedAt}.",
         "noRequestForSubmitter": "Den här personen har ingen ändringsbegäran.",
-        "rowMeta": "Inskickad av {submitter} · {count, plural, one {# fält} other {# fält}} · {submittedAt}",
+        "tableCaption": "Ändringsbegäranden — en rad per begäran: medlem, avsändare, fält, inskickad, väntetid och status.",
+        "reviewFor": "Granska begäran från {company}",
+        "viewFor": "Visa begäran från {company}",
         "open": "Granska"
       },
       "review": {
+          "withdrawn": {
+            "member": "Återtagen av medlemmen",
+            "replaced": "Ersatt av en nyare begäran",
+            "erasure": "Stängd — medlemmen raderad"
+          },
         "title": "Granska ändringsbegäran",
         "subtitle": "{company} · inskickad av {submitter} ({role}) den {submittedAt}",
         "roles": {
@@ -1048,12 +1087,14 @@
           "buyer_name": "köparens namn på skattefakturor och kvitton",
           "buyer_address": "köparens adress på skattefakturor och kvitton — kontrollera huvudkontor/filial",
           "buyer_contact": "köparens kontaktperson på skattedokument",
-          "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial"
+          "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial",
+          "billing_cleared": "faktureringsadressen tas bort — den registrerade adressen blir köparadressen på skattedokumenten; kontrollera huvudkontor-/filialangivelsen"
         }
       },
       "decision": {
         "confirm": "Bekräfta beslut",
         "selectionSummary": "{approved, plural, =0 {Inga fält} one {# fält} other {# fält}} att godkänna, {rejected, plural, =0 {inga} one {# fält} other {# fält}} att avslå",
+        "fieldsHeading": "Föreslagna ändringar",
         "titleApproveAll": "Godkänna alla {count, plural, one {# fält} other {# fält}}?",
         "titleMixed": "Godkänna {approved, plural, one {# fält} other {# fält}} och avslå {rejected, plural, one {# fält} other {# fält}}?",
         "titleRejectAll": "Avslå alla {count, plural, one {# fält} other {# fält}}?",
@@ -1090,6 +1131,16 @@
       }
     },
     "members": {
+        "changeRequests": {
+            "title": "Ändringsbegäranden",
+          "viewQueue": "Öppna i kön",
+          "loadFailed": "Ändringsbegärandena kunde inte läsas in. Ladda om sidan för att försöka igen.",
+          "empty": "Inga ändringsbegäranden för den här medlemmen ännu.",
+          "submittedBy": "Skickad av {name} ({role})",
+          "submittedOn": "Skickad {submittedAt}",
+          "review": "Granska",
+          "open": "Öppna"
+        },
       "title": "Medlemmar",
       "overrideReason": {
         "warnings": {
@@ -5329,6 +5380,7 @@
       "rerenderTaxReceipt": "Återskapa skattekvitto"
     },
     "navigate": {
+        "changeRequests": "Ändringsbegäranden",
       "plansList": "Paketlista",
       "invoiceSettings": "Fakturainställningar",
       "usersList": "Användarlista",
@@ -6059,6 +6111,41 @@
       }
     },
     "changeRequests": {
+      "history": {
+          "pageTitle": "Historik över ändringsbegäranden",
+          "title": "Historik över ändringsbegäranden",
+          "subtitle": "Varje ändring du föreslagit i din medlemspost och vad kammaren beslutade.",
+          "notLinked": "Ditt konto är inte kopplat till någon medlem.",
+          "empty": "Inga ändringsbegäranden ännu.",
+          "emptyHint": "Ändringar du föreslår på redigeringssidan visas här tillsammans med kammarens beslut.",
+          "listLabel": "Ändringsbegäranden, nyaste först",
+          "submittedOn": "Skickad {submittedAt}",
+          "submittedBy": "Skickad av {name}",
+          "submittedByYou": "Skickad av dig",
+          "decidedOn": "beslutad {decidedAt}",
+          "loadMore": "Visa äldre begäranden",
+          "backToProfile": "Tillbaka till profilen",
+          "state": {
+            "pending": "Väntar på granskning",
+            "decided": "Beslutad",
+            "withdrawn": "Återtagen"
+          },
+          "outcome": {
+            "approved": "Godkänd",
+            "partially_approved": "Delvis godkänd",
+            "rejected": "Inte godkänd"
+          },
+          "withdrawn": {
+            "member": "Återtagen av dig",
+            "replaced": "Ersatt av en nyare begäran",
+            "erasure": "Stängd"
+          },
+          "profileCard": {
+            "title": "Historik över ändringsbegäranden",
+            "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
+            "link": "Visa historik"
+          }
+        },
       "form": {
         "pageTitle": "Föreslå ändringar",
         "pageSubtitle": "Dina ändringar granskas av kammaren innan de träder i kraft.",
@@ -6066,7 +6153,8 @@
         "companySection": "Företagsuppgifter",
         "registeredAddressSection": "Registrerad adress",
         "billingAddressSection": "Faktureringsadress",
-        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon. Då blir den registrerade adressen den adress som trycks på dina skattedokument.",
+        "requiredNote": "* obligatoriska fält",
         "fields": {
           "firstName": "Förnamn",
           "lastName": "Efternamn",
@@ -6100,12 +6188,12 @@
       },
       "status": {
         "submitted": "Dina ändringar har skickats för granskning.",
-        "nothingToSubmit": "Inget att skicka – alla värden matchar dina nuvarande uppgifter.",
+        "nothingToSubmit": "Inget att skicka — alla värden matchar dina nuvarande uppgifter.",
         "alreadyPending": "Dessa ändringar väntar redan på granskning.",
         "alreadyPendingUnchanged": "Dina värden matchar din post. Begäran du skickade tidigare väntar fortfarande på granskning och har inte ändrats.",
         "rateLimited": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen efter {retryAt}.",
         "rateLimitedGeneric": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen senare.",
-        "approvalNotRequired": "Ändringar behöver inte längre godkännas – dina redigeringar sparas nu direkt."
+        "approvalNotRequired": "Ändringar behöver inte längre godkännas — dina redigeringar sparas nu direkt."
       },
       "errors": {
         "field": "Kontrollera det här värdet.",
@@ -6116,8 +6204,22 @@
       },
       "pending": {
         "title": "Väntar på kammarens granskning",
-        "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu – kammaren meddelar beslutet via e-post.",
+        "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu — kammaren meddelar beslutet via e-post.",
         "editLink": "Redigera din begäran"
+      },
+      "withdraw": {
+        "button": "Dra tillbaka begäran",
+        "title": "Dra tillbaka den här begäran?",
+        "description": "Inget har tillämpats ännu. Kammaren granskar inte längre dessa värden; du kan skicka en ny begäran när som helst.",
+        "confirm": "Dra tillbaka",
+        "cancel": "Behåll begäran",
+        "done": "Din begäran drogs tillbaka. Inget i din post har ändrats.",
+        "gone": "Det finns inte längre någon begäran som väntar på granskning — den kan redan ha avgjorts eller dragits tillbaka.",
+        "error": "Det gick inte att dra tillbaka din begäran. Försök igen.",
+        "readOnly": "Systemet är tillfälligt i skrivskyddat läge, så din begäran kan inte dras tillbaka just nu. Försök igen senare."
+      },
+      "replaced": {
+        "status": "Dina ändringar skickades för granskning och ersätter den begäran du skickade tidigare."
       },
       "outcome": {
         "title": {
@@ -7084,6 +7186,7 @@
         "events": "events.json — evenemang du har deltagit i.",
         "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
+        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
       },
       "truncationWarning": "⚠ DELVIS EXPORT — Vissa kategorier innehåller endast dina senaste poster; äldre poster har utelämnats för att begränsa arkivets storlek: {files}. Kontakta handelskammaren om du vill ha din fullständiga historik för dessa kategorier. Manifestets kontrollsummor omfattar endast de poster som ingår här.",

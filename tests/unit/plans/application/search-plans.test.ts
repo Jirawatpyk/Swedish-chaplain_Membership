@@ -424,6 +424,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f6EventCreate: true,
       f7Broadcasts: true,
       f088TaxAtPayment: true,
+      memberChangeApproval: false,
     }).map((e) => e.id);
     expect(kept).toEqual([
       'untagged.dashboard',
@@ -438,6 +439,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f6EventCreate: true,
       f7Broadcasts: false,
       f088TaxAtPayment: true,
+      memberChangeApproval: false,
     }).map((e) => e.id);
     expect(kept).toEqual([
       'untagged.dashboard',
@@ -451,6 +453,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f6EventCreate: false,
       f7Broadcasts: true,
       f088TaxAtPayment: true,
+      memberChangeApproval: false,
     }).map((e) => e.id);
     expect(kept).not.toContain('nav.events');
     expect(kept).toContain('nav.broadcasts');
@@ -462,6 +465,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f6EventCreate: false,
       f7Broadcasts: false,
       f088TaxAtPayment: false,
+      memberChangeApproval: false,
     }).map((e) => e.id);
     expect(kept).toEqual(['untagged.dashboard']);
   });

@@ -300,13 +300,14 @@ export function makeRequestDataExportDeps(tenantId: string): RequestDataExportDe
 export function listMemberDataExports(
   tenant: TenantContext,
   subjectMemberId: string,
-  limit = 5,
+  opts: { readonly limit?: number; readonly requestedBy?: string } = {},
 ): Promise<readonly ExportJobRecord[]> {
   return makeDrizzleExportJobRepo(tenant.slug).listRecentForSubject(
     tenant,
     subjectMemberId,
     'gdpr_member_archive',
-    limit,
+    opts.limit ?? 5,
+    opts.requestedBy,
   );
 }
 

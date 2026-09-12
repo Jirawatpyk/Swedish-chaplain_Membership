@@ -123,6 +123,10 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_requests_tenant_id_uniq' AND conrelid = 'public.member_change_requests'::regclass AND contype = 'u') AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_request_fields_request_fk' AND conrelid = 'public.member_change_request_fields'::regclass AND contype = 'f' AND array_length(conkey, 1) = 2) AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_requests_replaced_by_fk' AND conrelid = 'public.member_change_requests'::regclass AND contype = 'f' AND array_length(conkey, 1) = 2 AND condeferrable)`,
       },
       {
+        name: 'member_change_requests FK-column indexes (mig 0302 — PR-1 review, Mig M-2; the users-FK ones lead with the FK column)',
+        query: `SELECT 1 AS hit WHERE (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'member_change_requests' AND indexname IN ('member_change_requests_decided_by_tenant_idx', 'member_change_requests_submitted_by_user_idx', 'member_change_requests_tenant_submitted_by_contact_idx', 'member_change_requests_tenant_replaced_by_idx')) = 4 AND EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'member_change_requests_decided_by_tenant_idx' AND indexdef LIKE '%(decided_by_user_id, tenant_id)%')`,
+      },
+      {
         // 0301 is the enum-only migration — the one a duplicate `when` turns
         // into a silent no-op with no table to notice (round 6, comments I11)
         name: 'audit_event_type + notification_type carry the seven F114 values (mig 0301)',

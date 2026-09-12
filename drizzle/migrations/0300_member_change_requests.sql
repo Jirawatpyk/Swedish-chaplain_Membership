@@ -139,7 +139,8 @@ CREATE INDEX "member_change_requests_tenant_member_idx"
   ON "member_change_requests" ("tenant_id", "member_id", "submitted_at" DESC);--> statement-breakpoint
 
 -- R9 — the durable 24 h cap count per submitter (`countSubmittedSince` in the
--- repo; its use-case caller is T087, PR-2 — PR-1 uses an interim Upstash cap)
+-- repo, called by `submitChangeRequest` since T087 / PR-2; PR-1's interim
+-- Upstash cap is gone — comment-only edit, the DDL below is unchanged)
 CREATE INDEX "member_change_requests_rate_window_idx"
   ON "member_change_requests" ("tenant_id", "submitted_by_user_id", "submitted_at");--> statement-breakpoint
 

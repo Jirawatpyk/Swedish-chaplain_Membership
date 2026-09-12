@@ -51,6 +51,7 @@ import { noopEventRegistrationErasureAdapter } from '@/modules/members/infrastru
 import { noopDirectoryErasureAdapter } from '@/modules/members/infrastructure/adapters/directory-erasure-adapter';
 import { noopBroadcastsAudienceDerivationAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { noopSubprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
+import { changeRequestScrubAdapter } from '@/modules/members/infrastructure/adapters/change-request-scrub-adapter';
 // The REAL adapter under test — NOT a no-op. This is the whole point.
 import { invoicingErasureAdapter } from '@/modules/members/infrastructure/adapters/invoicing-erasure-adapter';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -233,6 +234,7 @@ describe('COMP-1 §6.2 — erasure discards drafts, retains issued (live Neon)',
       invoicingErasure: invoicingErasureAdapter,
       broadcastsAudienceDerivation: noopBroadcastsAudienceDerivationAdapter,
       subprocessorErasure: noopSubprocessorErasureAdapter,
+      changeRequestScrub: changeRequestScrubAdapter,
       audit: drizzleAuditAdapter,
       clock: { now: () => new Date() },
     };

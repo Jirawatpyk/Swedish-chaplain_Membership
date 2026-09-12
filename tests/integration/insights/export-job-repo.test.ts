@@ -84,6 +84,12 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
       5,
     );
     expect(none).toHaveLength(0);
+    // F114 review round 1 (C1): `requestedBy` narrows to one requester's jobs —
+    // the portal page lists only the archives THIS person asked for
+    const mine = await repo().listRecentForSubject(tenant.ctx, subjectA, 'gdpr_member_archive', 5, requester);
+    expect(mine).toHaveLength(2);
+    const someoneElse = await repo().listRecentForSubject(tenant.ctx, subjectA, 'gdpr_member_archive', 5, randomUUID());
+    expect(someoneElse).toHaveLength(0);
   });
 
   it('createOrGet is idempotent on (tenant, idempotency_key)', async () => {

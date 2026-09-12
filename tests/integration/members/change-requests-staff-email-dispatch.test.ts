@@ -110,7 +110,14 @@ async function tickUntilSettled(requestId: string, maxTicks = 8) {
   return null;
 }
 
+// US5 (T087): a resubmit within 1 h of the last staff notification queues NO
+// new outbox row (FR-011 coalescing). Every test in this file submits a fresh
+// request that REPLACES the previous one and expects its own staff row, so the
+// injected clock steps 61 min per submit — each one is past the window.
+let clockOffsetMs = 0;
+
 async function submit(rawBody: unknown) {
+  clockOffsetMs += 61 * 60_000;
   const deps: SubmitChangeRequestDeps = {
     tenant: tenant.ctx,
     changeRequestRepo: drizzleChangeRequestRepo,
@@ -122,7 +129,7 @@ async function submit(rawBody: unknown) {
     // against the ACTIVE reviewer roster at send time, so the reviewer is a
     // real active admin, not a fake address
     reviewers: { listReviewers: async () => [{ userId: mu(reviewer.userId), email: reviewer.email, locale: 'en' }] },
-    clock: { now: () => new Date() },
+    clock: { now: () => new Date(Date.now() + clockOffsetMs) },
     newRequestId: () => randomUUID() as ChangeRequestId,
   };
   return submitChangeRequest(deps, {
@@ -202,8 +209,11 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     const first = await submit({ contact: { phone: '+66855555555' } });
     expect(first.ok && first.value.outcome).toBe('submitted');
     const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : '';
+    // 61 min later (the injected clock) — past the coalescing window, so the
+    // replacement queues a row of its own (US5 T087)
     const second = await submit({ contact: { phone: '+66866666666' } });
     expect(second.ok && second.value.outcome).toBe('submitted');
+    expect(second.ok && second.value.outcome === 'submitted' && second.value.staffNotified).toBe(true);
     const secondId = second.ok && second.value.outcome === 'submitted' ? second.value.request.id : '';
     const superseded = await tickUntilSettled(firstId);
     expect(superseded?.status).toBe('permanently_failed');

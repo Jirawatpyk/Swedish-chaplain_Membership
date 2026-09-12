@@ -39,6 +39,8 @@ export function ChangeRequestDiffTable({ fields, showOutcome = false, className 
 
   function renderValue(key: ChangeRequestFieldView['key'], value: ProposedValue): React.ReactNode {
     if (value === null || value === '') return <span className="text-muted-foreground">{t('empty')}</span>;
+    // a STRING under an address key is the erasure sentinel (FR-030) — text, never "(empty)"
+    if (typeof value === 'string') return <span className="break-words">{value}</span>;
     if (isAddress(value) || isAddressGroupKey(key)) {
       const obj = (isAddress(value) ? value : {}) as Readonly<Record<string, string | null>>;
       const lines = key === 'billing_address' ? BILLING_ADDRESS_LINES : REGISTERED_ADDRESS_LINES;

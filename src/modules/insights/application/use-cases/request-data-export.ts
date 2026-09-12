@@ -91,11 +91,14 @@ export async function requestDataExport(
   const onBehalf = meta.actorMemberId !== input.subjectMemberId;
 
   const period = minuteBucket(deps.clock.now());
+  // keyed on the REQUESTER too: the archive's scope is theirs (FR-029), so a
+  // colleague or an admin asking in the same minute must not share the job
   const idempotencyKey = exportJobIdempotencyInput({
     tenantId: ctx.slug,
     kind: 'gdpr_member_archive',
     subjectMemberId: input.subjectMemberId,
     requestedForPeriod: period,
+    requestedBy: meta.actorUserId,
   });
 
   const { job, created } = await runInTenant(ctx, async (tx) => {

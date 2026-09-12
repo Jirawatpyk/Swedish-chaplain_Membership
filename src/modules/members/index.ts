@@ -193,6 +193,34 @@ export {
   type AcknowledgeChangeRequestInput,
 } from './application/use-cases/change-requests/acknowledge-change-request';
 export {
+  withdrawChangeRequest,
+  type WithdrawChangeRequestDeps,
+  type WithdrawChangeRequestError,
+  type WithdrawChangeRequestInput,
+} from './application/use-cases/change-requests/withdraw-change-request';
+export {
+  listChangeRequestQueue,
+  listMemberChangeRequests,
+  listPortalChangeRequests,
+  getPortalChangeRequest,
+  projectChangeRequestForViewer,
+  type GetPortalChangeRequestDeps,
+  encodeChangeRequestCursor,
+  decodeChangeRequestCursor,
+  waitingSecondsOf,
+  isOverdue,
+  QUEUE_PAGE_MAX,
+  QUEUE_PAGE_DEFAULT,
+  PORTAL_PAGE_MAX,
+  PORTAL_PAGE_DEFAULT,
+  type ListChangeRequestsDeps,
+  type ListChangeRequestsError,
+  type ChangeRequestQueueItem,
+  type ChangeRequestQueuePage,
+  type ChangeRequestHistoryPage,
+  type PortalChangeRequestPage,
+} from './application/use-cases/change-requests/list-change-requests';
+export {
   getChangeRequestReview,
   taxHintFor,
   type ChangeRequestReview,
