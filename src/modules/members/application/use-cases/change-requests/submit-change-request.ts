@@ -15,7 +15,9 @@
  *   3. `validateProposal` — the staff rules (FR-006);
  *   4. archived member — refused (FR-020 class);
  *   5. `diffAgainstRecord` — the baseline is the CURRENT record; nothing
- *      differing → `nothing_to_submit` (FR-007);
+ *      differing is answered INSIDE the tx (step 6) once the pending row is
+ *      known: `nothing_to_submit` (FR-007), or `already_pending` +
+ *      `unchanged: true` when a different proposal is pending (round 6 code #5);
  *   6. ONE `runInTenant`: the submitter's pending row FOR UPDATE → identical
  *      → `already_pending` (no write) · different → withdrawn/replaced (R3);
  *      member FOR UPDATE re-check; insert; audit; one outbox row PER REVIEWER
@@ -45,7 +47,9 @@ import {
   diffAgainstRecord,
   proposedValuesEqual,
   type GroupBProposal,
-  type GroupBRecord, normaliseText } from '../../../domain/change-request/policies';
+  type GroupBRecord,
+  normaliseText,
+} from '../../../domain/change-request/policies';
 import {
   BILLING_ADDRESS_LINES,
   COMPANY_FIELD_KEYS,
@@ -63,7 +67,7 @@ import type { ClockPort } from '../../ports/clock-port';
 import type { ContactRepo } from '../../ports/contact-repo';
 import type { EmailPort } from '../../ports/email-port';
 import { isRepoError, type MemberRepo, type RepoError } from '../../ports/member-repo';
-import type { ReviewerDirectoryPort } from '../../ports/reviewer-directory-port';
+import type { ReviewerDirectoryPort, Reviewer } from '../../ports/reviewer-directory-port';
 import { UseCaseAbort } from '../../tx-abort';
 
 // ---------------------------------------------------------------------------
@@ -103,7 +107,17 @@ export type SubmitChangeRequestOutcome =
       readonly staffNotified: boolean;
     }
   | { readonly outcome: 'nothing_to_submit' }
-  | { readonly outcome: 'already_pending'; readonly request: ChangeRequest };
+  | {
+      readonly outcome: 'already_pending';
+      readonly request: ChangeRequest;
+      /**
+       * `true` when the proposal matched the RECORD (the member "reverted" the
+       * form) while a DIFFERENT proposal is pending — the pending request is
+       * still what will be applied (round 7). `false` when the proposal is the
+       * pending one.
+       */
+      readonly unchanged: boolean;
+    };
 
 export type SubmitChangeRequestError =
   | {
@@ -196,7 +210,10 @@ function companyKeysIn(raw: unknown): CompanyFieldKey[] {
 // both sides of the diff apply) so the review page's `changedSinceSubmitted`
 // / `alreadyCurrent` compare like with like: a record holding 'CEO ' against a
 // seen 'CEO' is not a change (round 6, code #2).
-export function groupBRecordOf(member: Member, contact: Contact): GroupBRecord {
+/** The four contact columns the Group B record reads — a removed contact's stand-in provides exactly these (round 7). */
+export type GroupBContactRecord = Pick<Contact, 'firstName' | 'lastName' | 'phone' | 'roleTitle'>;
+
+export function groupBRecordOf(member: Member, contact: GroupBContactRecord): GroupBRecord {
   const n = normaliseText;
   return {
     contact: {
@@ -339,15 +356,20 @@ export async function submitChangeRequest(
   const scope: ChangeRequestScope = scopeResult.value;
 
   // Reviewer roster — a cross-tenant `users` read; taken BEFORE the tx so no
-  // row lock is held during it. Empty is a valid (misconfigured) answer.
-  const reviewers = await deps.reviewers.listReviewers();
-  if (reviewers.length === 0) {
-    logger.warn(
-      { tenantId, memberId: input.memberId, requestId: input.requestId },
-      'change-request.submit.no_reviewers — request will be created but nobody is notified',
+  // row lock is held during it. Empty is a valid (misconfigured) answer; a
+  // THROW (the read has no Result — round 2 R-1's class) is a logged
+  // server_error, never an unhandled rejection out of the route (round 7,
+  // silent-failure N1). The no-reviewers signal itself fires only once a
+  // request is actually CREATED — see the outcome branch below.
+  let reviewers: readonly Reviewer[];
+  try {
+    reviewers = await deps.reviewers.listReviewers();
+  } catch (e) {
+    logger.error(
+      { tenantId, memberId: input.memberId, requestId: input.requestId, err: errKind(e) },
+      'change-request.submit.roster_read_failed',
     );
-    // alertable without the T102 gauges (round 5, silent-failure #5)
-    membersMetrics.changeRequests.noReviewers(tenantId);
+    return err({ type: 'server_error', message: 'submit: roster_read_failed' });
   }
 
   const now = deps.clock.now();
@@ -360,10 +382,10 @@ export async function submitChangeRequest(
       if (!pendingResult.ok) throw new UseCaseAbort<RepoError>(pendingResult.error);
       const pending = pendingResult.value;
       if (nothingDiffers) {
-        return pending !== null ? { outcome: 'already_pending', request: pending } : { outcome: 'nothing_to_submit' };
+        return pending !== null ? { outcome: 'already_pending', request: pending, unchanged: true } : { outcome: 'nothing_to_submit' };
       }
       if (pending !== null && sameProposal(pending, fields)) {
-        return { outcome: 'already_pending', request: pending };
+        return { outcome: 'already_pending', request: pending, unchanged: false };
       }
 
       const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
@@ -457,6 +479,15 @@ export async function submitChangeRequest(
 
     if (outcome.outcome === 'submitted') {
       membersMetrics.changeRequests.submitted(tenantId, scope, false);
+      if (reviewers.length === 0) {
+        // a CREATED request nobody will be told about (round 5, silent-failure
+        // #5; moved here in round 7 so a no-op submit does not count)
+        logger.warn(
+          { tenantId, memberId: input.memberId, requestId: input.requestId, changeRequestId: outcome.request.id },
+          'change-request.submit.no_reviewers — request created but nobody is notified',
+        );
+        membersMetrics.changeRequests.noReviewers(tenantId);
+      }
     }
     return ok(outcome);
   } catch (e) {
@@ -492,7 +523,7 @@ export async function submitChangeRequest(
         }
         if (raced && raced.ok && raced.value) {
           // the winner's proposal IS this one → the harmless answer
-          if (sameProposal(raced.value, fields)) return ok({ outcome: 'already_pending', request: raced.value });
+          if (sameProposal(raced.value, fields)) return ok({ outcome: 'already_pending', request: raced.value, unchanged: false });
           // a DIFFERENT proposal lost the race: one bounded retry now finds the
           // winner's pending row FOR UPDATE and takes the replace path (FR-008)
           if (!opts.retriedAfterConflict) return submitChangeRequest(deps, input, { retriedAfterConflict: true });

@@ -212,7 +212,7 @@ export interface PortalChangeRequestFormProps {
   readonly resubmitOf?: ChangeRequestView | null;
 }
 
-type StatusKind = 'nothing_to_submit' | 'already_pending' | 'rate_limited' | null;
+type StatusKind = 'nothing_to_submit' | 'already_pending' | 'already_pending_unchanged' | 'rate_limited' | null;
 
 export function PortalChangeRequestForm({
   initialValues,
@@ -251,7 +251,7 @@ export function PortalChangeRequestForm({
         body: JSON.stringify(buildProposalBody(values, canProposeCompanyFields)),
       });
       const data = (await res.json().catch(() => null)) as
-        | { outcome?: string; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
+        | { outcome?: string; unchanged?: boolean; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
         | null;
 
       if (res.ok) {
@@ -261,7 +261,10 @@ export function PortalChangeRequestForm({
           return;
         }
         if (data?.outcome === 'already_pending') {
-          setStatus({ kind: 'already_pending' });
+          // `unchanged`: the member typed the RECORD's values back while a
+          // different proposal is pending — "these changes are awaiting
+          // review" would be a lie (round 7, code R1)
+          setStatus({ kind: data.unchanged === true ? 'already_pending_unchanged' : 'already_pending' });
           return;
         }
         if (data?.outcome === 'nothing_to_submit') {
@@ -358,6 +361,8 @@ export function PortalChangeRequestForm({
       ? tStatus('nothingToSubmit')
       : status.kind === 'already_pending'
         ? tStatus('alreadyPending')
+        : status.kind === 'already_pending_unchanged'
+          ? tStatus('alreadyPendingUnchanged')
         : status.kind === 'rate_limited'
           ? (status.retryAt ? tStatus('rateLimited', { retryAt: status.retryAt }) : tStatus('rateLimitedGeneric'))
           : '';

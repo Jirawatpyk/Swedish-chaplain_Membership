@@ -52,9 +52,9 @@ export function ContactLanguageForm({ initialValue }: ContactLanguageFormProps):
         announce(t('savedToast'));
       } else {
         setValue(saved);
-        // 503 = the write freeze, 429 = the profile rate limit: both are
-        // "try later", not "something broke"
-        const message = res.status === 503 ? t('readOnlyToast') : res.status === 429 ? t('rateLimitedToast') : t('errorToast');
+        // 503 = the write freeze (READ_ONLY_MODE): "try later", not "something
+        // broke". (`PATCH /api/portal/profile` has no rate limit — round 7.)
+        const message = res.status === 503 ? t('readOnlyToast') : t('errorToast');
         toast.error(message);
         announce(message);
       }

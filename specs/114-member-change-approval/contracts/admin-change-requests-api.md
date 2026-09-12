@@ -27,7 +27,7 @@ Default order: pending first by `submitted_at ASC` (oldest waiting on top), else
 
 `?submitter=<userId>&state=pending` with exactly one row is what the staff email links to; the page
 redirects to `/admin/change-requests/[id]`, or shows "no pending request — decided by X at T" when
-none (the coalescing case).
+none (a colleague decided it before the reviewer opened the email).
 
 ## `GET /api/admin/change-requests/[id]` — review payload (FR-019) · `members.read`
 
@@ -69,6 +69,14 @@ Success:
 
 ```json
 200 { "request": StaffChangeRequestView /* state decided, outcome derived */, "applied": ["phone"], "rejected": ["description"], "repeated": false }
+// the decision is COMMITTED but the joined display names could not be re-read →
+200 { "request": { id, state, outcome, decidedAt, … /* bare, no member / submitter names */ }, "applied": […], "rejected": […], "repeated": false, "viewUnavailable": true }
+// the decision is COMMITTED but the joined display names could not be re-read →
+200 { "request": { id, state, outcome, decidedAt, … /* bare, no member / submitter names */ }, "applied": […], "rejected": […], "repeated": false, "viewUnavailable": true }
+// the decision is COMMITTED but the joined display names could not be re-read →
+200 { "request": { id, state, outcome, decidedAt, … /* bare, no member / submitter names */ }, "applied": […], "rejected": […], "repeated": false, "viewUnavailable": true }
+// the decision is COMMITTED but the joined display names could not be re-read →
+200 { "request": { id, state, outcome, decidedAt, … /* bare, no member / submitter names */ }, "applied": […], "rejected": […], "repeated": false, "viewUnavailable": true }
 ```
 
 Side effects in ONE transaction (`research.md` R4): approved fields applied via

@@ -70,8 +70,9 @@ export function overlayFields(values: ChangeRequestFormValues, fields: readonly 
         }
         break;
       default: {
-        // a tenth Group B key must fail the build here, not fall through and
-        // silently prefill the resubmit form from the LIVE record (round 6)
+        // a tenth Group B key fails the BUILD here (compile-time only — at
+        // runtime an unknown key is skipped and that field prefills from the
+        // LIVE record; the build failure is what stops that shipping) (round 6)
         const _exhaustive: never = f.key;
         void _exhaustive;
       }

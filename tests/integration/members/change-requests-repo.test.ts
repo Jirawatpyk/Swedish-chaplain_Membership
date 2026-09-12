@@ -309,25 +309,28 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
       return drizzleChangeRequestRepo.insertInTx(tx, newer);
     });
     expect(seeded.ok).toBe(true);
-    const all = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor: null, limit: 50 });
-    expect(all.ok).toBe(true);
-    if (!all.ok) return;
-    const ids = all.value.items.map((r) => r.request.id);
-    const seen: string[] = [];
-    let cursor: typeof all.value.nextCursor = null;
-    for (let i = 0; i < 20; i += 1) {
-      const page = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor, limit: 1 });
-      expect(page.ok).toBe(true);
-      if (!page.ok) return;
-      seen.push(...page.value.items.map((r) => r.request.id));
-      cursor = page.value.nextCursor;
-      if (cursor === null) break;
+    try {
+      const all = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor: null, limit: 50 });
+      expect(all.ok).toBe(true);
+      if (!all.ok) return;
+      const ids = all.value.items.map((r) => r.request.id);
+      const seen: string[] = [];
+      let cursor: typeof all.value.nextCursor = null;
+      for (let i = 0; i < 20; i += 1) {
+        const page = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor, limit: 1 });
+        expect(page.ok).toBe(true);
+        if (!page.ok) return;
+        seen.push(...page.value.items.map((r) => r.request.id));
+        cursor = page.value.nextCursor;
+        if (cursor === null) break;
+      }
+      expect(seen).toEqual(ids); // same order, every row once
+      expect(new Set(seen).size).toBe(ids.length);
+      // clean up the two rows so the sibling cases keep their counts
+    } finally {
+      // owner-role delete (chamber_app has no DELETE grant; the app never hard-deletes)
+      await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, [older.id, newer.id]));
     }
-    expect(seen).toEqual(ids); // same order, every row once
-    expect(new Set(seen).size).toBe(ids.length);
-    // clean up the two rows so the sibling cases keep their counts
-    // owner-role delete (chamber_app has no DELETE grant; the app never hard-deletes)
-    await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, [older.id, newer.id]));
   });
 
   it('withdrawInTx: pending → withdrawn/replaced with the pointer; list projections carry member + submitter facts', async () => {

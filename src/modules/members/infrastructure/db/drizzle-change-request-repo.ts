@@ -21,6 +21,7 @@
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, sql } from 'drizzle-orm';
 import type { Member } from '../../domain/member';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 // The outbox / users tables live in the auth-shared schema. Same documented
@@ -39,7 +40,15 @@ import type {
 } from '../../application/ports/change-request-repo';
 import type { RepoError } from '../../application/ports/member-repo';
 import { changeRequestInvariantViolation, type ChangeRequest, type ChangeRequestId, type ChangeRequestOutcome, type ChangeRequestScope, type ChangeRequestState, type FieldOutcome, type ProposedField, type ProposedValue, type SubmitterRole, type WithdrawnReason } from '../../domain/change-request/change-request';
-import { PROPOSABLE_FIELD_KEYS, PROPOSABLE_FIELD_TARGET, type ProposableFieldKey, type ProposedFieldTarget } from '../../domain/change-request/proposable-fields';
+import {
+  BILLING_ADDRESS_LINES,
+  PROPOSABLE_FIELD_KEYS,
+  PROPOSABLE_FIELD_TARGET,
+  REGISTERED_ADDRESS_LINES,
+  isAddressGroupKey,
+  isProposableFieldKey,
+  type ProposableFieldKey,
+} from '../../domain/change-request/proposable-fields';
 import type { ContactId } from '../../domain/contact';
 import type { UserId } from '../../domain/value-objects/user-id';
 import type { MemberId, TenantId } from '../../domain/member';
@@ -63,27 +72,52 @@ import {
  * (→ `repo.unexpected`), never a `number` handed to `.trim()` on the review
  * page (round 6, types F8).
  */
-function parseProposedValue(raw: unknown, key: string, column: string): ProposedValue {
-  if (raw === null || raw === undefined || typeof raw === 'string') return (raw ?? null) as ProposedValue;
-  if (typeof raw === 'object' && !Array.isArray(raw)) {
-    for (const [line, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (v !== null && typeof v !== 'string') throw new Error(`member_change_request_fields.${column} for ${key}: line ${line} is not text`);
-    }
-    return raw as ProposedValue;
+/**
+ * A row that contradicts the schema's own rules — a key outside the CHECK, a
+ * value of the wrong shape, a state whose columns disagree. Named so `errKind`
+ * yields something an operator can grep, and LOGGED at the throw with the
+ * ids the message carries (no field value ever sits in it) — `repo.unexpected`
+ * alone said nothing (round 7, silent-failure R3).
+ */
+export class ChangeRequestRowError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChangeRequestRowError';
   }
-  throw new Error(`member_change_request_fields.${column} for ${key}: not a text or address value`);
+}
+function corruptRow(message: string, ids: Record<string, string>): ChangeRequestRowError {
+  logger.error({ ...ids, err: 'ChangeRequestRowError' }, `member_change_requests: ${message}`);
+  return new ChangeRequestRowError(message);
+}
+
+function parseProposedValue(raw: unknown, key: ProposableFieldKey, column: string, requestId: string): ProposedValue {
+  const address = isAddressGroupKey(key);
+  if (raw === null || raw === undefined) return null;
+  if (!address) {
+    if (typeof raw === 'string') return raw;
+    throw corruptRow(`${column} for ${key} is not text`, { requestId, fieldKey: key });
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw corruptRow(`${column} for ${key} is not an address object`, { requestId, fieldKey: key });
+  const lines: readonly string[] = key === 'billing_address' ? BILLING_ADDRESS_LINES : REGISTERED_ADDRESS_LINES;
+  for (const [line, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!lines.includes(line)) throw corruptRow(`${column} for ${key} carries an unknown line ${line}`, { requestId, fieldKey: key });
+    if (v !== null && typeof v !== 'string') throw corruptRow(`${column} for ${key}: line ${line} is not text`, { requestId, fieldKey: key });
+  }
+  return raw as ProposedValue;
 }
 
 function fieldRowToDomain(f: MemberChangeRequestFieldRow): ProposedField {
-  const key = f.fieldKey as ProposableFieldKey;
+  // the key is the CHECK's closed set (round 7): an unknown key is a corrupt
+  // row, never a cast that sorts to −1 and trusts the stored target
+  if (!isProposableFieldKey(f.fieldKey)) throw corruptRow(`unknown field_key ${f.fieldKey}`, { requestId: f.requestId, fieldKey: f.fieldKey });
+  const key = f.fieldKey;
   return {
     key,
     // the target is DERIVED from the key (one source, round 6 types F3); the
-    // stored column stays for query convenience and a contradicting row is a
-    // corrupt row, not a second opinion
-    target: PROPOSABLE_FIELD_TARGET[key] ?? (f.target as ProposedFieldTarget),
-    seen: parseProposedValue(f.seenValue, key, 'seen_value'),
-    proposed: parseProposedValue(f.proposedValue, key, 'proposed_value'),
+    // stored column stays for query convenience only
+    target: PROPOSABLE_FIELD_TARGET[key],
+    seen: parseProposedValue(f.seenValue, key, 'seen_value', f.requestId),
+    proposed: parseProposedValue(f.proposedValue, key, 'proposed_value', f.requestId),
     affectsTaxDocuments: f.affectsTaxDocuments,
     outcome: (f.outcome ?? null) as FieldOutcome | null,
     appliedAt: f.appliedAt ?? null,
@@ -126,7 +160,7 @@ function rowToDomain(r: MemberChangeRequestRow, fieldRows: readonly MemberChange
   // that contradicts its state is a corrupt row → repo.unexpected, never a
   // Domain object that every consumer must null-check again
   const violation = changeRequestInvariantViolation(request);
-  if (violation !== null) throw new Error(`member_change_requests: ${violation}`);
+  if (violation !== null) throw corruptRow(violation, { requestId: r.id });
   return request;
 }
 
@@ -421,7 +455,12 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         if (touched.length !== 1) throw new Error(`decideInTx: ${touched.length} field rows for key ${f.key} on ${row.id}`);
       }
       const fields = await loadFields(tx, [row.id]);
-      return ok(rowToDomain(row, fields.get(row.id) ?? []));
+      const rows = fields.get(row.id) ?? [];
+      // the converse of the per-key assert above: a decided request must have
+      // NO undecided field row (round 7, types F7 / #2) — the tx rolls back
+      const undecided = rows.filter((f) => f.outcome === null).map((f) => f.fieldKey);
+      if (undecided.length > 0) throw new Error(`decideInTx: decision leaves ${undecided.join(', ')} undecided on ${row.id}`);
+      return ok(rowToDomain(row, rows));
     } catch (e) {
       return err(unexpected(e));
     }

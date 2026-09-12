@@ -169,8 +169,11 @@ export type RepoError =
 /** Checked narrowing for a caught `UseCaseAbort<unknown>` — an `as RepoError` cast reads `code` off anything (round 6, types F9). */
 export function isRepoError(value: unknown): value is RepoError {
   if (!value || typeof value !== 'object') return false;
-  const code = (value as { code?: unknown }).code;
-  return code === 'repo.not_found' || code === 'repo.conflict' || code === 'repo.unexpected';
+  const { code, reason } = value as { code?: unknown; reason?: unknown };
+  if (code === 'repo.not_found' || code === 'repo.unexpected') return true;
+  // a conflict without its reason is not a RepoError (round 7, types F9):
+  // the narrowed read of `reason` would be `undefined` at runtime
+  return code === 'repo.conflict' && typeof reason === 'string';
 }
 
 /**

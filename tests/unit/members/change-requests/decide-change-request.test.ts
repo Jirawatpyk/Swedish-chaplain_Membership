@@ -492,7 +492,7 @@ describe('decideChangeRequest — the decision in ONE transaction (FR-015 / FR-0
     const r = await decideChangeRequest(deps, input(ALL_APPROVED));
     expect(r).toEqual({
       ok: false,
-      error: { type: 'already_decided', decidedByUserId: REVIEWER, decidedAt: NOW, outcome: 'partially_approved' },
+      error: { type: 'already_decided', decided: { byUserId: REVIEWER, at: NOW, outcome: 'partially_approved' } },
     });
     expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'already_decided');
     // same outcomes but a different reason is also a different decision
@@ -505,7 +505,8 @@ describe('decideChangeRequest — the decision in ONE transaction (FR-015 / FR-0
     // simulate: the read says pending but decideInTx matches 0 rows
     repo.failNext('decideInTx', { code: 'repo.not_found' });
     const r = await decideChangeRequest(deps, input(ALL_APPROVED));
-    expect(r).toMatchObject({ ok: false, error: { type: 'already_decided' } });
+    // the loser has NOTHING to report — one honest null, not three (round 7, types S6)
+    expect(r).toEqual({ ok: false, error: { type: 'already_decided', decided: null } });
   });
 });
 
@@ -551,5 +552,40 @@ describe('decideChangeRequest — throw-to-rollback after the first write (FR-01
     const { deps } = makeDeps();
     vi.mocked(runInTenant).mockRejectedValueOnce(new Error('neon down'));
     expect(await decideChangeRequest(deps, input(ALL_APPROVED))).toMatchObject({ ok: false, error: { type: 'server_error' } });
+  });
+});
+
+describe('decideChangeRequest — a whitespace-only difference is "already current" (round 7, tests N10)', () => {
+  it('approving a description that differs from the record only by surrounding whitespace writes nothing', async () => {
+    const { deps, memberRepo } = makeDeps({
+      member: member({ description: '  A chamber member  ' } as Partial<Member>),
+      request: pendingRequest({ fields: [{ key: 'description', target: 'member', seen: 'A chamber member', proposed: 'A chamber member', affectsTaxDocuments: false, outcome: null, appliedAt: null }] }),
+    });
+    const r = await decideChangeRequest(deps, input([{ key: 'description', outcome: 'approved' }]));
+    expect(r.ok).toBe(true);
+    expect(memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
+  });
+});
+
+describe('decideChangeRequest — the re-validation 422 names the field (round 7, tests N5)', () => {
+  it("a billing country the submit schema accepted but asIsoCountryCode refuses ('ZZ') → validation_error at company.billing_address.country", async () => {
+    const { deps } = makeDeps({
+      request: pendingRequest({
+        scope: 'company',
+        fields: [{ key: 'billing_address', target: 'member', seen: null, proposed: { line1: 'Box 9', line2: null, sub_district: null, city: 'X', province: null, postal_code: '11122', country: 'ZZ' }, affectsTaxDocuments: true, outcome: null, appliedAt: null }],
+      }),
+    });
+    const r = await decideChangeRequest(deps, input([{ key: 'billing_address', outcome: 'approved' }]));
+    expect(r).toMatchObject({ ok: false, error: { type: 'validation_error', issues: [{ path: ['company', 'billing_address', 'country'] }] } });
+  });
+});
+
+describe('decideChangeRequest — the tx_aborted log carries the CAUSE (round 7, tests N3)', () => {
+  it('a repo fault with a cause logs cause: <error kind>, not only repo.unexpected', async () => {
+    const { deps, memberRepo } = makeDeps();
+    memberRepo.updateFieldsInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: new TypeError('column missing') }));
+    const r = await decideChangeRequest(deps, input(ALL_APPROVED));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected', cause: 'TypeError' }), 'change-request.decide.tx_aborted');
   });
 });

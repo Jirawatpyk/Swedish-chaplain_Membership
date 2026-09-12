@@ -3,11 +3,13 @@
  * `member_change_request_fields` (migration 0300; data-model.md § 1–2).
  *
  * Drift-hygiene bindings, NOT a full mirror of the DDL: the partial unique
- * index, the indexes and the field-row composite FK are declared below so
- * `pnpm db:verify` / a schema diff can see them; the parent `UNIQUE
- * (tenant_id, id)`, the DEFERRABLE `replaced_by` self-FK, the eight CHECK
- * constraints and the RLS policies exist ONLY in migration 0300 (drizzle-kit
- * cannot emit them — `scripts/verify-schema.ts` carries their canaries).
+ * index, the indexes and the field-row composite FK are declared below so a
+ * schema diff of this file can see them; the parent `UNIQUE (tenant_id, id)`,
+ * the DEFERRABLE `replaced_by` self-FK, the eight NAMED `*_ck` table
+ * constraints plus the ten anonymous column-level CHECKs, and the RLS
+ * policies exist ONLY in migration 0300 (drizzle-kit cannot emit them).
+ * `pnpm db:verify` never reads this file — `scripts/verify-schema.ts` runs
+ * hand-written SQL against the live database and carries the canaries.
  * Inferred row types STAY in this file — the Domain
  * `ChangeRequest` / `ProposedField` are hand-declared and mapped in
  * `drizzle-change-request-repo.ts` (Principle III).

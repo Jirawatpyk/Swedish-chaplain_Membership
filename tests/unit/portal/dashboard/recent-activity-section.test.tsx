@@ -75,6 +75,7 @@ vi.mock('@/modules/members/members-deps', () => ({
 const timelineListMock = vi.fn();
 vi.mock('@/modules/members', () => ({
   timelineList: (...args: unknown[]) => timelineListMock(...args),
+  asMemberId: (id: string) => id,
 }));
 
 import { RecentActivitySection } from '@/app/(member)/portal/_components/recent-activity-section';

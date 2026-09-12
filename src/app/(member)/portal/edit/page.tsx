@@ -36,12 +36,18 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('pageTitle') };
 }
 
+/**
+ * The failed-read state (a pending-read or profile fault). `role="alert"` so
+ * assistive tech announces it, and NOT `text-muted-foreground` — muted is the
+ * repo's EMPTY-state sentinel, and this is an error (round 7, silent-failure
+ * N4). A retry is a reload (server component), so the copy says so.
+ */
 function loadFailed(title: string, message: string) {
   return (
     <FormContainer>
       <PageHeader title={title} />
-      <div className="py-12 text-center">
-        <p className="text-body text-muted-foreground">{message}</p>
+      <div role="alert" className="py-12 text-center">
+        <p className="text-body">{message}</p>
       </div>
     </FormContainer>
   );
@@ -162,20 +168,23 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const resubmitRaw = Array.isArray(sp.resubmit) ? sp.resubmit[0] : sp.resubmit;
   if (!pending && resubmitRaw && UUID_RE.test(resubmitRaw)) {
-    try {
-      const decided = await deps.changeRequestRepo.findById(tenant, resubmitRaw as ChangeRequestId);
-      if (decided.ok && decided.value.state === 'decided' && decided.value.submittedByUserId === asMembersUserId(user.id)) {
-        resubmitOf = serialiseChangeRequestForPortal(decided.value, {
-          contactId: ownContact.contactId,
-          displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
-          isMe: true,
-        });
-      }
-    } catch (e) {
+    // the repo answers a Result (its body is try/caught) — a fault is THIS
+    // arm, not a throw; the member still gets the live form (no error, no
+    // existence leak) but ops see why the rejected values were not prefilled
+    // (round 7, code N1: the previous catch was dead and this arm was silent)
+    const decided = await deps.changeRequestRepo.findById(tenant, resubmitRaw as ChangeRequestId);
+    if (!decided.ok && decided.error.code !== 'repo.not_found') {
       logger.error(
-        { errorId: 'M114.portal.edit.resubmit_read_failed', err: errKind(e), tenantId: tenant.slug, userId: user.id },
+        { errorId: 'M114.portal.edit.resubmit_read_failed', err: decided.error.code, tenantId: tenant.slug, userId: user.id },
         'portal.edit.resubmit_read_failed',
       );
+    }
+    if (decided.ok && decided.value.state === 'decided' && decided.value.submittedByUserId === asMembersUserId(user.id)) {
+      resubmitOf = serialiseChangeRequestForPortal(decided.value, {
+        contactId: ownContact.contactId,
+        displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
+        isMe: true,
+      });
     }
   }
 

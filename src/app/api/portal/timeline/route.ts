@@ -131,6 +131,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // F114 (privacy I-1) — the viewer's OWN contact; a read FAULT is a 500,
+  // never "unresolvable → drop the viewer's own rows" (round 7, types #3)
+  const ownContact = await resolveOwnContactId(deps.contactRepo, tenant, member.memberId, user.id, requestId);
+  if (!ownContact.ok) {
+    logger.error({ requestId, err: ownContact.error.code }, 'portal.timeline.own_contact_read_failed');
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
+  }
   const result = await timelineList(
     {
       memberId: member.memberId,
@@ -153,7 +160,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       timeline: deps.timeline,
       // F114 (privacy I-1) — the viewer's OWN contact, so a colleague's
       // own-field change request never reaches this person's timeline
-      viewerContactId: await resolveOwnContactId(deps.contactRepo, tenant, member.memberId, user.id, requestId),
+      viewerContactId: ownContact.value,
       // 016 review (security I-1) — the member's OWN billing history. The
       // money gate exists to stop STAFF without `invoicing.read` reading
       // someone else's invoices; the subject's own rows are the point of this

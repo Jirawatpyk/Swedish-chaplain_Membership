@@ -109,6 +109,10 @@ export {
   type SubmitterRole,
   type ProposedField,
   type ProposedValue,
+  isDecided,
+  isWithdrawn,
+  type DecidedChangeRequest,
+  type WithdrawnChangeRequest,
 } from './domain/change-request/change-request';
 export {
   deriveOutcome,

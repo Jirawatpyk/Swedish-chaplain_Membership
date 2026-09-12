@@ -379,6 +379,15 @@ describe('state-machine narrowing + the seam check (round 6, types F6)', () => {
     expect(isDecided(withdrawn)).toBe(false);
   });
 
+  it('a decided request whose field rows are not all decided, or whose appliedAt contradicts the field outcome, is named (round 7, types #2)', () => {
+    const decided: ChangeRequest = { ...base, state: 'decided', outcome: 'approved', decidedAt: new Date(), decidedByUserId: 'rev' as ChangeRequest['decidedByUserId'] };
+    const field = { key: 'phone' as const, target: 'contact' as const, seen: null, proposed: '+66899999999', affectsTaxDocuments: false };
+    expect(changeRequestInvariantViolation({ ...decided, fields: [{ ...field, outcome: 'approved', appliedAt: new Date() }] })).toBeNull();
+    expect(changeRequestInvariantViolation({ ...decided, fields: [{ ...field, outcome: null, appliedAt: null }] })).toMatch(/field phone has no outcome/);
+    expect(changeRequestInvariantViolation({ ...decided, fields: [{ ...field, outcome: 'rejected', appliedAt: new Date() }] })).toMatch(/appliedAt/);
+    expect(changeRequestInvariantViolation({ ...base, fields: [{ ...field, outcome: 'approved', appliedAt: null }] })).toMatch(/pending request .* field phone carries an outcome/);
+  });
+
   it('a row that contradicts its state is named (the DB CHECKs make these unreachable; the seam still refuses them)', () => {
     expect(changeRequestInvariantViolation({ ...base, state: 'decided' })).toMatch(/lacks outcome/);
     expect(changeRequestInvariantViolation({ ...base, state: 'withdrawn' })).toMatch(/lacks withdrawnReason/);

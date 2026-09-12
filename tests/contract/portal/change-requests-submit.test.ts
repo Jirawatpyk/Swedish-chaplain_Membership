@@ -12,9 +12,10 @@
  * `{ error: <code>, message?, issues? }`, 201 `submitted` / 200
  * `nothing_to_submit` / 200 `already_pending`, 403 `forbidden` /
  * `company_fields_require_primary` / `member_archived`, 422 `validation_error`
- * with `issues`, 429 `rate_limited` with `Retry-After`, a staff session → the
- * member-context 403, and the `errorId` taxonomy on the 500 arm. Read-only
- * mode (FR-036 / T116) is the proxy's 503 — asserted in the read-only harness.
+ * with `issues`, the interim 429 `rate_limited` (a route-level PEEK, consumed
+ * only on `submitted`, counted on `refused{rate_limited}`), a staff session →
+ * the member-context 403, and the `errorId` taxonomy on the 500 arm. Read-only
+ * mode (FR-036 / T116) is the IN-ROUTE 503, asserted below.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';

@@ -177,9 +177,13 @@ describe('change requests — concurrency on live Neon (T049)', () => {
     expect(losers).toHaveLength(1);
     expect(losers[0]).toMatchObject({ ok: false, error: { type: 'already_decided' } });
     if (losers[0] && !losers[0].ok && losers[0].error.type === 'already_decided') {
-      // FR-018 — the loser is told who decided and how
-      expect([reviewerA.userId, reviewerB.userId]).toContain(losers[0].error.decidedByUserId);
-      expect(losers[0].error.outcome).not.toBeNull();
+      // FR-018 — the loser is told who decided and how; the lock-race loser
+      // (a null `decided`) is the route's job to fill from the recorded row
+      const decided = losers[0].error.decided;
+      if (decided !== null) {
+        expect([reviewerA.userId, reviewerB.userId]).toContain(decided.byUserId);
+        expect(decided.outcome).not.toBeNull();
+      }
     }
 
     const [row] = await db.select().from(memberChangeRequests).where(eq(memberChangeRequests.id, requestId));

@@ -131,6 +131,14 @@ export function isWithdrawn(r: ChangeRequest): r is WithdrawnChangeRequest {
  * Returns the message, or null when the row is consistent.
  */
 export function changeRequestInvariantViolation(r: ChangeRequest): string | null {
+  // field-level (round 7, types #2): `appliedAt` ⇔ approved on every row
+  // (0300 `applied_iff_approved_ck`); a decided request has NO undecided row
+  // (the coverage `decideInTx` asserts) and a pending one has NO decided row
+  for (const f of r.fields) {
+    if (r.state === 'decided' && f.outcome === null) return `decided request ${r.id}: field ${f.key} has no outcome`;
+    if (r.state === 'pending' && f.outcome !== null) return `pending request ${r.id}: field ${f.key} carries an outcome`;
+    if ((f.appliedAt !== null) !== (f.outcome === 'approved')) return `request ${r.id}: field ${f.key} appliedAt contradicts its outcome`;
+  }
   switch (r.state) {
     case 'pending':
       if (r.outcome !== null || r.decidedAt !== null || r.decidedByUserId !== null || r.withdrawnAt !== null || r.withdrawnReason !== null) {

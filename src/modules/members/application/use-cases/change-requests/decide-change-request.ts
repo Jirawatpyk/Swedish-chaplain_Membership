@@ -43,7 +43,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { isDecided, DECISION_NOTE_MAX_LENGTH, DECISION_REASON_MAX_LENGTH, type ChangeRequest, type ChangeRequestId, type ChangeRequestOutcome, type FieldOutcome, type ProposedField, type ProposedValue } from '../../../domain/change-request/change-request';
 import { validateProposal } from '../../../domain/change-request/field-rules';
-import { deriveOutcome, proposedValuesEqual, type GroupBProposal, type GroupBRecord } from '../../../domain/change-request/policies';
+import { deriveOutcome, proposedValuesEqual, type GroupBProposal, type GroupBRecord, normaliseText } from '../../../domain/change-request/policies';
 import {
   type BillingAddress,
   type ProposableFieldKey,
@@ -116,9 +116,8 @@ export type DecideChangeRequestError =
   | { readonly type: 'not_pending' }
   | {
       readonly type: 'already_decided';
-      readonly decidedByUserId: UserId | null;
-      readonly decidedAt: Date | null;
-      readonly outcome: ChangeRequestOutcome | null;
+      /** The recorded decision, or null when this caller LOST the lock race and holds nothing (round 7, types S6 — one honest null, never three). */
+      readonly decided: { readonly byUserId: UserId; readonly at: Date; readonly outcome: ChangeRequestOutcome } | null;
     }
   | { readonly type: 'member_archived' }
   | { readonly type: 'member_erasing' }
@@ -130,11 +129,6 @@ export type DecideChangeRequestError =
 // Input rules (FR-014) — before any read
 // ---------------------------------------------------------------------------
 
-function normaliseText(value: string | null): string | null {
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-}
 
 function checkInput(input: DecideChangeRequestInput): DecideChangeRequestError | null {
   const seen = new Set<string>();
@@ -348,9 +342,7 @@ export async function decideChangeRequest(
         // narrowed: a decided row always carries who / when / what (F6)
         throw new Refusal({
           type: 'already_decided',
-          decidedByUserId: request.decidedByUserId,
-          decidedAt: request.decidedAt,
-          outcome: request.outcome,
+          decided: { byUserId: request.decidedByUserId, at: request.decidedAt, outcome: request.outcome },
         });
       }
 
@@ -389,7 +381,7 @@ export async function decideChangeRequest(
       // 6. approved values re-validated with the staff rules (FR-006).
       const validated = validateProposal(proposalOf(approvedFields));
       if (!validated.ok) throw new Refusal({ type: 'validation_error', issues: validated.error });
-      const record = groupBRecordOf(member, contact ?? removedContactStandIn(request));
+      const record = groupBRecordOf(member, contact ?? removedContactStandIn());
       const patches = patchesOf(validated.value, approvedKeys, record);
       if (!patches.ok) throw new Refusal(patches.error);
 
@@ -408,7 +400,14 @@ export async function decideChangeRequest(
       }
 
       // 8. the decision rows.
-      const overall = deriveOutcome(request.fields.map((f) => outcomeByKey.get(f.key) as FieldOutcome));
+      // `checkCoverage` proved every key is present; a checked lookup keeps
+      // that proof visible instead of three casts (round 7, types N3)
+      const outcomeOf = (key: string): FieldOutcome => {
+        const o = outcomeByKey.get(key);
+        if (o === undefined) throw new Error(`decide: no decision for field ${key} after coverage check`);
+        return o;
+      };
+      const overall = deriveOutcome(request.fields.map((f) => outcomeOf(f.key)));
       const decision: ChangeRequestDecision = {
         decidedAt: now,
         decidedByUserId: input.actorUserId,
@@ -416,7 +415,7 @@ export async function decideChangeRequest(
         reason,
         note,
         fields: request.fields.map((f) => {
-          const o = outcomeByKey.get(f.key) as FieldOutcome;
+          const o = outcomeOf(f.key);
           return { key: f.key, outcome: o, appliedAt: o === 'approved' ? now : null };
         }),
       };
@@ -424,7 +423,7 @@ export async function decideChangeRequest(
       if (!decided.ok) {
         // 0 rows matched `state = 'pending'`: a concurrent decision won the lock race.
         if (decided.error.code === 'repo.not_found') {
-          throw new Refusal({ type: 'already_decided', decidedByUserId: null, decidedAt: null, outcome: null });
+          throw new Refusal({ type: 'already_decided', decided: null });
         }
         throw new UseCaseAbort<RepoError>(decided.error);
       }
@@ -441,7 +440,7 @@ export async function decideChangeRequest(
           contact_id: request.submittedByContactId,
           scope: request.scope,
           outcome: overall,
-          fields: request.fields.map((f) => ({ key: f.key, outcome: outcomeByKey.get(f.key) })),
+          fields: request.fields.map((f) => ({ key: f.key, outcome: outcomeOf(f.key) })),
           reason_length: reason?.length ?? 0,
           // round 5 (silent-failure #3) — a decision nobody was told about is
           // a fact on the trail (DSAR-visible via related_member_id), not an

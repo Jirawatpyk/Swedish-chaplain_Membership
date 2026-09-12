@@ -27,8 +27,11 @@ request (never another contact's).
 
 ## `POST /api/portal/change-requests` — submit (spec US1, FR-001–FR-008)
 
-Headers: `Idempotency-Key` optional (same semantics as `/api/portal/profile`: same key + same body
-→ stored response; same key + different body → 422 `idempotency-key-reused`).
+Headers: `Idempotency-Key` optional (same semantics as `/api/portal/profile`: a PRESENT malformed
+key → 400; same key + same body → the stored response; same key + different body → 422
+`idempotency-key-reused`). The stored response is REDUCED — `{ replay: true, outcome, request:
+{ id, state, scope, submittedAt }, replaced?, staffNotified?, unchanged? }`, never a field value
+(the Redis record outlives the FR-030 erasure scrub); the client reads `outcome` only.
 
 Body (all keys optional; at least one must differ from the record):
 
@@ -44,9 +47,14 @@ Body (all keys optional; at least one must differ from the record):
 Rules (server): keys outside Group B → **403 `forbidden`** + `member_self_update_forbidden` audit;
 `company` present while the caller is not primary → **403 `company_fields_require_primary`** +
 the same audit; validation per `research.md` R14 → **422 `validation_error`** with `issues`;
-nothing differs from the record → **200 `{ "outcome": "nothing_to_submit" }`** (no row); identical
-to the caller's pending request → **200 `{ "outcome": "already_pending", "request": … }`**;
-≥ 10 requests in 24 h → **429 `rate_limited`** with `Retry-After` + audit; member archived →
+nothing differs from the record and nothing is pending → **200 `{ "outcome": "nothing_to_submit" }`**
+(no row); identical to the caller's pending request → **200 `{ "outcome": "already_pending",
+"unchanged": false, "request": … }`**; nothing differs from the record while a DIFFERENT proposal
+is pending → **200 `{ "outcome": "already_pending", "unchanged": true, "request": <the pending one> }`**
+(the member cannot silently "revert" a pending proposal — withdrawing is US5); ≥ 10 requests in
+24 h → **429 `rate_limited`** with `Retry-After` (PR-1: the interim route-level cap emits
+`members_change_request_refused_total{reason=rate_limited}` only — the audit event is T087);
+member archived →
 **403 `member_archived`**.
 
 Success:
@@ -55,9 +63,11 @@ Success:
 201 { "outcome": "submitted", "request": ChangeRequestView, "replaced": "<previous request id>" | null, "staffNotified": true | false }
 ```
 
-`staffNotified=false` when coalesced (FR-011). Side effects in ONE transaction: previous pending
-(same submitter) → `withdrawn/replaced`; insert request + fields; audit
-`member_change_request_submitted`; outbox rows for reviewers unless coalesced.
+`staffNotified=true` when at least one reviewer outbox row was queued; `false` means the reviewer
+roster was EMPTY (nobody is emailed — `members_change_request_no_reviewers_total` pages). The FR-011
+1 h coalescing is T087 (PR-2) and will add a third meaning. Side effects in ONE transaction: previous
+pending (same submitter) → `withdrawn/replaced`; insert request + fields; audit
+`member_change_request_submitted`; one outbox row per active reviewer.
 
 ## `GET /api/portal/change-requests` — own history (FR-029)
 
@@ -118,7 +128,8 @@ the client formats (BE for `th-TH`, display-only).
 - flag OFF → 404 on every route; flag ON + setting OFF → `gate.mode = immediate`, POST 409.
 - role pins: staff session → 403 on every route (`member-context` refusal).
 - POST: each Group C key → 403 + audit; company key from a secondary → 403; each validation
-  example in US1 AS4 → 422; equal payload → `nothing_to_submit`; 11th in 24 h → 429 with
-  `Retry-After`.
+  example in US1 AS4 → 422; equal payload → `nothing_to_submit` (or `already_pending` +
+  `unchanged: true` while a different proposal is pending); 11th in 24 h → 429 with
+  `Retry-After` (no audit row — metric only, until T087).
 - GET history: a secondary's own-field request is absent from the primary's list and vice versa.
 - DELETE: 200 then 404.

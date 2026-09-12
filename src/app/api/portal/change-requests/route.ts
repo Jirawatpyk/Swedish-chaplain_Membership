@@ -16,7 +16,8 @@
  * Error envelope: `{ error: <code>, message?, issues?, fields?, retryAfterSeconds? }`.
  * The two arms that can only be a FAULT (a throwing gate resolver, a failed
  * use case) name themselves in the errorId taxonomy (`M114.portal.submit.<arm>`);
- * the deterministic 4xx refusals are logged by the use case (or not at all).
+ * the deterministic 4xx refusals are logged by the use case, by this route
+ * for the interim 429 (metric + warn), or not at all.
  * `GET` (own history, FR-029) lands in US4 (T073) in this same file.
  */
 import { NextResponse, type NextRequest } from 'next/server';
@@ -36,9 +37,9 @@ import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { SUBMISSION_WINDOW_HOURS, SUBMISSIONS_PER_WINDOW_CAP, submitChangeRequest, type SubmitChangeRequestError } from '@/modules/members';
+import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 
 type SubmitRefusalError = SubmitChangeRequestError;
-import { serialiseChangeRequestForPortal } from './_serialise';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             },
           }
         : v.outcome === 'already_pending'
-          ? { status: 200, body: { outcome: 'already_pending' as const, request: serialiseChangeRequestForPortal(v.request, me) } }
+          ? { status: 200, body: { outcome: 'already_pending' as const, unchanged: v.unchanged, request: serialiseChangeRequestForPortal(v.request, me) } }
           : { status: 200, body: { outcome: 'nothing_to_submit' as const } };
     // The remembered body carries ids + outcome ONLY: the Redis record lives
     // 24 h outside the FR-030 scrub, so proposed values must not sit in it
@@ -206,12 +207,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
 type Refusal = { readonly status: number; readonly body: Record<string, unknown> };
 
-/** Ids + outcome only — never a field value (the idempotency store outlives the erasure scrub). */
-function rememberableBody(body: Record<string, unknown>): Record<string, unknown> {
-  const request = body['request'];
-  if (!request || typeof request !== 'object') return body;
-  const r = request as { id?: unknown; state?: unknown; scope?: unknown; submittedAt?: unknown };
-  return { ...body, request: { id: r.id, state: r.state, scope: r.scope, submittedAt: r.submittedAt } };
+/**
+ * Built BY CONSTRUCTION, never by subtraction (round 7, types S5): the
+ * remembered body names every key it carries — ids, outcome, the two
+ * booleans — so a future field with a value cannot ride along, and a
+ * replay is visibly the reduced shape (`replay: true`).
+ */
+type RememberableBody = {
+  readonly replay: true;
+  readonly outcome: 'submitted' | 'already_pending' | 'nothing_to_submit';
+  readonly request?: { readonly id: string; readonly state: string; readonly scope: string; readonly submittedAt: string };
+  readonly replaced?: string | null;
+  readonly staffNotified?: boolean;
+  readonly unchanged?: boolean;
+};
+function rememberableBody(body: {
+  readonly outcome: 'submitted' | 'already_pending' | 'nothing_to_submit';
+  readonly request?: { id: string; state: string; scope: string; submittedAt: string };
+  readonly replaced?: string | null;
+  readonly staffNotified?: boolean;
+  readonly unchanged?: boolean;
+}): RememberableBody {
+  const request = body.request ? { id: body.request.id, state: body.request.state, scope: body.request.scope, submittedAt: body.request.submittedAt } : undefined;
+  return {
+    replay: true,
+    outcome: body.outcome,
+    ...(request ? { request } : {}),
+    ...(body.replaced !== undefined ? { replaced: body.replaced } : {}),
+    ...(body.staffNotified !== undefined ? { staffNotified: body.staffNotified } : {}),
+    ...(body.unchanged !== undefined ? { unchanged: body.unchanged } : {}),
+  };
 }
 
 /** The 4xx arms the client can act on — stable for a given body, hence rememberable. */

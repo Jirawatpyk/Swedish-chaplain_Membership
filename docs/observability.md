@@ -449,17 +449,14 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `outbox_permanent_failures_total` | `rate > 0` sustained 5 min | Proactive Vercel Alert — admin sees `201 Created` but email never sends. Check Resend status, template integrity, and row `last_error` column. |
 | `outbox_stuck_rows_total` | `rate > 0` sustained 5 min | Cron dispatcher is down or lost `CRON_SECRET`. Verify Vercel Cron schedule + env var + recent function logs for `cron.outbox_dispatch.*`. |
 | `members.api.latency_ms` p95 | > 1 s for 5 consecutive min | Alarm → check Neon query plan, pg_trgm index health. |
-
 | `members_change_request_no_reviewers_total` | `rate > 0` | F114 — a tenant with no active `admin` / `super_admin`: every submit is created and nobody is emailed. Re-enable a reviewer; the pending rows drain on the next decide. |
+| `members_change_request_oldest_age_seconds` | > 14 d | F114 FR-037 — a member's proposal has aged half-way through the 30-day data-subject-request clock; open `/admin/change-requests` and decide it. **Bound to a gauge that has no emitter until T102 (PR-3)** — written here so the flip's pre-flight sees the rule. |
 
 #### Medium severity (notify on-call, investigate next business hour)
 
 | Event / Metric | Threshold | Action |
 |---|---|---|
-| `members_change_request_oldest_age_seconds` | > 7 d (warning) · > 14 d (page) | F114 FR-037 — a member's proposal is ageing inside the 30-day data-subject-request clock; open `/admin/change-requests`. **Bound to a gauge that has no emitter until T102 (PR-3)** — the rule is written here so the flip's gate list can point at it. |
-
-| Event / Metric | Threshold | Action |
-|---|---|---|
+| `members_change_request_oldest_age_seconds` | > 7 d | F114 FR-037 (warning; the > 14 d page is in the High table) — a member's proposal is ageing inside the 30-day data-subject-request clock; open `/admin/change-requests`. **Bound to a gauge that has no emitter until T102 (PR-3)** — the rule is written here so the flip's gate list can point at it. |
 | `member_self_update_forbidden` | ≥ 5 events in 10 min per actor | Investigate forged portal payload; possible script or compromised member session. Time-to-triage: 10 min. |
 | `outbox_permanent_failures_total` | ≥ 3 failures in 30 min | Check Resend rate limits and outbox `last_error` distribution. |
 | `members.bulk.rows_per_action` p95 | > 8 s for 100-row action | Bulk endpoint degraded — profile DB query + RLS policy latency. |

@@ -181,6 +181,12 @@ describe('submitChangeRequest — atomicity on live Neon (T034)', () => {
     // the member record itself is untouched (FR-001)
     const [m] = await db.select({ phone: contacts.phone }).from(contacts).where(eq(contacts.contactId, contactId));
     expect(m?.phone).toBe('+66812345678');
+    // …except its RECENCY: migration 0009's trigger fires on the snake_case
+    // `member_id` key the submitted event carries (round 7, tests N7 — the
+    // #336/#337 class), so the member's own action bumps last_activity_at
+    const [recency] = await db.select({ lastActivityAt: members.lastActivityAt }).from(members).where(eq(members.memberId, memberId));
+    expect(recency?.lastActivityAt).not.toBeNull();
+    expect((recency!.lastActivityAt as Date).getTime()).toBeGreaterThanOrEqual(Date.now() - 60_000);
   });
 
   it('an audit write failure rolls back the request AND the outbox rows (nothing half-committed)', async () => {

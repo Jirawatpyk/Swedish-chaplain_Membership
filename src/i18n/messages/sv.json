@@ -5532,8 +5532,7 @@
         "save": "Spara språk",
         "savedToast": "E-postspråket har uppdaterats.",
         "errorToast": "Det gick inte att spara språket. Försök igen.",
-        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund.",
-        "rateLimitedToast": "För många ändringar på kort tid. Vänta en minut och försök igen."
+        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund."
       },
       "title": "Kontoinställningar",
       "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
@@ -6103,6 +6102,7 @@
         "submitted": "Dina ändringar har skickats för granskning.",
         "nothingToSubmit": "Inget att skicka – alla värden matchar dina nuvarande uppgifter.",
         "alreadyPending": "Dessa ändringar väntar redan på granskning.",
+        "alreadyPendingUnchanged": "Dina värden matchar din post. Begäran du skickade tidigare väntar fortfarande på granskning och har inte ändrats.",
         "rateLimited": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen efter {retryAt}.",
         "rateLimitedGeneric": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen senare.",
         "approvalNotRequired": "Ändringar behöver inte längre godkännas – dina redigeringar sparas nu direkt."

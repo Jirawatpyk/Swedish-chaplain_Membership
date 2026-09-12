@@ -5532,8 +5532,7 @@
         "save": "Save language",
         "savedToast": "Email language updated.",
         "errorToast": "Could not save the language. Please try again.",
-        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly.",
-        "rateLimitedToast": "Too many changes in a short time. Please wait a minute and try again."
+        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly."
       },
       "title": "Account settings",
       "subtitle": "Manage your password and notification language.",
@@ -6103,6 +6102,7 @@
         "submitted": "Your changes were sent for review.",
         "nothingToSubmit": "Nothing to submit — every value matches your current record.",
         "alreadyPending": "These changes are already awaiting review.",
+        "alreadyPendingUnchanged": "Your values match your record. The request you sent earlier is still awaiting review and has not changed.",
         "rateLimited": "You have reached the limit of submissions for the last 24 hours. Try again after {retryAt}.",
         "rateLimitedGeneric": "You have reached the limit of submissions for the last 24 hours. Try again later.",
         "approvalNotRequired": "Changes no longer need approval — your edits now save directly."

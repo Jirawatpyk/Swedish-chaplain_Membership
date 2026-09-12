@@ -101,8 +101,9 @@ export function taxHintFor(field: ProposedField, ctx: { readonly submitterIsPrim
     case 'description':
       return null; // never tax-affecting (FR-019)
     default: {
-      // a key that later gains `affectsTaxDocuments` must fail the build here,
-      // not render the flag with no hint (round 6, silent-failure #18)
+      // a key that later gains `affectsTaxDocuments` fails the BUILD here
+      // (compile-time only — at runtime the flag would render with no hint;
+      // the build failure is what stops that shipping) (round 6, sf #18)
       const _exhaustive: never = field.key;
       void _exhaustive;
       return null;
@@ -157,7 +158,7 @@ export async function getChangeRequestReview(
   const contact: Contact | null = contactsResult.value.find((c) => c.contactId === request.submittedByContactId) ?? null;
   const contactGone = contact === null || contact.removedAt !== null || contact.linkedUserId === null;
 
-  const record = groupBRecordOf(member, contact ?? removedContactStandIn(request));
+  const record = groupBRecordOf(member, contact ?? removedContactStandIn());
   const submitterIsPrimary = request.submitterRoleAtSubmission === 'primary';
   const fields: ChangeRequestReviewField[] = request.fields.map((f) => {
     const current = liveValueOf(record, f.key);
@@ -192,5 +193,3 @@ function mapError(error: RepoError): GetChangeRequestReviewError {
   if (error.code === 'repo.not_found') return { type: 'not_found' };
   return { type: 'server_error', message: error.code };
 }
-
-

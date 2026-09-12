@@ -153,8 +153,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         extras: {
           ...extras,
           decidedBy: row?.decidedBy ?? null,
-          decidedAt: (row?.request.decidedAt ?? error.decidedAt)?.toISOString() ?? null,
-          outcome: row?.request.outcome ?? error.outcome,
+          decidedAt: (row?.request.decidedAt ?? error.decided?.at)?.toISOString() ?? null,
+          outcome: row?.request.outcome ?? error.decided?.outcome ?? null,
         },
       });
     }

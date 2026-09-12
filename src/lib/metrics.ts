@@ -531,6 +531,7 @@ export const outboxMetrics = {
       // reason while this label was hardcoded to no_template_handler).
       | 'request_gone'
       | 'recipient_gone'
+      | 'request_not_decided'
       // (`request_superseded` is NOT a failure — see `superseded` below)
       // R17-02 — void two-phase-commit Phase 2 sync failure: Blob
       // prefetch bytes don't match the sha256 committed by Phase 1.
@@ -6056,7 +6057,7 @@ export const insightsMetrics = {
 
 // --- F114 members — change-request approval workflow -------------------------
 
-/** Bounded refusal reasons for `members.change_request_refused.total` (contracts § 4). */
+/** Bounded refusal reasons for `members_change_request_refused_total` (contracts § 4). */
 export type ChangeRequestRefusedReason =
   | 'rate_limited'
   | 'forbidden'
@@ -6076,7 +6077,7 @@ export type ChangeRequestRefusedReason =
 export const membersMetrics = {
   changeRequests: {
     /**
-     * `members.change_requests_pending_count{tenant}` — async gauge over
+     * `members_change_requests_pending_count{tenant}` — async gauge over
      * `member_change_requests WHERE state = 'pending'`. NO caller yet: the
      * per-tenant gauges tick is wired in Phase 8 (research R12 / V2, T102 —
      * a pre-flip gate in quickstart § 3). Alert: see oldest age.
@@ -6092,11 +6093,11 @@ export const membersMetrics = {
       });
     },
     /**
-     * `members.change_request_oldest_age_seconds{tenant}` — age of the oldest
+     * `members_change_request_oldest_age_seconds{tenant}` — age of the oldest
      * pending request. NO caller yet (Phase 8, T102 — with `pendingCount`);
-     * the FR-037 alerts (> 7 d warning, > 14 d page, both inside the 30-day
-     * data-subject-request clock) are written into `docs/observability.md`
-     * by T102 together with the gauges' catalogue rows.
+     * the FR-037 alert rows (> 7 d warning, > 14 d page, both inside the
+     * 30-day data-subject-request clock) and the catalogue rows are ALREADY
+     * in `docs/observability.md § 14.1 / § 14.3` — T102 adds the emitter only.
      */
     oldestAgeSeconds(tenantId: string, seconds: number): void {
       safeMetric(() => {
@@ -6108,7 +6109,7 @@ export const membersMetrics = {
         );
       });
     },
-    /** `members.change_request_submitted.total{tenant,scope,coalesced}` — one per created request. */
+    /** `members_change_request_submitted_total{tenant,scope,coalesced}` — one per created request. */
     submitted(
       tenantId: string,
       scope: 'company' | 'own_contact' | 'mixed',
@@ -6121,7 +6122,7 @@ export const membersMetrics = {
         ).add(1, { tenant: tenantId, scope, coalesced: coalesced ? 'true' : 'false' });
       });
     },
-    /** `members.change_request_decided.total{tenant,outcome}` — one per recorded decision. */
+    /** `members_change_request_decided_total{tenant,outcome}` — one per recorded decision. */
     decided(
       tenantId: string,
       outcome: 'approved' | 'partially_approved' | 'rejected',
@@ -6133,7 +6134,7 @@ export const membersMetrics = {
         ).add(1, { tenant: tenantId, outcome });
       });
     },
-    /** `members.change_request_refused.total{tenant,reason}` — a submit or decide refused with nothing persisted (a decide's `already_decided` can fire after a rolled-back write). */
+    /** `members_change_request_refused_total{tenant,reason}` — a submit or decide refused with nothing persisted (a decide's `already_decided` can fire after a rolled-back write). */
     refused(tenantId: string, reason: ChangeRequestRefusedReason): void {
       safeMetric(() => {
         counter(
@@ -6142,7 +6143,7 @@ export const membersMetrics = {
         ).add(1, { tenant: tenantId, reason });
       });
     },
-    /** `members.change_request_decide_ms{tenant}` — decide use-case wall time (budget p95 < 400 ms). */
+    /** `members_change_request_decide_ms{tenant}` — decide use-case wall time (budget p95 < 400 ms). */
     decideDurationMs(tenantId: string, ms: number): void {
       safeMetric(() => {
         histogram(
@@ -6153,7 +6154,7 @@ export const membersMetrics = {
       });
     },
     /**
-     * `members.change_request_no_reviewers_total{tenant}` — a submit found
+     * `members_change_request_no_reviewers_total{tenant}` — a submit found
      * NO active reviewer (round 5, silent-failure #5): the request is
      * created, nobody is emailed, and until the T102 gauges land this counter
      * is the only signal. Alert: any non-zero rate (a roster misconfiguration
@@ -6167,7 +6168,7 @@ export const membersMetrics = {
       });
     },
     /**
-     * `members.change_request_decision_email_skipped_total{tenant, reason}` —
+     * `members_change_request_decision_email_skipped_total{tenant, reason}` —
      * a decision committed but the member could not be told (round 5,
      * silent-failure #3): the submitting contact is gone or unlinked. The
      * decided audit event carries the same fact (`member_notified: false`).

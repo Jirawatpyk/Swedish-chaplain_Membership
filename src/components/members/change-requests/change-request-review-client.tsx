@@ -112,7 +112,8 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
-    } catch {
+    } catch (e) {
+      console.error('[change-request-review] decide request failed', e);
       setDialogError(t('toast.error'));
       return;
     }
@@ -121,7 +122,10 @@ export function ChangeRequestReviewClient({ request, fields, canDecide }: Change
       // decided row with no outcome, which the DB CHECK forbids) still
       // toasts a success — the neutral "recorded" copy, never a guessed
       // outcome (round 6, silent-failure #14 / #15)
-      const data = (await res.json().catch(() => null)) as { repeated?: boolean; request?: Pick<StaffChangeRequestView, 'outcome'> } | null;
+      const data = (await res.json().catch((e: unknown) => {
+        console.error('[change-request-review] decision committed but the response body could not be parsed', e);
+        return null;
+      })) as { repeated?: boolean; request?: Pick<StaffChangeRequestView, 'outcome'> } | null;
       const outcome = data?.request?.outcome ?? null;
       toast.success(data?.repeated ? t('toast.repeated') : outcome ? t(`toast.${outcome}`) : t('toast.recorded'));
       closedViaSuccessRef.current = true;

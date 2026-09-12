@@ -671,8 +671,8 @@ const schema = z.object({
   // (FR-031 — flag first, then setting; a tenant with the setting off keeps
   // the immediate path). Stored requests survive a flag-off untouched and
   // are decidable again when it returns. Never read in Domain or
-  // Application; the readers are the two composition roots
-  // (`members-deps.ts`, `members-change-request-deps.ts`), every
+  // Application; the readers are the composition root `members-deps.ts`
+  // (`members-change-request-deps.ts` reads the PORT it builds), every
   // `/api/{portal,admin}/change-requests/**` route + the two admin pages
   // (404 / notFound before session work), the portal profile page, the
   // admin layout (nav) and the outbox dispatcher (query-time containment of

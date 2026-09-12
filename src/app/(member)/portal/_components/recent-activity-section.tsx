@@ -7,7 +7,7 @@ import { resolveOwnContactId } from '@/lib/portal-own-contact';
 import { logger } from '@/lib/logger';
 import { errKind, rootCause } from '@/lib/log-id';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
-import { timelineList } from '@/modules/members';
+import { asMemberId, timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { ClockIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -44,6 +44,14 @@ export async function RecentActivitySection({
   const requestId = requestIdFromHeaders(h);
   const deps = buildMembersDeps(tenant);
 
+  // F114 (privacy I-1, round 7) — resolved BEFORE the list read; a fault
+  // renders the same "unavailable" card as a failed list read (B2), never a
+  // preview that silently omits the viewer's own change requests
+  const ownContact = await resolveOwnContactId(deps.contactRepo, tenant, asMemberId(memberId), userId, requestId);
+  if (!ownContact.ok) {
+    logger.warn({ requestId, errKind: ownContact.error.code }, '[dashboard-recent-activity] own contact unresolved');
+    return unavailableCard(t('title'), t('loadFailed'));
+  }
   const result = await timelineList(
     { memberId, limit: PREVIEW_LIMIT },
     { actorUserId: userId, actorRole: 'member', requestId },
@@ -53,7 +61,7 @@ export async function RecentActivitySection({
       timeline: deps.timeline,
       // F114 (privacy I-1, round 2 R-2) — the viewer's OWN contact so their
       // own change requests show while a colleague's own-field ones do not
-      viewerContactId: await resolveOwnContactId(deps.contactRepo, tenant, memberId, userId, requestId),
+      viewerContactId: ownContact.value,
       // 016 final review B2 — the member OWNS this billing history. The gate
       // exists to stop STAFF without `invoicing.read` reading someone else's;
       // omitting it here hid the member's own invoices from page 1 while the
@@ -73,16 +81,7 @@ export async function RecentActivitySection({
       { requestId, errKind: errKind(rootCause(result.error)) },
       '[dashboard-recent-activity] timelineList failed',
     );
-    return (
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
-          <h2 className="font-heading text-base font-medium leading-snug">{t('title')}</h2>
-        </CardHeader>
-        <CardContent>
-          <p className="py-8 text-center text-sm text-muted-foreground">{t('loadFailed')}</p>
-        </CardContent>
-      </Card>
-    );
+    return unavailableCard(t('title'), t('loadFailed'));
   }
 
   const events = result.value.events
@@ -136,6 +135,20 @@ export function RecentActivitySkeleton(): React.JSX.Element {
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-10 w-full" />
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The B2 "unavailable" state — one card for a failed list read and for an unresolved viewer contact. */
+function unavailableCard(title: string, body: string) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <h2 className="font-heading text-base font-medium leading-snug">{title}</h2>
+      </CardHeader>
+      <CardContent>
+        <p className="py-8 text-center text-sm text-muted-foreground">{body}</p>
       </CardContent>
     </Card>
   );

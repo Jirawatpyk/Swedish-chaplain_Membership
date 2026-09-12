@@ -31,7 +31,7 @@
 -- / `decision_note` are outside the erasure path — quickstart § 3 makes T078
 -- a precondition of the flag flip. A hard delete only happens for test
 -- tenants and dummy rows. The two user FKs carry no ON DELETE clause
--- (NO ACTION — the default; equivalent to RESTRICT at commit): staff accounts
+-- (NO ACTION — the default; like RESTRICT, but checked at the END OF THE STATEMENT, not at commit — neither FK is DEFERRABLE): staff accounts
 -- are disabled, never deleted (FR-026), and the recorded reviewer /
 -- submitter must survive.
 --

@@ -92,6 +92,13 @@ export default async function PortalTimelinePage({
     filterArgs.source || filterArgs.actorKind || filterArgs.fromYmd || filterArgs.toYmd,
   );
 
+  // a contact-read fault is an error page, like the member lookup above —
+  // never a timeline that silently omits the viewer's own rows (round 7)
+  const ownContact = await resolveOwnContactId(deps.contactRepo, tenant, member.memberId, user.id, requestId);
+  if (!ownContact.ok) {
+    logger.error({ requestId, errKind: ownContact.error.code }, 'portal.timeline.own_contact_read_failed');
+    throw new Error('Failed to resolve the viewer contact for timeline');
+  }
   const result = await timelineList(
     { memberId: member.memberId, limit: 50, ...buildTimelineFilterInput(filterArgs, tz) },
     { actorUserId: user.id, actorRole: 'member', requestId },
@@ -99,8 +106,8 @@ export default async function PortalTimelinePage({
     {
       memberRepo: deps.memberRepo,
       timeline: deps.timeline,
-      // F114 (privacy I-1) — the shared, logging resolver (round 5)
-      viewerContactId: await resolveOwnContactId(deps.contactRepo, tenant, member.memberId, user.id, requestId),
+      // F114 (privacy I-1) — the shared resolver (rounds 5 / 7): a fault reached the error boundary above
+      viewerContactId: ownContact.value,
       // 016 final review B2 — the member OWNS this billing history. The gate
       // exists to stop STAFF without `invoicing.read` reading someone else's;
       // omitting it here hid the member's own invoices from page 1 while the

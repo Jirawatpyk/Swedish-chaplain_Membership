@@ -198,12 +198,17 @@ export function assertNeverAuditEvent(event: never): never {
 }
 
 /**
- * F114 — the payload each change-request event carries, as a TYPE (round 6,
- * types F4). The emit sites write `payload: { … } satisfies
- * ChangeRequestAuditPayload['<type>']`, so the snake_case `member_id` /
- * `related_member_id` split that drives migration 0009's `last_activity_at`
- * trigger, the `withdrawn_reason` key (never `reason`), and "ids and keys —
- * never a value" are checked by the compiler, not by a reviewer.
+ * F114 — the payload each change-request event carries, as a TYPE (rounds 6
+ * and 7, types F4). The emit sites write `payload: { … } satisfies
+ * ChangeRequestAuditPayload['<type>']`. What the compiler checks: every
+ * DIRECT key (a camelCase `memberId` fails; `reason` instead of
+ * `withdrawn_reason` fails); the withdrawn payload's member key is a
+ * two-variant union, so an emit with NEITHER `member_id` nor
+ * `related_member_id` fails (the #336/#337 class — migration 0009's
+ * `last_activity_at` trigger fires on the snake_case `member_id` key). What
+ * it does NOT check: a key smuggled through a spread (`...(cond ? {…} : {})`
+ * — keep those to literal, listed keys), and "never a value" (a reviewer's
+ * rule; the runtime evidence is the atomicity test's `not.toContain`).
  */
 export type ChangeRequestAuditPayload = {
   member_change_request_submitted: {
@@ -222,15 +227,16 @@ export type ChangeRequestAuditPayload = {
     readonly contact_id: string;
     readonly scope: 'own_contact' | 'company' | 'mixed';
     readonly outcome: 'approved' | 'partially_approved' | 'rejected';
-    readonly fields: readonly { readonly key: string; readonly outcome: 'approved' | 'rejected' | undefined }[];
+    readonly fields: readonly { readonly key: string; readonly outcome: 'approved' | 'rejected' }[];
     readonly reason_length: number;
     readonly actor_role: string;
     readonly member_notified: boolean;
     readonly member_notification_skipped?: 'recipient_gone';
   };
-  member_change_request_withdrawn: {
-    readonly member_id?: string;
-    readonly related_member_id?: string;
+  member_change_request_withdrawn: (
+    | { readonly member_id: string; readonly related_member_id?: never }
+    | { readonly related_member_id: string; readonly member_id?: never }
+  ) & {
     readonly request_id: string;
     readonly contact_id: string;
     readonly scope: 'own_contact' | 'company' | 'mixed';

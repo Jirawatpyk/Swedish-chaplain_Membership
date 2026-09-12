@@ -672,3 +672,46 @@ describe('submitChangeRequest — "nothing differs" while a request is PENDING (
     expect(r.ok && r.value.outcome).toBe('nothing_to_submit');
   });
 });
+
+describe('submitChangeRequest — the no-reviewers signal fires only for a CREATED request (round 7)', () => {
+  it('zero reviewers + nothing differs → no request, no metric, no "will be created" log', async () => {
+    const { deps, repo } = makeDeps({ reviewers: 0 });
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66812345678' } }));
+    expect(r.ok && r.value.outcome).toBe('nothing_to_submit');
+    expect(repo.rows.size).toBe(0);
+    expect(metricNoReviewers).not.toHaveBeenCalled();
+    expect(loggerWarn).not.toHaveBeenCalledWith(expect.anything(), expect.stringMatching(/no_reviewers/));
+  });
+
+  it('zero reviewers + an identical pending proposal → already_pending, no metric', async () => {
+    const { deps } = makeDeps({ reviewers: 0 });
+    await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    vi.clearAllMocks();
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r.ok && r.value.outcome).toBe('already_pending');
+    expect(metricNoReviewers).not.toHaveBeenCalled();
+  });
+});
+
+describe('submitChangeRequest — "nothing differs" while pending is flagged as UNCHANGED (round 7, code R1)', () => {
+  it('the already_pending outcome carries unchanged: true when the proposal matches the RECORD, false when it matches the PENDING request', async () => {
+    const { deps } = makeDeps();
+    await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    const reverted = await submitChangeRequest(deps, input({ contact: { phone: '+66812345678' } }));
+    expect(reverted.ok && reverted.value.outcome === 'already_pending' && reverted.value.unchanged).toBe(true);
+    const same = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(same.ok && same.value.outcome === 'already_pending' && same.value.unchanged).toBe(false);
+  });
+});
+
+describe('submitChangeRequest — a THROWING reviewer roster read (round 7, silent-failure N1)', () => {
+  it('is a logged server_error, never an unhandled rejection', async () => {
+    const { deps } = makeDeps();
+    (deps.reviewers as { listReviewers: () => Promise<unknown> }).listReviewers = async () => {
+      throw new Error('users read timed out');
+    };
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'Error' }), 'change-request.submit.roster_read_failed');
+  });
+});

@@ -224,9 +224,44 @@ code before it was fixed (108 rule 2).
 | types F9 — `as RepoError` at three catch sites | `isRepoError` (checked narrowing) at all three |
 | types F10 — `member.status: string` | `Member['status']` on both view types |
 | tests Q-1 / Q-4 / Q-5 / I-8 / I-9 | test title honest about the fake; the lock-race loser's 409 filled from the recorded row (FR-018); keyset paging on EQUAL `submitted_at` (live Neon); the lock-then-erasure order pinned; `contacts: []` both ways |
-| comments I6 / I11 | the six `membersMetrics` rows (the two gauges marked "no emitter until T102") + the FR-037 alert rows in `observability.md`; a 0301 enum canary in `verify-schema` (14 canaries) |
+| comments I6 / I11 | the eight `membersMetrics` rows (the two gauges marked "no emitter until T102") + the FR-037 alert rows in `observability.md`; a 0301 enum canary in `verify-schema` (13 canaries) |
 
 Not closed, and why: types F6's full discriminated union (above) — the seam parse + the guards give the same guarantee without the fixture churn.
+
+## Round 7 — the second toolkit pass re-reviews the FIXES (`8c1c09c6d..48b9abb68`), 2026-09-12
+
+The same five read-only lenses (Opus) applied 108 rule 1 to rounds 5–6. Verdicts: every code closure held; the round-5/6 PROSE lagged the code, and the fixes had opened a handful of seams. No Critical logic defect; one red assertion (the second `AUDIT_EVENT_TYPES` pin) was already fixed in the tree before this round. Everything below is closed in this round's commit.
+
+### Closed (tests first — RED, then the code)
+
+| Finding | Closure |
+|---|---|
+| silent-failure N1 — `listReviewers()` throws out of the submit route (no Result) | `try/catch` before the tx → `server_error` + `change-request.submit.roster_read_failed`; the no-reviewers warn + metric now fire only when a request was CREATED (a no-op submit no longer pages) |
+| silent-failure R1 — the dispatcher's decided arm closed a NON-decided request as `request_superseded` (silent) | unreachable by construction (the row is enqueued inside the decide tx) so it stays LOUD: new `PayloadMiss` `request_not_decided` → permanent + `email_dispatch_failed` audit + `outbox_permanent_failures_total{reason}`; the `PayloadMiss` docblock is now per arm |
+| silent-failure R3 — a corrupt row surfaced as a bare `repo.unexpected` | `ChangeRequestRowError` (named for `errKind`) + `logger.error` at every throw with the ids (never a value) |
+| silent-failure / types #3 — `resolveOwnContactId` answered `null` on a FAULT, so the timeline dropped the viewer's own rows silently | `Result<string \| null, {code}>`: the API route answers 500 + `portal.timeline.own_contact_read_failed`, the page throws to its boundary, the dashboard preview renders the B2 "unavailable" card; `ok(null)` is still "not linked" |
+| silent-failure — the edit page's resubmit read had an unlogged Result-err arm | logged (`M114.portal.edit.resubmit_read_failed`); the member still gets the live form |
+| silent-failure — two bare client catches; a dead 429 branch in the language form | `console.error` on both; the 429 branch + `rateLimitedToast` ×3 removed (the profile route has no rate limit) |
+| types #2 — the seam parse checked state columns only | `changeRequestInvariantViolation` also checks every field row: decided ⇒ each has an outcome, pending ⇒ none does, `appliedAt` ⇔ approved; `decideInTx` asserts no undecided row remains |
+| types F7 residual — `decideInTx` coverage | the loaded rows are re-checked after the UPDATEs (above) |
+| types F9 residual — `isRepoError` accepted a `repo.conflict` without `reason` | `reason` must be a string |
+| types S6 — `already_decided` carried three nullable fields for one fact | `decided: { byUserId, at, outcome } \| null` (null = the lock-race loser; the route fills it from the recorded row) |
+| types S5 — `rememberableBody` was built by subtraction | built by construction (`RememberableBody`, listed keys + `replay: true`); the contract documents the reduced replay |
+| types #4 / comments F18 — the removed-contact stand-in forged an `Email` | `groupBRecordOf` takes `GroupBContactRecord` (four columns) and the stand-in is exactly that |
+| types N3 — three `as FieldOutcome` casts after the coverage check | one checked `outcomeOf` lookup |
+| types — `fields[].outcome` typed `\| undefined`; the withdrawn payload allowed NEITHER member key | tightened; two-variant union (`member_id` xor `related_member_id`) — the #336/#337 class is now a compile error; docblock says what the compiler checks and what it does not |
+| types — `isDecided` imported from Domain by the dispatcher | exported from the barrel; the dispatcher imports `@/modules/members` |
+| types — `ListByMember.memberId: MemberId \| string` | `MemberId`; the dashboard section passes `asMemberId` |
+| comments F17 — "a contradicting row is a corrupt row" with no enforcement | an unknown `field_key` throws (`isProposableFieldKey`); the target is derived, the stored column is convenience only; `parseProposedValue` also rejects an unknown address line |
+| comments F15 / code R1 — "already awaiting review" shown when the member typed the RECORD back while a different proposal is pending | `already_pending` carries `unchanged: boolean`; the form shows `alreadyPendingUnchanged` (×3 locales) |
+| comments F14 — the submit docblock's step 5 contradicted round 6 | rewritten; the two contract sentences too |
+| code N — `normaliseText` duplicated in decide; `_serialise.ts` re-export | the Domain export; the route imports `@/lib/change-request-portal-view` |
+| tests — `completeness.test.ts` pinned 37 | 42 (the second of the "2 test counts"); atomicity asserts `members.last_activity_at` bumped; decide cases: whitespace-only reason no write, country `ZZ` names `company.billing_address.country`, the tx-abort cause; the toast / banner / language-form component tests |
+| comments F1–F6, F8–F13, F16, F18 — quickstart (0300 AND 0301; the 13 canaries; two staff emails in PR-1; the fifth fixture; the SQL flip until PR-3; the count by SQL not the unemitted gauge), the three contracts (reduced replay; `already_pending` + `unchanged`; 429 metric-only; `staffNotified` semantics; coalescing = T087; platform-default locale; `actor_role`; underscored metric names + `not_owner` + the two new counters; the errorId sentence), `policies.ts` headline, the Drizzle docblock (8 named + 10 anonymous CHECKs; `db:verify` reads SQL not this file), `env.ts` reader list, the route's 429 sentence, the guard's PR-1 withdraw note, 0300's NO ACTION timing, the dispatcher's superseded comment, the metrics docblocks (underscored; T102 adds the emitter only), the alert tables (one High table incl. the > 14 d page; one Medium table with the > 7 d warning), this ledger's counts | all rewritten to match the code |
+
+### Verification (this round)
+
+`pnpm typecheck` · full `pnpm lint` · `check:i18n` · unit + contract (`tests/unit/members`, `tests/unit/portal`, `tests/unit/lib`, `tests/contract/{members,portal}`: 284 files green) · integration on live Neon dev: `change-requests-{repo,submit-atomicity,concurrency,decide-rollback,member-email-dispatch,staff-email-dispatch}`, `audit/completeness`, `outbox-permanent-failure-metrics` (8 files, 74 tests green).
 
 Checklist checkboxes in `checklists/{security,privacy,tax}.md` remain reviewer-owned and are
 ticked only at `/speckit.review` (T112); each reviewer's per-CHK evidence is in its round-1

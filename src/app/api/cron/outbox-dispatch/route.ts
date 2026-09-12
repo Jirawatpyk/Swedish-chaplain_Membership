@@ -46,7 +46,7 @@ import {
  
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { isDecided } from '@/modules/members/domain/change-request/change-request';
+import { isDecided } from '@/modules/members';
 import { errKind } from '@/lib/log-id';
 import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -158,12 +158,17 @@ interface BuiltPayload {
  */
 interface PayloadMiss {
   /**
-   * `request_gone` — the request, its member OR its submitting contact no
-   * longer exists (all three make the email unrenderable); `recipient_gone`
-   * — the addressee (an active reviewer / the live contact) is gone;
-   * `request_superseded` — the request left `pending` before send.
+   * Per arm (round 7 — the two arms do NOT share one vocabulary):
+   *   staff arm (`…_submitted_staff`): `request_gone` — the request, its
+   *     member OR its submitting contact no longer exists; `recipient_gone`
+   *     — no active reviewer matches the row; `request_superseded` — the
+   *     request left `pending` before send (a normal flow: silent skip).
+   *   member arm (`…_decided_member`): `request_gone` — the request row is
+   *     gone; `recipient_gone` — the submitting contact is gone / removed /
+   *     unlinked; `request_not_decided` — the request is not `decided`
+   *     (unreachable by construction; kept LOUD: audit + failure metric).
    */
-  readonly miss: 'request_gone' | 'recipient_gone' | 'request_superseded';
+  readonly miss: 'request_gone' | 'recipient_gone' | 'request_superseded' | 'request_not_decided';
 }
 
 function isPayloadMiss(v: BuiltPayload | PayloadMiss | null): v is PayloadMiss {
@@ -492,10 +497,12 @@ async function buildPayload(
       if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
       // a decided row always carries outcome + decidedAt (F6 narrowing; a
       // contradicting row never reaches here — the repo throws on it). A
-      // request that is NOT decided (withdrawn / pending again) has nothing
-      // to tell the member: closed as superseded, not "gone".
+      // request that is NOT decided cannot happen (the row is enqueued inside
+      // the decide tx and a decided row never leaves `decided`) — so it stays
+      // LOUD (round 7, silent-failure R1): permanent + email_dispatch_failed
+      // audit + failure metric, never the silent superseded skip.
       const decidedRequest = request.value;
-      if (!isDecided(decidedRequest)) return { miss: 'request_superseded' };
+      if (!isDecided(decidedRequest)) return { miss: 'request_not_decided' };
       const contact = await drizzleContactRepo.findById(tenantCtx, decidedRequest.submittedByContactId);
       if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'recipient_gone' } : null;
       if (contact.value.removedAt !== null || contact.value.linkedUserId === null) return { miss: 'recipient_gone' };
@@ -1026,8 +1033,9 @@ async function dispatchOne(
       const isPermanent = miss !== null || nextAttempt >= MAX_ATTEMPTS;
       const failReason: string = miss ?? 'no_template_handler';
 
-      // F114 — a request REPLACED by a resubmit before its staff row was
-      // sent is a NORMAL flow, not an incident (whole-branch review F-4;
+      // F114 — a staff row whose request left `pending` before it was sent
+      // (replaced by a resubmit, or decided from the queue before this tick)
+      // is a NORMAL flow, not an incident (whole-branch review F-4;
       // US5 coalescing is PR-2). The row is closed as a silent skip: terminal
       // status + `last_error` for the operator, its own counter, and no
       // `email_dispatch_failed` audit (the replacement is already audited as
@@ -1099,7 +1107,10 @@ async function dispatchOne(
             },
           });
         }
-        outboxMetrics.permanentFailure(row.notificationType, miss === 'request_gone' || miss === 'recipient_gone' ? miss : 'no_template_handler');
+        outboxMetrics.permanentFailure(
+          row.notificationType,
+          miss === 'request_gone' || miss === 'recipient_gone' || miss === 'request_not_decided' ? miss : 'no_template_handler',
+        );
         if (row.notificationType === 'invoice_auto_email') {
           invoicingMetrics.autoEmailBounce('no_template_handler');
         }

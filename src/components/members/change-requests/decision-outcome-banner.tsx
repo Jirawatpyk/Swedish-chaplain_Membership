@@ -62,7 +62,8 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
         // page landmark instead of <body> (review: UX M7)
         document.getElementById('main-content')?.focus({ preventScroll: true });
         router.refresh();
-      } catch {
+      } catch (e) {
+        console.error('[decision-outcome-banner] acknowledge failed', e);
         toast.error(t('dismissError'));
       }
     });
