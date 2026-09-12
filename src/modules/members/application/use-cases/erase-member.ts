@@ -424,6 +424,23 @@ export async function eraseMember(
         });
       }
 
+      // F114 (the seam re-review of PR-2, #1) — the scrub above snapshotted
+      // the request ids BEFORE this member lock, and READ COMMITTED never adds
+      // rows INSERTED after a statement started: a submit that held the
+      // pending row first (its replace path) can commit a NEW request between
+      // the snapshot and our lock, and it would stay pending with live PII on
+      // the erased record. Re-read the ids now (non-locking — no new AB-BA)
+      // and abort on anything the scrub did not see: the tx rolls back, the
+      // admin's retry (or the reconciler's re-drive) scrubs the new row too.
+      const rescan = await deps.changeRequestScrub.listRequestIdsInTx(tx, memberId);
+      if (!rescan.ok)
+        throw new Error(`change_request_rescan_failed:${rescan.error.code}`, {
+          cause: 'cause' in rescan.error ? rescan.error.cause : undefined,
+        });
+      const scrubbedIds = new Set<string>(scrubChangeRequests.value.scrubbedRequestIds);
+      const unseen = rescan.value.filter((id) => !scrubbedIds.has(id));
+      if (unseen.length > 0) throw new Error(`change_request_race:${unseen.length}`);
+
       // Read linked users FIRST — the contacts scrub below sets removed_at on
       // every contact, and listLinkedUserIdsForMemberInTx filters
       // removed_at IS NULL, so reading after the scrub would yield an empty

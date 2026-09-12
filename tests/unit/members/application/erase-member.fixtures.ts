@@ -69,7 +69,7 @@ export type StubbedEraseDeps = EraseMemberDeps & {
   userEmails: { listEmailsForUsersInTx: ReturnType<typeof vi.fn> };
   outboxCancel: { cancelPendingForEmailsInTx: ReturnType<typeof vi.fn>; cancelPendingForMemberInTx: ReturnType<typeof vi.fn> };
   // F114 (FR-030, T078) — the change-request scrub, inside the scrub tx.
-  changeRequestScrub: { scrubForMemberInTx: ReturnType<typeof vi.fn> };
+  changeRequestScrub: { scrubForMemberInTx: ReturnType<typeof vi.fn>; listRequestIdsInTx: ReturnType<typeof vi.fn> };
   // COMP-1 US2c — F6 event-registration fan-out erasure cascade (post-commit).
   // A real `vi.fn` so the cascade tests can assert the (tenant, memberId, meta)
   // call args + override the discriminated-union outcome. Default:
@@ -208,6 +208,7 @@ export function buildEraseDeps(): StubbedEraseDeps {
     // nothing closed). Tests override to return closed requests.
     changeRequestScrub: {
       scrubForMemberInTx: vi.fn(async () => ok({ scrubbedRequestIds: [], closedRequests: [] })),
+      listRequestIdsInTx: vi.fn(async () => ok([])),
     },
     // F6 event-registration fan-out erasure (US2c). Default clean: the member
     // had no matched registrations (erasedCount 0). The `'ok'` variant of the

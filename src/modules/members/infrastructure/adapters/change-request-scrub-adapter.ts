@@ -96,4 +96,15 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
+
+  // the post-member-lock rescan (see the port) — a plain read on the same tx
+  async listRequestIdsInTx(txUnknown, memberId) {
+    const tx = txUnknown as TenantTx;
+    try {
+      const rows = await tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId));
+      return ok(rows.map((r) => r.id as ChangeRequestId));
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
 };

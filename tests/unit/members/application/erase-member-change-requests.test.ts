@@ -44,10 +44,13 @@ const CLOSED = [
   { id: '00000000-0000-4000-8000-000000000002', contactId: '22222222-2222-4222-8222-333333333333', scope: 'company' as const },
 ];
 
-function deps(overrides: { scrub?: () => Promise<unknown>; cancel?: () => Promise<unknown> } = {}) {
+const SCRUBBED_IDS = [...CLOSED.map((c) => c.id), '00000000-0000-4000-8000-000000000003'];
+
+function deps(overrides: { scrub?: () => Promise<unknown>; rescan?: () => Promise<unknown>; cancel?: () => Promise<unknown> } = {}) {
   const d = buildEraseDeps();
   d.changeRequestScrub = {
-    scrubForMemberInTx: vi.fn(overrides.scrub ?? (async () => ok({ scrubbedRequestIds: [...CLOSED.map((c) => c.id), '00000000-0000-4000-8000-000000000003'], closedRequests: CLOSED }))) as ReturnType<typeof vi.fn>,
+    scrubForMemberInTx: vi.fn(overrides.scrub ?? (async () => ok({ scrubbedRequestIds: SCRUBBED_IDS, closedRequests: CLOSED }))) as ReturnType<typeof vi.fn>,
+    listRequestIdsInTx: vi.fn(overrides.rescan ?? (async () => ok(SCRUBBED_IDS))) as ReturnType<typeof vi.fn>,
   };
   d.outboxCancel.cancelPendingForMemberInTx = vi.fn(overrides.cancel ?? (async () => ok({ cancelledCount: 2 }))) as ReturnType<typeof vi.fn>;
   return d;
@@ -87,8 +90,26 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
     expect(d.outboxCancel.cancelPendingForMemberInTx).toHaveBeenCalledWith({ __tx: 'scrub-tx' }, MEMBER_ID);
   });
 
+  it('a request INSERTED between the id snapshot and the member lock (a submit that got in first) aborts the erase → server_error, nothing committed (seam re-review, #1)', async () => {
+    // the scrub's FOR UPDATE snapshot cannot see a row inserted after the
+    // statement started; a submit holding the pending row first can commit a
+    // replacement before the erase reaches the member lock
+    const d = deps({ rescan: async () => ok([...SCRUBBED_IDS, '00000000-0000-4000-8000-000000000099']) });
+    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
+    expect(res).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    // the rescan runs AFTER the member row lock — that is the whole point
+    expect(d.changeRequestScrub.listRequestIdsInTx.mock.invocationCallOrder[0]!).toBeGreaterThan(d.memberRepo.findByIdInTx.mock.invocationCallOrder[0]!);
+    expect(d.memberRepo.scrubPiiInTx).not.toHaveBeenCalled();
+    expect(d.contactRepo.scrubPiiForMemberInTx).not.toHaveBeenCalled();
+    const types = d.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
   it('a member with no pending request emits no closure', async () => {
-    const d = deps({ scrub: async () => ok({ scrubbedRequestIds: ['00000000-0000-4000-8000-000000000003'], closedRequests: [] }) });
+    const d = deps({
+      scrub: async () => ok({ scrubbedRequestIds: ['00000000-0000-4000-8000-000000000003'], closedRequests: [] }),
+      rescan: async () => ok(['00000000-0000-4000-8000-000000000003']),
+    });
     const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
     expect(res.ok).toBe(true);
     const closures = d.audit.recordInTx.mock.calls.filter((c) => (c[2] as { type: string }).type === 'member_change_request_withdrawn');

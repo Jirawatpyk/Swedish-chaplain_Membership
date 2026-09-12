@@ -77,6 +77,19 @@ read inside `runInTenant`; i18n parity of the added / removed keys; `related_mem
 erase ↔ submit and erase ↔ contact-crud lock order sound; the sentinel round-trips for address
 groups.
 
+### Re-review of the round-2 fixes (same reviewer, commit `c8a6017b1`)
+
+Verdict: MERGEABLE WITH FIXES. Fix #1 confirmed sound (the lock graph after the change: erase =
+request rows → field rows → member → contacts; decide = request row → member → contacts → field
+rows; submit = pending row → member; withdraw = pending row; contact-crud = member → contacts —
+no pair acquires two shared rows in opposite order). Fix #2 confirmed for the interleaving
+reported. Fixes #3–#5 match the code. One residual of the same seam, one LOW:
+
+| # | Sev | Finding | Fix (commit after `c8a6017b1`) |
+|---|---|---|---|
+| 1 | MEDIUM | the scrub's `FOR UPDATE` snapshot is taken BEFORE the member lock, and READ COMMITTED never adds rows INSERTED after a statement started: a submit that held the pending row first (its replace path) commits a NEW request between the snapshot and the erase's member lock; `findErasedAtByIdInTx` does not catch it (the erase has not committed), and nothing in the erase tx rescanned after the member lock — the new row stays pending with live PII on the erased record, its staff email queued after the outbox cancel (ms-scale window; not reproduced live) | `ChangeRequestScrubPort.listRequestIdsInTx` (non-locking, same tx) called right after the member `FOR UPDATE`; any id the scrub did not see → the erase throws (`change_request_race:<n>`), the tx rolls back to `server_error`, the retry / re-drive scrubs the new row too. No new lock, so no new AB-BA. Unit test pins the rescan AFTER the member lock and zero scrubs / no `member_erased` on the race |
+| 2 | LOW | an erased member is refused by submit as `member_archived` (403 "archived", metric `refused{archived}`) while decide names `member_erasing` | accepted as is: the contact's session is revoked in the same erase tx, so the message is unreachable in practice; a dedicated metric reason is not worth a new bucket |
+
 ## Gate output after rounds 1 + 2
 
 | Gate | Result |

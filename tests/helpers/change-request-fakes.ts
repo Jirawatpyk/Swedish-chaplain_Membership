@@ -432,6 +432,7 @@ export function makeTenantMemberChangeSettingsFake(initial: boolean | null): Ten
 
 export interface ChangeRequestScrubFake extends ChangeRequestScrubPort {
   scrubForMemberInTx: MockedFunction<ChangeRequestScrubPort['scrubForMemberInTx']>;
+  listRequestIdsInTx: MockedFunction<ChangeRequestScrubPort['listRequestIdsInTx']>;
 }
 
 /** Scrubs the in-memory repo the way the Drizzle adapter scrubs the tables (R10). */
@@ -457,5 +458,6 @@ export function makeChangeRequestScrubFake(repo: InMemoryChangeRequestRepo): Cha
       }
       return ok({ scrubbedRequestIds: scrubbed, closedRequests: closed });
     }),
+    listRequestIdsInTx: vi.fn(async (_tx, memberId) => ok([...repo.rows.values()].filter((r) => r.memberId === memberId).map((r) => r.id))),
   };
 }

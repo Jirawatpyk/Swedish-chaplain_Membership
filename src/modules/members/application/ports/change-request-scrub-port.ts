@@ -30,9 +30,23 @@ export type ChangeRequestScrubResult = {
 };
 
 export interface ChangeRequestScrubPort {
+  /**
+   * The scrub. Its id read is `SELECT … FOR UPDATE` — the request rows are
+   * the first lock the erase tx takes (the submit / decide order).
+   */
   scrubForMemberInTx(
     tx: TenantTx,
     memberId: MemberId,
     at: Date,
   ): Promise<Result<ChangeRequestScrubResult, RepoError>>;
+
+  /**
+   * Every request id of the member, NON-locking — the erase use case calls
+   * it AFTER the member row's `FOR UPDATE` and compares with
+   * `scrubbedRequestIds`: a row the scrub's snapshot did not contain was
+   * inserted by a submit that got in first (READ COMMITTED never adds rows
+   * inserted after a statement started), and the erase aborts so a re-drive
+   * scrubs it too (the seam re-review of PR-2). No lock, so no new AB-BA.
+   */
+  listRequestIdsInTx(tx: TenantTx, memberId: MemberId): Promise<Result<readonly ChangeRequestId[], RepoError>>;
 }
