@@ -630,6 +630,17 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findErasedAtByIdInTx(tx, memberId) {
+    try {
+      const rows = await tx.select({ erasedAt: members.erasedAt }).from(members).where(eq(members.memberId, memberId)).limit(1);
+      const row = rows[0];
+      if (row === undefined) return err({ code: 'repo.not_found' });
+      return ok({ erasedAt: row.erasedAt ?? null });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findErasedAtById(ctx, memberId) {
     try {
       // COMP-1 narrow 1-column read (erasure pre-flight). Threads the

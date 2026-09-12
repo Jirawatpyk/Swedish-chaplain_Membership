@@ -31,6 +31,14 @@ import {
 import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
 import { PortalMarketingToggle } from '@/components/members/portal-marketing-toggle';
 import { env } from '@/lib/env';
+// F114 — the caller's OWN pending change request (never another contact's).
+import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
+import { asMembersUserId } from '@/lib/members-change-request-deps';
+import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
+import { PendingRequestBanner } from '@/components/members/change-requests/pending-request-banner';
+import { DecisionOutcomeBanner } from '@/components/members/change-requests/decision-outcome-banner';
 
 /**
  * 057 G4 — member-facing member-detail (design §4.2, Option C structure
@@ -160,6 +168,57 @@ export async function PortalProfileBody({
     ownMarketingState = deriveMarketingState(ownContact.marketing, suppressed);
   }
 
+  // F114 US1 (FR-010) — the pending banner: the caller's OWN pending request,
+  // only while the flag is on AND the tenant requires approval. Best-effort:
+  // a read failure logs and the profile still renders (never-500 contract).
+  let pendingRequest: ChangeRequestView | null = null;
+  // F114 US3 (FR-010) — the caller's LAST decided request until they dismiss
+  // it; hidden while a newer (pending) request exists.
+  let decidedRequest: ChangeRequestView | null = null;
+  if (ownContact && env.features.memberChangeApproval) {
+    try {
+      const gate = await deps.memberChangeGate.resolve(tenant);
+      if (gate === 'approval') {
+        const me = {
+          contactId: ownContact.contactId,
+          displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
+          isMe: true,
+        };
+        const pending = await runInTenant(tenant, (tx) =>
+          deps.changeRequestRepo.findPendingBySubmitterInTx(tx, asMembersUserId(user.id)),
+        );
+        if (pending.ok && pending.value) {
+          pendingRequest = serialiseChangeRequestForPortal(pending.value, me);
+        } else if (!pending.ok) {
+          logger.error(
+            { errorId: 'M114.portal.profile.pending_read_failed', err: pending.error.code, tenantId: tenant.slug },
+            'portal.profile.pending_read_failed',
+          );
+        } else {
+          const decided = await deps.changeRequestRepo.listQueue(
+            tenant,
+            { state: 'decided', submitterUserId: asMembersUserId(user.id) },
+            { cursor: null, limit: 1 },
+          );
+          const last = decided.ok ? decided.value.items[0] : undefined;
+          if (last && last.request.outcomeAcknowledgedAt === null) {
+            decidedRequest = serialiseChangeRequestForPortal(last.request, me);
+          } else if (!decided.ok) {
+            logger.error(
+              { errorId: 'M114.portal.profile.decided_read_failed', err: decided.error.code, tenantId: tenant.slug },
+              'portal.profile.decided_read_failed',
+            );
+          }
+        }
+      }
+    } catch (e) {
+      logger.error(
+        { errorId: 'M114.portal.profile.pending_read_failed', err: errKind(e), tenantId: tenant.slug },
+        'portal.profile.pending_read_failed',
+      );
+    }
+  }
+
   // Both reads are independent (plan lookup vs. member-settings row) —
   // collapse to ~1 RTT. Mirrors the Promise.all on the admin detail page.
   const [planLookup, memberPrefix] = await Promise.all([
@@ -251,6 +310,11 @@ export async function PortalProfileBody({
           </Link>
         }
       />
+
+      {/* F114 — awaiting-review banner (role=status), above the record it will change. */}
+      {pendingRequest ? <PendingRequestBanner request={pendingRequest} /> : null}
+      {/* F114 US3 — the shown decision (role=status) until dismissed; never alongside a pending one. */}
+      {!pendingRequest && decidedRequest ? <DecisionOutcomeBanner request={decidedRequest} /> : null}
 
       {/* Organisation — who the member is. */}
       <section aria-labelledby="portal-profile-org-heading">

@@ -264,7 +264,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       { memberId, limit: 50 },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-1' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -305,7 +305,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       { memberId, limit: 50, source: 'invoice' },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-2' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -319,7 +319,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       { memberId, limit: 50, actorKind: 'system' },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-3' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -341,7 +341,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-4' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -373,7 +373,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
         { memberId, limit: 1, ...(cursor !== undefined ? { cursor } : {}) },
         meta,
         tenant.ctx,
-        { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: false },
+        { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: false },
       );
       expect(r.ok).toBe(true);
       if (!r.ok) return;
@@ -403,7 +403,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       { memberId, limit: 50 },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-money-full' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(full.ok).toBe(true);
     if (!full.ok) return;
@@ -428,7 +428,7 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       { memberId: bareMemberId, limit: 50 },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-as5' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -504,7 +504,7 @@ describe('F9 US3 — keyset tiebreak on identical occurred_at (T052, live Neon)'
       { memberId, limit: 1 },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'tb-1' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(page1.ok).toBe(true);
     if (!page1.ok) return;
@@ -519,7 +519,7 @@ describe('F9 US3 — keyset tiebreak on identical occurred_at (T052, live Neon)'
       },
       { actorUserId: admin.userId, actorRole: 'admin', requestId: 'tb-2' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(page2.ok).toBe(true);
     if (!page2.ok) return;
@@ -699,6 +699,7 @@ describe('F9 US3 — actorKind classifies member-linked audit actors (code-revie
     const all = await timelineList({ memberId, limit: 50 }, meta('ak-all'), tenant.ctx, {
       memberRepo: deps.memberRepo,
       timeline: deps.timeline,
+      viewerContactId: null,
       invoicingRead: true,
     });
     expect(all.ok).toBe(true);
@@ -713,7 +714,7 @@ describe('F9 US3 — actorKind classifies member-linked audit actors (code-revie
       { memberId, limit: 50, actorKind: 'member' },
       meta('ak-m'),
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(memberFiltered.ok).toBe(true);
     if (!memberFiltered.ok) return;
@@ -726,7 +727,7 @@ describe('F9 US3 — actorKind classifies member-linked audit actors (code-revie
       { memberId, limit: 50, actorKind: 'staff' },
       meta('ak-s'),
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, viewerContactId: null, invoicingRead: true },
     );
     expect(staffFiltered.ok).toBe(true);
     if (!staffFiltered.ok) return;

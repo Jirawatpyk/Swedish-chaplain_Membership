@@ -36,7 +36,10 @@ describe('AUDIT_EVENT_TYPES', () => {
     // `eraseUser` use-case after anonymising the linked login row), so
     // it lives on this array — unlike `member_number_assigned` /
     // `member_erased` which are F3 events on the shared pg enum only.
-    expect(AUDIT_EVENT_TYPES).toHaveLength(37);
+    //   0301 (F114)         : member_change_request_{submitted,decided,
+    //                         withdrawn,rate_limited} +
+    //                         member_change_approval_setting_changed   (+5)
+    expect(AUDIT_EVENT_TYPES).toHaveLength(42);
   });
 
   it('includes the COMP-1 US2a F1 linked-user erasure event (migration 0222)', () => {

@@ -412,7 +412,16 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `members.email_change.count` | counter | `{event}` (`initiated`/`verified`/`reverted`/`failed`) | email-change lifecycle events |
 | `members.bundle_warning.latency_ms` | histogram | `{plan_id}` | `/api/plans/[year]/[planId]/affected-members` |
 | `outbox.dispatch.latency_ms` | histogram | `{notification_type, attempt}` | member-email outbox cron dispatcher |
-| `outbox_permanent_failures_total` | counter | `{notification_type, reason}` where `reason ∈ {max_retries, invalid_recipient, no_template_handler}` | `permanently_failed` flips after 5 retries or unrenderable payload |
+| `outbox_permanent_failures_total` | counter | `{notification_type, reason}` where `reason ∈ {max_retries, invalid_recipient, no_template_handler, attachment_sha_mismatch, request_gone, recipient_gone}` (the last two: F114 deterministic misses, first tick) | `permanently_failed` flips after 5 retries or unrenderable payload |
+| `outbox_superseded_total` | counter (watch only, NOT alerted) | `{notification_type}` | F114 — a `member_change_request_submitted_staff` row closed because its request was no longer pending at send time (replaced by the member, or decided from the queue before the next tick); a normal flow, tracks resubmits + decide-before-dispatch until US5 coalescing (PR-2) |
+| `members_change_request_no_reviewers_total` | counter (**alert: any non-zero rate**) | `{tenant}` | F114 — a submit found no active reviewer; the request exists, nobody is emailed (a roster misconfiguration blackholes the tenant until the T102 gauges land) |
+| `members_change_request_decision_email_skipped_total` | counter (watch only) | `{tenant, reason}` `reason ∈ {recipient_gone}` | F114 — a decision committed but the submitting contact is gone / unlinked, so FR-023's email was skipped (the decided audit event carries `member_notified: false`) |
+| `members_change_request_submitted_total` | counter | `{tenant, scope, coalesced}` | F114 — one per created request (`coalesced` is always `false` until T087) |
+| `members_change_request_decided_total` | counter | `{tenant, outcome}` | F114 — one per decision (`approved` / `partially_approved` / `rejected`) |
+| `members_change_request_refused_total` | counter | `{tenant, reason}` `reason ∈ {rate_limited, forbidden, archived, already_decided, validation, not_owner}` | F114 — a submit / decide / acknowledge refused with nothing persisted; `rate_limited` is the interim route cap |
+| `members_change_request_decide_ms` | histogram | `{tenant}` | F114 — `decideChangeRequest` transaction wall time |
+| `members_change_requests_pending_count` | gauge — **NO emitter yet (T102, PR-3)** | `{tenant}` | F114 — pending requests per tenant |
+| `members_change_request_oldest_age_seconds` | gauge — **NO emitter yet (T102, PR-3)** | `{tenant}` | F114 — age of the oldest pending request; FR-037's alerts below bind to it |
 | `outbox_stuck_rows_total` | counter (rate-alerted) | — | pending rows > 30 min past `next_retry_at` at cron tick time; rate > 0 = cron is down or lost `CRON_SECRET` |
 | `members.invite.count` | counter | `{outcome}` (`sent`/`already_linked`/`no_email`) | portal invite events |
 | `members.archive.count` | counter | `{cascade_sessions}` (`0`/`1`/`2+`) | archive cascade cardinality signal |
@@ -440,11 +449,14 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `outbox_permanent_failures_total` | `rate > 0` sustained 5 min | Proactive Vercel Alert — admin sees `201 Created` but email never sends. Check Resend status, template integrity, and row `last_error` column. |
 | `outbox_stuck_rows_total` | `rate > 0` sustained 5 min | Cron dispatcher is down or lost `CRON_SECRET`. Verify Vercel Cron schedule + env var + recent function logs for `cron.outbox_dispatch.*`. |
 | `members.api.latency_ms` p95 | > 1 s for 5 consecutive min | Alarm → check Neon query plan, pg_trgm index health. |
+| `members_change_request_no_reviewers_total` | `rate > 0` | F114 — a tenant with no active `admin` / `super_admin`: every submit is created and nobody is emailed. Re-enable a reviewer; the pending rows drain on the next decide. |
+| `members_change_request_oldest_age_seconds` | > 14 d | F114 FR-037 — a member's proposal has aged half-way through the 30-day data-subject-request clock; open `/admin/change-requests` and decide it. **Bound to a gauge that has no emitter until T102 (PR-3)** — written here so the flip's pre-flight sees the rule. |
 
 #### Medium severity (notify on-call, investigate next business hour)
 
 | Event / Metric | Threshold | Action |
 |---|---|---|
+| `members_change_request_oldest_age_seconds` | > 7 d | F114 FR-037 (warning; the > 14 d page is in the High table) — a member's proposal is ageing inside the 30-day data-subject-request clock; open `/admin/change-requests`. **Bound to a gauge that has no emitter until T102 (PR-3)** — the rule is written here so the flip's gate list can point at it. |
 | `member_self_update_forbidden` | ≥ 5 events in 10 min per actor | Investigate forged portal payload; possible script or compromised member session. Time-to-triage: 10 min. |
 | `outbox_permanent_failures_total` | ≥ 3 failures in 30 min | Check Resend rate limits and outbox `last_error` distribution. |
 | `members.bulk.rows_per_action` p95 | > 8 s for 100-row action | Bulk endpoint degraded — profile DB query + RLS policy latency. |

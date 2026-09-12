@@ -17,7 +17,12 @@ export type EmailNotificationType =
   | 'member_invitation'
   | 'email_verification'
   | 'email_change_revert'
-  | 'email_verification_resent';
+  | 'email_verification_resent'
+  // F114 (migration 0301) — one row per reviewer on submit (FR-011) and one
+  // row for the submitter on decide (FR-023). `contextData` = ids + field
+  // keys ONLY; the diff is rendered at send time from the request rows.
+  | 'member_change_request_submitted_staff'
+  | 'member_change_request_decided_member';
 
 export type EmailEnqueue = {
   readonly type: EmailNotificationType;

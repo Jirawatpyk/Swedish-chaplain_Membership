@@ -2038,6 +2038,20 @@
       "when": 1798543100000,
       "tag": "0299_broadcasts_audience_import_coherence",
       "breakpoints": true
+    },
+    {
+      "idx": 301,
+      "version": "7",
+      "when": 1798543200000,
+      "tag": "0300_member_change_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 302,
+      "version": "7",
+      "when": 1798543300000,
+      "tag": "0301_member_change_request_enums",
+      "breakpoints": true
     }
   ]
 }

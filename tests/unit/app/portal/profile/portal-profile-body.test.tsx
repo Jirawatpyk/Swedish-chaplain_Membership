@@ -19,6 +19,18 @@ vi.mock('@/lib/db', () => ({
     fn({} as unknown),
 }));
 
+// F114 (PR-1): the profile page imports `@/lib/logger` at module scope for the
+// decision-banner read; pino would read `env.log.level` from the partial env
+// mock below and crash the import.
+vi.mock('@/lib/logger', () => ({
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+// …and `@/lib/members-change-request-deps` (for `asMembersUserId`), whose
+// module graph boots the Upstash client via `@/lib/auth-deps` at import.
+vi.mock('@/lib/members-change-request-deps', () => ({
+  asMembersUserId: (id: string) => id,
+}));
+
 const findByLinkedUserIdMock = vi.fn();
 const getMemberMock = vi.fn();
 const getPlanMock = vi.fn();

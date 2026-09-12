@@ -995,6 +995,100 @@
       "errorToast": "Could not save preference. Please try again.",
       "loading": "Loading…"
     },
+    "changeRequests": {
+      "queue": {
+        "title": "Change requests",
+        "subtitle": "Member-proposed changes awaiting a staff decision, oldest first.",
+        "empty": "No change requests are awaiting a decision.",
+        "emptyHint": "New member proposals appear here as soon as they are submitted; the staff email links straight to the request.",
+        "noPendingForSubmitter": "This person has no request awaiting a decision — their last request was decided by {name} on {decidedAt}.",
+        "noRequestForSubmitter": "This person has no change request.",
+        "rowMeta": "Submitted by {submitter} · {count, plural, one {# field} other {# fields}} · {submittedAt}",
+        "open": "Review"
+      },
+      "review": {
+        "title": "Review change request",
+        "subtitle": "{company} · submitted by {submitter} ({role}) on {submittedAt}",
+        "roles": {
+          "primary": "primary contact",
+          "secondary": "secondary contact"
+        },
+        "state": {
+          "pending": "Awaiting decision",
+          "decided": "Decided",
+          "withdrawn": "Withdrawn"
+        },
+        "outcome": {
+          "approved": "Approved",
+          "partially_approved": "Partially approved",
+          "rejected": "Not approved"
+        },
+        "decidedBy": "Decided by {name} on {decidedAt}",
+        "deactivated": "(deactivated)",
+        "unknownReviewer": "a staff member",
+        "decisionReason": "Reason shown to the member",
+        "decisionNote": "Internal note",
+        "backToMember": "Member record",
+        "backToMembers": "Members",
+        "readOnly": "You can view this request. Only staff who can edit members can decide it.",
+        "archived": "This member is archived. Reject the request, or unarchive the member first and then approve.",
+        "erasing": "This member is being erased. The request cannot be approved.",
+        "notPending": "This request is no longer awaiting a decision.",
+        "columns": {
+          "decision": "Approve"
+        },
+        "approveCheckbox": "Approve {field}",
+        "markers": {
+          "changedSinceSubmitted": "Changed since the member submitted — they saw:",
+          "alreadyCurrent": "Already current — approving records the decision without changing the record",
+          "contactRemoved": "Contact removed — this field can only be rejected",
+          "taxAffecting": "Affects tax documents"
+        },
+        "taxHint": {
+          "buyer_name": "the buyer name printed on tax invoices and receipts",
+          "buyer_address": "the buyer address printed on tax invoices and receipts — check the head-office / branch designation",
+          "buyer_contact": "the buyer's contact person printed on tax documents",
+          "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation"
+        }
+      },
+      "decision": {
+        "confirm": "Confirm decision",
+        "selectionSummary": "{approved, plural, =0 {No fields} one {# field} other {# fields}} to approve, {rejected, plural, =0 {none} one {# field} other {# fields}} to reject",
+        "titleApproveAll": "Approve all {count, plural, one {# field} other {# fields}}?",
+        "titleMixed": "Approve {approved, plural, one {# field} other {# fields}} and reject {rejected, plural, one {# field} other {# fields}}?",
+        "titleRejectAll": "Reject all {count, plural, one {# field} other {# fields}}?",
+        "descriptionApprove": "The approved values are applied to the member record immediately and the member is emailed the decision.",
+        "descriptionReject": "Rejected fields are not applied. The member is emailed your reason word for word.",
+        "confirmApproveAll": "Approve all",
+        "confirmMixed": "Approve {approved}, reject {rejected}",
+        "confirmRejectAll": "Reject all",
+        "cancel": "Cancel",
+        "reasonLabel": "Reason shown to the member",
+        "reasonPlaceholder": "Explain what was not approved and what to do instead…",
+        "reasonHelpRequired": "Required when a field is rejected. Sent to the member word for word.",
+        "reasonHelpOptional": "Optional. Sent to the member word for word.",
+        "noteLabel": "Internal note (optional)",
+        "noteHelp": "Staff only — never shown to the member. Up to {max} characters.",
+        "errors": {
+          "tooLong": "Must be at most {max} characters."
+        },
+        "toast": {
+          "approved": "Decision recorded — every field was applied.",
+          "partially_approved": "Decision recorded — the approved fields were applied.",
+          "rejected": "Decision recorded — nothing was applied.",
+          "repeated": "This decision was already recorded.",
+          "already_decided": "Another reviewer already decided this request. The page has been refreshed.",
+          "not_pending": "This request is no longer awaiting a decision. The page has been refreshed.",
+          "member_archived": "This member is archived — reject the request or unarchive the member first.",
+          "member_erasing": "This member is being erased — the request cannot be approved.",
+          "contact_removed": "The submitting contact was removed — their fields can only be rejected.",
+          "validation_error": "An approved value no longer passes validation. Reject that field instead.",
+          "reason_required": "Add a reason for the rejected fields.",
+          "recorded": "Decision recorded.",
+          "error": "Could not record the decision. Please try again."
+        }
+      }
+    },
     "members": {
       "title": "Members",
       "overrideReason": {
@@ -5262,6 +5356,7 @@
   "nav": {
     "staff": {
       "dashboard": "Dashboard",
+      "changeRequests": "Change requests",
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",
@@ -5431,6 +5526,14 @@
       }
     },
     "account": {
+      "contactLanguage": {
+        "title": "Language for emails to you",
+        "description": "Used for messages addressed to you personally, such as the decision on a change you proposed. Emails to the company follow the setting above.",
+        "save": "Save language",
+        "savedToast": "Email language updated.",
+        "errorToast": "Could not save the language. Please try again.",
+        "readOnlyToast": "The system is in read-only mode for a moment. Try again shortly."
+      },
       "title": "Account settings",
       "subtitle": "Manage your password and notification language.",
       "forgotPassword": "Forgot your password?",
@@ -5955,6 +6058,116 @@
         "status": "Status"
       }
     },
+    "changeRequests": {
+      "form": {
+        "pageTitle": "Propose changes",
+        "pageSubtitle": "Your changes are reviewed by the chamber before they take effect.",
+        "contactSection": "Your contact details",
+        "companySection": "Company details",
+        "registeredAddressSection": "Registered address",
+        "billingAddressSection": "Billing address",
+        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none.",
+        "fields": {
+          "firstName": "First name",
+          "lastName": "Last name",
+          "phone": "Phone",
+          "roleTitle": "Job title",
+          "companyName": "Company name",
+          "website": "Website",
+          "description": "Description",
+          "line1": "Address line 1",
+          "line2": "Address line 2",
+          "subDistrict": "Sub-district",
+          "city": "City",
+          "province": "Province",
+          "postalCode": "Postal code",
+          "country": "Country (2-letter code)"
+        },
+        "submit": "Submit for review",
+        "submitting": "Submitting…",
+        "cancel": "Cancel",
+        "secondaryNote": "Only your company's primary contact can propose changes to the company details. Contact them if something needs updating.",
+        "notice": "Your proposal is reviewed by chamber staff, emailed to them, and kept with your member record.",
+        "privacyLink": "Privacy notice",
+        "pendingHint": "You already have a request awaiting review. Submitting again replaces it with these values.",
+        "resubmitTitle": "The chamber did not approve part of your last request:",
+        "errors": {
+          "phone": "Enter a phone number in international format, e.g. +66 81 234 5678.",
+          "website": "Enter a valid web address, e.g. https://example.com.",
+          "country": "Enter a 2-letter country code, e.g. TH.",
+          "billingIncomplete": "A billing address needs at least line 1, city, postal code and country — or leave every line empty."
+        }
+      },
+      "status": {
+        "submitted": "Your changes were sent for review.",
+        "nothingToSubmit": "Nothing to submit — every value matches your current record.",
+        "alreadyPending": "These changes are already awaiting review.",
+        "alreadyPendingUnchanged": "Your values match your record. The request you sent earlier is still awaiting review and has not changed.",
+        "rateLimited": "You have reached the limit of submissions for the last 24 hours. Try again after {retryAt}.",
+        "rateLimitedGeneric": "You have reached the limit of submissions for the last 24 hours. Try again later.",
+        "approvalNotRequired": "Changes no longer need approval — your edits now save directly."
+      },
+      "errors": {
+        "field": "Please check this value.",
+        "validation": "Please check the highlighted fields.",
+        "forbidden": "You are not allowed to change this.",
+        "archived": "This membership is archived and can no longer be edited.",
+        "generic": "Could not submit your changes. Please try again."
+      },
+      "pending": {
+        "title": "Awaiting chamber review",
+        "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
+        "editLink": "Edit your request"
+      },
+      "outcome": {
+        "title": {
+          "approved": "Your changes were approved",
+          "partially_approved": "Some of your changes were approved",
+          "rejected": "Your changes were not approved"
+        },
+        "body": {
+          "approved": "Decided {decidedAt}. Every change is now on your record.",
+          "partially_approved": "Decided {decidedAt}. The approved changes are on your record; the rest were not applied.",
+          "rejected": "Decided {decidedAt}. Nothing was changed on your record."
+        },
+        "reasonLabel": "Reason from the chamber",
+        "resubmit": "Edit and resubmit",
+        "dismiss": "Dismiss",
+        "dismissError": "Could not dismiss this notice. Please try again."
+      },
+      "diff": {
+        "field": "Field",
+        "seen": "Value when you submitted",
+        "current": "Current",
+        "proposed": "Proposed",
+        "empty": "(empty)",
+        "taxAffecting": "Affects tax documents",
+        "labels": {
+          "first_name": "First name",
+          "last_name": "Last name",
+          "phone": "Phone",
+          "role_title": "Job title",
+          "company_name": "Company name",
+          "website": "Website",
+          "description": "Description",
+          "registered_address": "Registered address",
+          "billing_address": "Billing address"
+        },
+        "lines": {
+          "line1": "Line 1",
+          "line2": "Line 2",
+          "sub_district": "Sub-district",
+          "city": "City",
+          "province": "Province",
+          "postal_code": "Postal code",
+          "country": "Country"
+        },
+        "outcome": {
+          "approved": "Approved",
+          "rejected": "Not approved"
+        }
+      }
+    },
     "edit": {
       "pageTitle": "Edit Profile",
       "notLinked": "Your account is not linked to a member.",
@@ -6348,6 +6561,11 @@
       "auto_email_skipped_no_recipient": "Automatic email skipped — no primary contact",
       "contact_marketing_opted_out": "Contact marketing switched off",
       "contact_marketing_opted_in": "Contact marketing switched on",
+      "member_change_request_submitted": "Member change request submitted",
+      "member_change_request_decided": "Member change request decided",
+      "member_change_request_withdrawn": "Member change request withdrawn",
+      "member_change_request_rate_limited": "Member change request refused — submission limit reached",
+      "member_change_approval_setting_changed": "Member change approval setting changed",
       "invoice_buyer_identity_invalid": "Buyer identity invalid — issuance blocked",
       "sign_in_failure": "Sign-in failed",
       "sign_out": "Signed out",

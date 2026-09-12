@@ -526,6 +526,13 @@ export const outboxMetrics = {
       | 'max_retries'
       | 'invalid_recipient'
       | 'no_template_handler'
+      // F114 — deterministic misses of the two change-request arms
+      // (review round 2, reliability N-1: the audit row carried the true
+      // reason while this label was hardcoded to no_template_handler).
+      | 'request_gone'
+      | 'recipient_gone'
+      | 'request_not_decided'
+      // (`request_superseded` is NOT a failure — see `superseded` below)
       // R17-02 — void two-phase-commit Phase 2 sync failure: Blob
       // prefetch bytes don't match the sha256 committed by Phase 1.
       // Emitted alongside the dual `email_dispatch_failed` +
@@ -537,6 +544,22 @@ export const outboxMetrics = {
       'outbox_permanent_failures_total',
       'Outbox rows permanently failed — alert on any non-zero rate',
     ).add(1, { notification_type: notificationType, reason });
+  },
+
+  /**
+   * F114 — a change-request staff row closed because its request was no
+   * longer PENDING at send time: the member replaced it, or a reviewer who
+   * reached the queue from the nav decided it before the next cron tick
+   * (whole-branch review F-4). A normal flow, not a failure: its own counter
+   * so the `outbox_permanent_failures_total` alarm stays clean; a rate here
+   * tracks resubmits + decide-before-dispatch.
+   * Alert: none (watch only). `docs/observability.md § 14.1`.
+   */
+  superseded(notificationType: string): void {
+    counter(
+      'outbox_superseded_total',
+      'Outbox rows closed because their request was replaced before send (F114)',
+    ).add(1, { notification_type: notificationType });
   },
 
   /**
@@ -6029,5 +6052,135 @@ export const insightsMetrics = {
         'F9 private export-artefact downloads by kind',
       ).add(1, { kind, tenant: tenantId });
     });
+  },
+} as const;
+
+// --- F114 members — change-request approval workflow -------------------------
+
+/** Bounded refusal reasons for `members_change_request_refused_total` (contracts § 4). */
+export type ChangeRequestRefusedReason =
+  | 'rate_limited'
+  | 'forbidden'
+  | 'archived'
+  | 'already_decided'
+  | 'validation'
+  // F114 review round 2 — a member acknowledging a COLLEAGUE's decision
+  // (same tenant, row visible): refused as not_found without a probe audit,
+  // counted here so an in-tenant IDOR attempt is not invisible.
+  | 'not_owner';
+
+/**
+ * F114 (contracts/notifications-and-audit.md § 4; docs/observability.md § 14.1
+ * "F114 rows"). Labels are bounded enums + `tenant`; never a user id, an
+ * email or a value.
+ */
+export const membersMetrics = {
+  changeRequests: {
+    /**
+     * `members_change_requests_pending_count{tenant}` — async gauge over
+     * `member_change_requests WHERE state = 'pending'`. NO caller yet: the
+     * per-tenant gauges tick is wired in Phase 8 (research R12 / V2, T102 —
+     * a pre-flip gate in quickstart § 3). Alert: see oldest age.
+     */
+    pendingCount(tenantId: string, count: number): void {
+      safeMetric(() => {
+        observeGauge(
+          'members_change_requests_pending_count',
+          'Member change requests awaiting a staff decision',
+          { tenant: tenantId },
+          count,
+        );
+      });
+    },
+    /**
+     * `members_change_request_oldest_age_seconds{tenant}` — age of the oldest
+     * pending request. NO caller yet (Phase 8, T102 — with `pendingCount`);
+     * the FR-037 alert rows (> 7 d warning, > 14 d page, both inside the
+     * 30-day data-subject-request clock) and the catalogue rows are ALREADY
+     * in `docs/observability.md § 14.1 / § 14.3` — T102 adds the emitter only.
+     */
+    oldestAgeSeconds(tenantId: string, seconds: number): void {
+      safeMetric(() => {
+        observeGauge(
+          'members_change_request_oldest_age_seconds',
+          'Age in seconds of the oldest pending member change request',
+          { tenant: tenantId },
+          seconds,
+        );
+      });
+    },
+    /** `members_change_request_submitted_total{tenant,scope,coalesced}` — one per created request. */
+    submitted(
+      tenantId: string,
+      scope: 'company' | 'own_contact' | 'mixed',
+      coalesced: boolean,
+    ): void {
+      safeMetric(() => {
+        counter(
+          'members_change_request_submitted_total',
+          'Member change requests created, by scope; coalesced = no new staff email queued',
+        ).add(1, { tenant: tenantId, scope, coalesced: coalesced ? 'true' : 'false' });
+      });
+    },
+    /** `members_change_request_decided_total{tenant,outcome}` — one per recorded decision. */
+    decided(
+      tenantId: string,
+      outcome: 'approved' | 'partially_approved' | 'rejected',
+    ): void {
+      safeMetric(() => {
+        counter(
+          'members_change_request_decided_total',
+          'Member change requests decided, by outcome',
+        ).add(1, { tenant: tenantId, outcome });
+      });
+    },
+    /** `members_change_request_refused_total{tenant,reason}` — a submit or decide refused with nothing persisted (a decide's `already_decided` can fire after a rolled-back write). */
+    refused(tenantId: string, reason: ChangeRequestRefusedReason): void {
+      safeMetric(() => {
+        counter(
+          'members_change_request_refused_total',
+          'Member change-request submits/decides refused, by bounded reason',
+        ).add(1, { tenant: tenantId, reason });
+      });
+    },
+    /** `members_change_request_decide_ms{tenant}` — decide use-case wall time (budget p95 < 400 ms). */
+    decideDurationMs(tenantId: string, ms: number): void {
+      safeMetric(() => {
+        histogram(
+          'members_change_request_decide_ms',
+          'decideChangeRequest transaction wall time',
+          'ms',
+        ).record(ms, { tenant: tenantId });
+      });
+    },
+    /**
+     * `members_change_request_no_reviewers_total{tenant}` — a submit found
+     * NO active reviewer (round 5, silent-failure #5): the request is
+     * created, nobody is emailed, and until the T102 gauges land this counter
+     * is the only signal. Alert: any non-zero rate (a roster misconfiguration
+     * blackholes every request of the tenant).
+     */
+    noReviewers(tenantId: string): void {
+      safeMetric(() => {
+        counter('members_change_request_no_reviewers_total', 'Change-request submits that found no active reviewer').add(1, {
+          tenant: tenantId,
+        });
+      });
+    },
+    /**
+     * `members_change_request_decision_email_skipped_total{tenant, reason}` —
+     * a decision committed but the member could not be told (round 5,
+     * silent-failure #3): the submitting contact is gone or unlinked. The
+     * decided audit event carries the same fact (`member_notified: false`).
+     * Alert: watch only; a rate that tracks contact removals is expected.
+     */
+    decisionEmailSkipped(tenantId: string, reason: 'recipient_gone'): void {
+      safeMetric(() => {
+        counter('members_change_request_decision_email_skipped_total', 'Change-request decisions whose member email was skipped').add(1, {
+          tenant: tenantId,
+          reason,
+        });
+      });
+    },
   },
 } as const;

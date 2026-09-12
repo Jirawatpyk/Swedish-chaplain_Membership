@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -15,13 +15,6 @@ import { Label } from '@/components/ui/label';
 import { RequiredMark } from '@/components/ui/required-mark';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import {
   boundedText,
   requiredText,
   type Translator,
@@ -32,6 +25,12 @@ import {
  *
  * Only shows whitelisted fields per FR-042 — forbidden fields are
  * hidden entirely, not shown disabled.
+ *
+ * F114 (FR-004, research R6): the contact's email/notification language
+ * (`preferredLanguage`) LEFT this form — it is a personal preference, not a
+ * member-record fact, and lives on /portal/account beside the display
+ * language. The immediate save semantics of the remaining fields are
+ * unchanged (flag-OFF path, SC-011).
  */
 
 function buildEditSchema(tv: Translator) {
@@ -39,7 +38,6 @@ function buildEditSchema(tv: Translator) {
     firstName: requiredText(tv, 100),
     lastName: requiredText(tv, 100),
     phone: boundedText(tv, 20).optional().default(''),
-    preferredLanguage: z.enum(['en', 'th', 'sv']),
     website: boundedText(tv, 200).optional().default(''),
     description: boundedText(tv, 2000).optional().default(''),
   });
@@ -53,7 +51,6 @@ type PortalEditFormProps = {
 
 export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   const t = useTranslations('portal.edit');
-  const tLang = useTranslations('common');
   const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -77,8 +74,6 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
       if (values.firstName !== initialValues.firstName) contactPatch.firstName = values.firstName;
       if (values.lastName !== initialValues.lastName) contactPatch.lastName = values.lastName;
       if (values.phone !== initialValues.phone) contactPatch.phone = values.phone || null;
-      if (values.preferredLanguage !== initialValues.preferredLanguage)
-        contactPatch.preferredLanguage = values.preferredLanguage;
       if (Object.keys(contactPatch).length > 0) body.primary_contact = contactPatch;
 
       // Member fields
@@ -112,7 +107,6 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             'firstName',
             'lastName',
             'phone',
-            'preferredLanguage',
             'website',
             'description',
           ];
@@ -216,31 +210,6 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                   {errors.phone.message}
                 </p>
               )}
-            </div>
-            <div>
-              <Label htmlFor="preferredLanguage">{t('fields.preferredLanguage')}</Label>
-              {/* W-9: Use Controller for proper RHF integration */}
-              <Controller
-                control={form.control}
-                name="preferredLanguage"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger id="preferredLanguage" className="w-full">
-                      <TranslatedSelectValue
-                        translate={(value: string) =>
-                          tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* W-7: i18n language option labels */}
-                      <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
-                      <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
-                      <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
             </div>
           </CardContent>
         </Card>

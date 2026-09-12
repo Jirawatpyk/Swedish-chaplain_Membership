@@ -194,6 +194,22 @@ export async function PATCH(request: NextRequest) {
 
   const deps = buildMembersDeps(ctx.tenant);
 
+  // F114 FR-001 / R6 — while the tenant requires approval this endpoint is
+  // narrowed to Group A (the use case refuses every Group B key with the
+  // forged-edit audit). Flag OFF → the resolver answers 'immediate' without a
+  // read, so the F3 path is byte-identical. A resolver failure is a 500 —
+  // never a guessed mode.
+  let gate: 'immediate' | 'approval';
+  try {
+    gate = await deps.memberChangeGate.resolve(ctx.tenant);
+  } catch (e) {
+    logger.error(
+      { errorId: 'M114.portal.profile.gate_failed', requestId: ctx.requestId, err: e instanceof Error ? e.name : String(e) },
+      'portal.profile.patch.gate_failed',
+    );
+    return NextResponse.json({ error: { code: 'internal' } }, { status: 500 });
+  }
+
   const result = await memberSelfUpdate(
     {
       tenant: ctx.tenant,
@@ -207,6 +223,7 @@ export async function PATCH(request: NextRequest) {
       rawBody,
       actorUserId: ctx.current.user.id,
       requestId: ctx.requestId,
+      gate,
     },
   );
 

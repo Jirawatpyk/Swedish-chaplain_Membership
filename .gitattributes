@@ -1,1 +1,3 @@
 src/lib/thai-postal/data.json -text
+# Claude Code Workflow scripts: the Workflow tool inlines the file and refuses \r as a hidden control character on CRLF checkouts.
+.claude/workflows/*.js text eol=lf

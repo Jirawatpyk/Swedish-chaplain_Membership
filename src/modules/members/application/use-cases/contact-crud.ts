@@ -33,6 +33,7 @@ import { primaryContactTriggerViolation } from '@/lib/db-errors';
 import { err, ok, type Result } from '@/lib/result';
 import { asPhone } from '../../domain/value-objects/phone';
 import { asEmail } from '../../domain/value-objects/email';
+import { CONTACT_FIELD_RULES } from '../../domain/change-request/field-rules';
 import { assertPrimaryContactInvariant } from '../../domain/policies/primary-contact-invariant';
 import type { TenantContext } from '@/modules/tenants';
 import type { Contact, ContactId } from '../../domain/contact';
@@ -83,10 +84,14 @@ function isIsoDateOnly(v: string): boolean {
 
 export const updateContactFieldsSchema = z
   .object({
-    first_name: z.string().trim().min(1).max(100).optional(),
-    last_name: z.string().trim().min(1).max(100).optional(),
-    phone: z.string().max(20).nullable().optional(),
-    role_title: z.string().max(100).nullable().optional(),
+    // F114 FR-006 / research R14 — the four Group B contact rules are the
+    // SHARED objects from `domain/change-request/field-rules.ts`, so a member
+    // change request validates with the very same zod objects a staff edit is
+    // held to (reference-equality pinned by field-rules-parity.test.ts).
+    first_name: CONTACT_FIELD_RULES.first_name,
+    last_name: CONTACT_FIELD_RULES.last_name,
+    phone: CONTACT_FIELD_RULES.phone,
+    role_title: CONTACT_FIELD_RULES.role_title,
     preferred_language: z.enum(['en', 'th', 'sv']).optional(),
     // Thai Alumni DOB gate — the edit form renders `date_of_birth` when the
     // member's plan requires it (individual scope). It was omitted from this

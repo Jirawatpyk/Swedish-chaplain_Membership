@@ -29,6 +29,9 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({
     memberRepo: { findByLinkedUserId: (...a: unknown[]) => findByLinkedUserIdMock(...a) },
+    // F114 (privacy I-1) — the route resolves the viewer's own contact for the
+    // own-contact change-request exclusion; an empty roster is a valid answer.
+    contactRepo: { listByMember: async () => ok([]) },
     timeline: {},
   }),
 }));

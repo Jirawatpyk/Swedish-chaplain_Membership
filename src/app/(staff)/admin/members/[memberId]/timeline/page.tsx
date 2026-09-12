@@ -137,6 +137,7 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
       // response; admission is the page guard above. 016 final review B2 —
       // this SSR path was missed when the gate landed, so a super_admin's
       // first page showed no invoices while the API-driven "load more" did.
+      viewerContactId: null, // staff viewer — the FR-029 projection is member-only
       invoicingRead: canPerform(
         session.user.role,
         'invoicing.read',

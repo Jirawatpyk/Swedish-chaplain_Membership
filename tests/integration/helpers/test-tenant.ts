@@ -45,6 +45,10 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { tenantMemberSequences } from '@/modules/members/infrastructure/db/schema-member-sequences';
 import { tenantMemberSettings } from '@/modules/members/infrastructure/db/schema-member-settings';
+import {
+  memberChangeRequestFields,
+  memberChangeRequests,
+} from '@/modules/members/infrastructure/db/schema-change-requests';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
@@ -175,6 +179,18 @@ export async function createTestTenant(
     await db
       .delete(tenantMemberSettings)
       .where(eq(tenantMemberSettings.tenantId, slug));
+    // F114 (migration 0300) — change-request rows FK both contacts and
+    // members (ON DELETE CASCADE) and the F1 `users` rows (RESTRICT). Delete
+    // them explicitly BEFORE contacts so `deleteTestUser` in a test's
+    // afterAll never trips the user FK, and so the order does not depend on
+    // the cascade. Fields cascade from requests; the explicit delete is for
+    // clarity, as with invoice_lines above.
+    await db
+      .delete(memberChangeRequestFields)
+      .where(eq(memberChangeRequestFields.tenantId, slug));
+    await db
+      .delete(memberChangeRequests)
+      .where(eq(memberChangeRequests.tenantId, slug));
     await db.delete(contacts).where(eq(contacts.tenantId, slug));
     // R2 Batch 3b-bis — migration 0125 added composite FKs:
     //   scheduled_plan_changes → renewal_cycles → members.

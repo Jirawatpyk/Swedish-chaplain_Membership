@@ -46,6 +46,8 @@ import {
  
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { isDecided } from '@/modules/members';
+import { errKind } from '@/lib/log-id';
 import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
  
@@ -55,6 +57,22 @@ import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/em
 import type { EmailLocale } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { isRole } from '@/modules/auth/domain/role';
+import { listActiveUsersByRole } from '@/modules/auth';
+import { reviewerRoles } from '@/lib/members-change-request-deps';
+// F114 — the change-request staff email is rendered AT SEND TIME from the
+// request rows (research R8 / § V3): the outbox row carries ids + field keys
+// only. Read through the members barrel (Principle III).
+import {
+  buildChangeRequestDecidedMemberEmail,
+  buildChangeRequestSubmittedStaffEmail,
+  drizzleChangeRequestRepo,
+  drizzleContactRepo,
+  drizzleMemberRepo,
+  drizzleMemberSettingsRepo,
+  formatMemberNumber,
+  resolveMemberNumberPrefix,
+  type ChangeRequestId,
+} from '@/modules/members';
  
 import {
   buildInvoiceAutoEmail,
@@ -112,6 +130,12 @@ interface BuiltPayload {
   html: string;
   text: string;
   /**
+   * F114 FR-023 — the member decision email goes to the submitting contact's
+   * CURRENT address, re-read at dispatch; when set it replaces the address
+   * frozen on the outbox row at decide time.
+   */
+  toEmail?: string;
+  /**
    * FR-036 — optional file attachments. Currently populated only for
    * `invoice_voided` (VOID-stamped invoice PDF) so the member's
    * bookkeeper has a filing-complete record that matches the original
@@ -125,16 +149,44 @@ interface BuiltPayload {
 }
 
 /**
+ * F114 — a DETERMINISTIC miss: the row can never render because the thing
+ * it refers to no longer exists (the request row was hard-deleted, or the
+ * submitting contact was removed / erased). Unlike `null` (transient — the
+ * template inputs could not be resolved this tick) a miss permanent-fails
+ * the row on the FIRST tick with the reason in `last_error` + the
+ * `email_dispatch_failed` audit payload, so an operator sees WHY.
+ */
+interface PayloadMiss {
+  /**
+   * Per arm (round 7 — the two arms do NOT share one vocabulary):
+   *   staff arm (`…_submitted_staff`): `request_gone` — the request, its
+   *     member OR its submitting contact no longer exists; `recipient_gone`
+   *     — no active reviewer matches the row; `request_superseded` — the
+   *     request left `pending` before send (a normal flow: silent skip).
+   *   member arm (`…_decided_member`): `request_gone` — the request row is
+   *     gone; `recipient_gone` — the submitting contact is gone / removed /
+   *     unlinked; `request_not_decided` — the request is not `decided`
+   *     (unreachable by construction; kept LOUD: audit + failure metric).
+   */
+  readonly miss: 'request_gone' | 'recipient_gone' | 'request_superseded' | 'request_not_decided';
+}
+
+function isPayloadMiss(v: BuiltPayload | PayloadMiss | null): v is PayloadMiss {
+  return v !== null && 'miss' in v;
+}
+
+/**
  * Translate an outbox row into a ready-to-send email. Returns `null`
  * when the row's notification_type + context_data do not produce a
  * renderable payload; the dispatcher then treats this as a permanent-
  * failure path with an explicit audit event so unrenderable rows do
- * not disappear silently.
+ * not disappear silently. Returns a `PayloadMiss` for the F114 arms when
+ * the referenced request / recipient is gone (see above).
  */
 async function buildPayload(
   row: NotificationsOutboxRow,
   prefetchedBytes?: Uint8Array,
-): Promise<BuiltPayload | null> {
+): Promise<BuiltPayload | PayloadMiss | null> {
   const locale: Locale = isLocale(row.locale) ? row.locale : 'en';
   const ctx = row.contextData as Record<string, unknown>;
 
@@ -358,6 +410,113 @@ async function buildPayload(
         reason,
         locale,
       });
+    }
+    case 'member_change_request_submitted_staff': {
+      // F114 FR-011 (research R8 / § V3) — read-at-send under the row's
+      // tenant. `context_data` = { tenantId, requestId, memberId,
+      // submitterUserId, fieldKeys } — ids only; the diff, the company name,
+      // the member number and the submitter's name come from the rows NOW,
+      // so a scrubbed request renders scrubbed. Same tenant-id shape guard as
+      // the receipt_pdf_render arm (S9 closure).
+      const requestId = typeof ctx.requestId === 'string' ? ctx.requestId : '';
+      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,63}$/.test(row.tenantId)) return null;
+      const tenantCtx = asTenantContext(row.tenantId);
+      const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
+      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      // A request replaced (or otherwise closed) before this row was sent
+      // must not reach the reviewer — the replacement queued its own rows
+      // (review: reliability I-4).
+      if (request.value.state !== 'pending') return { miss: 'request_superseded' };
+      // The recipient must STILL be an active reviewer at send time: an
+      // admin disabled between enqueue and dispatch gets no member PII
+      // (review: security I-4). The roster read throws (no Result): a
+      // transient fault stays on the retry ladder (round 2, reliability
+      // R-1 — the same class I-3 closed at the prefix read below). The reviewer is
+      // matched by USER ID when the row carries it, so an admin who changed
+      // their address between enqueue and send is still reached — at the
+      // CURRENT address (round 2, reliability N-3); rows without an id
+      // (enqueued before this change) fall back to the frozen address.
+      let reviewers: Awaited<ReturnType<typeof listActiveUsersByRole>>;
+      try {
+        reviewers = await listActiveUsersByRole(reviewerRoles());
+      } catch (e) {
+        // R-3 rule (this file, the blob prefetch): log before returning null
+        // so ops can tell a roster read failure from every other transient
+        // null the ladder labels `no_template_handler` (round 5, silent-failure #2)
+        logger.warn({ outboxRowId: row.id, tenantId: row.tenantId, err: errKind(e) }, 'cron.outbox_dispatch.change_request.roster_read_failed');
+        return null;
+      }
+      const reviewerUserId = typeof ctx.reviewerUserId === 'string' ? ctx.reviewerUserId : null;
+      const reviewer =
+        reviewerUserId !== null
+          ? reviewers.find((r) => r.id === reviewerUserId)
+          : reviewers.find((r) => r.email.toLowerCase() === row.toEmail.toLowerCase());
+      if (!reviewer) return { miss: 'recipient_gone' };
+      const member = await drizzleMemberRepo.findById(tenantCtx, request.value.memberId);
+      if (!member.ok) return member.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      const contact = await drizzleContactRepo.findById(tenantCtx, request.value.submittedByContactId);
+      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      // The prefix read throws (no Result); a transient failure must stay on
+      // the retry ladder, not escape the tick with `attempts` unbumped
+      // (review: reliability I-3).
+      let prefix: Awaited<ReturnType<typeof resolveMemberNumberPrefix>>;
+      try {
+        prefix = await resolveMemberNumberPrefix(tenantCtx, drizzleMemberSettingsRepo);
+      } catch (e) {
+        logger.warn({ outboxRowId: row.id, tenantId: row.tenantId, err: errKind(e) }, 'cron.outbox_dispatch.change_request.prefix_read_failed');
+        return null;
+      }
+      const staffEmail = buildChangeRequestSubmittedStaffEmail({
+        locale,
+        companyName: member.value.companyName,
+        memberNumber: formatMemberNumber(prefix, member.value.memberNumber),
+        submitterName: `${contact.value.firstName} ${contact.value.lastName}`.trim(),
+        submitterRole: request.value.submitterRoleAtSubmission,
+        submittedAt: request.value.submittedAt,
+        submitterUserId: request.value.submittedByUserId,
+        fields: request.value.fields.map((f) => ({
+          key: f.key,
+          current: f.seen,
+          proposed: f.proposed,
+          affectsTaxDocuments: f.affectsTaxDocuments,
+        })),
+      });
+      return { ...staffEmail, toEmail: reviewer.email };
+    }
+    case 'member_change_request_decided_member': {
+      // F114 FR-023 (research R8 / § V3) — read-at-send under the row's
+      // tenant: the outcome, the per-field outcomes, the proposed values and
+      // the reviewer's reason come from the request rows NOW (a scrubbed
+      // request renders scrubbed). The recipient is the submitting contact's
+      // CURRENT address; a removed / unlinked contact is a deterministic
+      // `recipient_gone` miss (permanent on the first tick, audited).
+      const requestId = typeof ctx.requestId === 'string' ? ctx.requestId : '';
+      if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,63}$/.test(row.tenantId)) return null;
+      const tenantCtx = asTenantContext(row.tenantId);
+      const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
+      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      // a decided row always carries outcome + decidedAt (F6 narrowing; a
+      // contradicting row never reaches here — the repo throws on it). A
+      // request that is NOT decided cannot happen (the row is enqueued inside
+      // the decide tx and a decided row never leaves `decided`) — so it stays
+      // LOUD (round 7, silent-failure R1): permanent + email_dispatch_failed
+      // audit + failure metric, never the silent superseded skip.
+      const decidedRequest = request.value;
+      if (!isDecided(decidedRequest)) return { miss: 'request_not_decided' };
+      const contact = await drizzleContactRepo.findById(tenantCtx, decidedRequest.submittedByContactId);
+      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'recipient_gone' } : null;
+      if (contact.value.removedAt !== null || contact.value.linkedUserId === null) return { miss: 'recipient_gone' };
+      const built = buildChangeRequestDecidedMemberEmail({
+        locale,
+        requestId: decidedRequest.id,
+        outcome: decidedRequest.outcome,
+        decidedAt: decidedRequest.decidedAt,
+        reason: decidedRequest.decisionReason,
+        fields: decidedRequest.fields
+          .filter((f): f is typeof f & { outcome: 'approved' | 'rejected' } => f.outcome !== null)
+          .map((f) => ({ key: f.key, proposed: f.proposed, outcome: f.outcome })),
+      });
+      return { ...built, toEmail: contact.value.email };
     }
     default:
       return null;
@@ -863,11 +1022,38 @@ async function dispatchOne(
       return 'permanent';
     }
 
-    const payload = await buildPayload(row, prefetchedBytes);
+    const built = await buildPayload(row, prefetchedBytes);
+    // F114 — a deterministic miss (request / recipient gone) permanent-fails
+    // on the first tick; `null` keeps the transient retry ladder below.
+    const miss = isPayloadMiss(built) ? built.miss : null;
+    const payload = isPayloadMiss(built) ? null : built;
 
     if (!payload) {
       const nextAttempt = row.attempts + 1;
-      const isPermanent = nextAttempt >= MAX_ATTEMPTS;
+      const isPermanent = miss !== null || nextAttempt >= MAX_ATTEMPTS;
+      const failReason: string = miss ?? 'no_template_handler';
+
+      // F114 — a staff row whose request left `pending` before it was sent
+      // (replaced by a resubmit, or decided from the queue before this tick)
+      // is a NORMAL flow, not an incident (whole-branch review F-4;
+      // US5 coalescing is PR-2). The row is closed as a silent skip: terminal
+      // status + `last_error` for the operator, its own counter, and no
+      // `email_dispatch_failed` audit (the replacement is already audited as
+      // `member_change_request_withdrawn{replaced}`) — so the on-call alarm
+      // on `outbox_permanent_failures_total` does not fire for a typo fix.
+      if (miss === 'request_superseded') {
+        await tx
+          .update(notificationsOutbox)
+          .set({
+            attempts: nextAttempt,
+            status: 'permanently_failed' as const,
+            lastError: failReason,
+            updatedAt: now,
+          })
+          .where(eq(notificationsOutbox.id, row.id));
+        outboxMetrics.superseded(row.notificationType);
+        return 'permanent';
+      }
 
       if (isPermanent) {
         await tx
@@ -875,7 +1061,7 @@ async function dispatchOne(
           .set({
             attempts: nextAttempt,
             status: 'permanently_failed' as const,
-            lastError: 'no_template_handler',
+            lastError: failReason,
             updatedAt: now,
           })
           .where(eq(notificationsOutbox.id, row.id));
@@ -890,14 +1076,14 @@ async function dispatchOne(
         await tx.insert(auditLog).values({
           eventType: 'email_dispatch_failed',
           actorUserId: 'system:cron',
-          summary: `outbox row ${row.id} permanently failed (no_template_handler) after ${nextAttempt} attempts`,
+          summary: `outbox row ${row.id} permanently failed (${failReason}) after ${nextAttempt} attempts`,
           requestId,
           tenantId: row.tenantId,
           payload: {
             outbox_row_id: row.id,
             notification_type: row.notificationType,
             attempts: nextAttempt,
-            reason: 'no_template_handler',
+            reason: failReason,
           },
         });
         // T106 — dual-emit the F4-specific `auto_email_delivery_failed`
@@ -923,7 +1109,7 @@ async function dispatchOne(
         }
         outboxMetrics.permanentFailure(
           row.notificationType,
-          'no_template_handler',
+          miss === 'request_gone' || miss === 'recipient_gone' || miss === 'request_not_decided' ? miss : 'no_template_handler',
         );
         if (row.notificationType === 'invoice_auto_email') {
           invoicingMetrics.autoEmailBounce('no_template_handler');
@@ -958,7 +1144,7 @@ async function dispatchOne(
     // bottleneck we can switch to a claim+release pattern where the tx
     // only claims the row and the send happens outside.
     const result = await emailSender.send({
-      to: row.toEmail,
+      to: payload.toEmail ?? row.toEmail,
       subject: payload.subject,
       html: payload.html,
       text: payload.text,
@@ -1149,6 +1335,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   ];
   if (!env.features.f4Invoicing) {
     baseReadyFilters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
+  }
+  // F114 — the same containment for the two change-request arms (whole-
+  // branch review F-1). With FEATURE_MEMBER_CHANGE_APPROVAL off the rows
+  // enqueued while it was on MUST NOT keep dispatching member PII to staff
+  // (or decisions to members) after the operator flips the switch: they
+  // stay `pending`, untouched, and drain when the flag returns
+  // (quickstart § 3, rollback matrix row 2).
+  if (!env.features.memberChangeApproval) {
+    baseReadyFilters.push(
+      ne(notificationsOutbox.notificationType, 'member_change_request_submitted_staff'),
+      ne(notificationsOutbox.notificationType, 'member_change_request_decided_member'),
+    );
   }
   // R1-I3 — kill-switch parity for the T166 async render branch.
   // When `FEATURE_F5_ASYNC_RECEIPT_PDF` is off, the dispatcher must

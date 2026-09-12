@@ -92,6 +92,18 @@ export type TimelineListDeps = {
    * and has zero misses; this follows it.
    */
   readonly invoicingRead: boolean;
+  /**
+   * F114 review (privacy I-1) — the PORTAL viewer's own contact id. A
+   * `member_change_request_submitted` row with `scope: 'own_contact'` names
+   * the colleague who proposed a change to THEIR OWN phone / name / title
+   * (`contact_id` + `field_keys`); FR-029 / spec U4 keep that per person, so
+   * for a member-role viewer such rows are dropped unless the contact is the
+   * viewer. Staff viewers (members.read) see everything and pass `null`
+   * EXPLICITLY — the field is required (round 2 security R-2: an optional
+   * field let a new caller read as "unresolvable = drop every own-contact
+   * row" without anyone noticing).
+   */
+  readonly viewerContactId: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -187,6 +199,40 @@ function carriesMoney(e: TimelineEvent): boolean {
   if (MONEY_SOURCES.has(e.source)) return true;
   if (MONEY_AUDIT_PREFIXES.some((p) => e.eventType.startsWith(p))) return true;
   return hasMoneyShapedPayload(e.payload);
+}
+
+/** FR-029 — a colleague's own-contact change request (its keys + contact) stays theirs. */
+function isChangeRequestRow(e: TimelineEvent): boolean {
+  return e.source === 'audit' && e.eventType.startsWith('member_change_request_');
+}
+
+const CHANGE_REQUEST_FIELD_KEYS_IN_PAYLOAD = ['field_keys', 'fields'] as const;
+
+function projectChangeRequestRowsForViewer(events: readonly TimelineEvent[], viewerContactId: string | null): TimelineEvent[] {
+  const out: TimelineEvent[] = [];
+  for (const e of events) {
+    if (!isChangeRequestRow(e) || !e.payload) {
+      out.push(e);
+      continue;
+    }
+    const contactId = e.payload['contact_id'];
+    const mine = typeof contactId === 'string' && contactId === viewerContactId;
+    const scope = e.payload['scope'];
+    // a privacy control fails CLOSED: only a row that says `company` is
+    // everyone's; `mixed` is stripped; `own_contact`, an ABSENT or an
+    // unrecognised scope is dropped for anyone but its own contact
+    // (round 6, silent-failure #19)
+    if (mine || scope === 'company') {
+      out.push(e);
+      continue;
+    }
+    if (scope !== 'mixed') continue; // own_contact / absent / unknown: not this viewer's business
+    // mixed: the company part is visible (FR-029) — the field list is not
+    const stripped: Record<string, unknown> = { ...e.payload };
+    for (const key of CHANGE_REQUEST_FIELD_KEYS_IN_PAYLOAD) delete stripped[key];
+    out.push({ ...e, payload: stripped });
+  }
+  return out;
 }
 
 function redactEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
@@ -314,7 +360,17 @@ export async function timelineList(
   const { events, nextCursor, total } = timelineResult.value;
   // rbac-portal-identity-ok: selects the member's own-history projection; the
   // permission decisions are the route gate above and `invoicingRead` below.
-  const roleProjected = meta.actorRole === 'member' ? redactEvents(events) : events;
+  // The FR-029 projection runs on the RAW rows (before redaction — round 2,
+  // security R-3: a future deny-list entry for `contact_id` must not fail it
+  // open) and covers all three change-request events: `submitted`, `decided`
+  // and `withdrawn` all carry `scope` + `contact_id`. A colleague's
+  // own_contact row is DROPPED; a mixed row (company keys + the primary's own
+  // keys) is kept with its per-field keys stripped for anyone but its
+  // submitter (round 2, privacy I-1 residual).
+  const roleProjected =
+    meta.actorRole === 'member'
+      ? redactEvents(projectChangeRequestRowsForViewer(events, deps.viewerContactId))
+      : events;
   // 016 review (security I-1) — money rows need `invoicing.read` on top of the
   // `members.read` that admitted the request. `!== true` rather than
   // `=== false` so an omitted dep fails CLOSED.
@@ -332,6 +388,9 @@ export async function timelineList(
     // remains as belt-and-braces for any residue the broader app-side probe
     // catches that the SQL twin somehow missed, so the header can never
     // disclose more than the rows on screen.
-    total: Math.max(0, total - (roleProjected.length - moneyFiltered.length)),
+    // F114 — `events.length`, not `roleProjected.length`: the member projection
+    // now also drops a colleague's own-contact request rows, and the header
+    // count must never exceed the rows on screen.
+    total: Math.max(0, total - (events.length - moneyFiltered.length)),
   });
 }

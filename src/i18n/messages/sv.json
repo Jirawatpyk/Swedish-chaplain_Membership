@@ -995,6 +995,100 @@
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
       "loading": "Läser in…"
     },
+    "changeRequests": {
+      "queue": {
+        "title": "Ändringsbegäranden",
+        "subtitle": "Ändringar som medlemmar föreslagit och som väntar på personalens beslut, äldst först.",
+        "empty": "Inga ändringsbegäranden väntar på beslut.",
+        "emptyHint": "Nya medlemsförslag visas här så snart de skickas in; personalens e-post länkar direkt till begäran.",
+        "noPendingForSubmitter": "Den här personen har ingen begäran som väntar på beslut — den senaste beslutades av {name} den {decidedAt}.",
+        "noRequestForSubmitter": "Den här personen har ingen ändringsbegäran.",
+        "rowMeta": "Inskickad av {submitter} · {count, plural, one {# fält} other {# fält}} · {submittedAt}",
+        "open": "Granska"
+      },
+      "review": {
+        "title": "Granska ändringsbegäran",
+        "subtitle": "{company} · inskickad av {submitter} ({role}) den {submittedAt}",
+        "roles": {
+          "primary": "primär kontakt",
+          "secondary": "sekundär kontakt"
+        },
+        "state": {
+          "pending": "Väntar på beslut",
+          "decided": "Beslutad",
+          "withdrawn": "Återkallad"
+        },
+        "outcome": {
+          "approved": "Godkänd",
+          "partially_approved": "Delvis godkänd",
+          "rejected": "Inte godkänd"
+        },
+        "decidedBy": "Beslutad av {name} den {decidedAt}",
+        "deactivated": "(inaktiverad)",
+        "unknownReviewer": "en medarbetare",
+        "decisionReason": "Motivering som visas för medlemmen",
+        "decisionNote": "Intern anteckning",
+        "backToMember": "Medlemsuppgifter",
+        "backToMembers": "Medlemmar",
+        "readOnly": "Du kan se den här begäran. Endast personal som kan redigera medlemmar kan besluta om den.",
+        "archived": "Medlemmen är arkiverad. Avslå begäran, eller avarkivera medlemmen först och godkänn sedan.",
+        "erasing": "Medlemmen håller på att raderas. Begäran kan inte godkännas.",
+        "notPending": "Den här begäran väntar inte längre på beslut.",
+        "columns": {
+          "decision": "Godkänn"
+        },
+        "approveCheckbox": "Godkänn {field}",
+        "markers": {
+          "changedSinceSubmitted": "Ändrat sedan medlemmen skickade in — de såg:",
+          "alreadyCurrent": "Redan aktuellt — ett godkännande registrerar beslutet utan att ändra uppgifterna",
+          "contactRemoved": "Kontakten är borttagen — fältet kan bara avslås",
+          "taxAffecting": "Påverkar skattedokument"
+        },
+        "taxHint": {
+          "buyer_name": "köparens namn på skattefakturor och kvitton",
+          "buyer_address": "köparens adress på skattefakturor och kvitton — kontrollera huvudkontor/filial",
+          "buyer_contact": "köparens kontaktperson på skattedokument",
+          "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial"
+        }
+      },
+      "decision": {
+        "confirm": "Bekräfta beslut",
+        "selectionSummary": "{approved, plural, =0 {Inga fält} one {# fält} other {# fält}} att godkänna, {rejected, plural, =0 {inga} one {# fält} other {# fält}} att avslå",
+        "titleApproveAll": "Godkänna alla {count, plural, one {# fält} other {# fält}}?",
+        "titleMixed": "Godkänna {approved, plural, one {# fält} other {# fält}} och avslå {rejected, plural, one {# fält} other {# fält}}?",
+        "titleRejectAll": "Avslå alla {count, plural, one {# fält} other {# fält}}?",
+        "descriptionApprove": "De godkända värdena förs in i medlemsuppgifterna direkt och medlemmen får beslutet per e-post.",
+        "descriptionReject": "Avslagna fält förs inte in. Medlemmen får din motivering ordagrant per e-post.",
+        "confirmApproveAll": "Godkänn alla",
+        "confirmMixed": "Godkänn {approved}, avslå {rejected}",
+        "confirmRejectAll": "Avslå alla",
+        "cancel": "Avbryt",
+        "reasonLabel": "Motivering som visas för medlemmen",
+        "reasonPlaceholder": "Förklara vad som inte godkändes och vad medlemmen kan göra i stället…",
+        "reasonHelpRequired": "Krävs när ett fält avslås. Skickas ordagrant till medlemmen.",
+        "reasonHelpOptional": "Valfritt. Skickas ordagrant till medlemmen.",
+        "noteLabel": "Intern anteckning (valfritt)",
+        "noteHelp": "Endast för personal — visas aldrig för medlemmen. Högst {max} tecken.",
+        "errors": {
+          "tooLong": "Får vara högst {max} tecken."
+        },
+        "toast": {
+          "approved": "Beslutet är registrerat — alla fält infördes.",
+          "partially_approved": "Beslutet är registrerat — de godkända fälten infördes.",
+          "rejected": "Beslutet är registrerat — inget infördes.",
+          "repeated": "Det här beslutet är redan registrerat.",
+          "already_decided": "En annan granskare har redan beslutat om den här begäran. Sidan har uppdaterats.",
+          "not_pending": "Den här begäran väntar inte längre på beslut. Sidan har uppdaterats.",
+          "member_archived": "Medlemmen är arkiverad — avslå begäran eller avarkivera medlemmen först.",
+          "member_erasing": "Medlemmen håller på att raderas — begäran kan inte godkännas.",
+          "contact_removed": "Kontakten som skickade in är borttagen — dess fält kan bara avslås.",
+          "validation_error": "Ett godkänt värde klarar inte längre valideringen. Avslå det fältet i stället.",
+          "reason_required": "Ange en motivering för de avslagna fälten.",
+          "recorded": "Beslutet har registrerats.",
+          "error": "Beslutet kunde inte registreras. Försök igen."
+        }
+      }
+    },
     "members": {
       "title": "Medlemmar",
       "overrideReason": {
@@ -5262,6 +5356,7 @@
   "nav": {
     "staff": {
       "dashboard": "Instrumentpanel",
+      "changeRequests": "Ändringsbegäranden",
       "plans": "Paket",
       "users": "Användare",
       "settings": "Inställningar",
@@ -5431,6 +5526,14 @@
       }
     },
     "account": {
+      "contactLanguage": {
+        "title": "Språk för e-post till dig",
+        "description": "Används för meddelanden som riktas till dig personligen, till exempel beslutet om en ändring du föreslagit. E-post till företaget följer inställningen ovan.",
+        "save": "Spara språk",
+        "savedToast": "E-postspråket har uppdaterats.",
+        "errorToast": "Det gick inte att spara språket. Försök igen.",
+        "readOnlyToast": "Systemet är tillfälligt i skrivskyddat läge. Försök igen om en stund."
+      },
       "title": "Kontoinställningar",
       "subtitle": "Hantera ditt lösenord och språket för aviseringsmejl.",
       "forgotPassword": "Glömt ditt lösenord?",
@@ -5955,6 +6058,116 @@
         "status": "Status"
       }
     },
+    "changeRequests": {
+      "form": {
+        "pageTitle": "Föreslå ändringar",
+        "pageSubtitle": "Dina ändringar granskas av kammaren innan de träder i kraft.",
+        "contactSection": "Dina kontaktuppgifter",
+        "companySection": "Företagsuppgifter",
+        "registeredAddressSection": "Registrerad adress",
+        "billingAddressSection": "Faktureringsadress",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
+        "fields": {
+          "firstName": "Förnamn",
+          "lastName": "Efternamn",
+          "phone": "Telefon",
+          "roleTitle": "Befattning",
+          "companyName": "Företagsnamn",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "line1": "Adressrad 1",
+          "line2": "Adressrad 2",
+          "subDistrict": "Stadsdel",
+          "city": "Stad",
+          "province": "Provins",
+          "postalCode": "Postnummer",
+          "country": "Land (tvåbokstavskod)"
+        },
+        "submit": "Skicka för granskning",
+        "submitting": "Skickar…",
+        "cancel": "Avbryt",
+        "secondaryNote": "Endast företagets primära kontakt kan föreslå ändringar av företagsuppgifterna. Kontakta hen om något behöver uppdateras.",
+        "notice": "Ditt förslag granskas av kammarens personal, skickas till dem via e-post och sparas tillsammans med din medlemspost.",
+        "privacyLink": "Integritetspolicy",
+        "pendingHint": "Du har redan en begäran som väntar på granskning. Skickar du igen ersätts den med dessa värden.",
+        "resubmitTitle": "Kammaren godkände inte hela din förra begäran:",
+        "errors": {
+          "phone": "Ange ett telefonnummer i internationellt format, t.ex. +46 70 123 45 67.",
+          "website": "Ange en giltig webbadress, t.ex. https://example.com.",
+          "country": "Ange en landskod med två bokstäver, t.ex. SE.",
+          "billingIncomplete": "En faktureringsadress behöver minst rad 1, stad, postnummer och land — eller lämna alla rader tomma."
+        }
+      },
+      "status": {
+        "submitted": "Dina ändringar har skickats för granskning.",
+        "nothingToSubmit": "Inget att skicka – alla värden matchar dina nuvarande uppgifter.",
+        "alreadyPending": "Dessa ändringar väntar redan på granskning.",
+        "alreadyPendingUnchanged": "Dina värden matchar din post. Begäran du skickade tidigare väntar fortfarande på granskning och har inte ändrats.",
+        "rateLimited": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen efter {retryAt}.",
+        "rateLimitedGeneric": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen senare.",
+        "approvalNotRequired": "Ändringar behöver inte längre godkännas – dina redigeringar sparas nu direkt."
+      },
+      "errors": {
+        "field": "Kontrollera det här värdet.",
+        "validation": "Kontrollera de markerade fälten.",
+        "forbidden": "Du får inte ändra detta.",
+        "archived": "Det här medlemskapet är arkiverat och kan inte längre redigeras.",
+        "generic": "Det gick inte att skicka dina ändringar. Försök igen."
+      },
+      "pending": {
+        "title": "Väntar på kammarens granskning",
+        "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu – kammaren meddelar beslutet via e-post.",
+        "editLink": "Redigera din begäran"
+      },
+      "outcome": {
+        "title": {
+          "approved": "Dina ändringar godkändes",
+          "partially_approved": "Några av dina ändringar godkändes",
+          "rejected": "Dina ändringar godkändes inte"
+        },
+        "body": {
+          "approved": "Beslutat {decidedAt}. Alla ändringar finns nu i dina uppgifter.",
+          "partially_approved": "Beslutat {decidedAt}. De godkända ändringarna finns i dina uppgifter; övriga infördes inte.",
+          "rejected": "Beslutat {decidedAt}. Inget ändrades i dina uppgifter."
+        },
+        "reasonLabel": "Motivering från kammaren",
+        "resubmit": "Redigera och skicka igen",
+        "dismiss": "Stäng",
+        "dismissError": "Meddelandet kunde inte stängas. Försök igen."
+      },
+      "diff": {
+        "field": "Fält",
+        "seen": "Värde när du skickade in",
+        "current": "Nuvarande",
+        "proposed": "Föreslaget",
+        "empty": "(tomt)",
+        "taxAffecting": "Påverkar skattedokument",
+        "labels": {
+          "first_name": "Förnamn",
+          "last_name": "Efternamn",
+          "phone": "Telefon",
+          "role_title": "Befattning",
+          "company_name": "Företagsnamn",
+          "website": "Webbplats",
+          "description": "Beskrivning",
+          "registered_address": "Registrerad adress",
+          "billing_address": "Faktureringsadress"
+        },
+        "lines": {
+          "line1": "Rad 1",
+          "line2": "Rad 2",
+          "sub_district": "Stadsdel",
+          "city": "Stad",
+          "province": "Provins",
+          "postal_code": "Postnummer",
+          "country": "Land"
+        },
+        "outcome": {
+          "approved": "Godkänd",
+          "rejected": "Ej godkänd"
+        }
+      }
+    },
     "edit": {
       "pageTitle": "Redigera profil",
       "notLinked": "Ditt konto är inte kopplat till en medlem.",
@@ -6348,6 +6561,11 @@
       "auto_email_skipped_no_recipient": "Automatiskt e-postmeddelande hoppades över — ingen primär kontakt",
       "contact_marketing_opted_out": "Kontaktens marknadsföring avstängd",
       "contact_marketing_opted_in": "Kontaktens marknadsföring påslagen",
+      "member_change_request_submitted": "Ändringsbegäran från medlem inskickad",
+      "member_change_request_decided": "Ändringsbegäran från medlem avgjord",
+      "member_change_request_withdrawn": "Ändringsbegäran från medlem återkallad",
+      "member_change_request_rate_limited": "Ändringsbegäran från medlem nekad – gräns för inskick nådd",
+      "member_change_approval_setting_changed": "Inställning för godkännande av medlemsändringar ändrad",
       "invoice_buyer_identity_invalid": "Köparens uppgifter ogiltiga — utfärdande blockerat",
       "sign_in_failure": "Inloggning misslyckades",
       "sign_out": "Utloggad",

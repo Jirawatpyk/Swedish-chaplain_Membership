@@ -48,6 +48,14 @@ import { subprocessorErasureAdapter } from './infrastructure/adapters/subprocess
 import { drizzlePlanAdvisoryLockAdapter } from './infrastructure/adapters/plan-advisory-lock-adapter';
 import { drizzleMemberNumberAllocator } from './infrastructure/repos/drizzle-member-number-allocator';
 import { drizzleMemberSettingsRepo } from './infrastructure/repos/drizzle-member-settings-repo';
+import { drizzleTenantMemberChangeSettingsRepo } from './infrastructure/repos/drizzle-tenant-member-change-settings-repo';
+import { drizzleChangeRequestRepo } from './infrastructure/db/drizzle-change-request-repo';
+import {
+  makeMemberChangeGateResolver,
+  type MemberChangeGateResolver,
+} from './application/use-cases/change-requests/resolve-member-change-gate';
+import type { ChangeRequestRepo } from './application/ports/change-request-repo';
+import type { TenantMemberChangeSettingsPort } from './application/ports/tenant-member-change-settings-port';
 import type { MemberNumberAllocatorPort } from './application/ports/member-number-allocator-port';
 import type { MemberSettingsReaderPort } from './application/ports/member-settings-port';
 import type { MemberRepo } from './application/ports/member-repo';
@@ -142,11 +150,32 @@ export type MembersDeps = {
    * only by `changePlan` (the route's `planChangeDeps` spread carries it).
    */
   applyPlanChangeToBilling?: PlanChangeBillingRemediationPort;
+  /**
+   * F114 — the change-request aggregate repo (migration 0300). Consumed by the
+   * change-request use cases (composed with the reviewer directory in
+   * `src/lib/members-change-request-deps.ts`) and by the portal routes that
+   * only need a read (pending banner, gate).
+   */
+  changeRequestRepo: ChangeRequestRepo;
+  /** F114 FR-031 — the per-tenant approval switch (read by the gate, written by US6). */
+  tenantMemberChangeSettings: TenantMemberChangeSettingsPort;
+  /**
+   * F114 — flag ∧ tenant setting → 'approval' | 'immediate'. ONE resolver per
+   * deps bag (= per request): the first `resolve` reads the tenant row, later
+   * calls are cached, so `PATCH /api/portal/profile` and the edit page pay one
+   * read. The env flag is read HERE (composition root), never in Application.
+   */
+  memberChangeGate: MemberChangeGateResolver;
   idFactory: {
     memberId(): MemberId;
     contactId(): ContactId;
   };
 };
+
+/** F114 — the env-backed `MemberChangeFlagPort` (the Application-facing reader; routes, pages and the dispatcher read `env.features` directly — see `env.ts`). */
+export const memberChangeApprovalFlag = {
+  memberChangeApproval: (): boolean => env.features.memberChangeApproval,
+} as const;
 
 const systemClock: ClockPort = {
   now: () => new Date(),
@@ -198,6 +227,12 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     clock: systemClock,
     memberNumberAllocator: drizzleMemberNumberAllocator,
     memberSettings: drizzleMemberSettingsRepo,
+    changeRequestRepo: drizzleChangeRequestRepo,
+    tenantMemberChangeSettings: drizzleTenantMemberChangeSettingsRepo,
+    memberChangeGate: makeMemberChangeGateResolver({
+      flags: memberChangeApprovalFlag,
+      tenantMemberSettings: drizzleTenantMemberChangeSettingsRepo,
+    }),
     // Phase 2 — gate the wiring on the flag so flag-off is byte-identical to
     // Phase 1 (dep undefined -> changePlan skips the re-freeze entirely). The
     // baked-in `immediateRefreezeEnabled` equals the flag (always true here);

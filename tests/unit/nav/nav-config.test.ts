@@ -41,6 +41,7 @@ describe('staffNavConfig', () => {
     expect(membership.titleKey).toBe('nav.staff.sections.membership');
     expect(membership.items.map((i) => i.titleKey)).toEqual([
       'nav.staff.members',
+      'nav.staff.changeRequests',
       'nav.staff.plans',
       'nav.staff.renewals',
       'nav.staff.directory',
@@ -307,6 +308,8 @@ describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)',
     expect(all).not.toContain('/admin/events');
     expect(all).not.toContain('/admin/settings/broadcasts');
     expect(all).not.toContain('/admin/settings/integrations/eventcreate');
+    // F114 (FR-039 dark ship) — the change-request queue rides visibilityFlag
+    expect(all).not.toContain('/admin/change-requests');
   });
 });
 

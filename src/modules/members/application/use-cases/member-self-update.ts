@@ -9,6 +9,17 @@
  * with `member_self_update_forbidden` audit event (FR-014 forged-payload
  * guard). The zod schema is generated FROM the tuple so adding/removing
  * a field is a single-source-change.
+ *
+ * F114 (FR-001 / FR-004, research R6): the whitelist is GATE-AWARE. With
+ * `gate: 'approval'` (the tenant requires approval for member changes) only
+ * Group A — the contact's own `preferredLanguage` — is accepted here; every
+ * Group B key becomes a change request through `submitChangeRequest` and is
+ * refused on this endpoint with the same forged-edit audit. `gate:
+ * 'immediate'` (the default) keeps the F3 WRITE path byte-identical (SC-011);
+ * the forged-edit audit sink is the one deliberate change in both modes —
+ * `member_self_update_forbidden` now carries `refusal` and a BOUNDED
+ * `attempted_fields` (+ `attempted_fields_truncated`), review privacy M-7 —
+ * disclosed in quickstart § 3 "Unflagged and live on merge".
  */
 
 import { z } from 'zod';
@@ -19,12 +30,15 @@ import type { TenantContext } from '@/modules/tenants';
 import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId, PreferredLanguage } from '../../domain/contact';
 import {
+  PORTAL_IMMEDIATE_CONTACT_FIELDS,
+  PORTAL_IMMEDIATE_MEMBER_FIELDS,
   PORTAL_SELF_UPDATE_CONTACT_FIELDS,
   PORTAL_SELF_UPDATE_MEMBER_FIELDS,
   type PortalSelfUpdateContactField,
   type PortalSelfUpdateMemberField,
 } from '../../domain/portal-self-update-fields';
 import { asPhone } from '../../domain/value-objects/phone';
+import { boundForbiddenKeys } from './change-requests/submit-change-request';
 import type { MemberRepo, MemberPatch, RepoError } from '../ports/member-repo';
 import type { ContactRepo, ContactPatch } from '../ports/contact-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -93,6 +107,15 @@ export type MemberSelfUpdateInput = {
   readonly rawBody: Record<string, unknown>;
   readonly actorUserId: string;
   readonly requestId: string;
+  /**
+   * F114 FR-001 / R6 — which set this immediate endpoint may write:
+   *   'immediate' (default, the F3 write path, byte-identical) → the full flag-OFF
+   *   whitelist; 'approval' → Group A ONLY (`PORTAL_IMMEDIATE_CONTACT_FIELDS`
+   *   = the contact's own notification language); every Group B key is then
+   *   refused with the same `member_self_update_forbidden` audit a forged
+   *   Group C key produces, so the gate cannot be bypassed here.
+   */
+  readonly gate?: 'immediate' | 'approval';
 };
 
 export type MemberSelfUpdateError =
@@ -121,24 +144,36 @@ const ALLOWED_CONTACT_KEYS = new Set<string>(
   PORTAL_SELF_UPDATE_CONTACT_FIELDS,
 );
 
+// F114 R6 — the narrowed (gate = 'approval') sets: Group A only.
+const APPROVAL_TOP_LEVEL_KEYS = new Set<string>([
+  ...PORTAL_IMMEDIATE_MEMBER_FIELDS,
+  'primary_contact',
+]);
+const APPROVAL_CONTACT_KEYS = new Set<string>(PORTAL_IMMEDIATE_CONTACT_FIELDS);
+
 /**
  * Returns forbidden field names if ANY key in the raw body is not in the
- * whitelist. This catches forged payloads that include `plan_id`, `status`,
- * `tax_id`, etc.
+ * whitelist for the given gate. This catches forged payloads that include
+ * `plan_id`, `status`, `tax_id`, etc. — and, while the tenant requires
+ * approval, every Group B key (F114 FR-001: the immediate endpoint must not
+ * remain a bypass of the change-request gate).
  */
 function detectForbiddenFields(
   raw: Record<string, unknown>,
+  gate: 'immediate' | 'approval',
 ): string[] {
+  const topLevel = gate === 'approval' ? APPROVAL_TOP_LEVEL_KEYS : ALLOWED_TOP_LEVEL_KEYS;
+  const contactKeys = gate === 'approval' ? APPROVAL_CONTACT_KEYS : ALLOWED_CONTACT_KEYS;
   const forbidden: string[] = [];
   for (const key of Object.keys(raw)) {
-    if (!ALLOWED_TOP_LEVEL_KEYS.has(key)) {
+    if (!topLevel.has(key)) {
       forbidden.push(key);
     }
   }
   const contactObj = raw['primary_contact'];
   if (contactObj && typeof contactObj === 'object' && contactObj !== null) {
     for (const key of Object.keys(contactObj)) {
-      if (!ALLOWED_CONTACT_KEYS.has(key)) {
+      if (!contactKeys.has(key)) {
         forbidden.push(`primary_contact.${key}`);
       }
     }
@@ -170,8 +205,16 @@ export async function memberSelfUpdate(
   Result<{ member: Member; contact: Contact }, MemberSelfUpdateError>
 > {
   // 1. Detect forbidden fields BEFORE parsing — reject forged payloads
-  const forbidden = detectForbiddenFields(input.rawBody);
+  //    (and, with the F114 gate on, every Group B key — FR-001).
+  const gate = input.gate ?? 'immediate';
+  const forbidden = detectForbiddenFields(input.rawBody, gate);
   if (forbidden.length > 0) {
+    // F114 review (privacy I-5) — a stale tab under a newly-switched tenant
+    // sends Group B keys the immediate whitelist used to accept; that is a
+    // gate refusal, not a forgery, and the audit trail must say which.
+    const refusal = gate === 'approval' && detectForbiddenFields(input.rawBody, 'immediate').length === 0 ? 'gate_narrowed' : 'forged';
+    // key NAMES are attacker-controlled; bound them before the append-only sink (review round 2, privacy M-7)
+    const boundedForbidden = boundForbiddenKeys(forbidden);
     // W-4: Audit the forgery attempt (FR-014). The forged payload is rejected
     // (403) REGARDLESS of audit success — an audit-write failure here is logged
     // (so SREs can detect an un-audited forgery attempt) but never opens the
@@ -181,10 +224,12 @@ export async function memberSelfUpdate(
       type: 'member_self_update_forbidden',
       actorUserId: input.actorUserId,
       requestId: input.requestId,
-      summary: `forged fields: ${forbidden.join(', ')}`,
+      summary: `${refusal === 'gate_narrowed' ? 'gate-narrowed' : 'forged'} fields: ${boundedForbidden.fields.join(', ')}`,
       payload: {
         member_id: input.memberId,
-        attempted_fields: forbidden,
+        attempted_fields: boundedForbidden.fields,
+        attempted_fields_truncated: boundedForbidden.truncated,
+        refusal,
       },
     });
     if (!auditResult.ok) {

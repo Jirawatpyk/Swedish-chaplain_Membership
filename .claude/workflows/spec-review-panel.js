@@ -14,12 +14,22 @@
 // and it is invoked only on explicit opt-in.
 //
 //   Scope       one cheap agent reads the spec: which modules, does it touch
-//               money / tax / PII / tenant / auth / UI — picks the lens panel
+//               money / tax / PII / tenant / auth / UI — picks the lens panel;
+//               also extracts the spec's PREMISES and its DECIDED items
 //   Lenses      project agents, one per lens, fresh context each. Every lens
 //               must CHECK THE SPEC'S PREMISES AGAINST THE CODE: does the
 //               mechanism the spec assumes exist? what already in the codebase
-//               would be pointless if the spec's premise held?
-//   Verify      skeptics per finding, default refuted; 2 for blocker/premise
+//               would be pointless if the spec's premise held? Every lens is
+//               handed the DECIDED list (§ Clarifications Q→A, AMENDMENT blocks,
+//               panel-applied notes) and told not to re-raise those — the
+//               2026-09-11 run spent 11 of 12 verify slots refuting documented
+//               decisions while 36 HIGH findings sat unverified.
+//   Verify      ONE skeptic per finding (code + intent in a single prompt),
+//               default refuted; a second skeptic only for kind=blocker. Verify
+//               order is kind-first (premise / blocker before everything else),
+//               then severity, then lens agreement — a wrong premise is what
+//               makes the implementation fail; a severity label is a lens's
+//               opinion.
 //   Synthesize  inherit model (design work): ranked blockers, "impossible if
 //               true" list, concrete amendments, GO / NO-GO for the next gate
 //
@@ -27,16 +37,16 @@
 //   Workflow({ name: 'spec-review-panel', args: { spec: 'specs/112-foo/spec.md',
 //              plan: 'specs/112-foo/plan.md',      // optional
 //              lenses: undefined,                  // optional override of the panel
-//              maxVerify: 12 } })
+//              maxVerify: 12 } })                  // findings verified; agents ≈ maxVerify + #blockers
 
 export const meta = {
   name: 'spec-review-panel',
   description: 'Independent multi-lens review of a spec (+ plan): premises checked against code, findings adversarially verified, blockers ranked with amendments — before tasks exist',
   whenToUse: 'A spec that touches money, tax, tenant isolation, PII, auth, or a migration — after /speckit.clarify, before /speckit.plan or /speckit.tasks. Skip for a UI-only or docs-only feature; /speckit.critique-run is enough there.',
   phases: [
-    { title: 'Scope', detail: 'read the spec; pick the lens panel from what it touches' },
-    { title: 'Lenses', detail: 'one project agent per lens, fresh context, premises checked against code', model: 'opus' },
-    { title: 'Verify', detail: 'skeptics per finding — default refuted', model: 'opus' },
+    { title: 'Scope', detail: 'read the spec; pick the lens panel from what it touches; extract premises + decided items' },
+    { title: 'Lenses', detail: 'one project agent per lens, fresh context, premises checked against code, decided items not re-raised', model: 'opus' },
+    { title: 'Verify', detail: 'one skeptic per finding (two for blockers), premise/blocker first — default refuted', model: 'opus' },
     { title: 'Synthesize', detail: 'rank, amendments, GO / NO-GO' },
   ],
 }
@@ -65,8 +75,9 @@ const SCOPE_SCHEMA = {
     },
     summary: { type: 'string' },
     premises: { type: 'array', items: { type: 'string' } },
+    decided: { type: 'array', items: { type: 'string' } },
   },
-  required: ['found', 'feature', 'modules', 'touches', 'summary', 'premises'],
+  required: ['found', 'feature', 'modules', 'touches', 'summary', 'premises', 'decided'],
 }
 
 const KIND = ['blocker', 'premise', 'gap', 'ambiguity', 'consistency', 'constitution']
@@ -107,6 +118,11 @@ const SYNTH_SCHEMA = {
 
 // ---------- helpers ----------
 const sevRank = (s) => SEV.indexOf(s)
+// Verify order: premise / blocker first (a wrong premise breaks the build; a
+// severity label is a lens's opinion), then everything else. Ties: severity,
+// then how many lenses raised it.
+const KIND_RANK = { premise: 0, blocker: 0, consistency: 1, gap: 1, constitution: 1, ambiguity: 2 }
+const kindRank = (k) => (k in KIND_RANK ? KIND_RANK[k] : 3)
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 48)
 const fkey = (f) => `${norm(f.anchor)}|${f.kind}|${norm(f.claim)}`
 
@@ -114,7 +130,7 @@ const fkey = (f) => `${norm(f.anchor)}|${f.kind}|${norm(f.claim)}`
 phase('Scope')
 const scope = await agent(
   `Read ${SPEC}${PLAN ? ` and ${PLAN}` : ''} in full (read-only). If the spec file does not exist return found=false.
-Return: the feature name; the src/modules/* bounded contexts it touches or creates; whether it touches money (invoices, payments, refunds, credit notes, renewal billing, amounts), tax (Thai RD documents, VAT, WHT, tax IDs, sequential numbering), PII (member/contact personal data, erasure, consent, export), tenant isolation (any new tenant-scoped table or query), auth/RBAC, UI, a DB migration, an external integration (Stripe, Resend, EventCreate, webhooks); a 3-sentence summary; and the spec's PREMISES — every statement of the form "X already works like Y" or "Z is guaranteed by W" that the design leans on. Premises are what the lenses will test against the code.`,
+Return: the feature name; the src/modules/* bounded contexts it touches or creates; whether it touches money (invoices, payments, refunds, credit notes, renewal billing, amounts), tax (Thai RD documents, VAT, WHT, tax IDs, sequential numbering), PII (member/contact personal data, erasure, consent, export), tenant isolation (any new tenant-scoped table or query), auth/RBAC, UI, a DB migration, an external integration (Stripe, Resend, EventCreate, webhooks); a 3-sentence summary; the spec's PREMISES — every statement of the form "X already works like Y" or "Z is guaranteed by W" that the design leans on (premises are what the lenses will test against the code); and the spec's DECIDED items — one line each, verbatim enough to recognise: every "Q: … → A: …" bullet under "## Clarifications", every AMENDMENT block, every "decided" / "maintainer chose" / "option X" note, and every line under an Out of Scope heading. Decided items are what the lenses must NOT re-raise as findings — a documented trade-off with its rationale is a decision, not a defect, even when a lens would have decided otherwise.`,
   { label: 'scope:read-spec', phase: 'Scope', schema: SCOPE_SCHEMA, effort: 'low' },
 )
 if (!scope || !scope.found) { log(`spec not readable at ${SPEC}`); return EMPTY('spec not found') }
@@ -144,6 +160,9 @@ Your brief: ${l.brief}
 The spec leans on these PREMISES — for each one that touches your lens, CHECK IT AGAINST THE CODE (grep the mechanism it assumes; read the use case, repo, migration or gate it names). A premise that would make some existing, deliberately-built mechanism pointless is probably false — or the mechanism is dead; either is a finding:
 ${scope.premises.length ? scope.premises.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(scope agent extracted none — extract your own from the text)'}
 
+DECIDED — do NOT re-raise any of these as a finding. Each is a recorded decision (§ Clarifications Q→A, an AMENDMENT block, an Out of Scope line). You may disagree with a decision only by showing the CODE contradicts the premise it rests on — then report it as kind=premise against that premise, citing the file, not against the decision:
+${scope.decided.length ? scope.decided.map((d, i) => `D${i + 1}. ${d}`).join('\n') : '(none recorded)'}
+
 Report findings with: kind (blocker = the spec mandates a defect; premise = a stated assumption the code contradicts or cannot show; gap = a requirement missing for your lens; ambiguity = two readings that lead to different implementations; consistency = FR/AS/SC/plan disagree; constitution = a principle violated without a Complexity Tracking line), severity, the anchor (section or FR/AS/SC id), the claim in one sentence, why, evidence MEASURED (you read the code) or ASSUMED, a code_ref when measured, and a concrete suggested_amendment in spec voice. Never make a claim stronger than the code supports; an ASSUMED blocker is a premise finding, not a blocker.`
 
 phase('Lenses')
@@ -165,36 +184,44 @@ for (const f of raw) {
     if (sevRank(f.severity) < sevRank(prev.severity)) { prev.severity = f.severity; prev.claim = f.claim; prev.why = f.why; prev.evidence = f.evidence; prev.code_ref = f.code_ref; prev.suggested_amendment = f.suggested_amendment }
   }
 }
-const candidates = [...byKey.values()].sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || b.lenses.length - a.lenses.length)
-log(`${raw.length} raw finding(s) → ${candidates.length} after dedup · ${candidates.filter((c) => c.lenses.length > 1).length} raised by more than one lens`)
+const candidates = [...byKey.values()].sort((a, b) => kindRank(a.kind) - kindRank(b.kind) || sevRank(a.severity) - sevRank(b.severity) || b.lenses.length - a.lenses.length)
+log(`${raw.length} raw finding(s) → ${candidates.length} after dedup · ${candidates.filter((c) => c.lenses.length > 1).length} raised by more than one lens · ${candidates.filter((c) => kindRank(c.kind) === 0).length} premise/blocker (verified first)`)
 const toVerify = candidates.slice(0, MAX_VERIFY)
 const dropped = candidates.slice(MAX_VERIFY)
-if (dropped.length) log(`CAP: ${dropped.length} lower-severity finding(s) beyond maxVerify=${MAX_VERIFY} were NOT verified — returned under "dropped"`)
+if (dropped.length) log(`CAP: ${dropped.length} finding(s) beyond maxVerify=${MAX_VERIFY} were NOT verified (order: premise/blocker → severity → lens agreement) — returned under "dropped"; ${dropped.filter((c) => kindRank(c.kind) === 0).length} of them are premise/blocker`)
 
 // ---------- Phase 3: Verify ----------
 phase('Verify')
-const LENSES_V = [
-  'CODE: is the premise / mechanism actually as the finding says? Open the file. If the spec is right and the finding misread the code, refute.',
-  'INTENT: does the spec, plan, a decision record, the constitution, or an existing runbook already address this deliberately? A documented trade-off is not a finding.',
-]
+// One skeptic carries BOTH refutation lenses (code + intent) — the two-agent
+// split doubled the fan-out (24 agents for 12 findings) without a second
+// perspective the single prompt cannot hold. A second, independent skeptic is
+// kept only for kind=blocker ("the spec mandates a defect"), where a false
+// confirmation would force a design change.
+const SKEPTIC_BRIEF = `Two ways to refute, check BOTH:
+  CODE — is the premise / mechanism actually as the finding says? Open the file. If the spec is right and the finding misread the code, refute.
+  INTENT — does the spec (its § Clarifications, an AMENDMENT block, Out of Scope), the plan, the constitution, or an existing runbook already address this deliberately? A documented trade-off is a decision, not a finding — refute, and name the line that decides it.`
+const DECIDED_BLOCK = scope.decided.length ? `\nDECIDED items recorded in the spec (a finding that merely disagrees with one of these is refuted on INTENT):\n${scope.decided.map((d, i) => `D${i + 1}. ${d}`).join('\n')}\n` : ''
+const votesFor = (f) => (f.kind === 'blocker' ? 2 : 1)
+const verifyAgents = toVerify.reduce((n, f) => n + votesFor(f), 0)
+log(`verify: ${toVerify.length} finding(s) → ${verifyAgents} skeptic agent(s) (blockers get two)`)
 const verified = toVerify.length === 0 ? [] : await parallel(
   toVerify.map((f, idx) => () => {
-    const votes = f.kind === 'blocker' || f.kind === 'premise' || sevRank(f.severity) <= 1 ? 2 : 1
+    const votes = votesFor(f)
     return parallel(
-      LENSES_V.slice(0, votes).map((lens, li) => () =>
+      Array.from({ length: votes }, (_, li) => () =>
         agent(
           `Try to REFUTE this spec-review finding. Default to refuted=true if you cannot confirm it from the spec text and the code.
 Spec: ${SPEC}${PLAN ? ` · Plan: ${PLAN}` : ''}
-
+${DECIDED_BLOCK}
 #${idx + 1} [${f.severity}/${f.kind}] at ${f.anchor} (raised by: ${f.lenses.join(', ')})
 Claim: ${f.claim}
 Why: ${f.why}
 Evidence claimed: ${f.evidence}${f.code_ref ? ` · code_ref: ${f.code_ref}` : ''}
 
-Your lens — ${lens}
+${SKEPTIC_BRIEF}${votes > 1 ? `\n\nYou are skeptic ${li + 1} of ${votes} on a BLOCKER — vote independently; you are not told the other's verdict.` : ''}
 
 State the ONE fact that decides it. If it stands at a different severity, say so in corrected_severity.`,
-          { label: `verify:${idx + 1}:${['code', 'intent'][li]}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: 'opus' },
+          { label: `verify:${idx + 1}:${votes > 1 ? `skeptic${li + 1}` : 'skeptic'}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: 'opus' },
         ),
       ),
     ).then((vs) => {
@@ -239,7 +266,7 @@ log(`spec-review: ${go} — ${reason}`)
 return {
   spec: SPEC,
   plan: PLAN,
-  scope: { feature: scope.feature, modules: scope.modules, touches: T, premises: scope.premises },
+  scope: { feature: scope.feature, modules: scope.modules, touches: T, premises: scope.premises, decided: scope.decided },
   lenses: lenses.map((l) => ({ key: l.key, agentType: l.agentType, ran: okLenses.includes(l.key) })),
   confirmed,
   refuted,

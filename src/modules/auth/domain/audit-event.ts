@@ -123,6 +123,16 @@ export const AUDIT_EVENT_TYPES = [
   //     not just the shared pg enum). No PII in the payload — the
   //     summary carries the userId only.
   'user_erased',
+  // --- F114 member change requests (migration 0301) — five F3-owned events
+  //     emitted via the members `AuditPort` (`member_change_request_*` +
+  //     `member_change_approval_setting_changed`). Registered here so the
+  //     pinned F1 taxonomy count and the shared pg enum stay in lockstep;
+  //     payloads carry ids, keys and outcomes — never proposed values.
+  'member_change_request_submitted',
+  'member_change_request_decided',
+  'member_change_request_withdrawn',
+  'member_change_request_rate_limited',
+  'member_change_approval_setting_changed',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

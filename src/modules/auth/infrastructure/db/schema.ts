@@ -122,6 +122,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'bulk_action_rate_limit_exceeded',
   // --- Round-3 review N-I3 — added by migration 0014 ---
   'member_portal_invite_queued',
+  // --- F114 member change requests (5) — added by migration 0301 ---
+  'member_change_request_submitted',
+  'member_change_request_decided',
+  'member_change_request_withdrawn',
+  'member_change_request_rate_limited',
+  'member_change_approval_setting_changed',
   // --- F4 invoicing events (16) — added by migration 0020 ---
   'invoice_draft_created',
   'invoice_draft_updated',
@@ -693,6 +699,13 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'email_verification',
   'email_change_revert',
   'email_verification_resent',
+  // --- F114 migration 0301: member change-request notifications. The
+  // staff row is enqueued once PER REVIEWER on submit (FR-011); the member
+  // row once on decide (FR-023). `context_data` carries ids + field keys
+  // only — the dispatcher reads the request rows at send time under the
+  // tenant tx (research R8 / § V3). ---
+  'member_change_request_submitted_staff',
+  'member_change_request_decided_member',
   // --- F4 migration 0023: invoice auto-email (issue / pay / void /
   // credit note + PDF resend variants). The physical column accepts
   // all F4 auto-email variants; the notification dispatcher routes

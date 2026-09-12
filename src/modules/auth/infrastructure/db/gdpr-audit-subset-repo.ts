@@ -33,6 +33,12 @@ export const gdprAuditSubsetReadAdapter: GdprAuditSubsetReadPort = {
       const arms: SQL[] = [
         sql`${auditLog.payload}->>'member_id' = ${input.memberId}`,
         sql`${auditLog.payload}->>'subject_member_id' = ${input.memberId}`,
+        // F114 review round 2 (privacy I-3) — staff actions ABOUT the member
+        // (`member_change_request_decided`, the replace / erasure withdrawals,
+        // `auto_email_skipped_no_recipient`, marketing opt-out rows) key
+        // `related_member_id`; the subject's Art. 15 / PDPA §30 export must
+        // include them. The app-side re-filter matches the same key.
+        sql`${auditLog.payload}->>'related_member_id' = ${input.memberId}`,
       ];
       if (input.memberUserIds.length > 0) {
         arms.push(inArray(auditLog.actorUserId, [...input.memberUserIds]));

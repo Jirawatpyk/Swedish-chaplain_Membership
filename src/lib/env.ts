@@ -661,6 +661,27 @@ const schema = z.object({
   // `isF7ImportAudienceEnabled` for the query and why it matters.
   FEATURE_F7_IMPORT_AUDIENCE: booleanFromString.default(false),
 
+  // --- F114 Member Portal: approval workflow for member changes -------------
+  // Platform kill-switch (FR-039). OFF (default — ships dark): every
+  // `/api/portal/change-requests/**` and `/api/admin/change-requests/**`
+  // route answers 404, the portal shows no pending / decision state, the
+  // staff nav and dashboard show no count, and `PATCH /api/portal/profile`
+  // keeps today's full self-service field set. ON: the gate is decided PER
+  // TENANT by `tenant_member_settings.member_change_approval_enabled`
+  // (FR-031 — flag first, then setting; a tenant with the setting off keeps
+  // the immediate path). Stored requests survive a flag-off untouched and
+  // are decidable again when it returns. Never read in Domain or
+  // Application; the readers are the composition root `members-deps.ts`
+  // (`members-change-request-deps.ts` reads the PORT it builds), every
+  // `/api/{portal,admin}/change-requests/**` route + the two admin pages
+  // (404 / notFound before session work), the portal profile page, the
+  // admin layout (nav) and the outbox dispatcher (query-time containment of
+  // the two arms) — `grep -rn features.memberChangeApproval src/` is the
+  // inventory to re-check before a revert.
+  // Setting this variable IS the flip on this repo (no `ignoreCommand`) —
+  // add it only when ready to redeploy immediately (quickstart § 3).
+  FEATURE_MEMBER_CHANGE_APPROVAL: booleanFromString.default(false),
+
   // --- ClamAV virus scanner (US2 dependency) -------------------------------
   // Network address of the clamd daemon. Empty string in dev = US2 disabled.
   // In prod, points at the Fly.io private 6PN address (e.g.
@@ -1081,6 +1102,9 @@ export const env = {
     contactMarketingRecipients: raw.FEATURE_CONTACT_MARKETING_RECIPIENTS,
     // 108 US5 — one Contacts-Import call instead of the per-contact loop.
     f7ImportAudience: raw.FEATURE_F7_IMPORT_AUDIENCE,
+    // F114 — member change-request approval gate (platform half; the tenant
+    // half is `tenant_member_settings.member_change_approval_enabled`).
+    memberChangeApproval: raw.FEATURE_MEMBER_CHANGE_APPROVAL,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     // COMP-1 US2d — member-erasure reconciliation sweep kill-switch.

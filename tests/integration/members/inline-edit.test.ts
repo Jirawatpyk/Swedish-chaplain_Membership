@@ -77,6 +77,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     findPendingInvitationsForPrimaryContacts: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
+    findErasedAtByIdInTx: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     findErasedIdsInTx: vi.fn(async () => ({
       ok: true as const,

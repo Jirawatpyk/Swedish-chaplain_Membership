@@ -246,6 +246,15 @@ export { AUDIT_EVENT_TYPES, AUDIT_SUMMARY_MAX_LENGTH } from './domain/audit-even
 // Canonical FULL cross-module audit-event-type list (S1-P1-7) — see schema.ts.
 export { ALL_AUDIT_EVENT_TYPES } from './infrastructure/db/schema';
 
+// F114 FR-011 — the narrow cross-tenant "active users holding these roles"
+// read behind the members reviewer directory (composed in
+// `src/lib/members-change-request-deps.ts`). Exported here so the composition
+// root never deep-imports the `users` table (auth-barrel baseline pin).
+export {
+  listActiveUsersByRole,
+  type ActiveUserByRole,
+} from './infrastructure/db/active-users-by-role-repo';
+
 // F9 activity feed (FR-003) — read-only recent-audit-events reader.
 export {
   listRecentAuditEvents,

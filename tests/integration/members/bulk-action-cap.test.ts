@@ -51,6 +51,7 @@ function stubDeps(): BulkActionDeps {
     findPendingInvitationsForPrimaryContacts: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
+    findErasedAtByIdInTx: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     findErasedIdsInTx: vi.fn(
       async (): ReturnType<BulkActionDeps['memberRepo']['findErasedIdsInTx']> => ({

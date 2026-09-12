@@ -154,12 +154,27 @@ export type RepoConflictReason =
   // 108 PR-B — migration 0293's deferred trigger refused the COMMIT because
   // the member would have ended with zero live primaries.
   | 'no_primary_contact'
-  | 'user_email_already_taken';
+  | 'user_email_already_taken'
+  // F114 — the partial unique index `member_change_requests_one_pending_per_
+  // submitter` refused a second `pending` row for the same submitter (R3);
+  // the submit use case serialises on the FOR UPDATE read first, so this is
+  // the loser of a race that slipped past it, not a normal path.
+  | 'change_request_pending_exists';
 
 export type RepoError =
   | { code: 'repo.not_found' }
   | { code: 'repo.conflict'; reason: RepoConflictReason }
   | { code: 'repo.unexpected'; cause?: unknown };
+
+/** Checked narrowing for a caught `UseCaseAbort<unknown>` — an `as RepoError` cast reads `code` off anything (round 6, types F9). */
+export function isRepoError(value: unknown): value is RepoError {
+  if (!value || typeof value !== 'object') return false;
+  const { code, reason } = value as { code?: unknown; reason?: unknown };
+  if (code === 'repo.not_found' || code === 'repo.unexpected') return true;
+  // a conflict without its reason is not a RepoError (round 7, types F9):
+  // the narrowed read of `reason` would be `undefined` at runtime
+  return code === 'repo.conflict' && typeof reason === 'string';
+}
 
 /**
  * Narrow single-member risk read (B18 / FR-007a). The F8 risk columns live on
@@ -894,6 +909,18 @@ export interface MemberRepo {
    */
   findErasedAtById(
     ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
+
+  /**
+   * F114 review (reliability I-2 / security I-2) — the in-tx twin, read on
+   * the CALLER's `tx` so a use case holding `FOR UPDATE` on the member row
+   * sees the erasure it is racing against instead of a second connection's
+   * older snapshot (and never opens a nested `runInTenant` while holding a
+   * lock — the pool-exhaustion class F4/F8 hit).
+   */
+  findErasedAtByIdInTx(
+    tx: TenantTx,
     memberId: MemberId,
   ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
 

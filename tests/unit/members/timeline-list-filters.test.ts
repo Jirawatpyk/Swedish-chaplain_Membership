@@ -38,7 +38,7 @@ function makeDeps(events: unknown[] = []) {
   // factory so the pre-existing filter/redaction cases keep their fixtures;
   // the money-gate describe overrides it per case.
   return {
-    deps: { memberRepo, timeline, invoicingRead: true },
+    deps: { memberRepo, timeline, invoicingRead: true, viewerContactId: null },
     captured,
     memberRepo,
     timeline,
@@ -194,6 +194,7 @@ describe('timelineList — filter resolution (D1)', () => {
       memberRepo,
       timeline,
       invoicingRead: true,
+      viewerContactId: null,
     });
 
     expect(r.ok).toBe(false);
@@ -218,6 +219,7 @@ describe('timelineList — filter resolution (D1)', () => {
       memberRepo,
       timeline,
       invoicingRead: true,
+      viewerContactId: null,
     });
 
     expect(r.ok).toBe(false);
@@ -497,5 +499,79 @@ describe('timelineList — money is gated on invoicing.read (security I-1)', () 
         ).toBe(false);
       }
     }
+  });
+});
+
+describe('timelineList — F114 own-contact change requests stay per person (privacy I-1 / FR-029)', () => {
+  const submitted = (contactId: string, scope: 'own_contact' | 'company' | 'mixed') => ({
+    id: `cr-${contactId}-${scope}`,
+    timestamp: new Date('2026-09-11T08:00:00Z'),
+    source: 'audit' as const,
+    eventType: 'member_change_request_submitted',
+    actorKind: 'member' as const,
+    actorUserId: 'u-x',
+    actorDisplayName: null,
+    payload: { member_id: MEMBER, request_id: `r-${contactId}`, contact_id: contactId, scope, field_keys: ['phone'] },
+  });
+
+  it("a member viewer sees their OWN own_contact request and every company/mixed one, but not a colleague's own_contact request", async () => {
+    const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'own_contact'), submitted('c-other', 'company'), submitted('c-other', 'mixed')]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true, viewerContactId: 'c-me' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).toEqual(['cr-c-me-own_contact', 'cr-c-other-company', 'cr-c-other-mixed']);
+    expect(r.value.total).toBe(3);
+  });
+
+  // round 2 (privacy I-1 residual): a colleague's MIXED request stays visible
+  // (its company part is the member's business) but its field list is not —
+  // the keys would name which of the colleague's own fields are in flight.
+  it("a colleague's mixed request keeps its row but loses `field_keys` / `fields`; the viewer's own mixed row keeps them", async () => {
+    const mine = { ...submitted('c-me', 'mixed'), payload: { ...submitted('c-me', 'mixed').payload, fields: [{ key: 'phone', outcome: 'approved' }] } };
+    const theirs = { ...submitted('c-other', 'mixed'), payload: { ...submitted('c-other', 'mixed').payload, fields: [{ key: 'phone', outcome: 'approved' }] } };
+    const { deps } = makeDeps([mine, theirs]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true, viewerContactId: 'c-me' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const byId = new Map(r.value.events.map((e) => [e.id, e.payload]));
+    expect(byId.get('cr-c-me-mixed')).toMatchObject({ field_keys: ['phone'], fields: [{ key: 'phone' }] });
+    const other = byId.get('cr-c-other-mixed');
+    expect(other).toBeDefined();
+    expect(other).not.toHaveProperty('field_keys');
+    expect(other).not.toHaveProperty('fields');
+    expect(other).toMatchObject({ scope: 'mixed', request_id: 'r-c-other' });
+  });
+
+  // round 2 (security R-3 / privacy I-1): the projection covers the DECIDED
+  // and WITHDRAWN rows too (all three carry scope + contact_id), and it runs
+  // BEFORE redaction so a future deny-list entry for contact_id cannot make
+  // it fail open.
+  it("a colleague's own_contact DECIDED and WITHDRAWN rows are dropped as well", async () => {
+    const decided = { ...submitted('c-other', 'own_contact'), id: 'cr-decided', eventType: 'member_change_request_decided', actorKind: 'staff' as const, payload: { related_member_id: MEMBER, request_id: 'r-c-other', contact_id: 'c-other', scope: 'own_contact', outcome: 'approved' } };
+    const withdrawn = { ...submitted('c-other', 'own_contact'), id: 'cr-withdrawn', eventType: 'member_change_request_withdrawn', payload: { member_id: MEMBER, request_id: 'r-c-other', contact_id: 'c-other', scope: 'own_contact', withdrawn_reason: 'member' } };
+    const { deps } = makeDeps([submitted('c-me', 'own_contact'), decided, withdrawn]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true, viewerContactId: 'c-me' });
+    expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-c-me-own_contact']);
+  });
+
+  it('with no viewer contact (unresolvable) every own_contact request is dropped for a member viewer — fail closed', async () => {
+    const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'company')]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true });
+    expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-c-other-company']);
+  });
+
+  it("a row with NO scope (or an unrecognised one) is treated as own_contact: dropped unless it is the viewer's own (round 6, silent-failure #19 — a privacy control fails closed)", async () => {
+    const noScope = { ...submitted('c-other', 'company'), id: 'cr-noscope', payload: { member_id: MEMBER, request_id: 'r-x', contact_id: 'c-other', field_keys: ['phone'] } };
+    const weird = { ...submitted('c-other', 'company'), id: 'cr-weird', payload: { member_id: MEMBER, request_id: 'r-y', contact_id: 'c-other', scope: 'everything', field_keys: ['phone'] } };
+    const mineNoScope = { ...submitted('c-me', 'company'), id: 'cr-mine-noscope', payload: { member_id: MEMBER, request_id: 'r-z', contact_id: 'c-me', field_keys: ['phone'] } };
+    const { deps } = makeDeps([noScope, weird, mineNoScope]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true, viewerContactId: 'c-me' });
+    expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-mine-noscope']);
+  });
+
+  it('a staff viewer is not filtered', async () => {
+    const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'own_contact')]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, { ...deps, invoicingRead: true });
+    expect(r.ok && r.value.events).toHaveLength(2);
   });
 });

@@ -14,7 +14,7 @@
  * The title, description, and button labels are passed as props so
  * callers can localise them via `useTranslations` at the call site.
  */
-import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { Children, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import {
@@ -76,6 +76,13 @@ export interface ConfirmationDialogProps {
    * (Base UI's own default — return the trigger — applies).
    */
   readonly finalFocus?: () => HTMLElement | false | null;
+  /**
+   * F114 review (UX I3) — where focus lands on open. Defaults to Cancel
+   * (ux-standards § 6); a dialog whose body carries a REQUIRED input (a
+   * reject reason) passes that input's ref so the keyboard user starts on the
+   * one thing that unblocks Confirm instead of Shift+Tabbing back to it.
+   */
+  readonly initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
 export function ConfirmationDialog({
@@ -91,6 +98,7 @@ export function ConfirmationDialog({
   confirmDisabled = false,
   closeOnConfirm = true,
   finalFocus,
+  initialFocusRef,
 }: ConfirmationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   // UX-2 fix (double-fire guard): without this, a fast double-click on
@@ -125,17 +133,23 @@ export function ConfirmationDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {/* Explicit initialFocus on Cancel (ux-standards § 6 "safest default") —
-          don't rely on DOM order, which a CSS reorder could silently break.
+      {/* Explicit initialFocus — Cancel by default (ux-standards § 6 "safest
+          default"), or the caller's `initialFocusRef` when the body has a
+          required field (F114 decision reason); don't rely on DOM order,
+          which a CSS reorder could silently break.
           `finalFocus` is optional — omitted, Base UI returns focus to the
           trigger (its own default), which is correct whenever the trigger
           survives the close. */}
-      <AlertDialogContent initialFocus={cancelRef} finalFocus={finalFocus}>
+      <AlertDialogContent initialFocus={initialFocusRef ?? cancelRef} finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
-        {children}
+        {/* F114 review (UX I2) — the popup has no max-height; a tall body
+            (two textareas + help + counters) on a short viewport pushed the
+            footer off-screen with no way to scroll to it. Bound the BODY, not
+            the popup, so Cancel / Confirm stay reachable. */}
+        {Children.toArray(children).length > 0 ? <div className="max-h-[50vh] space-y-4 overflow-y-auto">{children}</div> : null}
         <AlertDialogFooter>
           <AlertDialogCancel ref={cancelRef} disabled={submitting}>
             {cancelLabel}
