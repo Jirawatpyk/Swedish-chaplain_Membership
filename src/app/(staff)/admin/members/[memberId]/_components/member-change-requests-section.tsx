@@ -5,6 +5,9 @@
  * the "deactivated" marker (staff accounts are disabled, never deleted —
  * FR-026), the reason as plain text, and a link to the review page.
  *
+ * The list carries NO `aria-label`: the section's own `<h2>` names it, and a
+ * second name was announced three times over (PR-1 review, UX M8).
+ *
  * Server component, Suspense-wrapped at the call site (mirrors the invoices
  * / timeline sections). A FAILED read renders a DISTINCT "unavailable" state
  * (logged with errKind only) — never the empty state, which would tell the
@@ -83,7 +86,7 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
               <p className="text-sm text-muted-foreground">{t('empty')}</p>
             </div>
           ) : (
-            <ul className="flex flex-col gap-4" aria-label={t('listLabel')}>
+            <ul className="flex flex-col gap-4">
               {items.map(({ row }) => {
                 const r = row.request;
                 return (

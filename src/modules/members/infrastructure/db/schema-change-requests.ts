@@ -73,6 +73,14 @@ export const memberChangeRequests = pgTable(
       table.submittedByUserId,
       table.submittedAt,
     ),
+    // 0302 (PR-1 review, Mig M-2) — the three FK columns 0300 left unindexed
+    index('member_change_requests_tenant_decided_by_idx')
+      .on(table.tenantId, table.decidedByUserId)
+      .where(sql`decided_by_user_id IS NOT NULL`),
+    index('member_change_requests_tenant_submitted_by_contact_idx').on(table.tenantId, table.submittedByContactId),
+    index('member_change_requests_tenant_replaced_by_idx')
+      .on(table.tenantId, table.replacedByRequestId)
+      .where(sql`replaced_by_request_id IS NOT NULL`),
   ],
 );
 

@@ -11,7 +11,6 @@
  * 404 while the platform flag is off (FR-039).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -49,9 +48,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ mode, canProposeCompanyFields, pending: null });
   }
 
-  const pending = await runInTenant(ctx.tenant, (tx) =>
-    deps.changeRequestRepo.findPendingBySubmitterInTx(tx, asMembersUserId(ctx.current.user.id)),
-  ).catch((e: unknown) => ({ ok: false as const, error: { code: 'repo.unexpected' as const, cause: e } }));
+  // a PLAIN read (no lock) — the gate never queues behind a decide / submit
+  // holding the row (PR-1 review, Rel M-5)
+  const pending = await deps.changeRequestRepo
+    .findPendingBySubmitter(ctx.tenant, asMembersUserId(ctx.current.user.id))
+    .catch((e: unknown) => ({ ok: false as const, error: { code: 'repo.unexpected' as const, cause: e } }));
   if (!pending.ok) {
     logger.error(
       {

@@ -1087,12 +1087,14 @@
           "buyer_name": "the buyer name printed on tax invoices and receipts",
           "buyer_address": "the buyer address printed on tax invoices and receipts — check the head-office / branch designation",
           "buyer_contact": "the buyer's contact person printed on tax documents",
-          "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation"
+          "billing_country": "a non-Thai billing country for the buyer — judge the VAT treatment and check the head-office / branch designation",
+          "billing_cleared": "the billing address is being removed — the registered address becomes the buyer address printed on tax invoices; check the head-office / branch designation"
         }
       },
       "decision": {
         "confirm": "Confirm decision",
         "selectionSummary": "{approved, plural, =0 {No fields} one {# field} other {# fields}} to approve, {rejected, plural, =0 {none} one {# field} other {# fields}} to reject",
+        "fieldsHeading": "Proposed changes",
         "titleApproveAll": "Approve all {count, plural, one {# field} other {# fields}}?",
         "titleMixed": "Approve {approved, plural, one {# field} other {# fields}} and reject {rejected, plural, one {# field} other {# fields}}?",
         "titleRejectAll": "Reject all {count, plural, one {# field} other {# fields}}?",
@@ -1134,7 +1136,6 @@
           "viewQueue": "Open in queue",
           "loadFailed": "Change requests could not be loaded. Reload the page to try again.",
           "empty": "No change requests for this member yet.",
-          "listLabel": "Change requests, newest first",
           "submittedBy": "Submitted by {name} ({role})",
           "submittedOn": "Submitted {submittedAt}",
           "review": "Review",
@@ -6152,7 +6153,8 @@
         "companySection": "Company details",
         "registeredAddressSection": "Registered address",
         "billingAddressSection": "Billing address",
-        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none.",
+        "billingAddressHint": "Use when the VAT-registered address (ภ.พ.20) differs from the registered address — tax documents carry the billing address. Leave every line empty to keep none — the registered address then becomes the address printed on your tax invoices.",
+        "requiredNote": "* fields are required",
         "fields": {
           "firstName": "First name",
           "lastName": "Last name",

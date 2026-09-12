@@ -182,6 +182,15 @@ export function makeInMemoryChangeRequestRepo(seed: readonly ChangeRequest[] = [
       return ok(null);
     },
 
+    async findPendingBySubmitter(_ctx, userId) {
+      const f = takeFault('findPendingBySubmitter');
+      if (f) return err(f);
+      for (const r of rows.values()) {
+        if (r.submittedByUserId === userId && r.state === 'pending') return ok(r);
+      }
+      return ok(null);
+    },
+
     async withdrawInTx(_tx, id, input) {
       const f = takeFault('withdrawInTx');
       if (f) return err(f);

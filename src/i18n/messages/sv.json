@@ -1035,7 +1035,7 @@
         "emptyHint": "Nya medlemsförslag visas här så snart de skickas in; personalens e-post länkar direkt till begäran.",
         "noPendingForSubmitter": "Den här personen har ingen begäran som väntar på beslut — den senaste beslutades av {name} den {decidedAt}.",
         "noRequestForSubmitter": "Den här personen har ingen ändringsbegäran.",
-        "tableCaption": "Ändringsbegäranden – en rad per begäran: medlem, avsändare, fält, inskickad, väntetid och status.",
+        "tableCaption": "Ändringsbegäranden — en rad per begäran: medlem, avsändare, fält, inskickad, väntetid och status.",
         "reviewFor": "Granska begäran från {company}",
         "viewFor": "Visa begäran från {company}",
         "open": "Granska"
@@ -1044,7 +1044,7 @@
           "withdrawn": {
             "member": "Återtagen av medlemmen",
             "replaced": "Ersatt av en nyare begäran",
-            "erasure": "Stängd – medlemmen raderad"
+            "erasure": "Stängd — medlemmen raderad"
           },
         "title": "Granska ändringsbegäran",
         "subtitle": "{company} · inskickad av {submitter} ({role}) den {submittedAt}",
@@ -1087,12 +1087,14 @@
           "buyer_name": "köparens namn på skattefakturor och kvitton",
           "buyer_address": "köparens adress på skattefakturor och kvitton — kontrollera huvudkontor/filial",
           "buyer_contact": "köparens kontaktperson på skattedokument",
-          "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial"
+          "billing_country": "ett faktureringsland utanför Thailand för köparen — bedöm momshanteringen och kontrollera huvudkontor/filial",
+          "billing_cleared": "faktureringsadressen tas bort — den registrerade adressen blir köparadressen på skattedokumenten; kontrollera huvudkontor-/filialangivelsen"
         }
       },
       "decision": {
         "confirm": "Bekräfta beslut",
         "selectionSummary": "{approved, plural, =0 {Inga fält} one {# fält} other {# fält}} att godkänna, {rejected, plural, =0 {inga} one {# fält} other {# fält}} att avslå",
+        "fieldsHeading": "Föreslagna ändringar",
         "titleApproveAll": "Godkänna alla {count, plural, one {# fält} other {# fält}}?",
         "titleMixed": "Godkänna {approved, plural, one {# fält} other {# fält}} och avslå {rejected, plural, one {# fält} other {# fält}}?",
         "titleRejectAll": "Avslå alla {count, plural, one {# fält} other {# fält}}?",
@@ -1134,7 +1136,6 @@
           "viewQueue": "Öppna i kön",
           "loadFailed": "Ändringsbegärandena kunde inte läsas in. Ladda om sidan för att försöka igen.",
           "empty": "Inga ändringsbegäranden för den här medlemmen ännu.",
-          "listLabel": "Ändringsbegäranden, nyaste först",
           "submittedBy": "Skickad av {name} ({role})",
           "submittedOn": "Skickad {submittedAt}",
           "review": "Granska",
@@ -4040,7 +4041,7 @@
             "successNoRefundToast": "Återaktivering avslagen. Det fanns ingen betalning att återbetala.",
             "successPendingToast": "Återbetalning inskickad — den behandlas hos betalningsleverantören. Den här återaktiveringen ligger kvar i väntelistan tills återbetalningen bekräftas.",
             "error": {
-              "cycle_not_pending": "Den här cykeln väntar inte längre på granskning – den kan redan ha hanterats.",
+              "cycle_not_pending": "Den här cykeln väntar inte längre på granskning — den kan redan ha hanterats.",
               "refund_failed": "Återbetalningen kunde inte genomföras. Cykeln lämnades oförändrad – försök igen.",
               "rate_limited": "För många försök. Vänta en stund och försök igen.",
               "server_error": "Något gick fel. Försök igen."
@@ -6152,7 +6153,8 @@
         "companySection": "Företagsuppgifter",
         "registeredAddressSection": "Registrerad adress",
         "billingAddressSection": "Faktureringsadress",
-        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon.",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon — då blir den registrerade adressen den adress som trycks på dina skattedokument.",
+        "requiredNote": "* obligatoriska fält",
         "fields": {
           "firstName": "Förnamn",
           "lastName": "Efternamn",
@@ -6186,12 +6188,12 @@
       },
       "status": {
         "submitted": "Dina ändringar har skickats för granskning.",
-        "nothingToSubmit": "Inget att skicka – alla värden matchar dina nuvarande uppgifter.",
+        "nothingToSubmit": "Inget att skicka — alla värden matchar dina nuvarande uppgifter.",
         "alreadyPending": "Dessa ändringar väntar redan på granskning.",
         "alreadyPendingUnchanged": "Dina värden matchar din post. Begäran du skickade tidigare väntar fortfarande på granskning och har inte ändrats.",
         "rateLimited": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen efter {retryAt}.",
         "rateLimitedGeneric": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen senare.",
-        "approvalNotRequired": "Ändringar behöver inte längre godkännas – dina redigeringar sparas nu direkt."
+        "approvalNotRequired": "Ändringar behöver inte längre godkännas — dina redigeringar sparas nu direkt."
       },
       "errors": {
         "field": "Kontrollera det här värdet.",
@@ -6202,7 +6204,7 @@
       },
       "pending": {
         "title": "Väntar på kammarens granskning",
-        "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu – kammaren meddelar beslutet via e-post.",
+        "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu — kammaren meddelar beslutet via e-post.",
         "editLink": "Redigera din begäran"
       },
       "withdraw": {

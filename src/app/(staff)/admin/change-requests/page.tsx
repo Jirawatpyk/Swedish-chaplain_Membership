@@ -275,7 +275,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         {q.memberId ? (
           <p className="text-sm sm:col-span-2 lg:col-span-5" data-testid="queue-member-chip">
             {tFilters('memberChip', { company: memberChip ?? '' })}{' '}
-            <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline">
+            <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
               <XIcon className="size-3" aria-hidden="true" />
               {tFilters('removeMember')}
             </Link>
@@ -284,7 +284,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         {q.submitter ? (
           <p className="text-sm sm:col-span-2 lg:col-span-5" data-testid="queue-submitter-chip">
             {tFilters('submitterChip')}{' '}
-            <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline">
+            <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
               <XIcon className="size-3" aria-hidden="true" />
               {tFilters('removeSubmitter')}
             </Link>

@@ -32,7 +32,6 @@ import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
 import { PortalMarketingToggle } from '@/components/members/portal-marketing-toggle';
 import { env } from '@/lib/env';
 // F114 — the caller's OWN pending change request (never another contact's).
-import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { asMembersUserId } from '@/lib/members-change-request-deps';
@@ -185,9 +184,9 @@ export async function PortalProfileBody({
           displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
           isMe: true,
         };
-        const pending = await runInTenant(tenant, (tx) =>
-          deps.changeRequestRepo.findPendingBySubmitterInTx(tx, asMembersUserId(user.id)),
-        );
+        // a PLAIN read (no lock) — the page never queues behind a decide /
+        // submit holding the row (PR-1 review, Rel M-5)
+        const pending = await deps.changeRequestRepo.findPendingBySubmitter(tenant, asMembersUserId(user.id));
         if (pending.ok && pending.value) {
           pendingRequest = serialiseChangeRequestForPortal(pending.value, me);
         } else if (!pending.ok) {

@@ -101,6 +101,33 @@ The rescan takes no lock — the lock graph is unchanged. Every consumer of the 
 the fixture, `members-deps.test.ts`) carries the method. Noted: the race arm answers
 `server_error` to the admin (a throw, not a typed refusal); the retry re-drives.
 
+## PR-1's deferred items, closed here (the maintainer's ask, 2026-09-12)
+
+PR-1's ledger (`reviews/pr-1.md` § "Deferred with a written owner") assigned eleven items to
+PR-2. Their one-line summaries were re-derived against this branch by `enterprise-ux-designer`
+and `thai-tax-compliance-auditor` (Opus, read-only) before closing — each below was found at a
+file:line first, never rebuilt from the summary.
+
+| Item | State found | Closure |
+|---|---|---|
+| T078 erasure scrub + outbox cancel · T087 durable cap + coalescing (the two pre-flip gates) | closed by US4 / US5 | — |
+| Whole-branch #10 (`listVisibleToUser` returned a colleague's `mixed` values) | closed by US4 + round 1 C2 | `projectChangeRequestForViewer` |
+| Rel M-5 — the profile page and the gate route read the pending row with the `FOR UPDATE` finder (a render queued behind a decide / submit) | OPEN | `ChangeRequestRepo.findPendingBySubmitter` (plain read, own `runInTenant`) for the READ paths; the writers keep `…InTx`. Live proof: the plain read returns while a holder keeps the row `FOR UPDATE`, the locking one queues (positive control) |
+| Mig M-2 — unindexed FK columns `decided_by_user_id`, `submitted_by_contact_id`, `replaced_by_request_id` | OPEN | migration `0302` (tenant-first; the two nullable ones partial) + the Drizzle schema + a `verify-schema` canary; applied to dev, read back from `pg_indexes` |
+| Mig M-5 — `decideInTx` ran one UPDATE per field row (up to nine round-trips) | OPEN | one `UPDATE … FROM (VALUES …) RETURNING field_key`; a key with no row still rolls the tx back (live case). The raw-SQL param path does not serialise a Date — `applied_at` goes as ISO text with a cast (found on the first live run) |
+| Tax M7 — FR-022's live proof covered the billing-address branch only | OPEN | a billing-less member case: the registered-address change is flagged (the registered address IS the buyer address, §86/4(3)) and its approval leaves the issued snapshot byte-identical |
+| Tax M6 — no hint that CLEARING the billing address switches the buyer address to the registered one | OPEN, two surfaces | `billingAddressHint` ×3 says so on the portal form; the review page gets a `billing_cleared` tax hint (new `TaxHint` arm + copy ×3, unit case) |
+| Tax M8 — primary-ness frozen at submission | CLOSED already (`submitter_role_at_submission` feeds the hint and the subtitle) | — |
+| UX M13 queue paging · M14 route-level `error.tsx` | CLOSED by US4 | — |
+| UX M12 — one generic sentence for every server 422 rule | OPEN (highest impact) | per-rule copy from the issue's message / code (phone, website scheme, too long, required, country; the generic line only for an unknown rule) — zero new keys; unit test with six issues |
+| UX M11 — the four conditionally-required billing lines carried no marker; no "* required" note | OPEN | `required` follows `billTouched` (any billing line filled ⇒ line 1 / city / postal code / country marked + `aria-required`); `requiredNote` ×3 at the top of the form |
+| UX M4 — the review loading skeleton was one subtitle line + a badge short of the page; neither admin skeleton was announced | OPEN | header in the page's shape (subtitle + badge + action), the footer's summary + button, both admin skeletons in `PageSkeletonShell` |
+| UX M1 — the edit page's tab title said "Edit Profile" while the H1 said "Propose changes" | OPEN | `generateMetadata` resolves the gate (one settings read, never throws; falls back to the immediate title) |
+| UX M8 — the member section's list carried an `aria-label` duplicating its `<h2>` (announced three times); the review page's decision table had no heading at all | OPEN, both halves | the `aria-label` + its dead key dropped ×3; the table sits in a `<section>` under a new `<h2>` "Proposed changes" ×3 |
+| UX M5 — the queue's two chip links were colour-only inside a non-muted paragraph (WCAG 1.4.1) | OPEN | persistent `underline` (the in-paragraph rule; the privacy link already followed it) |
+| UX M17 — six SV strings used an en dash where EN, TH and the rest of `sv.json` use an em dash | OPEN | the six strings |
+| UX M9 / M10 — "sections are real fieldsets with legends" | the CODE was right (Cards with a real `<h2>`; no radio / checkbox groups) — the docblock was wrong | docblock corrected; no fieldset conversion |
+
 ## Gate output after rounds 1 + 2 (branch head `b7afc1bcb`)
 
 | Gate | Result |

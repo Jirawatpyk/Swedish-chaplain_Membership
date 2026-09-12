@@ -187,6 +187,20 @@ async function loadFields(
   return out;
 }
 
+/** The submitter's pending row + its fields; `lock` = `FOR UPDATE` (the writers) or a plain read (the pages). */
+async function readPendingBySubmitter(tx: TenantTx, userId: UserId, lock: boolean): Promise<Result<ChangeRequest | null, RepoError>> {
+  const base = tx
+    .select()
+    .from(memberChangeRequests)
+    .where(and(eq(memberChangeRequests.submittedByUserId, userId), eq(memberChangeRequests.state, 'pending')))
+    .limit(1);
+  const rows = lock ? await base.for('update') : await base;
+  const row = rows[0];
+  if (!row) return ok(null);
+  const fields = await loadFields(tx, [row.id]);
+  return ok(rowToDomain(row, fields.get(row.id) ?? []));
+}
+
 async function readOne(
   tx: TenantTx,
   id: string,
@@ -393,18 +407,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
 
   async findPendingBySubmitterInTx(tx, userId) {
     try {
-      const rows = await tx
-        .select()
-        .from(memberChangeRequests)
-        .where(
-          and(eq(memberChangeRequests.submittedByUserId, userId), eq(memberChangeRequests.state, 'pending')),
-        )
-        .limit(1)
-        .for('update');
-      const row = rows[0];
-      if (!row) return ok(null);
-      const fields = await loadFields(tx, [row.id]);
-      return ok(rowToDomain(row, fields.get(row.id) ?? []));
+      return await readPendingBySubmitter(tx, userId, true);
     } catch (e) {
       return err(unexpected(e));
     }
@@ -431,6 +434,14 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
     }
   },
 
+  async findPendingBySubmitter(ctx, userId) {
+    try {
+      return await runInTenant(ctx, (tx) => readPendingBySubmitter(tx, userId, false));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async decideInTx(tx, id, decision: ChangeRequestDecision) {
     try {
       const [row] = await tx
@@ -447,17 +458,28 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         .where(and(eq(memberChangeRequests.id, id), eq(memberChangeRequests.state, 'pending')))
         .returning();
       if (!row) return err({ code: 'repo.not_found' });
-      for (const f of decision.fields) {
-        const touched = await tx
-          .update(memberChangeRequestFields)
-          .set({ outcome: f.outcome, appliedAt: f.appliedAt })
-          .where(
-            and(eq(memberChangeRequestFields.requestId, row.id), eq(memberChangeRequestFields.fieldKey, f.key)),
-          )
-          .returning({ id: memberChangeRequestFields.id });
+      // ONE statement for every field row (PR-1 review, Mig M-5 — the loop was
+      // one round-trip per field, up to nine): the decisions join as a VALUES
+      // list; RETURNING tells which keys had a row.
+      if (decision.fields.length > 0) {
+        // the raw-SQL param path does not serialise a Date (the neon driver
+        // refuses it) — ISO text with an explicit cast
+        const values = sql.join(
+          decision.fields.map((f) => sql`(${f.key}::text, ${f.outcome}::text, ${f.appliedAt === null ? null : f.appliedAt.toISOString()}::timestamptz)`),
+          sql`, `,
+        );
+        const touched = (await tx.execute(sql`
+          UPDATE member_change_request_fields AS f
+          SET outcome = v.outcome, applied_at = v.applied_at
+          FROM (VALUES ${values}) AS v(field_key, outcome, applied_at)
+          WHERE f.request_id = ${row.id} AND f.field_key = v.field_key
+          RETURNING f.field_key
+        `)) as unknown as Array<{ field_key: string }>;
         // a decision naming a key with no row would leave a `decided` request
         // with an undecided field (round 6, types F7) — the tx rolls back
-        if (touched.length !== 1) throw new Error(`decideInTx: ${touched.length} field rows for key ${f.key} on ${row.id}`);
+        const touchedKeys = new Set(touched.map((t) => t.field_key));
+        const missing = decision.fields.map((f) => f.key).filter((k) => !touchedKeys.has(k));
+        if (missing.length > 0) throw new Error(`decideInTx: no field row for ${missing.join(', ')} on ${row.id}`);
       }
       const fields = await loadFields(tx, [row.id]);
       const rows = fields.get(row.id) ?? [];

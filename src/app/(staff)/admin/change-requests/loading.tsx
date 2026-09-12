@@ -7,10 +7,14 @@ import { getTranslations } from 'next-intl/server';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { PageSkeletonShell } from '@/components/shell/page-skeletons';
 
 export default async function Loading() {
   const t = await getTranslations('admin.changeRequests.queue');
+  const tLayout = await getTranslations('layout');
   return (
+    // announced (PR-1 review, UX M4 — the plain aria-hidden skeleton said nothing)
+    <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <div className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end" aria-hidden="true">
@@ -42,5 +46,6 @@ export default async function Loading() {
         ))}
       </div>
     </TableContainer>
+    </PageSkeletonShell>
   );
 }

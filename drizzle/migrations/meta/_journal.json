@@ -2052,6 +2052,13 @@
       "when": 1798543300000,
       "tag": "0301_member_change_request_enums",
       "breakpoints": true
+    },
+    {
+      "idx": 303,
+      "version": "7",
+      "when": 1798543400000,
+      "tag": "0302_member_change_request_fk_indexes",
+      "breakpoints": true
     }
   ]
 }

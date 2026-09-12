@@ -16,7 +16,9 @@
  *     their zod path; the message shown is LOCALISED, never the raw token.
  *   - Carries the GDPR Art. 13 / PDPA § 23 notice with the privacy-notice link
  *     (FR-010).
- *   - 320 px: single column; sections are real fieldsets with legends.
+ *   - 320 px: single column; sections are Cards with a real `<h2>` heading
+ *     (`CardTitle` renders a div — see ui/card.tsx; no radio / checkbox groups
+ *     here, so no fieldset is needed).
  */
 import { useId, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -286,7 +288,28 @@ export function PortalChangeRequestForm({
           const path = Array.isArray(issue.path) ? issue.path.join('.') : '';
           const field = PATH_TO_FIELD[path];
           if (field) {
-            const message = (issue as { message?: unknown }).message === 'billing_address_incomplete' ? t('errors.billingIncomplete') : tErrors('field');
+            // PER RULE (PR-1 review, UX M12): the server refuses what the
+            // client schema let through — its phone parser is stricter, a
+            // website scheme, a length bound, the country code — and the
+            // member must learn WHICH rule, not "check this value"
+            const raw = (issue as { message?: unknown }).message;
+            const m = typeof raw === 'string' ? raw : '';
+            const code = (issue as { code?: unknown }).code;
+            const max = (issue as { maximum?: unknown }).maximum;
+            const message =
+              m === 'billing_address_incomplete'
+                ? t('errors.billingIncomplete')
+                : m.startsWith('invalid phone')
+                  ? t('errors.phone')
+                  : m === 'website scheme not allowed' || (code === 'invalid_string' && field === 'website')
+                    ? t('errors.website')
+                    : field === 'billCountry'
+                      ? t('errors.country')
+                      : code === 'too_big' && typeof max === 'number'
+                        ? tv('tooLong', { max })
+                        : code === 'too_small'
+                          ? tv('required')
+                          : tErrors('field');
             form.setError(field, { type: 'server', message });
             if (!focused) {
               form.setFocus(field);
@@ -358,6 +381,13 @@ export function PortalChangeRequestForm({
     );
   }
 
+  // the billing group is ONE unit (the schema's superRefine): once any line
+  // is filled, line 1 / city / postal code / country are required — say so on
+  // the labels, not only in the error (PR-1 review, UX M11)
+  const billTouched = (['billLine1', 'billLine2', 'billSubDistrict', 'billCity', 'billProvince', 'billPostalCode', 'billCountry'] as const).some(
+    (k) => (form.watch(k) ?? '').trim() !== '',
+  );
+
   const statusMessage =
     status.kind === 'nothing_to_submit'
       ? tStatus('nothingToSubmit')
@@ -372,6 +402,9 @@ export function PortalChangeRequestForm({
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate data-testid="change-request-form">
       <div className="space-y-6">
+        <p className="text-sm text-muted-foreground" id="cr-required-fields-note">
+          {t('requiredNote')}
+        </p>
         {resubmitOf && resubmitOf.decisionReason ? (
           <InlineAlert tone="warning" role="status" data-testid="resubmit-reason">
             <p className="font-medium">{t('resubmitTitle')}</p>
@@ -453,13 +486,13 @@ export function PortalChangeRequestForm({
                 <p className="text-caption text-muted-foreground">{t('billingAddressHint')}</p>
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-2">
-                {field('billLine1', t('fields.line1'))}
+                {field('billLine1', t('fields.line1'), { required: billTouched })}
                 {field('billLine2', t('fields.line2'))}
                 {field('billSubDistrict', t('fields.subDistrict'))}
-                {field('billCity', t('fields.city'))}
+                {field('billCity', t('fields.city'), { required: billTouched })}
                 {field('billProvince', t('fields.province'))}
-                {field('billPostalCode', t('fields.postalCode'))}
-                {field('billCountry', t('fields.country'), { autoComplete: 'country' })}
+                {field('billPostalCode', t('fields.postalCode'), { required: billTouched })}
+                {field('billCountry', t('fields.country'), { autoComplete: 'country', required: billTouched })}
               </CardContent>
             </Card>
           </>

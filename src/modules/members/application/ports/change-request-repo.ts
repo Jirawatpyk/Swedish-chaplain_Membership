@@ -123,11 +123,19 @@ export interface ChangeRequestRepo {
   /** The review / staff-detail projection: the request plus member, submitter and reviewer display facts. */
   findListRowById(ctx: TenantContext, id: ChangeRequestId): Promise<Result<ChangeRequestListRow, RepoError>>;
 
-  /** The submitter's pending request, `FOR UPDATE`, or `null` (R3 replace path). */
+  /** The submitter's pending request, `FOR UPDATE`, or `null` (R3 replace path — the WRITERS: submit, withdraw). */
   findPendingBySubmitterInTx(
     tx: TenantTx,
     userId: UserId,
   ): Promise<Result<ChangeRequest | null, RepoError>>;
+
+  /**
+   * The same row as a PLAIN read (no lock, its own `runInTenant`) — for the
+   * READ paths (the profile page, the edit page, the gate route), so a page
+   * render never queues behind a decide / submit holding the row (PR-1
+   * review, Rel M-5).
+   */
+  findPendingBySubmitter(ctx: TenantContext, userId: UserId): Promise<Result<ChangeRequest | null, RepoError>>;
 
   /** pending → withdrawn / `reason`; `replacedByRequestId` iff `reason === 'replaced'`. */
   withdrawInTx(

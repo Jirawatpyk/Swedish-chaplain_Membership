@@ -41,7 +41,7 @@ vi.mock('@/lib/members-change-request-deps', () => ({
   buildChangeRequestDeps: vi.fn(() => ({
     tenant: { slug: 'test-swecham', __brand: true },
     memberChangeGate: { resolve: (...args: unknown[]) => resolveGateMock(...(args as [])) },
-    changeRequestRepo: { findPendingBySubmitterInTx: (...args: unknown[]) => findPendingMock(...args) },
+    changeRequestRepo: { findPendingBySubmitter: (...args: unknown[]) => findPendingMock(...args) },
   })),
 }));
 vi.mock('@/lib/logger', () => ({
@@ -103,7 +103,7 @@ describe('contract: GET /api/portal/change-requests/gate (F114 T030)', () => {
     const res = await GET(req());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ mode: 'approval', canProposeCompanyFields: true, pending: null });
-    expect(findPendingMock).toHaveBeenCalledWith({ __tx: true }, USER);
+    expect(findPendingMock).toHaveBeenCalledWith(expect.objectContaining({ slug: 'test-swecham' }), USER);
   });
 
   it('secondary with a pending request → canProposeCompanyFields false + the compact pending shape', async () => {
