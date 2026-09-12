@@ -12,8 +12,8 @@
  * `{ error: <code>, message?, issues? }`, 201 `submitted` / 200
  * `nothing_to_submit` / 200 `already_pending`, 403 `forbidden` /
  * `company_fields_require_primary` / `member_archived`, 422 `validation_error`
- * with `issues`, the interim 429 `rate_limited` (a route-level PEEK, consumed
- * only on `submitted`, counted on `refused{rate_limited}`), a staff session →
+ * with `issues`, the 429 `rate_limited` mapped from the use case's DURABLE cap (T087 —
+ * no limiter is consulted; the audit + metric are the use case's), a staff session →
  * the member-context 403, and the `errorId` taxonomy on the 500 arm. Read-only
  * mode (FR-036 / T116) is the IN-ROUTE 503, asserted below.
  */
@@ -384,81 +384,50 @@ describe('POST /api/portal/change-requests — READ_ONLY_MODE (T116)', () => {
 });
 
 /**
- * Review round 1 — security I-1 (interim per-person cap), M-2 (a
- * deterministic refusal is remembered under the Idempotency-Key so a retry
- * gets the same answer, never `idempotency-key-reused`), M-3 (a PRESENT but
- * malformed key is a 400, not silently un-deduplicated).
+ * Review round 1 — M-2 (a deterministic refusal is remembered under the
+ * Idempotency-Key so a retry gets the same answer, never
+ * `idempotency-key-reused`), M-3 (a PRESENT but malformed key is a 400, not
+ * silently un-deduplicated). The interim Upstash cap (security I-1) was
+ * replaced by the DURABLE cap inside the use case (US5 T087): the route maps
+ * its `rate_limited` error to 429 and consults no limiter at all.
  */
-describe('POST /api/portal/change-requests — review round 1', () => {
-  afterEach(() => {
-    rateLimitCheckMock.mockReset();
-    rateLimitCheckMock.mockResolvedValue({ success: true, reset: Date.now() + 60_000 });
-    rateLimitPeekMock.mockReset();
-    rateLimitPeekMock.mockResolvedValue({ success: true, reset: Date.now() + 60_000 });
-  });
-
-  it('is rate-limited per tenant + user at the durable cap (10 / 24 h) → 429 rate_limited + Retry-After, before the gate / use case', async () => {
-    rateLimitPeekMock.mockResolvedValueOnce({ success: false, reset: Date.now() + 3_600_000 });
+describe('POST /api/portal/change-requests — review round 1 + the durable cap (T087)', () => {
+  it('a `rate_limited` use-case refusal → 429 rate_limited + Retry-After (the same seconds), counted, NOT remembered under the key, no limiter consulted', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    submitMock.mockResolvedValueOnce(err({ type: 'rate_limited', retryAfterSeconds: 85_800, windowCount: 10 }));
     const { POST } = await import('@/app/api/portal/change-requests/route');
     const res = await POST(
       new NextRequest('http://localhost/api/portal/change-requests', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'idem-429' },
         body: JSON.stringify({ contact: { phone: '+66899999999' } }),
       }),
     );
     expect(res.status).toBe(429);
-    expect(res.headers.get('Retry-After')).toMatch(/^\d+$/);
-    const body = await res.json();
-    expect(body.error).toBe('rate_limited');
-    expect(body.retryAfterSeconds).toBeGreaterThan(3500);
-    expect(rateLimitPeekMock).toHaveBeenCalledWith(`f114:submit:test-swecham:${USER}`, 10, 86_400);
-    // the refusal is a PEEK: an exhausted bucket is not decremented further
+    expect(res.headers.get('Retry-After')).toBe('85800');
+    expect(await res.json()).toEqual({ error: 'rate_limited', retryAfterSeconds: 85_800 });
+    // the refusal is audited + counted by the use case; the route only maps it —
+    // and never writes it under the key (transient: the retry after the window must succeed)
+    expect(rememberMock).not.toHaveBeenCalled();
+    expect(rateLimitPeekMock).not.toHaveBeenCalled();
     expect(rateLimitCheckMock).not.toHaveBeenCalled();
-    // round 6 (code #4): the interim cap is observable
-    expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'rate_limited');
-    expect(resolveGateMock).not.toHaveBeenCalled();
-    expect(submitMock).not.toHaveBeenCalled();
+    expect(loggerError).not.toHaveBeenCalled();
   });
 
-  // round 2 — the bucket counts CREATED requests (FR-008), never attempts:
-  // only a `submitted` outcome consumes; refusals and the no-op outcomes
-  // leave the member's ten untouched.
-  it('a `submitted` outcome consumes ONE unit under the same key', async () => {
-    requireMemberContextMock.mockResolvedValueOnce(memberContext);
-    submitMock.mockResolvedValueOnce(ok({ outcome: 'submitted', request, replaced: null, staffNotified: true }));
+  it('no Upstash bucket is peeked or consumed on ANY outcome — the durable count is the cap', async () => {
+    requireMemberContextMock.mockResolvedValue(memberContext);
     const { POST } = await import('@/app/api/portal/change-requests/route');
-    const res = await POST(
-      new NextRequest('http://localhost/api/portal/change-requests', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ contact: { phone: '+66899999999' } }),
-      }),
-    );
-    expect(res.status).toBe(201);
-    expect(rateLimitCheckMock).toHaveBeenCalledTimes(1);
-    expect(rateLimitCheckMock).toHaveBeenCalledWith(`f114:submit:test-swecham:${USER}`, 10, 86_400);
-  });
-
-  it.each([
-    ['nothing_to_submit', ok({ outcome: 'nothing_to_submit' }), 200],
-    ['already_pending', ok({ outcome: 'already_pending', request }), 200],
-    ['422 validation_error', err({ type: 'validation_error', issues: [] }), 422],
-    ['500 server_error', err({ type: 'server_error', message: 'boom' }), 500],
-  ])('%s does NOT consume a unit', async (_label, useCaseResult, status) => {
-    requireMemberContextMock.mockResolvedValueOnce(memberContext);
-    submitMock.mockResolvedValueOnce(useCaseResult);
-    const { POST } = await import('@/app/api/portal/change-requests/route');
-    const res = await POST(
-      new NextRequest('http://localhost/api/portal/change-requests', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ contact: { phone: '+66899999999' } }),
-      }),
-    );
-    expect(res.status).toBe(status);
-    expect(rateLimitPeekMock).toHaveBeenCalledTimes(1);
+    for (const outcome of [ok({ outcome: 'submitted', request, replaced: null, staffNotified: true }), ok({ outcome: 'nothing_to_submit' }), err({ type: 'validation_error', issues: [] })]) {
+      submitMock.mockResolvedValueOnce(outcome);
+      await POST(
+        new NextRequest('http://localhost/api/portal/change-requests', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ contact: { phone: '+66899999999' } }),
+        }),
+      );
+    }
+    expect(rateLimitPeekMock).not.toHaveBeenCalled();
     expect(rateLimitCheckMock).not.toHaveBeenCalled();
   });
 

@@ -159,6 +159,7 @@ function makeDeps(opts: { member?: Member; contact?: Contact | null; reviewers?:
   const contactRepo = {
     findById: vi.fn(async (): Promise<Result<Contact, RepoError>> => (c ? ok(c) : err({ code: 'repo.not_found' as const }))),
   };
+  const clock = makeClockFake(NOW);
   const deps = {
     tenant,
     changeRequestRepo: repo,
@@ -167,10 +168,10 @@ function makeDeps(opts: { member?: Member; contact?: Contact | null; reviewers?:
     audit,
     emails,
     reviewers,
-    clock: makeClockFake(NOW),
+    clock,
     newRequestId: nextId,
   } as unknown as SubmitChangeRequestDeps;
-  return { deps, repo, audit, emails, reviewers, memberRepo, contactRepo };
+  return { deps, repo, audit, emails, reviewers, memberRepo, contactRepo, clock };
 }
 
 const input = (rawBody: unknown, actorRole = 'member') => ({
@@ -404,10 +405,13 @@ describe('submitChangeRequest — the happy path in ONE transaction', () => {
     expect(r2.ok && r2.value.outcome === 'submitted' && r2.value.request.fields[0]?.affectsTaxDocuments).toBe(false);
   });
 
-  it('a DIFFERENT pending request from the same person is replaced: previous → withdrawn/replaced, new one pending, staff re-notified', async () => {
-    const { deps, repo, audit, emails } = makeDeps();
+  it('a DIFFERENT pending request from the same person is replaced: previous → withdrawn/replaced, new one pending, staff re-notified once the 1 h coalescing window has passed', async () => {
+    const { deps, repo, audit, emails, clock } = makeDeps();
     const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : ('' as ChangeRequestId);
+    // US5 (T087): a resubmit within 1 h of the last staff notification queues
+    // NO new email (FR-011) — the re-notify case needs the window to have passed
+    clock.set(new Date(NOW.getTime() + 61 * 60_000));
     const second = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
     expect(second.ok && second.value.outcome === 'submitted' && second.value.replaced).toBe(firstId);
     const prev = repo.rows.get(firstId)!;
@@ -701,6 +705,188 @@ describe('submitChangeRequest — "nothing differs" while pending is flagged as 
     expect(reverted.ok && reverted.value.outcome === 'already_pending' && reverted.value.unchanged).toBe(true);
     const same = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     expect(same.ok && same.value.outcome === 'already_pending' && same.value.unchanged).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US5 (T085 / T087): replace + 1 h staff-email coalescing (FR-011, R8) and the
+// durable 10 / 24 h cap (FR-008, R9)
+// ---------------------------------------------------------------------------
+
+const HOUR = 60 * 60_000;
+const MINUTE = 60_000;
+
+describe('submitChangeRequest — resubmit within 1 h of the last staff notification queues NO new email (FR-011, R8)', () => {
+  it('coalesces: no outbox row, staffNotified false, the new row INHERITS staff_notified_at, audit coalesced: true, metric coalesced=true', async () => {
+    const { deps, repo, audit, emails, clock } = makeDeps();
+    const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : ('' as ChangeRequestId);
+    expect(emails.enqueued).toHaveLength(2);
+    clock.set(new Date(NOW.getTime() + 59 * MINUTE));
+    const second = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    expect(second.ok).toBe(true);
+    if (!second.ok || second.value.outcome !== 'submitted') return;
+    expect(second.value.replaced).toBe(firstId);
+    expect(second.value.staffNotified).toBe(false);
+    expect(second.value.request.staffNotifiedAt).toEqual(NOW); // inherited from the replaced row
+    expect(second.value.request.submittedAt).toEqual(new Date(NOW.getTime() + 59 * MINUTE));
+    expect(emails.enqueued).toHaveLength(2); // still only the first submission's rows
+    expect(repo.rows.get(firstId)).toMatchObject({ state: 'withdrawn', withdrawnReason: 'replaced', replacedByRequestId: second.value.request.id });
+    expect(audit.events.at(-1)).toMatchObject({
+      type: 'member_change_request_submitted',
+      payload: { request_id: second.value.request.id, replaced_request_id: firstId, coalesced: true, actor_role: 'member' },
+    });
+    expect(metricSubmitted).toHaveBeenLastCalledWith('test-tenant', 'own_contact', true);
+    // a coalesced submit is NOT the no-reviewers signal
+    expect(metricNoReviewers).not.toHaveBeenCalled();
+    expect(loggerWarn).not.toHaveBeenCalled();
+  });
+
+  it('exactly 1 h later is OUTSIDE the window: a new email per reviewer, staffNotified true, staff_notified_at = now, coalesced: false', async () => {
+    const { deps, audit, emails, clock } = makeDeps();
+    await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    const later = new Date(NOW.getTime() + HOUR);
+    clock.set(later);
+    const second = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    if (!second.ok || second.value.outcome !== 'submitted') throw new Error('expected submitted');
+    expect(second.value.staffNotified).toBe(true);
+    expect(second.value.request.staffNotifiedAt).toEqual(later);
+    expect(emails.enqueued).toHaveLength(4);
+    expect(audit.events.at(-1)).toMatchObject({ payload: { coalesced: false } });
+    expect(metricSubmitted).toHaveBeenLastCalledWith('test-tenant', 'own_contact', false);
+  });
+
+  it('a chain of replacements inherits the FIRST notification time, so the third resubmit 70 min after the first email is re-notified', async () => {
+    const { deps, emails, clock } = makeDeps();
+    await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    clock.set(new Date(NOW.getTime() + 40 * MINUTE));
+    const second = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    expect(second.ok && second.value.outcome === 'submitted' && second.value.request.staffNotifiedAt).toEqual(NOW);
+    expect(emails.enqueued).toHaveLength(2);
+    clock.set(new Date(NOW.getTime() + 70 * MINUTE));
+    const third = await submitChangeRequest(deps, input({ contact: { phone: '+66866666666' } }));
+    expect(third.ok && third.value.outcome === 'submitted' && third.value.staffNotified).toBe(true);
+    expect(emails.enqueued).toHaveLength(4);
+  });
+
+  it('a replaced request that never notified staff (empty roster at the time) is not a window: the resubmit with reviewers present IS emailed', async () => {
+    const { deps, emails, reviewers, clock } = makeDeps({ reviewers: 0 });
+    const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(first.ok && first.value.outcome === 'submitted' && first.value.request.staffNotifiedAt).toBeNull();
+    reviewers.listReviewers.mockResolvedValue(makeReviewers(1, 'en'));
+    clock.set(new Date(NOW.getTime() + 5 * MINUTE));
+    const second = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    expect(second.ok && second.value.outcome === 'submitted' && second.value.staffNotified).toBe(true);
+    expect(emails.enqueued).toHaveLength(1);
+  });
+
+  it('a previous request that is no longer pending at the read (decided meanwhile) is left alone: a NEW request, replaced null (US5 AS4)', async () => {
+    const { deps, repo, audit, emails } = makeDeps();
+    const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : ('' as ChangeRequestId);
+    // staff decided it between the member's two submits
+    const row = repo.rows.get(firstId)!;
+    repo.rows.set(firstId, {
+      ...row,
+      state: 'decided',
+      outcome: 'approved',
+      decidedAt: NOW,
+      decidedByUserId: 'a6c5b1a2-0000-4000-8000-00000000aaaa' as UserId,
+      fields: row.fields.map((f) => ({ ...f, outcome: 'approved' as const, appliedAt: NOW })),
+    });
+    const second = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    if (!second.ok || second.value.outcome !== 'submitted') throw new Error('expected submitted');
+    expect(second.value.replaced).toBeNull();
+    expect(repo.rows.get(firstId)?.state).toBe('decided');
+    expect([...repo.rows.values()].filter((r) => r.state === 'pending')).toHaveLength(1);
+    expect(audit.events.map((e) => e.type)).not.toContain('member_change_request_withdrawn');
+    expect(emails.enqueued).toHaveLength(4); // no window to inherit — staff notified again
+  });
+});
+
+describe('submitChangeRequest — the durable 10 / 24 h cap counted from the request history (FR-008, R9)', () => {
+  /** Ten CREATED requests, one minute apart — nine of them replaced, one pending. */
+  async function fillWindow(deps: SubmitChangeRequestDeps, clock: { set(d: Date): void }) {
+    for (let i = 0; i < 10; i += 1) {
+      clock.set(new Date(NOW.getTime() + i * MINUTE));
+      const r = await submitChangeRequest(deps, input({ contact: { phone: `+6689999${String(1000 + i).slice(1)}` } }));
+      expect(r.ok && r.value.outcome).toBe('submitted');
+    }
+  }
+
+  it('the 11th request inside 24 h is refused rate_limited with retry-after from the OLDEST row in the window; nothing created or replaced; audited + counted', async () => {
+    const { deps, repo, audit, emails, clock } = makeDeps();
+    await fillWindow(deps, clock);
+    const pendingBefore = [...repo.rows.values()].find((r) => r.state === 'pending')!;
+    const emailsBefore = emails.enqueued.length;
+    const now = new Date(NOW.getTime() + 10 * MINUTE);
+    clock.set(now);
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66811111111' } }));
+    // the oldest row (NOW) leaves the window at NOW + 24 h → 23 h 50 min from `now`
+    const expectedRetry = Math.ceil((NOW.getTime() + 24 * HOUR - now.getTime()) / 1000);
+    expect(r).toEqual({ ok: false, error: { type: 'rate_limited', retryAfterSeconds: expectedRetry, windowCount: 10 } });
+    expect(repo.rows.size).toBe(10);
+    expect(repo.rows.get(pendingBefore.id)?.state).toBe('pending');
+    expect(emails.enqueued).toHaveLength(emailsBefore);
+    // replaced requests COUNT toward the cap (nine of the ten are withdrawn/replaced)
+    expect([...repo.rows.values()].filter((x) => x.withdrawnReason === 'replaced')).toHaveLength(9);
+    const refusal = audit.events.at(-1)!;
+    expect(refusal).toMatchObject({
+      type: 'member_change_request_rate_limited',
+      actorUserId: USER,
+      requestId: 'req-1',
+      payload: { member_id: MEMBER, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
+    });
+    // the refusal is recorded OUTSIDE the (rolled-back) tx so it survives
+    expect(audit.record).toHaveBeenCalledWith(tenant, expect.objectContaining({ type: 'member_change_request_rate_limited' }));
+    expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'rate_limited');
+  });
+
+  it('the window rolls: once the oldest row is older than 24 h the next submit is accepted', async () => {
+    const { deps, repo, clock } = makeDeps();
+    await fillWindow(deps, clock);
+    clock.set(new Date(NOW.getTime() + 24 * HOUR + 1000));
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66811111111' } }));
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    expect(repo.rows.size).toBe(11);
+  });
+
+  it('the no-op answers come BEFORE the cap: at the cap, the identical pending proposal is already_pending and the record\'s values are already_pending + unchanged, never 429', async () => {
+    const { deps, audit, clock } = makeDeps();
+    await fillWindow(deps, clock);
+    clock.set(new Date(NOW.getTime() + 11 * MINUTE));
+    const same = await submitChangeRequest(deps, input({ contact: { phone: '+66899999009' } }));
+    expect(same.ok && same.value.outcome === 'already_pending' && same.value.unchanged).toBe(false);
+    const reverted = await submitChangeRequest(deps, input({ contact: { phone: '+66812345678' } }));
+    expect(reverted.ok && reverted.value.outcome === 'already_pending' && reverted.value.unchanged).toBe(true);
+    expect(audit.events.map((e) => e.type)).not.toContain('member_change_request_rate_limited');
+  });
+
+  it('retry-after is never below 1 s', async () => {
+    const { deps, clock } = makeDeps();
+    await fillWindow(deps, clock);
+    // 24 h minus 200 ms after the oldest row: still inside the window, ceil → 1
+    clock.set(new Date(NOW.getTime() + 24 * HOUR - 200));
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66811111111' } }));
+    expect(r).toEqual({ ok: false, error: { type: 'rate_limited', retryAfterSeconds: 1, windowCount: 10 } });
+  });
+
+  it('a fault on the window count → server_error, nothing created', async () => {
+    const { deps, repo } = makeDeps();
+    repo.failNext('countSubmittedSince');
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(!r.ok && r.error.type).toBe('server_error');
+    expect(repo.rows.size).toBe(0);
+  });
+
+  it('a failed audit write on the refusal path is logged, and the refusal still stands (fail-closed)', async () => {
+    const { deps, audit, clock } = makeDeps();
+    await fillWindow(deps, clock);
+    clock.set(new Date(NOW.getTime() + 10 * MINUTE));
+    audit.failNext();
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66811111111' } }));
+    expect(!r.ok && r.error.type).toBe('rate_limited');
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'test-tenant' }), expect.stringMatching(/rate_limited/));
   });
 });
 

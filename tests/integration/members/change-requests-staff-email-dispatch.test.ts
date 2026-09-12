@@ -110,6 +110,11 @@ async function tickUntilSettled(requestId: string, maxTicks = 8) {
   return null;
 }
 
+// US5 (T087): a resubmit within 1 h of the last staff notification queues NO
+// new outbox row (FR-011 coalescing) — the replaced-row test below advances
+// this clock past the window so its SECOND row exists to be dispatched.
+let clockOffsetMs = 0;
+
 async function submit(rawBody: unknown) {
   const deps: SubmitChangeRequestDeps = {
     tenant: tenant.ctx,
@@ -122,7 +127,7 @@ async function submit(rawBody: unknown) {
     // against the ACTIVE reviewer roster at send time, so the reviewer is a
     // real active admin, not a fake address
     reviewers: { listReviewers: async () => [{ userId: mu(reviewer.userId), email: reviewer.email, locale: 'en' }] },
-    clock: { now: () => new Date() },
+    clock: { now: () => new Date(Date.now() + clockOffsetMs) },
     newRequestId: () => randomUUID() as ChangeRequestId,
   };
   return submitChangeRequest(deps, {
@@ -202,8 +207,17 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     const first = await submit({ contact: { phone: '+66855555555' } });
     expect(first.ok && first.value.outcome).toBe('submitted');
     const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : '';
-    const second = await submit({ contact: { phone: '+66866666666' } });
+    // past the 1 h coalescing window (US5 T087) — otherwise the replacement
+    // inherits `staff_notified_at` and queues no row of its own
+    clockOffsetMs = 61 * 60_000;
+    let second: Awaited<ReturnType<typeof submit>>;
+    try {
+      second = await submit({ contact: { phone: '+66866666666' } });
+    } finally {
+      clockOffsetMs = 0;
+    }
     expect(second.ok && second.value.outcome).toBe('submitted');
+    expect(second.ok && second.value.outcome === 'submitted' && second.value.staffNotified).toBe(true);
     const secondId = second.ok && second.value.outcome === 'submitted' ? second.value.request.id : '';
     const superseded = await tickUntilSettled(firstId);
     expect(superseded?.status).toBe('permanently_failed');
