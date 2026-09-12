@@ -90,8 +90,9 @@ export const outboxCancelAdapter: OutboxCancelPort = {
 
   // F114 T078 — the two change-request notification types are keyed on the
   // MEMBER, not on an address: the staff row's `to_email` is a REVIEWER's
-  // address (never in the erased set) and the member row's recipient is
-  // re-read at dispatch. Both carry `context_data.memberId`, so the erased
+  // address (never in the erased set) and the member row's `to_email` is the
+  // contact's address FROZEN at enqueue (decide-change-request.ts) — findable
+  // by the email leg only through its ownership guard. Both carry `context_data.memberId`, so the erased
   // member's still-pending rows are found by that key (no ownership guard is
   // needed — the key IS the owner). Only `pending` rows go; sent /
   // permanently_failed history survives.

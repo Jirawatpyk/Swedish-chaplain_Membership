@@ -1006,7 +1006,10 @@
           "apply": "Apply",
           "clear": "Clear filters",
           "memberChip": "Showing requests for {company}.",
-          "removeMember": "Show all members"
+          "removeMember": "Show all members",
+          "submitterChip": "Showing one person's requests.",
+          "removeSubmitter": "Show everyone's requests",
+          "unknownMember": "a member that could not be found"
         },
       "queue": {
           "emptyFiltered": "No change requests match these filters.",
@@ -1032,7 +1035,9 @@
         "emptyHint": "New member proposals appear here as soon as they are submitted; the staff email links straight to the request.",
         "noPendingForSubmitter": "This person has no request awaiting a decision — their last request was decided by {name} on {decidedAt}.",
         "noRequestForSubmitter": "This person has no change request.",
-        "rowMeta": "Submitted by {submitter} · {count, plural, one {# field} other {# fields}} · {submittedAt}",
+        "tableCaption": "Change requests — one row per request: the member, who submitted it, the fields, when it was submitted, how long it has waited and its status.",
+        "reviewFor": "Review the request from {company}",
+        "viewFor": "View the request from {company}",
         "open": "Review"
       },
       "review": {
@@ -6208,7 +6213,8 @@
         "cancel": "Keep request",
         "done": "Your request was withdrawn. Nothing on your record has changed.",
         "gone": "There is no request awaiting review any more — it may already have been decided or withdrawn.",
-        "error": "Could not withdraw your request. Please try again."
+        "error": "Could not withdraw your request. Please try again.",
+        "readOnly": "The system is in read-only mode for a moment, so your request cannot be withdrawn right now. Please try again later."
       },
       "replaced": {
         "status": "Your changes were sent for review and replace the request you sent earlier."
@@ -7178,7 +7184,7 @@
         "events": "events.json — events you attended.",
         "broadcasts": "broadcasts.json — E-Blast / broadcast records relevant to you.",
         "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
-        "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). The reviewer is shown as the organisation.",
+        "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation.",
         "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."
       },
       "truncationWarning": "⚠ PARTIAL EXPORT — Some categories contain only your most recent records; older entries were omitted to keep the archive a manageable size: {files}. To request your complete history for these categories, contact the chamber. The manifest checksums cover only the records included here.",

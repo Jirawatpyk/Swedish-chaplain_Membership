@@ -128,13 +128,22 @@ export interface ExportJobIdempotencyParts {
   readonly kind: ExportKind;
   readonly subjectMemberId: string | null;
   readonly requestedForPeriod: string | null;
+  /**
+   * F114 T079 (review round 1, C1) — a GDPR archive's CONTENT depends on who
+   * asked (FR-029 scope), so the key does too: two people asking for the same
+   * member in the same minute get two jobs, never one another's file. Omitted
+   * for the directory artefacts (one build per period, whoever asks) — the
+   * segment is appended only when given, so their keys are unchanged.
+   */
+  readonly requestedBy?: string;
 }
 
 /**
  * Deterministic canonical idempotency input (data-model § 4:
- * `hash(tenant_id, kind, subject_member_id, requested_for_period)`). Infra hashes
- * this string into `export_jobs.idempotency_key`. Null subject/period collapse to
- * an empty segment (a stable sentinel — never the literal "null"/"undefined").
+ * `hash(tenant_id, kind, subject_member_id, requested_for_period[, requested_by])`).
+ * Infra hashes this string into `export_jobs.idempotency_key`. Null subject/period
+ * collapse to an empty segment (a stable sentinel — never the literal
+ * "null"/"undefined").
  */
 export function exportJobIdempotencyInput(
   parts: ExportJobIdempotencyParts,
@@ -144,5 +153,6 @@ export function exportJobIdempotencyInput(
     parts.kind,
     parts.subjectMemberId ?? '',
     parts.requestedForPeriod ?? '',
+    ...(parts.requestedBy !== undefined ? [parts.requestedBy] : []),
   ].join('|');
 }

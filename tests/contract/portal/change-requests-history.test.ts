@@ -16,12 +16,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import type { UserId } from '@/modules/members/domain/value-objects/user-id';
 import type { ChangeRequest, ChangeRequestId, ProposedField } from '@/modules/members/domain/change-request/change-request';
-import { makeClockFake, makeInMemoryChangeRequestRepo, type InMemoryChangeRequestRepo } from '../../helpers/change-request-fakes';
+import { makeAuditPortFake, makeClockFake, makeInMemoryChangeRequestRepo, type AuditPortFake, type InMemoryChangeRequestRepo } from '../../helpers/change-request-fakes';
 
 const requireMemberContextMock = vi.fn();
 const loggerError = vi.fn();
 let flagOn = true;
 let repo: InMemoryChangeRequestRepo;
+let audit: AuditPortFake;
 
 vi.mock('@/lib/env', async () => {
   const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
@@ -44,11 +45,15 @@ vi.mock('@/lib/members-change-request-deps', () => ({
   buildChangeRequestDeps: vi.fn(() => ({
     tenant: { slug: 'test-swecham', __brand: true },
     changeRequestRepo: repo,
+    audit,
     clock: makeClockFake(NOW),
   })),
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: (...a: unknown[]) => loggerError(...a), warn: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('@/lib/metrics', () => ({
+  membersMetrics: { changeRequests: { refused: vi.fn(), submitted: vi.fn(), decided: vi.fn(), decideDurationMs: vi.fn(), pendingCount: vi.fn(), oldestAgeSeconds: vi.fn() } },
 }));
 
 import { GET as listHistory } from '@/app/api/portal/change-requests/route';
@@ -130,6 +135,7 @@ function one(id: string): Promise<Response> {
 beforeEach(() => {
   flagOn = true;
   repo = makeInMemoryChangeRequestRepo(seed());
+  audit = makeAuditPortFake();
   repo.display.users.set(PRIMARY, { displayName: 'Anna Svensson', deactivated: false });
   repo.display.users.set(SECONDARY, { displayName: 'Bo Svensson', deactivated: false });
   requireMemberContextMock.mockResolvedValue(memberContext(PRIMARY, PRIMARY_CONTACT, true));
@@ -167,6 +173,9 @@ describe('GET /api/portal/change-requests — own history (FR-029)', () => {
     const mixed = body.items[1];
     expect(mixed.fields.map((f: { key: string }) => f.key)).toEqual(['company_name']);
     expect(mixed.submittedBy).toEqual({ contactId: PRIMARY_CONTACT, displayName: 'Anna Svensson', isMe: false });
+    // FR-014: the reviewer's reason is the SUBMITTING person's — a colleague never sees it
+    expect(mixed.decisionReason).toBeNull();
+    expect(JSON.stringify(body)).not.toContain('Use the registered phone');
     // the primary's phone proposal (R1 own-contact + R3's contact row) never reaches the secondary
     expect(body.items.filter((i: { id: string }) => i.id !== R(2)).every((i: { fields: { target: string }[] }) => i.fields.every((f) => f.target === 'member'))).toBe(true);
   });
@@ -212,6 +221,11 @@ describe('GET /api/portal/change-requests/[id]', () => {
     expect((await one(R(5))).status).toBe(404);
     expect((await one(R(9))).status).toBe(404);
     expect((await one('nope')).status).toBe(404);
+    // FR-035: the unknown / foreign id is audited as a probe (once per miss); the
+    // colleague's own-contact row (visible in this tenant) is not a probe
+    const probes = audit.events.filter((e) => e.type === 'member_cross_tenant_probe');
+    expect(probes.map((e) => e.payload['attempted_change_request_id'])).toEqual([R(9)]);
+    expect(probes[0]).toMatchObject({ actorUserId: PRIMARY, payload: { actor_tenant_id: 'test-swecham', action: 'history_item' } });
   });
 
   it('flag OFF → 404 before the member context; a repo fault → 500 named in the errorId taxonomy', async () => {

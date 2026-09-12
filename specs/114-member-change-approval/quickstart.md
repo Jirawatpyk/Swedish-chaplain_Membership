@@ -53,7 +53,8 @@ pnpm check:audit-events && pnpm check:i18n       # 5 events × 5 places; ~160 le
 ### US5 — withdraw / replace / cap
 1. Submit, then "Withdraw request" on the pending banner (confirmation dialog, non-destructive tier) or `DELETE /api/portal/change-requests/current` → *withdrawn/member*; the queue no longer lists it; a second DELETE → 404 `no_pending_request`; `/admin/audit` has `member_change_request_withdrawn { withdrawn_reason: member }`.
 2. Submit twice within a minute → the first becomes *withdrawn/replaced* (pointing at the second), exactly one pending, the second answers `replaced: <first id>` + `staffNotified: false` and **one** staff email in total (the second row inherited `staff_notified_at`; the email's link opens the current request). Resubmit again more than 1 h after the first email → a new email (`staffNotified: true`). `staffNotified: false` on a FIRST submit means the reviewer roster was EMPTY, which pages.
-3. Submit 10 times in a row (script) → the 11th is 429 with `Retry-After` (= when the oldest of the ten leaves the 24 h window) and the form says when to try again; `member_change_request_rate_limited { window_count: 10 }` in the audit; works with `UPSTASH_*` unset (the count is the request table's — `tests/integration/members/change-requests-rate-cap.test.ts` is the automated twin).
+3. Submit 10 times in a row (script) → the 11th is 429 with `Retry-After` (= when the oldest of the ten leaves the 24 h window) and the form says when to try again; `member_change_request_rate_limited { related_member_id, window_count: 10 }` in the audit (the member's `last_activity_at` does NOT move — a refusal is not activity); the CAP works with `UPSTASH_*` unset (the count is the request table's — `tests/integration/members/change-requests-rate-cap.test.ts` is the automated twin). Separately, 61 POSTs inside 10 minutes from one person (any outcome — even 400s) → 429 from the route's attempt bucket, which needs Upstash and fails open without it.
+4. Erasure (FR-030): erase a member who has a decided request with a reason and a pending one → both requests still list (the queue, the member section, the history API) with every value, the reason and the note reading `[erased]` — an address group too — the pending one `withdrawn/erasure`; re-running the erasure changes nothing (`tests/integration/members/change-requests-erasure-scrub.test.ts`). A GDPR export requested by a colleague or by staff on behalf of the member carries `company` / `mixed` requests only, with company fields and no reason; a member's own export carries their own requests in full.
 
 ### US6 — tenant switch + dashboard
 1. Switch the setting OFF with one request pending → the queue still lists it and it can be decided; a new member edit at `/portal/edit` saves immediately (F3 behaviour) and emits `member_self_updated`.
@@ -109,8 +110,11 @@ moment the flag is set:
    (setting the env var IS the flip on this repo — no `ignoreCommand`) **and only after every
    pre-flip gate above is merged**.
 3. Update the record of processing (RoPA) entry for member data with the new purpose ("review of
-   member-proposed changes; accountable history") and the new disclosure (staff notification
-   emails) — FR-040 makes this a precondition of the switch.
+   member-proposed changes; accountable history"), the new disclosure (staff notification
+   emails), the new Art. 15 / 20 export category (`change-requests.json`, scoped to the requester
+   per FR-029) and the retention note that a SENT `member_change_request_decided_member` outbox
+   row keeps the subject's address frozen at enqueue under the existing COMP-1 outbox retention
+   (review round 1, P-10) — FR-040 makes this a precondition of the switch.
 4. Switch the tenant setting ON. Until US6 / PR-3 ships the audited admin card (T098 / T099,
    `/admin/settings/member-changes`) this is one SQL statement on
    `tenant_member_settings.member_change_approval_enabled` (the e2e seed's

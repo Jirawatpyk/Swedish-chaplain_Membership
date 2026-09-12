@@ -204,6 +204,7 @@ export {
   listPortalChangeRequests,
   getPortalChangeRequest,
   projectChangeRequestForViewer,
+  type GetPortalChangeRequestDeps,
   encodeChangeRequestCursor,
   decodeChangeRequestCursor,
   waitingSecondsOf,

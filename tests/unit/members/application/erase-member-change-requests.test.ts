@@ -3,7 +3,11 @@
  * atomic scrub tx and records the erasure closures (FR-025, FR-030; research
  * R10). Over the stubbed erase deps (`erase-member.fixtures.ts`):
  *   - `changeRequestScrub.scrubForMemberInTx(tx, memberId, now)` runs in the
- *     same tx as the member + contact scrubs, AFTER the contact scrub;
+ *     same tx as the member + contact scrubs and is the FIRST lock the tx
+ *     takes — BEFORE the member row's `FOR UPDATE` — so every F114 path locks
+ *     in the same order (request rows → member row) as `submitChangeRequest`
+ *     and `decideChangeRequest`, and an erasure racing a submit cannot
+ *     deadlock (review round 1, REL-1: AB-BA inversion);
  *   - one `member_change_request_withdrawn` audit row per CLOSED (formerly
  *     pending) request: `{ related_member_id, request_id, contact_id, scope,
  *     withdrawn_reason: 'erasure', actor_role: 'system' }` attributed to the
@@ -50,7 +54,7 @@ function deps(overrides: { scrub?: () => Promise<unknown>; cancel?: () => Promis
 }
 
 describe('eraseMember — change-request scrub (F114 T078)', () => {
-  it('scrubs inside the atomic tx after the contact scrub, records one erasure closure per closed request, cancels the member-keyed outbox rows', async () => {
+  it('scrubs inside the atomic tx BEFORE the member row lock (request rows → member row, the submit / decide order), records one erasure closure per closed request, cancels the member-keyed outbox rows', async () => {
     const d = deps();
     const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
     expect(res.ok, JSON.stringify(res)).toBe(true);
@@ -60,9 +64,9 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
     expect(tx).toEqual({ __tx: 'scrub-tx' });
     expect(memberArg).toBe(MEMBER_ID);
     expect(at).toBeInstanceOf(Date);
-    const contactScrubOrder = d.contactRepo.scrubPiiForMemberInTx.mock.invocationCallOrder[0]!;
+    const memberLockOrder = d.memberRepo.findByIdInTx.mock.invocationCallOrder[0]!;
     const crScrubOrder = d.changeRequestScrub.scrubForMemberInTx.mock.invocationCallOrder[0]!;
-    expect(crScrubOrder).toBeGreaterThan(contactScrubOrder);
+    expect(crScrubOrder).toBeLessThan(memberLockOrder);
 
     const events = d.audit.recordInTx.mock.calls.map((c) => c[2] as { type: string; actorUserId: string; requestId: string; payload: Record<string, unknown> });
     const closures = events.filter((e) => e.type === 'member_change_request_withdrawn');

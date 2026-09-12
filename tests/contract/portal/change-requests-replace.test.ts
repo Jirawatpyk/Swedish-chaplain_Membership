@@ -20,8 +20,9 @@
  *     created or replaced, and NOT remembered under an Idempotency-Key
  *     (transient — the retry after the window must succeed);
  *   - replaced requests count toward the cap (the durable count is over
- *     ROWS, not pending rows) — with `UPSTASH_*` irrelevant: no limiter is
- *     consulted on this path any more.
+ *     ROWS, not pending rows) — the route's ATTEMPT bucket (60 / 10 min,
+ *     review round 1 SEC-I2) is stubbed open here; the cap under test is the
+ *     durable one.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -104,8 +105,8 @@ vi.mock('@/lib/metrics', () => ({
     },
   },
 }));
-// The interim Upstash cap is gone from this route (T087) — a stub stays so a
-// leftover import can never reach the real limiter; nothing here asserts on it.
+// The route's attempt bucket (review round 1, SEC-I2) — stubbed OPEN so this
+// file exercises the DURABLE cap; change-requests-submit.test.ts pins the bucket.
 vi.mock('@/lib/auth-deps', () => ({
   rateLimiter: {
     check: vi.fn(async () => ({ success: true, reset: Date.now() + 60_000 })),
@@ -275,7 +276,7 @@ describe('POST /api/portal/change-requests — resubmit replaces, coalesces, and
     expect(audit.events.at(-1)).toMatchObject({
       type: 'member_change_request_rate_limited',
       actorUserId: USER,
-      payload: { member_id: MEMBER, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
+      payload: { related_member_id: MEMBER, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
     });
     expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'rate_limited');
     // transient: never remembered under the key, so the retry after the window is not replayed as a 429

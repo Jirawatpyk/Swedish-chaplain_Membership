@@ -13,11 +13,15 @@
  * request simply stops being reviewed; ux-standards § 6), focus on Cancel,
  * `finalFocus` back to the trigger. Confirm calls
  * `DELETE /api/portal/change-requests/current`; a 200 swaps the banner for a
- * `role="status"` "withdrawn" message (the live region announces it; the
- * server state catches up on the next navigation); a 404 means the request
- * was decided or withdrawn meanwhile — the "gone" message + a server refresh
- * so the profile shows whatever landed; a failure stays inline in the same
- * live region (no toast — the banner IS the status surface).
+ * `role="status"` "withdrawn" message (the live region announces it) AND
+ * refreshes the server tree, so /portal/edit's form + hint stop describing
+ * a request that no longer exists (review round 1, UX C2); a 404 means the
+ * request was decided or withdrawn meanwhile — the "gone" message + the same
+ * refresh so the profile shows whatever landed; a 503 (READ_ONLY_MODE) has
+ * its own copy; any other failure stays inline in the same live region (no
+ * toast — the banner IS the status surface). Focus after the dialog closes
+ * goes through the shared `useDialogFinalFocus` (trigger, else the page
+ * landmark — the shell's own rule, UX C3).
  */
 import { useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
@@ -27,6 +31,7 @@ import { ClockIcon, Undo2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InlineAlert } from '@/components/ui/inline-alert';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { ChangeRequestDiffTable } from './change-request-diff-table';
@@ -38,6 +43,7 @@ export interface PendingRequestBannerProps {
 }
 
 type WithdrawResult = 'withdrawn' | 'gone' | null;
+type WithdrawFailure = 'error' | 'read_only' | null;
 
 export function PendingRequestBanner({ request, showEditLink = true }: PendingRequestBannerProps) {
   const t = useTranslations('portal.changeRequests.pending');
@@ -45,9 +51,12 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
   const locale = useLocale();
   const router = useRouter();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // set before the banner is replaced, so the dialog's close lands on the landmark
+  const closedViaSuccessRef = useRef(false);
+  const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<WithdrawResult>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<WithdrawFailure>(null);
   const [busy, startTransition] = useTransition();
   const submittedAt = formatLocalisedDate(request.submittedAt, locale, {
     dateStyle: 'medium',
@@ -55,23 +64,26 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
   });
 
   async function withdraw(): Promise<void> {
-    setFailed(false);
+    setFailed(null);
     try {
       const res = await fetch('/api/portal/change-requests/current', { method: 'DELETE' });
       if (res.ok) {
+        closedViaSuccessRef.current = true;
         setResult('withdrawn');
+        startTransition(() => router.refresh());
         return;
       }
       if (res.status === 404) {
         // decided or withdrawn under us — let the server say what landed
+        closedViaSuccessRef.current = true;
         setResult('gone');
         startTransition(() => router.refresh());
         return;
       }
-      setFailed(true);
+      setFailed(res.status === 503 ? 'read_only' : 'error');
     } catch (e) {
       console.error('[pending-request-banner] withdraw failed', e);
-      setFailed(true);
+      setFailed('error');
     }
   }
 
@@ -93,9 +105,9 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
         </div>
       </div>
       <ChangeRequestDiffTable fields={request.fields} className="bg-background text-foreground" />
-      {failed ? (
+      {failed !== null ? (
         <p className="text-sm font-medium text-destructive" data-testid="withdraw-error">
-          {tw('error')}
+          {failed === 'read_only' ? tw('readOnly') : tw('error')}
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
@@ -126,9 +138,7 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
         confirmLabel={tw('confirm')}
         cancelLabel={tw('cancel')}
         onConfirm={withdraw}
-        // the trigger survives every close path except a successful withdraw,
-        // where the whole banner is replaced — land on the page landmark then
-        finalFocus={() => triggerRef.current ?? document.getElementById('main-content')}
+        finalFocus={finalFocus}
       />
     </InlineAlert>
   );

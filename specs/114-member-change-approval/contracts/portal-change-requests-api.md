@@ -53,12 +53,21 @@ nothing differs from the record and nothing is pending → **200 `{ "outcome": "
 is pending → **200 `{ "outcome": "already_pending", "unchanged": true, "request": <the pending one> }`**
 (the member cannot silently "revert" a pending proposal — withdrawing is `DELETE …/current`);
 ≥ 10 requests CREATED by this person in the trailing 24 h (counted from the request table,
-replaced rows included — no rate-limiting service is consulted, so the cap holds with Upstash
-absent) → **429 `rate_limited`** with `Retry-After` and the same `retryAfterSeconds` in the body
-(when the OLDEST row leaves the window), audited `member_change_request_rate_limited
-{ member_id, window_count, retry_after_seconds }`, counted on
+replaced rows included — the use case consults no rate-limiting service, so the cap holds with
+Upstash absent) → **429 `rate_limited`** with `Retry-After` and the same `retryAfterSeconds` in
+the body (when the OLDEST row leaves the window), audited `member_change_request_rate_limited
+{ related_member_id, window_count, retry_after_seconds, actor_role }` (`related_member_id` — a
+refused attempt is not member activity), counted on
 `members_change_request_refused_total{reason=rate_limited}`, and never remembered under an
-`Idempotency-Key` (transient); member archived → **403 `member_archived`**. The no-op answers
+`Idempotency-Key` (transient). A second 429 with the SAME envelope guards the route itself: an
+ATTEMPT bucket of 60 / 10 min per tenant + user (Upstash, atomic `check`, consumed on EVERY
+POST — refusals, validation errors and malformed keys included — before the tenant gate and the
+body), so a client cannot drive the gate / validation / count path at line rate under a rotating
+key; it fails OPEN on an Upstash outage, and the durable cap still holds then (review round 1,
+SEC-I2). **After any 429 the client mints a NEW `Idempotency-Key`**: the record was reserved
+before the refusal and a same-key retry inside the record's 24 h TTL answers 422
+`idempotency-key-reused` (review round 1, SEC-S1 — the portal form mints one key per attempt);
+member archived → **403 `member_archived`**. The no-op answers
 come BEFORE the cap: at the cap an identical or record-matching proposal is still
 `nothing_to_submit` / `already_pending`, never 429.
 
@@ -102,7 +111,15 @@ link) and the profile card links to it; both 404 while the platform flag is off.
 ## `GET /api/portal/change-requests/[id]`
 
 404 unless the row is in the caller's FR-029 scope (never 403 — no existence leak across contacts);
-the same `mixed` projection applies. `M114.portal.history_item.<arm>` on the 500.
+the same non-submitter projection applies (a colleague's `mixed` row → company fields only; ANY row
+that is not the caller's own → `decisionReason: null` — FR-014 gives the reason to the submitting
+person, and it may quote their proposed values; `scope` is still the row's, so a colleague can
+tell a `mixed` request also touched the submitter's own fields — intended, low value, review round
+1 SEC-S3). A miss on the id (unknown, or another tenant's — indistinguishable under RLS) is audited
+`member_cross_tenant_probe { attempted_change_request_id, actor_tenant_id, actor_role, action:
+'history_item' }` like every other change-request miss (FR-035); an in-tenant row outside the
+caller's scope is counted `refused{not_owner}` and not audited (the acknowledge precedent).
+`M114.portal.history_item.<arm>` on the 500.
 
 ## `DELETE /api/portal/change-requests/current` — withdraw (US5, FR-009)
 
@@ -160,7 +177,10 @@ the client formats (BE for `th-TH`, display-only).
   live-Neon twin is `tests/integration/members/change-requests-rate-cap.test.ts` with `UPSTASH_*`
   unset); a resubmit → `replaced`, coalesced within 1 h, re-notified after.
 - GET history (`change-requests-history.test.ts`): a secondary's own-field request is absent from
-  the primary's list and vice versa; a colleague's `mixed` row carries company fields only;
-  `state` / `cursor` / `limit`; `…/[id]` 404 out of scope (a colleague's own-field request,
-  another member's row, an unknown or malformed id).
+  the primary's list and vice versa; a colleague's `mixed` row carries company fields only and no
+  `decisionReason`; `state` / `cursor` / `limit`; `…/[id]` 404 out of scope (a colleague's
+  own-field request, another member's row, an unknown or malformed id) with the unknown id
+  audited as a probe and the colleague's row not.
+- POST attempt bucket (`change-requests-submit.test.ts`): an exhausted bucket → 429 before the
+  gate and the use case; the bucket is consumed once per POST on every outcome.
 - DELETE: 200 then 404 (`change-requests-withdraw.test.ts`); a colleague's pending request untouched.

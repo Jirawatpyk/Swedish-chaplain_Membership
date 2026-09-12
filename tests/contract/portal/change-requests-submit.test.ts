@@ -392,7 +392,27 @@ describe('POST /api/portal/change-requests — READ_ONLY_MODE (T116)', () => {
  * its `rate_limited` error to 429 and consults no limiter at all.
  */
 describe('POST /api/portal/change-requests — review round 1 + the durable cap (T087)', () => {
-  it('a `rate_limited` use-case refusal → 429 rate_limited + Retry-After (the same seconds), counted, NOT remembered under the key, no limiter consulted', async () => {
+  it('an exhausted ATTEMPT bucket (60 / 10 min per tenant + user — review round 1, SEC-I2) → 429 before the gate / use case; the bucket is consumed on EVERY attempt, refusals included', async () => {
+    rateLimitCheckMock.mockResolvedValueOnce({ success: false, reset: Date.now() + 120_000 });
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    const { POST } = await import('@/app/api/portal/change-requests/route');
+    const res = await POST(
+      new NextRequest('http://localhost/api/portal/change-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ company: { tax_id: 'forged' } }),
+      }),
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(await res.json()).toMatchObject({ error: 'rate_limited' });
+    expect(rateLimitCheckMock).toHaveBeenCalledWith(`f114:submit-attempts:test-swecham:${USER}`, 60, 600);
+    expect(resolveGateMock).not.toHaveBeenCalled();
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'rate_limited');
+  });
+
+  it('a `rate_limited` use-case refusal (the durable FR-008 cap) → 429 rate_limited + Retry-After (the same seconds), NOT remembered under the key', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
     submitMock.mockResolvedValueOnce(err({ type: 'rate_limited', retryAfterSeconds: 85_800, windowCount: 10 }));
     const { POST } = await import('@/app/api/portal/change-requests/route');
@@ -409,12 +429,10 @@ describe('POST /api/portal/change-requests — review round 1 + the durable cap 
     // the refusal is audited + counted by the use case; the route only maps it —
     // and never writes it under the key (transient: the retry after the window must succeed)
     expect(rememberMock).not.toHaveBeenCalled();
-    expect(rateLimitPeekMock).not.toHaveBeenCalled();
-    expect(rateLimitCheckMock).not.toHaveBeenCalled();
     expect(loggerError).not.toHaveBeenCalled();
   });
 
-  it('no Upstash bucket is peeked or consumed on ANY outcome — the durable count is the cap', async () => {
+  it('the attempt bucket is consumed once per request on EVERY outcome (a forged-key flood is bounded); the durable count stays the FR-008 rule', async () => {
     requireMemberContextMock.mockResolvedValue(memberContext);
     const { POST } = await import('@/app/api/portal/change-requests/route');
     for (const outcome of [ok({ outcome: 'submitted', request, replaced: null, staffNotified: true }), ok({ outcome: 'nothing_to_submit' }), err({ type: 'validation_error', issues: [] })]) {
@@ -428,7 +446,7 @@ describe('POST /api/portal/change-requests — review round 1 + the durable cap 
       );
     }
     expect(rateLimitPeekMock).not.toHaveBeenCalled();
-    expect(rateLimitCheckMock).not.toHaveBeenCalled();
+    expect(rateLimitCheckMock).toHaveBeenCalledTimes(3);
   });
 
   it('a PRESENT but malformed Idempotency-Key is a 400 invalid_idempotency_key — never processed un-deduplicated (security M-3)', async () => {
@@ -445,7 +463,8 @@ describe('POST /api/portal/change-requests — review round 1 + the durable cap 
     expect((await res.json()).error).toBe('invalid_idempotency_key');
     expect(classifyMock).not.toHaveBeenCalled();
     expect(submitMock).not.toHaveBeenCalled();
-    expect(rateLimitCheckMock).not.toHaveBeenCalled();
+    // the attempt bucket is consumed BEFORE the key is parsed — a malformed-key flood is bounded too
+    expect(rateLimitCheckMock).toHaveBeenCalledTimes(1);
   });
 
   it('a 422 validation refusal is remembered under the Idempotency-Key (a retry replays it instead of 422 idempotency-key-reused)', async () => {

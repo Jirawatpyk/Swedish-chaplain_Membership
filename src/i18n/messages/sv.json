@@ -1006,7 +1006,10 @@
           "apply": "Tillämpa",
           "clear": "Rensa filter",
           "memberChip": "Visar begäranden för {company}.",
-          "removeMember": "Visa alla medlemmar"
+          "removeMember": "Visa alla medlemmar",
+          "submitterChip": "Visar en persons begäranden.",
+          "removeSubmitter": "Visa allas begäranden",
+          "unknownMember": "en medlem som inte kunde hittas"
         },
       "queue": {
           "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
@@ -1032,7 +1035,9 @@
         "emptyHint": "Nya medlemsförslag visas här så snart de skickas in; personalens e-post länkar direkt till begäran.",
         "noPendingForSubmitter": "Den här personen har ingen begäran som väntar på beslut — den senaste beslutades av {name} den {decidedAt}.",
         "noRequestForSubmitter": "Den här personen har ingen ändringsbegäran.",
-        "rowMeta": "Inskickad av {submitter} · {count, plural, one {# fält} other {# fält}} · {submittedAt}",
+        "tableCaption": "Ändringsbegäranden – en rad per begäran: medlem, avsändare, fält, inskickad, väntetid och status.",
+        "reviewFor": "Granska begäran från {company}",
+        "viewFor": "Visa begäran från {company}",
         "open": "Granska"
       },
       "review": {
@@ -6208,7 +6213,8 @@
         "cancel": "Behåll begäran",
         "done": "Din begäran drogs tillbaka. Inget i din post har ändrats.",
         "gone": "Det finns inte längre någon begäran som väntar på granskning – den kan redan ha avgjorts eller dragits tillbaka.",
-        "error": "Det gick inte att dra tillbaka din begäran. Försök igen."
+        "error": "Det gick inte att dra tillbaka din begäran. Försök igen.",
+        "readOnly": "Systemet är tillfälligt i skrivskyddat läge, så din begäran kan inte dras tillbaka just nu. Försök igen senare."
       },
       "replaced": {
         "status": "Dina ändringar skickades för granskning och ersätter den begäran du skickade tidigare."
@@ -7178,7 +7184,7 @@
         "events": "events.json — evenemang du har deltagit i.",
         "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
-        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen.",
+        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
       },
       "truncationWarning": "⚠ DELVIS EXPORT — Vissa kategorier innehåller endast dina senaste poster; äldre poster har utelämnats för att begränsa arkivets storlek: {files}. Kontakta handelskammaren om du vill ha din fullständiga historik för dessa kategorier. Manifestets kontrollsummor omfattar endast de poster som ingår här.",

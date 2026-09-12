@@ -7,7 +7,9 @@
  * `requireApiPermission('members.read')`. The member must exist in the
  * caller's tenant (`memberRepo.findById` — another tenant's member is
  * invisible under RLS, so the answer is a 404 problem, never a 403 that
- * confirms existence; a malformed id is a 404 too). Every state, newest
+ * confirms existence, and the miss is audited `member_cross_tenant_probe`
+ * with the true actor — Constitution I.4, the get-member rule; a malformed
+ * id is a 404 before any read, not a probe). Every state, newest
  * first, the queue's list-row shape (no field values, no staff note); keyset
  * `cursor` / `limit ≤ 100`. `M114.admin.member_history.<arm>` on the 500s.
  */
@@ -54,7 +56,24 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const deps = buildChangeRequestDeps(resolveTenantFromRequest(request));
   const member = await deps.memberRepo.findById(deps.tenant, asMemberId(memberId));
   if (!member.ok) {
-    if (member.error.code === 'repo.not_found') return notFound();
+    if (member.error.code === 'repo.not_found') {
+      // the adapter answers a Result — read it, or a failed probe write would
+      // be silent (the contact-marketing precedent)
+      const probe = await deps.audit.record(deps.tenant, {
+        type: 'member_cross_tenant_probe',
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        summary: `member probe (change_request_history) on ${memberId}`,
+        payload: { attempted_member_id: memberId, actor_tenant_id: deps.tenant.slug, actor_role: ctx.current.user.role, action: 'change_request_history' },
+      });
+      if (!probe.ok) {
+        logger.error(
+          { errorId: `${ERROR_ID}.probe_audit_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, err: probe.error.code },
+          'change-requests.member-history: probe audit failed',
+        );
+      }
+      return notFound();
+    }
     logger.error(
       { errorId: `${ERROR_ID}.member_read_failed`, requestId: ctx.requestId, tenantId: deps.tenant.slug, memberId, err: member.error.code },
       'change-requests.member-history: member read failed',

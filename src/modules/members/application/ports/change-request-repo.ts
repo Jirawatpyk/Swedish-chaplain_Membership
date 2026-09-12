@@ -157,7 +157,17 @@ export interface ChangeRequestRepo {
     since: Date,
   ): Promise<Result<{ readonly count: number; readonly oldestSubmittedAt: Date | null }, RepoError>>;
 
-  /** Tenant-wide queue: pending oldest-first by default, else newest-first (FR-027). */
+  /**
+   * Tenant-wide queue: pending oldest-first by default, else newest-first (FR-027).
+   *
+   * The keyset cursor `(submittedAt, id)` has MILLISECOND resolution (it
+   * round-trips through `Date.toISOString()`), and `submitted_at` is always
+   * written from `clock.now()` (a JS Date — whole milliseconds), so no row
+   * carries microseconds and the `lt(t) OR (eq(t) AND lt(id))` predicate is
+   * exact. A backfill / import that writes `now()` from SQL MUST truncate to
+   * milliseconds (`date_trunc('milliseconds', …)`), or the rows inside
+   * `(t_truncated, t_actual)` fall silently out of a page (review round 1, REL-14).
+   */
   listQueue(
     ctx: TenantContext,
     filter: ChangeRequestListFilter,

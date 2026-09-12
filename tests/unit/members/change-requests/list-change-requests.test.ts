@@ -24,6 +24,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+const metricRefused = vi.fn();
+vi.mock('@/lib/metrics', () => ({
+  membersMetrics: {
+    changeRequests: {
+      refused: (...a: unknown[]) => metricRefused(...a),
+      submitted: vi.fn(),
+      decided: vi.fn(),
+      decideDurationMs: vi.fn(),
+      pendingCount: vi.fn(),
+      oldestAgeSeconds: vi.fn(),
+    },
+  },
+}));
 
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId, asContactId } from '@/modules/members';
@@ -40,7 +53,7 @@ import {
   projectChangeRequestForViewer,
   waitingSecondsOf,
 } from '@/modules/members/application/use-cases/change-requests/list-change-requests';
-import { makeClockFake, makeInMemoryChangeRequestRepo } from '../../../helpers/change-request-fakes';
+import { makeAuditPortFake, makeClockFake, makeInMemoryChangeRequestRepo } from '../../../helpers/change-request-fakes';
 
 const tenant = asTenantContext('test-tenant');
 const MEMBER = asMemberId('11111111-1111-4111-8111-111111111111');
@@ -111,7 +124,8 @@ function seed() {
 function makeDeps(rows = seed()) {
   const repo = makeInMemoryChangeRequestRepo(rows);
   repo.display.users.set(REVIEWER, { displayName: 'Reviewer Rae', deactivated: true });
-  return { deps: { tenant, changeRequestRepo: repo, clock: makeClockFake(NOW) }, repo };
+  const audit = makeAuditPortFake();
+  return { deps: { tenant, changeRequestRepo: repo, audit, clock: makeClockFake(NOW) }, repo, audit };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -229,6 +243,28 @@ describe('FR-029 — the portal projection', () => {
     // the primary's own-contact request R(1) is absent for the secondary; R(2) absent for the primary
   });
 
+  it("a NON-submitter never sees the reviewer's reason or note — on a mixed row AND on a company row (FR-014: only the submitting person); the submitter does", async () => {
+    const { deps } = makeDeps();
+    const secondary = await listPortalChangeRequests(deps, { userId: SECONDARY, memberId: MEMBER, cursor: null, limit: 20 });
+    const mixed = secondary.ok ? secondary.value.items.find((r) => r.request.id === R(3)) : undefined;
+    expect(mixed?.request.decisionReason).toBeNull();
+    expect(mixed?.request.decisionNote).toBeNull();
+    const primary = await listPortalChangeRequests(deps, { userId: PRIMARY, memberId: MEMBER, cursor: null, limit: 20 });
+    const mine = primary.ok ? primary.value.items.find((r) => r.request.id === R(3)) : undefined;
+    expect(mine?.request.decisionReason).toBe('Use the registered phone');
+    // a company row decided with a reason: the same rule
+    const companyRow = { request: request(R(7), { scope: 'company', state: 'decided', outcome: 'rejected', decidedAt: NOW, decidedByUserId: REVIEWER, decisionReason: 'Rename needs a DBD extract', decisionNote: 'checked', fields: [companyName('rejected')] }), member: { companyName: 'Nordic Co', memberNumber: 1, status: 'active' as const, archived: false }, submitter: { displayName: 'Anna' }, decidedBy: null };
+    const forSecondary = projectChangeRequestForViewer(companyRow, SECONDARY);
+    expect(forSecondary.request.decisionReason).toBeNull();
+    expect(forSecondary.request.decisionNote).toBeNull();
+    expect(forSecondary.request.fields.map((f) => f.key)).toEqual(['company_name']);
+    expect(projectChangeRequestForViewer(companyRow, PRIMARY)).toBe(companyRow);
+    // the company-level AUDIENCE (viewer null — an on-behalf export): stripped like a non-submitter
+    const forAudience = projectChangeRequestForViewer({ ...companyRow, request: seed()[2]! }, null);
+    expect(forAudience.request.fields.map((f) => f.key)).toEqual(['company_name']);
+    expect(forAudience.request.decisionReason).toBeNull();
+  });
+
   it('a mixed row shown to a NON-submitter carries its company fields only; the submitter sees all of it', async () => {
     const { deps } = makeDeps();
     const secondary = await listPortalChangeRequests(deps, { userId: SECONDARY, memberId: MEMBER, cursor: null, limit: 20 });
@@ -251,15 +287,33 @@ describe('FR-029 — the portal projection', () => {
 
   it('getPortalChangeRequest: in scope → the (projected) row; a colleague\'s own-contact request, another member\'s row and an unknown id → not_found', async () => {
     const { deps, repo } = makeDeps();
-    const mine = await getPortalChangeRequest(deps, { changeRequestId: R(1) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER });
+    const mine = await getPortalChangeRequest(deps, { changeRequestId: R(1) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER , actorRole: 'member', requestId: 'req-item' });
     expect(mine.ok && mine.value.request.id).toBe(R(1));
-    const mixedForSecondary = await getPortalChangeRequest(deps, { changeRequestId: R(3) as ChangeRequestId, userId: SECONDARY, memberId: MEMBER });
+    const mixedForSecondary = await getPortalChangeRequest(deps, { changeRequestId: R(3) as ChangeRequestId, userId: SECONDARY, memberId: MEMBER , actorRole: 'member', requestId: 'req-item' });
     expect(mixedForSecondary.ok && mixedForSecondary.value.request.fields.map((f) => f.key)).toEqual(['company_name']);
-    expect(await getPortalChangeRequest(deps, { changeRequestId: R(1) as ChangeRequestId, userId: SECONDARY, memberId: MEMBER })).toEqual({ ok: false, error: { type: 'not_found' } });
-    expect(await getPortalChangeRequest(deps, { changeRequestId: R(5) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER })).toEqual({ ok: false, error: { type: 'not_found' } });
-    expect(await getPortalChangeRequest(deps, { changeRequestId: R(9) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER })).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(await getPortalChangeRequest(deps, { changeRequestId: R(1) as ChangeRequestId, userId: SECONDARY, memberId: MEMBER , actorRole: 'member', requestId: 'req-item' })).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(await getPortalChangeRequest(deps, { changeRequestId: R(5) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER , actorRole: 'member', requestId: 'req-item' })).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(await getPortalChangeRequest(deps, { changeRequestId: R(9) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER , actorRole: 'member', requestId: 'req-item' })).toEqual({ ok: false, error: { type: 'not_found' } });
     repo.failNext('findListRowById');
-    const fault = await getPortalChangeRequest(deps, { changeRequestId: R(1) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER });
+    const fault = await getPortalChangeRequest(deps, { changeRequestId: R(1) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER , actorRole: 'member', requestId: 'req-item' });
     expect(!fault.ok && fault.error.type).toBe('server_error');
+  });
+
+  it('getPortalChangeRequest: an UNKNOWN id (a foreign tenant is invisible under RLS) is audited as member_cross_tenant_probe; an in-tenant "not yours" is counted, never audited as a probe (FR-035)', async () => {
+    const { deps, audit } = makeDeps();
+    const actor = { actorRole: 'member', requestId: 'req-probe' };
+    expect(await getPortalChangeRequest(deps, { changeRequestId: R(9) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER, ...actor })).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      type: 'member_cross_tenant_probe',
+      actorUserId: PRIMARY,
+      requestId: 'req-probe',
+      payload: { attempted_change_request_id: R(9), actor_tenant_id: 'test-tenant', actor_role: 'member', action: 'history_item' },
+    });
+    metricRefused.mockClear();
+    // a colleague's own-contact row: visible in this tenant → not a probe, but not silent either
+    expect(await getPortalChangeRequest(deps, { changeRequestId: R(1) as ChangeRequestId, userId: SECONDARY, memberId: MEMBER, ...actor })).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(audit.events).toHaveLength(1);
+    expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'not_owner');
   });
 });

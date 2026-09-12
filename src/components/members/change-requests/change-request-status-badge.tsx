@@ -23,7 +23,7 @@ export function ChangeRequestStatusBadge({ state, outcome, withdrawnReason, audi
   if (state === 'decided' && outcome !== null) {
     const Icon = outcome === 'approved' ? CheckCircle2Icon : outcome === 'rejected' ? XCircleIcon : ListChecksIcon;
     return (
-      <Badge variant={outcome === 'rejected' ? 'destructive' : outcome === 'approved' ? 'default' : 'secondary'} className={className} data-state={state} data-outcome={outcome}>
+      <Badge variant={outcome === 'rejected' ? 'destructive' : outcome === 'approved' ? 'default' : 'outline'} className={className} data-state={state} data-outcome={outcome}>
         <Icon className="mr-1 size-3" aria-hidden="true" />
         {t(`outcome.${outcome}`)}
       </Badge>

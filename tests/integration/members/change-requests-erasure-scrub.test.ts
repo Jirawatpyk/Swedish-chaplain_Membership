@@ -172,7 +172,14 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
     });
 
     // one decided request (rejected with a reason + a note) …
-    decidedId = await submit({ contact: { phone: PROPOSED_PHONE }, company: { company_name: PROPOSED_NAME } });
+    decidedId = await submit({
+      contact: { phone: PROPOSED_PHONE },
+      company: {
+        company_name: PROPOSED_NAME,
+        // an address GROUP — the sentinel must read back for a jsonb object column too
+        billing_address: { line1: 'Box 9', line2: null, sub_district: null, city: 'Stockholm', province: null, postal_code: '11122', country: 'SE' },
+      },
+    });
     const decided = await decideChangeRequest(
       { tenant: tenant.ctx, changeRequestRepo: drizzleChangeRequestRepo, memberRepo: drizzleMemberRepo, contactRepo: drizzleContactRepo, audit: f3DrizzleAuditAdapter, emails: resendEmailPort, clock },
       {
@@ -180,6 +187,7 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
         decisions: [
           { key: 'phone', outcome: 'rejected' },
           { key: 'company_name', outcome: 'rejected' },
+          { key: 'billing_address', outcome: 'rejected' },
         ],
         reason: REASON,
         note: NOTE,
@@ -218,7 +226,7 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
     expect(pending.withdrawnAt).not.toBeNull();
 
     const fields = await db.select().from(memberChangeRequestFields).where(inArray(memberChangeRequestFields.requestId, [decidedId, pendingId]));
-    expect(fields).toHaveLength(3);
+    expect(fields).toHaveLength(4);
     for (const f of fields) {
       expect(f.seenValue, f.fieldKey).toBe(ERASED_SENTINEL);
       expect(f.proposedValue, f.fieldKey).toBe(ERASED_SENTINEL);
@@ -240,6 +248,8 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
     expect(text).not.toContain(PROPOSED_PHONE);
     expect(text).not.toContain(PROPOSED_NAME);
     expect(text).not.toContain(REASON);
+    expect(text).not.toContain(NOTE);
+    expect(text).not.toContain('Box 9');
 
     const outboxAfter = await db
       .select()
@@ -254,8 +264,22 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
     expect(readBack.value.fields.map((f) => [f.key, f.seen, f.proposed, f.outcome])).toEqual([
       ['phone', ERASED_SENTINEL, ERASED_SENTINEL, 'rejected'],
       ['company_name', ERASED_SENTINEL, ERASED_SENTINEL, 'rejected'],
+      ['billing_address', ERASED_SENTINEL, ERASED_SENTINEL, 'rejected'],
     ]);
     const list = await drizzleChangeRequestRepo.listByMember(tenant.ctx, asMemberId(memberId), { cursor: null, limit: 10 });
     expect(list.ok && list.value.items).toHaveLength(2);
-  }, 120_000);
+
+    // a RE-DRIVE (the reconciler re-running the erasure) is idempotent: no new
+    // closure, the withdrawn row keeps its first `withdrawn_at`, values stay sentinel
+    const withdrawnAtFirst = pending.withdrawnAt;
+    const again = await eraseMember(asMemberId(memberId), { reason: 'gdpr_erasure_request' }, { actorUserId: admin.userId, requestId: 'req-erase-cr-redrive' }, buildEraseMemberDeps(tenant.ctx));
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    const closuresAfter = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.eventType, 'member_change_request_withdrawn')));
+    expect(closuresAfter.filter((a) => (a.payload as { withdrawn_reason?: string }).withdrawn_reason === 'erasure')).toHaveLength(1);
+    const [pendingAgain] = await db.select().from(memberChangeRequests).where(eq(memberChangeRequests.id, pendingId));
+    expect(pendingAgain?.withdrawnAt?.getTime()).toBe(withdrawnAtFirst?.getTime());
+  }, 180_000);
 });

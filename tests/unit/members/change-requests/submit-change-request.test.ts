@@ -835,8 +835,11 @@ describe('submitChangeRequest — the durable 10 / 24 h cap counted from the req
       type: 'member_change_request_rate_limited',
       actorUserId: USER,
       requestId: 'req-1',
-      payload: { member_id: MEMBER, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
+      payload: { related_member_id: MEMBER, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
     });
+    // a REFUSED attempt is not member activity: `related_member_id`, never the
+    // 0009 trigger key `member_id` (review round 1, REL-3 / P-7)
+    expect(refusal.payload).not.toHaveProperty('member_id');
     // the refusal is recorded OUTSIDE the (rolled-back) tx so it survives
     expect(audit.record).toHaveBeenCalledWith(tenant, expect.objectContaining({ type: 'member_change_request_rate_limited' }));
     expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'rate_limited');

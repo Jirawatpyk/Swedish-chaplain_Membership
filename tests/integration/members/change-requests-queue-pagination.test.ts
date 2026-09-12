@@ -4,8 +4,12 @@
  * precedent for a stated budget is a SEEDED test, not a sentence).
  *
  * Seeds 200 members × 25 DECIDED requests (5,000 rows + one field row each)
- * in one tenant, then walks `listQueue({ state: 'decided' })` with keyset
- * `cursor` / `limit = 100`:
+ * in one tenant — the first 300 rows share ONE `submitted_at`, so the keyset's
+ * `(submitted_at = cursor, id < cursor.id)` tie-break branch is exercised on
+ * three page boundaries (review round 1, REL-7: 1-second spacing never reached
+ * it) — then walks the QUEUE USE CASE (`listChangeRequestQueue`: the page's
+ * `listQueue` + `pendingStats` in parallel, the two transactions a route pays,
+ * REL-9) with keyset `cursor` / `limit = 100`:
  *   - 50 pages, 5,000 distinct ids, no gap and no duplicate;
  *   - a stable order: `(submitted_at DESC, id DESC)` across page boundaries;
  *   - the page latency's p95 is under `ciScaled(400)` ms (the plan's budget
@@ -24,7 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
-import { asMemberId, drizzleChangeRequestRepo, type ChangeRequestCursor } from '@/modules/members';
+import { asMemberId, drizzleChangeRequestRepo, listChangeRequestQueue } from '@/modules/members';
 import { memberChangeRequestFields, memberChangeRequests } from '@/modules/members/infrastructure/db/schema-change-requests';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
@@ -38,6 +42,7 @@ const MEMBERS = 200;
 const PER_MEMBER = 25;
 const TOTAL = MEMBERS * PER_MEMBER;
 const PAGE = 100;
+const TIE_ROWS = 300;
 const BASE = new Date('2026-06-01T00:00:00Z');
 
 let tenant: TestTenant;
@@ -89,7 +94,8 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
       );
       const requestRows = Array.from({ length: TOTAL }, (_, n) => {
         const m = n % MEMBERS;
-        const submittedAt = new Date(BASE.getTime() + n * 1000);
+        // the first TIE_ROWS rows share one timestamp (keyset tie-break coverage)
+        const submittedAt = new Date(BASE.getTime() + Math.max(0, n - TIE_ROWS + 1) * 1000);
         return {
           id: randomUUID(),
           tenantId: tenant.ctx.slug,
@@ -135,21 +141,25 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
 
   it('walks all 5,000 rows in 50 pages with no gap, no duplicate, a stable order, p95 page latency under budget', async () => {
     const seen = new Set<string>();
-    let cursor: ChangeRequestCursor | null = null;
+    let cursor: string | null = null;
     let pages = 0;
     let previous: { submittedAt: number; id: string } | null = null;
     const durations: number[] = [];
-    // warm-up: the first statement pays the pooled connection + plan cost
-    await drizzleChangeRequestRepo.listQueue(tenant.ctx, { state: 'decided' }, { cursor: null, limit: PAGE });
+    const deps = { tenant: tenant.ctx, changeRequestRepo: drizzleChangeRequestRepo, clock: { now: () => new Date() } };
+    // warm-up: the first statements pay the pooled connection + plan cost
+    await listChangeRequestQueue(deps, { filter: { state: 'decided' }, cursor: null, limit: PAGE });
+    let tieBoundaries = 0;
     for (;;) {
       const started = performance.now();
-      const page = await drizzleChangeRequestRepo.listQueue(tenant.ctx, { state: 'decided' }, { cursor, limit: PAGE });
+      const page = await listChangeRequestQueue(deps, { filter: { state: 'decided' }, cursor, limit: PAGE });
       durations.push(performance.now() - started);
       expect(page.ok, JSON.stringify(page)).toBe(true);
       if (!page.ok) return;
       pages += 1;
+      const first = page.value.items[0]?.row.request;
+      if (previous && first && first.submittedAt.getTime() === previous.submittedAt) tieBoundaries += 1;
       for (const item of page.value.items) {
-        const r = item.request;
+        const r = item.row.request;
         expect(seen.has(r.id), `duplicate ${r.id}`).toBe(false);
         seen.add(r.id);
         if (previous) {
@@ -164,18 +174,23 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
     }
     expect(seen.size).toBe(TOTAL);
     expect(pages).toBe(TOTAL / PAGE);
+    // the tie-break branch was crossed (300 equal rows / 100 per page → 2 boundaries inside the tie block)
+    expect(tieBoundaries).toBeGreaterThanOrEqual(2);
     const sorted = [...durations].sort((x, y) => x - y);
     const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]!;
     const slowest = sorted[sorted.length - 1]!;
     expect(p95, `p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms (budget p95 < ${ciScaled(400)} ms)`).toBeLessThan(ciScaled(400));
   }, 300_000);
 
-  it('the page query uses the (tenant_id, state, submitted_at DESC) index — never a seq scan + sort', async () => {
+  it.each([
+    ['newest first (decided / history)', 'DESC'],
+    ['oldest first (the pending queue default — a backward index scan)', 'ASC'],
+  ])('the page query uses the (tenant_id, state, submitted_at DESC) index — %s — never a seq scan + sort', async (_label, dir) => {
     const plan = await runInTenant(tenant.ctx, async (tx) => {
       const rows = (await tx.execute(sql`
         EXPLAIN SELECT * FROM member_change_requests
         WHERE state = 'decided'
-        ORDER BY submitted_at DESC, id DESC
+        ORDER BY submitted_at ${sql.raw(dir)}, id ${sql.raw(dir)}
         LIMIT ${PAGE + 1}
       `)) as unknown as Array<Record<string, string>>;
       return rows.map((r) => Object.values(r).join(' ')).join('\n');

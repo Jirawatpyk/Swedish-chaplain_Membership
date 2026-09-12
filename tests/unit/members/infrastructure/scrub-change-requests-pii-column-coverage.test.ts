@@ -10,20 +10,23 @@
  * into an ALLOWLIST over the ACTUAL Drizzle columns: every column is either
  * SCRUBBED (rewritten by `scrubForMemberInTx`) or KEPT (retained on purpose,
  * with a one-word rationale). A new column fails here until it is classified.
+ *
+ * Unlike its two siblings the SCRUBBED sets are NOT hand-copied here: they are
+ * the adapter's own exported column lists, which the adapter's `.set({...})`
+ * calls are typed against (`satisfies Record<column, unknown>`), so a column
+ * dropped from a `.set()` fails the ADAPTER's typecheck and a column added
+ * to the list without a `.set()` entry fails it too (review round 1, P-6 /
+ * SEC-S2: the guard used to read a constant the adapter never saw).
  */
 import { describe, expect, it } from 'vitest';
 import { getTableColumns } from 'drizzle-orm';
 import { memberChangeRequestFields, memberChangeRequests } from '@/modules/members/infrastructure/db/schema-change-requests';
+import { FIELD_SCRUBBED_COLUMNS, REQUEST_SCRUBBED_COLUMNS } from '@/modules/members/infrastructure/adapters/change-request-scrub-adapter';
 
-// member_change_requests — rewritten by `scrubForMemberInTx`
-const REQUEST_SCRUBBED = new Set<string>([
-  'decisionReason', // → '[erased]' when set (never NULL — reason_iff_rejected_ck)
-  'decisionNote', // → '[erased]' when set
-  'state', // pending → 'withdrawn' (a pending request cannot be decided after erasure)
-  'withdrawnReason', // pending → 'erasure'
-  'withdrawnAt', // pending → the erasure time
-  'updatedAt',
-]);
+// member_change_requests — rewritten by `scrubForMemberInTx` (the adapter's own list:
+// decisionReason / decisionNote → '[erased]' when set; state / withdrawnReason /
+// withdrawnAt for a pending row; updatedAt)
+const REQUEST_SCRUBBED = new Set<string>(REQUEST_SCRUBBED_COLUMNS);
 
 // member_change_requests — retained: the EXISTENCE + OUTCOME of every request stay countable (FR-030)
 const REQUEST_KEPT = new Set<string>([
@@ -44,11 +47,8 @@ const REQUEST_KEPT = new Set<string>([
   'createdAt', // record-keeping
 ]);
 
-// member_change_request_fields — the two value columns carry the PII
-const FIELD_SCRUBBED = new Set<string>([
-  'seenValue', // → '[erased]'
-  'proposedValue', // → '[erased]'
-]);
+// member_change_request_fields — the two value columns carry the PII (the adapter's own list)
+const FIELD_SCRUBBED = new Set<string>(FIELD_SCRUBBED_COLUMNS);
 
 const FIELD_KEPT = new Set<string>([
   'id', // identity
@@ -82,7 +82,9 @@ describe('change-request scrub — column-coverage allowlist guard (F114 FR-030)
     assertPartition('member_change_request_fields', getTableColumns(memberChangeRequestFields), FIELD_SCRUBBED, FIELD_KEPT);
   });
 
-  it('the value columns and the reviewer free text are in the SCRUBBED sets', () => {
+  it('the value columns and the reviewer free text are in the SCRUBBED sets (positive control: the adapter lists are non-empty)', () => {
+    expect(REQUEST_SCRUBBED_COLUMNS.length).toBeGreaterThan(0);
+    expect(FIELD_SCRUBBED_COLUMNS.length).toBeGreaterThan(0);
     for (const col of ['seenValue', 'proposedValue']) expect(FIELD_SCRUBBED.has(col), col).toBe(true);
     for (const col of ['decisionReason', 'decisionNote']) expect(REQUEST_SCRUBBED.has(col), col).toBe(true);
   });

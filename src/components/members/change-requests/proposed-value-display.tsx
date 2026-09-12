@@ -29,6 +29,8 @@ export interface ProposedValueDisplayProps {
 export function ProposedValueDisplay({ fieldKey, value }: ProposedValueDisplayProps) {
   const t = useTranslations('portal.changeRequests.diff');
   if (value === null || value === '') return <span className="text-muted-foreground">{t('empty')}</span>;
+  // a STRING under an address key is the erasure sentinel (FR-030) — text, never "(empty)"
+  if (typeof value === 'string') return <span className="break-words">{value}</span>;
   if (isAddress(value) || isAddressGroupKey(fieldKey)) {
     const obj = (isAddress(value) ? value : {}) as Readonly<Record<string, string | null>>;
     const lines = fieldKey === 'billing_address' ? BILLING_ADDRESS_LINES : REGISTERED_ADDRESS_LINES;

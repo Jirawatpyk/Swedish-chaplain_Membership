@@ -13,25 +13,34 @@
  *   - the per-MEMBER history (FR-026): every state, newest first;
  *   - the PORTAL history (FR-029): the caller's own requests + the member's
  *     `company` / `mixed` ones — the repo applies the predicate in SQL, and
- *     this layer applies it AGAIN (fail closed) and projects a `mixed` row
- *     shown to a NON-submitter down to its company fields, so a colleague's
- *     proposed name / phone never leaves the server (whole-branch round 3,
- *     F-10).
+ *     this layer applies it AGAIN (fail closed) and projects a row shown to
+ *     a NON-submitter: a `mixed` row down to its company fields, so a
+ *     colleague's proposed name / phone never leaves the server (whole-branch
+ *     round 3, F-10), and EVERY row down to no reason / note — FR-014 makes
+ *     the reviewer's reason the SUBMITTING person's (review round 1, C2).
  *
  * Paging is keyset on `(submitted_at, id)` — the cursor is an OPAQUE string
  * (base64url of `iso|uuid`) so a client cannot craft one; a malformed cursor
  * is `invalid_cursor` (a 400), never page one silently. Limits are clamped
  * here, not trusted from the wire.
  *
- * Reads only — no tx, no audit (staff reads are not audited, FR-026).
+ * Reads only — no tx; staff reads are not audited (FR-026). The one write is
+ * the by-id miss: `getPortalChangeRequest` on an id the repo cannot see
+ * (foreign tenant or unknown — indistinguishable under RLS) is audited
+ * `member_cross_tenant_probe` like every other change-request miss (FR-035;
+ * review round 1, SEC-I3); an in-tenant row outside the caller's scope is
+ * counted `refused{not_owner}` and NOT audited (a colleague's row is not a
+ * probe — the acknowledge precedent).
  */
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
+import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { OVERDUE_AFTER_DAYS, type ChangeRequest, type ChangeRequestId, type ChangeRequestState } from '../../../domain/change-request/change-request';
 import type { MemberId } from '../../../domain/member';
 import type { UserId } from '../../../domain/value-objects/user-id';
+import type { AuditPort } from '../../ports/audit-port';
 import type {
   ChangeRequestCursor,
   ChangeRequestListFilter,
@@ -40,6 +49,7 @@ import type {
 } from '../../ports/change-request-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { RepoError } from '../../ports/member-repo';
+import { auditChangeRequestProbe } from './decide-change-request';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +60,9 @@ export type ListChangeRequestsDeps = {
   readonly changeRequestRepo: Pick<ChangeRequestRepo, 'listQueue' | 'listByMember' | 'listVisibleToUser' | 'pendingStats' | 'findListRowById'>;
   readonly clock: ClockPort;
 };
+
+/** `getPortalChangeRequest` also audits a miss — it needs the audit port. */
+export type GetPortalChangeRequestDeps = ListChangeRequestsDeps & { readonly audit: Pick<AuditPort, 'record'> };
 
 export type ListChangeRequestsError =
   | { readonly type: 'invalid_cursor' }
@@ -137,15 +150,27 @@ function toItem(row: ChangeRequestListRow, now: Date): ChangeRequestQueueItem {
 }
 
 /**
- * FR-029 — what a portal viewer may see of a row: their own request in
- * full; a `company` request in full; a `mixed` request from a COLLEAGUE with
- * its company fields only (the colleague's own name / phone / job title
- * are theirs). Returns the same reference when nothing is stripped.
+ * FR-029 / FR-014 — what a viewer may see of a row: the SUBMITTER sees their
+ * own request in full (the same reference). Anyone else — a colleague on the
+ * portal, or the company-level AUDIENCE of an on-behalf GDPR export
+ * (`viewerUserId: null`) — sees a `company` request's fields, a `mixed`
+ * request's company fields only (the colleague's own name / phone / job
+ * title are theirs), and NEVER the reviewer's reason or note: FR-014 gives
+ * the reason to the submitting person, and it may quote their proposed
+ * values (review round 1, C2 — the queue / export reuse this one rule).
  */
-export function projectChangeRequestForViewer(row: ChangeRequestListRow, viewerUserId: UserId): ChangeRequestListRow {
+export function projectChangeRequestForViewer(row: ChangeRequestListRow, viewerUserId: UserId | null): ChangeRequestListRow {
   const r = row.request;
-  if (r.submittedByUserId === viewerUserId || r.scope !== 'mixed') return row;
-  return { ...row, request: { ...r, fields: r.fields.filter((f) => f.target === 'member') } };
+  if (viewerUserId !== null && r.submittedByUserId === viewerUserId) return row;
+  return {
+    ...row,
+    request: {
+      ...r,
+      fields: r.scope === 'mixed' ? r.fields.filter((f) => f.target === 'member') : r.fields,
+      decisionReason: null,
+      decisionNote: null,
+    },
+  };
 }
 
 function visibleTo(row: ChangeRequestListRow, viewerUserId: UserId, memberId: MemberId): boolean {
@@ -223,15 +248,36 @@ export async function listPortalChangeRequests(
 }
 
 export async function getPortalChangeRequest(
-  deps: ListChangeRequestsDeps,
-  input: { readonly changeRequestId: ChangeRequestId; readonly userId: UserId; readonly memberId: MemberId },
+  deps: GetPortalChangeRequestDeps,
+  input: {
+    readonly changeRequestId: ChangeRequestId;
+    readonly userId: UserId;
+    readonly memberId: MemberId;
+    readonly actorRole: string | null;
+    readonly requestId: string;
+  },
 ): Promise<Result<ChangeRequestListRow, { readonly type: 'not_found' } | ListChangeRequestsError>> {
   const found = await deps.changeRequestRepo.findListRowById(deps.tenant, input.changeRequestId);
   if (!found.ok) {
-    if (found.error.code === 'repo.not_found') return err({ type: 'not_found' });
+    if (found.error.code === 'repo.not_found') {
+      // a foreign tenant's id and an unknown id look the same under RLS —
+      // every miss is a probe record (FR-035), best-effort like the others
+      await auditChangeRequestProbe(deps.audit, deps.tenant, {
+        changeRequestId: input.changeRequestId,
+        actorUserId: input.userId,
+        actorRole: input.actorRole,
+        requestId: input.requestId,
+        action: 'history_item',
+      });
+      return err({ type: 'not_found' });
+    }
     return err(serverError(deps, 'portal_history_item', found.error));
   }
-  // out of the caller's FR-029 scope → not_found, never 403 (no existence leak)
-  if (!visibleTo(found.value, input.userId, input.memberId)) return err({ type: 'not_found' });
+  // out of the caller's FR-029 scope → not_found, never 403 (no existence
+  // leak); in-tenant, so not a probe — counted so an IDOR sweep is visible
+  if (!visibleTo(found.value, input.userId, input.memberId)) {
+    membersMetrics.changeRequests.refused(deps.tenant.slug, 'not_owner');
+    return err({ type: 'not_found' });
+  }
   return ok(projectChangeRequestForViewer(found.value, input.userId));
 }

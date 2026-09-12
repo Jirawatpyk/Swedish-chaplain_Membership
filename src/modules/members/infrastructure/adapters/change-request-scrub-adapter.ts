@@ -21,6 +21,12 @@
  * Returns the closed requests' `(id, contact_id, scope)` so the use case can
  * write one `member_change_request_withdrawn` audit row per closure — the
  * adapter writes no audit itself (the use case owns attribution).
+ *
+ * The column lists below are EXPORTED and each `.set({...})` is typed
+ * against its own list (`satisfies Cols<…>` — a missing or extra key fails
+ * this file's typecheck), so the column-coverage guard
+ * (scrub-change-requests-pii-column-coverage.test.ts) reads the adapter's
+ * own truth, not a hand-copied constant (review round 1, P-6 / SEC-S2).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { TenantTx } from '@/lib/db';
@@ -30,6 +36,17 @@ import type { ChangeRequestId, ChangeRequestScope } from '../../domain/change-re
 import type { ContactId } from '../../domain/contact';
 import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import { memberChangeRequestFields, memberChangeRequests } from '../db/schema-change-requests';
+
+type Cols<T extends readonly string[]> = Record<T[number], unknown>;
+
+/** `member_change_request_fields` — the two value columns (statement 1). */
+export const FIELD_SCRUBBED_COLUMNS = ['seenValue', 'proposedValue'] as const;
+const REASON_COLUMNS = ['decisionReason', 'decisionNote', 'updatedAt'] as const;
+const CLOSE_COLUMNS = ['state', 'withdrawnReason', 'withdrawnAt', 'updatedAt'] as const;
+/** `member_change_requests` — every column statements 2 + 3 rewrite. */
+export const REQUEST_SCRUBBED_COLUMNS: ReadonlyArray<(typeof REASON_COLUMNS)[number] | (typeof CLOSE_COLUMNS)[number]> = [
+  ...new Set<(typeof REASON_COLUMNS)[number] | (typeof CLOSE_COLUMNS)[number]>([...REASON_COLUMNS, ...CLOSE_COLUMNS]),
+];
 
 export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
   async scrubForMemberInTx(txUnknown, memberId, at) {
@@ -43,7 +60,7 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
       // 1. the values (jsonb string sentinel)
       await tx
         .update(memberChangeRequestFields)
-        .set({ seenValue: ERASED_SENTINEL, proposedValue: ERASED_SENTINEL })
+        .set({ seenValue: ERASED_SENTINEL, proposedValue: ERASED_SENTINEL } satisfies Cols<typeof FIELD_SCRUBBED_COLUMNS>)
         .where(inArray(memberChangeRequestFields.requestId, ids));
 
       // 2. the reviewer's free text — sentinel when set, NULL stays NULL
@@ -53,13 +70,13 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
           decisionReason: sql`CASE WHEN ${memberChangeRequests.decisionReason} IS NULL THEN NULL ELSE ${ERASED_SENTINEL} END`,
           decisionNote: sql`CASE WHEN ${memberChangeRequests.decisionNote} IS NULL THEN NULL ELSE ${ERASED_SENTINEL} END`,
           updatedAt: at,
-        })
+        } satisfies Cols<typeof REASON_COLUMNS>)
         .where(inArray(memberChangeRequests.id, ids));
 
       // 3. close what is still pending
       const closed = await tx
         .update(memberChangeRequests)
-        .set({ state: 'withdrawn', withdrawnReason: 'erasure', withdrawnAt: at, updatedAt: at })
+        .set({ state: 'withdrawn', withdrawnReason: 'erasure', withdrawnAt: at, updatedAt: at } satisfies Cols<typeof CLOSE_COLUMNS>)
         .where(and(inArray(memberChangeRequests.id, ids), eq(memberChangeRequests.state, 'pending')))
         .returning({ id: memberChangeRequests.id, contactId: memberChangeRequests.submittedByContactId, scope: memberChangeRequests.scope });
 

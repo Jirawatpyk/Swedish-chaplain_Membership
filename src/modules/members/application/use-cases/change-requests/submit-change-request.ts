@@ -543,12 +543,14 @@ export async function submitChangeRequest(
         actorUserId: input.actorUserId,
         requestId: input.requestId,
         summary: `change request refused: ${e.windowCount} submissions in ${SUBMISSION_WINDOW_HOURS} h`,
+        // a REFUSED attempt is not member activity: `related_member_id`, never
+        // the 0009 trigger key `member_id` (review round 1, REL-3 / P-7)
         payload: {
-          member_id: input.memberId,
+          related_member_id: input.memberId,
           window_count: e.windowCount,
           retry_after_seconds: e.retryAfterSeconds,
           actor_role: input.actorRole,
-        },
+        } satisfies ChangeRequestAuditPayload['member_change_request_rate_limited'],
       });
       if (!audited.ok) {
         logger.error(

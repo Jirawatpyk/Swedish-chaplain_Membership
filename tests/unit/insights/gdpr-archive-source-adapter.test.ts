@@ -29,10 +29,19 @@ vi.mock('@/modules/members/members-deps', () => ({
     },
   }),
 }));
-vi.mock('@/modules/members', () => ({
-  asMemberId: (s: string) => s,
-  asTenantId: (s: string) => s,
-}));
+vi.mock('@/modules/members', async () => {
+  // the barrel pulls Drizzle infra (and the mocked events barrel); the REAL
+  // projection is taken from its own module so the archive's FR-029 / FR-014
+  // rule under test is the members module's, not a copy
+  const actual = await vi.importActual<typeof import('@/modules/members/application/use-cases/change-requests/list-change-requests')>(
+    '@/modules/members/application/use-cases/change-requests/list-change-requests',
+  );
+  return {
+    asMemberId: (s: string) => s,
+    asTenantId: (s: string) => s,
+    projectChangeRequestForViewer: actual.projectChangeRequestForViewer,
+  };
+});
 vi.mock('@/modules/invoicing', () => ({
   listInvoicesByMember: (...a: unknown[]) => listInvoicesByMemberMock(...a),
   makeListInvoicesByMemberDeps: () => ({}),
@@ -320,20 +329,49 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
       expect(JSON.stringify(data!.changeRequests)).not.toContain('staff-9');
     });
 
-    it('an on-behalf requester who is not a contact of the member gets the whole member history', async () => {
+    it('an on-behalf requester who is not a contact of the member gets the COMPANY-LEVEL history only: own-contact requests dropped, a mixed row stripped, no reason / note (FR-029 fail-closed — the artefact may reach any contact)', async () => {
       listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
-      crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [row], nextCursor: null } });
+      const company = { ...row, request: { ...row.request, id: 'cr-company', scope: 'company', fields: [{ key: 'company_name', target: 'member', seen: 'Acme', proposed: 'Acme Co', affectsTaxDocuments: true, outcome: 'rejected', appliedAt: null }] } };
+      const mixed = { ...row, request: { ...row.request, id: 'cr-mixed', scope: 'mixed', fields: [...row.request.fields, { key: 'company_name', target: 'member', seen: 'Acme', proposed: 'Acme Co', affectsTaxDocuments: true, outcome: 'rejected', appliedAt: null }] } };
+      crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [row, company, mixed], nextCursor: null } });
       const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: 'admin-1' });
       expect(crListByMemberMock).toHaveBeenCalledWith(CTX, MEMBER, expect.objectContaining({ cursor: null }));
       expect(crListVisibleToUserMock).not.toHaveBeenCalled();
-      expect(data!.changeRequests).toHaveLength(1);
+      expect(data!.changeRequests.map((r) => r.id)).toEqual(['cr-company', 'cr-mixed']);
+      for (const r of data!.changeRequests) {
+        expect(r.fields.every((f) => f.target === 'member')).toBe(true);
+        expect(r.decisionReason).toBeNull();
+        expect(r.decisionNote).toBeNull();
+      }
+      expect(JSON.stringify(data!.changeRequests)).not.toContain('+668');
+      expect(JSON.stringify(data!.changeRequests)).not.toContain('checked DBD');
+    });
+
+    it("a linked requester sees a COLLEAGUE's mixed row with company fields only and without the reason / note; their own row in full", async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      contactListByMemberMock.mockResolvedValue({
+        ok: true,
+        value: [{ contactId: 'c-1', linkedUserId: REQUESTER, firstName: 'Som', lastName: 'Chai', email: 'som@acme.example', phone: null, dateOfBirth: null, roleTitle: null, preferredLanguage: 'en', isPrimary: false, removedAt: null, createdAt: new Date('2026-01-01T00:00:00Z') }],
+      });
+      const colleagueMixed = { ...row, request: { ...row.request, id: 'cr-colleague', submittedByUserId: 'u-primary', submittedByContactId: 'c-0', scope: 'mixed', fields: [...row.request.fields, { key: 'company_name', target: 'member', seen: 'Acme', proposed: 'Acme Co', affectsTaxDocuments: true, outcome: 'rejected', appliedAt: null }] } };
+      crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [row, colleagueMixed], nextCursor: null } });
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: REQUESTER });
+      const mine = data!.changeRequests.find((r) => r.id === 'cr-1')!;
+      const theirs = data!.changeRequests.find((r) => r.id === 'cr-colleague')!;
+      expect(mine.decisionReason).toBe('Use the registered phone');
+      expect(mine.fields.map((f) => f.key)).toEqual(['phone']);
+      expect(theirs.fields.map((f) => f.key)).toEqual(['company_name']);
+      expect(theirs.decisionReason).toBeNull();
+      expect(theirs.decisionNote).toBeNull();
     });
 
     it('walks every page of the history (keyset cursor) so a long history is not silently cut', async () => {
       listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
-      const second = { ...row, request: { ...row.request, id: 'cr-2' } };
+      // an on-behalf gather (no requester) — company-level rows, which survive the scope rule
+      const companyRow = { ...row, request: { ...row.request, scope: 'company', fields: [{ key: 'company_name', target: 'member', seen: 'Acme', proposed: 'Acme Co', affectsTaxDocuments: true, outcome: 'rejected', appliedAt: null }] } };
+      const second = { ...companyRow, request: { ...companyRow.request, id: 'cr-2' } };
       crListByMemberMock
-        .mockResolvedValueOnce({ ok: true, value: { items: [row], nextCursor: { submittedAt: row.request.submittedAt, id: 'cr-1' } } })
+        .mockResolvedValueOnce({ ok: true, value: { items: [companyRow], nextCursor: { submittedAt: row.request.submittedAt, id: 'cr-1' } } })
         .mockResolvedValueOnce({ ok: true, value: { items: [second], nextCursor: null } });
       const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
       expect(data!.changeRequests.map((r) => r.id)).toEqual(['cr-1', 'cr-2']);

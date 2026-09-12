@@ -39,7 +39,6 @@ import {
   CHANGE_REQUEST_STATES,
   asMemberId,
   listChangeRequestQueue,
-  type ChangeRequestQueueItem,
   type UserId,
 } from '@/modules/members';
 import { Badge } from '@/components/ui/badge';
@@ -47,7 +46,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InlineAlert } from '@/components/ui/inline-alert';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -57,6 +56,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE = 50;
 const TENANT_TZ = 'Asia/Bangkok';
+// a native select: the Input's focus ring, so keyboard focus is visible (UX)
+const SELECT_CLASS = 'h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 const searchSchema = z.object({
   state: z.enum(CHANGE_REQUEST_STATES).optional(),
@@ -96,7 +97,10 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   const deps = buildChangeRequestDeps(tenant);
   // A repo failure must reach the error boundary — never render as "no
   // change requests are awaiting a decision" (review: UX C3).
-  const fail = (arm: string, code: string): never => {
+  // typed `never` on the BINDING (not only the arrow) so TS narrows after a
+  // call and no `ok ? value : fallback` is needed — a fallback that renders
+  // an empty page is the defect this helper exists to prevent (UX C3, REL-13)
+  const fail: (arm: string, code: string) => never = (arm, code) => {
     logger.error({ errorId: `M114.admin.queue_page.${arm}`, requestId, tenantId: tenant.slug, err: code }, 'change-requests.queue page: read failed');
     throw new Error('change-requests.queue: load failed');
   };
@@ -114,6 +118,8 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   });
   const q = parsed.success ? parsed.data : {};
   const state = q.state ?? 'pending';
+  // an outcome only means something on decided rows — anywhere else it is dropped, not applied silently
+  const outcome = state === 'decided' ? q.outcome : undefined;
   const submitter = q.submitter ? asMembersUserId(q.submitter) : undefined;
 
   const t = await getTranslations('admin.changeRequests.queue');
@@ -122,17 +128,18 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   const locale = await getLocale();
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
 
-  // The staff-email deep link (FR-011): the PERSON's current pending request.
+  // The staff-email deep link (FR-011): the PERSON's current pending request —
+  // through the use case like every other read here (Principle III, REL-12).
   let deepLinkNotice: string | null = null;
   if (submitter && state === 'pending' && !q.cursor) {
-    const pending = await deps.changeRequestRepo.listQueue(tenant, { state: 'pending', submitterUserId: submitter as UserId }, { cursor: null, limit: 2 });
-    if (!pending.ok) fail('deep_link_pending_read_failed', pending.error.code);
-    const rows = pending.ok ? pending.value.items : [];
-    if (rows.length === 1 && rows[0]) redirect(`/admin/change-requests/${rows[0].request.id}`);
+    const pending = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: submitter as UserId }, cursor: null, limit: 2 });
+    if (!pending.ok) fail('deep_link_pending_read_failed', pending.error.type === 'server_error' ? pending.error.message : pending.error.type);
+    const rows = pending.value.items;
+    if (rows.length === 1 && rows[0]) redirect(`/admin/change-requests/${rows[0].row.request.id}`);
     if (rows.length === 0) {
-      const decided = await deps.changeRequestRepo.listQueue(tenant, { state: 'decided', submitterUserId: submitter as UserId }, { cursor: null, limit: 1 });
-      if (!decided.ok) fail('deep_link_decided_read_failed', decided.error.code);
-      const last = decided.ok ? decided.value.items[0] : undefined;
+      const decided = await listChangeRequestQueue(deps, { filter: { state: 'decided', submitterUserId: submitter as UserId }, cursor: null, limit: 1 });
+      if (!decided.ok) fail('deep_link_decided_read_failed', decided.error.type === 'server_error' ? decided.error.message : decided.error.type);
+      const last = decided.value.items[0]?.row;
       deepLinkNotice =
         last && last.request.decidedAt
           ? t('noPendingForSubmitter', { name: last.decidedBy?.displayName || tReview('unknownReviewer'), decidedAt: fmt(last.request.decidedAt) })
@@ -143,7 +150,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   const result = await listChangeRequestQueue(deps, {
     filter: {
       state,
-      ...(state === 'decided' && q.outcome ? { outcome: q.outcome } : {}),
+      ...(outcome ? { outcome } : {}),
       ...(q.memberId ? { memberId: asMemberId(q.memberId) } : {}),
       ...(submitter ? { submitterUserId: submitter as UserId } : {}),
       ...(q.from ? { from: new Date(tenantDayStartUtc(q.from, TENANT_TZ)) } : {}),
@@ -156,16 +163,38 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     if (result.error.type === 'invalid_cursor') notFound();
     fail('queue_read_failed', result.error.message);
   }
-  const page = result.ok ? result.value : { items: [] as readonly ChangeRequestQueueItem[], nextCursor: null, pendingCount: 0, oldestPendingAgeSeconds: null };
-  const filtered = Boolean(q.outcome || q.memberId || submitter || q.from || q.to || (q.state && q.state !== 'pending'));
-  const memberChip = q.memberId ? page.items.find((i) => i.row.request.memberId === q.memberId)?.row.member.companyName ?? null : null;
+  const page = result.value;
+  const filtered = Boolean(outcome || q.memberId || submitter || q.from || q.to || state !== 'pending');
+  // the member chip names the COMPANY — resolved from the member record, so an
+  // empty page never falls back to a raw uuid (review round 1, UX C1)
+  let memberChip: string | null = null;
+  if (q.memberId) {
+    const member = await deps.memberRepo.findById(tenant, asMemberId(q.memberId));
+    if (member.ok) memberChip = member.value.companyName;
+    else if (member.error.code === 'repo.not_found') memberChip = tFilters('unknownMember');
+    else fail('member_chip_read_failed', member.error.code);
+  }
+  const defaultView = !filtered && !q.cursor;
+
+  // a chip's "show all" link keeps every OTHER filter (UX I3)
+  const hrefWithout = (drop: 'memberId' | 'submitter') => {
+    const params = new URLSearchParams();
+    if (q.state) params.set('state', q.state);
+    if (outcome) params.set('outcome', outcome);
+    if (q.memberId && drop !== 'memberId') params.set('memberId', q.memberId);
+    if (q.submitter && drop !== 'submitter') params.set('submitter', q.submitter);
+    if (q.from) params.set('from', q.from);
+    if (q.to) params.set('to', q.to);
+    const qs = params.toString();
+    return qs ? `/admin/change-requests?${qs}` : '/admin/change-requests';
+  };
 
   // the "Next page" link keeps every filter, swaps the cursor
   const nextHref = (() => {
     if (!page.nextCursor) return null;
     const params = new URLSearchParams();
     if (q.state) params.set('state', q.state);
-    if (q.outcome) params.set('outcome', q.outcome);
+    if (outcome) params.set('outcome', outcome);
     if (q.memberId) params.set('memberId', q.memberId);
     if (q.submitter) params.set('submitter', q.submitter);
     if (q.from) params.set('from', q.from);
@@ -180,8 +209,10 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         title={t('title')}
         subtitle={t('subtitle')}
         actions={
-          page.pendingCount > 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="queue-pending-count">
+          // the tenant's pending fact belongs to the DEFAULT view — on a
+          // filtered page it reads as a count of what is shown (UX I8)
+          defaultView && page.pendingCount > 0 ? (
+            <p className="text-sm" data-testid="queue-pending-count">
               {t('pendingSummary', {
                 count: page.pendingCount,
                 oldestDays: page.oldestPendingAgeSeconds === null ? 0 : Math.floor(page.oldestPendingAgeSeconds / 86_400),
@@ -198,9 +229,10 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
 
       <form method="get" action="/admin/change-requests" className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end" aria-label={tFilters('label')} data-testid="queue-filters">
         {q.memberId ? <input type="hidden" name="memberId" value={q.memberId} /> : null}
+        {q.submitter ? <input type="hidden" name="submitter" value={q.submitter} /> : null}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="cr-filter-state">{tFilters('state')}</Label>
-          <select id="cr-filter-state" name="state" defaultValue={state} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+          <select id="cr-filter-state" name="state" defaultValue={state} className={SELECT_CLASS}>
             {CHANGE_REQUEST_STATES.map((s) => (
               <option key={s} value={s}>
                 {tReview(`state.${s}`)}
@@ -208,17 +240,19 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="cr-filter-outcome">{tFilters('outcome')}</Label>
-          <select id="cr-filter-outcome" name="outcome" defaultValue={q.outcome ?? ''} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-            <option value="">{tFilters('anyOutcome')}</option>
-            {CHANGE_REQUEST_OUTCOMES.map((o) => (
-              <option key={o} value={o}>
-                {tReview(`outcome.${o}`)}
-              </option>
-            ))}
-          </select>
-        </div>
+        {state === 'decided' ? (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="cr-filter-outcome">{tFilters('outcome')}</Label>
+            <select id="cr-filter-outcome" name="outcome" defaultValue={outcome ?? ''} className={SELECT_CLASS}>
+              <option value="">{tFilters('anyOutcome')}</option>
+              {CHANGE_REQUEST_OUTCOMES.map((o) => (
+                <option key={o} value={o}>
+                  {tReview(`outcome.${o}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="cr-filter-from">{tFilters('from')}</Label>
           <Input id="cr-filter-from" name="from" type="date" defaultValue={q.from ?? ''} className="h-9" />
@@ -239,13 +273,19 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </div>
         {q.memberId ? (
           <p className="text-sm sm:col-span-2 lg:col-span-5" data-testid="queue-member-chip">
-            {tFilters('memberChip', { company: memberChip ?? q.memberId })}{' '}
-            <Link
-              href={`/admin/change-requests?${new URLSearchParams({ ...(q.state ? { state: q.state } : {}), ...(q.outcome ? { outcome: q.outcome } : {}) }).toString()}`}
-              className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
-            >
+            {tFilters('memberChip', { company: memberChip ?? '' })}{' '}
+            <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline">
               <XIcon className="size-3" aria-hidden="true" />
               {tFilters('removeMember')}
+            </Link>
+          </p>
+        ) : null}
+        {q.submitter ? (
+          <p className="text-sm sm:col-span-2 lg:col-span-5" data-testid="queue-submitter-chip">
+            {tFilters('submitterChip')}{' '}
+            <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline">
+              <XIcon className="size-3" aria-hidden="true" />
+              {tFilters('removeSubmitter')}
             </Link>
           </p>
         ) : null}
@@ -258,7 +298,8 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
           </div>
         )
       ) : (
-        <Table aria-label={t('title')} data-testid="queue-table">
+        <Table data-testid="queue-table">
+          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead>{t('columns.member')}</TableHead>
@@ -319,7 +360,12 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
                     ) : null}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link href={`/admin/change-requests/${r.id}`} className={`${buttonVariants({ variant: 'outline', size: 'sm' })} inline-flex items-center`} aria-describedby={`${rowId}-waiting`}>
+                    <Link
+                      href={`/admin/change-requests/${r.id}`}
+                      className={`${buttonVariants({ variant: 'outline', size: 'sm' })} inline-flex h-9 items-center`}
+                      aria-label={r.state === 'pending' ? t('reviewFor', { company: item.row.member.companyName }) : t('viewFor', { company: item.row.member.companyName })}
+                      aria-describedby={`${rowId}-waiting`}
+                    >
                       {r.state === 'pending' ? t('open') : t('view')}
                     </Link>
                   </TableCell>

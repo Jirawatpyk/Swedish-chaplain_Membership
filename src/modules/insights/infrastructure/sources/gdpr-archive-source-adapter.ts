@@ -16,7 +16,7 @@
  * `buildMemberAuditSubset` (third-party PII + internal annotations stripped).
  */
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { asMemberId, asTenantId, type ChangeRequestCursor, type ChangeRequestListRow, type UserId } from '@/modules/members';
+import { type ChangeRequestCursor, type ChangeRequestListRow, type UserId, asMemberId, asTenantId, projectChangeRequestForViewer } from '@/modules/members';
 import {
   listInvoicesByMember,
   makeListInvoicesByMemberDeps,
@@ -66,17 +66,19 @@ function isoOrNull(d: Date | string | null): string | null {
 
 /**
  * F114 (FR-014 / FR-029 / FR-030) — one change request for the archive:
- * values + per-field outcomes, the reviewer's reason AND note (both are the
- * subject's personal data), the decider as the ORGANISATION — the archive
- * never names a staff member (`decidedByUserId` / the reviewer's display
- * name are dropped). A `mixed` request from a COLLEAGUE of the requester is
- * projected to its company fields (the same FR-029 rule the portal history
- * applies — `projectChangeRequestForViewer` in the members module).
+ * values + per-field outcomes, the reviewer's reason AND note when the row
+ * is the REQUESTER's own (both are the submitting person's personal data),
+ * the decider as the ORGANISATION — the archive never names a staff member
+ * (`decidedByUserId` / the reviewer's display name are dropped). The row
+ * arrives already projected for its viewer (`projectChangeRequestForViewer`
+ * in the members module — the one FR-029 / FR-014 rule the portal history
+ * applies too, review round 1 P-5): a colleague's `mixed` row carries its
+ * company fields only, and a row that is not the requester's carries no
+ * reason / note.
  */
-function serialiseChangeRequest(row: ChangeRequestListRow, requesterUserId: string | null): GdprChangeRequestEntry {
+function serialiseChangeRequest(row: ChangeRequestListRow): GdprChangeRequestEntry {
   const r = row.request;
-  const stripContactFields = requesterUserId !== null && r.scope === 'mixed' && r.submittedByUserId !== requesterUserId;
-  const fields = stripContactFields ? r.fields.filter((f) => f.target === 'member') : r.fields;
+  const fields = r.fields;
   return {
     id: r.id,
     scope: r.scope,
@@ -280,10 +282,16 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     if (broadcastsTruncated) broadcasts.length = MAX_BROADCASTS; // trim the probe row
 
     // 5b) F114 — change requests (FR-030). Scoped as FR-029 when the requester
-    //     is one of the member's linked contacts (their own + company-level);
-    //     an on-behalf request from staff (not a contact) exports the whole
-    //     member's history. FAIL-LOUD like contacts (a hollow file would be a
-    //     falsely-complete archive, FR-037). Every page is walked (keyset).
+    //     is one of the member's linked contacts (their own in full + the
+    //     company-level ones as a non-submitter sees them). An ON-BEHALF
+    //     request (staff, or any requester who is not a linked contact) gets
+    //     the COMPANY-LEVEL history only — `company` / `mixed` rows with their
+    //     company fields and no reason / note, never a contact's own-field
+    //     request: the artefact is downloadable by whoever requested it and
+    //     may be handed to any contact, so it fails CLOSED to what every
+    //     contact may see (review round 1, C1). FAIL-LOUD like contacts (a
+    //     hollow file would be a falsely-complete archive, FR-037). Every page
+    //     is walked (keyset).
     const requesterUserId =
       opts.requestedByUserId !== undefined && memberUserIds.includes(opts.requestedByUserId) ? opts.requestedByUserId : null;
     const changeRequests: GdprChangeRequestEntry[] = [];
@@ -295,7 +303,8 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
           : await memberDeps.changeRequestRepo.listByMember(ctx, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE });
       if (!page.ok) throw new Error(`GDPR gather: change-request list failed (${page.error.code})`);
       for (const row of page.value.items) {
-        changeRequests.push(serialiseChangeRequest(row, requesterUserId));
+        if (requesterUserId === null && row.request.scope === 'own_contact') continue; // a contact's own request is theirs alone
+        changeRequests.push(serialiseChangeRequest(projectChangeRequestForViewer(row, requesterUserId as UserId | null)));
         if (changeRequests.length > MAX_CHANGE_REQUESTS) break; // one probe row past the cap
       }
       crCursor = page.value.nextCursor;

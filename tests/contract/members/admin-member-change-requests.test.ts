@@ -16,13 +16,14 @@ import { NextRequest } from 'next/server';
 import { err, ok } from '@/lib/result';
 import type { UserId } from '@/modules/members/domain/value-objects/user-id';
 import type { ChangeRequest, ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
-import { makeClockFake, makeInMemoryChangeRequestRepo, type InMemoryChangeRequestRepo } from '../../helpers/change-request-fakes';
+import { makeAuditPortFake, makeClockFake, makeInMemoryChangeRequestRepo, type AuditPortFake, type InMemoryChangeRequestRepo } from '../../helpers/change-request-fakes';
 
 const requireApiPermissionMock = vi.fn();
 const memberFindByIdMock = vi.fn();
 const loggerError = vi.fn();
 let flagOn = true;
 let repo: InMemoryChangeRequestRepo;
+let audit: AuditPortFake;
 
 vi.mock('@/lib/env', async () => {
   const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
@@ -47,6 +48,7 @@ vi.mock('@/lib/members-change-request-deps', () => ({
     tenant: { slug: 'test-swecham', __brand: true },
     changeRequestRepo: repo,
     memberRepo: { findById: (...a: unknown[]) => memberFindByIdMock(...a) },
+    audit,
     clock: makeClockFake(NOW),
   })),
 }));
@@ -116,6 +118,7 @@ function call(memberId = MEMBER, query = ''): Promise<Response> {
 beforeEach(() => {
   flagOn = true;
   repo = makeInMemoryChangeRequestRepo(seed());
+  audit = makeAuditPortFake();
   memberFindByIdMock.mockImplementation(async (_ctx: unknown, id: string) => (id === MEMBER ? ok({ memberId: MEMBER, companyName: 'Nordic Co', status: 'active' }) : err({ code: 'repo.not_found' })));
   requireApiPermissionMock.mockResolvedValue(staffContext('admin'));
 });
@@ -160,7 +163,16 @@ describe('GET /api/admin/members/[id]/change-requests', () => {
     const res = await call(OTHER_MEMBER);
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ status: 404, type: expect.stringMatching(/not_found$/) });
+    // FR-035 / Constitution I.4: the miss is audited as a cross-tenant probe with the true actor
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      type: 'member_cross_tenant_probe',
+      actorUserId: REVIEWER,
+      requestId: 'req-mh1',
+      payload: { attempted_member_id: OTHER_MEMBER, actor_tenant_id: 'test-swecham', actor_role: 'admin', action: 'change_request_history' },
+    });
     expect((await call('nope')).status).toBe(404);
+    expect(audit.events).toHaveLength(1); // a malformed id is refused before any read — not a probe
   });
 
   it('a repo fault → 500 problem named in the errorId taxonomy', async () => {

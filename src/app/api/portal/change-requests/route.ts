@@ -16,11 +16,18 @@
  * The two arms that can only be a FAULT (a throwing gate resolver, a failed
  * use case) name themselves in the errorId taxonomy (`M114.portal.submit.<arm>`);
  * the deterministic 4xx refusals are audited / counted by the use case, or
- * not at all. The 429 is the use case's DURABLE 10 / 24 h cap (US5 T087 —
- * counted from the request table, so no rate-limiting service is consulted
- * here; PR-1's interim Upstash peek is gone): mapped to `{ error:
- * 'rate_limited', retryAfterSeconds }` + `Retry-After`, and NOT remembered
- * under an Idempotency-Key (transient — the retry after the window succeeds).
+ * not at all. Two 429s, one envelope: the use case's DURABLE 10 / 24 h cap
+ * (US5 T087 — CREATED requests, counted from the request table; the FR-008
+ * rule) and, before the gate, an ATTEMPT bucket — 60 / 10 min per tenant +
+ * user on Upstash, consumed on EVERY POST, refusals and validation errors
+ * included — so a client cannot drive the gate / validation /
+ * `countSubmittedSince` path at line rate under a rotating Idempotency-Key
+ * (review round 1, SEC-I2 / REL-2; PR-1's interim PEEK is gone — this is an
+ * atomic `check`). Both map to `{ error: 'rate_limited', retryAfterSeconds }`
+ * + `Retry-After`, and neither is remembered under an Idempotency-Key
+ * (transient — the retry after the window succeeds; the client mints a new
+ * key). The bucket fails OPEN on an Upstash outage (the limiter's fallback);
+ * the durable cap still holds then.
  *
  * `GET` — own history (US4 AS4, FR-029; § history): the caller's own requests
  * + the member's `company` / `mixed` ones, newest first, never a colleague's
@@ -39,6 +46,9 @@ import {
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { membersMetrics } from '@/lib/metrics';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
@@ -59,6 +69,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ERROR_ID = 'M114.portal.submit';
+const SUBMIT_ATTEMPTS_PER_WINDOW = 60;
+const SUBMIT_ATTEMPT_WINDOW_SECONDS = 600;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // FR-039 — dark ship: 404 before any session work.
@@ -74,6 +86,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // in-route guard every mutating route carries — T116).
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
+
+  // The attempt bucket (see the docblock) — before the gate and the body, so
+  // a refused attempt costs one Redis round-trip and nothing else.
+  const attempts = await rateLimiter.check(
+    `f114:submit-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
+    SUBMIT_ATTEMPTS_PER_WINDOW,
+    SUBMIT_ATTEMPT_WINDOW_SECONDS,
+  );
+  if (!attempts.success) {
+    membersMetrics.changeRequests.refused(ctx.tenant.slug, 'rate_limited');
+    const retryAfterSeconds = retryAfterSecondsFromRl({ reset: attempts.reset });
+    return NextResponse.json(
+      { error: 'rate_limited', retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
+    );
+  }
 
   const deps = buildChangeRequestDeps(ctx.tenant);
 

@@ -23,6 +23,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
@@ -60,6 +62,9 @@ let user: TestUser;
 let memberId: string;
 let contactId: string;
 let now = T0;
+// the integration suite runs in ONE fork and `isolate` resets modules, not
+// process.env — what beforeAll deletes, afterAll must restore (review round 1, REL-5)
+const savedEnv = { url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN };
 
 const REVIEWERS = [{ userId: mu('00000000-0000-4000-8000-0000000000a1'), email: 'reviewer-cap@staff.example', locale: 'en' as const }];
 
@@ -142,12 +147,21 @@ describe('durable submission cap + coalescing on live Neon (T084)', () => {
   });
 
   afterAll(async () => {
+    if (savedEnv.url !== undefined) process.env.UPSTASH_REDIS_REST_URL = savedEnv.url;
+    if (savedEnv.token !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = savedEnv.token;
     await tenant.cleanup().catch(() => {});
     await deleteTestUser(user).catch(() => {});
   });
 
+  it('the durable cap consults no rate-limiting service — a SOURCE assertion with a positive control (review round 1, REL-6)', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/modules/members/application/use-cases/change-requests/submit-change-request.ts'), 'utf8');
+    // positive control: the count this cap is built on IS in the file
+    expect(source).toContain('countSubmittedSince(');
+    // the import and the call — a docblock may still SAY "Upstash" while explaining why it is not used
+    expect(source).not.toMatch(/from '@\/lib\/auth-deps'|from '@upstash|rateLimiter\.(check|peek)\(/);
+  });
+
   it('holds the cap from the table count alone, coalesces the staff email inside 1 h, and rolls the window', async () => {
-    expect(process.env.UPSTASH_REDIS_REST_URL).toBeUndefined();
 
     // 1. ten created requests, one minute apart
     for (let i = 0; i < SUBMISSIONS_PER_WINDOW_CAP; i += 1) {
@@ -180,7 +194,8 @@ describe('durable submission cap + coalescing on live Neon (T084)', () => {
       .from(auditLog)
       .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.eventType, 'member_change_request_rate_limited')));
     expect(refusals).toHaveLength(1);
-    expect(refusals[0]!.payload).toMatchObject({ member_id: memberId, window_count: 10, actor_role: 'member' });
+    expect(refusals[0]!.payload).toMatchObject({ related_member_id: memberId, window_count: 10, actor_role: 'member' });
+    expect(refusals[0]!.payload).not.toHaveProperty('member_id');
     expect(JSON.stringify(refusals[0]!.payload)).not.toContain('+668');
 
     // 3. the window rolls; > 1 h since the last notification → a second staff row

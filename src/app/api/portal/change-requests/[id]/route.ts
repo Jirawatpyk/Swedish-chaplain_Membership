@@ -7,8 +7,11 @@
  * role only). 404 unless the row belongs to the caller's member AND is the
  * caller's own or company-level (`company` / `mixed`) — never a 403, which
  * would confirm a colleague's request exists. A `mixed` row from a colleague
- * is answered with its company fields only. The portal view never carries
- * the reviewer's identity or the staff note. `M114.portal.history_item.<arm>`.
+ * is answered with its company fields only and without the reviewer's reason
+ * (FR-014 — the reason is the submitting person's). The portal view never
+ * carries the reviewer's identity or the staff note. A miss on the id is
+ * audited `member_cross_tenant_probe` by the use case (FR-035).
+ * `M114.portal.history_item.<arm>`.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
@@ -37,7 +40,13 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
   const deps = buildChangeRequestDeps(ctx.tenant);
   const me = asMembersUserId(ctx.current.user.id);
-  const result = await getPortalChangeRequest(deps, { changeRequestId: id as ChangeRequestId, userId: me, memberId: ctx.memberId });
+  const result = await getPortalChangeRequest(deps, {
+    changeRequestId: id as ChangeRequestId,
+    userId: me,
+    memberId: ctx.memberId,
+    actorRole: ctx.current.user.role,
+    requestId: ctx.requestId,
+  });
 
   if (!result.ok) {
     if (result.error.type === 'not_found') return NextResponse.json({ error: 'not_found' }, { status: 404 });

@@ -128,6 +128,18 @@ describe('PendingRequestBanner — withdraw (T089)', () => {
     expect(result.textContent).toContain(copy.withdraw.done);
     expect(screen.queryByTestId('pending-request-banner')).toBeNull();
     expect(screen.queryByRole('button', { name: copy.withdraw.button })).toBeNull();
+    // the server tree is refreshed too, so /portal/edit's form + hint stop
+    // describing a request that no longer exists (review round 1, UX C2)
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('READ_ONLY_MODE (503) is its own message, not "please try again" (review round 1, UX S13)', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'read_only_mode' } }), { status: 503 }));
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.button }));
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.confirm }));
+    await waitFor(() => expect(screen.getByTestId('withdraw-error')).toBeTruthy());
+    expect(screen.getByTestId('withdraw-error').textContent).toContain(copy.withdraw.readOnly);
   });
 
   it('a 404 no_pending_request (decided or withdrawn meanwhile) shows the "gone" message and refreshes the server state', async () => {

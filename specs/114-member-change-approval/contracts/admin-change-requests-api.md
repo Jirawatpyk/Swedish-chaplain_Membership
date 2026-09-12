@@ -98,8 +98,11 @@ the submitter. Any failure → nothing persisted, request stays pending, 500 wit
 Same item shape as the queue, all states, newest first, `cursor`/`limit ≤ 100`. The segment is
 `[id]` (every `/api/admin/members/[id]/*` sibling names it so — Next.js refuses two slug names on
 one path). The member must exist in the caller's tenant: another tenant's member is invisible
-under RLS → **404 problem `not_found`** (never a 403 that confirms existence); a malformed id →
-404. `M114.admin.member_history.<arm>` on the 500s. The member record page mounts this as the
+under RLS → **404 problem `not_found`** (never a 403 that confirms existence), audited
+`member_cross_tenant_probe { attempted_member_id, actor_tenant_id, actor_role, action:
+'change_request_history' }` with the true actor (Constitution I.4 — the get-member rule); a
+malformed id → 404 before any read (not a probe). `M114.admin.member_history.<arm>` on the 500s.
+The member record page mounts this as the
 "Change requests" section (10 newest, per-field outcomes through the shared diff table, the
 reviewer with the "deactivated" marker, the reason as plain text) and links to the queue with
 `?memberId=`.

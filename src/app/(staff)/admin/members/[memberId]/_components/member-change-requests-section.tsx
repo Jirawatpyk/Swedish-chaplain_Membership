@@ -16,6 +16,7 @@ import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { FileClockIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { InlineAlert } from '@/components/ui/inline-alert';
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
@@ -61,7 +62,7 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
   return (
     <section aria-labelledby="member-change-requests-heading" data-testid="member-change-requests-section">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <h2 id="member-change-requests-heading" className="font-heading text-base font-medium leading-snug">
             {t('title')}
           </h2>
@@ -72,9 +73,11 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
         </CardHeader>
         <CardContent>
           {loadFailed ? (
-            <div role="alert" className="py-6 text-center">
+            // `status`, not `alert`: the page rendered, one section did not —
+            // no interruption of whatever the admin is reading (UX I9)
+            <InlineAlert tone="destructive" role="status" data-testid="member-change-requests-unavailable">
               <p className="text-sm">{t('loadFailed')}</p>
-            </div>
+            </InlineAlert>
           ) : items.length === 0 ? (
             <div className="py-6 text-center">
               <p className="text-sm text-muted-foreground">{t('empty')}</p>
@@ -127,7 +130,7 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
 /** Suspense fallback matching the section's card shape (CLS-stable). */
 export function MemberChangeRequestsSkeleton() {
   return (
-    <Card aria-busy="true" aria-hidden="true">
+    <Card aria-hidden="true">
       <CardHeader className="flex flex-row items-center justify-between">
         <Skeleton className="h-5 w-40" />
         <Skeleton className="h-9 w-28" />
