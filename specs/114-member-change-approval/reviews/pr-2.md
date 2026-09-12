@@ -90,12 +90,24 @@ reported. Fixes #3–#5 match the code. One residual of the same seam, one LOW:
 | 1 | MEDIUM | the scrub's `FOR UPDATE` snapshot is taken BEFORE the member lock, and READ COMMITTED never adds rows INSERTED after a statement started: a submit that held the pending row first (its replace path) commits a NEW request between the snapshot and the erase's member lock; `findErasedAtByIdInTx` does not catch it (the erase has not committed), and nothing in the erase tx rescanned after the member lock — the new row stays pending with live PII on the erased record, its staff email queued after the outbox cancel (ms-scale window; not reproduced live) | `ChangeRequestScrubPort.listRequestIdsInTx` (non-locking, same tx) called right after the member `FOR UPDATE`; any id the scrub did not see → the erase throws (`change_request_race:<n>`), the tx rolls back to `server_error`, the retry / re-drive scrubs the new row too. No new lock, so no new AB-BA. Unit test pins the rescan AFTER the member lock and zero scrubs / no `member_erased` on the race |
 | 2 | LOW | an erased member is refused by submit as `member_archived` (403 "archived", metric `refused{archived}`) while decide names `member_erasing` | accepted as is: the contact's session is revoked in the same erase tx, so the message is unreachable in practice; a dedicated metric reason is not worth a new bucket |
 
-## Gate output after rounds 1 + 2
+### Final re-review (same reviewer, commit `b7afc1bcb`)
+
+Verdict: **MERGEABLE**. Every concurrent-submit interleaving is now either rescanned-and-aborted
+(a submit that committed before the erase's member lock) or refused by `erased_at` under the
+member lock (a submit that waited on it); `insertInTx` has ONE caller and it takes the member
+`FOR UPDATE` before the insert, so no row can land between the rescan and the erase's commit.
+The rescan takes no lock — the lock graph is unchanged. Every consumer of the scrub port
+(one implementer, one caller, two hand-built integration deps on the real adapter, the fake,
+the fixture, `members-deps.test.ts`) carries the method. Noted: the race arm answers
+`server_error` to the admin (a throw, not a typed refusal); the retry re-drives.
+
+## Gate output after rounds 1 + 2 (branch head `b7afc1bcb`)
 
 | Gate | Result |
 |---|---|
-| `pnpm typecheck` · `pnpm lint` (full) · `check:i18n` 5,499 keys · `check:layout` · `check:audit-events` · `check:actor-role-truth` · `check:api-route-guard` | all OK |
-| the 17 unit / contract files the round touched | 292 passed |
-| whole `tests/contract/` + `tests/unit/{members,insights,app,lib,architecture}` (after round 1) | 558 files, 5,552 passed, 2 todo |
-| integration (live Neon `dev`, by path) | rate-cap 2 · erasure-scrub 1 · tenant-isolation 6 · queue-pagination 4 · export-job-repo · account-hub-cross-tenant · erase-member — 34 passed, 0 failed |
-| e2e | still NOT RUN (T066 / T081 / T091 partial) |
+| `pnpm typecheck` · `pnpm lint` (full) · `check:i18n` 5,499 keys · `check:layout` · `check:staff-page-guard` (50) · `check:api-route-guard` (123) · `check:audit-events` · `check:actor-role-truth` (0 fabricated) · `check:multi-tenant` (28) · `check:fixme` · `check:dates` | all OK |
+| whole `tests/contract/` + `tests/unit/{members,insights,app,lib,architecture}` (after round 1, `a44d9bf81`) | 558 files, 5,552 passed, 2 todo |
+| `tests/contract/{portal,members,insights}` + `tests/unit/{members,insights}` (after round 2, `c8a6017b1`) | 264 files, 2,489 passed, 1 todo |
+| erase unit suites after the rescan (`b7afc1bcb`) | 87 passed |
+| integration (live Neon `dev`, by path) | after round 1: rate-cap 2 · erasure-scrub 1 · tenant-isolation 6 · queue-pagination 4 · export-job-repo · account-hub-cross-tenant · erase-member — 34 passed; after round 2: erasure-scrub · submit-atomicity · concurrency · erase-member — 8 passed; after the rescan: erasure-scrub · erase-member · erase-member-cascade — 8 passed |
+| e2e | still NOT RUN (T066 / T081 / T091 partial — the dev server env needs the flag) |
