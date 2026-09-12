@@ -129,7 +129,8 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
 
   // The staff-email deep link (FR-011): the PERSON's current pending request —
-  // through the use case like every other read here (Principle III, REL-12).
+  // through the queue use case (Principle III, REL-12; the member chip below
+  // reads the member record through its repo, the member-page idiom).
   let deepLinkNotice: string | null = null;
   if (submitter && state === 'pending' && !q.cursor) {
     const pending = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: submitter as UserId }, cursor: null, limit: 2 });

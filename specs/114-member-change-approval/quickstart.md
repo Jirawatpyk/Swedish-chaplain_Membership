@@ -162,7 +162,14 @@ final tree after review rounds 1–3; the review rounds themselves added the las
   cancel on EVERY erasure (a member with no requests scrubs nothing — the statements match zero
   rows); the GDPR archive gains `change-requests.json` (+ a README line) for every export, empty
   when the member has no requests; the F114 audit-payload union and the `[erased]` sentinel are
-  accepted by the change-request row parser. Flag-gated (404 / hidden while off): the queue,
+  accepted by the change-request row parser. **The GDPR archive becomes requester-scoped on the
+  live F9 surface** (review round 1, C1): (a) `downloadExport`'s member arm also requires
+  `job.requestedBy === actor` — a member can no longer download an archive an admin produced
+  on their behalf (F9 FR-031 on-behalf archives are now STAFF-download-only; the link answers
+  403 for the member); (b) `/portal/account` lists only the archives the signed-in person
+  requested; (c) the `gdpr_member_archive` job key includes the requester, so two people asking
+  in the same minute get two jobs (directory keys unchanged). Rolling any of the three back is
+  a code revert, not a flag flip. Flag-gated (404 / hidden while off): the queue,
   the per-member history route + section, the portal history route + page + profile card, the
   withdraw route + banner control, the palette entry.
 

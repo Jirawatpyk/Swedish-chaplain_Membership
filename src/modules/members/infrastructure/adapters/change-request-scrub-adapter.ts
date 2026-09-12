@@ -3,8 +3,14 @@
  *
  * Runs INSIDE `eraseMember`'s atomic scrub tx (the caller's `runInTenant`
  * tx — never the global `db`; RLS + the GUC confine every statement to the
- * erased member's tenant). Three statements, each idempotent (a re-drive
- * rewrites the same sentinels and closes nothing new):
+ * erased member's tenant). The id read is `SELECT … FOR UPDATE`: the
+ * REQUEST rows are the first lock this adapter takes, before any field row,
+ * because `decideInTx` locks the request row first and writes the field
+ * rows LAST — a scrub that updated field rows before holding the request
+ * row was an AB-BA with decide on (field rows ↔ request row) (the seam
+ * review of PR-2, #1). Every F114 writer now serialises on the request row.
+ * Three statements, each idempotent (a re-drive rewrites the same sentinels
+ * and closes nothing new):
  *
  *   1. every field row of the member's requests: `seen_value` /
  *      `proposed_value` → the `[erased]` sentinel (a JSON string — for an
@@ -53,7 +59,7 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
     const tx = txUnknown as TenantTx;
     try {
       const ids = (
-        await tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId))
+        await tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId)).for('update')
       ).map((r) => r.id);
       if (ids.length === 0) return ok({ scrubbedRequestIds: [], closedRequests: [] });
 

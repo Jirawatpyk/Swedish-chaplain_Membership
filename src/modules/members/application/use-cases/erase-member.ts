@@ -366,11 +366,16 @@ export async function eraseMember(
   try {
     await runInTenant(deps.tenant, async (tx) => {
       // F114 (FR-030, T078) — the member's change requests, in the SAME tx
-      // and FIRST: this scrub takes the request-row locks BEFORE the member
-      // row's `FOR UPDATE` below, the same order (request rows → member row)
-      // `submitChangeRequest` / `decideChangeRequest` lock in, so an erasure
-      // racing a submit cannot deadlock (review round 1, REL-1: the scrub used
-      // to run after the member lock — an AB-BA inversion). Values + reason +
+      // and FIRST: the scrub's id read is `FOR UPDATE`, so the request-row
+      // locks are the first this tx takes — before any field row and before
+      // the member row's `FOR UPDATE` below — the same order (request row →
+      // field rows / member row) `submitChangeRequest` / `decideChangeRequest`
+      // lock in, so an erasure racing a submit or a decide serialises instead
+      // of deadlocking (review round 1, REL-1: the scrub used to run after the
+      // member lock; the seam pass, #1: it also updated field rows before
+      // holding the request row — decide's mirror image). A submit that waited
+      // on the member lock re-reads `erased_at` on its own tx (seam #2), so it
+      // cannot land a new request on the erased record. Values + reason +
       // note → sentinel, pending → withdrawn / erasure. One
       // `member_change_request_withdrawn` audit row per closure — keyed
       // `related_member_id` (a system closure is NOT member activity: the 0009

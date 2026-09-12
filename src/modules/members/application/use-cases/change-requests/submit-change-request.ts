@@ -104,7 +104,7 @@ export type SubmitChangeRequestInput = {
 export type SubmitChangeRequestDeps = {
   readonly tenant: TenantContext;
   readonly changeRequestRepo: ChangeRequestRepo;
-  readonly memberRepo: Pick<MemberRepo, 'findById' | 'findByIdInTx'>;
+  readonly memberRepo: Pick<MemberRepo, 'findById' | 'findByIdInTx' | 'findErasedAtByIdInTx'>;
   readonly contactRepo: Pick<ContactRepo, 'findById'>;
   readonly audit: AuditPort;
   readonly emails: EmailPort;
@@ -421,6 +421,17 @@ export async function submitChangeRequest(
       const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
       if (!fresh.ok) throw new UseCaseAbort<RepoError>(fresh.error);
       if (fresh.value.status === 'archived') throw new MemberArchivedAbort();
+      // An erasure keeps `status` and stamps only `erased_at`, so the FOR
+      // UPDATE re-read above sees an unchanged row once an erase tx that we
+      // waited on has committed — and this submit would land a pending
+      // request with live PII on an erased record, after the erasure's
+      // scrub + outbox cancel already ran. Read `erased_at` on the SAME tx
+      // (decide's rule — the seam review of PR-2, #2). Refused as
+      // `member_archived`: the member is gone either way, and the contact's
+      // session is revoked by the same erasure.
+      const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, input.memberId);
+      if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
+      if (erased.value.erasedAt !== null) throw new MemberArchivedAbort();
 
       let replaced: ChangeRequestId | null = null;
       // FR-011 coalescing (R8): no new staff email within 1 h of the last one

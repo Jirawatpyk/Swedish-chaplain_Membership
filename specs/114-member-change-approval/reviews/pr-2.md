@@ -57,11 +57,32 @@ sentence). One Critical, shared by three lenses (P-1 / SEC-C1 / REL-16): the GDP
 | REL-17 | `withdrawChangeRequest` emits no metric; the two OTel spans in contracts § 4 are not in the code | withdraw has no row in the § 4 metric table (not a contract violation); the spans are T106 (Phase 9) |
 | S11 · S14 | indentation / wording nits in test docblocks | cosmetic; left to avoid churn in files this round already rewrote |
 
-## Gate output after round 1 (this commit)
+## Round 2 — `whole-branch-reviewer` (fable) seam pass on `62a9d09bf..a44d9bf81`, 2026-09-12
+
+Verdict: MERGEABLE WITH FIXES (no BLOCKER). Five findings, all confirmed against the code
+before the fix; the two seams are exactly the kind a single-surface lens cannot see — both are
+consequences of round 1's REL-1 reorder.
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| 1 | HIGH | the REL-1 fix moved the scrub first, but its id read was a plain SELECT and its FIRST write hit `member_change_request_fields`; the request rows were locked only by statement 2. `decideInTx` locks the request row first (`readOne(…, true)`) and writes the field rows LAST — a new AB-BA with decide on (field rows ↔ request row); the unit seam asserted mock call order, not the lock graph | the id read is `SELECT … FOR UPDATE`: the request rows are the scrub's first lock, before any field row; erase / submit / decide now all serialise on the request row. Reasoned from the statement sequences (not reproduced live); comments rewritten in the adapter + the erase tx |
+| 2 | MEDIUM | after the reorder an in-flight submit that waited on the member lock resumed after the erase committed and inserted a pending request with live PII: submit's in-tx re-check read only `status === 'archived'`, and an erasure keeps `status`, stamping `erased_at` only (decide already reads `findErasedAtByIdInTx`) | submit reads `erased_at` on the same tx after the FOR UPDATE re-read and refuses as `member_archived` (the member is gone either way; the contact's session is revoked by the erasure); deps `Pick` widened; unit test pins order + zero writes; the replace contract's double carries the method |
+| 3 | MEDIUM | quickstart's "PR-2, unflagged" list omitted the three round-1 changes to the LIVE F9 export surface (member download arm, account-page listing, job key) — a member can no longer download an admin's on-behalf archive, flag OFF or not | listed with the rollback consequence (a code revert) |
+| 4 | MEDIUM | the `GdprArchiveSource` port docblock said an on-behalf request exports the WHOLE history — the adapter and its test do the opposite (round 1 C1); the next implementer would re-open the Critical | docblock states the adapter's rule |
+| 5 | LOW | the queue page's REL-12 comment claimed "like every other read here" while the ux-C1 member chip reads `memberRepo.findById` directly (the member-page idiom) | comment corrected |
+
+Refuted by the pass (recorded so it is not re-raised): attempt bucket vs idempotency (the bucket
+runs before key parsing, reserves nothing); every changed arity's consumers updated; every new
+read inside `runInTenant`; i18n parity of the added / removed keys; `related_member_id` typed;
+erase ↔ submit and erase ↔ contact-crud lock order sound; the sentinel round-trips for address
+groups.
+
+## Gate output after rounds 1 + 2
 
 | Gate | Result |
 |---|---|
 | `pnpm typecheck` · `pnpm lint` (full) · `check:i18n` 5,499 keys · `check:layout` · `check:audit-events` · `check:actor-role-truth` · `check:api-route-guard` | all OK |
 | the 17 unit / contract files the round touched | 292 passed |
+| whole `tests/contract/` + `tests/unit/{members,insights,app,lib,architecture}` (after round 1) | 558 files, 5,552 passed, 2 todo |
 | integration (live Neon `dev`, by path) | rate-cap 2 · erasure-scrub 1 · tenant-isolation 6 · queue-pagination 4 · export-job-repo · account-hub-cross-tenant · erase-member — 34 passed, 0 failed |
 | e2e | still NOT RUN (T066 / T081 / T091 partial) |

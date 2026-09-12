@@ -82,6 +82,7 @@ vi.mock('@/lib/members-change-request-deps', () => ({
     memberRepo: {
       findById: async (): Promise<Result<Member, RepoError>> => ok(member()),
       findByIdInTx: async (): Promise<Result<Member, RepoError>> => ok(member()),
+      findErasedAtByIdInTx: async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: null }),
     },
     contactRepo: { findById: async (): Promise<Result<Contact, RepoError>> => ok(contact()) },
     audit,

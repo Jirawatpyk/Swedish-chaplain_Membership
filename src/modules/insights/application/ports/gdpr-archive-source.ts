@@ -93,11 +93,15 @@ export interface GdprArchiveSource {
     opts: {
       readonly subjectMemberId: string;
       /**
-       * F114 (FR-029) — the user who asked for the export. When they are one
-       * of the member's linked contacts the change-request history is scoped
-       * to what THEY may see (their own + company-level); an on-behalf
-       * request from staff exports the whole member's history. Absent ⇒
-       * whole history (a legacy job row).
+       * F114 (FR-029 / FR-014) — the user who asked for the export. When they
+       * are one of the member's linked contacts the change-request history is
+       * scoped to what THEY may see (their own requests in full + the
+       * company-level ones as a non-submitter sees them). Any other
+       * requester — staff on behalf, or absent (a legacy job row) — gets the
+       * COMPANY-LEVEL history only: `company` / `mixed` requests with their
+       * company fields and no reason / note, never a contact's own-field
+       * request (the artefact may reach any contact, so it fails closed;
+       * review round 1 of PR-2, C1).
        */
       readonly requestedByUserId?: string;
     },

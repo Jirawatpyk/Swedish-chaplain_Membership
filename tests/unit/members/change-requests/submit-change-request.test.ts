@@ -155,6 +155,7 @@ function makeDeps(opts: { member?: Member; contact?: Contact | null; reviewers?:
   const memberRepo = {
     findById: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
     findByIdInTx: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
+    findErasedAtByIdInTx: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: null })),
   };
   const contactRepo = {
     findById: vi.fn(async (): Promise<Result<Contact, RepoError>> => (c ? ok(c) : err({ code: 'repo.not_found' as const }))),
@@ -282,6 +283,20 @@ describe('submitChangeRequest — refusals before any write', () => {
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     expect(r).toEqual({ ok: false, error: { type: 'member_archived' } });
     expect(repo.rows.size).toBe(0);
+  });
+
+  it('a member ERASED by a concurrent erasure (status unchanged, erased_at stamped) is caught on the same tx — no pending request with live PII lands on an erased record (seam review, #2)', async () => {
+    const { deps, memberRepo, repo, audit, emails } = makeDeps();
+    // the erasure keeps `status` and stamps only `erased_at`: the FOR UPDATE
+    // re-read alone sees an unchanged row once the erase tx commits
+    memberRepo.findErasedAtByIdInTx.mockResolvedValueOnce(ok({ erasedAt: NOW }));
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toEqual({ ok: false, error: { type: 'member_archived' } });
+    expect(memberRepo.findErasedAtByIdInTx.mock.invocationCallOrder[0]!).toBeGreaterThan(memberRepo.findByIdInTx.mock.invocationCallOrder[0]!);
+    expect(repo.rows.size).toBe(0);
+    expect(audit.events).toHaveLength(0);
+    expect(emails.enqueued).toHaveLength(0);
+    expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'archived');
   });
 });
 
