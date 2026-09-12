@@ -393,5 +393,10 @@ describe('state-machine narrowing + the seam check (round 6, types F6)', () => {
     expect(changeRequestInvariantViolation({ ...base, state: 'withdrawn' })).toMatch(/lacks withdrawnReason/);
     expect(changeRequestInvariantViolation({ ...base, outcome: 'approved' })).toMatch(/pending request .* carries/);
     expect(changeRequestInvariantViolation({ ...base, state: 'decided', outcome: 'rejected', decidedAt: new Date(), decidedByUserId: 'rev' as ChangeRequest['decidedByUserId'], withdrawnAt: new Date() })).toMatch(/carries withdrawal/);
+    expect(changeRequestInvariantViolation({ ...base, state: 'withdrawn', withdrawnReason: 'member', withdrawnAt: new Date(), outcome: 'approved' })).toMatch(/carries decision/);
+    expect(changeRequestInvariantViolation({ ...base, state: 'withdrawn', withdrawnReason: 'member', withdrawnAt: new Date(), decidedAt: new Date() })).toMatch(/carries decision/);
+    // a state outside the union (a widened DB enum, a parsed string) is named, never accepted —
+    // the `default` arm is `void _exhaustive`, not the fail-open `return _exhaustive`
+    expect(changeRequestInvariantViolation({ ...base, state: 'archived' as ChangeRequest['state'] })).toMatch(/unknown state/);
   });
 });
