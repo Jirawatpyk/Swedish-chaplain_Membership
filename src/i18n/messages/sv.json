@@ -6119,6 +6119,19 @@
         "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu – kammaren meddelar beslutet via e-post.",
         "editLink": "Redigera din begäran"
       },
+      "withdraw": {
+        "button": "Dra tillbaka begäran",
+        "title": "Dra tillbaka den här begäran?",
+        "description": "Inget har tillämpats ännu. Kammaren granskar inte längre dessa värden; du kan skicka en ny begäran när som helst.",
+        "confirm": "Dra tillbaka",
+        "cancel": "Behåll begäran",
+        "done": "Din begäran drogs tillbaka. Inget i din post har ändrats.",
+        "gone": "Det finns inte längre någon begäran som väntar på granskning – den kan redan ha avgjorts eller dragits tillbaka.",
+        "error": "Det gick inte att dra tillbaka din begäran. Försök igen."
+      },
+      "replaced": {
+        "status": "Dina ändringar skickades för granskning och ersätter den begäran du skickade tidigare."
+      },
       "outcome": {
         "title": {
           "approved": "Dina ändringar godkändes",

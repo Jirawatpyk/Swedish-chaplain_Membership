@@ -855,10 +855,11 @@ describe('submitChangeRequest — the durable 10 / 24 h cap counted from the req
     const { deps, audit, clock } = makeDeps();
     await fillWindow(deps, clock);
     clock.set(new Date(NOW.getTime() + 11 * MINUTE));
-    const same = await submitChangeRequest(deps, input({ contact: { phone: '+66899999009' } }));
-    expect(same.ok && same.value.outcome === 'already_pending' && same.value.unchanged).toBe(false);
+    // the tenth proposal (i = 9 → '+6689999' + '009')
+    const same = await submitChangeRequest(deps, input({ contact: { phone: '+6689999009' } }));
+    expect(same).toMatchObject({ ok: true, value: { outcome: 'already_pending', unchanged: false } });
     const reverted = await submitChangeRequest(deps, input({ contact: { phone: '+66812345678' } }));
-    expect(reverted.ok && reverted.value.outcome === 'already_pending' && reverted.value.unchanged).toBe(true);
+    expect(reverted).toMatchObject({ ok: true, value: { outcome: 'already_pending', unchanged: true } });
     expect(audit.events.map((e) => e.type)).not.toContain('member_change_request_rate_limited');
   });
 

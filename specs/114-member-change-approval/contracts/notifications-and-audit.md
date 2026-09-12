@@ -23,9 +23,10 @@ body lists the member (company name + member number), the submitting person's na
 rows marked); link `https://<host>/admin/change-requests?submitter=<userId>&state=pending`. Never
 CC/BCC; never to a member address.
 
-**Coalescing (T087, PR-2 — NOT in PR-1)**: not enqueued when the replaced request's
-`staff_notified_at` is within 1 h; the new row inherits that timestamp. In PR-1 every submit
-queues one row per active reviewer; `staff_notified_at` is null only when the roster was empty.
+**Coalescing (FR-011, T087)**: not enqueued when the replaced request's `staff_notified_at` is
+within 1 h; the new row inherits that timestamp (along a chain of replacements — one email per
+person per hour at most, SC-013) and the submitted audit row says `coalesced: true`.
+`staff_notified_at` is null only when the roster was empty at submission.
 
 **Dispatch failure** to one reviewer is recorded by the existing outbox retry/`email_dispatch_failed`
 path and does not affect the others.
@@ -76,9 +77,9 @@ timeline shows the same rows for the member's own timeline (existing filter).
 |---|---|---|---|
 | `members_change_requests_pending_count` | gauge | `tenant` | per-tenant gauges tick (R12) — NO emitter until T102 (PR-3) |
 | `members_change_request_oldest_age_seconds` | gauge | `tenant` | same — NO emitter until T102 (PR-3) |
-| `members_change_request_submitted_total` | counter | `tenant, scope, coalesced` (always `false` until T087) | submit use case |
+| `members_change_request_submitted_total` | counter | `tenant, scope, coalesced` | submit use case |
 | `members_change_request_decided_total` | counter | `tenant, outcome` | decide use case |
-| `members_change_request_refused_total` | counter | `tenant, reason` (`rate_limited`, `forbidden`, `not_owner`, `archived`, `already_decided`, `validation`) | the submit route (429) + both use cases |
+| `members_change_request_refused_total` | counter | `tenant, reason` (`rate_limited`, `forbidden`, `not_owner`, `archived`, `already_decided`, `validation`) | the submit use case (incl. the durable-cap 429) + the decide / acknowledge use cases |
 | `members_change_request_decide_ms` | histogram | `tenant` | decide use case |
 | `members_change_request_no_reviewers_total` | counter | `tenant` | submit use case — a CREATED request with an empty reviewer roster (pages) |
 | `members_change_request_decision_email_skipped_total` | counter | `tenant, reason` (`recipient_gone`) | decide use case |
@@ -88,8 +89,8 @@ Names are underscored as emitted (`src/lib/metrics.ts`); `docs/observability.md 
 Alerts: `oldest_age_seconds > 7d` → warning; `> 14d` → page (both inside the 30-day DSR clock,
 FR-037). Every route arm that can only be a FAULT (a throwing gate resolver, a failed use case, a
 failed re-read) names itself in the `errorId` taxonomy (`M114.<route>.<arm>` — the
-`check:f8-error-id` pattern, without its gate); deterministic 4xx refusals are logged by the use
-case, or by the route for the interim 429, or not at all.
+`check:f8-error-id` pattern, without its gate); deterministic 4xx refusals are audited / counted
+by the use case (the durable-cap 429 included), or not at all.
 
 Logs: pino with `requestId`, `tenantId`, hashed user id, `requestChangeId`; **never** field values,
 reasons or emails (`docs/observability.md` § 3 forbidden fields).

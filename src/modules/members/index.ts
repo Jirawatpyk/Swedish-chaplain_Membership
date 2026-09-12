@@ -193,6 +193,12 @@ export {
   type AcknowledgeChangeRequestInput,
 } from './application/use-cases/change-requests/acknowledge-change-request';
 export {
+  withdrawChangeRequest,
+  type WithdrawChangeRequestDeps,
+  type WithdrawChangeRequestError,
+  type WithdrawChangeRequestInput,
+} from './application/use-cases/change-requests/withdraw-change-request';
+export {
   getChangeRequestReview,
   taxHintFor,
   type ChangeRequestReview,

@@ -6119,6 +6119,19 @@
         "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
         "editLink": "Edit your request"
       },
+      "withdraw": {
+        "button": "Withdraw request",
+        "title": "Withdraw this request?",
+        "description": "Nothing has been applied yet. The chamber will no longer review these values; you can submit a new request at any time.",
+        "confirm": "Withdraw",
+        "cancel": "Keep request",
+        "done": "Your request was withdrawn. Nothing on your record has changed.",
+        "gone": "There is no request awaiting review any more — it may already have been decided or withdrawn.",
+        "error": "Could not withdraw your request. Please try again."
+      },
+      "replaced": {
+        "status": "Your changes were sent for review and replace the request you sent earlier."
+      },
       "outcome": {
         "title": {
           "approved": "Your changes were approved",

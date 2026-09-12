@@ -50,9 +50,9 @@ pnpm check:audit-events && pnpm check:i18n       # 5 events × 5 places; ~160 le
 3. `/admin/members/[id]/timeline` and `/portal/timeline` show the submitted/decided events.
 
 ### US5 — withdraw / replace / cap
-1. Submit, then `DELETE /api/portal/change-requests/current` → *withdrawn*; queue no longer lists it; a second DELETE → 404.
-2. Submit twice within a minute → first becomes *withdrawn/replaced*, exactly one pending, and — in PR-1 — **two** staff emails, both `staffNotified: true` (the 1 h coalescing is T087 / PR-2; `staffNotified: false` today means the reviewer roster was EMPTY, which pages).
-3. Submit 10 times in a row (script) → the 11th is 429 with `Retry-After`; `member_change_request_rate_limited` in the audit; works with `UPSTASH_*` unset.
+1. Submit, then "Withdraw request" on the pending banner (confirmation dialog, non-destructive tier) or `DELETE /api/portal/change-requests/current` → *withdrawn/member*; the queue no longer lists it; a second DELETE → 404 `no_pending_request`; `/admin/audit` has `member_change_request_withdrawn { withdrawn_reason: member }`.
+2. Submit twice within a minute → the first becomes *withdrawn/replaced* (pointing at the second), exactly one pending, the second answers `replaced: <first id>` + `staffNotified: false` and **one** staff email in total (the second row inherited `staff_notified_at`; the email's link opens the current request). Resubmit again more than 1 h after the first email → a new email (`staffNotified: true`). `staffNotified: false` on a FIRST submit means the reviewer roster was EMPTY, which pages.
+3. Submit 10 times in a row (script) → the 11th is 429 with `Retry-After` (= when the oldest of the ten leaves the 24 h window) and the form says when to try again; `member_change_request_rate_limited { window_count: 10 }` in the audit; works with `UPSTASH_*` unset (the count is the request table's — `tests/integration/members/change-requests-rate-cap.test.ts` is the automated twin).
 
 ### US6 — tenant switch + dashboard
 1. Switch the setting OFF with one request pending → the queue still lists it and it can be decided; a new member edit at `/portal/edit` saves immediately (F3 behaviour) and emits `member_self_updated`.
@@ -68,7 +68,8 @@ pnpm vitest run tests/unit/members/change-requests tests/contract/portal/change-
 pnpm test:integration tests/integration/members/change-requests-tenant-isolation.test.ts
 pnpm test:integration tests/integration/members/change-requests-concurrency.test.ts
 pnpm test:integration tests/integration/members/change-requests-decide-rollback.test.ts
-pnpm test:integration tests/integration/members/change-requests-erasure-scrub.test.ts   # PR-2 (T070) — does not exist yet
+pnpm test:integration tests/integration/members/change-requests-rate-cap.test.ts        # PR-2 (T084) — the durable cap + coalescing + withdraw, UPSTASH_* unset
+pnpm test:integration tests/integration/members/change-requests-erasure-scrub.test.ts   # PR-2 (T070)
 # e2e (local only, workers=1 mandatory) — ≤ 10-min foreground chunks
 pnpm test:e2e --grep "@change-requests" --workers=1
 pnpm test:e2e --grep "@a11y" --workers=1
@@ -93,7 +94,7 @@ moment the flag is set:
 | Gate | Why it blocks | Closes in |
 |---|---|---|
 | **T078 + T070** — the FR-030 erasure scrub adapter wired into `eraseMember` (+ its live-Neon test + table-scoped guard) | Until it merges, `member_change_request_fields.seen_value` / `proposed_value` and `member_change_requests.decision_reason` / `decision_note` are OUTSIDE the GDPR Art. 17 / PDPA §33 path — an erasure leaves the subject's proposed name / phone / addresses and the reviewer's reason intact. The `ChangeRequestScrubPort` exists; nothing implements or calls it. Also cancel pending outbox rows of the two new `notification_type`s by `context_data->>'memberId'`, not only by `to_email`. Note for the RoPA / erasure runbook: a remembered `Idempotency-Key` response on `POST /api/portal/change-requests` carries the serialised request view (proposed values) for the record's 24 h TTL; the scrub does not reach it, so an erasure completes fully only after that window — document it, or purge the tenant's keys in the adapter. | PR-2 (US4) |
-| **T087** — the durable 10 / 24 h cap + 1 h staff-email coalescing | PR-1 carries an interim Upstash cap (10 / 24 h per tenant + user) on `POST /api/portal/change-requests`, but no coalescing: every submit still fans one email out per reviewer. | PR-2 (US5) |
+| **T087** — the durable 10 / 24 h cap + 1 h staff-email coalescing | **CLOSED in PR-2 (US5)**: the cap is counted inside the submit tx from the request table (no Upstash on the path — PR-1's interim peek is deleted) and a resubmit within 1 h of the last staff email queues nothing. | PR-2 (US5) — done |
 | **T102** — the pending-count / oldest-age gauges | FR-037's > 7 d warning / > 14 d page alerts cannot fire until the gauges have a caller. | PR-3 (US6) |
 | **T072 / T074** — the real queue (filters, cursor paging, overdue flag) | The PR-1 `/admin/change-requests` page lists 50 pending rows with no paging; row 51 is invisible. | PR-2 (US4) |
 | e2e `tests/e2e/change-requests.spec.ts` green on every Playwright project with the flag ON | **Run 2026-09-11 on chromium + mobile-safari: 8 passed, 1 skipped** (the secondary-contact case waits for an `E2E_MEMBER_SECONDARY_*` persona — research § V4). Five fixture defects fixed on the way (staff sessions probing the member gate, the `page.request` POST without an Origin, the required-mark label, a pre-hydration click, the dialog-focus assertion) and ONE product defect: Base UI's Checkbox renders `disabled` as `data-disabled` only, so a manager's read-only row carried no `aria-disabled` (fixed). Note for anyone re-running locally: the dev roster must be sane — the shared `dev` branch had 3,774 leaked `createActiveTestUser` admins and every submit fanned one outbox row out to each (a 3-minute transaction); they are now `disabled`. | before flip (re-run on the release branch) |

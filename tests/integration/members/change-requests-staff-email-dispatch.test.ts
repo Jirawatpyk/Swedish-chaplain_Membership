@@ -111,11 +111,13 @@ async function tickUntilSettled(requestId: string, maxTicks = 8) {
 }
 
 // US5 (T087): a resubmit within 1 h of the last staff notification queues NO
-// new outbox row (FR-011 coalescing) — the replaced-row test below advances
-// this clock past the window so its SECOND row exists to be dispatched.
+// new outbox row (FR-011 coalescing). Every test in this file submits a fresh
+// request that REPLACES the previous one and expects its own staff row, so the
+// injected clock steps 61 min per submit — each one is past the window.
 let clockOffsetMs = 0;
 
 async function submit(rawBody: unknown) {
+  clockOffsetMs += 61 * 60_000;
   const deps: SubmitChangeRequestDeps = {
     tenant: tenant.ctx,
     changeRequestRepo: drizzleChangeRequestRepo,
@@ -207,15 +209,9 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     const first = await submit({ contact: { phone: '+66855555555' } });
     expect(first.ok && first.value.outcome).toBe('submitted');
     const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : '';
-    // past the 1 h coalescing window (US5 T087) — otherwise the replacement
-    // inherits `staff_notified_at` and queues no row of its own
-    clockOffsetMs = 61 * 60_000;
-    let second: Awaited<ReturnType<typeof submit>>;
-    try {
-      second = await submit({ contact: { phone: '+66866666666' } });
-    } finally {
-      clockOffsetMs = 0;
-    }
+    // 61 min later (the injected clock) — past the coalescing window, so the
+    // replacement queues a row of its own (US5 T087)
+    const second = await submit({ contact: { phone: '+66866666666' } });
     expect(second.ok && second.value.outcome).toBe('submitted');
     expect(second.ok && second.value.outcome === 'submitted' && second.value.staffNotified).toBe(true);
     const secondId = second.ok && second.value.outcome === 'submitted' ? second.value.request.id : '';

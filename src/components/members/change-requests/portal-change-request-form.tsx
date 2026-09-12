@@ -223,6 +223,7 @@ export function PortalChangeRequestForm({
 }: PortalChangeRequestFormProps) {
   const t = useTranslations('portal.changeRequests.form');
   const tStatus = useTranslations('portal.changeRequests.status');
+  const tReplaced = useTranslations('portal.changeRequests.replaced');
   const tErrors = useTranslations('portal.changeRequests.errors');
   const tv = useTranslations('shared.validation');
   const locale = useLocale();
@@ -251,12 +252,13 @@ export function PortalChangeRequestForm({
         body: JSON.stringify(buildProposalBody(values, canProposeCompanyFields)),
       });
       const data = (await res.json().catch(() => null)) as
-        | { outcome?: string; unchanged?: boolean; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
+        | { outcome?: string; unchanged?: boolean; replaced?: string | null; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
         | null;
 
       if (res.ok) {
         if (data?.outcome === 'submitted') {
-          toast.success(tStatus('submitted'));
+          // US5 AS2: a resubmit REPLACED the earlier pending request — say so
+          toast.success(typeof data.replaced === 'string' ? tReplaced('status') : tStatus('submitted'));
           router.push('/portal/profile');
           return;
         }

@@ -203,7 +203,8 @@ describe('durable submission cap + coalescing on live Neon (T084)', () => {
       .from(auditLog)
       .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.eventType, 'member_change_request_withdrawn')));
     expect(withdrawn.filter((a) => (a.payload as { withdrawn_reason?: string }).withdrawn_reason === 'member')).toHaveLength(1);
-    expect(withdrawn.filter((a) => (a.payload as { withdrawn_reason?: string }).withdrawn_reason === 'replaced')).toHaveLength(9);
+    // nine inside the window + the twelfth replacing the tenth after the roll-over
+    expect(withdrawn.filter((a) => (a.payload as { withdrawn_reason?: string }).withdrawn_reason === 'replaced')).toHaveLength(10);
     rows = await myRows();
     expect(rows.filter((r) => r.state === 'pending')).toHaveLength(0);
     expect(rows).toHaveLength(11);

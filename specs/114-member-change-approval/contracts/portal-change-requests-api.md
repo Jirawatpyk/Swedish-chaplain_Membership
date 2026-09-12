@@ -51,11 +51,16 @@ nothing differs from the record and nothing is pending → **200 `{ "outcome": "
 (no row); identical to the caller's pending request → **200 `{ "outcome": "already_pending",
 "unchanged": false, "request": … }`**; nothing differs from the record while a DIFFERENT proposal
 is pending → **200 `{ "outcome": "already_pending", "unchanged": true, "request": <the pending one> }`**
-(the member cannot silently "revert" a pending proposal — withdrawing is US5); ≥ 10 requests in
-24 h → **429 `rate_limited`** with `Retry-After` (PR-1: the interim route-level cap emits
-`members_change_request_refused_total{reason=rate_limited}` only — the audit event is T087);
-member archived →
-**403 `member_archived`**.
+(the member cannot silently "revert" a pending proposal — withdrawing is `DELETE …/current`);
+≥ 10 requests CREATED by this person in the trailing 24 h (counted from the request table,
+replaced rows included — no rate-limiting service is consulted, so the cap holds with Upstash
+absent) → **429 `rate_limited`** with `Retry-After` and the same `retryAfterSeconds` in the body
+(when the OLDEST row leaves the window), audited `member_change_request_rate_limited
+{ member_id, window_count, retry_after_seconds }`, counted on
+`members_change_request_refused_total{reason=rate_limited}`, and never remembered under an
+`Idempotency-Key` (transient); member archived → **403 `member_archived`**. The no-op answers
+come BEFORE the cap: at the cap an identical or record-matching proposal is still
+`nothing_to_submit` / `already_pending`, never 429.
 
 Success:
 
@@ -63,11 +68,17 @@ Success:
 201 { "outcome": "submitted", "request": ChangeRequestView, "replaced": "<previous request id>" | null, "staffNotified": true | false }
 ```
 
-`staffNotified=true` when at least one reviewer outbox row was queued; `false` means the reviewer
-roster was EMPTY (nobody is emailed — `members_change_request_no_reviewers_total` pages). The FR-011
-1 h coalescing is T087 (PR-2) and will add a third meaning. Side effects in ONE transaction: previous
-pending (same submitter) → `withdrawn/replaced`; insert request + fields; audit
-`member_change_request_submitted`; one outbox row per active reviewer.
+`staffNotified=true` when at least one reviewer outbox row was queued; `false` means either the
+reviewer roster was EMPTY (nobody is emailed — `members_change_request_no_reviewers_total` pages)
+or the email was **coalesced** (FR-011): the replaced request's `staff_notified_at` is less than
+1 h old, so no row is queued, the new row inherits that timestamp (along a chain of replacements,
+so a burst of resubmits yields one email per hour) and the audit says `coalesced: true` — the
+earlier email's link resolves to the person's CURRENT pending request. Side effects in ONE
+transaction: previous pending (same submitter) → `withdrawn/replaced` with
+`replaced_by_request_id`; insert request + fields; audit `member_change_request_submitted`; one
+outbox row per active reviewer unless coalesced. A previous request that is no longer pending at
+the FOR UPDATE read (decided meanwhile) is left alone: the submission is a new request with
+`replaced: null` (US5 AS4).
 
 ## `GET /api/portal/change-requests` — own history (FR-029)
 
@@ -85,9 +96,14 @@ Query: `state?=pending|decided|withdrawn`, `cursor?`, `limit?≤50`. Returns the
 
 ## `DELETE /api/portal/change-requests/current` — withdraw (US5, FR-009)
 
-Withdraws the caller's pending request. **200** `{ "request": ChangeRequestView }` (now
-`withdrawn/member`), **404 `no_pending_request`** if none. Audit `member_change_request_withdrawn
-{ reason: 'member' }`. Idempotent: a second call is 404.
+Withdraws the caller's pending request — found by the SESSION's user id, never by a body id, so a
+colleague's request can never be named; read-only mode → 503 (T116). **200** `{ "request":
+ChangeRequestView }` (now `withdrawn/member`), **404 `no_pending_request`** if none — including a
+decision that committed first (FR-017). Audit `member_change_request_withdrawn { member_id,
+request_id, contact_id, scope, withdrawn_reason: 'member', actor_role }` on the same tx (`member_id`:
+a withdrawal IS member activity). Idempotent: a second call is 404. The tenant gate is not
+consulted (a pending request stays withdrawable after approval is switched off, as it stays
+decidable — FR-032).
 
 ## `POST /api/portal/change-requests/[id]/acknowledge` — dismiss a shown decision (FR-010)
 
@@ -130,6 +146,8 @@ the client formats (BE for `th-TH`, display-only).
 - POST: each Group C key → 403 + audit; company key from a secondary → 403; each validation
   example in US1 AS4 → 422; equal payload → `nothing_to_submit` (or `already_pending` +
   `unchanged: true` while a different proposal is pending); 11th in 24 h → 429 with
-  `Retry-After` (no audit row — metric only, until T087).
+  `Retry-After` + the audit row (`change-requests-replace.test.ts` over the REAL use case; the
+  live-Neon twin is `tests/integration/members/change-requests-rate-cap.test.ts` with `UPSTASH_*`
+  unset); a resubmit → `replaced`, coalesced within 1 h, re-notified after.
 - GET history: a secondary's own-field request is absent from the primary's list and vice versa.
-- DELETE: 200 then 404.
+- DELETE: 200 then 404 (`change-requests-withdraw.test.ts`); a colleague's pending request untouched.
