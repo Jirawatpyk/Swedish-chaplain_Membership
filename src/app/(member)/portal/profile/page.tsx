@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
-import { BookUserIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
+import { BookUserIcon, FileClockIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -94,6 +94,7 @@ export async function PortalProfileBody({
 }) {
   const t = await getTranslations('portal.profile');
   const tDir = await getTranslations('directorySettings');
+  const tHistory = await getTranslations('portal.changeRequests.history');
   // 059 / PR-A Task 3b — the ADMIN member-detail page already resolves
   // legal_entity_type through these same labels (resolveLegalEntityTypeLabel);
   // reused here rather than duplicated so a member sees IDENTICAL copy to
@@ -537,6 +538,35 @@ export async function PortalProfileBody({
           </CardContent>
         </Card>
       </section>
+
+      {/* F114 US4 (FR-029) — the member's own change-request history. Gated on
+          the platform flag (the target page notFounds when dark); shown
+          regardless of the tenant setting — history exists once requests do
+          (FR-032). Real <h2> like the sibling cards. */}
+      {env.features.memberChangeApproval ? (
+        <section aria-labelledby="portal-profile-change-requests-heading">
+          <Card>
+            <CardHeader>
+              <SectionHeading id="portal-profile-change-requests-heading">
+                {tHistory('profileCard.title')}
+              </SectionHeading>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-body text-muted-foreground">
+                {tHistory('profileCard.subtitle')}
+              </p>
+              <Link
+                href="/portal/change-requests"
+                className={buttonVariants({ variant: 'outline' })}
+                data-testid="profile-history-link"
+              >
+                <FileClockIcon className="size-4" aria-hidden />
+                {tHistory('profileCard.link')}
+              </Link>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       {/* F9 directory listing self-service — gated on the F9 flag so it stays
           hidden until the feature flips on; the target page notFounds when

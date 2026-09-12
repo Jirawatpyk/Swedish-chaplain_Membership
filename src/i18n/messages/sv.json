@@ -996,7 +996,36 @@
       "loading": "Läser in…"
     },
     "changeRequests": {
+        "filters": {
+          "label": "Filtrera ändringsbegäranden",
+          "state": "Status",
+          "outcome": "Beslut",
+          "anyOutcome": "Alla beslut",
+          "from": "Skickad från",
+          "to": "Skickad till och med",
+          "apply": "Tillämpa",
+          "clear": "Rensa filter",
+          "memberChip": "Visar begäranden för {company}.",
+          "removeMember": "Visa alla medlemmar"
+        },
       "queue": {
+          "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
+          "pendingSummary": "{count, plural, one {# begäran väntar} other {# begäranden väntar}} · äldsta {oldestDays, plural, =0 {i dag} one {# dag} other {# dagar}}",
+          "columns": {
+            "member": "Medlem",
+            "submitter": "Skickad av",
+            "fields": "Fält",
+            "submitted": "Skickad",
+            "waiting": "Väntetid",
+            "status": "Status"
+          },
+          "fieldCount": "{count, plural, one {# fält} other {# fält}}",
+          "waitingDays": "{count, plural, one {# dag} other {# dagar}}",
+          "waitingHours": "{count, plural, =0 {under en timme} one {# timme} other {# timmar}}",
+          "overdue": "Försenad",
+          "archivedMember": "Arkiverad",
+          "view": "Visa",
+          "nextPage": "Nästa sida",
         "title": "Ändringsbegäranden",
         "subtitle": "Ändringar som medlemmar föreslagit och som väntar på personalens beslut, äldst först.",
         "empty": "Inga ändringsbegäranden väntar på beslut.",
@@ -1007,6 +1036,11 @@
         "open": "Granska"
       },
       "review": {
+          "withdrawn": {
+            "member": "Återtagen av medlemmen",
+            "replaced": "Ersatt av en nyare begäran",
+            "erasure": "Stängd – medlemmen raderad"
+          },
         "title": "Granska ändringsbegäran",
         "subtitle": "{company} · inskickad av {submitter} ({role}) den {submittedAt}",
         "roles": {
@@ -1090,6 +1124,17 @@
       }
     },
     "members": {
+        "changeRequests": {
+            "title": "Ändringsbegäranden",
+          "viewQueue": "Öppna i kön",
+          "loadFailed": "Ändringsbegärandena kunde inte läsas in. Ladda om sidan för att försöka igen.",
+          "empty": "Inga ändringsbegäranden för den här medlemmen ännu.",
+          "listLabel": "Ändringsbegäranden, nyaste först",
+          "submittedBy": "Skickad av {name} ({role})",
+          "submittedOn": "Skickad {submittedAt}",
+          "review": "Granska",
+          "open": "Öppna"
+        },
       "title": "Medlemmar",
       "overrideReason": {
         "warnings": {
@@ -5329,6 +5374,7 @@
       "rerenderTaxReceipt": "Återskapa skattekvitto"
     },
     "navigate": {
+        "changeRequests": "Ändringsbegäranden",
       "plansList": "Paketlista",
       "invoiceSettings": "Fakturainställningar",
       "usersList": "Användarlista",
@@ -6059,6 +6105,41 @@
       }
     },
     "changeRequests": {
+      "history": {
+          "pageTitle": "Historik över ändringsbegäranden",
+          "title": "Historik över ändringsbegäranden",
+          "subtitle": "Varje ändring du föreslagit i din medlemspost och vad kammaren beslutade.",
+          "notLinked": "Ditt konto är inte kopplat till någon medlem.",
+          "empty": "Inga ändringsbegäranden ännu.",
+          "emptyHint": "Ändringar du föreslår på redigeringssidan visas här tillsammans med kammarens beslut.",
+          "listLabel": "Ändringsbegäranden, nyaste först",
+          "submittedOn": "Skickad {submittedAt}",
+          "submittedBy": "Skickad av {name}",
+          "submittedByYou": "Skickad av dig",
+          "decidedOn": "beslutad {decidedAt}",
+          "loadMore": "Visa äldre begäranden",
+          "backToProfile": "Tillbaka till profilen",
+          "state": {
+            "pending": "Väntar på granskning",
+            "decided": "Beslutad",
+            "withdrawn": "Återtagen"
+          },
+          "outcome": {
+            "approved": "Godkänd",
+            "partially_approved": "Delvis godkänd",
+            "rejected": "Inte godkänd"
+          },
+          "withdrawn": {
+            "member": "Återtagen av dig",
+            "replaced": "Ersatt av en nyare begäran",
+            "erasure": "Stängd"
+          },
+          "profileCard": {
+            "title": "Historik över ändringsbegäranden",
+            "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
+            "link": "Visa historik"
+          }
+        },
       "form": {
         "pageTitle": "Föreslå ändringar",
         "pageSubtitle": "Dina ändringar granskas av kammaren innan de träder i kraft.",
@@ -7097,6 +7178,7 @@
         "events": "events.json — evenemang du har deltagit i.",
         "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
+        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
       },
       "truncationWarning": "⚠ DELVIS EXPORT — Vissa kategorier innehåller endast dina senaste poster; äldre poster har utelämnats för att begränsa arkivets storlek: {files}. Kontakta handelskammaren om du vill ha din fullständiga historik för dessa kategorier. Manifestets kontrollsummor omfattar endast de poster som ingår här.",

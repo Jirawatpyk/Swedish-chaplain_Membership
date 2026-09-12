@@ -26,7 +26,36 @@ export interface GdprInvoiceEntry {
 }
 
 /** A category whose export was capped at the most-recent N records. */
-export type GdprTruncatableCategory = 'invoices' | 'events' | 'broadcasts' | 'auditEvents';
+export type GdprTruncatableCategory = 'invoices' | 'events' | 'broadcasts' | 'auditEvents' | 'changeRequests';
+
+/**
+ * F114 (FR-014 / FR-029 / FR-030) — one change request in the requester's
+ * history: the proposed / seen values with their outcomes, the reviewer's
+ * reason AND note (FR-014: both are the subject's personal data), the
+ * decider as the ORGANISATION — the archive never names a staff member.
+ */
+export interface GdprChangeRequestEntry {
+  readonly id: string;
+  readonly scope: string;
+  readonly state: string;
+  readonly outcome: string | null;
+  readonly withdrawnReason: string | null;
+  readonly submittedAt: string;
+  readonly submittedBy: { readonly contactId: string; readonly displayName: string };
+  readonly decidedAt: string | null;
+  readonly decidedBy: 'organisation';
+  readonly decisionReason: string | null;
+  readonly decisionNote: string | null;
+  readonly fields: readonly {
+    readonly key: string;
+    readonly target: string;
+    readonly seen: unknown;
+    readonly proposed: unknown;
+    readonly outcome: string | null;
+    readonly appliedAt: string | null;
+    readonly affectsTaxDocuments: boolean;
+  }[];
+}
 
 /**
  * Completeness signal (FR-037 — "no export may silently fail/mislead"). The
@@ -49,6 +78,8 @@ export interface GdprMemberData {
   readonly events: readonly Record<string, unknown>[];
   readonly broadcasts: readonly Record<string, unknown>[];
   readonly auditEvents: readonly GdprAuditEntry[];
+  /** F114 — the requester's change-request history (FR-029-scoped when the requester is a linked contact). */
+  readonly changeRequests: readonly GdprChangeRequestEntry[];
   /**
    * Per-category truncation disclosure. Optional for backward-compatible test
    * fixtures (absent ⇒ treated as complete); the adapter always populates it.
@@ -59,6 +90,16 @@ export interface GdprMemberData {
 export interface GdprArchiveSource {
   gather(
     ctx: TenantContext,
-    opts: { readonly subjectMemberId: string },
+    opts: {
+      readonly subjectMemberId: string;
+      /**
+       * F114 (FR-029) — the user who asked for the export. When they are one
+       * of the member's linked contacts the change-request history is scoped
+       * to what THEY may see (their own + company-level); an on-behalf
+       * request from staff exports the whole member's history. Absent ⇒
+       * whole history (a legacy job row).
+       */
+      readonly requestedByUserId?: string;
+    },
   ): Promise<GdprMemberData | null>;
 }

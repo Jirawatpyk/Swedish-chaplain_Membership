@@ -211,9 +211,10 @@ describe('listMemberChangeRequests (FR-026)', () => {
     const { deps } = makeDeps();
     const r = await listMemberChangeRequests(deps, { memberId: MEMBER, cursor: null, limit: 50 });
     if (!r.ok) throw new Error('list');
-    expect(r.value.items.map((i) => i.row.request.id)).toEqual([R(2), R(1), R(3), R(4)]);
-    expect(r.value.items.map((i) => i.row.request.state)).toEqual(['pending', 'pending', 'decided', 'withdrawn']);
-    expect(r.value.items[2]?.row.request.fields.map((f) => f.outcome)).toEqual(['rejected', 'approved']);
+    // newest first: R2 (1 d), R3 (3 d), R1 (4 d), R4 (5 d)
+    expect(r.value.items.map((i) => i.row.request.id)).toEqual([R(2), R(3), R(1), R(4)]);
+    expect(r.value.items.map((i) => i.row.request.state)).toEqual(['pending', 'decided', 'pending', 'withdrawn']);
+    expect(r.value.items[1]?.row.request.fields.map((f) => f.outcome)).toEqual(['rejected', 'approved']);
   });
 });
 
@@ -221,7 +222,8 @@ describe('FR-029 — the portal projection', () => {
   it('the primary sees their own + the company-level requests; the secondary sees theirs + company-level, never the primary\'s own-contact request', async () => {
     const { deps } = makeDeps();
     const primary = await listPortalChangeRequests(deps, { userId: PRIMARY, memberId: MEMBER, cursor: null, limit: 20 });
-    expect(primary.ok && primary.value.items.map((r) => r.request.id)).toEqual([R(1), R(3), R(4)]);
+    // newest first: R3 (3 d), R1 (4 d), R4 (5 d) — the secondary's own-contact R2 is absent
+    expect(primary.ok && primary.value.items.map((r) => r.request.id)).toEqual([R(3), R(1), R(4)]);
     const secondary = await listPortalChangeRequests(deps, { userId: SECONDARY, memberId: MEMBER, cursor: null, limit: 20 });
     expect(secondary.ok && secondary.value.items.map((r) => r.request.id)).toEqual([R(2), R(3), R(4)]);
     // the primary's own-contact request R(1) is absent for the secondary; R(2) absent for the primary

@@ -16,7 +16,7 @@
  * `buildMemberAuditSubset` (third-party PII + internal annotations stripped).
  */
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { asMemberId, asTenantId } from '@/modules/members';
+import { asMemberId, asTenantId, type ChangeRequestCursor, type ChangeRequestListRow, type UserId } from '@/modules/members';
 import {
   listInvoicesByMember,
   makeListInvoicesByMemberDeps,
@@ -36,6 +36,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { buildMemberAuditSubset } from '../../application/gdpr-audit-subset';
 import type {
   GdprArchiveSource,
+  GdprChangeRequestEntry,
   GdprInvoiceEntry,
   GdprMemberData,
   GdprTruncatableCategory,
@@ -53,12 +54,51 @@ const MAX_EVENTS = 1000;
 const BROADCAST_PAGE = 100;
 const MAX_BROADCASTS = 1000;
 const MAX_AUDIT_ROWS = 5000;
+const CHANGE_REQUEST_PAGE = 50;
+const MAX_CHANGE_REQUESTS = 1000;
 /** Far-past lower bound so ALL event attendance is included (not the 365-day default). */
 const EPOCH_ISO = '2000-01-01T00:00:00.000Z';
 
 function isoOrNull(d: Date | string | null): string | null {
   if (d === null) return null;
   return typeof d === 'string' ? d : d.toISOString();
+}
+
+/**
+ * F114 (FR-014 / FR-029 / FR-030) — one change request for the archive:
+ * values + per-field outcomes, the reviewer's reason AND note (both are the
+ * subject's personal data), the decider as the ORGANISATION — the archive
+ * never names a staff member (`decidedByUserId` / the reviewer's display
+ * name are dropped). A `mixed` request from a COLLEAGUE of the requester is
+ * projected to its company fields (the same FR-029 rule the portal history
+ * applies — `projectChangeRequestForViewer` in the members module).
+ */
+function serialiseChangeRequest(row: ChangeRequestListRow, requesterUserId: string | null): GdprChangeRequestEntry {
+  const r = row.request;
+  const stripContactFields = requesterUserId !== null && r.scope === 'mixed' && r.submittedByUserId !== requesterUserId;
+  const fields = stripContactFields ? r.fields.filter((f) => f.target === 'member') : r.fields;
+  return {
+    id: r.id,
+    scope: r.scope,
+    state: r.state,
+    outcome: r.outcome,
+    withdrawnReason: r.withdrawnReason,
+    submittedAt: isoOrNull(r.submittedAt) ?? '',
+    submittedBy: { contactId: r.submittedByContactId, displayName: row.submitter.displayName },
+    decidedAt: isoOrNull(r.decidedAt),
+    decidedBy: 'organisation',
+    decisionReason: r.decisionReason,
+    decisionNote: r.decisionNote,
+    fields: fields.map((f) => ({
+      key: f.key,
+      target: f.target,
+      seen: f.seen,
+      proposed: f.proposed,
+      outcome: f.outcome,
+      appliedAt: isoOrNull(f.appliedAt),
+      affectsTaxDocuments: f.affectsTaxDocuments,
+    })),
+  };
 }
 
 function serialiseInvoiceRecord(inv: Invoice): Record<string, unknown> {
@@ -88,7 +128,7 @@ function serialiseInvoiceRecord(inv: Invoice): Record<string, unknown> {
 export const gdprArchiveSourceAdapter: GdprArchiveSource = {
   async gather(
     ctx: TenantContext,
-    opts: { readonly subjectMemberId: string },
+    opts: { readonly subjectMemberId: string; readonly requestedByUserId?: string },
   ): Promise<GdprMemberData | null> {
     const memberId = asMemberId(opts.subjectMemberId);
     const memberDeps = buildMembersDeps(ctx);
@@ -239,6 +279,31 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     const broadcastsTruncated = broadcasts.length > MAX_BROADCASTS;
     if (broadcastsTruncated) broadcasts.length = MAX_BROADCASTS; // trim the probe row
 
+    // 5b) F114 — change requests (FR-030). Scoped as FR-029 when the requester
+    //     is one of the member's linked contacts (their own + company-level);
+    //     an on-behalf request from staff (not a contact) exports the whole
+    //     member's history. FAIL-LOUD like contacts (a hollow file would be a
+    //     falsely-complete archive, FR-037). Every page is walked (keyset).
+    const requesterUserId =
+      opts.requestedByUserId !== undefined && memberUserIds.includes(opts.requestedByUserId) ? opts.requestedByUserId : null;
+    const changeRequests: GdprChangeRequestEntry[] = [];
+    let crCursor: ChangeRequestCursor | null = null;
+    for (;;) {
+      const page: Awaited<ReturnType<typeof memberDeps.changeRequestRepo.listByMember>> =
+        requesterUserId !== null
+          ? await memberDeps.changeRequestRepo.listVisibleToUser(ctx, requesterUserId as UserId, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE })
+          : await memberDeps.changeRequestRepo.listByMember(ctx, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE });
+      if (!page.ok) throw new Error(`GDPR gather: change-request list failed (${page.error.code})`);
+      for (const row of page.value.items) {
+        changeRequests.push(serialiseChangeRequest(row, requesterUserId));
+        if (changeRequests.length > MAX_CHANGE_REQUESTS) break; // one probe row past the cap
+      }
+      crCursor = page.value.nextCursor;
+      if (crCursor === null || changeRequests.length > MAX_CHANGE_REQUESTS) break;
+    }
+    const changeRequestsTruncated = changeRequests.length > MAX_CHANGE_REQUESTS;
+    if (changeRequestsTruncated) changeRequests.length = MAX_CHANGE_REQUESTS;
+
     // 6) Audit subset (member-performed ∪ member-targeted) → redacted entries.
     //    Over-fetch by one so exactly-MAX_AUDIT_ROWS is not false-flagged
     //    truncated (Round 2 — #1); trim to MAX before building the subset.
@@ -274,6 +339,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     if (eventsTruncated) truncatedCategories.push('events');
     if (broadcastsTruncated) truncatedCategories.push('broadcasts');
     if (auditTruncated) truncatedCategories.push('auditEvents');
+    if (changeRequestsTruncated) truncatedCategories.push('changeRequests');
 
     return {
       subjectMemberId: opts.subjectMemberId,
@@ -344,6 +410,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       events,
       broadcasts,
       auditEvents,
+      changeRequests,
     };
   },
 };

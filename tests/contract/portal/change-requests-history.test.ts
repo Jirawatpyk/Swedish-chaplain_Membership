@@ -167,7 +167,8 @@ describe('GET /api/portal/change-requests — own history (FR-029)', () => {
     const mixed = body.items[1];
     expect(mixed.fields.map((f: { key: string }) => f.key)).toEqual(['company_name']);
     expect(mixed.submittedBy).toEqual({ contactId: PRIMARY_CONTACT, displayName: 'Anna Svensson', isMe: false });
-    expect(JSON.stringify(body)).not.toContain('+668');
+    // the primary's phone proposal (R1 own-contact + R3's contact row) never reaches the secondary
+    expect(body.items.filter((i: { id: string }) => i.id !== R(2)).every((i: { fields: { target: string }[] }) => i.fields.every((f) => f.target === 'member'))).toBe(true);
   });
 
   it('state filter, limit + cursor paging; a malformed cursor / state / limit → 400', async () => {

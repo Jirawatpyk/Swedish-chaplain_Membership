@@ -8,8 +8,10 @@
  * `cursor` / `limit = 100`:
  *   - 50 pages, 5,000 distinct ids, no gap and no duplicate;
  *   - a stable order: `(submitted_at DESC, id DESC)` across page boundaries;
- *   - every page completes under `ciScaled(400)` ms (measured around the repo
- *     call — the route adds JSON only);
+ *   - the page latency's p95 is under `ciScaled(400)` ms (the plan's budget
+ *     is a p95, measured around the repo call — the route adds JSON only;
+ *     one warm-up page absorbs the connection + plan cost, and a single
+ *     slow page out of fifty is below the percentile, not a regression);
  *   - `EXPLAIN` of the page query names the
  *     `member_change_requests_tenant_state_submitted_idx` index (the planner
  *     did not fall back to a seq scan + sort).
@@ -131,12 +133,14 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
     await deleteTestUser(reviewer).catch(() => {});
   }, 120_000);
 
-  it('walks all 5,000 rows in 50 pages with no gap, no duplicate, a stable order, each page under budget', async () => {
+  it('walks all 5,000 rows in 50 pages with no gap, no duplicate, a stable order, p95 page latency under budget', async () => {
     const seen = new Set<string>();
     let cursor: ChangeRequestCursor | null = null;
     let pages = 0;
     let previous: { submittedAt: number; id: string } | null = null;
     const durations: number[] = [];
+    // warm-up: the first statement pays the pooled connection + plan cost
+    await drizzleChangeRequestRepo.listQueue(tenant.ctx, { state: 'decided' }, { cursor: null, limit: PAGE });
     for (;;) {
       const started = performance.now();
       const page = await drizzleChangeRequestRepo.listQueue(tenant.ctx, { state: 'decided' }, { cursor, limit: PAGE });
@@ -160,8 +164,10 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
     }
     expect(seen.size).toBe(TOTAL);
     expect(pages).toBe(TOTAL / PAGE);
-    const slowest = Math.max(...durations);
-    expect(slowest, `slowest page ${slowest.toFixed(0)} ms (budget ${ciScaled(400)} ms)`).toBeLessThan(ciScaled(400));
+    const sorted = [...durations].sort((x, y) => x - y);
+    const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]!;
+    const slowest = sorted[sorted.length - 1]!;
+    expect(p95, `p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms (budget p95 < ${ciScaled(400)} ms)`).toBeLessThan(ciScaled(400));
   }, 300_000);
 
   it('the page query uses the (tenant_id, state, submitted_at DESC) index — never a seq scan + sort', async () => {

@@ -59,7 +59,9 @@ export type PalettePlanHit = {
 export type PaletteFeatureFlag =
   | 'f6EventCreate'
   | 'f7Broadcasts'
-  | 'f088TaxAtPayment';
+  | 'f088TaxAtPayment'
+  // F114 — the change-request queue (404 while the flag is off)
+  | 'memberChangeApproval';
 
 export type PaletteActionItem = {
   readonly id: string;
@@ -260,6 +262,16 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.membersList',
     url: '/admin/members',
     permission: 'members.read',
+  },
+  // F114 (quickstart § 3 pre-flip gate, UX I7): the change-request queue —
+  // reachable from the Membership nav AND the palette. Feature-gated like the
+  // route itself (404 while the flag is off); `members.read` mirrors the page.
+  {
+    id: 'nav.changeRequests',
+    label: 'palette.navigate.changeRequests',
+    url: '/admin/change-requests',
+    permission: 'members.read',
+    feature: 'memberChangeApproval',
   },
   {
     id: 'nav.invoices',

@@ -43,16 +43,16 @@ const CLOSED = [
 function deps(overrides: { scrub?: () => Promise<unknown>; cancel?: () => Promise<unknown> } = {}) {
   const d = buildEraseDeps();
   d.changeRequestScrub = {
-    scrubForMemberInTx: vi.fn(overrides.scrub ?? (async () => ok({ scrubbedRequestIds: [...CLOSED.map((c) => c.id), '00000000-0000-4000-8000-000000000003'], closedRequests: CLOSED }))),
+    scrubForMemberInTx: vi.fn(overrides.scrub ?? (async () => ok({ scrubbedRequestIds: [...CLOSED.map((c) => c.id), '00000000-0000-4000-8000-000000000003'], closedRequests: CLOSED }))) as ReturnType<typeof vi.fn>,
   };
-  d.outboxCancel.cancelPendingForMemberInTx = vi.fn(overrides.cancel ?? (async () => ok({ cancelledCount: 2 })));
+  d.outboxCancel.cancelPendingForMemberInTx = vi.fn(overrides.cancel ?? (async () => ok({ cancelledCount: 2 }))) as ReturnType<typeof vi.fn>;
   return d;
 }
 
 describe('eraseMember — change-request scrub (F114 T078)', () => {
   it('scrubs inside the atomic tx after the contact scrub, records one erasure closure per closed request, cancels the member-keyed outbox rows', async () => {
     const d = deps();
-    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr' }, META, d);
+    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
     expect(res.ok, JSON.stringify(res)).toBe(true);
 
     expect(d.changeRequestScrub.scrubForMemberInTx).toHaveBeenCalledTimes(1);
@@ -85,7 +85,7 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
 
   it('a member with no pending request emits no closure', async () => {
     const d = deps({ scrub: async () => ok({ scrubbedRequestIds: ['00000000-0000-4000-8000-000000000003'], closedRequests: [] }) });
-    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr' }, META, d);
+    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
     expect(res.ok).toBe(true);
     const closures = d.audit.recordInTx.mock.calls.filter((c) => (c[2] as { type: string }).type === 'member_change_request_withdrawn');
     expect(closures).toHaveLength(0);
@@ -96,7 +96,7 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
     ['outbox cancel', { cancel: async () => err({ code: 'repo.unexpected' as const, cause: new Error('boom') }) }],
   ])('a %s failure aborts the scrub tx → server_error, member_erased never emitted', async (_label, overrides) => {
     const d = deps(overrides);
-    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr' }, META, d);
+    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
     expect(res).toMatchObject({ ok: false, error: { type: 'server_error' } });
     const types = d.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).not.toContain('member_erased');
@@ -107,7 +107,7 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
     d.audit.recordInTx = vi.fn(async (_tx: unknown, _ctx: unknown, event: { type: string }) =>
       event.type === 'member_change_request_withdrawn' ? err({ code: 'repo.unexpected' as const, cause: new Error('audit down') }) : ok(undefined),
     );
-    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr' }, META, d);
+    const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
     expect(res).toMatchObject({ ok: false, error: { type: 'server_error' } });
   });
 });

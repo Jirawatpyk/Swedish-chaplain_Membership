@@ -50,6 +50,7 @@ import {
   type ProposableFieldKey,
 } from '../../domain/change-request/proposable-fields';
 import type { ContactId } from '../../domain/contact';
+import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import type { UserId } from '../../domain/value-objects/user-id';
 import type { MemberId, TenantId } from '../../domain/member';
 import { mapDbError, unexpected } from './_repo-error';
@@ -93,6 +94,10 @@ function corruptRow(message: string, ids: Record<string, string>): ChangeRequest
 function parseProposedValue(raw: unknown, key: ProposableFieldKey, column: string, requestId: string): ProposedValue {
   const address = isAddressGroupKey(key);
   if (raw === null || raw === undefined) return null;
+  // FR-030: the erasure scrub writes the sentinel STRING for every key — an
+  // address group included — so a scrubbed request still reads back (the
+  // history / queue render "[erased]") instead of becoming a corrupt row
+  if (raw === ERASED_SENTINEL) return raw;
   if (!address) {
     if (typeof raw === 'string') return raw;
     throw corruptRow(`${column} for ${key} is not text`, { requestId, fieldKey: key });

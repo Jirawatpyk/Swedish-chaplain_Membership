@@ -32,7 +32,8 @@ import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { ContactRepo } from '../ports/contact-repo';
-import type { AuditPort } from '../ports/audit-port';
+import type { AuditPort, ChangeRequestAuditPayload } from '../ports/audit-port';
+import type { ChangeRequestScrubPort } from '../ports/change-request-scrub-port';
 import type { BroadcastsCascadePort } from '../ports/broadcasts-cascade-port';
 import type { BroadcastsContentScrubPort } from '../ports/broadcasts-content-scrub-port';
 import type { BroadcastsDeliveryTombstonePort } from '../ports/broadcasts-delivery-tombstone-port';
@@ -205,6 +206,12 @@ export type EraseMemberDeps = {
   // tombstone, which redacts `recipient_email_lower` (the join key).
   broadcastsAudienceDerivation: BroadcastsAudienceDerivationPort;
   subprocessorErasure: SubprocessorErasurePort;
+  // F114 (FR-030, T078) — the member's change requests: every proposed /
+  // seen value and the reviewer's reason / note → the sentinel, any pending
+  // request closed `withdrawn / erasure`. Runs INSIDE the atomic scrub tx,
+  // after the contact scrub (its closures are audited here, one row each,
+  // attributed to the erasure's actor with `actor_role: 'system'`).
+  changeRequestScrub: ChangeRequestScrubPort;
   audit: AuditPort;
   clock: ClockPort;
 };
@@ -535,6 +542,39 @@ export async function eraseMember(
             'cause' in scrubContacts.error ? scrubContacts.error.cause : undefined,
         });
 
+      // F114 (FR-030, T078) — the member's change requests, in the SAME tx:
+      // values + reason + note → sentinel, pending → withdrawn / erasure. One
+      // `member_change_request_withdrawn` audit row per closure — keyed
+      // `related_member_id` (a system closure is NOT member activity: the 0009
+      // recency trigger must not fire) with `actor_role: 'system'` (the
+      // closure is the erasure's consequence, not a human decision — the #333
+      // kill-switch precedent) and the erasure's actor as `actor_user_id`.
+      const scrubChangeRequests = await deps.changeRequestScrub.scrubForMemberInTx(tx, memberId, now);
+      if (!scrubChangeRequests.ok)
+        throw new Error(`change_request_scrub_failed:${scrubChangeRequests.error.code}`, {
+          cause: 'cause' in scrubChangeRequests.error ? scrubChangeRequests.error.cause : undefined,
+        });
+      for (const closed of scrubChangeRequests.value.closedRequests) {
+        const closureAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'member_change_request_withdrawn',
+          actorUserId: meta.actorUserId,
+          requestId: meta.requestId,
+          summary: `change request ${closed.id} closed — member erased`,
+          payload: ({
+            related_member_id: memberId,
+            request_id: closed.id,
+            contact_id: closed.contactId,
+            scope: closed.scope,
+            withdrawn_reason: 'erasure',
+            actor_role: 'system',
+          } satisfies ChangeRequestAuditPayload['member_change_request_withdrawn']),
+        });
+        if (!closureAudit.ok)
+          throw new Error('audit_failed', {
+            cause: 'cause' in closureAudit.error ? closureAudit.error.cause : undefined,
+          });
+      }
+
       // Cascade — revoke the sessions of the users linked at erasure time
       // (snapshot read above, before the scrubs shadowed removed_at).
       for (const userId of uniqueLinkedUserIds) {
@@ -651,6 +691,16 @@ export async function eraseMember(
             'cause' in outboxCancel.error
               ? outboxCancel.error.cause
               : undefined,
+        });
+
+      // F114 (FR-030, T078) — the change-request notifications are keyed on
+      // the MEMBER (`context_data.memberId`), not on an address the set above
+      // could hold: the staff row addresses a reviewer, the member row's
+      // recipient is re-read at dispatch. Cancel them by that key.
+      const memberOutboxCancel = await deps.outboxCancel.cancelPendingForMemberInTx(tx, memberId);
+      if (!memberOutboxCancel.ok)
+        throw new Error(`outbox_cancel_failed:${memberOutboxCancel.error.code}`, {
+          cause: 'cause' in memberOutboxCancel.error ? memberOutboxCancel.error.cause : undefined,
         });
     });
   } catch (e) {

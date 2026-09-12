@@ -67,6 +67,7 @@ describe('buildEraseMemberDeps', () => {
       'broadcastsCascade',
       'broadcastsContentScrub',
       'broadcastsDeliveryTombstone',
+      'changeRequestScrub',
       'clock',
       'contactRepo',
       'directoryErasure',

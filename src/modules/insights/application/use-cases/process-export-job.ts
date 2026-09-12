@@ -115,6 +115,8 @@ export async function processExportJob(
       kind: job.kind,
       subjectMemberId: job.subjectMemberId,
       requesterLocale: job.requesterLocale,
+      // F114 (FR-029) — scopes the change-request history to the requester
+      requestedBy: job.requestedBy,
     };
   });
 
@@ -224,6 +226,7 @@ export async function processExportJob(
       }
       const archive = await deps.gdprArchive.buildArchiveForMember(ctx, {
         subjectMemberId: claim.subjectMemberId,
+        requestedByUserId: claim.requestedBy,
         requesterLocale: claim.requesterLocale ?? deps.tenantDefaultLocale,
         generatedAtIso,
       });

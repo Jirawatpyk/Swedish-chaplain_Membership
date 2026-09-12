@@ -448,3 +448,256 @@ test.describe('@change-requests US3 — member sees the rejection, resubmits, di
     await runAxeScan(page, testInfo, { include: 'main' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// US4 (T081) — history: the staff queue with filters, the member record
+// section, the portal history; axe on each at 320 px. The secondary's scope
+// case waits for the `E2E_MEMBER_SECONDARY_*` persona (research § V4).
+// ---------------------------------------------------------------------------
+test.describe('@change-requests US4 — history is complete and visible', () => {
+  test.skip(
+    !MEMBER_EMAIL || !MEMBER_PASSWORD || !ADMIN_EMAIL || !ADMIN_PASSWORD || !DATABASE_URL,
+    'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY + E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD + DATABASE_URL',
+  );
+
+  let member: PortalMemberRef | null = null;
+  let previousSetting: boolean | null = null;
+  let originalPhone: string | null = null;
+  let originalDescription: string | null = null;
+  let decided: SeededPendingRequest | null = null;
+  let pending: SeededPendingRequest | null = null;
+  const REASON = 'History e2e: the description was not approved.';
+
+  test.beforeAll(async () => {
+    previousSetting = await ensureApprovalSetting(true);
+    member = await resolvePortalMember(MEMBER_EMAIL!);
+    if (!member) return;
+    originalPhone = await readContactPhone(member.contactId);
+    originalDescription = await readMemberDescription(member.memberId);
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    decided = await seedPendingRequest(member, {
+      phone: originalPhone === '+66833333333' ? '+66844444444' : '+66833333333',
+      description: `e2e history description ${Date.now()}`,
+      seenPhone: originalPhone,
+      seenDescription: originalDescription,
+    });
+  });
+
+  test.afterAll(async () => {
+    // the partial approval applied the phone — restore the persona's record
+    if (member && originalPhone !== null) await writeContactPhone(member.contactId, originalPhone);
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    if (previousSetting !== null) await ensureApprovalSetting(previousSetting);
+  });
+
+  test('admin: partial approval → the queue filtered to partially_approved finds it; the member record section lists it with the reason', async ({ page }) => {
+    test.skip(!member || !decided, 'persona is not linked to a member / could not seed');
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+    const decideRes = await page.request.post(`/api/admin/change-requests/${decided!.requestId}/decide`, {
+      headers: { Origin: new URL(page.url()).origin },
+      data: { decisions: [{ key: 'phone', outcome: 'approved' }, { key: 'description', outcome: 'rejected' }], reason: REASON, note: null },
+    });
+    expect(decideRes.status()).toBe(200);
+    // a second, pending request so the history holds two entries (US4 independent test)
+    pending = await seedPendingRequest(member!, {
+      phone: originalPhone === '+66855555555' ? '+66866666666' : '+66855555555',
+      description: `e2e pending description ${Date.now()}`,
+      seenPhone: decided!.proposedPhone,
+      seenDescription: originalDescription,
+    });
+    expect(pending).not.toBeNull();
+
+    // the queue: default pending shows the pending one; filtered to decided/partially_approved shows the decided one
+    await page.goto('/admin/change-requests');
+    await expect(page.getByRole('heading', { level: 1, name: adminCopy.queue.title })).toBeVisible();
+    await expect(page.locator(`[data-testid="queue-row"][data-request-id="${pending!.requestId}"]`)).toBeVisible();
+    await page.goto('/admin/change-requests?state=decided&outcome=partially_approved');
+    const row = page.locator(`[data-testid="queue-row"][data-request-id="${decided!.requestId}"]`);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(adminCopy.review.outcome.partially_approved);
+    await expect(page.locator(`[data-testid="queue-row"][data-request-id="${pending!.requestId}"]`)).toHaveCount(0);
+    await row.getByRole('link', { name: adminCopy.queue.view }).click();
+    await page.waitForURL(`**/admin/change-requests/${decided!.requestId}`);
+
+    // the member record section lists both, newest first, with the reason
+    await page.goto(`/admin/members/${member!.memberId}`);
+    const section = page.getByTestId('member-change-requests-section');
+    await expect(section).toBeVisible();
+    await expect(section.locator(`[data-request-id="${pending!.requestId}"]`)).toBeVisible();
+    await expect(section.locator(`[data-request-id="${decided!.requestId}"]`)).toContainText(REASON);
+    await expect(section.locator(`[data-request-id="${decided!.requestId}"]`)).toContainText(adminCopy.review.outcome.partially_approved);
+  });
+
+  test('member: the profile links to the history, which lists both requests with the outcome and the reason', async ({ page }) => {
+    test.skip(!member || !decided || !pending, 'the admin case seeds the two requests');
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+    await skipUnlessFlagOn(page);
+    await page.goto('/portal/profile');
+    await page.getByTestId('profile-history-link').click();
+    await page.waitForURL('**/portal/change-requests');
+    await expect(page.getByRole('heading', { level: 1, name: copy.history.title })).toBeVisible();
+    const items = page.getByTestId('history-item');
+    await expect(items).toHaveCount(2);
+    const decidedItem = page.locator(`[data-testid="history-item"][data-request-id="${decided!.requestId}"]`);
+    await expect(decidedItem).toContainText(copy.history.outcome.partially_approved);
+    await expect(decidedItem.getByTestId('history-reason')).toContainText(REASON);
+    await expect(decidedItem).toContainText(copy.history.submittedByYou);
+    // the reviewer is never named (FR-029) — only the organisation's wording
+    await expect(decidedItem).not.toContainText(ADMIN_EMAIL!.split('@')[0]!);
+    await expect(page.locator(`[data-testid="history-item"][data-request-id="${pending!.requestId}"]`)).toContainText(copy.history.state.pending);
+  });
+
+  test('@a11y axe: queue, member record section and portal history at 320 px', async ({ page }, testInfo) => {
+    test.skip(!member || !decided, 'persona is not linked to a member / could not seed');
+    await page.setViewportSize({ width: 320, height: 720 });
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+    await page.goto('/admin/change-requests?state=decided');
+    await expect(page.getByTestId('queue-table')).toBeVisible();
+    await runAxeScan(page, testInfo, { include: 'main' });
+    await page.goto(`/admin/members/${member!.memberId}`);
+    await expect(page.getByTestId('member-change-requests-section')).toBeVisible();
+    await runAxeScan(page, testInfo, { include: '[data-testid="member-change-requests-section"]' });
+    await page.context().clearCookies();
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+    await page.goto('/portal/change-requests');
+    await expect(page.getByTestId('history-list')).toBeVisible();
+    await runAxeScan(page, testInfo, { include: 'main' });
+  });
+
+  test("a secondary contact's history omits the primary's own-field request", async ({ page }) => {
+    test.skip(!SECONDARY_EMAIL || !SECONDARY_PASSWORD, 'Set E2E_MEMBER_SECONDARY_EMAIL + E2E_MEMBER_SECONDARY_PASSWORD (research § V4: prod has none; seed-e2e-user.ts mints none yet)');
+    test.skip(!pending, 'the admin case seeds the requests');
+    await signIn(page, SECONDARY_EMAIL!, SECONDARY_PASSWORD!);
+    await skipUnlessFlagOn(page);
+    await page.goto('/portal/change-requests');
+    // the primary's requests carry own-contact rows (phone) — a `mixed` one shows
+    // company fields only, an own-contact one is absent
+    const res = await page.request.get('/api/portal/change-requests');
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as { items: Array<{ id: string; scope: string; fields: Array<{ target: string }> }> };
+    for (const item of body.items) {
+      expect(item.scope).not.toBe('own_contact');
+      expect(item.fields.every((f) => f.target === 'member')).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US5 (T091) — withdraw with confirmation; resubmit replaces; the durable cap.
+// ---------------------------------------------------------------------------
+test.describe('@change-requests US5 — withdraw, replace, cap', () => {
+  test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD || !DATABASE_URL, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY + DATABASE_URL');
+
+  let member: PortalMemberRef | null = null;
+  let previousSetting: boolean | null = null;
+  let originalPhone: string | null = null;
+  let originalDescription: string | null = null;
+
+  test.beforeAll(async () => {
+    previousSetting = await ensureApprovalSetting(true);
+    member = await resolvePortalMember(MEMBER_EMAIL!);
+    if (member) {
+      originalPhone = await readContactPhone(member.contactId);
+      originalDescription = await readMemberDescription(member.memberId);
+    }
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+  });
+
+  test.afterAll(async () => {
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    if (previousSetting !== null) await ensureApprovalSetting(previousSetting);
+  });
+
+  test('withdraw with confirmation → the banner announces the withdrawal and is gone after a reload', async ({ page }) => {
+    test.skip(!member, 'persona is not linked to a member — run scripts/seed-e2e-user.ts');
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    const seeded = await seedPendingRequest(member!, {
+      phone: originalPhone === '+66811111111' ? '+66822222222' : '+66811111111',
+      description: `e2e withdraw description ${Date.now()}`,
+      seenPhone: originalPhone,
+      seenDescription: originalDescription,
+    });
+    test.skip(!seeded, 'could not seed a pending request');
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+    await skipUnlessFlagOn(page);
+    await page.goto('/portal/profile');
+    await expect(page.getByTestId('pending-request-banner')).toBeVisible();
+    // the click is retried across the dev-mode hydration window (a pre-hydration click no-ops)
+    await expect(async () => {
+      await page.getByTestId('withdraw-request').click();
+      await expect(page.getByRole('alertdialog')).toBeVisible({ timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toContainText(copy.withdraw.title);
+    // focus starts on Cancel (ux-standards § 6 — the safe default)
+    await expect(dialog.getByRole('button', { name: copy.withdraw.cancel })).toBeFocused();
+    await dialog.getByRole('button', { name: copy.withdraw.confirm }).click();
+    const result = page.getByTestId('withdraw-result');
+    await expect(result).toBeVisible();
+    await expect(result).toHaveAttribute('role', 'status');
+    await expect(result).toContainText(copy.withdraw.done);
+    await expect(page.getByTestId('pending-request-banner')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('pending-request-banner')).toHaveCount(0);
+    // FR-001 — nothing was applied; the request stays in history as withdrawn
+    expect(await readContactPhone(member!.contactId)).toBe(originalPhone);
+    const history = await page.request.get('/api/portal/change-requests?state=withdrawn');
+    expect(history.status()).toBe(200);
+    const body = (await history.json()) as { items: Array<{ id: string; withdrawnReason: string }> };
+    expect(body.items.some((i) => i.id === seeded!.requestId && i.withdrawnReason === 'member')).toBe(true);
+  });
+
+  test('resubmitting twice → exactly one pending request; the earlier one is withdrawn as replaced', async ({ page }) => {
+    test.skip(!member, 'persona is not linked to a member');
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+    await skipUnlessFlagOn(page);
+    const origin = new URL(page.url()).origin;
+    const first = await page.request.post('/api/portal/change-requests', { headers: { Origin: origin }, data: { contact: { phone: '+66877777701' } } });
+    expect(first.status()).toBe(201);
+    const firstId = ((await first.json()) as { request: { id: string } }).request.id;
+    const second = await page.request.post('/api/portal/change-requests', { headers: { Origin: origin }, data: { contact: { phone: '+66877777702' } } });
+    expect(second.status()).toBe(201);
+    const secondBody = (await second.json()) as { replaced: string | null; staffNotified: boolean; request: { id: string } };
+    expect(secondBody.replaced).toBe(firstId);
+    // within 1 h of the first staff email: coalesced (FR-011)
+    expect(secondBody.staffNotified).toBe(false);
+    const pendingList = (await (await page.request.get('/api/portal/change-requests?state=pending')).json()) as { items: Array<{ id: string }> };
+    expect(pendingList.items.map((i) => i.id)).toEqual([secondBody.request.id]);
+    const withdrawnList = (await (await page.request.get('/api/portal/change-requests?state=withdrawn')).json()) as { items: Array<{ id: string; withdrawnReason: string }> };
+    expect(withdrawnList.items.some((i) => i.id === firstId && i.withdrawnReason === 'replaced')).toBe(true);
+    // the profile shows ONE pending banner with the latest values
+    await page.goto('/portal/profile');
+    await expect(page.getByTestId('pending-request-banner')).toHaveCount(1);
+    await expect(page.getByTestId('pending-request-banner')).toContainText('+66877777702');
+  });
+
+  test('the 11th submission in 24 h is refused with the retry time (durable cap, FR-008)', async ({ page }) => {
+    test.skip(!member, 'persona is not linked to a member');
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+    await skipUnlessFlagOn(page);
+    const origin = new URL(page.url()).origin;
+    for (let i = 0; i < 10; i += 1) {
+      const res = await page.request.post('/api/portal/change-requests', { headers: { Origin: origin }, data: { contact: { phone: `+668999990${String(10 + i)}` } } });
+      expect(res.status(), `submit #${i + 1}`).toBe(201);
+    }
+    const eleventh = await page.request.post('/api/portal/change-requests', { headers: { Origin: origin }, data: { contact: { phone: '+66899999099' } } });
+    expect(eleventh.status()).toBe(429);
+    expect(eleventh.headers()['retry-after']).toMatch(/^\d+$/);
+    // the form shows the same refusal inline with the retry time
+    await page.goto('/portal/edit');
+    await page.waitForLoadState('networkidle');
+    const phoneField = page.getByLabel(copy.form.fields.phone, { exact: true });
+    await expect(async () => {
+      await phoneField.fill('+66899999098');
+      await expect(phoneField).toHaveValue('+66899999098', { timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
+    await page.getByRole('button', { name: copy.form.submit }).click();
+    const status = page.getByTestId('submit-status');
+    await expect(status).toContainText(copy.status.rateLimited.split('{retryAt}')[0]!.trim());
+    await expect(page).toHaveURL(/\/portal\/edit$/);
+  });
+});

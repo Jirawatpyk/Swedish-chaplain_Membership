@@ -10,15 +10,23 @@
  */
 import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
-import type { ChangeRequestId } from '../../domain/change-request/change-request';
+import type { ChangeRequestId, ChangeRequestScope } from '../../domain/change-request/change-request';
+import type { ContactId } from '../../domain/contact';
 import type { MemberId } from '../../domain/member';
 import type { RepoError } from './member-repo';
+
+/** A request that was still pending and is now `withdrawn / erasure` — what its closure audit row needs. */
+export type ClosedChangeRequest = {
+  readonly id: ChangeRequestId;
+  readonly contactId: ContactId;
+  readonly scope: ChangeRequestScope;
+};
 
 export type ChangeRequestScrubResult = {
   /** Every request of the member that was scrubbed (rows kept). */
   readonly scrubbedRequestIds: readonly ChangeRequestId[];
-  /** The subset that was still pending and is now `withdrawn / erasure`. */
-  readonly closedRequestIds: readonly ChangeRequestId[];
+  /** The subset that was still pending and is now `withdrawn / erasure` (the erase use case audits each). */
+  readonly closedRequests: readonly ClosedChangeRequest[];
 };
 
 export interface ChangeRequestScrubPort {

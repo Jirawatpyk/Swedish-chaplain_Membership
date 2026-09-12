@@ -21,7 +21,12 @@
  * here; PR-1's interim Upstash peek is gone): mapped to `{ error:
  * 'rate_limited', retryAfterSeconds }` + `Retry-After`, and NOT remembered
  * under an Idempotency-Key (transient — the retry after the window succeeds).
- * `GET` (own history, FR-029) lands in US4 (T073) in this same file.
+ *
+ * `GET` — own history (US4 AS4, FR-029; § history): the caller's own requests
+ * + the member's `company` / `mixed` ones, newest first, never a colleague's
+ * own-field request; a colleague's `mixed` row carries its company fields
+ * only. Query `state?`, opaque keyset `cursor?`, `limit? ≤ 50`; anything
+ * else → 400 `invalid_query`. `M114.portal.history.<arm>` on the 500.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
@@ -37,7 +42,15 @@ import { errKind } from '@/lib/log-id';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
-import { submitChangeRequest, type SubmitChangeRequestError } from '@/modules/members';
+import { z } from 'zod';
+import {
+  CHANGE_REQUEST_STATES,
+  PORTAL_PAGE_DEFAULT,
+  PORTAL_PAGE_MAX,
+  listPortalChangeRequests,
+  submitChangeRequest,
+  type SubmitChangeRequestError,
+} from '@/modules/members';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 
 type SubmitRefusalError = SubmitChangeRequestError;
@@ -236,4 +249,62 @@ function mapRefusal(error: SubmitRefusalError): Refusal | null {
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// GET — own history (FR-029)
+// ---------------------------------------------------------------------------
+
+const HISTORY_ERROR_ID = 'M114.portal.history';
+
+const historyQuerySchema = z.object({
+  state: z.enum(CHANGE_REQUEST_STATES).optional(),
+  cursor: z.string().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(PORTAL_PAGE_MAX).default(PORTAL_PAGE_DEFAULT),
+});
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  if (!env.features.memberChangeApproval) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  const ctx = await requireMemberContext(request);
+  if ('response' in ctx) return ctx.response;
+
+  const parsed = historyQuerySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'invalid_query', message: 'Invalid query.' }, { status: 400 });
+  }
+
+  const deps = buildChangeRequestDeps(ctx.tenant);
+  const me = asMembersUserId(ctx.current.user.id);
+  const result = await listPortalChangeRequests(deps, {
+    userId: me,
+    memberId: ctx.memberId,
+    ...(parsed.data.state ? { state: parsed.data.state } : {}),
+    cursor: parsed.data.cursor ?? null,
+    limit: parsed.data.limit,
+  });
+
+  if (!result.ok) {
+    if (result.error.type === 'invalid_cursor') {
+      return NextResponse.json({ error: 'invalid_query', message: 'Invalid cursor.' }, { status: 400 });
+    }
+    logger.error(
+      { errorId: `${HISTORY_ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: result.error.message },
+      'change-requests.history: use case failed',
+    );
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    items: result.value.items.map((row) =>
+      serialiseChangeRequestForPortal(row.request, {
+        contactId: row.request.submittedByContactId,
+        displayName: row.submitter.displayName,
+        isMe: row.request.submittedByUserId === me,
+      }),
+    ),
+    nextCursor: result.value.nextCursor,
+  });
 }

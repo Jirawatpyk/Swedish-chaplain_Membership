@@ -45,9 +45,10 @@ pnpm check:audit-events && pnpm check:i18n       # 5 events × 5 places; ~160 le
 2. Member follows the email link → `/portal/edit?resubmit=<id>` shows the reason and prefills **only** the rejected values → submit → a new pending request.
 
 ### US4 — history
-1. `/admin/members/[id]` → "Change requests" section lists both requests with per-field outcomes; `/admin/change-requests?state=decided&outcome=partially_approved` finds the first.
-2. `/portal/change-requests` as the primary shows both; as the **secondary** shows only their own + company-level ones.
-3. `/admin/members/[id]/timeline` and `/portal/timeline` show the submitted/decided events.
+1. `/admin/members/[id]` → the "Change requests" section lists both requests, newest first, with per-field outcomes, the reviewer (a disabled staff account carries "(deactivated)") and the reason; "Open in queue" is `/admin/change-requests?memberId=…`. The queue's filters are a GET form: `/admin/change-requests?state=decided&outcome=partially_approved` finds the first; a pending row older than 3 days carries the OVERDUE badge; "Next page" carries the opaque keyset cursor. The queue is also in the ⌘K palette ("Change requests", flag-gated).
+2. `/portal/change-requests` (the profile's "Change request history" card links there) as the primary shows both with the outcome badge, the diff and the reason — the reviewer is never named; as the **secondary** shows only their own + company-level ones, and a colleague's `mixed` request with its company fields only.
+3. `/admin/members/[id]/timeline` and `/portal/timeline` show the submitted / decided / withdrawn events (labels from `audit.eventType.*` — the component reads that namespace, there is no `timeline.audit.*`).
+4. Erase the member (`/admin/members/[id]` → Erase) → every `seen_value` / `proposed_value` / `decision_reason` / `decision_note` of its requests is `[erased]`, a pending request is `withdrawn/erasure` with a `member_change_request_withdrawn { withdrawn_reason: erasure, actor_role: system }` audit row, the queued F114 outbox rows are cancelled, and the rows still read back (the queue / history render "[erased]"). The member's GDPR archive (`/portal/account` → data export) carries `change-requests.json`, scoped as FR-029 for the requesting person.
 
 ### US5 — withdraw / replace / cap
 1. Submit, then "Withdraw request" on the pending banner (confirmation dialog, non-destructive tier) or `DELETE /api/portal/change-requests/current` → *withdrawn/member*; the queue no longer lists it; a second DELETE → 404 `no_pending_request`; `/admin/audit` has `member_change_request_withdrawn { withdrawn_reason: member }`.
@@ -69,7 +70,9 @@ pnpm test:integration tests/integration/members/change-requests-tenant-isolation
 pnpm test:integration tests/integration/members/change-requests-concurrency.test.ts
 pnpm test:integration tests/integration/members/change-requests-decide-rollback.test.ts
 pnpm test:integration tests/integration/members/change-requests-rate-cap.test.ts        # PR-2 (T084) — the durable cap + coalescing + withdraw, UPSTASH_* unset
-pnpm test:integration tests/integration/members/change-requests-erasure-scrub.test.ts   # PR-2 (T070)
+pnpm test:integration tests/integration/members/change-requests-erasure-scrub.test.ts   # PR-2 (T070) — the FR-030 scrub through the production erase deps
+pnpm test:integration tests/integration/members/change-requests-queue-pagination.test.ts # PR-2 (T119) — 5,000 rows, p95 < 400 ms, the index in EXPLAIN — the FR-030 scrub through the production erase deps
+pnpm test:integration tests/integration/members/change-requests-queue-pagination.test.ts # PR-2 (T119) — 5,000 rows, p95 < 400 ms, the index in EXPLAIN
 # e2e (local only, workers=1 mandatory) — ≤ 10-min foreground chunks
 pnpm test:e2e --grep "@change-requests" --workers=1
 pnpm test:e2e --grep "@a11y" --workers=1
@@ -93,13 +96,13 @@ moment the flag is set:
 
 | Gate | Why it blocks | Closes in |
 |---|---|---|
-| **T078 + T070** — the FR-030 erasure scrub adapter wired into `eraseMember` (+ its live-Neon test + table-scoped guard) | Until it merges, `member_change_request_fields.seen_value` / `proposed_value` and `member_change_requests.decision_reason` / `decision_note` are OUTSIDE the GDPR Art. 17 / PDPA §33 path — an erasure leaves the subject's proposed name / phone / addresses and the reviewer's reason intact. The `ChangeRequestScrubPort` exists; nothing implements or calls it. Also cancel pending outbox rows of the two new `notification_type`s by `context_data->>'memberId'`, not only by `to_email`. Note for the RoPA / erasure runbook: a remembered `Idempotency-Key` response on `POST /api/portal/change-requests` carries the serialised request view (proposed values) for the record's 24 h TTL; the scrub does not reach it, so an erasure completes fully only after that window — document it, or purge the tenant's keys in the adapter. | PR-2 (US4) |
+| **T078 + T070** — the FR-030 erasure scrub adapter wired into `eraseMember` (+ its live-Neon test + table-scoped guard) | **CLOSED in PR-2 (US4)**: `changeRequestScrubAdapter` runs inside `eraseMember`'s atomic scrub tx (values, reason, note → `[erased]`; pending → `withdrawn/erasure` + one audit row each with `related_member_id` / `actor_role: 'system'`), the F114 outbox rows are cancelled by `context_data->>'memberId'` (`cancelPendingForMemberInTx`), both tables carry the allowlist column-coverage guard (`scrub-change-requests-pii-column-coverage.test.ts`), and the live-Neon oracle is `change-requests-erasure-scrub.test.ts`. The remembered `Idempotency-Key` body is ids + outcome only since round 6, so no value outlives the scrub there. | PR-2 (US4) — done |
 | **T087** — the durable 10 / 24 h cap + 1 h staff-email coalescing | **CLOSED in PR-2 (US5)**: the cap is counted inside the submit tx from the request table (no Upstash on the path — PR-1's interim peek is deleted) and a resubmit within 1 h of the last staff email queues nothing. | PR-2 (US5) — done |
 | **T102** — the pending-count / oldest-age gauges | FR-037's > 7 d warning / > 14 d page alerts cannot fire until the gauges have a caller. | PR-3 (US6) |
-| **T072 / T074** — the real queue (filters, cursor paging, overdue flag) | The PR-1 `/admin/change-requests` page lists 50 pending rows with no paging; row 51 is invisible. | PR-2 (US4) |
+| **T072 / T074** — the real queue (filters, cursor paging, overdue flag) | **CLOSED in PR-2 (US4)**: GET-form filters (state / outcome / date range, `?memberId=` from the member record), keyset "Next page", the overdue badge, `pendingCount` + oldest age in the header; the 5,000-row budget is measured by `change-requests-queue-pagination.test.ts`. | PR-2 (US4) — done |
 | e2e `tests/e2e/change-requests.spec.ts` green on every Playwright project with the flag ON | **Run 2026-09-11 on chromium + mobile-safari: 8 passed, 1 skipped** (the secondary-contact case waits for an `E2E_MEMBER_SECONDARY_*` persona — research § V4). Five fixture defects fixed on the way (staff sessions probing the member gate, the `page.request` POST without an Origin, the required-mark label, a pre-hydration click, the dialog-focus assertion) and ONE product defect: Base UI's Checkbox renders `disabled` as `data-disabled` only, so a manager's read-only row carried no `aria-disabled` (fixed). Note for anyone re-running locally: the dev roster must be sane — the shared `dev` branch had 3,774 leaked `createActiveTestUser` admins and every submit fanned one outbox row out to each (a 3-minute transaction); they are now `disabled`. | before flip (re-run on the release branch) |
 | `TENANT_PRIVACY_POLICY_URL` set in Vercel | The FR-010 privacy link on the portal form hides when the variable is unset (review round 1, UX Critical: a dead `/privacy` link); with it unset the member is asked to propose PII changes with no link to the policy — PDPA §23 notice. | before flip (operator) |
-| Command-palette entry for `/admin/change-requests` (the navigate registry in `src/modules/plans/application/search-plans.ts`) | The queue is reachable from the Membership nav (round 1, UX I7) but not from the palette; staff who live in it will not find the queue. | PR-2 UX pass |
+| Command-palette entry for `/admin/change-requests` (the navigate registry in `src/modules/plans/application/search-plans.ts`) | **CLOSED in PR-2**: `nav.changeRequests` (`members.read`, feature-gated `memberChangeApproval` — stripped while the flag is off, like the F6 / F7 entries). | PR-2 — done |
 
 1. Merge → prod auto-migrates 0300 and 0301 on deploy (`vercel-build`); `pnpm db:verify:prod`.
 2. Set `FEATURE_MEMBER_CHANGE_APPROVAL=true` in Vercel **only when ready to redeploy immediately**
@@ -150,7 +153,14 @@ final tree after review rounds 1–3; the review rounds themselves added the las
 - the portal timeline route / page / recent-activity resolve the viewer's own contact (one extra
   `contactRepo.listByMember` per render — perf only); `MembersDeps` gains three members; the
   `verify-schema` + `check-multi-tenant-ready` canaries; the test-tenant helper deletes the new
-  tables.
+  tables;
+- **PR-2, unflagged**: `eraseMember` runs the change-request scrub + the member-keyed outbox
+  cancel on EVERY erasure (a member with no requests scrubs nothing — the statements match zero
+  rows); the GDPR archive gains `change-requests.json` (+ a README line) for every export, empty
+  when the member has no requests; the F114 audit-payload union and the `[erased]` sentinel are
+  accepted by the change-request row parser. Flag-gated (404 / hidden while off): the queue,
+  the per-member history route + section, the portal history route + page + profile card, the
+  withdraw route + banner control, the palette entry.
 
 Rolling any of these back is a new migration / code change, not a flag flip.
 

@@ -183,7 +183,9 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
         ],
         reason: REASON,
         note: NOTE,
-        actor: { userId: mu(admin.userId), role: 'admin', requestId: 'req-erase-decide' },
+        actorUserId: mu(admin.userId),
+        actorRole: 'admin',
+        requestId: 'req-erase-decide',
       },
     );
     if (!decided.ok) throw new Error(`decide failed: ${JSON.stringify(decided)}`);
@@ -204,7 +206,7 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
       .where(and(eq(notificationsOutbox.tenantId, tenant.ctx.slug), inArray(notificationsOutbox.notificationType, ['member_change_request_submitted_staff', 'member_change_request_decided_member'])));
     expect(outboxBefore.filter((r) => r.status === 'pending').length).toBeGreaterThan(0);
 
-    const res = await eraseMember(asMemberId(memberId), { reason: 'gdpr' }, { actorUserId: admin.userId, requestId: 'req-erase-cr' }, buildEraseMemberDeps(tenant.ctx));
+    const res = await eraseMember(asMemberId(memberId), { reason: 'gdpr_erasure_request' }, { actorUserId: admin.userId, requestId: 'req-erase-cr' }, buildEraseMemberDeps(tenant.ctx));
     expect(res.ok, JSON.stringify(res)).toBe(true);
 
     const requests = await db.select().from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId));

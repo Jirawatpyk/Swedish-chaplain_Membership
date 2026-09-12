@@ -292,7 +292,10 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
 
     it('a linked requester gets the FR-029-scoped list, serialised with reason + note and the organisation as decider — never the reviewer', async () => {
       listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
-      contactListByMemberMock.mockResolvedValue({ ok: true, value: [{ contactId: 'c-1', linkedUserId: REQUESTER, firstName: 'Som', lastName: 'Chai', email: 'som@acme.example', removedAt: null }] });
+      contactListByMemberMock.mockResolvedValue({
+        ok: true,
+        value: [{ contactId: 'c-1', linkedUserId: REQUESTER, firstName: 'Som', lastName: 'Chai', email: 'som@acme.example', phone: null, dateOfBirth: null, roleTitle: null, preferredLanguage: 'en', isPrimary: true, removedAt: null, createdAt: new Date('2026-01-01T00:00:00Z') }],
+      });
       crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [row], nextCursor: null } });
       const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: REQUESTER });
       expect(crListVisibleToUserMock).toHaveBeenCalledWith(CTX, REQUESTER, MEMBER, expect.objectContaining({ cursor: null }));

@@ -51,4 +51,16 @@ export interface OutboxCancelPort {
     emails: readonly string[],
     erasedMemberId: MemberId,
   ): Promise<Result<{ readonly cancelledCount: number }, RepoError>>;
+
+  /**
+   * F114 (FR-030, T078) — cancel the erased member's pending change-request
+   * notifications, keyed on `context_data->>'memberId'` rather than on an
+   * address: the staff email goes to a REVIEWER and the member email's
+   * recipient is resolved at dispatch, so neither is found by `to_email`.
+   * Same tx, same RLS confinement, `pending` rows only.
+   */
+  cancelPendingForMemberInTx(
+    tx: TenantTx,
+    erasedMemberId: MemberId,
+  ): Promise<Result<{ readonly cancelledCount: number }, RepoError>>;
 }

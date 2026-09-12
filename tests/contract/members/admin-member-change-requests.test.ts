@@ -1,5 +1,5 @@
 /**
- * F114 T068 — contract: `GET /api/admin/members/[memberId]/change-requests`
+ * F114 T068 — contract: `GET /api/admin/members/[id]/change-requests`
  * — the per-member history (contracts/admin-change-requests-api.md
  * § per-member history; US4 AS1; FR-026, FR-039).
  *
@@ -57,7 +57,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: (...a: unknown[]) => loggerError(...a), warn: vi.fn(), debug: vi.fn() },
 }));
 
-import { GET } from '@/app/api/admin/members/[memberId]/change-requests/route';
+import { GET } from '@/app/api/admin/members/[id]/change-requests/route';
 
 const NOW = new Date('2026-09-12T08:00:00Z');
 const DAY = 86_400_000;
@@ -110,7 +110,7 @@ function seed(): ChangeRequest[] {
 }
 
 function call(memberId = MEMBER, query = ''): Promise<Response> {
-  return GET(new NextRequest(`http://localhost/api/admin/members/${memberId}/change-requests${query}`, { method: 'GET' }), { params: Promise.resolve({ memberId }) });
+  return GET(new NextRequest(`http://localhost/api/admin/members/${memberId}/change-requests${query}`, { method: 'GET' }), { params: Promise.resolve({ id: memberId }) });
 }
 
 beforeEach(() => {
@@ -121,7 +121,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.clearAllMocks());
 
-describe('GET /api/admin/members/[memberId]/change-requests', () => {
+describe('GET /api/admin/members/[id]/change-requests', () => {
   it('404 while the platform flag is off — before the gate', async () => {
     flagOn = false;
     expect((await call()).status).toBe(404);
@@ -138,18 +138,19 @@ describe('GET /api/admin/members/[memberId]/change-requests', () => {
     const res = await call();
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.items.map((i: { id: string }) => i.id)).toEqual([R(1), R(2), R(3)]);
-    expect(body.items.map((i: { state: string }) => i.state)).toEqual(['pending', 'decided', 'withdrawn']);
-    expect(body.items[1]).toMatchObject({ outcome: 'approved', decidedBy: { displayName: 'Reviewer', deactivated: false }, waitingSeconds: 86_400, overdue: false });
+    // newest first: R2 (3 d, decided), R1 (4 d, pending), R3 (5 d, withdrawn)
+    expect(body.items.map((i: { id: string }) => i.id)).toEqual([R(2), R(1), R(3)]);
+    expect(body.items.map((i: { state: string }) => i.state)).toEqual(['decided', 'pending', 'withdrawn']);
+    expect(body.items[0]).toMatchObject({ outcome: 'approved', decidedBy: { displayName: 'Reviewer', deactivated: false }, waitingSeconds: 86_400, overdue: false });
     expect(body.items[2]).toMatchObject({ withdrawnReason: 'replaced', overdue: false });
-    expect(body.items[0]).toMatchObject({ overdue: true, waitingSeconds: 4 * 86_400 });
+    expect(body.items[1]).toMatchObject({ overdue: true, waitingSeconds: 4 * 86_400 });
     expect(body.nextCursor).toBeNull();
     expect(JSON.stringify(body)).not.toContain('+668');
   });
 
   it('keyset paging with limit + cursor', async () => {
     const p1 = await (await call(MEMBER, '?limit=2')).json();
-    expect(p1.items.map((i: { id: string }) => i.id)).toEqual([R(1), R(2)]);
+    expect(p1.items.map((i: { id: string }) => i.id)).toEqual([R(2), R(1)]);
     const p2 = await (await call(MEMBER, `?limit=2&cursor=${encodeURIComponent(p1.nextCursor)}`)).json();
     expect(p2.items.map((i: { id: string }) => i.id)).toEqual([R(3)]);
     expect((await call(MEMBER, '?cursor=garbage')).status).toBe(400);

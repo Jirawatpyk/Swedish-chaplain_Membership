@@ -87,4 +87,27 @@ export const outboxCancelAdapter: OutboxCancelPort = {
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
+
+  // F114 T078 — the two change-request notification types are keyed on the
+  // MEMBER, not on an address: the staff row's `to_email` is a REVIEWER's
+  // address (never in the erased set) and the member row's recipient is
+  // re-read at dispatch. Both carry `context_data.memberId`, so the erased
+  // member's still-pending rows are found by that key (no ownership guard is
+  // needed — the key IS the owner). Only `pending` rows go; sent /
+  // permanently_failed history survives.
+  async cancelPendingForMemberInTx(txUnknown, erasedMemberId) {
+    const tx = txUnknown as TenantTx;
+    try {
+      const deleted = (await tx.execute(sql`
+        DELETE FROM notifications_outbox o
+        WHERE o.status = 'pending'
+          AND o.notification_type IN ('member_change_request_submitted_staff', 'member_change_request_decided_member')
+          AND o.context_data->>'memberId' = ${erasedMemberId}
+        RETURNING o.id
+      `)) as unknown as Array<{ id: string }>;
+      return ok({ cancelledCount: deleted.length });
+    } catch (e) {
+      return err({ code: 'repo.unexpected', cause: e });
+    }
+  },
 };

@@ -82,17 +82,27 @@ the FOR UPDATE read (decided meanwhile) is left alone: the submission is a new r
 
 ## `GET /api/portal/change-requests` — own history (FR-029)
 
-Query: `state?=pending|decided|withdrawn`, `cursor?`, `limit?≤50`. Returns the caller's own requests
-+ the member's `company`/`mixed`-scope requests, newest first. Never another contact's
-`own_contact` requests.
+Query: `state?=pending|decided|withdrawn`, `cursor?` (opaque keyset), `limit?≤50` (default 20);
+anything else → **400 `invalid_query`**. Returns the caller's own requests + the member's
+`company`/`mixed`-scope requests, newest first. Never another contact's `own_contact` requests —
+the repo applies the predicate in SQL and the use case applies it AGAIN (fail closed). A `mixed`
+request submitted by a COLLEAGUE is answered with its company fields only (the colleague's own
+name / phone / job title rows are stripped — `projectChangeRequestForViewer`). `submittedBy.isMe`
+is true on the caller's own rows; `decidedBy` is always `"organisation"`; the staff note never
+leaves the server. `M114.portal.history.<arm>` on the 500.
 
 ```json
 200 { "items": ChangeRequestView[], "nextCursor": string|null }
 ```
 
+The page `/portal/change-requests` renders this list (status badge with icon + text, the shared
+diff table with per-field outcomes, the reason as plain text, a server-rendered "Show older"
+link) and the profile card links to it; both 404 while the platform flag is off.
+
 ## `GET /api/portal/change-requests/[id]`
 
-404 unless the row is in the caller's FR-029 scope (never 403 — no existence leak across contacts).
+404 unless the row is in the caller's FR-029 scope (never 403 — no existence leak across contacts);
+the same `mixed` projection applies. `M114.portal.history_item.<arm>` on the 500.
 
 ## `DELETE /api/portal/change-requests/current` — withdraw (US5, FR-009)
 
@@ -149,5 +159,8 @@ the client formats (BE for `th-TH`, display-only).
   `Retry-After` + the audit row (`change-requests-replace.test.ts` over the REAL use case; the
   live-Neon twin is `tests/integration/members/change-requests-rate-cap.test.ts` with `UPSTASH_*`
   unset); a resubmit → `replaced`, coalesced within 1 h, re-notified after.
-- GET history: a secondary's own-field request is absent from the primary's list and vice versa.
+- GET history (`change-requests-history.test.ts`): a secondary's own-field request is absent from
+  the primary's list and vice versa; a colleague's `mixed` row carries company fields only;
+  `state` / `cursor` / `limit`; `…/[id]` 404 out of scope (a colleague's own-field request,
+  another member's row, an unknown or malformed id).
 - DELETE: 200 then 404 (`change-requests-withdraw.test.ts`); a colleague's pending request untouched.
