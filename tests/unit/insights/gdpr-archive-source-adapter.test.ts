@@ -15,11 +15,18 @@ const downloadBytesMock = vi.fn();
 const memberFindByIdMock = vi.fn();
 const contactListByMemberMock = vi.fn();
 const auditQueryMock = vi.fn();
+// F114 T079 — the change-request history (FR-029-scoped for a linked requester)
+const crListVisibleToUserMock = vi.fn();
+const crListByMemberMock = vi.fn();
 
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({
     memberRepo: { findById: (...a: unknown[]) => memberFindByIdMock(...a) },
     contactRepo: { listByMember: (...a: unknown[]) => contactListByMemberMock(...a) },
+    changeRequestRepo: {
+      listVisibleToUser: (...a: unknown[]) => crListVisibleToUserMock(...a),
+      listByMember: (...a: unknown[]) => crListByMemberMock(...a),
+    },
   }),
 }));
 vi.mock('@/modules/members', () => ({
@@ -114,6 +121,8 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     memberFindByIdMock.mockResolvedValue({ ok: true, value: baseMember() });
     contactListByMemberMock.mockResolvedValue({ ok: true, value: [] });
     auditQueryMock.mockResolvedValue([]);
+    crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
+    crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
   });
 
   it('records the invoice without bytes when the PDF fetch throws (fail-soft)', async () => {
@@ -245,6 +254,94 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     memberFindByIdMock.mockResolvedValue({ ok: false, error: { code: 'repo.not_found' } });
     const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
     expect(data).toBeNull();
+  });
+
+  // F114 T079 — FR-030: the change-request history joins the export, scoped
+  // as FR-029 for a requester who is one of the member's linked contacts;
+  // an admin on-behalf request (not a contact of the member) exports the
+  // whole member's history. Reason AND note are included (FR-014); the
+  // decider is the organisation, never a named reviewer.
+  describe('change requests (F114 T079)', () => {
+    const REQUESTER = 'u-portal-1';
+    const row = {
+      request: {
+        id: 'cr-1',
+        memberId: MEMBER,
+        submittedByUserId: REQUESTER,
+        submittedByContactId: 'c-1',
+        submitterRoleAtSubmission: 'primary',
+        scope: 'own_contact',
+        state: 'decided',
+        outcome: 'rejected',
+        withdrawnReason: null,
+        replacedByRequestId: null,
+        submittedAt: new Date('2026-09-01T10:00:00Z'),
+        staffNotifiedAt: new Date('2026-09-01T10:00:00Z'),
+        decidedAt: new Date('2026-09-02T10:00:00Z'),
+        decidedByUserId: 'staff-9',
+        decisionReason: 'Use the registered phone',
+        decisionNote: 'checked DBD',
+        withdrawnAt: null,
+        outcomeAcknowledgedAt: null,
+        fields: [{ key: 'phone', target: 'contact', seen: '+66812345678', proposed: '+66899999999', affectsTaxDocuments: false, outcome: 'rejected', appliedAt: null }],
+      },
+      member: { companyName: 'Acme Co', memberNumber: 7, status: 'active', archived: false },
+      submitter: { displayName: 'Som Chai' },
+      decidedBy: { displayName: 'Reviewer Rae', deactivated: false },
+    };
+
+    it('a linked requester gets the FR-029-scoped list, serialised with reason + note and the organisation as decider — never the reviewer', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      contactListByMemberMock.mockResolvedValue({ ok: true, value: [{ contactId: 'c-1', linkedUserId: REQUESTER, firstName: 'Som', lastName: 'Chai', email: 'som@acme.example', removedAt: null }] });
+      crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [row], nextCursor: null } });
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: REQUESTER });
+      expect(crListVisibleToUserMock).toHaveBeenCalledWith(CTX, REQUESTER, MEMBER, expect.objectContaining({ cursor: null }));
+      expect(crListByMemberMock).not.toHaveBeenCalled();
+      expect(data!.changeRequests).toEqual([
+        {
+          id: 'cr-1',
+          scope: 'own_contact',
+          state: 'decided',
+          outcome: 'rejected',
+          withdrawnReason: null,
+          submittedAt: '2026-09-01T10:00:00.000Z',
+          submittedBy: { contactId: 'c-1', displayName: 'Som Chai' },
+          decidedAt: '2026-09-02T10:00:00.000Z',
+          decidedBy: 'organisation',
+          decisionReason: 'Use the registered phone',
+          decisionNote: 'checked DBD',
+          fields: [{ key: 'phone', target: 'contact', seen: '+66812345678', proposed: '+66899999999', outcome: 'rejected', appliedAt: null, affectsTaxDocuments: false }],
+        },
+      ]);
+      expect(JSON.stringify(data!.changeRequests)).not.toContain('Reviewer Rae');
+      expect(JSON.stringify(data!.changeRequests)).not.toContain('staff-9');
+    });
+
+    it('an on-behalf requester who is not a contact of the member gets the whole member history', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [row], nextCursor: null } });
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER, requestedByUserId: 'admin-1' });
+      expect(crListByMemberMock).toHaveBeenCalledWith(CTX, MEMBER, expect.objectContaining({ cursor: null }));
+      expect(crListVisibleToUserMock).not.toHaveBeenCalled();
+      expect(data!.changeRequests).toHaveLength(1);
+    });
+
+    it('walks every page of the history (keyset cursor) so a long history is not silently cut', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      const second = { ...row, request: { ...row.request, id: 'cr-2' } };
+      crListByMemberMock
+        .mockResolvedValueOnce({ ok: true, value: { items: [row], nextCursor: { submittedAt: row.request.submittedAt, id: 'cr-1' } } })
+        .mockResolvedValueOnce({ ok: true, value: { items: [second], nextCursor: null } });
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+      expect(data!.changeRequests.map((r) => r.id)).toEqual(['cr-1', 'cr-2']);
+      expect(crListByMemberMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('FAILS LOUD when the change-request read errors — never a hollow change-requests.json', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      crListByMemberMock.mockResolvedValue({ ok: false, error: { code: 'repo.unexpected' } });
+      await expect(gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER })).rejects.toThrow(/change-request list failed/);
+    });
   });
 
   it('FAILS LOUD when the contacts read errors — never degrades to an empty archive (C2)', async () => {

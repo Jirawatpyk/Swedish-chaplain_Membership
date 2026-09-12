@@ -29,6 +29,24 @@ const data: GdprMemberData = {
   auditEvents: [
     { id: 'a1', eventType: 'member_self_update', occurredAt: '2026-05-01T10:00:00.000Z', summary: 'updated profile', payload: { member_id: MEMBER } },
   ],
+  // F114 T079 (FR-014 / FR-030): the requester's change-request history —
+  // reason AND note included, the decider shown as the organisation.
+  changeRequests: [
+    {
+      id: 'cr-1',
+      scope: 'own_contact',
+      state: 'decided',
+      outcome: 'rejected',
+      withdrawnReason: null,
+      submittedAt: '2026-09-01T10:00:00.000Z',
+      submittedBy: { contactId: 'c-1', displayName: 'Som Chai' },
+      decidedAt: '2026-09-02T10:00:00.000Z',
+      decidedBy: 'organisation',
+      decisionReason: 'Use the registered phone',
+      decisionNote: 'checked DBD',
+      fields: [{ key: 'phone', target: 'contact', seen: '+66812345678', proposed: '+66899999999', outcome: 'rejected', appliedAt: null, affectsTaxDocuments: false }],
+    },
+  ],
 };
 
 const meta = { tenantName: 'SweCham', generatedAtIso: '2026-05-29T08:30:00.000Z', requesterLocale: 'en' };
@@ -44,6 +62,7 @@ describe('buildGdprArchiveBytes', () => {
         'README.txt',
         'audit-events.json',
         'broadcasts.json',
+        'change-requests.json',
         'contacts.json',
         'events.json',
         'invoices.json',
@@ -52,6 +71,17 @@ describe('buildGdprArchiveBytes', () => {
         'profile.json',
       ].sort(),
     );
+  });
+
+  it('F114 T079: change-requests.json carries the requester\'s history with reason + note (FR-014), the decider as the organisation, and the README names the file', () => {
+    const files = unzipSync(buildGdprArchiveBytes(data, meta).bytes);
+    const rows = JSON.parse(strFromU8(files['change-requests.json']!));
+    expect(rows).toEqual(data.changeRequests);
+    expect(rows[0].decidedBy).toBe('organisation');
+    expect(rows[0].decisionNote).toBe('checked DBD');
+    expect(strFromU8(files['README.txt']!)).toContain('change-requests.json');
+    const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+    expect(manifest.files.map((f: { path: string }) => f.path)).toContain('change-requests.json');
   });
 
   it('includes the member’s own data in profile.json', () => {

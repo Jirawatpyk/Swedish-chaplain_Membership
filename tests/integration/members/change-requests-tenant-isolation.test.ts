@@ -38,8 +38,13 @@ import {
   drizzleTenantMemberChangeSettingsRepo,
   f3DrizzleAuditAdapter,
   getChangeRequestReview,
+  getPortalChangeRequest,
+  listChangeRequestQueue,
+  listMemberChangeRequests,
+  listPortalChangeRequests,
   makeMemberChangeGateResolver,
   submitChangeRequest,
+  withdrawChangeRequest,
   type ChangeRequestId,
   type UserId,
 } from '@/modules/members';
@@ -249,6 +254,31 @@ describe('change requests — two-layer tenant isolation on live Neon (T033)', (
       expect(memberProbes.some((r) => (r.payload as { action?: string }).action === 'acknowledge')).toBe(true);
       // nothing was audited in the TARGET tenant by the probing actors
       expect(await probeAudits(t.tenant, p.reviewer.userId)).toHaveLength(0);
+    }, 60_000);
+
+    // PR-2 (US4 + US5): the history reads and the withdraw
+    it('US4 / US5: the history reads see nothing; a withdraw from the other tenant finds no pending request and leaves the row pending', async () => {
+      const p = probe();
+      const t = target();
+      const listDeps = { tenant: p.tenant.ctx, changeRequestRepo: drizzleChangeRequestRepo, clock };
+
+      const portal = await listPortalChangeRequests(listDeps, { userId: mu(t.user.userId), memberId: asMemberId(t.memberId), cursor: null, limit: 20 });
+      expect(portal).toEqual({ ok: true, value: { items: [], nextCursor: null } });
+      const one = await getPortalChangeRequest(listDeps, { changeRequestId: t.requestId, userId: mu(t.user.userId), memberId: asMemberId(t.memberId) });
+      expect(one).toEqual({ ok: false, error: { type: 'not_found' } });
+      const history = await listMemberChangeRequests(listDeps, { memberId: asMemberId(t.memberId), cursor: null, limit: 20 });
+      expect(history).toEqual({ ok: true, value: { items: [], nextCursor: null } });
+      const queue = await listChangeRequestQueue(listDeps, { filter: { memberId: asMemberId(t.memberId) }, cursor: null, limit: 20 });
+      expect(queue.ok && queue.value.items).toEqual([]);
+
+      const before = await requestRow(t.requestId);
+      const withdrawn = await withdrawChangeRequest(
+        { tenant: p.tenant.ctx, changeRequestRepo: drizzleChangeRequestRepo, audit: f3DrizzleAuditAdapter, clock },
+        { actorUserId: mu(t.user.userId), actorRole: 'member', requestId: 'req-iso-withdraw' },
+      );
+      expect(withdrawn).toEqual({ ok: false, error: { type: 'no_pending_request' } });
+      expect(await requestRow(t.requestId)).toEqual(before);
+      expect(before?.state).toBe('pending');
     }, 60_000);
   });
 });
