@@ -462,6 +462,13 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
       // one round-trip per field, up to nine): the decisions join as a VALUES
       // list; RETURNING tells which keys had a row.
       if (decision.fields.length > 0) {
+        // UPDATE … FROM VALUES with a duplicated key would update the row
+        // ONCE from an unspecified source row and RETURNING would still show
+        // the key — the use case refuses duplicates first, this is the
+        // defence-in-depth (migration re-review, L1)
+        if (new Set(decision.fields.map((f) => f.key)).size !== decision.fields.length) {
+          throw new Error(`decideInTx: duplicate field keys in the decision for ${row.id}`);
+        }
         // the raw-SQL param path does not serialise a Date (the neon driver
         // refuses it) — ISO text with an explicit cast
         const values = sql.join(

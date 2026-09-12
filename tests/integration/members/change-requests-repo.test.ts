@@ -24,6 +24,7 @@ import { inArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asMemberId, asContactId, type UserId } from '@/modules/members';
 import type { ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
+import { PROPOSABLE_FIELD_KEYS } from '@/modules/members/domain/change-request/proposable-fields';
 import { drizzleChangeRequestRepo } from '@/modules/members/infrastructure/db/drizzle-change-request-repo';
 import { UseCaseAbort } from '@/modules/members/application/tx-abort';
 import type { ChangeRequestDraft } from '@/modules/members/application/ports/change-request-repo';
@@ -213,6 +214,20 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     expect(outside.ok && outside.value).toEqual({ count: 0, oldestSubmittedAt: null });
   });
 
+  it.each([
+    ['decided_by_user_id', 'member_change_requests_decided_by_tenant_idx'],
+    ['submitted_by_user_id', 'member_change_requests_submitted_by_user_idx'],
+  ])('migration 0302: the RI check on the single-column users FK (%s) is an index probe, never a seq scan — a positive control the name-counting canary cannot give (migration re-review, M1 / M2)', async (column, indexName) => {
+    const plan = await runInTenant(a.tenant.ctx, async (tx) => {
+      // a tiny table would seq-scan on cost alone; force the planner to show whether an index CAN serve the lookup
+      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+      const rows = (await tx.execute(sql`EXPLAIN SELECT 1 FROM member_change_requests WHERE ${sql.raw(column)} = ${randomUUID()}`)) as unknown as Array<Record<string, string>>;
+      return rows.map((r) => Object.values(r).join(' ')).join('\n');
+    });
+    expect(plan).toContain(indexName);
+    expect(plan).not.toMatch(/Seq Scan on member_change_requests/);
+  });
+
   it('findPendingBySubmitter (PR-1 review, Rel M-5) is a PLAIN read: it returns while another tx holds the row FOR UPDATE — the locking finder blocks behind the same holder (positive control)', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
@@ -247,6 +262,10 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     const pending = await runInTenant(a.tenant.ctx, (tx) => drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId)));
     const id = pending.ok && pending.value ? pending.value.id : ('' as ChangeRequestId);
     const keys = pending.ok && pending.value ? pending.value.fields.map((f) => f.key) : [];
+    // a key the fixture does NOT propose — chosen, not hardcoded, so a fixture
+    // change cannot turn this into the duplicate-key path (migration re-review, L2)
+    const absentKey = PROPOSABLE_FIELD_KEYS.find((k) => !keys.includes(k));
+    if (!absentKey) throw new Error('fixture proposes every key');
     const reviewer = await createActiveTestUser('admin');
     try {
       await expect(
@@ -257,7 +276,7 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
             outcome: 'rejected',
             reason: 'one key too many',
             note: null,
-            fields: [...keys.map((key) => ({ key, outcome: 'rejected' as const, appliedAt: null })), { key: 'website' as const, outcome: 'rejected' as const, appliedAt: null }],
+            fields: [...keys.map((key) => ({ key, outcome: 'rejected' as const, appliedAt: null })), { key: absentKey, outcome: 'rejected' as const, appliedAt: null }],
           });
           if (!r.ok) throw new UseCaseAbort(r.error);
           return r;

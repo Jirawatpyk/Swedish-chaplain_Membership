@@ -128,6 +128,44 @@ file:line first, never rebuilt from the summary.
 | UX M17 — six SV strings used an en dash where EN, TH and the rest of `sv.json` use an em dash | OPEN | the six strings |
 | UX M9 / M10 — "sections are real fieldsets with legends" | the CODE was right (Cards with a real `<h2>`; no radio / checkbox groups) — the docblock was wrong | docblock corrected; no fieldset conversion |
 
+### Re-review of the PR-1 closures (the same two agents on `22671112b`)
+
+UX: every item CLOSED; two defects on M17 — `withdraw.gone` was missed and the substring
+replace hit `renewals…cycle_not_pending` (a string this item did not own) first — both corrected
+(the renewals string restored); the billing hint now ends its first clause with a full stop in all
+three locales and the TH tail says คุณ like the rest of the namespace. One residual raised and
+**deliberately left**: `portal/edit/loading.tsx` still shows the "Edit Profile" title and a 6-field
+skeleton in approval mode — a loading skeleton cannot resolve the gate without the settings read
+the page itself is about to make; the page's own header replaces it within the same navigation.
+Tax: M7 CLOSED (the ordering assumption holds — no `sequence` / `shuffle` in the integration
+config; the cleared-billing state is exactly the 0284 composer switch); M6(a) CLOSED; **M6(b)
+NEEDS FIX — the `billing_cleared` arm tested `proposed === null`, but a CLEAR never arrives as
+`null`: the form always sends the seven-line group ('' → null) and `normaliseAddress` never yields
+null, so the arm was dead code and its unit case a frozen fixture.** Fixed: the predicate is
+`line1 === null` (the one `resultingHasBillingAddress` and 0284's CHECK use); the unit case now
+runs the real wire shape and keeps the literal-null one as a defensive twin.
+
+### Migration re-review (`drizzle-migration-reviewer`, Opus, on `22671112b`)
+
+Verdict: MERGEABLE WITH FIXES — all taken. **M1 / M2 (MEDIUM):** the two FKs to `users(id)` are
+SINGLE-column, so their RI check is `WHERE $1 = <column>` — a tenant-first index cannot serve it
+(no skip scan before PG 18; one tenant degenerates it anyway), and `submitted_by_user_id` was the
+FOURTH such column the first cut missed (its two tenant-first indexes do not serve the RI check
+either). `0302` is edited IN PLACE (never run on prod — the 0300 precedent): `(decided_by_user_id,
+tenant_id) WHERE NOT NULL` + a plain `(submitted_by_user_id)`; the two composite-FK indexes stay
+tenant-first (both columns are equalities in their RI check); the Drizzle schema and the canary
+follow, and the canary now also checks the leading column. On dev the old index was dropped and
+the two new ones created by hand (the runner records `0302` as applied). A live positive control
+`EXPLAIN … WHERE <column> = $1` under `enable_seqscan = off` names the index for both columns —
+the name-counting canary cannot see column order. **L1:** `decideInTx` refuses duplicate keys
+before building the VALUES list (defence-in-depth — the use case already refuses them). **L2:**
+the no-row live case picks a key the fixture does not propose from `PROPOSABLE_FIELD_KEYS`.
+Verified OK by the reviewer: VALUES-batch under RLS FORCE, the two CHECKs per row, the real
+rollback path, the casts (live both ways), the journal `when` (global max, +100000), no Drizzle ↔
+SQL drift, the lock order incl. the DEFERRABLE self-FK and the partial unique index, and the
+rescan — with the DB's own second layer: a new request's RI check takes `FOR KEY SHARE` on the
+`members` row the erase holds `FOR UPDATE`, so no submit commits a row after the member lock.
+
 ## Gate output after rounds 1 + 2 (branch head `b7afc1bcb`)
 
 | Gate | Result |

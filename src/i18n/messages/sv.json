@@ -4041,7 +4041,7 @@
             "successNoRefundToast": "Återaktivering avslagen. Det fanns ingen betalning att återbetala.",
             "successPendingToast": "Återbetalning inskickad — den behandlas hos betalningsleverantören. Den här återaktiveringen ligger kvar i väntelistan tills återbetalningen bekräftas.",
             "error": {
-              "cycle_not_pending": "Den här cykeln väntar inte längre på granskning — den kan redan ha hanterats.",
+              "cycle_not_pending": "Den här cykeln väntar inte längre på granskning – den kan redan ha hanterats.",
               "refund_failed": "Återbetalningen kunde inte genomföras. Cykeln lämnades oförändrad – försök igen.",
               "rate_limited": "För många försök. Vänta en stund och försök igen.",
               "server_error": "Något gick fel. Försök igen."
@@ -6153,7 +6153,7 @@
         "companySection": "Företagsuppgifter",
         "registeredAddressSection": "Registrerad adress",
         "billingAddressSection": "Faktureringsadress",
-        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon — då blir den registrerade adressen den adress som trycks på dina skattedokument.",
+        "billingAddressHint": "Använd när den momsregistrerade adressen (ภ.พ.20) skiljer sig från den registrerade adressen — skattedokumenten bär faktureringsadressen. Lämna alla rader tomma för att inte ange någon. Då blir den registrerade adressen den adress som trycks på dina skattedokument.",
         "requiredNote": "* obligatoriska fält",
         "fields": {
           "firstName": "Förnamn",
@@ -6214,7 +6214,7 @@
         "confirm": "Dra tillbaka",
         "cancel": "Behåll begäran",
         "done": "Din begäran drogs tillbaka. Inget i din post har ändrats.",
-        "gone": "Det finns inte längre någon begäran som väntar på granskning – den kan redan ha avgjorts eller dragits tillbaka.",
+        "gone": "Det finns inte längre någon begäran som väntar på granskning — den kan redan ha avgjorts eller dragits tillbaka.",
         "error": "Det gick inte att dra tillbaka din begäran. Försök igen.",
         "readOnly": "Systemet är tillfälligt i skrivskyddat läge, så din begäran kan inte dras tillbaka just nu. Försök igen senare."
       },
