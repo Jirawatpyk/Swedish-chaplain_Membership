@@ -180,6 +180,7 @@ rescan — with the DB's own second layer: a new request's RI check takes `FOR K
 | integration (live Neon `dev`, by path) | tax-immutability 2 · repo 14 (incl. the plain-read lock proof, the single-UPDATE no-row rollback, the two EXPLAIN controls) · decide-rollback · submit-atomicity · concurrency — all green |
 | e2e `tests/e2e/change-requests.spec.ts` on the maintainer's dev server (flag ON), `--workers=1` | before the closures: chromium 13 passed / 2 skipped (persona) / 1 flaky (US3 dismiss — dev-mode first-hit route compile; retry passed), mobile-chrome 14 / 2 skipped; after `22671112b`: chromium 14 passed / 2 skipped, no flake |
 | re-reviews of the closures | UX, tax, migration: all CLOSED / MERGEABLE (`29e7c9ecb`, `39e5fcbb6`) |
+| pre-push gates on the push (static + `tests/unit/architecture` + the insights AND members integration folders) | two catches, both test fidelity: (1) the F9 GDPR archive oracle pinned the file list without `change-requests.json` (`52f656ea9`); (2) the 5,000-row pagination suite seeded three tables and never ANALYZEd them — with 0302's indexes present the planner, believing every table held one row, picked a different tenant-leading index and sorted all 5,000 rows a page, and joined members / contacts as a materialised 200 × 200 cross product (688 ms a page, measured with EXPLAIN ANALYZE). The suite now ANALYZEs the three tables after seeding (the steady state production has); 50 pages walk in 15.6 s. Third push green |
 
 ## Gate output after rounds 1 + 2 (branch head `b7afc1bcb`)
 

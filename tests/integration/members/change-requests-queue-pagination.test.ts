@@ -27,7 +27,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import { asMemberId, drizzleChangeRequestRepo, listChangeRequestQueue } from '@/modules/members';
 import { memberChangeRequestFields, memberChangeRequests } from '@/modules/members/infrastructure/db/schema-change-requests';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -131,6 +131,17 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
         );
       }
     });
+    // Statistics AFTER the bulk load — for the request table AND the two it
+    // joins. Without them the planner believes each holds ONE row: at rows=1
+    // every tenant-leading index on the request table costs the same (with
+    // 0302's FK indexes present it picked `…_tenant_submitted_by_contact_idx`
+    // and SORTED all 5,000 rows per page), and the members / contacts joins
+    // were planned as a materialised 200 × 200 cross product filtered per
+    // request row (4 M rows removed by the join filter, 688 ms a page —
+    // EXPLAIN ANALYZE on the pre-push gate's failure). In production these
+    // tables carry autoanalyze statistics; this models the steady state the
+    // plan budget is written for.
+    await db.execute(sql`ANALYZE member_change_requests, members, contacts`);
   }, 300_000);
 
   afterAll(async () => {
