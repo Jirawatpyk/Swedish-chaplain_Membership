@@ -171,6 +171,16 @@ SQL drift, the lock order incl. the DEFERRABLE self-FK and the partial unique in
 rescan — with the DB's own second layer: a new request's RI check takes `FOR KEY SHARE` on the
 `members` row the erase holds `FOR UPDATE`, so no submit commits a row after the member lock.
 
+## Gate output at the branch head `39e5fcbb6` (after the PR-1 closures + their re-reviews)
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` · `pnpm lint` (full) · `check:i18n` 5,501 keys · `check:layout` · `check:staff-page-guard` · `pnpm db:verify` (dev, incl. the 0302 canary) | all OK |
+| `pnpm test` (the whole Vitest suite, tree `29e7c9ecb`; the last commit changed one SQL file + one live test + the ledger) | 1,272 files, 14,360 passed, 2 todo |
+| integration (live Neon `dev`, by path) | tax-immutability 2 · repo 14 (incl. the plain-read lock proof, the single-UPDATE no-row rollback, the two EXPLAIN controls) · decide-rollback · submit-atomicity · concurrency — all green |
+| e2e `tests/e2e/change-requests.spec.ts` on the maintainer's dev server (flag ON), `--workers=1` | before the closures: chromium 13 passed / 2 skipped (persona) / 1 flaky (US3 dismiss — dev-mode first-hit route compile; retry passed), mobile-chrome 14 / 2 skipped; after `22671112b`: chromium 14 passed / 2 skipped, no flake |
+| re-reviews of the closures | UX, tax, migration: all CLOSED / MERGEABLE (`29e7c9ecb`, `39e5fcbb6`) |
+
 ## Gate output after rounds 1 + 2 (branch head `b7afc1bcb`)
 
 | Gate | Result |
