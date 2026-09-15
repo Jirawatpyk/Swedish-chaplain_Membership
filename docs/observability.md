@@ -2086,6 +2086,13 @@ Labels are bounded enums + `tenant` — never a user id, an email, a field value
 | `members_change_request_decision_email_skipped_total` | counter | `tenant`, `reason` | `decideChangeRequest` | `reason ∈ {recipient_gone}` — the decision committed, the submitting contact is gone; the decided audit event carries `member_notified: false`. |
 | `members_change_request_decide_ms` | histogram | `tenant` | `decideChangeRequest` | Transaction wall time of a decision (apply + audit + email row). |
 
+Forget set on the dark path (seam pass 2026-09-15): with the flag OFF the tick forgets the two
+series for every tenant in `tenant_member_settings`, which is the observe set's first half only —
+a tenant that has request rows but no settings row would keep its last value across a flag flip.
+Unreachable in production (a submission needs the gate `approval`, i.e. a settings row with the
+switch ON, and PR-3's upsert materialises the row); reachable only by seeding rows directly on
+`dev` / `ci`.
+
 The tick's completion log `cron.broadcasts_gauges.completed` carries `broadcastsGaugesOk`,
 `membersGaugesOk`, `membersGaugesSkipped`, `membersPendingTenantCount`, `membersPendingTotal`,
 `membersOldestAgeSecondsMax`; a members-half fault logs
@@ -2118,8 +2125,8 @@ logs `errorId: M114.<portal|admin>.<route>.<arm>` (guarded by
 the route prefix, e.g. `M114.admin.decide.*`.
 
 Two spans on the tracer `swecham.members` (T106, `src/lib/otel-tracer.ts` `membersTracer()`),
-each wrapping the ONE transaction of its use case so the auto-instrumented Drizzle statements
-parent under it:
+each wrapping the ONE transaction of its use case (no statement spans parent under them — there is no
+database instrumentation, § 27.5):
 
 | Span | Wraps | Attributes (bounded — § 27.5) |
 |---|---|---|

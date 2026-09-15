@@ -104,7 +104,7 @@ moment the flag is set:
 | `TENANT_PRIVACY_POLICY_URL` set in Vercel | The FR-010 privacy link on the portal form hides when the variable is unset (review round 1, UX Critical: a dead `/privacy` link); with it unset the member is asked to propose PII changes with no link to the policy — PDPA §23 notice. | before flip (operator) |
 | Command-palette entry for `/admin/change-requests` (the navigate registry in `src/modules/plans/application/search-plans.ts`) | **CLOSED in PR-2**: `nav.changeRequests` (`members.read`, feature-gated `memberChangeApproval` — stripped while the flag is off, like the F6 / F7 entries). | PR-2 — done |
 
-1. Merge → prod auto-migrates 0300 and 0301 on deploy (`vercel-build`); `pnpm db:verify:prod`.
+1. Merge → prod auto-migrates 0300–0302 on deploy (`vercel-build`; 0302 shipped with PR-2 on 2026-09-15); `pnpm db:verify:prod`.
 2. Set `FEATURE_MEMBER_CHANGE_APPROVAL=true` in Vercel **only when ready to redeploy immediately**
    (setting the env var IS the flip on this repo — no `ignoreCommand`) **and only after every
    pre-flip gate above is merged**.
@@ -178,6 +178,18 @@ final tree after review rounds 1–3; the review rounds themselves added the las
   a code revert, not a flag flip. Flag-gated (404 / hidden while off): the queue,
   the per-member history route + section, the portal history route + page + profile card, the
   withdraw route + banner control, the palette entry.
+
+- **PR-3, unflagged** (seam pass 2026-09-15): (a) `/portal/account` renders a destructive
+  `role=status` alert and logs `M114.portal.account.exports_read_failed` when the export list
+  cannot be read — the live F9 surface used to show an empty list; (b) the per-tenant gauges tick
+  (`/api/internal/metrics/broadcasts-gauges`) no longer returns on a broadcasts fault — it runs
+  the members half, answers 500 at the END with `broadcastsGaugesOk: false`, its body carries the
+  `members*` fields, and it reads `tenant_member_settings` every 5 minutes in BOTH flag states
+  (with the flag OFF the pending scan is skipped and the two members series are forgotten);
+  (c) the staff layout and the dashboard resolve the tenant through `resolveTenantFromHeaders`
+  (the dev / e2e `X-Tenant` override only); (d) `NeedsAttentionList` gained an `unavailable`
+  prop and the queue filter bar is a real GET form. Flag-gated (404 / hidden while off): the
+  settings route, page and hub card, the nav badge, the dashboard item, the pending scan.
 
 Rolling any of these back is a new migration / code change, not a flag flip.
 

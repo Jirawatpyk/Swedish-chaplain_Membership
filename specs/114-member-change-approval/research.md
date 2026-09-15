@@ -469,3 +469,11 @@ the gauge's `0` a metric one). The route file keeps its name — renaming it wou
 "generalised per-tenant gauges tick" of plan § Project Structure is this file with two blocks.
 Observability rows: `docs/observability.md § 27` (§ 14 is F3's; the F114 rows that were parked
 in § 14.1 / § 14.3 now point at the emitter).
+
+**Superseded in the PR-3 review round (2026-09-15, `reviews/pr-3.md`)** — three parts of the
+decision rule above changed before merge: the tenant set for the zero-fill comes from
+`tenant_member_settings` ∪ the pending `GROUP BY` keys, never a `DISTINCT tenant_id` scan of the
+request table (reliability R-M4); a broadcasts-half fault no longer returns early — the members
+half runs and the tick answers 500 at the end with `broadcastsGaugesOk: false` (security SEC-1);
+with the platform flag OFF the pending scan is skipped and both series are forgotten per tenant
+(security SEC-5). The contract test pins all three.

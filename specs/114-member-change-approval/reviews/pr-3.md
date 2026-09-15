@@ -555,3 +555,44 @@ SEC-2 (tree added, floor 30, on-disk existence control, mutant-proven).
    expensive one, is what is skipped.
 6. **No `Suspense` on the nav badge** — the count feeds a client component's prop through a config
    that carries functions; the read is time-boxed instead (R-H1), and the layout docblock says so.
+
+## Seam pass — `whole-branch-reviewer` (Fable, read-only) on `321d813ee..68a3f9abe`, 2026-09-15
+
+Verdict **MERGEABLE — no code defect at any seam**; seven docs ↔ code drift items, all closed
+in the same sitting (commit after `68a3f9abe`):
+
+- **#1 MEDIUM** — `quickstart.md` § 3 "Unflagged and live on merge" had no PR-3 entry although
+  three hunks are live regardless of the flag (the `/portal/account` export-list fault alert, the
+  gauges tick's new failure order + `members*` body + `tenant_member_settings` read in both flag
+  states, the header-based tenant resolution on the layout/dashboard). TAKEN: a "PR-3, unflagged"
+  bullet; the runbook's rollback line names PR-2 AND PR-3; step 1 says 0300–0302.
+- **#2 MEDIUM** — `docs/observability.md` § 27.2 said the spans wrap the transaction "so the
+  auto-instrumented Drizzle statements parent under it", contradicting § 27.5 (no database
+  instrumentation is registered). TAKEN: clause removed, § 27.5 cross-referenced.
+- **#3 LOW** — flag-OFF forget set is `tenant_member_settings` only, while the observe set is
+  settings ∪ pending keys; a tenant with request rows and no settings row keeps its last value
+  across a flip. Dead in production (a submission needs a settings row with the switch ON; PR-3
+  materialises the row). TAKEN as a documented residual in § 27.1, not a code change (the only
+  fix is the DISTINCT scan R-M4 just removed).
+- **#4 LOW** — `research.md` § V2's "binding" decision rule still described the DISTINCT scan and
+  the early return. TAKEN: a "superseded in the PR-3 review round" paragraph.
+- **#5 LOW** — the flag-off contract test's positive control was a list count (`12`), not an
+  on-disk walk; a route file added under an F114 tree without a flag check would not fail it.
+  TAKEN: the test walks the four trees and requires `onDisk == listed` both ways.
+- **#6 LOW** — `tasks.md` done-notes on T096/T099/T100/T101/T102/T103/T117/T118 described the
+  pre-review shape; T116 said done with an unticked box. TAKEN: each note carries a
+  "superseded by reviews/pr-3.md" suffix; T116 ticked with both halves named.
+- **#7 LOW** — `cron-jobs.md`'s tick row named only the broadcasts gauges; quickstart step 1
+  said "0300 and 0301". TAKEN.
+
+Verified seams (the reviewer's list, kept for the record): setting flip → gate → form → profile
+narrowing with no stale cache; the four pending-count consumers on one query with consistent
+`ok | hidden | unavailable`; the gauges tick's three paths pinned by the contract test; the four
+attempt buckets' keys, sizes and ordering; the settings repo's materialise-then-lock upsert under
+RLS; the GET form never yields a `notFound` URL; FR-039 complete (10 route files = 10 listed,
+3 pages `notFound()`, card/badge/item/scan hidden); i18n parity; RBAC agreement across route,
+page and hub card. Refuted: an `X-Tenant` crash (gated by `E2E_X_TENANT_HEADER_ENABLED`);
+`pendingStats` without an explicit tenant predicate (RLS-only is this repo's convention, on
+`main` before PR-3); a "forged" audit on an admin flip mid-edit (`gate_narrowed` is its own
+refusal); the settings GET's two reads not being one snapshot (no consumer needs one).
+

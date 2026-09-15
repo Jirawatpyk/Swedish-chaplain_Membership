@@ -18,6 +18,8 @@
  * UI half: see T096 — the profile banner / nav badge / dashboard item
  * assertions belong to the UI slice, not here.
  */
+import { readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, type Result } from '@/lib/result';
@@ -337,6 +339,31 @@ afterEach(() => vi.clearAllMocks());
 describe('FEATURE_MEMBER_CHANGE_APPROVAL=false with rows present (F114 T118 / FR-039)', () => {
   it('positive control: the route list covers every F114 handler (12 — ten route files, two with a second verb)', () => {
     expect(ROUTES).toHaveLength(12);
+  });
+
+  // Seam pass 2026-09-15: the count above is a list pin — a route FILE added under one of the
+  // F114 trees without a flag check would not fail it. Walk the trees on disk and require that
+  // every `route.ts` found is a path the list exercises, and vice versa (the error-id guard's
+  // rule 5, applied here).
+  it('positive control: every route.ts on disk under the F114 trees is in the list, and vice versa', () => {
+    const trees = [
+      'src/app/api/portal/change-requests',
+      'src/app/api/admin/change-requests',
+      'src/app/api/admin/members/[id]/change-requests',
+      'src/app/api/admin/settings/member-changes',
+    ];
+    const onDisk = new Set<string>();
+    const walk = (dir: string, rel: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full, `${rel}/${entry}`);
+        else if (entry === 'route.ts') onDisk.add(rel);
+      }
+    };
+    for (const tree of trees) walk(join(process.cwd(), tree), tree.replace(/^src\/app/, ''));
+    expect(onDisk.size).toBeGreaterThan(0);
+    const listed = new Set(ROUTES.map(([label]) => label.split(' ')[1]!));
+    expect([...onDisk].sort()).toEqual([...listed].sort());
   });
 
   it.each(ROUTES.map(([label, call]) => [label, call] as const))('%s → 404 before any session work; rows untouched', async (_label, call) => {

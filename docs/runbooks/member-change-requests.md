@@ -190,7 +190,7 @@ FR-040 gap the first cutover had to close. The card's own description says so; t
 `quickstart.md` § 3 step 3.
 
 Never rolled back by any layer: migrations 0300 / 0301 / 0302, the seven enum values, the
-`tenant_member_settings` column, and the unflagged PR-2 items listed in `quickstart.md` § 3.
+`tenant_member_settings` column, and the unflagged PR-2 and PR-3 items listed in `quickstart.md` § 3.
 
 ## Related
 
