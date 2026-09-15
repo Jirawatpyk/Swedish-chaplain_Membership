@@ -6115,6 +6115,25 @@ export const membersMetrics = {
         );
       });
     },
+    /**
+     * PR-3 review (SEC-5) — drop one tenant's labels from BOTH change-request
+     * gauges so the series go ABSENT rather than frozen at their last value.
+     * Same shape and reasoning as `forgetDispatchFailureRate`: the gauges tick
+     * skips the pending scan while `FEATURE_MEMBER_CHANGE_APPROVAL` is OFF
+     * (the routes 404, so a retained queue is one nobody can decide), and
+     * `observeGauge` would otherwise keep re-reporting the last count and age
+     * at every scrape — paging "> 14 d" (FR-037) at an operator with no
+     * action available. A zero-fill would be the wrong answer here: 0 asserts
+     * "the queue is empty", which is a different fact from "the feature is
+     * dark and this number means nothing".
+     */
+    forgetGauges(tenantId: string): void {
+      safeMetric(() => {
+        const label = JSON.stringify({ tenant: tenantId });
+        gaugeValues.get('members_change_requests_pending_count')?.delete(label);
+        gaugeValues.get('members_change_request_oldest_age_seconds')?.delete(label);
+      });
+    },
     /** `members_change_request_submitted_total{tenant,scope,coalesced}` — one per created request. */
     submitted(
       tenantId: string,

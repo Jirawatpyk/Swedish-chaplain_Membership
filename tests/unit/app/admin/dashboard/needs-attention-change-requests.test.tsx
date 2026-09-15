@@ -15,8 +15,13 @@
  *   - count 0 → no item (a "0" with a dead-end link is noise, FR-006);
  *   - flag OFF → no item even with rows waiting, and NO query (FR-039 —
  *     the T118 dashboard half);
- *   - the count read faults → the page still renders, the item is simply
- *     absent, logged once under `M114.dashboard.pending_count_failed`.
+ *   - the count read faults → the page still renders and shows the
+ *     section-failure alert (`role="status"` + `tone="destructive"`, the
+ *     member record's UX I9 shape) INSTEAD of the all-clear empty state
+ *     (PR-3 review, reliability R-H2: "unavailable" and "nothing to do" are
+ *     different facts, and the FR-037 clock runs while the operator is told
+ *     everything is fine), logged once under
+ *     `M114.dashboard.pending_count_failed`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -61,7 +66,14 @@ vi.mock('@/lib/auth-session', () => ({
   }),
 }));
 
+// SEC-4 — the page resolves the tenant from the REQUEST HEADERS (the settings
+// page's idiom) and hands it to the read helper; the helper resolves nothing
+// of its own.
+vi.mock('next/headers', () => ({
+  headers: async () => new Headers(),
+}));
 vi.mock('@/lib/tenant-context', () => ({
+  resolveTenantFromHeaders: () => ({ slug: 'tenant-a' }),
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
 }));
 
@@ -177,13 +189,34 @@ describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => 
     expect(h.count).not.toHaveBeenCalled();
   });
 
-  it('the count read faults → the page still renders, the item is absent, logged once', async () => {
+  it('the count read faults → the page renders the section-failure alert, NOT the all-clear state (R-H2)', async () => {
     h.count.mockRejectedValue(new Error('neon down'));
     const html = await renderPage();
     expect(html).toContain(en.admin.dashboard.title);
     expect(html).not.toContain('href="/admin/change-requests"');
-    expect(html).toContain(en.admin.dashboard.needsAttention.empty);
+    // the defect: "All clear — nothing needs attention right now." while a
+    // queue nobody can see is ageing against the FR-037 clock
+    expect(html).not.toContain(en.admin.dashboard.needsAttention.empty);
+    expect(html).toContain(en.admin.dashboard.needsAttention.changeRequestsUnavailable);
+    expect(html).toContain('data-testid="needs-attention-change-requests-unavailable"');
+    // `status`, not `alert`: the page rendered, one item did not (UX I9)
+    expect(html).toContain('role="status"');
     expect(h.logError).toHaveBeenCalledTimes(1);
     expect(h.logError.mock.calls[0]![0]).toMatchObject({ errorId: 'M114.dashboard.pending_count_failed' });
+  });
+
+  it('a Result error (not a throw) is the same "unavailable" surface — never the empty state', async () => {
+    h.count.mockResolvedValue({ ok: false, error: { type: 'server_error', message: 'count-pending: repo.unexpected' } });
+    const html = await renderPage();
+    expect(html).toContain(en.admin.dashboard.needsAttention.changeRequestsUnavailable);
+    expect(html).not.toContain(en.admin.dashboard.needsAttention.empty);
+  });
+
+  it('flag OFF is HIDDEN, not unavailable — no alert and no item (FR-039)', async () => {
+    h.features.memberChangeApproval = false;
+    const html = await renderPage();
+    expect(html).not.toContain(en.admin.dashboard.needsAttention.changeRequestsUnavailable);
+    expect(html).toContain(en.admin.dashboard.needsAttention.empty);
+    expect(h.count).not.toHaveBeenCalled();
   });
 });

@@ -263,13 +263,22 @@ function patchesOf(
         Object.assign(member, billing.value);
         break;
       }
-      /* v8 ignore start — a key outside the union cannot reach here: the strict
-       * proposal schema (step 6) refuses an unknown key before `patchesOf` runs.
-       * Kept as the compile-time exhaustiveness check + a safe runtime refusal. */
+      /* v8 ignore start — a key outside the union cannot reach here, and PR-3
+       * review R-M5 asked whether a stored `field_key` (TEXT + CHECK in 0300,
+       * not a Domain enum) could: it cannot. Step 6 re-validates the APPROVED
+       * values through the strict proposal schema, which refuses an
+       * unrecognised key — naming it — before `patchesOf` runs; a REJECTED
+       * unknown key never enters `approved` at all. Both paths are pinned by
+       * "a stored field_key outside the Domain union" in
+       * decide-change-request.test.ts, which is why this arm keeps its marker
+       * instead of a test. It stays as the compile-time exhaustiveness check
+       * plus a NAMED runtime refusal: `issues: []` was a 422 that told the
+       * reviewer nothing, against this file's own rule (round 6,
+       * silent-failure #22). */
       default: {
         const _exhaustive: never = key;
         void _exhaustive;
-        return err({ type: 'validation_error', issues: [] });
+        return err({ type: 'validation_error', issues: [namedIssue([String(key)], 'unknown_field')] });
       }
       /* v8 ignore stop */
     }

@@ -22,9 +22,13 @@
  *
  * On an Upstash outage the limiter does NOT fail open: its fallback is a
  * per-process in-memory window, so the cap holds per serverless instance
- * rather than per tenant + user — weaker, never absent — logged once per
- * refusal-or-not as `<prefix>.attempt_bucket_fell_back` so an operator
- * reading a 429 spike knows which world produced it.
+ * rather than per tenant + user — weaker, never absent. Every call that lands
+ * on the fallback logs `<prefix>.attempt_bucket_fell_back` (R-L4: an earlier
+ * draft of this docblock said "logged once" — it is per CALL, and the limiter
+ * logs its own line for the same outage). The duplication is deliberate: the
+ * limiter's line says Upstash is down, this one says WHICH route's bucket was
+ * degraded, which is the dimension an operator reading a 429 spike needs and
+ * the one a shared literal would destroy (T107).
  */
 import { NextResponse } from 'next/server';
 import { rateLimiter } from '@/lib/auth-deps';

@@ -232,3 +232,37 @@ describe('ApprovalSwitch (F114 US6)', () => {
     expect(sw).toHaveAttribute('aria-checked', 'false');
   });
 });
+
+/**
+ * PR-3 review (reliability R-L5) — the server answers `changedAt: null` when
+ * the stored value already matched (an idempotent upsert, no audit row). A
+ * success toast on that path claims a change that did not happen: two admins
+ * on the same card, or a double-click, both read "Approval switched on" for
+ * an operation the audit trail does not record. The visible state line already
+ * carries the value, so the no-op needs no announcement.
+ */
+describe('ApprovalSwitch — the unchanged no-op is not announced (R-L5)', () => {
+  it('changedAt null → no toast; the state line still shows the stored value', async () => {
+    const fetchFn = stubFetch(200, { approvalEnabled: true, changedAt: null });
+    renderSwitch({ initialEnabled: true, pendingCount: 0 });
+
+    // a stale second tab flipping "on" onto an already-on tenant
+    fireEvent.click(screen.getByRole('switch', { name: t.switchLabel }));
+
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('switch', { name: t.switchLabel })).toHaveAttribute('aria-checked', 'true'));
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(screen.getByText(t.state.on)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('a real change (changedAt set) still toasts exactly once — the guard is the no-op, not the toast', async () => {
+    stubFetch(200, { approvalEnabled: false, changedAt: '2026-09-15T10:00:00.000Z' });
+    renderSwitch({ initialEnabled: true, pendingCount: 0 });
+
+    fireEvent.click(screen.getByRole('switch', { name: t.switchLabel }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    expect(toast.success).toHaveBeenCalledWith(t.toast.off);
+  });
+});

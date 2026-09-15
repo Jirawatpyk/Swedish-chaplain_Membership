@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
+import { headers } from 'next/headers';
 import { getTranslations, getLocale } from 'next-intl/server';
 import {
   Card,
@@ -15,6 +16,7 @@ import { CountUp } from '@/components/dashboard/count-up';
 import {
   NeedsAttentionList,
   type NeedsAttentionItem,
+  type NeedsAttentionUnavailable,
 } from '@/components/dashboard/needs-attention-list';
 import { InsightsPanel, type InsightLine } from '@/components/dashboard/insights-panel';
 import {
@@ -30,13 +32,16 @@ import { InvoiceStatusChart } from '@/components/dashboard/invoice-status-chart'
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
 import { requirePagePermission, canPerform } from '@/lib/rbac';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { resolveEventLabel } from '@/lib/audit-event-label';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { readPendingChangeRequests } from '@/lib/pending-change-requests';
+import {
+  readPendingChangeRequests,
+  type PendingChangeRequestsRead,
+} from '@/lib/pending-change-requests';
 import {
   listDashboard,
   hasFinanceMetrics,
@@ -104,7 +109,11 @@ export default async function StaffHomePage() {
   }
 
   // --- F9 operations dashboard ---------------------------------------------
-  const tenant = resolveTenantFromRequest();
+  // SEC-4 (PR-3 review): resolved from the REQUEST HEADERS, the idiom every
+  // other staff page uses — `resolveTenantFromRequest()` with no argument
+  // cannot see the `X-Tenant` override, so two resolutions of the same
+  // request could disagree about which tenant this page is.
+  const tenant = resolveTenantFromHeaders(await headers());
   const t = await getTranslations('admin.dashboard');
   const locale = await getLocale();
   const meta = {
@@ -143,15 +152,21 @@ export default async function StaffHomePage() {
     // F114 US6 (FR-033; research R12) — the LIVE pending change-request
     // count + oldest age, one indexed query at render (not the cron
     // snapshot, so US6 AS3 holds the moment a request lands). The helper
-    // answers `null` without a query when the platform flag is OFF (FR-039)
-    // or the viewer lacks `members.read`, and degrades any fault to `null`
-    // with one log line under this page's own errorId — the item is then
-    // simply absent. Sits in the same allSettled for widget isolation.
-    readPendingChangeRequests(user.role, 'M114.dashboard.pending_count_failed'),
+    // answers `hidden` without a query when the platform flag is OFF
+    // (FR-039) or the viewer lacks `members.read`, and `unavailable` with
+    // one log line under this page's own errorId on a fault — which is
+    // RENDERED (the section-failure alert), never folded into "all clear"
+    // (PR-3 review, R-H2). Sits in the same allSettled for widget isolation.
+    // The dashboard keeps the FULL read (no nav-style deadline): it is one
+    // page an operator opened, not a shell on every route.
+    readPendingChangeRequests(tenant, user.role, 'M114.dashboard.pending_count_failed'),
   ]);
   const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
-  const pendingChanges =
-    pendingChangesSettled.status === 'fulfilled' ? pendingChangesSettled.value : null;
+  // An allSettled REJECTION is the same fact as an `unavailable` answer: the
+  // helper swallows both channels itself, so this arm only fires on a throw
+  // it could not (an env/RBAC fault above its try) — still not "all clear".
+  const pendingChanges: PendingChangeRequestsRead =
+    pendingChangesSettled.status === 'fulfilled' ? pendingChangesSettled.value : { kind: 'unavailable' };
 
   if (dashSettled.status === 'rejected') {
     // The dashboard's PRIMARY widget threw outside the Result channel (e.g. a
@@ -286,9 +301,17 @@ export default async function StaffHomePage() {
   // positive count (a race between the two reads) drops the clause rather
   // than rendering "(oldest )" (UX L5).
   const oldestDays =
-    pendingChanges !== null && pendingChanges.oldestAgeSeconds !== null
-      ? Math.floor(pendingChanges.oldestAgeSeconds / 86_400)
+    pendingChanges.kind === 'ok' && pendingChanges.summary.oldestAgeSeconds !== null
+      ? Math.floor(pendingChanges.summary.oldestAgeSeconds / 86_400)
       : null;
+
+  // R-H2 — a count we could not read is its OWN state, rendered as the
+  // section-failure alert inside the same card. `hidden` (flag off / no
+  // `members.read`) renders nothing at all; only `unavailable` alerts.
+  const needsAttentionUnavailable: readonly NeedsAttentionUnavailable[] =
+    pendingChanges.kind === 'unavailable'
+      ? [{ id: 'change-requests', label: t('needsAttention.changeRequestsUnavailable') }]
+      : [];
 
   // Only surface items that actually need attention (FR-006) — a "0" with a
   // dead-end link is noise; when all are zero the list shows an "all clear" state.
@@ -326,10 +349,12 @@ export default async function StaffHomePage() {
         href: '/admin/broadcasts',
       },
       // F114 US6 (FR-033) — live pending change requests → the queue. Count
-      // and age come from `readPendingChangeRequests` above (null → 0 → dropped).
+      // and age come from `readPendingChangeRequests` above; anything but
+      // `ok` is 0 here and dropped by the filter — `unavailable` is carried
+      // by `needsAttentionUnavailable` instead, never as a zero count.
       {
         id: 'changeRequests',
-        n: pendingChanges?.count ?? 0,
+        n: pendingChanges.kind === 'ok' ? pendingChanges.summary.count : 0,
         label:
           oldestDays === null
             ? t('needsAttention.changeRequestsNoAge')
@@ -505,6 +530,7 @@ export default async function StaffHomePage() {
           title={t('needsAttention.title')}
           emptyLabel={t('needsAttention.empty')}
           items={needsAttentionItems}
+          unavailable={needsAttentionUnavailable}
         />
         <InsightsPanel
           title={t('insights.title')}

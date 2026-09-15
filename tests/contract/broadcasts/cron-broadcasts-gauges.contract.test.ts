@@ -36,10 +36,15 @@ const suppressionListSizeSpy = vi.fn();
 // can be asserted as logged-not-fatal.
 const membersPendingCountSpy = vi.fn();
 const membersOldestAgeSecondsSpy = vi.fn();
+// SEC-5 — while the platform flag is OFF the two members series must go
+// ABSENT, not stay at their last value: a retained queue nobody can decide
+// would keep paging "> 14 d".
+const membersForgetGaugesSpy = vi.fn();
 const loggerErrorSpy = vi.fn();
 
 const envMock = {
   isDevelopment: false,
+  features: { memberChangeApproval: true },
 };
 
 vi.mock('@/lib/env', () => ({
@@ -81,6 +86,7 @@ vi.mock('@/lib/metrics', async () => {
         ...actual.membersMetrics.changeRequests,
         pendingCount: membersPendingCountSpy,
         oldestAgeSeconds: membersOldestAgeSecondsSpy,
+        forgetGauges: membersForgetGaugesSpy,
       },
     },
   };
@@ -98,6 +104,7 @@ function makeRequest(auth?: string): NextRequest {
 beforeEach(() => {
   process.env.CRON_SECRET = 'test-cron-secret';
   envMock.isDevelopment = false;
+  envMock.features.memberChangeApproval = true;
   dbTransactionMock.mockReset();
   queuePendingSpy.mockReset();
   stuckSendingCountSpy.mockReset();
@@ -108,6 +115,7 @@ beforeEach(() => {
   suppressionListSizeSpy.mockReset();
   membersPendingCountSpy.mockReset();
   membersOldestAgeSecondsSpy.mockReset();
+  membersForgetGaugesSpy.mockReset();
   loggerErrorSpy.mockReset();
 });
 
@@ -406,6 +414,38 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
  * `db.transaction` call in order: first the broadcasts rows, then the
  * members rows.
  */
+/** The text of a drizzle sql template — enough to assert WHICH table a statement reads. */
+function sqlText(q: unknown): string {
+  const chunks = (q as { queryChunks?: readonly unknown[] }).queryChunks ?? [];
+  return chunks
+    .map((c) => (typeof c === 'object' && c !== null && 'value' in c ? (c as { value: readonly string[] }).value.join('') : ' ? '))
+    .join('');
+}
+
+/**
+ * Run the REAL members transaction callback against a recording `tx` double,
+ * so the assertions below can see WHICH statements the block issues — a mock
+ * that only returns rows cannot tell a `tenant_member_settings` read from a
+ * full `DISTINCT` scan of the request table (A4), nor prove that the pending
+ * scan was skipped (SEC-5).
+ */
+function recordMembersTx(rows: { tenantRows?: readonly unknown[]; pendingRows?: readonly unknown[] }): string[] {
+  const statements: string[] = [];
+  dbTransactionMock.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => {
+    const tx = {
+      execute: async (q: unknown) => {
+        const text = sqlText(q);
+        statements.push(text);
+        if (/FROM\s+tenant_member_settings/i.test(text)) return rows.tenantRows ?? [];
+        if (/FROM\s+member_change_requests/i.test(text)) return rows.pendingRows ?? [];
+        return [];
+      },
+    };
+    return fn(tx);
+  });
+  return statements;
+}
+
 describe('GET /api/internal/metrics/broadcasts-gauges — members change-request gauges (F114 T102)', () => {
   const broadcastsQuiet = () => ({
     tenantRows: [],
@@ -488,13 +528,115 @@ describe('GET /api/internal/metrics/broadcasts-gauges — members change-request
     expect(body.membersGaugesOk).toBe(false);
   });
 
-  it('the broadcasts query throwing is still the 500 it was — the members half is not reached', async () => {
+  // SEC-1 (PR-3 review) — the two halves are independent BOTH ways. The
+  // broadcasts catch used to `return` the 500 before the members block ran, so
+  // a broadcasts outage silently took the FR-037 age gauge with it — the one
+  // signal whose alert doubles as the 30-day data-subject-request backstop.
+  // The broadcasts fault is still a 500 (the tick did not do its whole job);
+  // it is answered at the END, with `broadcastsGaugesOk: false`.
+  it('the broadcasts query throwing still emits the members gauges, answers 500, and says broadcastsGaugesOk: false', async () => {
     dbTransactionMock.mockImplementationOnce(async () => {
       throw new Error('Neon: connection terminated');
     });
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 'swecham' }],
+      pendingRows: [{ tenant_id: 'swecham', count: 2, oldest_age_seconds: 1_300_000 }],
+    }));
+
     const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
-    expect((await GET(makeRequest('Bearer test-cron-secret'))).status).toBe(500);
-    expect(dbTransactionMock).toHaveBeenCalledTimes(1);
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(500);
+    expect(dbTransactionMock).toHaveBeenCalledTimes(2);
+
+    expect(membersPendingCountSpy).toHaveBeenCalledWith('swecham', 2);
+    expect(membersOldestAgeSecondsSpy).toHaveBeenCalledWith('swecham', 1_300_000);
+    // no broadcasts sample can be invented from a transaction that threw
+    expect(queuePendingSpy).not.toHaveBeenCalled();
+    expect(dispatchFailureRateSpy).not.toHaveBeenCalled();
+
+    const body = (await res.json()) as { error?: string; broadcastsGaugesOk: boolean; membersGaugesOk: boolean; membersPendingTotal: number };
+    expect(body.error).toBe('query_failed');
+    expect(body.broadcastsGaugesOk).toBe(false);
+    expect(body.membersGaugesOk).toBe(true);
+    expect(body.membersPendingTotal).toBe(2);
+    expect(loggerErrorSpy).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(String) }), 'cron.broadcasts_gauges.query_failed');
+  });
+
+  it('a healthy tick says broadcastsGaugesOk: true', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => broadcastsQuiet());
+    dbTransactionMock.mockImplementationOnce(async () => ({ tenantRows: [], pendingRows: [] }));
+    const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { broadcastsGaugesOk: boolean }).toMatchObject({ broadcastsGaugesOk: true });
+  });
+
+  // A4 (PR-3 review) — the zero-fill tenant set used to be `SELECT DISTINCT
+  // tenant_id FROM member_change_requests`: an index-only scan of the WHOLE
+  // request history, every 5 min, growing with retention rather than with the
+  // number of tenants. The set is now every PROVISIONED tenant
+  // (`tenant_member_settings`) union the pending GROUP BY keys — the union keeps
+  // a tenant with pending rows but no settings row (a pre-0209 seed) observed.
+  it('the tenant set comes from tenant_member_settings + the pending keys, never a DISTINCT scan of the request table', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => broadcastsQuiet());
+    const statements = recordMembersTx({
+      tenantRows: [{ tenant_id: 'provisioned-quiet' }],
+      pendingRows: [{ tenant_id: 'no-settings-row', count: 1, oldest_age_seconds: 10 }],
+    });
+
+    const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
+    expect((await GET(makeRequest('Bearer test-cron-secret'))).status).toBe(200);
+
+    const membersSql = statements.join(String.fromCharCode(10));
+    expect(membersSql).toMatch(/FROM\s+tenant_member_settings/i);
+    expect(membersSql).not.toMatch(/DISTINCT\s+tenant_id\s+FROM\s+member_change_requests/i);
+    // the union, both directions
+    expect(membersPendingCountSpy).toHaveBeenCalledWith('provisioned-quiet', 0);
+    expect(membersOldestAgeSecondsSpy).toHaveBeenCalledWith('provisioned-quiet', 0);
+    expect(membersPendingCountSpy).toHaveBeenCalledWith('no-settings-row', 1);
+  });
+
+  // SEC-5 (PR-3 review) — while `FEATURE_MEMBER_CHANGE_APPROVAL` is OFF the
+  // routes 404 and nobody can decide a retained request, so an age gauge
+  // ticking past 14 d would page an operator who has no action to take. The
+  // pending scan is skipped and both series are FORGOTTEN (absence, not a
+  // fabricated 0 — a 0 would assert "the queue is empty", which is a
+  // different fact) so no value can latch across a flag flip.
+  it('flag OFF: no pending scan, both series forgotten per tenant, membersGaugesSkipped flag_off', async () => {
+    envMock.features.memberChangeApproval = false;
+    dbTransactionMock.mockImplementationOnce(async () => broadcastsQuiet());
+    const statements = recordMembersTx({
+      tenantRows: [{ tenant_id: 'swecham' }, { tenant_id: 'other' }],
+      pendingRows: [{ tenant_id: 'swecham', count: 3, oldest_age_seconds: 1_300_000 }],
+    });
+
+    const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+
+    expect(statements.join(String.fromCharCode(10))).not.toMatch(/FROM\s+member_change_requests/i);
     expect(membersPendingCountSpy).not.toHaveBeenCalled();
+    expect(membersOldestAgeSecondsSpy).not.toHaveBeenCalled();
+    expect(membersForgetGaugesSpy).toHaveBeenCalledWith('swecham');
+    expect(membersForgetGaugesSpy).toHaveBeenCalledWith('other');
+
+    const body = (await res.json()) as { membersGaugesSkipped: string | null; membersPendingTotal: number; membersGaugesOk: boolean };
+    expect(body.membersGaugesSkipped).toBe('flag_off');
+    expect(body.membersPendingTotal).toBe(0);
+    expect(body.membersGaugesOk).toBe(true);
+  });
+
+  it('flag ON: nothing is forgotten and the body carries membersGaugesSkipped null', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => broadcastsQuiet());
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 'swecham' }],
+      pendingRows: [{ tenant_id: 'swecham', count: 1, oldest_age_seconds: 5 }],
+    }));
+
+    const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+    expect(membersForgetGaugesSpy).not.toHaveBeenCalled();
+    expect((await res.json()) as { membersGaugesSkipped: string | null }).toMatchObject({ membersGaugesSkipped: null });
   });
 });

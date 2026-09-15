@@ -98,7 +98,7 @@ moment the flag is set:
 |---|---|---|
 | **T078 + T070** — the FR-030 erasure scrub adapter wired into `eraseMember` (+ its live-Neon test + table-scoped guard) | **CLOSED in PR-2 (US4)**: `changeRequestScrubAdapter` runs inside `eraseMember`'s atomic scrub tx (values, reason, note → `[erased]`; pending → `withdrawn/erasure` + one audit row each with `related_member_id` / `actor_role: 'system'`), the F114 outbox rows are cancelled by `context_data->>'memberId'` (`cancelPendingForMemberInTx`), both tables carry the allowlist column-coverage guard (`scrub-change-requests-pii-column-coverage.test.ts`), and the live-Neon oracle is `change-requests-erasure-scrub.test.ts`. The remembered `Idempotency-Key` body is ids + outcome only since round 6, so no value outlives the scrub there. | PR-2 (US4) — done |
 | **T087** — the durable 10 / 24 h cap + 1 h staff-email coalescing | **CLOSED in PR-2 (US5)**: the cap is counted inside the submit tx from the request table (no Upstash on the path — PR-1's interim peek is deleted) and a resubmit within 1 h of the last staff email queues nothing. | PR-2 (US5) — done |
-| **T102** — the pending-count / oldest-age gauges | FR-037's > 7 d warning / > 14 d page alerts cannot fire until the gauges have a caller. | PR-3 (US6) |
+| **T102** — the pending-count / oldest-age gauges | **CLOSED in PR-3 (US6)**: the two gauges are emitted by the 5-min per-tenant tick (`/api/internal/metrics/broadcasts-gauges`, a second `db.transaction` with its own try/catch — research § V2), zero-filled over `tenant_member_settings` ∪ the pending keys, and the FR-037 alert rows in `docs/observability.md` § 27.3 bind to them. Note for whoever watches the first flip: while the platform flag is OFF the tick deliberately FORGETS both series (`membersGaugesSkipped: 'flag_off'`), so "no data" before step 2 is expected — the series appear on the first tick after the flag is set. | PR-3 (US6) — done |
 | **T072 / T074** — the real queue (filters, cursor paging, overdue flag) | **CLOSED in PR-2 (US4)**: URL-driven filters — a client bar on the shadcn `Select` (state / outcome / date range, `?memberId=` from the member record), keyset "Next page", the overdue badge, `pendingCount` + oldest age in the header; the 5,000-row budget is measured by `change-requests-queue-pagination.test.ts`. | PR-2 (US4) — done |
 | e2e `tests/e2e/change-requests.spec.ts` green on every Playwright project with the flag ON | **Run 2026-09-11 on chromium + mobile-safari: 8 passed, 1 skipped** (the secondary-contact case waits for an `E2E_MEMBER_SECONDARY_*` persona — research § V4). Five fixture defects fixed on the way (staff sessions probing the member gate, the `page.request` POST without an Origin, the required-mark label, a pre-hydration click, the dialog-focus assertion) and ONE product defect: Base UI's Checkbox renders `disabled` as `data-disabled` only, so a manager's read-only row carried no `aria-disabled` (fixed). Note for anyone re-running locally: the dev roster must be sane — the shared `dev` branch had 3,774 leaked `createActiveTestUser` admins and every submit fanned one outbox row out to each (a 3-minute transaction); they are now `disabled`. | before flip (re-run on the release branch) |
 | `TENANT_PRIVACY_POLICY_URL` set in Vercel | The FR-010 privacy link on the portal form hides when the variable is unset (review round 1, UX Critical: a dead `/privacy` link); with it unset the member is asked to propose PII changes with no link to the policy — PDPA §23 notice. | before flip (operator) |
@@ -114,22 +114,29 @@ moment the flag is set:
    per FR-029) and the retention note that a SENT `member_change_request_decided_member` outbox
    row keeps the subject's address frozen at enqueue under the existing COMP-1 outbox retention
    (review round 1, P-10) — FR-040 makes this a precondition of the switch.
-4. Switch the tenant setting ON. Until US6 / PR-3 ships the audited admin card (T098 / T099,
-   `/admin/settings/member-changes`) this is one SQL statement on
-   `tenant_member_settings.member_change_approval_enabled` (the e2e seed's
-   `ensureApprovalSetting` is the reference) — record who ran it and when in `reviews/cutover.md`,
-   since no `member_change_approval_setting_changed` audit row exists yet. Before that moment the
-   portal behaves exactly as before.
+4. Switch the tenant setting ON **in the admin card** — `/admin/settings/member-changes`,
+   `members.write`, shipped in PR-3 (T098 / T099). The flip is audited: one
+   `member_change_approval_setting_changed { previous, next, actor_role }` row names who did it
+   and when, so there is nothing to transcribe into `reviews/cutover.md` by hand any more (the
+   earlier "one SQL statement on `tenant_member_settings.member_change_approval_enabled`, record
+   it yourself" instruction is superseded — the SQL path is now the break-glass fallback only,
+   and taking it produces no audit row). **Step 3 is a precondition of this step, not a
+   follow-up** (FR-040): the RoPA entry must already list the activity before the switch goes on,
+   and the card's own description says so. Switching OFF and later back ON is another switch-ON —
+   FR-040 applies again; see the runbook's Rollback section. Before this moment the portal
+   behaves exactly as before.
 5. First-submission observation: one real member submits → confirm the staff email arrives, the
-   queue shows it, the dashboard count is 1, and `SELECT count(*) FROM member_change_requests
-   WHERE state = 'pending'` for the tenant is 1 (the `members_change_requests_pending_count` gauge
-   has no emitter until T102 / PR-3). Record the observation in `reviews/cutover.md`.
+   queue shows it, the dashboard "Needs attention" row and the nav badge read 1, and
+   `SELECT count(*) FROM member_change_requests WHERE state = 'pending'` for the tenant is 1. The
+   `members_change_requests_pending_count` gauge follows within one 5-min tick (its emitter
+   landed in PR-3 / T102; while the flag was off the tick deliberately reported nothing).
+   Record the observation in `reviews/cutover.md`.
 
 ### Rollback matrix (FR-039)
 
 | Layer | Action | Pending rows | Portal | Nav / dashboard | `PATCH /api/portal/profile` | Time |
 |---|---|---|---|---|---|---|
-| 1 — tenant setting OFF | SQL on `tenant_member_settings.member_change_approval_enabled` until PR-3 ships the audited admin card (T098 / T099) | kept, still decidable | no new requests; existing pending banner stays | count stays while rows pending | Group B saves immediately again | seconds |
+| 1 — tenant setting OFF | the audited admin card at `/admin/settings/member-changes` (`members.write`; shipped PR-3, T098 / T099). Switching off with requests waiting asks for confirmation and names the count; one `member_change_approval_setting_changed` audit row records the transition. **Reversing this layer is a switch-ON: FR-040 applies again** (step 3 above) | kept, still decidable | no new requests; existing pending banner stays | count stays while rows pending | Group B saves immediately again | seconds |
 | 2 — platform flag OFF | remove `FEATURE_MEMBER_CHANGE_APPROVAL` in Vercel + redeploy | kept untouched, decidable again when the flag returns; **queued outbox rows** of the two F114 types stay `pending` — the dispatcher filters them at query time while the flag is off (the F4 R7-B4 precedent) and drains them when it returns | no pending/decision state shown | hidden | widened back to today's field set | one deploy |
 | 3 — code revert | revert the PR | kept (see below) | — | — | — | one deploy |
 

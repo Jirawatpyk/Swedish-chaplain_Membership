@@ -6,15 +6,17 @@
  * anywhere in the feature's route, page or component trees would bypass all
  * three at once (research R5), so this scan fails on any hit.
  *
- * Two positive controls, so the guard cannot pass vacuously:
+ * Three positive controls, so the guard cannot pass vacuously:
  *   1. the walk must yield at least MIN_FILES_SCANNED files (a renamed
  *      directory makes an empty scan LOUD rather than green);
- *   2. the SAME matcher must detect the directive in a fixture string (in
+ *   2. EVERY entry of SCANNED_TREES must exist on disk (PR-3 review, SEC-2:
+ *      the `existsSync` skip below was written for trees a later slice would
+ *      land, and once every slice has landed that skip is pure risk — a
+ *      renamed or deleted tree would drop silently out of the scan while the
+ *      remaining trees still cleared the floor);
+ *   3. the SAME matcher must detect the directive in a fixture string (in
  *      both quote styles, and after a CRLF line ending — a `\n`-anchored
  *      regex is inert on every Windows checkout, CLAUDE.md § Gotchas).
- *
- * Directories that do not exist yet (the UI slice lands them) are skipped;
- * the file floor is what keeps that skip honest.
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -30,10 +32,21 @@ const SCANNED_TREES = [
   'src/app/(member)/portal/change-requests',
   'src/app/(staff)/admin/change-requests',
   'src/components/members/change-requests',
+  // SEC-2 (PR-3 review): the US6 SETTINGS UI — page + loading + error + the
+  // `ApprovalSwitch` that PATCHes the tenant-wide gate. It was the one staff
+  // tree the guard did not read, and it is the surface where a `'use server'`
+  // would matter most: a Server Action there would flip the switch outside the
+  // CSRF Origin allow-list, the in-route READ_ONLY_MODE gate and the RBAC
+  // denial audit, all three at once.
+  'src/app/(staff)/admin/settings/member-changes',
 ] as const;
 
-/** The server half alone is 10 route files; a scan below this has lost a tree. */
-const MIN_FILES_SCANNED = 10;
+/**
+ * 32 source files across the seven trees on 2026-09-15 (the settings UI added
+ * 4). The floor sits just under, so a lost tree fails loudly while ordinary
+ * additions do not churn the number.
+ */
+const MIN_FILES_SCANNED = 30;
 
 const SOURCE_EXT = /\.(ts|tsx)$/;
 
@@ -66,6 +79,11 @@ const scanned = SCANNED_TREES.flatMap((tree) => {
 describe('F114 change-request surfaces carry no Server Action (FR-038)', () => {
   it(`positive control: the scan covers at least ${MIN_FILES_SCANNED} source files`, () => {
     expect(scanned.length, scanned.map((f) => f.rel).join('\n')).toBeGreaterThanOrEqual(MIN_FILES_SCANNED);
+  });
+
+  it('positive control: every SCANNED_TREES entry exists on disk — a renamed tree cannot skip silently', () => {
+    const missing = SCANNED_TREES.filter((tree) => !existsSync(resolve(ROOT, tree)));
+    expect(missing, `these trees are in SCANNED_TREES but not on disk: ${missing.join(', ')}`).toEqual([]);
   });
 
   it('positive control: the matcher detects the directive in both quote styles, with a semicolon, and after CRLF', () => {

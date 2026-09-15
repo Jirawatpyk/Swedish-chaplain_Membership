@@ -693,3 +693,47 @@ describe('decideChangeRequest — T105 coverage: every field key applies, every 
     expect(emails.enqueued).toEqual([expect.objectContaining({ type: 'member_change_request_decided_member', locale: 'en' })]);
   });
 });
+
+/**
+ * PR-3 review (reliability R-M5) — `member_change_requests_fields.field_key`
+ * is TEXT + a CHECK list in migration 0300, not a Domain-owned enum, so a
+ * stored key OUTSIDE `ProposableFieldKey` is representable (a widened CHECK,
+ * a hand-written row, a future key rolled back in code but not in data).
+ *
+ * The finding claimed such a row reaches `patchesOf`'s `default` arm, which
+ * answers `issues: []` — a 422 naming no field. These two cases pin where the
+ * refusal ACTUALLY comes from: step 6 re-validates the approved values through
+ * the STRICT proposal schema, which refuses the unrecognised key with a NAMED
+ * issue before `patchesOf` is reached. `patchesOf`'s default arm therefore
+ * stays unreachable (its `v8 ignore` stands) — but it now names the key too,
+ * so the file's own rule ("the 422 names the field the reviewer must reject —
+ * never an empty `issues`") holds on every arm, reachable or not.
+ */
+describe('decideChangeRequest — a stored field_key outside the Domain union (PR-3 R-M5)', () => {
+  const unknownKeyRequest = () =>
+    pendingRequest({
+      fields: [
+        { key: 'legacy_fax', target: 'member', seen: null, proposed: '02-000-0000', affectsTaxDocuments: false, outcome: null, appliedAt: null },
+      ] as unknown as ChangeRequest['fields'],
+    });
+
+  it('APPROVING it is refused with an issue that NAMES the unknown key — never an empty 422', async () => {
+    const { deps, repo } = makeDeps({ request: unknownKeyRequest() });
+    const r = await decideChangeRequest(deps, input([{ key: 'legacy_fax', outcome: 'approved' }]));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('validation_error');
+    const issues = (r.error as { issues: ReadonlyArray<{ path: readonly (string | number)[]; message?: string }> }).issues;
+    expect(issues.length).toBeGreaterThan(0);
+    expect(JSON.stringify(issues)).toContain('legacy_fax');
+    // refused BEFORE any write: the row is still pending
+    expect(repo.rows.get(REQ)!.state).toBe('pending');
+  });
+
+  it('REJECTING it is a normal decision — an unknown key never blocks the queue from being cleared', async () => {
+    const { deps, repo } = makeDeps({ request: unknownKeyRequest() });
+    const r = await decideChangeRequest(deps, input([{ key: 'legacy_fax', outcome: 'rejected' }], 'not a field we hold'));
+    expect(r.ok).toBe(true);
+    expect(repo.rows.get(REQ)!.outcome).toBe('rejected');
+  });
+});

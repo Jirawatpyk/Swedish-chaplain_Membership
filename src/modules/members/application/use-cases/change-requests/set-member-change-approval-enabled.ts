@@ -3,14 +3,19 @@
  * contracts/admin-change-requests-api.md § settings).
  *
  * The per-tenant approval switch: one `runInTenant` → the upsert of
- * `tenant_member_settings.member_change_approval_enabled` (the port returns
- * the PREVIOUS value) → ONE audit row `member_change_approval_setting_changed
- * { previous, next, actor_role }` when the value actually changed. An
- * unchanged value is a no-op answer (`changed: false`, no audit) — the
- * upsert of the same value is idempotent and the audit trail records
- * transitions, not clicks. No member key in the payload: a setting flip is
- * not member activity, so migration 0009's `last_activity_at` trigger has
- * nothing to fire on.
+ * `tenant_member_settings.member_change_approval_enabled` (the port
+ * materialises the row if it is missing and returns the PREVIOUS value) →
+ * ONE audit row `member_change_approval_setting_changed
+ * { previous, next, actor_role }` when the value actually changed.
+ *
+ * An unchanged value answers `changed: false` with NO audit row (R-L4: the
+ * word "no-op" in an earlier draft of this docblock was wrong about the
+ * write — the upsert still runs and still stamps `updated_at`; what is
+ * skipped is the AUDIT, because the trail records transitions, not clicks).
+ * Re-writing the same value is idempotent, so nothing downstream observes a
+ * difference. No member key in the payload: a setting flip is not member
+ * activity, so migration 0009's `last_activity_at` trigger has nothing to
+ * fire on.
  *
  * `actor_role` is the SESSION role the route passes, `null` when it has
  * none — never a literal (`check:actor-role-truth`).
@@ -50,9 +55,9 @@ export type SetMemberChangeApprovalEnabledInput = {
 export type SetMemberChangeApprovalEnabledOutcome = {
   readonly approvalEnabled: boolean;
   readonly previous: boolean;
-  /** `false` when the stored value already matched — no audit row was written. */
+  /** `false` when the stored value already matched — the upsert still ran, no audit row was written. */
   readonly changed: boolean;
-  /** The clock instant of the change; `null` on a no-op. */
+  /** The clock instant of the transition; `null` when nothing transitioned (the card then shows no toast). */
   readonly changedAt: Date | null;
 };
 

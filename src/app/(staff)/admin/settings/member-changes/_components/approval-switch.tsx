@@ -29,10 +29,12 @@
  *   - `PATCH /api/admin/settings/member-changes { approvalEnabled }`, same
  *     origin; while in flight the switch is `aria-busy` + dimmed, never
  *     `disabled` (a disabled control drops focus to `<body>`);
- *   - success → toast + state line; a 503 read-only refusal → the
- *     setting-specific read-only copy inline (`role="alert"`, UX M5), any
- *     other failure → the generic inline alert; state unchanged either way
- *     (ux-standards § 4.1).
+ *   - success → state line, and a toast ONLY when the value actually
+ *     transitioned (`changedAt` non-null; R-L5 — an unchanged no-op writes no
+ *     audit row, so announcing "switched on" would claim a change the trail
+ *     does not have); a 503 read-only refusal → the setting-specific
+ *     read-only copy inline (`role="alert"`, UX M5), any other failure → the
+ *     generic inline alert; state unchanged either way (ux-standards § 4.1).
  */
 import { useId, useState } from 'react';
 import Link from 'next/link';
@@ -45,6 +47,8 @@ import { Switch } from '@/components/ui/switch';
 
 type ResponseBody = {
   readonly approvalEnabled?: unknown;
+  /** ISO instant of the change; `null` when the stored value already matched. */
+  readonly changedAt?: unknown;
   // read-only-mode 503: flat string (proxy-level gate) OR nested `{ code }`
   // (the route guard) — same dual-shape check as `plans-table.tsx`.
   readonly error?: string | { readonly code?: string };
@@ -93,7 +97,14 @@ export function ApprovalSwitch({
       // answers with the stored state.
       const value = body.approvalEnabled === true;
       setEnabled(value);
-      toast.success(value ? t('toast.on') : t('toast.off'));
+      // `changedAt: null` = the stored value already matched: the upsert ran
+      // (and stamped `updated_at`) but nothing TRANSITIONED, so there is no
+      // audit row — and "Approval switched on" would claim a change the trail
+      // does not record (UX/reliability R-L5). The state line above already
+      // shows the stored value, so the no-op needs no announcement.
+      if (body.changedAt !== null && body.changedAt !== undefined) {
+        toast.success(value ? t('toast.on') : t('toast.off'));
+      }
     } catch {
       setError(t('errors.generic'));
     } finally {

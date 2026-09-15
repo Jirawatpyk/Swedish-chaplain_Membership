@@ -2077,7 +2077,7 @@ Labels are bounded enums + `tenant` — never a user id, an email, a field value
 
 | Metric | Type | Labels | Source | Notes |
 |---|---|---|---|---|
-| `members_change_requests_pending_count` | gauge | `tenant` | per-tenant gauges tick `/api/internal/metrics/broadcasts-gauges` (native Vercel Cron, every 5 min, UTC) — the `members` block, its own `db.transaction` + try/catch (research § V2) | `COUNT(*)` over `member_change_requests WHERE state = 'pending'` per tenant. **Zero-filled**: every tenant with any change-request row is observed, 0 included (the C9 latch rule — `observeGauge` re-reports the last value at every scrape). |
+| `members_change_requests_pending_count` | gauge | `tenant` | per-tenant gauges tick `/api/internal/metrics/broadcasts-gauges` (native Vercel Cron, every 5 min, UTC) — the `members` block, its own `db.transaction` + try/catch (research § V2) | `COUNT(*)` over `member_change_requests WHERE state = 'pending'` per tenant. **Zero-filled**: every tenant in the tenant set is observed, 0 included (the C9 latch rule — `observeGauge` re-reports the last value at every scrape). The tenant set is `tenant_member_settings` (one row per PROVISIONED tenant) ∪ the pending `GROUP BY` keys — never a `DISTINCT` scan of the request table, whose cost grew with retention rather than with the number of tenants (PR-3 review A4). |
 | `members_change_request_oldest_age_seconds` | gauge | `tenant` | same block | `now() - MIN(submitted_at)` over the pending rows, whole seconds, clamped at 0. **0 when nothing is pending** (metric convention; the read model `countPendingChangeRequests` answers `null` so the UI renders nothing). FR-037's two alerts bind here. |
 | `members_change_request_submitted_total` | counter | `tenant`, `scope`, `coalesced` | `submitChangeRequest` | One per created request; `coalesced` = the submit replaced the person's earlier pending request (US5). |
 | `members_change_request_decided_total` | counter | `tenant`, `outcome` | `decideChangeRequest` | `approved` / `partially_approved` / `rejected`. |
@@ -2086,10 +2086,27 @@ Labels are bounded enums + `tenant` — never a user id, an email, a field value
 | `members_change_request_decision_email_skipped_total` | counter | `tenant`, `reason` | `decideChangeRequest` | `reason ∈ {recipient_gone}` — the decision committed, the submitting contact is gone; the decided audit event carries `member_notified: false`. |
 | `members_change_request_decide_ms` | histogram | `tenant` | `decideChangeRequest` | Transaction wall time of a decision (apply + audit + email row). |
 
-The tick's completion log `cron.broadcasts_gauges.completed` carries `membersGaugesOk`,
-`membersPendingTenantCount`, `membersPendingTotal`, `membersOldestAgeSecondsMax`; a members-half
-fault logs `cron.broadcasts_gauges.members_query_failed` and answers `membersGaugesOk: false` in
-the tick body while the broadcasts gauges and the 200 are unaffected.
+The tick's completion log `cron.broadcasts_gauges.completed` carries `broadcastsGaugesOk`,
+`membersGaugesOk`, `membersGaugesSkipped`, `membersPendingTenantCount`, `membersPendingTotal`,
+`membersOldestAgeSecondsMax`; a members-half fault logs
+`cron.broadcasts_gauges.members_query_failed` and answers `membersGaugesOk: false` in the tick
+body while the broadcasts gauges and the 200 are unaffected.
+
+**The two halves are independent BOTH ways** (PR-3 review SEC-1). The broadcasts half failing
+logs `cron.broadcasts_gauges.query_failed`, emits no broadcasts sample, sets
+`broadcastsGaugesOk: false` and still answers **500** — but only at the END of the tick, after
+the members gauges are emitted. It used to `return` the 500 immediately, which took the FR-037
+age gauge down with it: the one alert whose threshold doubles as the 30-day data-subject-request
+backstop, blind for the duration of an unrelated broadcasts outage. Alert on each flag
+separately; a 500 no longer implies the members series are stale.
+
+**While `FEATURE_MEMBER_CHANGE_APPROVAL` is OFF** (PR-3 review SEC-5) the tick skips the pending
+scan and FORGETS both members series for every tenant in the tenant set, answering
+`membersGaugesSkipped: 'flag_off'` with `membersGaugesOk: true`. The series go ABSENT rather
+than reporting a queue nobody can decide (the routes 404 while dark), and no value can latch
+across a flag flip. Absence is the honest answer here, not a zero: a 0 would assert "the queue
+is empty", which is a different fact. Both FR-037 alert rows below therefore read "no data"
+while the feature is dark — expected, not an outage.
 
 ### 27.2 Audit / log events
 
@@ -2126,7 +2143,8 @@ decided well before the month a data subject may hold the chamber to.
 | **Page** | `members_change_request_oldest_age_seconds` | > 14 d (1,209,600 s), any tenant | A member's proposal has aged half-way through the 30-day clock. Open `/admin/change-requests` (oldest first) and decide it; if no reviewer can, escalate to the chamber's data-protection contact the same day. Runbook § 27.4. |
 | Warning | `members_change_request_oldest_age_seconds` | > 7 d (604,800 s), any tenant | Nudge the reviewers: the queue is not being worked. Check the staff email did arrive (`outbox` rows for `member_change_request_submitted_staff`) and that the tenant still has an active reviewer. |
 | Warning | `members_change_request_no_reviewers_total` | `rate > 0` | A tenant with no active `admin` / `super_admin`: every submit is created and nobody is emailed. Re-enable a reviewer; the pending rows drain on the next decide. |
-| Warning | tick body `membersGaugesOk = false` (log `cron.broadcasts_gauges.members_query_failed`) | 3 consecutive ticks (15 min) | The members gauges are stale — both age alerts above are blind. Check the migration state of `member_change_requests` on the deployed branch and the tick's statement timeout. |
+| Warning | tick body `membersGaugesOk = false` (log `cron.broadcasts_gauges.members_query_failed`) | 3 consecutive ticks (15 min) | The members gauges are stale — both age alerts above are blind. Check the migration state of `member_change_requests` on the deployed branch and the tick's statement timeout. NOT the same as `membersGaugesSkipped: 'flag_off'`, which is the deliberate dark state (§ 27.1). |
+| Warning | tick body `broadcastsGaugesOk = false` (log `cron.broadcasts_gauges.query_failed`, HTTP 500) | 3 consecutive ticks (15 min) | The BROADCASTS half of the shared tick is failing; the members gauges above are unaffected (SEC-1). § 22.3 owns the broadcasts alert rows. |
 | Watch | `members_change_requests_pending_count` | dashboard panel, no threshold | Backlog level per tenant; the age gauge is the alarm, the count is the context. |
 
 ### 27.4 Runbook
@@ -2142,3 +2160,13 @@ decidable again when it returns — FR-039).
 
 No feature-specific extension beyond § 3: proposed field VALUES, decision reasons and member /
 contact emails never reach a log line or a metric label — ids, field KEYS and outcomes only.
+
+The same holds for TRACES, and it holds because of a configuration rather than a filter: the two
+spans of § 27.2 carry only the bounded attributes listed there, and no SQL text or bind
+parameter is recorded anywhere else in the span tree because `instrumentation.ts` (repo root)
+calls `registerOTel({ serviceName })` and nothing else — **no pg / database instrumentation** is
+registered, so there is no auto-instrumented statement span to leak a proposed value into. If
+database instrumentation is ever added, leave
+`enhancedDatabaseReporting` OFF: it attaches statement text and parameters to every span, which
+would put proposed PII values and member emails into the trace backend, outside every filter
+this section describes (privacy review P-L2).

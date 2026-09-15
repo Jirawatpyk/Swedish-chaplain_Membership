@@ -33,6 +33,14 @@
  * reported as `membersGaugesOk: false`; it never costs the broadcasts
  * samples or the 200. No `broadcasts_*` metric is renamed — the names live
  * on the `*Metrics` objects, not on this route.
+ *
+ * The independence is symmetric (PR-3 review, SEC-1): the BROADCASTS catch no
+ * longer returns early either, so a broadcasts outage cannot take the FR-037
+ * age gauge down with it. Its arrays stay empty (no sample is invented), the
+ * members block runs, and the 500 + `error: 'query_failed'` is answered at the
+ * END alongside `broadcastsGaugesOk: false`. The body therefore carries an
+ * independent OK flag per half, and `membersGaugesSkipped: 'flag_off'` when
+ * the members half is deliberately dark (SEC-5).
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from 'drizzle-orm';
@@ -88,13 +96,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  let tenants: TenantRow[];
-  let pending: PendingRow[];
-  let stuck: PendingRow[];
-  let dispatchRatios: DispatchRatioRow[];
-  let suppressionSizes: PendingRow[];
-  let approvedOverdue: PendingRow[];
-  let audienceImportStuck: PendingRow[];
+  // SEC-1 (PR-3 review): a broadcasts fault must NOT skip the members block.
+  // This catch used to `return` the 500 straight out, so a broadcasts outage
+  // silently took the FR-037 age gauge with it — the one alert that doubles as
+  // the 30-day data-subject-request backstop, blind exactly when nobody is
+  // looking. The halves are now independent BOTH ways: every array below
+  // stays empty on a fault (so no broadcasts sample is invented), the members
+  // block runs, and the 500 is answered at the END.
+  let tenants: TenantRow[] = [];
+  let pending: PendingRow[] = [];
+  let stuck: PendingRow[] = [];
+  let dispatchRatios: DispatchRatioRow[] = [];
+  let suppressionSizes: PendingRow[] = [];
+  let approvedOverdue: PendingRow[] = [];
+  let audienceImportStuck: PendingRow[] = [];
+  let broadcastsGaugesOk = true;
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
@@ -204,11 +220,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     approvedOverdue = Array.from(result.approvedOverdueRows);
     audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
   } catch (e) {
+    broadcastsGaugesOk = false;
     logger.error(
       { requestId, err: errKind(e) },
       'cron.broadcasts_gauges.query_failed',
     );
-    return NextResponse.json({ error: 'query_failed' }, { status: 500 });
   }
 
   let pendingTotal = 0;
@@ -297,16 +313,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // C9 latch rule, again: `observeGauge` re-reports the last value at every
   // scrape, so a tenant whose queue drained emits no GROUP BY row and would
   // keep reading its old count forever — and FR-037's "> 14 d" page would
-  // never clear. Every tenant with ANY change-request row is observed; 0
-  // pending is reported as 0 on both gauges ("0 means 0" — the metric
-  // convention; the read model's `null` age is a UI one).
+  // never clear. Every PROVISIONED tenant is observed; 0 pending is reported
+  // as 0 on both gauges ("0 means 0" — the metric convention; the read
+  // model's `null` age is a UI one).
+  //
+  // A4 (PR-3 review) — the zero-fill tenant set was `SELECT DISTINCT tenant_id
+  // FROM member_change_requests`: an index-only scan of the WHOLE request
+  // history, every 5 min, whose cost grows with RETENTION rather than with the
+  // number of tenants. It is now `tenant_member_settings` (one row per
+  // provisioned tenant) ∪ the pending GROUP BY keys — the union is what keeps
+  // a tenant with pending rows but no settings row (a pre-0209 seed) observed.
+  //
+  // SEC-5 (PR-3 review) — while `FEATURE_MEMBER_CHANGE_APPROVAL` is OFF the
+  // queue routes 404 and nobody can decide a retained request, so the pending
+  // scan is skipped and both series are FORGOTTEN per tenant (absence, not a
+  // fabricated 0: a 0 would assert "the queue is empty", a different fact) so
+  // no value can latch across a flag flip. The tiny provisioned-tenant read
+  // still runs — forgetting a label set requires knowing it.
   // -------------------------------------------------------------------------
+  const membersGaugesSkipped: 'flag_off' | null = env.features.memberChangeApproval ? null : 'flag_off';
   const membersPendingByTenant = new Map<string, MembersPendingRow>();
   const membersObserved = new Set<string>();
   let membersGaugesOk = true;
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
+      const tenantRows = await tx.execute<TenantRow>(sql`
+        SELECT tenant_id FROM tenant_member_settings
+      `);
+      if (membersGaugesSkipped !== null) return { tenantRows, pendingRows: [] as MembersPendingRow[] };
       const pendingRows = await tx.execute<MembersPendingRow>(sql`
         SELECT
           tenant_id,
@@ -316,16 +351,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         WHERE state::text = 'pending'
         GROUP BY tenant_id
       `);
-      const tenantRows = await tx.execute<TenantRow>(sql`
-        SELECT DISTINCT tenant_id FROM member_change_requests
-      `);
-      return { pendingRows, tenantRows };
+      return { tenantRows, pendingRows };
     });
-    for (const row of Array.from(result.pendingRows)) {
+    for (const row of Array.from(result.tenantRows ?? [])) membersObserved.add(row.tenant_id);
+    for (const row of Array.from(result.pendingRows ?? [])) {
       membersPendingByTenant.set(row.tenant_id, row);
       membersObserved.add(row.tenant_id);
     }
-    for (const row of Array.from(result.tenantRows ?? [])) membersObserved.add(row.tenant_id);
   } catch (e) {
     membersGaugesOk = false;
     logger.error({ requestId, err: errKind(e) }, 'cron.broadcasts_gauges.members_query_failed');
@@ -333,6 +365,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let membersPendingTotal = 0;
   let membersOldestAgeSecondsMax = 0;
   for (const tenantId of membersObserved) {
+    if (membersGaugesSkipped !== null) {
+      membersMetrics.changeRequests.forgetGauges(tenantId);
+      continue;
+    }
     const row = membersPendingByTenant.get(tenantId);
     const count = row?.count ?? 0;
     // an age can only be negative under clock skew between the DB and a row
@@ -357,7 +393,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
+      broadcastsGaugesOk,
       membersGaugesOk,
+      membersGaugesSkipped,
       membersPendingTenantCount: membersPendingByTenant.size,
       membersPendingTotal,
       membersOldestAgeSecondsMax,
@@ -367,7 +405,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json(
     {
-      ok: true,
+      // SEC-1: the broadcasts half failing is still a 500 (the tick did not do
+      // its whole job) — answered HERE, after the members gauges are emitted,
+      // keeping the body and log names the alerting already keys on.
+      ok: broadcastsGaugesOk,
+      ...(broadcastsGaugesOk ? {} : { error: 'query_failed' }),
+      broadcastsGaugesOk,
       pendingTenantCount: pending.length,
       stuckTenantCount: stuck.length,
       dispatchRatioTenantCount: dispatchRatios.length,
@@ -379,10 +422,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
       membersGaugesOk,
+      membersGaugesSkipped,
       membersPendingTenantCount: membersPendingByTenant.size,
       membersPendingTotal,
       membersOldestAgeSecondsMax,
     },
-    { status: 200 },
+    { status: broadcastsGaugesOk ? 200 : 500 },
   );
 }

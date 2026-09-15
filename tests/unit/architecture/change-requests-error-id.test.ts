@@ -24,6 +24,17 @@
  * `const HISTORY_ERROR_ID = '…'` resolved in-file — and comments are
  * stripped first, so prose about an id is not an id. Line handling is
  * `\r?\n`-safe (the working tree is CRLF).
+ *
+ * PR-3 review (SEC-3): the `errorIdPrefix:` call sites are collected too. Four
+ * routes hand their prefix to `refuseWhenAttemptsExhausted`, which appends
+ * `.attempts_exhausted` / `.attempt_bucket_fell_back` and logs it — so the id
+ * that reaches the log never appears as an `errorId:` literal in the route,
+ * and a route passing a NEIGHBOUR's `ERROR_ID` const was invisible to rules 2
+ * and 3. That is the F8 defect exactly (one hardcoded id, 24 callers): the
+ * only difference is that the literal travels as an argument. Prefixes are
+ * resolved through the same `consts` map and checked by the same
+ * `violations()`, where a prefix matches its route by EQUALITY (the helper
+ * supplies the arm).
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -67,14 +78,20 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\r?\n)[ \t]*\/\/[^\r\n]*/g, '$1');
 }
 
+/** The file's own `const <NAME>_ID = '…'` declarations, comments already stripped. */
+function constsOf(code: string): Map<string, string> {
+  const consts = new Map<string, string>();
+  for (const m of code.matchAll(/const\s+([A-Z_]*ERROR_ID)\s*=\s*'([^']+)'/g)) consts.set(m[1]!, m[2]!);
+  return consts;
+}
+
 /**
  * Every `errorId` literal a file can log, template forms resolved through the
  * file's own `const <NAME>_ID = '…'` / `const ERROR_ID = '…'` declarations.
  */
 export function collectErrorIds(source: string): string[] {
   const code = stripComments(source);
-  const consts = new Map<string, string>();
-  for (const m of code.matchAll(/const\s+([A-Z_]*ERROR_ID)\s*=\s*'([^']+)'/g)) consts.set(m[1]!, m[2]!);
+  const consts = constsOf(code);
   const ids: string[] = [];
   for (const m of code.matchAll(/errorId:\s*'([^']+)'/g)) ids.push(m[1]!);
   for (const m of code.matchAll(/errorId:\s*`([^`]+)`/g)) {
@@ -84,9 +101,33 @@ export function collectErrorIds(source: string): string[] {
   return ids;
 }
 
-/** Rule 2 as a pure function so the positive control can exercise it. */
+/**
+ * SEC-3 — every PREFIX a file hands to a shared logging helper
+ * (`refuseWhenAttemptsExhausted({ errorIdPrefix })`), resolved through the same
+ * `consts` map. The helper appends the arm, so what lands in the log is
+ * `<prefix>.attempts_exhausted` — an id that appears nowhere in the route as
+ * an `errorId:` literal.
+ */
+export function collectErrorIdPrefixes(source: string): string[] {
+  const code = stripComments(source);
+  const consts = constsOf(code);
+  const prefixes: string[] = [];
+  for (const m of code.matchAll(/errorIdPrefix:\s*'([^']+)'/g)) prefixes.push(m[1]!);
+  for (const m of code.matchAll(/errorIdPrefix:\s*([A-Z_]*ERROR_ID)\b/g)) {
+    prefixes.push(consts.get(m[1]!) ?? `<unresolved:${m[1]!}>`);
+  }
+  return prefixes;
+}
+
+/**
+ * Rule 2 as a pure function so the positive control can exercise it.
+ *
+ * An `errorId` must START WITH one of the route's prefixes plus a dot; an
+ * `errorIdPrefix` IS the prefix (the helper supplies the arm), so an exact
+ * match counts too — both forms are judged here, against the same list.
+ */
 export function violations(ids: readonly string[], prefixes: readonly string[]): string[] {
-  return ids.filter((id) => !prefixes.some((p) => id.startsWith(`${p}.`)));
+  return ids.filter((id) => !prefixes.some((p) => id === p || id.startsWith(`${p}.`)));
 }
 
 describe('F114 errorId taxonomy (T107)', () => {
@@ -116,15 +157,54 @@ describe('F114 errorId taxonomy (T107)', () => {
     expect(onDisk.length).toBeGreaterThanOrEqual(10);
   });
 
+  it('positive control: an errorIdPrefix carrying a NEIGHBOUR route\'s const is a violation, its own is not (SEC-3)', () => {
+    const fixture = [
+      "const ERROR_ID = 'M114.portal.submit';",
+      "const NEIGHBOUR_ERROR_ID = 'M114.portal.withdraw';",
+      'const refusal = await refuseWhenAttemptsExhausted({',
+      '  key: `f114:submit-attempts:${tenant.slug}:${user.id}`,',
+      '  errorIdPrefix: NEIGHBOUR_ERROR_ID,',
+      '});',
+      "// errorIdPrefix: 'M114.portal.gate' — prose, not a call site",
+    ].join('\r\n');
+    expect(collectErrorIdPrefixes(fixture)).toEqual(['M114.portal.withdraw']);
+    expect(violations(collectErrorIdPrefixes(fixture), ['M114.portal.submit'])).toEqual(['M114.portal.withdraw']);
+    // its OWN const, and the bare-literal form, both pass the same checker
+    expect(violations(collectErrorIdPrefixes("const ERROR_ID = 'M114.portal.submit';\r\nerrorIdPrefix: ERROR_ID,"), ['M114.portal.submit'])).toEqual([]);
+    expect(collectErrorIdPrefixes("errorIdPrefix: 'M114.portal.submit',")).toEqual(['M114.portal.submit']);
+    // an unresolvable const must not silently vanish from the check
+    expect(violations(collectErrorIdPrefixes('errorIdPrefix: MISSING_ERROR_ID,'), ['M114.portal.submit'])).toEqual([
+      '<unresolved:MISSING_ERROR_ID>',
+    ]);
+  });
+
   const perFile = ROUTE_PREFIXES.map(([file, prefixes]) => {
     const abs = resolve(ROOT, API, file);
-    return { file, prefixes, ids: existsSync(abs) ? collectErrorIds(readFileSync(abs, 'utf8')) : [] };
+    const source = existsSync(abs) ? readFileSync(abs, 'utf8') : '';
+    return { file, prefixes, ids: collectErrorIds(source), bucketPrefixes: collectErrorIdPrefixes(source) };
+  });
+
+  it('positive control: the attempt-bucket prefixes are actually found on disk (the SEC-3 parse is not vacuous)', () => {
+    const withBuckets = perFile.filter((f) => f.bucketPrefixes.length > 0).map((f) => f.file);
+    expect(withBuckets.sort()).toEqual(
+      [
+        'portal/change-requests/route.ts',
+        'portal/change-requests/current/route.ts',
+        'portal/change-requests/[id]/route.ts',
+        'portal/change-requests/[id]/acknowledge/route.ts',
+      ].sort(),
+    );
   });
 
   it.each(perFile.map((f) => [f.file, f] as const))('%s: every errorId names this route (M114.<surface>.<route>.<arm>)', (_file, f) => {
     expect(f.ids.length, `${f.file} declares no errorId literal — the parse is vacuous or the route logs nothing on failure`).toBeGreaterThan(0);
     for (const id of f.ids) expect(id, `${f.file} logs ${id}`).toMatch(/^M114\.(portal|admin)\.[a-z_]+\.[a-z_]+$/);
-    expect(violations(f.ids, f.prefixes), `${f.file} logs an id that names another route`).toEqual([]);
+    // a PREFIX is one segment shorter — the helper appends the arm
+    for (const p of f.bucketPrefixes) expect(p, `${f.file} passes ${p} to a shared logger`).toMatch(/^M114\.(portal|admin)\.[a-z_]+$/);
+    expect(
+      violations([...f.ids, ...f.bucketPrefixes], f.prefixes),
+      `${f.file} logs an id that names another route`,
+    ).toEqual([]);
   });
 
   it('no two route files share an identical full errorId literal (the F8 shared-helper defect)', () => {

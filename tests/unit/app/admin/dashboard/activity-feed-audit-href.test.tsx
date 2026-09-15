@@ -86,7 +86,11 @@ vi.mock('@/lib/auth-session', () => ({
   })),
 }));
 
+vi.mock('next/headers', () => ({
+  headers: async () => new Headers(),
+}));
 vi.mock('@/lib/tenant-context', () => ({
+  resolveTenantFromHeaders: () => ({ slug: 'tenant-a' }),
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
 }));
 

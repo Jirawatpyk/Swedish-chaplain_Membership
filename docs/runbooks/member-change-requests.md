@@ -66,12 +66,16 @@ Causes, in the order to check:
    escalate to the chamber's data-protection contact the same day — the request is a
    rectification proposal and the clock is running.
 2. **No reviewer exists** (`members_change_request_no_reviewers_total > 0`, log
-   `change-request.submit.no_reviewers`). The request was created and nobody was emailed:
+   `change-request.submit.no_reviewers`). The request was created and nobody was emailed. The
+   question this answers is whether an active reviewer EXISTS, which needs no address — so the
+   query selects none (privacy review P-L1: do not pull staff emails into a terminal or a
+   paste-buffer to count rows):
    ```sql
-   SELECT id, email, role, status FROM users
+   SELECT id, role, status FROM users
     WHERE role IN ('admin', 'super_admin') AND status = 'active';
    ```
-   Re-enable or invite a reviewer (`/admin/users`). The pending rows are still there and drain on
+   Identify and act on the people in `/admin/users` (the same list, under the RBAC + audit
+   surface). Re-enable or invite a reviewer there. The pending rows are still there and drain on
    the next decision; no re-submission is needed.
 3. **The email was queued but never sent** — see Alarm 3.
 4. **The reviewer cannot decide** (the review page shows the rows read-only): the session holds
@@ -93,7 +97,7 @@ Genuine no-email cases:
 |---|---|---|
 | No `member_change_request_submitted_staff` outbox row at all | `change-request.submit.no_reviewers` in the logs; counter `members_change_request_no_reviewers_total` | Alarm 1, cause 2 |
 | Row exists, `status = 'pending'`, `attempts = 0`, minutes old | the drainer runs every 60 s; while the platform flag is OFF it **skips** both F114 types at query time (the F4 R7-B4 precedent) and drains them when the flag returns | check the flag on the deployment that runs the cron; otherwise `cron-jobs.md` § outbox-dispatch |
-| Row `failed`, `last_error` set, audit `email_dispatch_failed` with the F114 `notification_type` | Resend delivery (the transactional key, not the broadcasts one) | `docs/runbooks/audit-emit-loss.md` is NOT this; follow the outbox section of `cron-jobs.md`; a retry is the drainer's job, do not resend by hand |
+| Row `permanently_failed`, `last_error` set, audit `email_dispatch_failed` with the F114 `notification_type` | Resend delivery (the transactional key, not the broadcasts one) | `docs/runbooks/audit-emit-loss.md` is NOT this; follow the outbox section of `cron-jobs.md`; a retry is the drainer's job, do not resend by hand |
 | The member never got the decision email | `member_change_request_decided_member` row; the decided audit event says `member_notified: false` + `member_notification_skipped: 'recipient_gone'` when the submitting contact was removed between submit and decide | expected — the decision stands (FR-017), the history page on the portal shows it; nothing to resend |
 
 ## Alarm 3 — a member reports 429 on submit ("why am I rate limited?")
@@ -119,9 +123,21 @@ history is the audit trail and the GDPR export); the window rolls forward on its
 who hits it is usually re-submitting to "fix" a typo — the replace path already withdraws the
 earlier pending request as `replaced`, so tell them the latest submission is the one in review.
 
-Distinct from the per-IP / per-session probe limiter on the by-id routes
-(`M114.portal.*.rate_limited`, 429 without an audit row): that one is Upstash-backed with a
-per-process fallback window and clears on its own.
+Distinct from the per-actor **ATTEMPT bucket** the routes share
+(`src/lib/change-request-attempt-bucket.ts`). It is keyed per **tenant + user** — never per IP
+and never per session — at 10 / 10 min on the two by-id portal reads (`GET …/[id]`,
+`POST …/[id]/acknowledge`, where it bounds the `member_cross_tenant_probe` row a miss writes
+into the append-only trail) and 60 / 10 min on submit and withdraw. It answers the SAME 429
+envelope (`{ error: 'rate_limited', retryAfterSeconds }` + `Retry-After`) with **no audit row**,
+so grep the LOGS for `*.attempts_exhausted` (`M114.portal.submit.attempts_exhausted`,
+`…withdraw…`, `…history_item…`, `…acknowledge…` — each route names itself) and read the metric as
+`members_change_request_refused_total{reason=attempt_throttled}`; `reason=rate_limited` is the
+durable 10 / 24 h cap above, alone. It is Upstash-backed with a per-process fallback window, and
+a refusal produced in that weaker world is preceded by `<prefix>.attempt_bucket_fell_back`. It
+clears on its own — nothing to reset by hand.
+
+A sustained `attempt_throttled` rate from one tenant reads as enumeration; a sustained
+`rate_limited` rate reads as one member re-submitting.
 
 ## Alarm 4 — the gauges are blind (`membersGaugesOk = false`, three ticks)
 
@@ -134,17 +150,28 @@ tick and its 200 are unaffected by design; both age alerts above are blind until
    pending scan is no longer indexed — check `member_change_requests_tenant_state_submitted_idx`
    exists and `ANALYZE member_change_requests` (the 5,000-row pagination suite documents the
    planner's behaviour on stale stats).
-3. Zero-fill is deliberate: a tenant with change-request rows but nothing pending reports **0**
-   on both gauges (the C9 latch rule — a gauge that keeps its last value pages forever). A gauge
-   that reads a stale non-zero for a tenant whose queue is empty is a regression, not a data fix.
+3. Zero-fill is deliberate: a provisioned tenant with nothing pending reports **0** on both
+   gauges (the C9 latch rule — a gauge that keeps its last value pages forever). A gauge that
+   reads a stale non-zero for a tenant whose queue is empty is a regression, not a data fix. The
+   tenant set is `tenant_member_settings` (every provisioned tenant) ∪ the pending `GROUP BY`
+   keys, so a tenant with pending rows but no settings row is still observed.
+4. `membersGaugesSkipped: 'flag_off'` in the tick body is NOT a fault: while
+   `FEATURE_MEMBER_CHANGE_APPROVAL` is off the pending scan is skipped and both series are
+   FORGOTTEN per tenant, so they go ABSENT rather than reporting a queue nobody can decide (the
+   routes 404 while dark). Expect "no data" on both age alerts in that state; the series come
+   back on the first tick after the flag returns. `membersGaugesOk` stays `true` — nothing
+   failed.
 
 ## Dispatcher failures for the two F114 types
 
 Both types render from `context_data` ids only (the dispatcher re-reads the request under the
-tenant transaction at send time — research § V3). A row that fails to render is `failed` with
-`last_error`; the request itself is unaffected and still decidable. After an erasure the
-member-keyed rows are cancelled by the scrub (`cancelPendingForMemberInTx`), so a `cancelled`
-row with `context_data->>'memberId'` of an erased member is expected, not a fault.
+tenant transaction at send time — research § V3). `outbox_status` has exactly three values —
+`pending | sent | permanently_failed` (`src/modules/auth/infrastructure/db/schema.ts`) — so a row
+that exhausts its retries is `permanently_failed` with `last_error`; the request itself is
+unaffected and still decidable. There is **no `cancelled` status**: after an erasure the scrub
+(`cancelPendingForMemberInTx`) DELETEs the still-`pending` F114 rows whose
+`context_data->>'memberId'` is the erased member, so **no row at all** is the expected state
+there — do not go looking for a cancelled one.
 
 ## Rollback (FR-039 — `quickstart.md` § 3 has the full matrix)
 
@@ -153,6 +180,14 @@ row with `context_data->>'memberId'` of an erased member is expected, not a faul
 | 1 — tenant setting OFF | `/admin/settings/member-changes` (audited; the card warns with the pending count) | kept, still decidable; member edits save immediately again | seconds |
 | 2 — platform flag OFF | remove `FEATURE_MEMBER_CHANGE_APPROVAL` in Vercel + redeploy (setting the var IS the deploy on this repo) | kept untouched; routes 404, nav / dashboard hidden; queued outbox rows wait and drain when the flag returns | one deploy |
 | 3 — code revert | revert the PR | kept | one deploy |
+
+**Switching back ON is a switch-ON.** FR-040 applies again in full: before layer 1 is reversed
+for a chamber, that chamber's record of processing (RoPA) must list this activity — the
+purpose ("review of member-proposed changes; accountable history"), the staff-notification
+disclosure, the `change-requests.json` export category and the outbox-retention note. Rolling
+the setting off does not retire the entry, and rolling it back on without one is the same
+FR-040 gap the first cutover had to close. The card's own description says so; the full text is
+`quickstart.md` § 3 step 3.
 
 Never rolled back by any layer: migrations 0300 / 0301 / 0302, the seven enum values, the
 `tenant_member_settings` column, and the unflagged PR-2 items listed in `quickstart.md` § 3.

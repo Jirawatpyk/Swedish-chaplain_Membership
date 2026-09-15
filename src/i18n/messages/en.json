@@ -474,7 +474,8 @@
         "atRisk": "At-risk members",
         "broadcasts": "Broadcasts awaiting approval",
         "changeRequests": "Change requests waiting (oldest {days, plural, =0 {today} one {# day} other {# days}})",
-        "changeRequestsNoAge": "Change requests waiting"
+        "changeRequestsNoAge": "Change requests waiting",
+        "changeRequestsUnavailable": "Change requests waiting could not be counted. Reload the page to try again, or open the queue."
       },
       "trends": {
         "sectionLabel": "Trend charts"
@@ -2039,7 +2040,7 @@
         "pageTitle": "Member change approval",
         "pageDescription": "Decide whether changes members make to their own record need a staff decision before they apply.",
         "title": "Approval requirement",
-        "cardDescription": "Applies to every member of this chamber. Staff edits are never affected.",
+        "cardDescription": "Applies to every member of this chamber. Staff edits are never affected. Before switching on for a chamber, its record of processing must list this activity — see the cutover runbook.",
         "switchLabel": "Require approval for member changes",
         "description": "When approval is on, member edits to company and contact details wait in the change-request queue for a staff decision. When it is off, those edits apply immediately and are recorded as self-service edits. Requests already waiting stay in the queue and can still be decided either way.",
         "state": {

@@ -37,10 +37,15 @@
  * is announced through ONE `role="status"` / `aria-live="polite"` line
  * ("Showing N requests") the page feeds from its result, updated in place on
  * every Apply so the announcement never steals focus (H2); and the bar is a
- * REAL `<form method="get" action="/admin/change-requests">` whose named
- * controls — the two date inputs plus hidden `state` / `outcome` / scope
- * inputs mirroring what `apply()` writes — make a pre-hydration Enter submit
- * the same query natively (N4). The one difference: a native submit sends an
+ * REAL `<form method="get" action={pathname}>` — `usePathname()`, so the
+ * target is the route the bar is mounted on and never a literal that could
+ * drift from it; the value is framework-supplied and same-origin by
+ * construction, so there is no redirect surface here (PR-3 review SEC-6,
+ * which read the earlier docblock's hardcoded `/admin/change-requests` as the
+ * code). Its named controls — the two date inputs plus hidden `state` /
+ * `outcome` / scope inputs mirroring what `apply()` writes — make a
+ * pre-hydration Enter submit the same query natively (N4). The one
+ * difference: a native submit sends an
  * EMPTY `from=` / `to=` for a blank date input; the page's zod drops an
  * invalid date on its own (`.catch(undefined)`), so the view is the same and
  * the next client-side Apply writes the canonical URL.
