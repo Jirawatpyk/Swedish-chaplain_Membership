@@ -139,14 +139,6 @@ deleted — the recorded name stays, FR-026), `decisionNote`, `withdrawnReason`,
   newest-first, the other tenant's member → 404.
 - 5,000-row budget (`tests/integration/members/change-requests-queue-pagination.test.ts`, live
   Neon): 50 keyset pages, no gap / duplicate, p95 page latency < `ciScaled(400)` ms after one
-  warm-up page, `EXPLAIN` names `member_change_requests_tenant_state_submitted_idx`. The frozen marketing surface set
-  (`role-endpoint-matrix.test.ts`) is 53 with the queue + per-member history routes.
-- queue (`admin-change-requests-queue.test.ts`): default pending oldest-first, every filter, the
-  overdue flag, keyset paging, 400 on a malformed cursor / limit / filter, the item shape carries
-  no value and no note; per-member history (`admin-member-change-requests.test.ts`): all states
-  newest-first, the other tenant's member → 404.
-- 5,000-row budget (`tests/integration/members/change-requests-queue-pagination.test.ts`, live
-  Neon): 50 keyset pages, no gap / duplicate, p95 page latency < `ciScaled(400)` ms after one
   warm-up page, `EXPLAIN` names `member_change_requests_tenant_state_submitted_idx`.
 - decide: incomplete decisions → 422; rejected without reason → 422; identical repeat → 200
   `repeated`; different repeat → 409; archived → 409; second concurrent → 409.

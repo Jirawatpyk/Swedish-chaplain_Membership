@@ -63,7 +63,8 @@ export function serialiseQueueItem(item: ChangeRequestQueueItem): ChangeRequestQ
     waitingSeconds: item.waitingSeconds,
     overdue: item.overdue,
     decidedAt: r.decidedAt?.toISOString() ?? null,
-    decidedBy: row.decidedBy,
+    // an explicit pick — a wider `decidedBy` (say, an email) must never ride out through a pass-through (PR review, types I6)
+    decidedBy: row.decidedBy ? { displayName: row.decidedBy.displayName, deactivated: row.decidedBy.deactivated } : null,
   };
 }
 
@@ -117,7 +118,8 @@ export function serialiseChangeRequestForStaff(row: ChangeRequestListRow): Staff
       roleAtSubmission: r.submitterRoleAtSubmission,
     },
     decidedAt: r.decidedAt?.toISOString() ?? null,
-    decidedBy: row.decidedBy,
+    // an explicit pick — a wider `decidedBy` (say, an email) must never ride out through a pass-through (PR review, types I6)
+    decidedBy: row.decidedBy ? { displayName: row.decidedBy.displayName, deactivated: row.decidedBy.deactivated } : null,
     decisionReason: r.decisionReason,
     decisionNote: r.decisionNote,
     withdrawnAt: r.withdrawnAt?.toISOString() ?? null,

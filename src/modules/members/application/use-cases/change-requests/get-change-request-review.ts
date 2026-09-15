@@ -21,7 +21,8 @@ import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { ChangeRequestId, ProposedField, ProposedValue } from '../../../domain/change-request/change-request';
 import { proposedValuesEqual, type GroupBRecord } from '../../../domain/change-request/policies';
-import { isContactFieldKey, type ProposableFieldKey } from '../../../domain/change-request/proposable-fields';
+import { type BillingAddress, isContactFieldKey, type ProposableFieldKey } from '../../../domain/change-request/proposable-fields';
+import { ERASED_SENTINEL } from '../../../domain/erasure-sentinels';
 import type { Contact } from '../../../domain/contact';
 import type { Member, MemberId } from '../../../domain/member';
 import type { UserId } from '../../../domain/value-objects/user-id';
@@ -96,10 +97,12 @@ export function taxHintFor(field: ProposedField, ctx: { readonly submitterIsPrim
       // predicate is `line1 === null` — the same one `resultingHasBillingAddress`
       // and migration 0284's CHECK use (the tax re-review: a `=== null` test
       // alone was dead code).
-      const group = field.proposed !== null && typeof field.proposed === 'object' ? (field.proposed as Readonly<Record<string, string | null>>) : null;
-      if (group === null || (group['line1'] ?? null) === null) return 'billing_cleared';
-      const country = group['country'] ?? null;
-      return country !== null && country.trim().toUpperCase() !== 'TH' ? 'billing_country' : 'buyer_address';
+      // An erased request carries the sentinel STRING — never "cleared" (the
+      // third reader of the sentinel; the two renderers already knew).
+      if (field.proposed === ERASED_SENTINEL) return 'buyer_address';
+      const group = field.proposed !== null && typeof field.proposed === 'object' ? (field.proposed as BillingAddress) : null;
+      if (group === null || group.line1 === null) return 'billing_cleared';
+      return group.country !== null && group.country.trim().toUpperCase() !== 'TH' ? 'billing_country' : 'buyer_address';
     }
     case 'first_name':
     case 'last_name':

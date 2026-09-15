@@ -141,7 +141,7 @@ describe('<ChangeRequestQueueFilters>', () => {
   it('Clear appears once any filter is in the URL and drops every param; once the URL is empty the controls re-stage and focus is still on Apply (UX H1 / N1 — the same instance, never a remount)', () => {
     const { rerender } = renderBar('state=withdrawn&from=2026-01-01&to=2026-02-01');
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Withdrawn');
-    expect(screen.getByLabelText('Submitted until')).toHaveValue('2026-02-01');
+    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('2026-02-01');
     const clearButton = screen.getByRole('button', { name: 'Clear filters' });
     clearButton.focus();
     fireEvent.click(clearButton);
@@ -151,7 +151,7 @@ describe('<ChangeRequestQueueFilters>', () => {
     navigateTo(rerender, '');
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Awaiting decision');
-    expect(screen.getByLabelText('Submitted until')).toHaveValue('');
+    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('');
     // the very same button element — a remount would have dropped focus to <body>
     expect(screen.getByRole('button', { name: 'Apply' })).toBe(applyButton);
     expect(applyButton).toHaveFocus();
@@ -163,7 +163,7 @@ describe('<ChangeRequestQueueFilters>', () => {
   ])('a date the page would refuse (its zod drops the whole query) — %s — is never echoed as a staged filter and surfaces no Clear (UX R1)', (_label, query) => {
     renderBar(query);
     expect(screen.getByLabelText('Submitted from')).toHaveValue('');
-    expect(screen.getByLabelText('Submitted until')).toHaveValue('');
+    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('');
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
   });
 
@@ -180,6 +180,6 @@ describe('<ChangeRequestQueueFilters>', () => {
     navigateTo(rerender, 'state=withdrawn&to=2026-03-31');
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Withdrawn');
     expect(screen.queryByRole('combobox', { name: 'Outcome' })).toBeNull();
-    expect(screen.getByLabelText('Submitted until')).toHaveValue('2026-03-31');
+    expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('2026-03-31');
   });
 });

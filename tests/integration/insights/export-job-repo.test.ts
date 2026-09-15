@@ -57,6 +57,7 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
           idempotencyKey: exportJobIdempotencyInput({
             tenantId: tenant.ctx.slug,
             kind: 'gdpr_member_archive',
+            requestedBy: requester,
             subjectMemberId: subject,
             requestedForPeriod: period,
           }),
@@ -334,6 +335,7 @@ describe('F9 ExportJobRepo — integration (T070-infra)', () => {
           idempotencyKey: exportJobIdempotencyInput({
             tenantId: tenant.ctx.slug,
             kind: 'gdpr_member_archive',
+            requestedBy: requester,
             subjectMemberId: subject,
             requestedForPeriod: 'xt-2026',
           }),

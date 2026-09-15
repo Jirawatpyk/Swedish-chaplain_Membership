@@ -31,7 +31,7 @@ import { env } from '@/lib/env';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import { tenantDayEndUtc, tenantDayStartUtc } from '@/lib/tenant-day-range';
+import { isYmd, tenantDayEndUtc, tenantDayStartUtc } from '@/lib/tenant-day-range';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -40,7 +40,6 @@ import {
   CHANGE_REQUEST_STATES,
   asMemberId,
   listChangeRequestQueue,
-  type UserId,
 } from '@/modules/members';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -53,16 +52,21 @@ import { ChangeRequestStatusBadge } from '@/components/members/change-requests/c
 import { ChangeRequestQueueFilters } from './_components/queue-filters';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE = 50;
-const TENANT_TZ = 'Asia/Bangkok';
+// Each filter is validated on its own (`.catch(undefined)`): one bad value is
+// a bad link and drops only itself, the other filters stay applied (PR review —
+// the whole-object parse used to fall back to the default view, and the filter
+// bar, which reads the raw URL, then disagreed with the list). A date must be
+// a real calendar day (`isYmd`): the tenant-day helpers THROW on `2026-02-30`,
+// which the shape regex accepts — that was a 500 on a hand-edited URL. The
+// cursor is NOT lenient: a malformed one is a 404, never page one silently.
 const searchSchema = z.object({
-  state: z.enum(CHANGE_REQUEST_STATES).optional(),
-  outcome: z.enum(CHANGE_REQUEST_OUTCOMES).optional(),
-  memberId: z.string().regex(UUID_RE).optional(),
-  submitter: z.string().regex(UUID_RE).optional(),
-  from: z.string().regex(YMD_RE).optional(),
-  to: z.string().regex(YMD_RE).optional(),
+  state: z.enum(CHANGE_REQUEST_STATES).optional().catch(undefined),
+  outcome: z.enum(CHANGE_REQUEST_OUTCOMES).optional().catch(undefined),
+  memberId: z.string().regex(UUID_RE).optional().catch(undefined),
+  submitter: z.string().regex(UUID_RE).optional().catch(undefined),
+  from: z.string().refine(isYmd).optional().catch(undefined),
+  to: z.string().refine(isYmd).optional().catch(undefined),
   cursor: z.string().min(1).max(200).optional(),
 });
 
@@ -103,7 +107,8 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   };
 
   const sp = await searchParams;
-  // an invalid filter value is a bad link, not a fault — drop it and show the default view
+  // an invalid filter value is a bad link, not a fault — it drops itself (the
+  // schema's per-field `.catch`); only a malformed cursor fails the parse
   const parsed = searchSchema.safeParse({
     state: one(sp.state),
     outcome: one(sp.outcome),
@@ -113,7 +118,8 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     to: one(sp.to),
     cursor: one(sp.cursor),
   });
-  const q = parsed.success ? parsed.data : {};
+  if (!parsed.success) notFound();
+  const q = parsed.data;
   const state = q.state ?? 'pending';
   // an outcome only means something on decided rows — anywhere else it is dropped, not applied silently
   const outcome = state === 'decided' ? q.outcome : undefined;
@@ -130,12 +136,12 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   // reads the member record through its repo, the member-page idiom).
   let deepLinkNotice: string | null = null;
   if (submitter && state === 'pending' && !q.cursor) {
-    const pending = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: submitter as UserId }, cursor: null, limit: 2 });
+    const pending = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: submitter }, cursor: null, limit: 2 });
     if (!pending.ok) fail('deep_link_pending_read_failed', pending.error.type === 'server_error' ? pending.error.message : pending.error.type);
     const rows = pending.value.items;
     if (rows.length === 1 && rows[0]) redirect(`/admin/change-requests/${rows[0].row.request.id}`);
     if (rows.length === 0) {
-      const decided = await listChangeRequestQueue(deps, { filter: { state: 'decided', submitterUserId: submitter as UserId }, cursor: null, limit: 1 });
+      const decided = await listChangeRequestQueue(deps, { filter: { state: 'decided', submitterUserId: submitter }, cursor: null, limit: 1 });
       if (!decided.ok) fail('deep_link_decided_read_failed', decided.error.type === 'server_error' ? decided.error.message : decided.error.type);
       const last = decided.value.items[0]?.row;
       deepLinkNotice =
@@ -145,15 +151,16 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     }
   }
 
+  const scope = {
+    ...(q.memberId ? { memberId: asMemberId(q.memberId) } : {}),
+    ...(submitter ? { submitterUserId: submitter } : {}),
+    // day bounds in the tenant's timezone (`TENANT_TIMEZONE`), like the audit export
+    ...(q.from ? { from: new Date(tenantDayStartUtc(q.from, env.tenant.timezone)) } : {}),
+    ...(q.to ? { to: new Date(tenantDayEndUtc(q.to, env.tenant.timezone)) } : {}),
+  };
   const result = await listChangeRequestQueue(deps, {
-    filter: {
-      state,
-      ...(outcome ? { outcome } : {}),
-      ...(q.memberId ? { memberId: asMemberId(q.memberId) } : {}),
-      ...(submitter ? { submitterUserId: submitter as UserId } : {}),
-      ...(q.from ? { from: new Date(tenantDayStartUtc(q.from, TENANT_TZ)) } : {}),
-      ...(q.to ? { to: new Date(tenantDayEndUtc(q.to, TENANT_TZ)) } : {}),
-    },
+    // an outcome exists only under `decided` — the filter type says so (PR review, types I2)
+    filter: state === 'decided' ? { state, ...(outcome ? { outcome } : {}), ...scope } : { state, ...scope },
     cursor: q.cursor ?? null,
     limit: PAGE,
   });
@@ -267,7 +274,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
               <TableHead>{t('columns.waiting')}</TableHead>
               <TableHead>{t('columns.status')}</TableHead>
               <TableHead>
-                <span className="sr-only">{t('open')}</span>
+                <span className="sr-only">{t('columns.actions')}</span>
               </TableHead>
             </TableRow>
           </TableHeader>

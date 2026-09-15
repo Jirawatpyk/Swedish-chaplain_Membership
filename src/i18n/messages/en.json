@@ -1002,7 +1002,7 @@
           "outcome": "Outcome",
           "anyOutcome": "Any outcome",
           "from": "Submitted from",
-          "to": "Submitted until",
+          "to": "Submitted up to and including",
           "apply": "Apply",
           "clear": "Clear filters",
           "memberChip": "Showing requests for {company}.",
@@ -1020,7 +1020,8 @@
             "fields": "Fields",
             "submitted": "Submitted",
             "waiting": "Waiting",
-            "status": "Status"
+            "status": "Status",
+            "actions": "Actions"
           },
           "fieldCount": "{count, plural, one {# field} other {# fields}}",
           "waitingDays": "{count, plural, one {# day} other {# days}}",
@@ -1030,7 +1031,7 @@
           "view": "View",
           "nextPage": "Next page",
         "title": "Change requests",
-        "subtitle": "Member-proposed changes awaiting a staff decision, oldest first.",
+        "subtitle": "Changes members proposed to their record. Pending requests first, the longest wait on top.",
         "empty": "No change requests are awaiting a decision.",
         "emptyHint": "New member proposals appear here as soon as they are submitted; the staff email links straight to the request.",
         "noPendingForSubmitter": "This person has no request awaiting a decision — their last request was decided by {name} on {decidedAt}.",
@@ -6205,7 +6206,8 @@
       "pending": {
         "title": "Awaiting chamber review",
         "body": "Submitted {submittedAt}. Nothing has changed on your record yet — the chamber will email you the decision.",
-        "editLink": "Edit your request"
+        "editLink": "Edit your request",
+        "loadFailed": "Your pending change request could not be loaded right now. Refresh to try again. It is still waiting for review."
       },
       "withdraw": {
         "button": "Withdraw request",
@@ -7186,7 +7188,7 @@
         "events": "events.json — events you attended.",
         "broadcasts": "broadcasts.json — E-Blast / broadcast records relevant to you.",
         "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
-        "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation.",
+        "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation. An archive produced by chamber staff on your behalf, or requested by a colleague, holds the company-level requests only, without the reviewer's reason; ask the chamber for your personal request history if you need it.",
         "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."
       },
       "truncationWarning": "⚠ PARTIAL EXPORT — Some categories contain only your most recent records; older entries were omitted to keep the archive a manageable size: {files}. To request your complete history for these categories, contact the chamber. The manifest checksums cover only the records included here.",

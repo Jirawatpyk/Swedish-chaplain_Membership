@@ -314,7 +314,7 @@ export async function submitChangeRequest(
 
   // 2. the caller's own contact (IDOR guard) + who-may-propose (FR-002).
   const contactResult = await deps.contactRepo.findById(deps.tenant, input.contactId);
-  if (!contactResult.ok) return err(mapLoadError(contactResult.error));
+  if (!contactResult.ok) return err(mapLoadError(contactResult.error, { tenantId, memberId: input.memberId, requestId: input.requestId, read: 'contact' }));
   const contact = contactResult.value;
   if (contact.memberId !== input.memberId || contact.removedAt !== null) {
     membersMetrics.changeRequests.refused(tenantId, 'forbidden');
@@ -339,7 +339,7 @@ export async function submitChangeRequest(
 
   // 4. the member (pre-tx read; re-checked FOR UPDATE inside the tx).
   const memberResult = await deps.memberRepo.findById(deps.tenant, input.memberId);
-  if (!memberResult.ok) return err(mapLoadError(memberResult.error));
+  if (!memberResult.ok) return err(mapLoadError(memberResult.error, { tenantId, memberId: input.memberId, requestId: input.requestId, read: 'member' }));
   const member = memberResult.value;
   if (member.status === 'archived') {
     membersMetrics.changeRequests.refused(tenantId, 'archived');
@@ -635,8 +635,16 @@ class RateLimitedAbort extends Error {
   }
 }
 
-function mapLoadError(error: RepoError): SubmitChangeRequestError {
+function mapLoadError(
+  error: RepoError,
+  at: { readonly tenantId: string; readonly memberId: string; readonly requestId: string; readonly read: 'contact' | 'member' },
+): SubmitChangeRequestError {
   if (error.code === 'repo.not_found') return { type: 'not_found' };
+  // the pre-tx reads used to fail without a line (the tx path logs its cause) — PR review
+  logger.error(
+    { ...at, err: error.code, cause: errKind(error.code === 'repo.unexpected' ? error.cause : undefined) },
+    'change-request.submit: pre-tx read failed',
+  );
   return { type: 'server_error', message: error.code };
 }
 

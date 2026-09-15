@@ -31,18 +31,21 @@
 -- is empty in production until the flag flips.
 --
 -- The migrator skips by `created_at < folderMillis` only (the hash is stored,
--- never compared), so a database that ran this file's FIRST cut — a
--- `preview/*` Neon branch created between the two pushes — would never
--- re-run it: the first statement drops that cut's tenant-first index so the
--- file is idempotent across both cuts (a no-op on a fresh database).
+-- never compared). This file was edited in place after its first cut had run
+-- on the `preview/*` Neon branch of PR #366 (and on `dev`), so its `when` was
+-- bumped (+100000 ms) to make those databases re-run it: the first statement
+-- drops the first cut's tenant-first index, and every CREATE is `IF NOT
+-- EXISTS`, so the file is safe to replay — a no-op on a database that already
+-- carries the final shape, four indexes on a fresh one. Production never ran
+-- the first cut.
 DROP INDEX IF EXISTS "member_change_requests_tenant_decided_by_idx";--> statement-breakpoint
-CREATE INDEX "member_change_requests_decided_by_tenant_idx"
+CREATE INDEX IF NOT EXISTS "member_change_requests_decided_by_tenant_idx"
   ON "member_change_requests" ("decided_by_user_id", "tenant_id")
   WHERE "decided_by_user_id" IS NOT NULL;--> statement-breakpoint
-CREATE INDEX "member_change_requests_submitted_by_user_idx"
+CREATE INDEX IF NOT EXISTS "member_change_requests_submitted_by_user_idx"
   ON "member_change_requests" ("submitted_by_user_id");--> statement-breakpoint
-CREATE INDEX "member_change_requests_tenant_submitted_by_contact_idx"
+CREATE INDEX IF NOT EXISTS "member_change_requests_tenant_submitted_by_contact_idx"
   ON "member_change_requests" ("tenant_id", "submitted_by_contact_id");--> statement-breakpoint
-CREATE INDEX "member_change_requests_tenant_replaced_by_idx"
+CREATE INDEX IF NOT EXISTS "member_change_requests_tenant_replaced_by_idx"
   ON "member_change_requests" ("tenant_id", "replaced_by_request_id")
   WHERE "replaced_by_request_id" IS NOT NULL;

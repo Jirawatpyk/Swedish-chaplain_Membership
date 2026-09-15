@@ -5,7 +5,8 @@
  *
  * Order of checks is the contract: platform flag (404, dark ship — before any
  * session work) → member context (member role only; the proxy already applied
- * the CSRF Origin allow-list) → in-route READ_ONLY_MODE 503 (T116) → tenant
+ * the CSRF Origin allow-list) → in-route READ_ONLY_MODE 503 (T116) → the
+ * attempt bucket (429 — before the gate and the body, see below) → tenant
  * gate (409 `approval_not_required` when `immediate` — a race guard, the form
  * resolves the gate first) → body JSON → optional
  * `Idempotency-Key` (a PRESENT malformed key → 400; same key + same body → the
@@ -19,15 +20,18 @@
  * not at all. Two 429s, one envelope: the use case's DURABLE 10 / 24 h cap
  * (US5 T087 — CREATED requests, counted from the request table; the FR-008
  * rule) and, before the gate, an ATTEMPT bucket — 60 / 10 min per tenant +
- * user on Upstash, consumed on EVERY POST, refusals and validation errors
- * included — so a client cannot drive the gate / validation /
+ * user on Upstash, consumed on every POST that reaches the gate (after the
+ * dark-ship 404, the session check and READ_ONLY_MODE), refusals and
+ * validation errors included — so a client cannot drive the gate / validation /
  * `countSubmittedSince` path at line rate under a rotating Idempotency-Key
  * (review round 1, SEC-I2 / REL-2; PR-1's interim PEEK is gone — this is an
  * atomic `check`). Both map to `{ error: 'rate_limited', retryAfterSeconds }`
  * + `Retry-After`, and neither is remembered under an Idempotency-Key
  * (transient — the retry after the window succeeds; the client mints a new
- * key). The bucket fails OPEN on an Upstash outage (the limiter's fallback);
- * the durable cap still holds then.
+ * key). On an Upstash outage the bucket does NOT fail open: the limiter's
+ * fallback is a per-process in-memory window, so the cap holds per serverless
+ * instance rather than per tenant + user — weaker, never absent (logged as
+ * `attempt_bucket_fell_back`); the durable cap is unaffected either way.
  *
  * `GET` — own history (US4 AS4, FR-029; § history): the caller's own requests
  * + the member's `company` / `mixed` ones, newest first, never a colleague's
@@ -94,7 +98,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     SUBMIT_ATTEMPTS_PER_WINDOW,
     SUBMIT_ATTEMPT_WINDOW_SECONDS,
   );
+  if ('fellBack' in attempts && attempts.fellBack === true) {
+    // the fallback is a per-process window, not open — but the cap is now per
+    // instance, and an operator reading a 429 spike needs to know which world
+    logger.warn(
+      { errorId: `${ERROR_ID}.attempt_bucket_fell_back`, requestId: ctx.requestId, tenantId: ctx.tenant.slug },
+      'change-requests.submit: attempt bucket on the in-process fallback (Upstash unreachable)',
+    );
+  }
   if (!attempts.success) {
+    // the one F114 refusal with no audit row (the durable cap writes one) — so it logs
+    logger.warn(
+      { errorId: `${ERROR_ID}.attempts_exhausted`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, reset: attempts.reset },
+      'change-requests.submit: attempt bucket exhausted',
+    );
     membersMetrics.changeRequests.refused(ctx.tenant.slug, 'rate_limited');
     const retryAfterSeconds = retryAfterSecondsFromRl({ reset: attempts.reset });
     return NextResponse.json(
@@ -220,7 +237,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const error = result.error;
   logger.error(
-    { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type },
+    // the repo code rides in `message` — `type` alone is always 'server_error' here
+    { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type === 'server_error' ? error.message : error.type },
     'change-requests.submit: use case failed',
   );
   return NextResponse.json({ error: 'server_error' }, { status: 500 });
@@ -274,8 +292,16 @@ function mapRefusal(error: SubmitRefusalError): Refusal | null {
       return { status: 403, body: { error: 'member_archived', message: 'An archived membership cannot be edited.' } };
     case 'not_found':
       return { status: 404, body: { error: 'not_found' } };
-    default:
+    case 'rate_limited':
+    case 'server_error':
       return null;
+    default: {
+      // a refusal arm added to the use case must be mapped here on purpose,
+      // never fall through to an unremembered 500 (PR review, types I4)
+      const _exhaustive: never = error;
+      void _exhaustive;
+      return null;
+    }
   }
 }
 

@@ -20,8 +20,10 @@
  *     the reviewer's reason the SUBMITTING person's (review round 1, C2).
  *
  * Paging is keyset on `(submitted_at, id)` — the cursor is an OPAQUE string
- * (base64url of `iso|uuid`) so a client cannot craft one; a malformed cursor
- * is `invalid_cursor` (a 400), never page one silently. Limits are clamped
+ * (base64url of `iso|uuid`): opaque to the client, not authenticated — a
+ * forged cursor only moves the window, because the tenant / member / viewer
+ * scoping is re-applied on every page; a malformed cursor is `invalid_cursor`
+ * (a 400), never page one silently. Limits are clamped
  * here, not trusted from the wire.
  *
  * Reads only — no tx; staff reads are not audited (FR-026). The one write is

@@ -290,10 +290,20 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     //     request: the artefact is downloadable by whoever requested it and
     //     may be handed to any contact, so it fails CLOSED to what every
     //     contact may see (review round 1, C1). FAIL-LOUD like contacts (a
-    //     hollow file would be a falsely-complete archive, FR-037). Every page
-    //     is walked (keyset).
-    const requesterUserId =
-      opts.requestedByUserId !== undefined && memberUserIds.includes(opts.requestedByUserId) ? opts.requestedByUserId : null;
+    //     hollow file would be a falsely-complete archive, F9 FR-037). Every
+    //     page is walked (keyset). A requester who is NOT (or no longer) a
+    //     linked contact of the member — staff on behalf, or a contact
+    //     unlinked between the request and the build — gets the same
+    //     company-level scope; the second case is logged, since the member's
+    //     own export is then narrower than they asked for (PR review).
+    const requesterIsLinked = opts.requestedByUserId !== undefined && memberUserIds.includes(opts.requestedByUserId);
+    if (opts.requestedByUserId !== undefined && !requesterIsLinked) {
+      logger.warn(
+        { errorId: 'M114.gdpr.requester_not_linked', tenantId: ctx.slug, subjectMemberId: opts.subjectMemberId },
+        'gdpr gather: the requester is not a linked contact of the member — change-request history scoped to company level',
+      );
+    }
+    const requesterUserId = requesterIsLinked ? (opts.requestedByUserId as UserId) : null;
     const changeRequests: GdprChangeRequestEntry[] = [];
     let crCursor: ChangeRequestCursor | null = null;
     for (;;) {

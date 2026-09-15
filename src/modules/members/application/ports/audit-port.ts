@@ -215,6 +215,7 @@ export function assertNeverAuditEvent(event: never): never {
 export type ChangeRequestAuditPayload = {
   member_change_request_submitted: {
     readonly member_id: string;
+    readonly related_member_id?: never;
     readonly request_id: string;
     readonly contact_id: string;
     readonly scope: 'own_contact' | 'company' | 'mixed';
@@ -225,6 +226,9 @@ export type ChangeRequestAuditPayload = {
   };
   member_change_request_decided: {
     readonly related_member_id: string;
+    // a decision is STAFF activity — never the 0009 trigger key (`?: never`
+    // also refuses the key through a spread, which `satisfies` cannot)
+    readonly member_id?: never;
     readonly request_id: string;
     readonly contact_id: string;
     readonly scope: 'own_contact' | 'company' | 'mixed';

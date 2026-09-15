@@ -3,7 +3,7 @@
  * contracts/admin-change-requests-api.md § queue; FR-027, FR-033, FR-039).
  *
  * Platform flag OFF → 404 before any session work (dark ship). Gate:
- * `requireApiPermission('members.read')` — a manager reads the queue; deciding
+ * `requireApiPermission('members.read')` — a manager or a marketing user reads the queue (FR-026); deciding
  * is the review route's `members.write`. Query: `state` (default `pending`,
  * oldest waiting first; any other state newest first), `outcome`, `memberId`,
  * `submitter` (the staff-email deep link), `from` / `to` (ISO-8601), the
@@ -62,15 +62,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const q = parsed.data;
 
   const deps = buildChangeRequestDeps(resolveTenantFromRequest(request));
+  const scope = {
+    ...(q.memberId ? { memberId: asMemberId(q.memberId) } : {}),
+    ...(q.submitter ? { submitterUserId: asMembersUserId(q.submitter) } : {}),
+    ...(q.from ? { from: new Date(q.from) } : {}),
+    ...(q.to ? { to: new Date(q.to) } : {}),
+  };
   const result = await listChangeRequestQueue(deps, {
-    filter: {
-      ...(q.state ? { state: q.state } : {}),
-      ...(q.outcome ? { outcome: q.outcome } : {}),
-      ...(q.memberId ? { memberId: asMemberId(q.memberId) } : {}),
-      ...(q.submitter ? { submitterUserId: asMembersUserId(q.submitter) } : {}),
-      ...(q.from ? { from: new Date(q.from) } : {}),
-      ...(q.to ? { to: new Date(q.to) } : {}),
-    },
+    // an outcome exists only under `decided` — dropped anywhere else, like the
+    // page does (it used to be applied, answering an empty page for
+    // `?state=pending&outcome=approved`; PR review, types I2)
+    filter:
+      q.state === 'decided'
+        ? { state: q.state, ...(q.outcome ? { outcome: q.outcome } : {}), ...scope }
+        : { ...(q.state ? { state: q.state } : {}), ...scope },
     cursor: q.cursor ?? null,
     limit: q.limit,
   });

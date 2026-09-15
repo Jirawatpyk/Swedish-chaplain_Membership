@@ -34,9 +34,10 @@ import type { ChangeRequestId } from '@/modules/members';
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.edit');
   // the tab title follows the GATE like the H1 does (PR-1 review, UX M1):
-  // "Propose changes" in approval mode, "Edit Profile" otherwise. One
-  // single-row settings read; never throws — metadata falls back to the
-  // immediate title on any fault
+  // "Propose changes" in approval mode, "Edit Profile" otherwise. One extra
+  // single-row settings read for the tab title (the page body builds its own
+  // deps and resolves the gate again); never throws — metadata falls back to
+  // the immediate title on any fault, logged
   if (!env.features.memberChangeApproval) return { title: t('pageTitle') };
   try {
     const tenant = resolveTenantFromRequest();
@@ -45,8 +46,8 @@ export async function generateMetadata(): Promise<Metadata> {
       const tCr = await getTranslations('portal.changeRequests.form');
       return { title: tCr('pageTitle') };
     }
-  } catch {
-    // fall through to the immediate title
+  } catch (e) {
+    logger.warn({ errorId: 'M114.portal.edit.metadata_gate_failed', err: errKind(e) }, 'portal.edit: the tab title could not follow the gate — immediate title');
   }
   return { title: t('pageTitle') };
 }

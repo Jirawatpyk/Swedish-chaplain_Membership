@@ -23,10 +23,11 @@
  * would destroy the button the admin just pressed and drop focus to `<body>`
  * (the re-review's N1).
  *
- * A11y (the UX review of this bar): a Base UI trigger is a `<button>`, which
- * takes no name from `<label for>` (only a native `<select>` does), so each
- * trigger carries `aria-label` as well — the label stays for the click target
- * and the visual. Apply / Clear are never `disabled` while pending (a focused
+ * A11y (the UX review of this bar): a Base UI trigger renders a `<button>`,
+ * whose accessible name comes from its CONTENT — here the selected value, not
+ * the field's purpose — so each trigger carries `aria-label` ("Status" /
+ * "Outcome"); the visible `<Label htmlFor>` stays for the click target and
+ * the visual. Apply / Clear are never `disabled` while pending (a focused
  * button that turns disabled drops focus to `<body>`); `aria-busy` + a
  * re-entry guard do that job, and Clear hands focus to Apply before it
  * unmounts itself.
@@ -56,11 +57,15 @@ function isState(v: string | null): v is ChangeRequestState {
 function isOutcome(v: string | null): v is ChangeRequestOutcome {
   return v !== null && (CHANGE_REQUEST_OUTCOMES as readonly string[]).includes(v);
 }
-// the page's `searchSchema` shape — a date the page would refuse (and with it
-// the whole query) is never echoed as a staged filter (re-review R1)
+// the page's rule (`isYmd`: a REAL calendar day, not only the shape — the
+// tenant-day helper throws on `2026-02-30`) without js-joda in the client
+// bundle: a UTC round-trip is exact for `YYYY-MM-DD`. A date the page would
+// refuse is never echoed as a staged filter (re-review R1).
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 function ymd(v: string | null): string {
-  return v !== null && YMD_RE.test(v) ? v : '';
+  if (v === null || !YMD_RE.test(v)) return '';
+  const d = new Date(`${v}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? '' : v;
 }
 
 export function ChangeRequestQueueFilters() {
@@ -93,13 +98,14 @@ export function ChangeRequestQueueFilters() {
     setTo(urlTo);
   }
 
-  // the page's `filtered`, read the way the page reads it: `state=pending` is
-  // the default view, an outcome counts only under `decided` (the page drops
-  // it otherwise), member and submitter scoping count
+  // the page's `filtered`, read the way the page reads it: a value the page
+  // would drop (`?state=bogus`) is no filter, `state=pending` is the default
+  // view, an outcome counts only under `decided`, member and submitter
+  // scoping count
   const p = (k: string) => params.get(k) ?? '';
   const hasFilters =
-    (p('state') !== '' && p('state') !== DEFAULT_STATE) ||
-    (p('state') === 'decided' && p('outcome') !== '') ||
+    (isState(urlState) && urlState !== DEFAULT_STATE) ||
+    (urlState === 'decided' && isOutcome(urlOutcome)) ||
     p('memberId') !== '' ||
     p('submitter') !== '' ||
     urlFrom !== '' ||

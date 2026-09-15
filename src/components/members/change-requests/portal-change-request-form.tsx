@@ -400,7 +400,7 @@ export function PortalChangeRequestForm({
           : '';
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate data-testid="change-request-form">
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate aria-describedby="cr-required-fields-note" data-testid="change-request-form">
       <div className="space-y-6">
         <p className="text-sm text-muted-foreground" id="cr-required-fields-note">
           {t('requiredNote')}

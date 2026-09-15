@@ -221,6 +221,74 @@ the whole query; now the same `YYYY-MM-DD` shape gates what is staged and what c
 R2 (the e2e queue case presses Apply and asserts the button keeps focus — the call-site guard a unit
 test of the child cannot be).
 
+## PR review — `/pr-review-toolkit:review-pr #366`, five read-only Opus reviewers on `62a9d09bf..069d5872a` (2026-09-15)
+
+code-reviewer · pr-test-analyzer · comment-analyzer · silent-failure-hunter · type-design-analyzer, each
+told to read the ledger first and not re-raise closed items. No logic Critical; four Critical findings
+were about what the artefacts CLAIM (and one about what the tests can see), and every Important was
+taken. **Taken:**
+
+- **Queue page dates (code I1 = silent I-1).** `?from=2026-02-30` matched the shape regex and
+  `tenantDayStartUtc` threw — a 500 on a hand-edited URL, against the page's own "a bad filter is a bad
+  link" rule and the helper's `MUST validate with isYmd` docblock (the only caller that did not). The
+  schema now refines with `isYmd`, validates each filter on its own (`.catch(undefined)` — one bad value
+  drops itself, the others stay; the bar, which reads the raw URL, used to disagree with the list), keeps
+  the cursor strict (a malformed one is a 404), and takes the day bounds from `env.tenant.timezone`
+  instead of a hard-coded Bangkok. The bar's `ymd()` is calendar-valid too (a UTC round-trip, no js-joda
+  in the client bundle) and `hasFilters` counts only values the page would keep.
+- **Types.** `member_change_request_submitted` / `_decided` payloads carry the `?: never` twin the two
+  newer arms had (a spread cannot smuggle the 0009 trigger key); `ChangeRequestListFilter` admits an
+  `outcome` only with `state: 'decided'` — the queue route used to apply `?state=pending&outcome=…` and
+  answer an empty page while the page dropped it, now both drop it; `mapRefusal` closes its `default`
+  with a `never` check (a new refusal arm fails the build instead of becoming an unremembered 500);
+  `decidedBy` is an explicit pick on both wire projections; `ExportJobIdempotencyParts` is a union on
+  `kind` — the GDPR arm REQUIRES `requestedBy` (round 1's C1 was enforced by a comment), the directory
+  arms forbid it; the redundant `as UserId` casts on the page are gone; the billing tax-hint arm reads a
+  `BillingAddress`, and an ERASED request (the sentinel string) hints `buyer_address`, never
+  `billing_cleared` (the third reader of the sentinel — the two renderers already knew).
+- **Silent failures.** The attempt bucket never "failed open": the limiter's fallback is a per-process
+  window (the cap holds per serverless instance) — the docblock, contracts and quickstart said the
+  opposite; the route now logs `attempt_bucket_fell_back` and `attempts_exhausted` (the one F114
+  refusal with no audit row had no log either); the submit route's 500 log carries the repo code (`type`
+  alone was always `server_error`) and the two pre-tx reads log their cause; a GDPR requester who is
+  not (or no longer) a linked contact logs `M114.gdpr.requester_not_linked` (their own export is then
+  narrower than asked — the same scope as staff on behalf, but a different event); the portal profile
+  renders a `role=status` "could not load your pending request" alert instead of the page that says "no
+  request pending" (three fault arms; the throwing gate resolver has its own errorId); the edit page's
+  metadata catch logs.
+- **Comments / artefacts.** Migration 0302's "idempotent across both cuts" was false both ways — the
+  same `when` means a database that ran the first cut never re-runs it, and a re-run would hit 42P07 on
+  two names: the file is now `CREATE INDEX IF NOT EXISTS` throughout with its `when` bumped
+  (+100000 ms → 1798543500000), re-applied on `dev` (four "already exists, skipping" notices,
+  `db:verify` green), so the PR's preview branch heals itself. `tasks.md` T083 recorded the rate-limit
+  payload as `member_id` (the key the port type forbids); T074 / quickstart / the T072 row still said
+  "GET form"; T075 said `role=alert` for a deliberate `role=status`; the admin contract carried a
+  verbatim duplicated block and the quickstart a duplicated line; the listQueue port doc named only the
+  DESC keyset predicate; the "opaque cursor so a client cannot craft one" claim; the erase-member
+  outbox comment gave the opposite reason from its port; the gate resolver's "one read per request"
+  (two per edit render); the filter bar's "only a native select takes a label" (a button is labelable —
+  its name simply comes from content). Copy: the queue subtitle no longer says "awaiting a staff
+  decision, oldest first" over a decided view; "Submitted until" → "up to and including" (the bound is
+  inclusive); the GDPR README says what an on-behalf archive holds; a neutral `columns.actions` header.
+- **Tests (pr-test-analyzer).** The FR-029 list path had no assertion that could fail at either layer
+  (the live seed was all `mixed`, so `every(scope !== 'own_contact')` was vacuously true; the fake
+  pre-filtered, so the use case's fail-closed filter was a no-op) — a real `own_contact` seed with a
+  positive control, and a leaky double for the use case; a live lock proof for the scrub's
+  `FOR UPDATE`; `pendingStats` asserted across tenants (it relies on RLS alone); the F114 events
+  asserted to reach `member_timeline_v` (the #336 class); the exact idempotency strings; the
+  change-request truncation; the `decideInTx` duplicate-key guard; the erased-sentinel tax hint; the
+  pagination docblock's "three boundaries" / "the page query" corrected; the 0302 RI positive control
+  reframed or made to model the RI check.
+
+**Not taken (with the reason):** the by-id probe audit has no attempt bound (the house pattern —
+`getMember` does the same; PR-3 polish with the metric split `attempt_throttled` vs the durable cap,
+silent S-2); the banner reads only the status of a 404, not its body (the flag-flip race, silent S-4);
+`DELETE …/current` has no bucket (silent S-5); the account hub's export list still degrades to empty
+on a read fault (F9's contract, silent S-6); the status badge's flat props (types I3 — a display
+fallback the DB CHECK makes unreachable) and the `GdprChangeRequestEntry` / `actor_role` string typing
+(types S4 / S6); `useId` on the bar; the EXPLAIN control on the real joined query (docblock corrected;
+the real-query EXPLAIN is PR-3 with T119's revisit); the `repoErrorCause` helper (S8).
+
 ## Gate output at the branch head `39e5fcbb6` (after the PR-1 closures + their re-reviews)
 
 | Gate | Result |

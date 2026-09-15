@@ -1020,7 +1020,8 @@
             "fields": "Fält",
             "submitted": "Skickad",
             "waiting": "Väntetid",
-            "status": "Status"
+            "status": "Status",
+            "actions": "Åtgärder"
           },
           "fieldCount": "{count, plural, one {# fält} other {# fält}}",
           "waitingDays": "{count, plural, one {# dag} other {# dagar}}",
@@ -1030,7 +1031,7 @@
           "view": "Visa",
           "nextPage": "Nästa sida",
         "title": "Ändringsbegäranden",
-        "subtitle": "Ändringar som medlemmar föreslagit och som väntar på personalens beslut, äldst först.",
+        "subtitle": "Ändringar som medlemmar föreslagit i sin medlemspost. Väntande begäranden först, den som väntat längst överst.",
         "empty": "Inga ändringsbegäranden väntar på beslut.",
         "emptyHint": "Nya medlemsförslag visas här så snart de skickas in; personalens e-post länkar direkt till begäran.",
         "noPendingForSubmitter": "Den här personen har ingen begäran som väntar på beslut — den senaste beslutades av {name} den {decidedAt}.",
@@ -6205,7 +6206,8 @@
       "pending": {
         "title": "Väntar på kammarens granskning",
         "body": "Inskickat {submittedAt}. Inget har ändrats i dina uppgifter ännu — kammaren meddelar beslutet via e-post.",
-        "editLink": "Redigera din begäran"
+        "editLink": "Redigera din begäran",
+        "loadFailed": "Din väntande ändringsbegäran kunde inte läsas in just nu. Uppdatera sidan för att försöka igen. Den väntar fortfarande på granskning."
       },
       "withdraw": {
         "button": "Dra tillbaka begäran",
@@ -7186,7 +7188,7 @@
         "events": "events.json — evenemang du har deltagit i.",
         "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
-        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering.",
+        "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering. Ett arkiv som kammarens personal tagit fram för din räkning, eller som en kollega begärt, innehåller endast begäranden på företagsnivå och utan granskarens motivering. Kontakta kammaren om du behöver din personliga historik.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."
       },
       "truncationWarning": "⚠ DELVIS EXPORT — Vissa kategorier innehåller endast dina senaste poster; äldre poster har utelämnats för att begränsa arkivets storlek: {files}. Kontakta handelskammaren om du vill ha din fullständiga historik för dessa kategorier. Manifestets kontrollsummor omfattar endast de poster som ingår här.",

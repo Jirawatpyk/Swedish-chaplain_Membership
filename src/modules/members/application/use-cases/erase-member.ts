@@ -723,9 +723,11 @@ export async function eraseMember(
         });
 
       // F114 (FR-030, T078) — the change-request notifications are keyed on
-      // the MEMBER (`context_data.memberId`), not on an address the set above
-      // could hold: the staff row addresses a reviewer, the member row's
-      // recipient is re-read at dispatch. Cancel them by that key.
+      // the MEMBER (`context_data.memberId`): the staff row addresses a
+      // REVIEWER (never in the erased set), and the member row's `to_email`
+      // IS an erased contact's address — the email leg above would match it,
+      // but only through the peer-ownership guard. The member key finds both
+      // rows unconditionally (the port's docblock has the full argument).
       const memberOutboxCancel = await deps.outboxCancel.cancelPendingForMemberInTx(tx, memberId);
       if (!memberOutboxCancel.ok)
         throw new Error(`outbox_cancel_failed:${memberOutboxCancel.error.code}`, {

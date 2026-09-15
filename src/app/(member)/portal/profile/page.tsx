@@ -10,6 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { InlineAlert } from '@/components/ui/inline-alert';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
@@ -94,6 +95,7 @@ export async function PortalProfileBody({
   const t = await getTranslations('portal.profile');
   const tDir = await getTranslations('directorySettings');
   const tHistory = await getTranslations('portal.changeRequests.history');
+  const tPending = await getTranslations('portal.changeRequests.pending');
   // 059 / PR-A Task 3b — the ADMIN member-detail page already resolves
   // legal_entity_type through these same labels (resolveLegalEntityTypeLabel);
   // reused here rather than duplicated so a member sees IDENTICAL copy to
@@ -175,6 +177,9 @@ export async function PortalProfileBody({
   // F114 US3 (FR-010) — the caller's LAST decided request until they dismiss
   // it; hidden while a newer (pending) request exists.
   let decidedRequest: ChangeRequestView | null = null;
+  // a failed read renders its OWN state (`role=status`), never the profile
+  // that says "no request pending" — the member section's rule (PR review)
+  let ownRequestReadFailed = false;
   if (ownContact && env.features.memberChangeApproval) {
     try {
       const gate = await deps.memberChangeGate.resolve(tenant);
@@ -190,6 +195,7 @@ export async function PortalProfileBody({
         if (pending.ok && pending.value) {
           pendingRequest = serialiseChangeRequestForPortal(pending.value, me);
         } else if (!pending.ok) {
+          ownRequestReadFailed = true;
           logger.error(
             { errorId: 'M114.portal.profile.pending_read_failed', err: pending.error.code, tenantId: tenant.slug },
             'portal.profile.pending_read_failed',
@@ -204,6 +210,7 @@ export async function PortalProfileBody({
           if (last && last.request.outcomeAcknowledgedAt === null) {
             decidedRequest = serialiseChangeRequestForPortal(last.request, me);
           } else if (!decided.ok) {
+            ownRequestReadFailed = true;
             logger.error(
               { errorId: 'M114.portal.profile.decided_read_failed', err: decided.error.code, tenantId: tenant.slug },
               'portal.profile.decided_read_failed',
@@ -212,9 +219,11 @@ export async function PortalProfileBody({
         }
       }
     } catch (e) {
+      // its own id: a throwing gate resolver is not a failed pending read
+      ownRequestReadFailed = true;
       logger.error(
-        { errorId: 'M114.portal.profile.pending_read_failed', err: errKind(e), tenantId: tenant.slug },
-        'portal.profile.pending_read_failed',
+        { errorId: 'M114.portal.profile.gate_failed', err: errKind(e), tenantId: tenant.slug },
+        'portal.profile.gate_failed',
       );
     }
   }
@@ -313,6 +322,11 @@ export async function PortalProfileBody({
 
       {/* F114 — awaiting-review banner (role=status), above the record it will change. */}
       {pendingRequest ? <PendingRequestBanner request={pendingRequest} /> : null}
+      {ownRequestReadFailed ? (
+        <InlineAlert tone="destructive" role="status" data-testid="portal-own-request-unavailable">
+          <p className="text-sm">{tPending('loadFailed')}</p>
+        </InlineAlert>
+      ) : null}
       {/* F114 US3 — the shown decision (role=status) until dismissed; never alongside a pending one. */}
       {!pendingRequest && decidedRequest ? <DecisionOutcomeBanner request={decidedRequest} /> : null}
 
