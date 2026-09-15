@@ -22,6 +22,17 @@
  *
  * Idempotent: GET-only, read-only. Re-running emits identical samples.
  * Runtime: Node.js. Force-dynamic to skip Next cache.
+ *
+ * F114 T102 (research § V2) — this tick is ALSO the per-tenant gauges host
+ * for the members module (`vercel.json` holds 37 of the Pro plan's 40 cron
+ * jobs, so no module gets its own): a SECOND `db.transaction` after the
+ * broadcasts one, with its own statement timeout and its own try/catch, emits
+ * `members_change_requests_pending_count{tenant}` +
+ * `members_change_request_oldest_age_seconds{tenant}`. A members-half
+ * failure is logged (`cron.broadcasts_gauges.members_query_failed`) and
+ * reported as `membersGaugesOk: false`; it never costs the broadcasts
+ * samples or the 200. No `broadcasts_*` metric is renamed — the names live
+ * on the `*Metrics` objects, not on this route.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from 'drizzle-orm';
@@ -30,7 +41,7 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsMetrics, membersMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
@@ -45,6 +56,13 @@ interface TenantRow extends Record<string, unknown> {
 interface PendingRow extends Record<string, unknown> {
   readonly tenant_id: string;
   readonly count: number;
+}
+
+/** F114 — one row per tenant with ≥ 1 pending change request. */
+interface MembersPendingRow extends Record<string, unknown> {
+  readonly tenant_id: string;
+  readonly count: number;
+  readonly oldest_age_seconds: number;
 }
 
 interface DispatchRatioRow extends Record<string, unknown> {
@@ -266,6 +284,66 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // F114 T102 (research R12 + § V2) — the members change-request gauges.
+  //
+  // A SECOND transaction, on the same pool-global `db` every gauge above
+  // uses deliberately (owner role, BYPASSRLS: these are cross-tenant
+  // `GROUP BY tenant_id` reads for internal metrics, never a tenant-scoped
+  // path), with its own statement timeout and its own try/catch: a fault in
+  // `member_change_requests` must not cost the six broadcasts samples just
+  // emitted, and the broadcasts 500 above must not hide a members fault.
+  //
+  // C9 latch rule, again: `observeGauge` re-reports the last value at every
+  // scrape, so a tenant whose queue drained emits no GROUP BY row and would
+  // keep reading its old count forever — and FR-037's "> 14 d" page would
+  // never clear. Every tenant with ANY change-request row is observed; 0
+  // pending is reported as 0 on both gauges ("0 means 0" — the metric
+  // convention; the read model's `null` age is a UI one).
+  // -------------------------------------------------------------------------
+  const membersPendingByTenant = new Map<string, MembersPendingRow>();
+  const membersObserved = new Set<string>();
+  let membersGaugesOk = true;
+  try {
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
+      const pendingRows = await tx.execute<MembersPendingRow>(sql`
+        SELECT
+          tenant_id,
+          COUNT(*)::int AS count,
+          EXTRACT(EPOCH FROM (now() - MIN(submitted_at)))::int AS oldest_age_seconds
+        FROM member_change_requests
+        WHERE state::text = 'pending'
+        GROUP BY tenant_id
+      `);
+      const tenantRows = await tx.execute<TenantRow>(sql`
+        SELECT DISTINCT tenant_id FROM member_change_requests
+      `);
+      return { pendingRows, tenantRows };
+    });
+    for (const row of Array.from(result.pendingRows)) {
+      membersPendingByTenant.set(row.tenant_id, row);
+      membersObserved.add(row.tenant_id);
+    }
+    for (const row of Array.from(result.tenantRows ?? [])) membersObserved.add(row.tenant_id);
+  } catch (e) {
+    membersGaugesOk = false;
+    logger.error({ requestId, err: errKind(e) }, 'cron.broadcasts_gauges.members_query_failed');
+  }
+  let membersPendingTotal = 0;
+  let membersOldestAgeSecondsMax = 0;
+  for (const tenantId of membersObserved) {
+    const row = membersPendingByTenant.get(tenantId);
+    const count = row?.count ?? 0;
+    // an age can only be negative under clock skew between the DB and a row
+    // stamped by the app; clamp so the alert rule never sees a nonsense value
+    const age = Math.max(0, row?.oldest_age_seconds ?? 0);
+    membersMetrics.changeRequests.pendingCount(tenantId, count);
+    membersMetrics.changeRequests.oldestAgeSeconds(tenantId, age);
+    membersPendingTotal += count;
+    if (age > membersOldestAgeSecondsMax) membersOldestAgeSecondsMax = age;
+  }
+
   logger.info(
     {
       requestId,
@@ -279,6 +357,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
+      membersGaugesOk,
+      membersPendingTenantCount: membersPendingByTenant.size,
+      membersPendingTotal,
+      membersOldestAgeSecondsMax,
     },
     'cron.broadcasts_gauges.completed',
   );
@@ -296,6 +378,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
+      membersGaugesOk,
+      membersPendingTenantCount: membersPendingByTenant.size,
+      membersPendingTotal,
+      membersOldestAgeSecondsMax,
     },
     { status: 200 },
   );

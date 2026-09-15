@@ -257,6 +257,15 @@ export type ChangeRequestAuditPayload = {
     readonly replaced_by_request_id?: string;
     readonly actor_role: string;
   };
+  member_change_approval_setting_changed: {
+    readonly previous: boolean;
+    readonly next: boolean;
+    // the SESSION role or null — never a literal (audit-truth invariant)
+    readonly actor_role: string | null;
+    // a setting flip is not member activity: no 0009 trigger key, no member key at all
+    readonly member_id?: never;
+    readonly related_member_id?: never;
+  };
 };
 
 export type F3AuditEvent = {

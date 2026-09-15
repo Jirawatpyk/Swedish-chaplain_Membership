@@ -199,6 +199,19 @@ export {
   type WithdrawChangeRequestInput,
 } from './application/use-cases/change-requests/withdraw-change-request';
 export {
+  setMemberChangeApprovalEnabled,
+  type SetMemberChangeApprovalEnabledDeps,
+  type SetMemberChangeApprovalEnabledError,
+  type SetMemberChangeApprovalEnabledInput,
+  type SetMemberChangeApprovalEnabledOutcome,
+} from './application/use-cases/change-requests/set-member-change-approval-enabled';
+export {
+  countPendingChangeRequests,
+  type CountPendingChangeRequestsDeps,
+  type CountPendingChangeRequestsError,
+  type PendingChangeRequestsSummary,
+} from './application/use-cases/change-requests/count-pending-change-requests';
+export {
   listChangeRequestQueue,
   listMemberChangeRequests,
   listPortalChangeRequests,

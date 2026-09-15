@@ -118,6 +118,11 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/admin/change-requests', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/members/[id]/change-requests', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/change-requests/[id]', kind: 'api', key: 'members.read' },
+  // F114 US6 (T098): the per-tenant approval switch — members.write on BOTH
+  // verbs (the read carries the pending count for the switch-off warning; a
+  // manager / marketing user neither reads nor flips an admin setting).
+  { surface: 'GET /api/admin/settings/member-changes', kind: 'api', key: 'members.write' },
+  { surface: 'PATCH /api/admin/settings/member-changes', kind: 'api', key: 'members.write' },
   { surface: 'GET /api/admin/members/search', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/renewals', kind: 'api', key: 'renewals.read' },
   { surface: 'GET /api/admin/renewals/at-risk', kind: 'api', key: 'renewals.read' },

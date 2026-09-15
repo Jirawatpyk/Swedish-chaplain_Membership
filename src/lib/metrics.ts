@@ -6078,9 +6078,10 @@ export const membersMetrics = {
   changeRequests: {
     /**
      * `members_change_requests_pending_count{tenant}` — async gauge over
-     * `member_change_requests WHERE state = 'pending'`. NO caller yet: the
-     * per-tenant gauges tick is wired in Phase 8 (research R12 / V2, T102 —
-     * a pre-flip gate in quickstart § 3). Alert: see oldest age.
+     * `member_change_requests WHERE state = 'pending'`, emitted by the
+     * per-tenant gauges tick (`/api/internal/metrics/broadcasts-gauges`,
+     * every 5 min — research R12 / § V2, T102) for every tenant with any
+     * change-request row, 0 included (the C9 latch rule). Alert: see oldest age.
      */
     pendingCount(tenantId: string, count: number): void {
       safeMetric(() => {
@@ -6094,10 +6095,11 @@ export const membersMetrics = {
     },
     /**
      * `members_change_request_oldest_age_seconds{tenant}` — age of the oldest
-     * pending request. NO caller yet (Phase 8, T102 — with `pendingCount`);
-     * the FR-037 alert rows (> 7 d warning, > 14 d page, both inside the
-     * 30-day data-subject-request clock) and the catalogue rows are ALREADY
-     * in `docs/observability.md § 14.1 / § 14.3` — T102 adds the emitter only.
+     * pending request, emitted by the same tick as `pendingCount` (0 when
+     * nothing is pending — the gauge convention; the read model answers
+     * `null`). The FR-037 alert rows (> 7 d warning, > 14 d page, both inside
+     * the 30-day data-subject-request clock) live in
+     * `docs/observability.md § 27.3` (catalogue § 27.1; § 14.1 / § 14.3 point there).
      */
     oldestAgeSeconds(tenantId: string, seconds: number): void {
       safeMetric(() => {
