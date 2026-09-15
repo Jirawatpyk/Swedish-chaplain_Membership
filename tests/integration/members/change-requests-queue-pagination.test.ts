@@ -42,6 +42,19 @@ import { seedPortalPlan } from '../helpers/portal-seed';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { ciScaled } from '../../helpers/ci-latency';
 
+// The p95 is a PERFORMANCE budget, not an anti-hang guard: it measures the repo
+// call on a shared Neon compute. Inside the pre-push folder run (108 files at
+// once, `INTEGRATION_FOLDER_RUN=1` from `.husky/pre-push`) the same walk that
+// takes ~290 ms a page alone measured 1,315 ms — contention, not a regression
+// (the third push of PR #366 happened to pass, the fourth did not). Per
+// `ci-latency.ts`: a per-query budget takes its threshold from an env var or
+// does not run in the sweep — so the folder run REPORTS the p95 and asserts
+// everything else; run the file alone (or set `QUEUE_PAGE_P95_BUDGET_MS`) for
+// the budget itself.
+const FOLDER_RUN = process.env.INTEGRATION_FOLDER_RUN === '1';
+const P95_BUDGET_MS = process.env.QUEUE_PAGE_P95_BUDGET_MS !== undefined ? Number(process.env.QUEUE_PAGE_P95_BUDGET_MS) : ciScaled(400);
+const ASSERT_P95 = !FOLDER_RUN || process.env.QUEUE_PAGE_P95_BUDGET_MS !== undefined;
+
 const MEMBERS = 200;
 const PER_MEMBER = 25;
 const TOTAL = MEMBERS * PER_MEMBER;
@@ -194,7 +207,11 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
     const sorted = [...durations].sort((x, y) => x - y);
     const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]!;
     const slowest = sorted[sorted.length - 1]!;
-    expect(p95, `p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms (budget p95 < ${ciScaled(400)} ms)`).toBeLessThan(ciScaled(400));
+    if (ASSERT_P95) {
+      expect(p95, `p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms (budget p95 < ${P95_BUDGET_MS} ms)`).toBeLessThan(P95_BUDGET_MS);
+    } else {
+      console.warn(`[queue-pagination] folder run — p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms measured under a concurrent sweep; the budget (< ${P95_BUDGET_MS} ms) is asserted only when the file runs alone`);
+    }
   }, 300_000);
 
   it.each([

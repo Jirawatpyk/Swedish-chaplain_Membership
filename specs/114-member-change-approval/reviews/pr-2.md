@@ -289,6 +289,19 @@ fallback the DB CHECK makes unreachable) and the `GdprChangeRequestEntry` / `act
 (types S4 / S6); `useId` on the bar; the EXPLAIN control on the real joined query (docblock corrected;
 the real-query EXPLAIN is PR-3 with T119's revisit); the `repoErrorCause` helper (S8).
 
+### The fourth push — the queue p95 budget inside the pre-push folder run
+
+The push carrying the review closure was refused by its own gate: the 5,000-row pagination suite's
+p95 measured 1,315 ms (budget 400) inside the members folder run — 108 files against one shared Neon
+compute — while the same walk alone measures ~300 ms a page (14.7 s for 50 pages, re-run right after).
+The third push had passed the same assertion by luck. `tests/helpers/ci-latency.ts` already states the
+rule: a per-query budget "should take its threshold from an env var the workflow sets, or not run in
+the sweep at all". So `.husky/pre-push` now runs a module folder with `INTEGRATION_FOLDER_RUN=1`, and
+the suite asserts the p95 only when it runs alone (or when `QUEUE_PAGE_P95_BUDGET_MS` is set) — in a
+folder run it REPORTS the p95 and still asserts the walk, the order, no gap / duplicate and the EXPLAIN
+control. Both modes proven: `QUEUE_PAGE_P95_BUDGET_MS=1` under the folder flag fails (312 ms > 1), the
+folder flag alone reports and passes.
+
 ## Gate output at the branch head `39e5fcbb6` (after the PR-1 closures + their re-reviews)
 
 | Gate | Result |
