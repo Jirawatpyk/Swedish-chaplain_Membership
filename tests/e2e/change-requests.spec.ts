@@ -25,7 +25,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { fillField } from './fixtures';
 import { runAxeScan } from './helpers/axe-scan';
-import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsAdmin, signInAsSuperAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import {
   ensureApprovalSetting,
@@ -553,8 +553,12 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     await page.setViewportSize({ width: 320, height: 720 });
     await signInAsAdmin(page);
     await skipUnlessFlagOn(page);
+    // The default (pending) view: the beforeAll seed is always there, so the
+    // test survives a Playwright retry (a retry re-runs beforeAll in a fresh
+    // worker — the row test 1 decided is wiped and re-seeded as pending).
+    // The bar renders on every view, rows or not — the Outcome trigger only
+    // under `decided`, so the two accessible names are read there first.
     await page.goto('/admin/change-requests?state=decided');
-    await expect(page.getByTestId('queue-table')).toBeVisible();
     // the filter triggers are Base UI buttons: `<label for>` names a native
     // select, not a button, so each trigger carries its own aria-label. This
     // is a smoke check of the rendered name against the copy — Playwright's
@@ -564,11 +568,18 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // the ids are `useId()`-minted (PR-3 L5), so the triggers are found by their accessible name
     await expect(page.getByRole('combobox', { name: adminCopy.filters.state })).toHaveAccessibleName(adminCopy.filters.state);
     await expect(page.getByRole('combobox', { name: adminCopy.filters.outcome })).toHaveAccessibleName(adminCopy.filters.outcome);
+    await page.goto('/admin/change-requests');
+    // Wait for exactly ONE table: while React swaps the streamed content in
+    // for the Suspense fallback the DOM briefly holds two, and a strict-mode
+    // locator failed on that instant once (2026-09-15).
+    await expect(page.getByTestId('queue-table')).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.getByTestId('queue-table')).toBeVisible();
     // Apply is a same-page navigation: the pressed button keeps focus — the bar
     // is never remounted on a filter change (UX re-review N1 / R2)
     const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });
     await applyButton.focus();
     await applyButton.press('Enter');
+    await expect(page.getByTestId('queue-table')).toHaveCount(1, { timeout: 30_000 });
     await expect(page.getByTestId('queue-table')).toBeVisible();
     await expect(applyButton).toBeFocused();
     await runAxeScan(page, testInfo, { include: 'main' });
@@ -715,5 +726,124 @@ test.describe('@change-requests US5 — withdraw, replace, cap', () => {
     const status = page.getByTestId('submit-status');
     await expect(status).toContainText(copy.status.rateLimited.split('{retryAt}')[0]!.trim());
     await expect(page).toHaveURL(/\/portal\/edit$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US6 (T104) — the tenant switch is audited, pending work is visible at a glance
+// (FR-031 / FR-032 / FR-033; US6 AS1–AS4). One seeded pending request is the
+// fixture: the dashboard "Needs attention" row and the nav badge count it; the
+// settings card flips the setting OFF behind the platform confirmation (the
+// confirm button names the count — UX H1) and the FR-032 note keeps linking to
+// the queue; the member's gate answers `immediate` while off and `approval`
+// again once on; the seeded row is still readable by staff either way; the
+// super_admin sees the setting event on /admin/audit (`audit.read` is
+// superAdminOnly since 016 D4 — an admin is denied the viewer).
+// ---------------------------------------------------------------------------
+test.describe('@change-requests US6 — tenant switch, dashboard count, nav badge', () => {
+  test.skip(
+    !MEMBER_EMAIL || !MEMBER_PASSWORD || !DATABASE_URL || !ADMIN_EMAIL || !ADMIN_PASSWORD,
+    'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY + E2E_ADMIN_* + DATABASE_URL',
+  );
+
+  const settingsCopy = en.admin.settings.memberChanges;
+  let member: PortalMemberRef | null = null;
+  let previousSetting: boolean | null = null;
+  let seeded: SeededPendingRequest | null = null;
+
+  test.beforeAll(async () => {
+    previousSetting = await ensureApprovalSetting(true);
+    member = await resolvePortalMember(MEMBER_EMAIL!);
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    if (member) {
+      seeded = await seedPendingRequest(member, {
+        phone: '+66866666601',
+        description: `e2e us6 description ${Date.now()}`,
+        seenPhone: await readContactPhone(member.contactId),
+        seenDescription: await readMemberDescription(member.memberId),
+      });
+    }
+  });
+
+  test.afterAll(async () => {
+    await wipeChangeRequestsForUser(MEMBER_EMAIL!);
+    if (previousSetting !== null) await ensureApprovalSetting(previousSetting);
+  });
+
+  test('admin: dashboard row + nav badge count the request; switching off is confirmed and the member gate follows; back on', async ({ page, browser }) => {
+    test.skip(!member || !seeded, 'persona is not linked to a member / could not seed a pending request');
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+
+    // FR-033 — the "Needs attention" row links to the queue; the count is ≥ 1.
+    await page.goto('/admin');
+    const attention = page.getByRole('link', { name: /^Change requests waiting/ });
+    await expect(attention).toBeVisible();
+    await expect(attention).toHaveAttribute('href', '/admin/change-requests');
+    // The nav badge is part of the link's accessible name ("Change requests N pending").
+    const nav = page.getByRole('navigation', { name: en.nav.staff.ariaLabel });
+    await expect(nav.getByRole('link', { name: /^Change requests \d+ pending$/ })).toBeVisible();
+
+    // The settings card: ON, the pending note links to the queue.
+    await page.goto('/admin/settings/member-changes');
+    const sw = page.getByRole('switch', { name: settingsCopy.switchLabel });
+    await expect(sw).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('note').getByRole('link')).toHaveAttribute('href', '/admin/change-requests');
+
+    // OFF behind the confirmation (plain tier; the confirm names the count — UX H1).
+    await sw.click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /^Switch off \(\d+\)$/ }).click();
+    // The dialog is aria-modal: the switch behind it is out of the tree until it
+    // closes, and the dev server compiles the PATCH route on its first hit.
+    await expect(dialog).toBeHidden({ timeout: 60_000 });
+    await expect(sw).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByText(settingsCopy.state.off)).toBeVisible();
+    // FR-032 — the note still names the waiting request and still links to the queue (UX H2).
+    await expect(page.getByRole('note').getByRole('link')).toHaveAttribute('href', '/admin/change-requests');
+    const stored = await page.request.get('/api/admin/settings/member-changes');
+    expect(stored.status()).toBe(200);
+    expect(await stored.json()).toMatchObject({ approvalEnabled: false });
+
+    // US6 AS1 — the member's gate is `immediate` now; AS2 — the pending row is still readable by staff.
+    const memberCtx = await browser.newContext();
+    try {
+      const memberPage = await memberCtx.newPage();
+      await signIn(memberPage, MEMBER_EMAIL!, MEMBER_PASSWORD!);
+      let gate = await memberPage.request.get('/api/portal/change-requests/gate');
+      expect(gate.status()).toBe(200);
+      expect(await gate.json()).toMatchObject({ mode: 'immediate' });
+      const review = await page.request.get(`/api/admin/change-requests/${seeded!.requestId}`);
+      expect(review.status()).toBe(200);
+
+      // Back ON (no confirmation on the way up) — the member gate follows.
+      await sw.click();
+      await expect(sw).toHaveAttribute('aria-checked', 'true', { timeout: 30_000 });
+      await expect(page.getByText(settingsCopy.state.on)).toBeVisible();
+      gate = await memberPage.request.get('/api/portal/change-requests/gate');
+      expect(await gate.json()).toMatchObject({ mode: 'approval' });
+    } finally {
+      await memberCtx.close();
+    }
+  });
+
+  test('super_admin: /admin/audit lists the setting event (US6 AS4)', async ({ page }) => {
+    test.skip(!process.env.E2E_SUPER_ADMIN_EMAIL || !process.env.E2E_SUPER_ADMIN_PASSWORD, 'Set E2E_SUPER_ADMIN_EMAIL + E2E_SUPER_ADMIN_PASSWORD');
+    await signInAsSuperAdmin(page);
+    await skipUnlessFlagOn(page);
+    await page.goto('/admin/audit?eventType=member_change_approval_setting_changed');
+    const table = page.getByRole('table');
+    await expect(table).toBeVisible();
+    await expect(table).toContainText(en.audit.eventType.member_change_approval_setting_changed);
+  });
+
+  test('@a11y axe: the settings card at 320 px', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await signInAsAdmin(page);
+    await skipUnlessFlagOn(page);
+    await page.goto('/admin/settings/member-changes');
+    await expect(page.getByRole('switch', { name: settingsCopy.switchLabel })).toBeVisible();
+    await runAxeScan(page, testInfo, { include: 'main' });
   });
 });
