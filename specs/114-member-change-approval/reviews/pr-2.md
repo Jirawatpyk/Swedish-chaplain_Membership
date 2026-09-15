@@ -171,6 +171,56 @@ SQL drift, the lock order incl. the DEFERRABLE self-FK and the partial unique in
 rescan — with the DB's own second layer: a new request's RI check takes `FOR KEY SHARE` on the
 `members` row the erase holds `FOR UPDATE`, so no submit commits a row after the member lock.
 
+## After PR #366 opened — the CI catch + the filter-bar pattern (2026-09-15)
+
+Five of the six required checks passed on `cdf5a1e95`; **`Unit + contract coverage vs pinned thresholds`
+failed**: `erase-member.ts` is pinned 100 / 100 / 100 / 100 in `vitest.config.ts` and the seam re-review's
+post-lock rescan (`b7afc1bcb`) added a `!rescan.ok` throw with no test (lines 99.65 %, branches 97.08 %),
+plus every `'cause' in error ? … : undefined` narrowing — scrub, closure audit, outbox cancel, rescan —
+had only the with-cause side exercised. Nothing local enforces the pins: `pnpm test` and the pre-push hook
+run without `--coverage`, so six review rounds and three pushes were green on a file CI would refuse.
+Fix is test-only: `erase-member-change-requests.test.ts` now drives each port failure with and without a
+cause (`repo.not_found`), measured back to 100 % on all four axes with
+`vitest run <suites> --coverage --coverage.include=<file>` — the check to run before pushing a branch
+that touches any pinned file. The Vercel preview on the same push also failed
+(`BUILD_EXCEEDED_MAXIMUM_TIME`: the build finished in 4 min, "Deploying outputs" hung for 41 min); the
+five earlier previews of this branch were READY, Vercel is not a required check, and the next push
+redeploys.
+
+The maintainer also flagged the queue's filter dropdowns as the wrong pattern: `page.tsx` rendered a
+server `<form method="get">` with two NATIVE `<select>`s — the one admin filter surface not on the shadcn
+`Select`. Replaced by `_components/queue-filters.tsx` (client; the `credit-note-filters` / member-page
+invoice shape: controls stage locally, Apply patches the URL with `router.replace` + `scroll: false` and
+drops the cursor, Clear drops every param; the outcome `Select` exists only while the STAGED state is
+`decided` and leaving `decided` resets it). Unit test `change-request-queue-filters.test.tsx` (7 cases,
+RED first on the missing module). `enterprise-ux-designer` (Opus, read-only) on the first cut: **NOT
+MERGEABLE — B1**: a Base UI `SelectTrigger` is a `<button>`, and `<label for>` names a native `<select>`
+but never a button, so both comboboxes had NO accessible name — a regression from the native select — and
+no test could see it (the unit stub is a plain button and jsdom's name computation polyfills
+`label[for]` → button; axe's `aria-input-field-name` skips buttons). Taken: B1 (`aria-label` on both
+triggers + an e2e `toHaveAccessibleName` on the real primitive), H1 (never `disabled` while pending —
+a focused button that turns disabled drops focus to `<body>`; `aria-busy` + re-entry guards; Clear parks
+focus on Apply before it unmounts), M1 (the loading skeleton reserved 4 controls for a 3-control default
+view), M2 (outline / ghost at the default size — `size="sm" className="h-9"` kept sm text), M3 (phone:
+buttons fill the row), M4 (`lg:col-start-5` so choosing "Decided" does not shove the buttons), M5
+(`hasFilters` reads the URL the way the page's `filtered` does), L1 (keyed on the URL filters — Back /
+Forward re-stage), L2, L3, L4. Not taken: H2 (a live region announcing the applied result — no sibling
+filter bar does; parked for the PR-3 polish round), L5 (`useId` — single instance, the e2e asserts the
+ids). Re-review of those fixes: every item CLOSED but **N1 (HIGH, new)** — the `key` used for L1 remounted
+the bar on every Apply / Clear, which destroyed the button the admin had just pressed and dropped focus
+to `<body>`, undoing H1; the unit case could not see it because it rendered without the key. Fixed with
+React's adjust-state-during-render (`urlKey` / `stagedFor`: the same instance re-stages from the URL,
+never a remount); the unit test now swaps the URL under the same instance and asserts the Apply node is
+the SAME element and still focused (mutation-checked). Also N2 (`aria-busy` has no styling anywhere in
+the app — `aria-busy:opacity-70` gives back the visible "working" dim `disabled` used to), N3 (the e2e
+`toHaveAccessibleName` is a smoke check only — Playwright's accname, like jsdom's, honours
+`label[for]` → button; the guard is the unit `toHaveAttribute('aria-label', …)`). N4 (a pre-hydration
+Enter in a date input submits a bare GET) parked for PR-3. Third pass: **MERGEABLE**; its two LOW
+residuals taken too — R1 (the bar echoed a raw `?from=` / `?to=` the page's zod would refuse along with
+the whole query; now the same `YYYY-MM-DD` shape gates what is staged and what counts as a filter) and
+R2 (the e2e queue case presses Apply and asserts the button keeps focus — the call-site guard a unit
+test of the child cannot be).
+
 ## Gate output at the branch head `39e5fcbb6` (after the PR-1 closures + their re-reviews)
 
 | Gate | Result |

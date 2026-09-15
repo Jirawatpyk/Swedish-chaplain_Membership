@@ -555,6 +555,21 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     await skipUnlessFlagOn(page);
     await page.goto('/admin/change-requests?state=decided');
     await expect(page.getByTestId('queue-table')).toBeVisible();
+    // the filter triggers are Base UI buttons: `<label for>` names a native
+    // select, not a button, so each trigger carries its own aria-label. This
+    // is a smoke check of the rendered name against the copy — Playwright's
+    // accname (like jsdom's) still honours `label[for]` → button, so the
+    // regression guard is the unit test's `toHaveAttribute('aria-label', …)`;
+    // axe's `aria-input-field-name` skips buttons altogether
+    await expect(page.locator('#cr-filter-state')).toHaveAccessibleName(adminCopy.filters.state);
+    await expect(page.locator('#cr-filter-outcome')).toHaveAccessibleName(adminCopy.filters.outcome);
+    // Apply is a same-page navigation: the pressed button keeps focus — the bar
+    // is never remounted on a filter change (UX re-review N1 / R2)
+    const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });
+    await applyButton.focus();
+    await applyButton.press('Enter');
+    await expect(page.getByTestId('queue-table')).toBeVisible();
+    await expect(applyButton).toBeFocused();
     await runAxeScan(page, testInfo, { include: 'main' });
     await page.goto(`/admin/members/${member!.memberId}`);
     await expect(page.getByTestId('member-change-requests-section')).toBeVisible();

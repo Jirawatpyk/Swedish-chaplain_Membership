@@ -5,8 +5,9 @@
  * `requirePagePermission('members.read')` — a manager reads the queue; the
  * review page gates deciding on `members.write`. Platform flag OFF → 404.
  *
- * Filters are a plain GET form (state / outcome / member / date range —
- * FR-027), so every view is a URL: `?state=decided&outcome=partially_approved`
+ * Filters live in the URL (state / outcome / member / date range — FR-027;
+ * `_components/queue-filters.tsx` stages them and patches the query on
+ * Apply), so every view is a URL: `?state=decided&outcome=partially_approved`
  * finds "the partially approved ones", `?memberId=…` is the member record's
  * link, and the staff email's `?submitter=<userId>&state=pending` deep link
  * resolves server-side — exactly one pending request for that person →
@@ -42,23 +43,19 @@ import {
   type UserId,
 } from '@/modules/members';
 import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { buttonVariants } from '@/components/ui/button';
 import { InlineAlert } from '@/components/ui/inline-alert';
-import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ChangeRequestStatusBadge } from '@/components/members/change-requests/change-request-status-badge';
+import { ChangeRequestQueueFilters } from './_components/queue-filters';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE = 50;
 const TENANT_TZ = 'Asia/Bangkok';
-// a native select: the Input's focus ring, so keyboard focus is visible (UX)
-const SELECT_CLASS = 'h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
-
 const searchSchema = z.object({
   state: z.enum(CHANGE_REQUEST_STATES).optional(),
   outcome: z.enum(CHANGE_REQUEST_OUTCOMES).optional(),
@@ -228,69 +225,29 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </InlineAlert>
       ) : null}
 
-      <form method="get" action="/admin/change-requests" className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end" aria-label={tFilters('label')} data-testid="queue-filters">
-        {q.memberId ? <input type="hidden" name="memberId" value={q.memberId} /> : null}
-        {q.submitter ? <input type="hidden" name="submitter" value={q.submitter} /> : null}
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="cr-filter-state">{tFilters('state')}</Label>
-          <select id="cr-filter-state" name="state" defaultValue={state} className={SELECT_CLASS}>
-            {CHANGE_REQUEST_STATES.map((s) => (
-              <option key={s} value={s}>
-                {tReview(`state.${s}`)}
-              </option>
-            ))}
-          </select>
-        </div>
-        {state === 'decided' ? (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cr-filter-outcome">{tFilters('outcome')}</Label>
-            <select id="cr-filter-outcome" name="outcome" defaultValue={outcome ?? ''} className={SELECT_CLASS}>
-              <option value="">{tFilters('anyOutcome')}</option>
-              {CHANGE_REQUEST_OUTCOMES.map((o) => (
-                <option key={o} value={o}>
-                  {tReview(`outcome.${o}`)}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="cr-filter-from">{tFilters('from')}</Label>
-          <Input id="cr-filter-from" name="from" type="date" defaultValue={q.from ?? ''} className="h-9" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="cr-filter-to">{tFilters('to')}</Label>
-          <Input id="cr-filter-to" name="to" type="date" defaultValue={q.to ?? ''} className="h-9" />
-        </div>
-        <div className="flex items-center gap-2">
-          <Button type="submit" size="sm" className="h-9">
-            {tFilters('apply')}
-          </Button>
-          {filtered ? (
-            <Link href="/admin/change-requests" className={`${buttonVariants({ variant: 'ghost', size: 'sm' })} h-9`}>
-              {tFilters('clear')}
-            </Link>
+      <ChangeRequestQueueFilters />
+      {q.memberId || q.submitter ? (
+        <div className="space-y-1">
+          {q.memberId ? (
+            <p className="text-sm" data-testid="queue-member-chip">
+              {tFilters('memberChip', { company: memberChip ?? '' })}{' '}
+              <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
+                <XIcon className="size-3" aria-hidden="true" />
+                {tFilters('removeMember')}
+              </Link>
+            </p>
+          ) : null}
+          {q.submitter ? (
+            <p className="text-sm" data-testid="queue-submitter-chip">
+              {tFilters('submitterChip')}{' '}
+              <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
+                <XIcon className="size-3" aria-hidden="true" />
+                {tFilters('removeSubmitter')}
+              </Link>
+            </p>
           ) : null}
         </div>
-        {q.memberId ? (
-          <p className="text-sm sm:col-span-2 lg:col-span-5" data-testid="queue-member-chip">
-            {tFilters('memberChip', { company: memberChip ?? '' })}{' '}
-            <Link href={hrefWithout('memberId')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
-              <XIcon className="size-3" aria-hidden="true" />
-              {tFilters('removeMember')}
-            </Link>
-          </p>
-        ) : null}
-        {q.submitter ? (
-          <p className="text-sm sm:col-span-2 lg:col-span-5" data-testid="queue-submitter-chip">
-            {tFilters('submitterChip')}{' '}
-            <Link href={hrefWithout('submitter')} className="inline-flex items-center gap-1 text-primary underline underline-offset-4 hover:no-underline">
-              <XIcon className="size-3" aria-hidden="true" />
-              {tFilters('removeSubmitter')}
-            </Link>
-          </p>
-        ) : null}
-      </form>
+      ) : null}
 
       {page.items.length === 0 ? (
         deepLinkNotice ? null : (
