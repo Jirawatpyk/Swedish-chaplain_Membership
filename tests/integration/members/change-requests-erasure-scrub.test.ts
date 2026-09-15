@@ -21,10 +21,18 @@
  *   - the scrubbed rows still READ BACK through the Drizzle repo (the DB →
  *     Domain seam accepts the sentinel — an erased request must not become a
  *     corrupt row that 500s the queue).
+ *
+ * Two further cases run against the same fixture afterwards:
+ *   - the scrub adapter's LOCK ORDER — it takes the request rows `FOR UPDATE`
+ *     FIRST and holds no field row while it waits (the AB-BA guard vs
+ *     `decideInTx`), with a positive control for the NOWAIT probe itself;
+ *   - the F114 audit events reach `member_timeline_v` under BOTH payload
+ *     keys the view accepts (`member_id` / `related_member_id`) — the
+ *     #336/#337 payload-key class, which PR-2 moved twice.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import {
@@ -41,6 +49,7 @@ import {
 } from '@/modules/members';
 import { ERASED_SENTINEL } from '@/modules/members/domain/erasure-sentinels';
 import { eraseMember } from '@/modules/members/application/use-cases/erase-member';
+import { changeRequestScrubAdapter } from '@/modules/members/infrastructure/adapters/change-request-scrub-adapter';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
 import { resendEmailPort } from '@/modules/members/infrastructure/adapters/resend-email-port';
 import { memberChangeRequestFields, memberChangeRequests } from '@/modules/members/infrastructure/db/schema-change-requests';
@@ -282,4 +291,96 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
     const [pendingAgain] = await db.select().from(memberChangeRequests).where(eq(memberChangeRequests.id, pendingId));
     expect(pendingAgain?.withdrawnAt?.getTime()).toBe(withdrawnAtFirst?.getTime());
   }, 180_000);
+
+  it('scrubForMemberInTx takes the REQUEST rows first (`SELECT … FOR UPDATE`): it blocks behind a holder of one of them and holds NO field row while it waits — the AB-BA guard against decideInTx (seam review of PR-2, #1)', async () => {
+    const blocked = (ms: number) => new Promise<'blocked'>((r) => setTimeout(() => r('blocked'), ms));
+    /** `FOR UPDATE NOWAIT` over the member's field rows: 'free', or 'locked' (SQLSTATE 55P03). */
+    const probeFieldRows = () =>
+      runInTenant(tenant.ctx, (tx) =>
+        tx.execute(sql`SELECT "id" FROM "member_change_request_fields" WHERE "request_id" IN (${decidedId}::uuid, ${pendingId}::uuid) FOR UPDATE NOWAIT`),
+      ).then(
+        () => 'free' as const,
+        (e: unknown) => {
+          const code = (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
+          return code === '55P03' ? ('locked' as const) : Promise.reject(e);
+        },
+      );
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    // tx A holds ONE of the member's REQUEST rows — and nothing of the field table
+    const holder = runInTenant(tenant.ctx, async (tx) => {
+      const rows = (await tx.execute(
+        sql`SELECT "id" FROM "member_change_requests" WHERE "member_id" = ${memberId}::uuid ORDER BY "id" LIMIT 1 FOR UPDATE`,
+      )) as unknown as Array<{ id: string }>;
+      expect(rows).toHaveLength(1);
+      await gate;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    try {
+      const scrub = runInTenant(tenant.ctx, (tx) =>
+        changeRequestScrubAdapter.scrubForMemberInTx(tx, asMemberId(memberId), new Date('2026-09-13T00:00:00Z')),
+      );
+      expect(await Promise.race([scrub, blocked(1_500)])).toBe('blocked');
+      // WHERE it waits is the whole point. Drop `.for('update')` from the
+      // adapter's id read and that read returns instantly, statement 1
+      // rewrites EVERY field row (taking their row locks for the rest of the
+      // tx) and only statement 2 queues on the request row — field-rows-then-
+      // request-row, the exact lock order that deadlocks against decideInTx
+      // (which locks the request row first and writes the field rows last).
+      expect(await probeFieldRows()).toBe('free');
+      release();
+      await holder;
+      const done = await scrub;
+      expect(done.ok && done.value.scrubbedRequestIds).toHaveLength(2);
+    } finally {
+      release();
+      await holder.catch(() => {});
+    }
+
+    // positive control for the probe itself: with a field row deliberately
+    // held, the SAME call reports 'locked'. Without this, a probe that could
+    // never say anything but 'free' would look like proof (memory:
+    // a check that cannot tell "nothing to find" from "not looking").
+    let releaseField!: () => void;
+    const fieldGate = new Promise<void>((r) => {
+      releaseField = r;
+    });
+    const fieldHolder = runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`SELECT "id" FROM "member_change_request_fields" WHERE "request_id" = ${pendingId}::uuid FOR UPDATE`);
+      await fieldGate;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    try {
+      expect(await probeFieldRows()).toBe('locked');
+    } finally {
+      releaseField();
+      await fieldHolder.catch(() => {});
+    }
+  }, 60_000);
+
+  it('the F114 audit events reach member_timeline_v — the view keys on payload `member_id` OR `related_member_id` (migration 0196; the #336/#337 payload-key class)', async () => {
+    // `member_change_request_submitted` keys on `member_id` (it IS member
+    // activity — the 0009 `last_activity_at` trigger reads that key);
+    // `_decided` and `_withdrawn` key on `related_member_id` (a staff action
+    // is not the member's own activity). The view's audit arm accepts BOTH
+    // (`payload ? 'member_id' OR payload ? 'related_member_id'`, member_id =
+    // COALESCE of the two), so a rename on EITHER side silently drops the
+    // member's change-request history off their timeline.
+    const rows = await runInTenant(
+      tenant.ctx,
+      async (tx) =>
+        (await tx.execute(sql`
+          SELECT DISTINCT "payload"->>'event_type' AS event_type
+          FROM "member_timeline_v"
+          WHERE "tenant_id" = ${tenant.ctx.slug} AND "member_id" = ${memberId} AND "source" = 'audit'
+        `)) as unknown as Array<{ event_type: string }>,
+    );
+    const types = rows.map((r) => r.event_type);
+    expect(types, JSON.stringify(types)).toContain('member_change_request_submitted');
+    expect(types, JSON.stringify(types)).toContain('member_change_request_decided');
+    expect(types, JSON.stringify(types)).toContain('member_change_request_withdrawn');
+  }, 60_000);
 });

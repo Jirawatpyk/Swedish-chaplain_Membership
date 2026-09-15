@@ -6,8 +6,9 @@
  * Seeds 200 members × 25 DECIDED requests (5,000 rows + one field row each)
  * in one tenant — the first 300 rows share ONE `submitted_at`, so the keyset's
  * `(submitted_at = cursor, id < cursor.id)` tie-break branch is exercised on
- * three page boundaries (review round 1, REL-7: 1-second spacing never reached
- * it) — then walks the QUEUE USE CASE (`listChangeRequestQueue`: the page's
+ * the TWO page boundaries that fall inside that tie block (300 tied rows /
+ * 100 per page; review round 1, REL-7: 1-second spacing never reached it) —
+ * then walks the QUEUE USE CASE (`listChangeRequestQueue`: the page's
  * `listQueue` + `pendingStats` in parallel, the two transactions a route pays,
  * REL-9) with keyset `cursor` / `limit = 100`:
  *   - 50 pages, 5,000 distinct ids, no gap and no duplicate;
@@ -16,9 +17,12 @@
  *     is a p95, measured around the repo call — the route adds JSON only;
  *     one warm-up page absorbs the connection + plan cost, and a single
  *     slow page out of fifty is below the percentile, not a regression);
- *   - `EXPLAIN` of the page query names the
- *     `member_change_requests_tenant_state_submitted_idx` index (the planner
- *     did not fall back to a seq scan + sort).
+ *   - `EXPLAIN` of the page query's DRIVING SCAN — a single-table proxy
+ *     (`WHERE state = … ORDER BY submitted_at, id LIMIT n`) for what
+ *     `runList` issues, without its `members` / `contacts` / `users` joins —
+ *     names the `member_change_requests_tenant_state_submitted_idx` index in
+ *     both directions (the planner did not fall back to a seq scan + sort).
+ *     The joins' own access paths are NOT covered here.
  *
  * `decided` rows are used because the partial unique index allows only one
  * PENDING row per submitter — 5,000 pending rows would need 5,000 users. The

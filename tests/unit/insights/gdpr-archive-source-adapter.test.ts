@@ -378,6 +378,40 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
       expect(crListByMemberMock).toHaveBeenCalledTimes(2);
     });
 
+    it('caps the history at MAX_CHANGE_REQUESTS (1,000), stops walking one row past the cap, and DISCLOSES the truncation', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      const companyRow = (id: string) => ({
+        ...row,
+        request: {
+          ...row.request,
+          id,
+          scope: 'company',
+          fields: [{ key: 'company_name', target: 'member', seen: 'Acme', proposed: 'Acme Co', affectsTaxDocuments: true, outcome: 'rejected', appliedAt: null }],
+        },
+      });
+      // The pool is deliberately LARGER than the cap + one page (1,200, not
+      // 1,001): the 1,001st row is what trips the cap, and the rows beyond it
+      // are what makes the `break` at gdpr-archive-source-adapter.ts:308-311
+      // fail-able — without it the walk drains all 24 pages instead of 21.
+      const POOL = 1_200;
+      const PAGE = 50; // CHANGE_REQUEST_PAGE
+      let served = 0;
+      crListByMemberMock.mockImplementation(async () => {
+        const items = Array.from({ length: Math.min(PAGE, POOL - served) }, (_, i) => companyRow(`cr-${served + i + 1}`));
+        served += items.length;
+        const last = items[items.length - 1];
+        return {
+          ok: true,
+          value: { items, nextCursor: served < POOL && last ? { submittedAt: row.request.submittedAt, id: last.request.id } : null },
+        };
+      });
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+      expect(data!.changeRequests).toHaveLength(1000);
+      expect(data!.changeRequests[999]!.id).toBe('cr-1000'); // the NEWEST-first page order is kept, trimmed from the tail
+      expect(data!.completeness!.truncatedCategories).toContain('changeRequests');
+      expect(crListByMemberMock).toHaveBeenCalledTimes(21);
+    });
+
     it('FAILS LOUD when the change-request read errors — never a hollow change-requests.json', async () => {
       listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
       crListByMemberMock.mockResolvedValue({ ok: false, error: { code: 'repo.unexpected' } });

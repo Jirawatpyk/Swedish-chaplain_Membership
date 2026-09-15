@@ -38,8 +38,10 @@ vi.mock('@/lib/metrics', () => ({
   },
 }));
 
+import { ok } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId, asContactId } from '@/modules/members';
+import type { ChangeRequestListRow } from '@/modules/members/application/ports/change-request-repo';
 import type { UserId } from '@/modules/members/domain/value-objects/user-id';
 import type { ChangeRequest, ChangeRequestId, ProposedField } from '@/modules/members/domain/change-request/change-request';
 import {
@@ -277,6 +279,31 @@ describe('FR-029 — the portal projection', () => {
     const row = { request: seed()[2]!, member: { companyName: 'Nordic Co', memberNumber: 1, status: 'active' as const, archived: false }, submitter: { displayName: 'Anna' }, decidedBy: null };
     expect(projectChangeRequestForViewer(row, SECONDARY).request.fields.map((f) => f.key)).toEqual(['company_name']);
     expect(projectChangeRequestForViewer(row, PRIMARY)).toBe(row);
+  });
+
+  it('the use case re-applies the scope rule itself: a LEAKY repo that hands back a colleague\'s own_contact row AND another member\'s row has BOTH dropped (fail closed)', async () => {
+    // Every other case here feeds a PRE-FILTERED list (the in-memory repo
+    // mirrors the SQL predicate), which leaves `listPortalChangeRequests`'
+    // own `.filter(visibleTo)` — list-change-requests.ts:245 — a no-op that
+    // nothing measures. Delete that filter and this is the case that fails.
+    const { deps, repo } = makeDeps();
+    const listRow = (r: (typeof leaked)[number]): ChangeRequestListRow => ({
+      request: r,
+      member: { companyName: 'Nordic Co', memberNumber: 1, status: 'active', archived: false },
+      submitter: { displayName: 'Submitter' },
+      decidedBy: null,
+    });
+    const leaked = seed();
+    repo.listVisibleToUser = async () => ok({ items: leaked.map(listRow), nextCursor: null });
+
+    const r = await listPortalChangeRequests(deps, { userId: SECONDARY, memberId: MEMBER, cursor: null, limit: 20 });
+    if (!r.ok) throw new Error('portal');
+    const ids = r.value.items.map((x) => x.request.id);
+    expect(ids).not.toContain(R(1)); // the PRIMARY's own_contact request — a colleague's
+    expect(ids).not.toContain(R(5)); // a row of ANOTHER member entirely
+    // positive control: the in-scope rows still come through, so the two
+    // exclusions above are a filter doing work, not an empty response
+    expect(ids).toEqual([R(2), R(3), R(4)]);
   });
 
   it('a state filter narrows the portal list', async () => {

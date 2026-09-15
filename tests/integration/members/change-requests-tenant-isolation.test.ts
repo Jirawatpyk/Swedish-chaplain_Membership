@@ -274,6 +274,19 @@ describe('change requests — two-layer tenant isolation on live Neon (T033)', (
       expect(history).toEqual({ ok: true, value: { items: [], nextCursor: null } });
       const queue = await listChangeRequestQueue(listDeps, { filter: { memberId: asMemberId(t.memberId) }, cursor: null, limit: 20 });
       expect(queue.ok && queue.value.items).toEqual([]);
+      // An empty PAGE does not prove the page's FR-033 counters are ours:
+      // `pendingStats` (drizzle-change-request-repo.ts:578-597) carries NO
+      // tenant predicate at all — it leans on RLS alone — and it ignores the
+      // `memberId` filter, so it reports the tenant-wide pending count. The
+      // probing tenant seeded exactly ONE pending request (its own) and
+      // nothing in this file ever decides or withdraws it, so a leak across
+      // the RLS boundary would count the target's as well.
+      expect(queue.ok && queue.value.pendingCount).toBe(1);
+      const ownPending = await requestRow(p.requestId);
+      const stats = await drizzleChangeRequestRepo.pendingStats(p.tenant.ctx);
+      expect(stats.ok && stats.value.count).toBe(1);
+      expect(stats.ok && stats.value.oldestSubmittedAt?.getTime()).toBe(ownPending?.submittedAt.getTime());
+      expect(queue.ok && queue.value.oldestPendingAgeSeconds).not.toBeNull();
 
       const before = await requestRow(t.requestId);
       const withdrawn = await withdrawChangeRequest(
