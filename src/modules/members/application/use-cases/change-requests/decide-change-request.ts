@@ -532,7 +532,7 @@ export { auditProbe as auditChangeRequestProbe };
 async function auditProbe(
   audit: Pick<AuditPort, 'record'>,
   tenant: TenantContext,
-  p: { changeRequestId: ChangeRequestId; actorUserId: UserId; actorRole: string | null; requestId: string; action: 'decide' | 'acknowledge' | 'review' },
+  p: { changeRequestId: ChangeRequestId; actorUserId: UserId; actorRole: string | null; requestId: string; action: 'decide' | 'acknowledge' | 'review' | 'history_item' },
 ): Promise<void> {
   const audited = await audit.record(tenant, {
     type: 'member_cross_tenant_probe',

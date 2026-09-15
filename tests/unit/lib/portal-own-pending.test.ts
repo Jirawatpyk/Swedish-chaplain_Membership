@@ -13,7 +13,6 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 
-import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import type { UserId } from '@/modules/members/domain/value-objects/user-id';
 import { readOwnPendingRequest } from '@/lib/portal-own-pending';
@@ -24,18 +23,17 @@ const USER = 'a6c5b1a2-0000-4000-8000-00000000bbbb' as UserId;
 describe('readOwnPendingRequest', () => {
   it('ok(row) / ok(null) pass through', async () => {
     const row = { id: 'r1' } as never;
-    expect(await readOwnPendingRequest({ findPendingBySubmitterInTx: async () => ok(row) }, tenant, USER)).toEqual(ok(row));
-    expect(await readOwnPendingRequest({ findPendingBySubmitterInTx: async () => ok(null) }, tenant, USER)).toEqual(ok(null));
+    expect(await readOwnPendingRequest({ findPendingBySubmitter: async () => ok(row) }, tenant, USER)).toEqual(ok(row));
+    expect(await readOwnPendingRequest({ findPendingBySubmitter: async () => ok(null) }, tenant, USER)).toEqual(ok(null));
   });
 
   it('a repo Result fault is err(read_failed) — never "no pending request"', async () => {
-    const r = await readOwnPendingRequest({ findPendingBySubmitterInTx: async () => err({ code: 'repo.unexpected' as const }) }, tenant, USER);
+    const r = await readOwnPendingRequest({ findPendingBySubmitter: async () => err({ code: 'repo.unexpected' as const }) }, tenant, USER);
     expect(r).toEqual({ ok: false, error: { type: 'read_failed', code: 'repo.unexpected' } });
   });
 
   it('a throw is err(read_failed) with the error kind', async () => {
-    vi.mocked(runInTenant).mockRejectedValueOnce(new Error('neon down'));
-    const r = await readOwnPendingRequest({ findPendingBySubmitterInTx: async () => ok(null) }, tenant, USER);
+    const r = await readOwnPendingRequest({ findPendingBySubmitter: async () => { throw new Error('neon down'); } }, tenant, USER);
     expect(r).toEqual({ ok: false, error: { type: 'read_failed', code: 'Error' } });
   });
 });

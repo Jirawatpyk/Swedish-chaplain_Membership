@@ -123,18 +123,36 @@ export function isStuckProcessing(
   return nowMs - claimedAtMs > timeoutMs;
 }
 
-export interface ExportJobIdempotencyParts {
-  readonly tenantId: string;
-  readonly kind: ExportKind;
-  readonly subjectMemberId: string | null;
-  readonly requestedForPeriod: string | null;
-}
+/**
+ * Keyed on `kind`: a GDPR archive's CONTENT depends on who asked (FR-029
+ * scope), so its key REQUIRES `requestedBy` — two people asking for the same
+ * member in the same minute get two jobs, never one another's file (F114 T079,
+ * review round 1, C1; the PR review made it a type rule so a caller cannot
+ * forget it). The directory artefacts are one build per period whoever asks,
+ * so their arm forbids the segment — their keys are unchanged.
+ */
+export type ExportJobIdempotencyParts =
+  | {
+      readonly tenantId: string;
+      readonly kind: 'gdpr_member_archive';
+      readonly subjectMemberId: string;
+      readonly requestedForPeriod: string;
+      readonly requestedBy: string;
+    }
+  | {
+      readonly tenantId: string;
+      readonly kind: Exclude<ExportKind, 'gdpr_member_archive'>;
+      readonly subjectMemberId: string | null;
+      readonly requestedForPeriod: string | null;
+      readonly requestedBy?: never;
+    };
 
 /**
  * Deterministic canonical idempotency input (data-model § 4:
- * `hash(tenant_id, kind, subject_member_id, requested_for_period)`). Infra hashes
- * this string into `export_jobs.idempotency_key`. Null subject/period collapse to
- * an empty segment (a stable sentinel — never the literal "null"/"undefined").
+ * `hash(tenant_id, kind, subject_member_id, requested_for_period[, requested_by])`).
+ * Infra hashes this string into `export_jobs.idempotency_key`. Null subject/period
+ * collapse to an empty segment (a stable sentinel — never the literal
+ * "null"/"undefined").
  */
 export function exportJobIdempotencyInput(
   parts: ExportJobIdempotencyParts,
@@ -144,5 +162,6 @@ export function exportJobIdempotencyInput(
     parts.kind,
     parts.subjectMemberId ?? '',
     parts.requestedForPeriod ?? '',
+    ...(parts.requestedBy !== undefined ? [parts.requestedBy] : []),
   ].join('|');
 }

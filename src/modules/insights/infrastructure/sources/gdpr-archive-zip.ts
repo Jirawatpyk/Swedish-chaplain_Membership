@@ -40,6 +40,7 @@ const TRUNCATED_FILE: Record<GdprTruncatableCategory, string> = {
   events: 'events.json',
   broadcasts: 'broadcasts.json',
   auditEvents: 'audit-events.json',
+  changeRequests: 'change-requests.json',
 };
 
 export interface BuildGdprArchiveMeta {
@@ -105,6 +106,8 @@ export function buildGdprArchiveBytes(
     'events.json': jsonBytes(data.events),
     'broadcasts.json': jsonBytes(data.broadcasts),
     'audit-events.json': jsonBytes(data.auditEvents),
+    // F114 (FR-030) — the requester's change-request history
+    'change-requests.json': jsonBytes(data.changeRequests),
   };
   for (const invoice of data.invoices) {
     if (invoice.pdf !== null) {

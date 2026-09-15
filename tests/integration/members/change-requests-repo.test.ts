@@ -9,11 +9,15 @@
  *     `(tenant_id, submitted_by_user_id)` → `repo.conflict`
  *     `change_request_pending_exists`;
  *   - the CHECKs refuse `state = 'decided'` without an outcome / decision
- *     columns (a repo bug cannot half-decide a row);
+ *     columns (a repo bug cannot half-decide a row), and `decideInTx` refuses
+ *     a decision that names a key twice or names a key with no field row —
+ *     both roll the tx back and leave the request pending;
  *   - RLS FORCE — a `runInTenant` for tenant B sees ZERO rows of tenant A, in
  *     BOTH directions (Constitution I.3, the repo-level half of SC-009);
  *   - withdraw / decide / acknowledge / countSubmittedSince / pendingStats /
- *     the three list projections read back what was written.
+ *     the three list projections read back what was written — including
+ *     FR-029: `listVisibleToUser` EXCLUDES a colleague's `own_contact` row
+ *     while still returning the member's company-level ones.
  *
  * Seeds: two tenants, each with a plan + member + primary contact + a portal
  * user linked to it, so every FK (member, contact, user) is satisfied.
@@ -24,6 +28,7 @@ import { inArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asMemberId, asContactId, type UserId } from '@/modules/members';
 import type { ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
+import { PROPOSABLE_FIELD_KEYS } from '@/modules/members/domain/change-request/proposable-fields';
 import { drizzleChangeRequestRepo } from '@/modules/members/infrastructure/db/drizzle-change-request-repo';
 import { UseCaseAbort } from '@/modules/members/application/tx-abort';
 import type { ChangeRequestDraft } from '@/modules/members/application/ports/change-request-repo';
@@ -213,6 +218,98 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     expect(outside.ok && outside.value).toEqual({ count: 0, oldestSubmittedAt: null });
   });
 
+  it.each([
+    ['decided_by_user_id', 'member_change_requests_decided_by_tenant_idx'],
+    ['submitted_by_user_id', 'member_change_requests_submitted_by_user_idx'],
+  ])('migration 0302: the RI check on the single-column users FK (%s) is an index probe, never a seq scan — a positive control the name-counting canary cannot give (migration re-review, M1 / M2)', async (column, indexName) => {
+    // Postgres runs an RI check with row security OFF and NO tenant qual — it
+    // is a bare `WHERE $1 = <fk column>` issued by the parent row's delete
+    // trigger. So it is modelled on the OWNER connection, OUTSIDE
+    // `runInTenant`: inside one, RLS appends `tenant_id =
+    // current_setting('app.current_tenant')` and a TENANT-FIRST index (the
+    // pre-0302 shape this test exists to refuse) serves that PAIR as a single
+    // `Index Cond`, so the demotion would be invisible — measured. Dropping
+    // to `SET LOCAL row_security = off` inside `runInTenant` is not an
+    // option: `chamber_app` is NOBYPASSRLS, so the query errors outright
+    // (also measured). `SET LOCAL` keeps the planner knob inside this tx.
+    const plan = await db.transaction(async (tx) => {
+      // a tiny table would seq-scan on cost alone; force the planner to show whether an index CAN serve the lookup
+      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+      const rows = (await tx.execute(sql`EXPLAIN SELECT 1 FROM member_change_requests WHERE ${sql.raw(column)} = ${randomUUID()}`)) as unknown as Array<Record<string, string>>;
+      return rows.map((r) => Object.values(r).join(' ')).join('\n');
+    });
+    expect(plan, plan).toContain(indexName);
+    expect(plan, plan).not.toMatch(/Seq Scan on member_change_requests/);
+    // the FK column must be the index CONDITION, not a Filter under an index
+    // scan — EXPLAIN prints the index name in BOTH shapes, and demoted-to-
+    // Filter is exactly the pre-fix (tenant-first) behaviour guarded here
+    expect(plan, plan).toMatch(new RegExp(`Index Cond: \\(${column} = `));
+    expect(plan, plan).not.toMatch(new RegExp(`Filter: \\(${column} = `));
+  });
+
+  it('findPendingBySubmitter (PR-1 review, Rel M-5) is a PLAIN read: it returns while another tx holds the row FOR UPDATE — the locking finder blocks behind the same holder (positive control)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const holder = runInTenant(a.tenant.ctx, async (tx) => {
+      const locked = await drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId));
+      expect(locked.ok && locked.value?.submittedByUserId).toBe(a.user.userId);
+      await gate;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    const blocked = (ms: number) => new Promise<'blocked'>((r) => setTimeout(() => r('blocked'), ms));
+    try {
+      // the read the profile page + the gate route make: never waits on a decide / submit holding the row
+      const plain = await Promise.race([drizzleChangeRequestRepo.findPendingBySubmitter(a.tenant.ctx, mu(a.user.userId)), blocked(5_000)]);
+      expect(plain).not.toBe('blocked');
+      expect(plain !== 'blocked' && plain.ok && plain.value?.submittedByUserId).toBe(a.user.userId);
+      // positive control: the FOR UPDATE finder DOES queue behind the holder
+      const locking = runInTenant(a.tenant.ctx, (tx) => drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId)));
+      expect(await Promise.race([locking, blocked(1_500)])).toBe('blocked');
+      release();
+      await holder;
+      const after = await locking;
+      expect(after.ok && after.value?.submittedByUserId).toBe(a.user.userId);
+    } finally {
+      release();
+      await holder.catch(() => {});
+    }
+    const stranger = await drizzleChangeRequestRepo.findPendingBySubmitter(a.tenant.ctx, mu(b.user.userId));
+    expect(stranger).toEqual({ ok: true, value: null });
+  }, 60_000);
+
+  it('decideInTx (PR-1 review, Mig M-5 — ONE statement for every field row): a decision naming a key with NO row rolls the tx back and the request stays pending', async () => {
+    const pending = await runInTenant(a.tenant.ctx, (tx) => drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId)));
+    const id = pending.ok && pending.value ? pending.value.id : ('' as ChangeRequestId);
+    const keys = pending.ok && pending.value ? pending.value.fields.map((f) => f.key) : [];
+    // a key the fixture does NOT propose — chosen, not hardcoded, so a fixture
+    // change cannot turn this into the duplicate-key path (migration re-review, L2)
+    const absentKey = PROPOSABLE_FIELD_KEYS.find((k) => !keys.includes(k));
+    if (!absentKey) throw new Error('fixture proposes every key');
+    const reviewer = await createActiveTestUser('admin');
+    try {
+      await expect(
+        runInTenant(a.tenant.ctx, async (tx) => {
+          const r = await drizzleChangeRequestRepo.decideInTx(tx, id, {
+            decidedAt: new Date('2026-09-11T09:31:00Z'),
+            decidedByUserId: mu(reviewer.userId),
+            outcome: 'rejected',
+            reason: 'one key too many',
+            note: null,
+            fields: [...keys.map((key) => ({ key, outcome: 'rejected' as const, appliedAt: null })), { key: absentKey, outcome: 'rejected' as const, appliedAt: null }],
+          });
+          if (!r.ok) throw new UseCaseAbort(r.error);
+          return r;
+        }),
+      ).rejects.toBeInstanceOf(UseCaseAbort);
+      const [row] = await db.select().from(memberChangeRequests).where(inArray(memberChangeRequests.id, [id]));
+      expect(row?.state).toBe('pending');
+      const fieldRows = await db.select().from(memberChangeRequestFields).where(inArray(memberChangeRequestFields.requestId, [id]));
+      expect(fieldRows.every((f) => f.outcome === null)).toBe(true);
+    } finally {
+      await deleteTestUser(reviewer).catch(() => {});
+    }
+  });
+
   it('decideInTx writes per-field outcomes + decision columns atomically; a decided row refuses a second decide', async () => {
     const pending = await runInTenant(a.tenant.ctx, (tx) =>
       drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(a.user.userId)),
@@ -372,19 +469,43 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     expect(page2.ok && page2.value.items.map((r) => r.request.id)).toEqual([byMember.value.items[2]!.request.id]);
     expect(page2.ok && page2.value.nextCursor).toBeNull();
 
-    // FR-029 scope: a stranger user of the same member sees only company/mixed-scope rows
+    // queue default = pending oldest-first
+    const queue = await drizzleChangeRequestRepo.listQueue(a.tenant.ctx, {}, { cursor: null, limit: 10 });
+    expect(queue.ok && queue.value.items.map((r) => r.request.id)).toEqual([second.id]);
+    const filtered = await drizzleChangeRequestRepo.listQueue(a.tenant.ctx, { state: 'decided', outcome: 'partially_approved' }, { cursor: null, limit: 10 });
+    expect(filtered.ok && filtered.value.items.length).toBe(1);
+
+    // FR-029 scope (PR-2 review, Critical C1). Every row seeded above is
+    // `mixed`, so the previous `every((r) => r.request.scope !== 'own_contact')`
+    // was VACUOUSLY true — it passed on an all-mixed set and would have passed
+    // against a repo with no scope predicate at all. Seed a REAL own_contact
+    // row first. It needs its own submitter: the partial unique index allows
+    // one pending row per submitter and `second` already holds A's. The FR-029
+    // predicate reads `submitted_by_user_id` + `scope` only, so the colleague
+    // reuses A's contact row for the display join.
+    const colleague = await createActiveTestUser('member');
+    lateUsers.push(colleague);
+    const ownContact = draft(a, {
+      submittedByUserId: mu(colleague.userId),
+      submitterRoleAtSubmission: 'secondary',
+      scope: 'own_contact',
+      submittedAt: new Date('2026-09-11T11:10:00Z'),
+      fields: [{ key: 'phone', target: 'contact', seen: '+66812345678', proposed: '+66877777777', affectsTaxDocuments: false }],
+    });
+    const insOwn = await runInTenant(a.tenant.ctx, (tx) => drizzleChangeRequestRepo.insertInTx(tx, ownContact));
+    expect(insOwn.ok, JSON.stringify(insOwn)).toBe(true);
+
     const strangerView = await drizzleChangeRequestRepo.listVisibleToUser(
       a.tenant.ctx,
       mu(b.user.userId),
       asMemberId(a.memberId),
       { cursor: null, limit: 10 },
     );
-    expect(strangerView.ok && strangerView.value.items.every((r) => r.request.scope !== 'own_contact')).toBe(true);
-    // queue default = pending oldest-first
-    const queue = await drizzleChangeRequestRepo.listQueue(a.tenant.ctx, {}, { cursor: null, limit: 10 });
-    expect(queue.ok && queue.value.items.map((r) => r.request.id)).toEqual([second.id]);
-    const filtered = await drizzleChangeRequestRepo.listQueue(a.tenant.ctx, { state: 'decided', outcome: 'partially_approved' }, { cursor: null, limit: 10 });
-    expect(filtered.ok && filtered.value.items.length).toBe(1);
+    const visibleIds = strangerView.ok ? strangerView.value.items.map((r) => r.request.id) : [];
+    expect(visibleIds).not.toContain(ownContact.id);
+    // the positive control: the SAME read still carries the member's
+    // company-level rows, so the line above is an exclusion, not an empty list
+    expect(visibleIds).toContain(second.id);
   });
 
   it('PR-1 review (migration I-1) — the composite child FK refuses a field row of tenant B that points at a request of tenant A (RI bypasses RLS; the FK must not)', async () => {
@@ -414,9 +535,50 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     }
     expect(code).toBe('23503');
   });
+
+  it('decideInTx refuses a DUPLICATED field key and leaves the request pending (defence-in-depth, migration re-review L1 — the guard had never gone red)', async () => {
+    // Tenant B's seeded request is still pending and carries BOTH fixture
+    // keys, so this decision covers EVERY field row: only the duplicate can
+    // refuse it. That isolation matters — a duplicate that left some key
+    // undecided would be caught by the `decision leaves … undecided` guard
+    // instead, and this one would stay unexercised. Without lines 469-471 the
+    // `UPDATE … FROM (VALUES …)` join updates the repeated row ONCE from an
+    // unspecified source row, RETURNING still names the key, and the request
+    // commits `decided`.
+    const pending = await runInTenant(b.tenant.ctx, (tx) => drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, mu(b.user.userId)));
+    expect(pending.ok && pending.value).not.toBeNull();
+    const id = pending.ok && pending.value ? pending.value.id : ('' as ChangeRequestId);
+    const keys = pending.ok && pending.value ? pending.value.fields.map((f) => f.key) : [];
+    expect(keys.length).toBeGreaterThan(0);
+    const reviewer = await createActiveTestUser('admin');
+    lateUsers.push(reviewer);
+    const decidedAt = new Date('2026-09-11T13:00:00Z');
+    await expect(
+      runInTenant(b.tenant.ctx, async (tx) => {
+        const r = await drizzleChangeRequestRepo.decideInTx(tx, id, {
+          decidedAt,
+          decidedByUserId: mu(reviewer.userId),
+          outcome: 'rejected',
+          reason: 'duplicate-key probe',
+          note: null,
+          fields: [...keys, keys[0]!].map((key) => ({ key, outcome: 'rejected' as const, appliedAt: null })),
+        });
+        if (!r.ok) throw new UseCaseAbort(r.error);
+        return r;
+      }),
+    ).rejects.toBeInstanceOf(UseCaseAbort);
+    const [row] = await db.select().from(memberChangeRequests).where(inArray(memberChangeRequests.id, [id]));
+    expect(row?.state).toBe('pending');
+    expect(row?.decidedByUserId).toBeNull();
+    const fieldRows = await db.select().from(memberChangeRequestFields).where(inArray(memberChangeRequestFields.requestId, [id]));
+    expect(fieldRows.length).toBe(keys.length);
+    expect(fieldRows.every((f) => f.outcome === null)).toBe(true);
+  });
 });
 
 const reviewers: TestUser[] = [];
+/** Users a change-request row REFERENCES (submitter / reviewer, RESTRICT) — deleted after the tenant rows are gone. */
+const lateUsers: TestUser[] = [];
 afterAll(async () => {
-  for (const r of reviewers) await deleteTestUser(r).catch(() => {});
+  for (const r of [...reviewers, ...lateUsers]) await deleteTestUser(r).catch(() => {});
 });

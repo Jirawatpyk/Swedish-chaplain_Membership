@@ -22,6 +22,8 @@ export interface BuildGdprArchiveResult {
 
 export interface BuildArchiveForMemberOpts {
   readonly subjectMemberId: string;
+  /** F114 — the requesting user; scopes the change-request history (FR-029) when they are a linked contact. */
+  readonly requestedByUserId?: string;
   /** Requester's locale for the README (EN fallback) — FR-029. */
   readonly requesterLocale: Locale;
   /** ISO-8601 UTC generation instant (README + manifest). */

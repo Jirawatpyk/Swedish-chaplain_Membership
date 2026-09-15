@@ -173,6 +173,7 @@ describe('F9 GDPR archive — integration (T086)', () => {
         'README.txt',
         'audit-events.json',
         'broadcasts.json',
+        'change-requests.json', // F114 T079 — every archive carries it (empty when the member has no requests)
         'contacts.json',
         'events.json',
         'invoices.json',
@@ -180,6 +181,8 @@ describe('F9 GDPR archive — integration (T086)', () => {
         'profile.json',
       ].sort(),
     );
+    // F114: the change-request category is present, an array, and empty for a member who never proposed a change
+    expect(JSON.parse(strFromU8(files['change-requests.json']!))).toEqual([]);
 
     // Member's own data present.
     const profile = JSON.parse(strFromU8(files['profile.json']!));

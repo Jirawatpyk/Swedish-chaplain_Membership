@@ -246,7 +246,9 @@ export default async function MemberAccountPage() {
   let exportJobs: Awaited<ReturnType<typeof listMemberDataExports>> = [];
   if (env.features.f9Dashboard && memberId) {
     try {
-      exportJobs = await listMemberDataExports(tenant, memberId);
+      // only the archives THIS person requested — a colleague's file is scoped
+      // to the colleague (F114 FR-029; review round 1, C1)
+      exportJobs = await listMemberDataExports(tenant, memberId, { requestedBy: user.id });
     } catch (err) {
       logger.warn(
         {

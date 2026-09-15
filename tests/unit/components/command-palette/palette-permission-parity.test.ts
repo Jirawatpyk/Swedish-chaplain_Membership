@@ -138,7 +138,8 @@ describe('palette registries declare a permission (T064)', () => {
     // be dropped by the innermost-brace parser, are the newest ones. Update
     // deliberately when the palette gains or loses an entry.
     // 108 PR-D: +1 — `nav.marketingAudience`.
-    expect(ENTRIES).toHaveLength(33);
+    // F114 PR-2: +1 — `nav.changeRequests` (feature-gated `memberChangeApproval`).
+    expect(ENTRIES).toHaveLength(34);
   });
 
   it('no entry still carries the two-tier `requires` tag', () => {

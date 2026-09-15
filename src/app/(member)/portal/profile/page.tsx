@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
-import { BookUserIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
+import { BookUserIcon, FileClockIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -10,6 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { InlineAlert } from '@/components/ui/inline-alert';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
@@ -32,7 +33,6 @@ import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
 import { PortalMarketingToggle } from '@/components/members/portal-marketing-toggle';
 import { env } from '@/lib/env';
 // F114 — the caller's OWN pending change request (never another contact's).
-import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { asMembersUserId } from '@/lib/members-change-request-deps';
@@ -94,6 +94,8 @@ export async function PortalProfileBody({
 }) {
   const t = await getTranslations('portal.profile');
   const tDir = await getTranslations('directorySettings');
+  const tHistory = await getTranslations('portal.changeRequests.history');
+  const tPending = await getTranslations('portal.changeRequests.pending');
   // 059 / PR-A Task 3b — the ADMIN member-detail page already resolves
   // legal_entity_type through these same labels (resolveLegalEntityTypeLabel);
   // reused here rather than duplicated so a member sees IDENTICAL copy to
@@ -175,6 +177,9 @@ export async function PortalProfileBody({
   // F114 US3 (FR-010) — the caller's LAST decided request until they dismiss
   // it; hidden while a newer (pending) request exists.
   let decidedRequest: ChangeRequestView | null = null;
+  // a failed read renders its OWN state (`role=status`), never the profile
+  // that says "no request pending" — the member section's rule (PR review)
+  let ownRequestReadFailed = false;
   if (ownContact && env.features.memberChangeApproval) {
     try {
       const gate = await deps.memberChangeGate.resolve(tenant);
@@ -184,12 +189,13 @@ export async function PortalProfileBody({
           displayName: `${ownContact.firstName} ${ownContact.lastName}`.trim(),
           isMe: true,
         };
-        const pending = await runInTenant(tenant, (tx) =>
-          deps.changeRequestRepo.findPendingBySubmitterInTx(tx, asMembersUserId(user.id)),
-        );
+        // a PLAIN read (no lock) — the page never queues behind a decide /
+        // submit holding the row (PR-1 review, Rel M-5)
+        const pending = await deps.changeRequestRepo.findPendingBySubmitter(tenant, asMembersUserId(user.id));
         if (pending.ok && pending.value) {
           pendingRequest = serialiseChangeRequestForPortal(pending.value, me);
         } else if (!pending.ok) {
+          ownRequestReadFailed = true;
           logger.error(
             { errorId: 'M114.portal.profile.pending_read_failed', err: pending.error.code, tenantId: tenant.slug },
             'portal.profile.pending_read_failed',
@@ -204,6 +210,7 @@ export async function PortalProfileBody({
           if (last && last.request.outcomeAcknowledgedAt === null) {
             decidedRequest = serialiseChangeRequestForPortal(last.request, me);
           } else if (!decided.ok) {
+            ownRequestReadFailed = true;
             logger.error(
               { errorId: 'M114.portal.profile.decided_read_failed', err: decided.error.code, tenantId: tenant.slug },
               'portal.profile.decided_read_failed',
@@ -212,9 +219,11 @@ export async function PortalProfileBody({
         }
       }
     } catch (e) {
+      // its own id: a throwing gate resolver is not a failed pending read
+      ownRequestReadFailed = true;
       logger.error(
-        { errorId: 'M114.portal.profile.pending_read_failed', err: errKind(e), tenantId: tenant.slug },
-        'portal.profile.pending_read_failed',
+        { errorId: 'M114.portal.profile.gate_failed', err: errKind(e), tenantId: tenant.slug },
+        'portal.profile.gate_failed',
       );
     }
   }
@@ -313,6 +322,11 @@ export async function PortalProfileBody({
 
       {/* F114 — awaiting-review banner (role=status), above the record it will change. */}
       {pendingRequest ? <PendingRequestBanner request={pendingRequest} /> : null}
+      {ownRequestReadFailed ? (
+        <InlineAlert tone="destructive" role="status" data-testid="portal-own-request-unavailable">
+          <p className="text-sm">{tPending('loadFailed')}</p>
+        </InlineAlert>
+      ) : null}
       {/* F114 US3 — the shown decision (role=status) until dismissed; never alongside a pending one. */}
       {!pendingRequest && decidedRequest ? <DecisionOutcomeBanner request={decidedRequest} /> : null}
 
@@ -537,6 +551,35 @@ export async function PortalProfileBody({
           </CardContent>
         </Card>
       </section>
+
+      {/* F114 US4 (FR-029) — the member's own change-request history. Gated on
+          the platform flag (the target page notFounds when dark); shown
+          regardless of the tenant setting — history exists once requests do
+          (FR-032). Real <h2> like the sibling cards. */}
+      {env.features.memberChangeApproval ? (
+        <section aria-labelledby="portal-profile-change-requests-heading">
+          <Card>
+            <CardHeader>
+              <SectionHeading id="portal-profile-change-requests-heading">
+                {tHistory('profileCard.title')}
+              </SectionHeading>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-body text-muted-foreground">
+                {tHistory('profileCard.subtitle')}
+              </p>
+              <Link
+                href="/portal/change-requests"
+                className={buttonVariants({ variant: 'outline' })}
+                data-testid="profile-history-link"
+              >
+                <FileClockIcon className="size-4" aria-hidden />
+                {tHistory('profileCard.link')}
+              </Link>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       {/* F9 directory listing self-service — gated on the F9 flag so it stays
           hidden until the feature flips on; the target page notFounds when

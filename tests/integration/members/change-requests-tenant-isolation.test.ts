@@ -38,8 +38,13 @@ import {
   drizzleTenantMemberChangeSettingsRepo,
   f3DrizzleAuditAdapter,
   getChangeRequestReview,
+  getPortalChangeRequest,
+  listChangeRequestQueue,
+  listMemberChangeRequests,
+  listPortalChangeRequests,
   makeMemberChangeGateResolver,
   submitChangeRequest,
+  withdrawChangeRequest,
   type ChangeRequestId,
   type UserId,
 } from '@/modules/members';
@@ -249,6 +254,48 @@ describe('change requests — two-layer tenant isolation on live Neon (T033)', (
       expect(memberProbes.some((r) => (r.payload as { action?: string }).action === 'acknowledge')).toBe(true);
       // nothing was audited in the TARGET tenant by the probing actors
       expect(await probeAudits(t.tenant, p.reviewer.userId)).toHaveLength(0);
+    }, 60_000);
+
+    // PR-2 (US4 + US5): the history reads and the withdraw
+    it('US4 / US5: the history reads see nothing; a withdraw from the other tenant finds no pending request and leaves the row pending', async () => {
+      const p = probe();
+      const t = target();
+      const listDeps = { tenant: p.tenant.ctx, changeRequestRepo: drizzleChangeRequestRepo, audit: f3DrizzleAuditAdapter, clock };
+
+      const portal = await listPortalChangeRequests(listDeps, { userId: mu(t.user.userId), memberId: asMemberId(t.memberId), cursor: null, limit: 20 });
+      expect(portal).toEqual({ ok: true, value: { items: [], nextCursor: null } });
+      const one = await getPortalChangeRequest(listDeps, { changeRequestId: t.requestId, userId: mu(t.user.userId), memberId: asMemberId(t.memberId), actorRole: 'member', requestId: 'req-iso-history-item' });
+      expect(one).toEqual({ ok: false, error: { type: 'not_found' } });
+      // the by-id miss is a probe record in the PROBING tenant (FR-035; review round 1, SEC-I3)
+      const historyProbes = (await probeAudits(p.tenant, t.user.userId)).filter((a) => (a.payload as { action?: string }).action === 'history_item');
+      expect(historyProbes).toHaveLength(1);
+      expect(historyProbes[0]!.payload).toMatchObject({ attempted_change_request_id: t.requestId, actor_tenant_id: p.tenant.ctx.slug, actor_role: 'member' });
+      const history = await listMemberChangeRequests(listDeps, { memberId: asMemberId(t.memberId), cursor: null, limit: 20 });
+      expect(history).toEqual({ ok: true, value: { items: [], nextCursor: null } });
+      const queue = await listChangeRequestQueue(listDeps, { filter: { memberId: asMemberId(t.memberId) }, cursor: null, limit: 20 });
+      expect(queue.ok && queue.value.items).toEqual([]);
+      // An empty PAGE does not prove the page's FR-033 counters are ours:
+      // `pendingStats` (drizzle-change-request-repo.ts:578-597) carries NO
+      // tenant predicate at all — it leans on RLS alone — and it ignores the
+      // `memberId` filter, so it reports the tenant-wide pending count. The
+      // probing tenant seeded exactly ONE pending request (its own) and
+      // nothing in this file ever decides or withdraws it, so a leak across
+      // the RLS boundary would count the target's as well.
+      expect(queue.ok && queue.value.pendingCount).toBe(1);
+      const ownPending = await requestRow(p.requestId);
+      const stats = await drizzleChangeRequestRepo.pendingStats(p.tenant.ctx);
+      expect(stats.ok && stats.value.count).toBe(1);
+      expect(stats.ok && stats.value.oldestSubmittedAt?.getTime()).toBe(ownPending?.submittedAt.getTime());
+      expect(queue.ok && queue.value.oldestPendingAgeSeconds).not.toBeNull();
+
+      const before = await requestRow(t.requestId);
+      const withdrawn = await withdrawChangeRequest(
+        { tenant: p.tenant.ctx, changeRequestRepo: drizzleChangeRequestRepo, audit: f3DrizzleAuditAdapter, clock },
+        { actorUserId: mu(t.user.userId), actorRole: 'member', requestId: 'req-iso-withdraw' },
+      );
+      expect(withdrawn).toEqual({ ok: false, error: { type: 'no_pending_request' } });
+      expect(await requestRow(t.requestId)).toEqual(before);
+      expect(before?.state).toBe('pending');
     }, 60_000);
   });
 });

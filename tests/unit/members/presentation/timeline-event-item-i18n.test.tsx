@@ -13,6 +13,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+import enMessages from '@/i18n/messages/en.json';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), refresh: vi.fn(), push: vi.fn() }),
@@ -156,6 +157,35 @@ describe('TimelineEventItem — round-3+4+5 audit event-type i18n (L5)', () => {
     );
     expect(screen.getByText('Tax receipt issued')).toBeTruthy();
     expect(screen.getByText('RC-2026-000045')).toBeTruthy();
+  });
+
+  // F114 T077 (US4 AS3, FR-028): the three change-request events reach the
+  // timeline through `member_timeline_v`'s audit arm and render their
+  // catalogued label from the SAME `audit.eventType.*` namespace the component
+  // reads — the `timeline.audit.*` namespace the plan named does not exist
+  // (the component never reads it), so the labels live in `audit.eventType`.
+  // Read from the REAL en.json so a renamed key fails here, not in production.
+  it.each([
+    ['member_change_request_submitted', enMessages.audit.eventType.member_change_request_submitted],
+    ['member_change_request_decided', enMessages.audit.eventType.member_change_request_decided],
+    ['member_change_request_withdrawn', enMessages.audit.eventType.member_change_request_withdrawn],
+  ] as const)('F114: renders "%s" → "%s" from audit.eventType.* (real en.json)', (eventType, expectedLabel) => {
+    expect(expectedLabel).toMatch(/change request/i);
+    render(
+      <NextIntlClientProvider locale="en" messages={{ ...messages, audit: { eventType: enMessages.audit.eventType } }}>
+        <TimelineEventItem
+          id={`audit-${eventType}`}
+          timestamp="2026-09-12T10:00:00Z"
+          source="audit"
+          eventType={eventType}
+          actorKind="member"
+          actorUserId="actor-2"
+          actorDisplayName="Anna Svensson"
+          payload={{ member_id: 'm-1', request_id: 'r-1', scope: 'own_contact' }}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText(expectedLabel)).toBeTruthy();
   });
 
   it('uncatalogued audit event with no summary falls back to the source label', () => {

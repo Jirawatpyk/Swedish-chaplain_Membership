@@ -99,13 +99,17 @@ export interface ExportJobRepo {
 
   /**
    * Recent jobs of one kind for a single subject member, newest first — for the
-   * member's GDPR data-export portal page (US6). Tenant + subject scoped.
+   * member's GDPR data-export portal page (US6). Tenant + subject scoped;
+   * `requestedBy` narrows to one requester's jobs (the portal page: a member
+   * sees + downloads only the archives THEY asked for — F114 FR-029, review
+   * round 1 C1; the staff section passes nothing and sees them all).
    */
   listRecentForSubject(
     ctx: TenantContext,
     subjectMemberId: string,
     kind: ExportKind,
     limit: number,
+    requestedBy?: string,
   ): Promise<readonly ExportJobRecord[]>;
 
   /** Ids of `requested` jobs for the worker to claim (oldest first). */

@@ -16,6 +16,7 @@ import { asMemberId, asContactId, type Member, type Contact } from '@/modules/me
 import type { UserId } from '@/modules/members/domain/value-objects/user-id';
 import type { RepoError } from '@/modules/members/application/ports/member-repo';
 import type { ChangeRequest, ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
+import { ERASED_SENTINEL } from '@/modules/members/domain/erasure-sentinels';
 import { getChangeRequestReview } from '@/modules/members/application/use-cases/change-requests/get-change-request-review';
 import { makeAuditPortFake, makeInMemoryChangeRequestRepo } from '../../../helpers/change-request-fakes';
 
@@ -178,6 +179,35 @@ describe('getChangeRequestReview', () => {
       erasing: false,
       hasBillingAddress: false,
     });
+  });
+
+  it.each([
+    // the WIRE shape: the form always sends the seven-line group, '' → null, and `normaliseAddress` never yields null
+    ['the all-null group (what the form actually sends)', { line1: null, line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null }, 'billing_cleared'],
+    ['a literal null (defensive — no producer today)', null, 'billing_cleared'],
+    // FR-030: an ERASED request's values are the sentinel STRING, not a
+    // group. `typeof proposed === 'object'` is false for it, so the
+    // clear-detection collapsed a scrubbed row into "the member cleared their
+    // billing address" — a tax-relevant claim about a request nobody can read
+    // any more (PR-2 review). It is not a clear; it carries no address.
+    ['the erasure SENTINEL — a scrubbed request is NOT a clear (PR-2 review)', ERASED_SENTINEL, 'buyer_address'],
+  ])('a billing_address proposal — %s — hints %s (PR-1 review, Tax M6: a CLEAR switches the buyer address to the registered one)', async (_label, proposed, expected) => {
+    const req = request({
+      fields: [
+        {
+          key: 'billing_address',
+          target: 'member',
+          seen: { line1: '1 Old Billing St', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110', country: 'TH' },
+          proposed,
+          affectsTaxDocuments: true,
+          outcome: null,
+          appliedAt: null,
+        },
+      ],
+    });
+    const { deps } = makeDeps({ request: req });
+    const r = await getChangeRequestReview(deps, { changeRequestId: REQ, canWrite: true, actor: ACTOR });
+    expect(r.ok && r.value.fields[0]?.taxHint).toBe(expected);
   });
 
   it('a billing address proposed with a TH country (or no country) hints buyer_address, not billing_country', async () => {

@@ -114,6 +114,9 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/admin/members/export.zip', kind: 'api', key: 'members.bulk' },
   { surface: 'GET /api/admin/members/[id]/data-export/[jobId]/download', kind: 'api', key: 'members.bulk' },
   // F114 US2 — review payload (`members.read`) + decide (`members.write`).
+  // F114 PR-2 (US4): the queue + the per-member history — members.read like the review read
+  { surface: 'GET /api/admin/change-requests', kind: 'api', key: 'members.read' },
+  { surface: 'GET /api/admin/members/[id]/change-requests', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/change-requests/[id]', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/members/search', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/admin/renewals', kind: 'api', key: 'renewals.read' },

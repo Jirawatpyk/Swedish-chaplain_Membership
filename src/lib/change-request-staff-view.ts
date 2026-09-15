@@ -8,9 +8,73 @@
  * staff-only `decisionNote`. Timestamps are UTC ISO-8601; the client formats
  * (BE for `th-TH`, display-only). Pure — no framework imports.
  */
-import type { ChangeRequest, ChangeRequestListRow } from '@/modules/members';
+import type { ChangeRequest, ChangeRequestListRow, ChangeRequestQueueItem } from '@/modules/members';
 import type { ChangeRequestReviewField, TaxHint } from '@/modules/members/application/use-cases/change-requests/get-change-request-review';
 import { serialiseField, type ChangeRequestFieldView } from './change-request-portal-view';
+
+/**
+ * A queue / per-member history row (contracts/admin-change-requests-api.md
+ * § queue): the display facts a list needs and NOTHING a list must not
+ * carry — no field values (the review page reads those), no staff note.
+ */
+export interface ChangeRequestQueueItemView {
+  readonly id: string;
+  readonly member: {
+    readonly id: string;
+    readonly companyName: string;
+    readonly memberNumber: number;
+    readonly status: ChangeRequestListRow['member']['status'];
+    readonly archived: boolean;
+  };
+  readonly submitter: { readonly displayName: string; readonly roleAtSubmission: ChangeRequest['submitterRoleAtSubmission'] };
+  readonly scope: ChangeRequest['scope'];
+  readonly state: ChangeRequest['state'];
+  readonly outcome: ChangeRequest['outcome'];
+  readonly withdrawnReason: ChangeRequest['withdrawnReason'];
+  readonly fieldCount: number;
+  readonly affectsTaxDocuments: boolean;
+  readonly submittedAt: string;
+  readonly waitingSeconds: number;
+  readonly overdue: boolean;
+  readonly decidedAt: string | null;
+  readonly decidedBy: { readonly displayName: string; readonly deactivated: boolean } | null;
+}
+
+/**
+ * An explicit pick — a wider `decidedBy` (say, an email) must never ride out
+ * through a pass-through (PR review, types I6). Both staff views serialise the
+ * reviewer through here, so the rule has one home.
+ */
+function pickDecidedBy(decidedBy: ChangeRequestListRow['decidedBy']): { readonly displayName: string; readonly deactivated: boolean } | null {
+  return decidedBy === null ? null : { displayName: decidedBy.displayName, deactivated: decidedBy.deactivated };
+}
+
+export function serialiseQueueItem(item: ChangeRequestQueueItem): ChangeRequestQueueItemView {
+  const { row } = item;
+  const r = row.request;
+  return {
+    id: r.id,
+    member: {
+      id: r.memberId,
+      companyName: row.member.companyName,
+      memberNumber: row.member.memberNumber,
+      status: row.member.status,
+      archived: row.member.archived,
+    },
+    submitter: { displayName: row.submitter.displayName, roleAtSubmission: r.submitterRoleAtSubmission },
+    scope: r.scope,
+    state: r.state,
+    outcome: r.outcome,
+    withdrawnReason: r.withdrawnReason,
+    fieldCount: r.fields.length,
+    affectsTaxDocuments: r.fields.some((f) => f.affectsTaxDocuments),
+    submittedAt: r.submittedAt.toISOString(),
+    waitingSeconds: item.waitingSeconds,
+    overdue: item.overdue,
+    decidedAt: r.decidedAt?.toISOString() ?? null,
+    decidedBy: pickDecidedBy(row.decidedBy),
+  };
+}
 
 export interface StaffChangeRequestView {
   readonly id: string;
@@ -62,7 +126,7 @@ export function serialiseChangeRequestForStaff(row: ChangeRequestListRow): Staff
       roleAtSubmission: r.submitterRoleAtSubmission,
     },
     decidedAt: r.decidedAt?.toISOString() ?? null,
-    decidedBy: row.decidedBy,
+    decidedBy: pickDecidedBy(row.decidedBy),
     decisionReason: r.decisionReason,
     decisionNote: r.decisionNote,
     withdrawnAt: r.withdrawnAt?.toISOString() ?? null,

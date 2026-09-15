@@ -177,6 +177,16 @@ export function isRepoError(value: unknown): value is RepoError {
 }
 
 /**
+ * The underlying cause of a `repo.unexpected`, `undefined` for every other
+ * code — the one narrowing every `errKind(...)` log site needs. Discriminates
+ * on `code` rather than `'cause' in error`: the same answer, but it reads as
+ * the rule it is (only the unexpected arm carries a cause).
+ */
+export function repoErrorCause(error: RepoError): unknown {
+  return error.code === 'repo.unexpected' ? error.cause : undefined;
+}
+
+/**
  * Narrow single-member risk read (B18 / FR-007a). The F8 risk columns live on
  * the members table but are NOT carried on the `Member` aggregate (only the
  * directory LIST projection surfaces them), so the profile page resolves them

@@ -50,6 +50,7 @@ import { noopDirectoryErasureAdapter } from '@/modules/members/infrastructure/ad
 import { noopInvoicingErasureAdapter } from '@/modules/members/infrastructure/adapters/invoicing-erasure-adapter';
 import { noopBroadcastsAudienceDerivationAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { noopSubprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
+import { changeRequestScrubAdapter } from '@/modules/members/infrastructure/adapters/change-request-scrub-adapter';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import {
@@ -123,6 +124,7 @@ function buildEraseMemberDeps(tenant: TestTenant): EraseMemberDeps {
     // are covered live in subprocessor-erasure.test.ts).
     broadcastsAudienceDerivation: noopBroadcastsAudienceDerivationAdapter,
     subprocessorErasure: noopSubprocessorErasureAdapter,
+    changeRequestScrub: changeRequestScrubAdapter,
     audit: drizzleAuditAdapter,
     clock: { now: () => new Date() },
   };

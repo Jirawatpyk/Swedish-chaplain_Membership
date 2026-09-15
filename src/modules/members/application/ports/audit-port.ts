@@ -169,7 +169,9 @@ export type F3AuditEventType =
   //     redaction deny-list and this closed enum must survive projection)
   | 'member_change_request_withdrawn'
   //   member_change_request_rate_limited:
-  //     { member_id, window_count, retry_after_seconds, actor_role }
+  //     { related_member_id, window_count, retry_after_seconds, actor_role }
+  //     (`related_member_id` — a refused attempt is NOT member activity, so
+  //     the 0009 `last_activity_at` trigger key `member_id` is never used)
   | 'member_change_request_rate_limited'
   //   member_change_approval_setting_changed:
   //     { previous: bool, next: bool, actor_role } (no member key)
@@ -213,6 +215,7 @@ export function assertNeverAuditEvent(event: never): never {
 export type ChangeRequestAuditPayload = {
   member_change_request_submitted: {
     readonly member_id: string;
+    readonly related_member_id?: never;
     readonly request_id: string;
     readonly contact_id: string;
     readonly scope: 'own_contact' | 'company' | 'mixed';
@@ -223,6 +226,9 @@ export type ChangeRequestAuditPayload = {
   };
   member_change_request_decided: {
     readonly related_member_id: string;
+    // a decision is STAFF activity — never the 0009 trigger key (`?: never`
+    // also refuses the key through a spread, which `satisfies` cannot)
+    readonly member_id?: never;
     readonly request_id: string;
     readonly contact_id: string;
     readonly scope: 'own_contact' | 'company' | 'mixed';
@@ -232,6 +238,13 @@ export type ChangeRequestAuditPayload = {
     readonly actor_role: string;
     readonly member_notified: boolean;
     readonly member_notification_skipped?: 'recipient_gone';
+  };
+  member_change_request_rate_limited: {
+    readonly related_member_id: string;
+    readonly member_id?: never;
+    readonly window_count: number;
+    readonly retry_after_seconds: number;
+    readonly actor_role: string;
   };
   member_change_request_withdrawn: (
     | { readonly member_id: string; readonly related_member_id?: never }

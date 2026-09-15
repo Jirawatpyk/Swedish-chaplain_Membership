@@ -37,6 +37,7 @@ import { authUserErasureAdapter } from './infrastructure/adapters/auth-user-eras
 import { f7BroadcastsContentScrubAdapter } from './infrastructure/adapters/broadcasts-content-scrub-adapter';
 import { f7BroadcastsDeliveryTombstoneAdapter } from './infrastructure/adapters/broadcasts-delivery-tombstone-adapter';
 import { outboxCancelAdapter } from './infrastructure/adapters/outbox-cancel-adapter';
+import { changeRequestScrubAdapter } from './infrastructure/adapters/change-request-scrub-adapter';
 import { eventRegistrationErasureAdapter } from './infrastructure/adapters/event-registration-erasure-adapter';
 import { directoryErasureAdapter } from './infrastructure/adapters/directory-erasure-adapter';
 import {
@@ -315,6 +316,8 @@ export function buildEraseMemberDeps(tenant: TenantContext): EraseMemberDeps {
     // (best-effort / non-blocking). Stripe is a pure no-op today.
     broadcastsAudienceDerivation: f7BroadcastsAudienceDerivationAdapter,
     subprocessorErasure: subprocessorErasureAdapter,
+    // F114 (FR-030, T078) — the change-request scrub, inside the atomic tx.
+    changeRequestScrub: changeRequestScrubAdapter,
     audit: drizzleAuditAdapter,
     clock: systemClock,
   };

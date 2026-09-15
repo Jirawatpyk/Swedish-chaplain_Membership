@@ -275,4 +275,71 @@ describe('FR-022 — approved tax-affecting fields never alter an issued documen
     // and the earlier document is still what it was
     expect(JSON.stringify(await snapshotOf(issuedBefore))).toBe(beforeJson);
   }, 180_000);
+  it('PR-1 review, Tax M7 — a BILLING-LESS member: the registered address IS the buyer address (§86/4(3)), so its change is flagged, and an approval leaves the issued snapshot byte-identical', async () => {
+    // clear the billing group: from here the composer prints the registered address
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(members)
+        .set({ billingAddressLine1: null, billingAddressLine2: null, billingSubDistrict: null, billingCity: null, billingProvince: null, billingPostalCode: null, billingCountry: null })
+        .where(eq(members.memberId, memberId));
+    });
+    const issued = await draftAndMaybeIssue(true);
+    const beforeJson = JSON.stringify(await snapshotOf(issued));
+
+    const submitted = await submitChangeRequest(
+      {
+        tenant: tenant.ctx,
+        changeRequestRepo: drizzleChangeRequestRepo,
+        memberRepo: drizzleMemberRepo,
+        contactRepo: drizzleContactRepo,
+        audit: f3DrizzleAuditAdapter,
+        emails: resendEmailPort,
+        reviewers: { listReviewers: async () => [] },
+        clock: { now: () => new Date() },
+        newRequestId: () => randomUUID() as ChangeRequestId,
+      },
+      {
+        memberId: asMemberId(memberId),
+        contactId: asContactId(contactId),
+        rawBody: {
+          company: {
+            registered_address: { line1: '77 New Rama IX', line2: null, sub_district: null, city: 'Huai Khwang', province: 'Bangkok', postal_code: '10310' },
+          },
+        },
+        actorUserId: mu(memberUser.userId),
+        actorRole: 'member',
+        requestId: 'req-tax-submit-2',
+      },
+    );
+    if (!submitted.ok || submitted.value.outcome !== 'submitted') throw new Error(`submit failed: ${show(submitted)}`);
+    // FR-019: no billing address on record ⇒ the registered address is the buyer address ⇒ flagged
+    expect(submitted.value.request.fields.map((f) => [f.key, f.affectsTaxDocuments])).toEqual([['registered_address', true]]);
+
+    const decided = await decideChangeRequest(
+      {
+        tenant: tenant.ctx,
+        changeRequestRepo: drizzleChangeRequestRepo,
+        memberRepo: drizzleMemberRepo,
+        contactRepo: drizzleContactRepo,
+        audit: f3DrizzleAuditAdapter,
+        emails: resendEmailPort,
+        clock: { now: () => new Date() },
+      },
+      {
+        changeRequestId: submitted.value.request.id,
+        decisions: [{ key: 'registered_address', outcome: 'approved' }],
+        reason: null,
+        note: null,
+        actorUserId: mu(admin.userId),
+        actorRole: 'admin',
+        requestId: 'req-tax-decide-2',
+      },
+    );
+    expect(decided.ok, show(decided)).toBe(true);
+
+    const [m] = await db.select({ addressLine1: members.addressLine1 }).from(members).where(eq(members.memberId, memberId));
+    expect(m?.addressLine1).toBe('77 New Rama IX');
+    // FR-022: the document issued before the approval is byte-identical
+    expect(JSON.stringify(await snapshotOf(issued))).toBe(beforeJson);
+  }, 120_000);
 });

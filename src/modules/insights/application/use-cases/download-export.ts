@@ -62,8 +62,12 @@ function authorize(job: ExportJobRecord, meta: DownloadExportMeta): boolean {
   // Subject artefact (GDPR archive) — the subject member themselves, or a
   // staff role holding `members.pii_sensitive`. Keying the staff arm on the
   // PII key (not `members.bulk`, whose holders merely COINCIDE today) is the
-  // exact move T057 prescribed for PII egress paths.
-  if (meta.actorRole === 'member') return meta.actorMemberId === job.subjectMemberId;
+  // exact move T057 prescribed for PII egress paths. The member arm also
+  // requires the job to be the caller's OWN request: the archive is scoped to
+  // its requester (F114 FR-029 — a colleague's file carries that colleague's
+  // own change requests; an admin's on-behalf file is company-level), so a
+  // member never downloads another person's artefact (review round 1, C1).
+  if (meta.actorRole === 'member') return meta.actorMemberId === job.subjectMemberId && job.requestedBy === meta.actorUserId;
   return hasPermission(meta.actorRole, 'members.pii_sensitive');
 }
 

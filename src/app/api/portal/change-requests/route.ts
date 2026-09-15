@@ -6,9 +6,9 @@
  * Order of checks is the contract: platform flag (404, dark ship — before any
  * session work) → member context (member role only; the proxy already applied
  * the CSRF Origin allow-list) → in-route READ_ONLY_MODE 503 (T116) → the
- * interim rate-limit PEEK (429, review round 1 security I-1; consumed only on
- * `submitted`) → tenant gate (409 `approval_not_required` when `immediate` — a
- * race guard, the form resolves the gate first) → body JSON → optional
+ * attempt bucket (429 — before the gate and the body, see below) → tenant
+ * gate (409 `approval_not_required` when `immediate` — a race guard, the form
+ * resolves the gate first) → body JSON → optional
  * `Idempotency-Key` (a PRESENT malformed key → 400; same key + same body → the
  * stored response; same key + different body → 422 `idempotency-key-reused`;
  * reservation outage → 503) → use case.
@@ -16,9 +16,28 @@
  * Error envelope: `{ error: <code>, message?, issues?, fields?, retryAfterSeconds? }`.
  * The two arms that can only be a FAULT (a throwing gate resolver, a failed
  * use case) name themselves in the errorId taxonomy (`M114.portal.submit.<arm>`);
- * the deterministic 4xx refusals are logged by the use case, by this route
- * for the interim 429 (metric + warn), or not at all.
- * `GET` (own history, FR-029) lands in US4 (T073) in this same file.
+ * the deterministic 4xx refusals are audited / counted by the use case, or
+ * not at all. Two 429s, one envelope: the use case's DURABLE 10 / 24 h cap
+ * (US5 T087 — CREATED requests, counted from the request table; the FR-008
+ * rule) and, before the gate, an ATTEMPT bucket — 60 / 10 min per tenant +
+ * user on Upstash, consumed on every POST that reaches the gate (after the
+ * dark-ship 404, the session check and READ_ONLY_MODE), refusals and
+ * validation errors included — so a client cannot drive the gate / validation /
+ * `countSubmittedSince` path at line rate under a rotating Idempotency-Key
+ * (review round 1, SEC-I2 / REL-2; PR-1's interim PEEK is gone — this is an
+ * atomic `check`). Both map to `{ error: 'rate_limited', retryAfterSeconds }`
+ * + `Retry-After`, and neither is remembered under an Idempotency-Key
+ * (transient — the retry after the window succeeds; the client mints a new
+ * key). On an Upstash outage the bucket does NOT fail open: the limiter's
+ * fallback is a per-process in-memory window, so the cap holds per serverless
+ * instance rather than per tenant + user — weaker, never absent (logged as
+ * `attempt_bucket_fell_back`); the durable cap is unaffected either way.
+ *
+ * `GET` — own history (US4 AS4, FR-029; § history): the caller's own requests
+ * + the member's `company` / `mixed` ones, newest first, never a colleague's
+ * own-field request; a colleague's `mixed` row carries its company fields
+ * only. Query `state?`, opaque keyset `cursor?`, `limit? ≤ 50`; anything
+ * else → 400 `invalid_query`. `M114.portal.history.<arm>` on the 500.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
@@ -32,19 +51,28 @@ import {
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { membersMetrics } from '@/lib/metrics';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
-import { SUBMISSION_WINDOW_HOURS, SUBMISSIONS_PER_WINDOW_CAP, submitChangeRequest, type SubmitChangeRequestError } from '@/modules/members';
+import { z } from 'zod';
+import {
+  CHANGE_REQUEST_STATES,
+  PORTAL_PAGE_DEFAULT,
+  PORTAL_PAGE_MAX,
+  listPortalChangeRequests,
+  submitChangeRequest,
+  type SubmitChangeRequestError,
+} from '@/modules/members';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
-
-type SubmitRefusalError = SubmitChangeRequestError;
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ERROR_ID = 'M114.portal.submit';
+const SUBMIT_ATTEMPTS_PER_WINDOW = 60;
+const SUBMIT_ATTEMPT_WINDOW_SECONDS = 600;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // FR-039 — dark ship: 404 before any session work.
@@ -61,26 +89,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
 
-  // Interim per-person cap until the durable 10 / 24 h cap + 1 h staff-email
-  // coalescing land (US5 T087): every submit fans one outbox row out per
-  // reviewer, so an unbounded caller is a mailbox / reputation problem
-  // (review: security I-1). The window and count mirror T087's numbers, but
-  // this bucket counts ATTEMPTS while the durable rule counts CREATED
-  // requests (FR-008) — so the bucket is peeked here and consumed only on
-  // `outcome === 'submitted'` (round 2, UX + security: a validation error,
-  // `nothing_to_submit`, `already_pending` or an idempotent replay must not
-  // spend one of the member's ten). Peek-then-consume leaves the classic
-  // race open (N concurrent submits can all pass the peek), but every
-  // SEQUENTIAL replace still consumes one unit, so the fan-out this cap
-  // exists for stays bounded at ten per day per person; the precedent is
-  // change-password's peek-then-consume (`change-password.ts`, review B2).
-  const rateLimitKey = `f114:submit:${ctx.tenant.slug}:${ctx.current.user.id}`;
-  const rl = await rateLimiter.peek(rateLimitKey, SUBMISSIONS_PER_WINDOW_CAP, SUBMISSION_WINDOW_HOURS * 3600);
-  if (!rl.success) {
-    const retryAfterSeconds = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000));
-    logger.warn({ requestId: ctx.requestId, tenantId: ctx.tenant.slug, memberId: ctx.memberId, reset: rl.reset }, 'change-requests.submit rate-limited');
-    // observable (round 6, code #4); the audit event `member_change_request_rate_limited` is T087's
+  // The attempt bucket (see the docblock) — before the gate and the body, so
+  // a refused attempt costs one Redis round-trip and nothing else.
+  const attempts = await rateLimiter.check(
+    `f114:submit-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
+    SUBMIT_ATTEMPTS_PER_WINDOW,
+    SUBMIT_ATTEMPT_WINDOW_SECONDS,
+  );
+  if ('fellBack' in attempts && attempts.fellBack === true) {
+    // the fallback is a per-process window, not open — but the cap is now per
+    // instance, and an operator reading a 429 spike needs to know which world
+    logger.warn(
+      { errorId: `${ERROR_ID}.attempt_bucket_fell_back`, requestId: ctx.requestId, tenantId: ctx.tenant.slug },
+      'change-requests.submit: attempt bucket on the in-process fallback (Upstash unreachable)',
+    );
+  }
+  if (!attempts.success) {
+    // the one F114 refusal with no audit row (the durable cap writes one) — so it logs
+    logger.warn(
+      { errorId: `${ERROR_ID}.attempts_exhausted`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, reset: attempts.reset },
+      'change-requests.submit: attempt bucket exhausted',
+    );
     membersMetrics.changeRequests.refused(ctx.tenant.slug, 'rate_limited');
+    const retryAfterSeconds = retryAfterSecondsFromRl({ reset: attempts.reset });
     return NextResponse.json(
       { error: 'rate_limited', retryAfterSeconds },
       { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
@@ -160,11 +191,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       isMe: true,
     };
     const v = result.value;
-    if (v.outcome === 'submitted') {
-      // consume ONE unit for the request that was actually created; the
-      // result is bookkeeping (the request exists either way)
-      await rateLimiter.check(rateLimitKey, SUBMISSIONS_PER_WINDOW_CAP, SUBMISSION_WINDOW_HOURS * 3600);
-    }
     const { status, body } =
       v.outcome === 'submitted'
         ? {
@@ -187,6 +213,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(body, { status });
   }
 
+  // The durable cap (FR-008): 429 + Retry-After, the same seconds in the
+  // body for the form's "try again after <time>"; audited + counted by the
+  // use case. Transient by nature — never remembered under the key.
+  if (result.error.type === 'rate_limited') {
+    return NextResponse.json(
+      { error: 'rate_limited', retryAfterSeconds: result.error.retryAfterSeconds },
+      { status: 429, headers: { 'Retry-After': String(result.error.retryAfterSeconds) } },
+    );
+  }
+
   // A deterministic refusal is remembered under the key too — otherwise a
   // retry with the same key + body reads the reserved-but-empty record as a
   // CONFLICT and answers 422 `idempotency-key-reused` forever (review:
@@ -199,7 +235,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const error = result.error;
   logger.error(
-    { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type },
+    // the repo code rides in `message` — `type` alone is always 'server_error' here
+    { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type === 'server_error' ? error.message : error.type },
     'change-requests.submit: use case failed',
   );
   return NextResponse.json({ error: 'server_error' }, { status: 500 });
@@ -240,7 +277,7 @@ function rememberableBody(body: {
 }
 
 /** The 4xx arms the client can act on — stable for a given body, hence rememberable. */
-function mapRefusal(error: SubmitRefusalError): Refusal | null {
+function mapRefusal(error: SubmitChangeRequestError): Refusal | null {
   switch (error.type) {
     case 'forbidden':
       return {
@@ -253,7 +290,73 @@ function mapRefusal(error: SubmitRefusalError): Refusal | null {
       return { status: 403, body: { error: 'member_archived', message: 'An archived membership cannot be edited.' } };
     case 'not_found':
       return { status: 404, body: { error: 'not_found' } };
-    default:
+    case 'rate_limited':
+    case 'server_error':
       return null;
+    default: {
+      // a refusal arm added to the use case must be mapped here on purpose,
+      // never fall through to an unremembered 500 (PR review, types I4)
+      const _exhaustive: never = error;
+      void _exhaustive;
+      return null;
+    }
   }
+}
+
+// ---------------------------------------------------------------------------
+// GET — own history (FR-029)
+// ---------------------------------------------------------------------------
+
+const HISTORY_ERROR_ID = 'M114.portal.history';
+
+const historyQuerySchema = z.object({
+  state: z.enum(CHANGE_REQUEST_STATES).optional(),
+  cursor: z.string().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(PORTAL_PAGE_MAX).default(PORTAL_PAGE_DEFAULT),
+});
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  if (!env.features.memberChangeApproval) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  const ctx = await requireMemberContext(request);
+  if ('response' in ctx) return ctx.response;
+
+  const parsed = historyQuerySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'invalid_query', message: 'Invalid query.' }, { status: 400 });
+  }
+
+  const deps = buildChangeRequestDeps(ctx.tenant);
+  const me = asMembersUserId(ctx.current.user.id);
+  const result = await listPortalChangeRequests(deps, {
+    userId: me,
+    memberId: ctx.memberId,
+    ...(parsed.data.state ? { state: parsed.data.state } : {}),
+    cursor: parsed.data.cursor ?? null,
+    limit: parsed.data.limit,
+  });
+
+  if (!result.ok) {
+    if (result.error.type === 'invalid_cursor') {
+      return NextResponse.json({ error: 'invalid_query', message: 'Invalid cursor.' }, { status: 400 });
+    }
+    logger.error(
+      { errorId: `${HISTORY_ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: result.error.message },
+      'change-requests.history: use case failed',
+    );
+    return NextResponse.json({ error: 'server_error' }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    items: result.value.items.map((row) =>
+      serialiseChangeRequestForPortal(row.request, {
+        contactId: row.request.submittedByContactId,
+        displayName: row.submitter.displayName,
+        isMe: row.request.submittedByUserId === me,
+      }),
+    ),
+    nextCursor: result.value.nextCursor,
+  });
 }

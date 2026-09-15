@@ -136,7 +136,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
       });
     },
 
-    async listRecentForSubject(ctx, subjectMemberId, kind, limit) {
+    async listRecentForSubject(ctx, subjectMemberId, kind, limit, requestedBy) {
       if (!UUID_RE.test(subjectMemberId)) return [];
       return runInTenant(ctx, async (tx) => {
         const rows = await tx
@@ -147,6 +147,7 @@ export function makeDrizzleExportJobRepo(tenantId: string): ExportJobRepo {
               eq(exportJobs.tenantId, tenantId),
               eq(exportJobs.subjectMemberId, subjectMemberId),
               eq(exportJobs.kind, kind),
+              ...(requestedBy !== undefined ? [eq(exportJobs.requestedBy, requestedBy)] : []),
             ),
           )
           .orderBy(desc(exportJobs.createdAt))

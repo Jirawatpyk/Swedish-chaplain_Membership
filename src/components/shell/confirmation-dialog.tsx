@@ -133,9 +133,9 @@ export function ConfirmationDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {/* Explicit initialFocus — Cancel by default (ux-standards § 6 "safest
-          default"), or the caller's `initialFocusRef` when the body has a
-          required field (F114 decision reason); don't rely on DOM order,
+      {/* Explicit initialFocus — the caller's `initialFocusRef` when given
+          (a body with a required field, F114 decision reason), else Cancel
+          (ux-standards § 6 "safest default"); don't rely on DOM order,
           which a CSS reorder could silently break.
           `finalFocus` is optional — omitted, Base UI returns focus to the
           trigger (its own default), which is correct whenever the trigger

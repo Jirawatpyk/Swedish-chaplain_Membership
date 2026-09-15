@@ -16,7 +16,9 @@
  *     their zod path; the message shown is LOCALISED, never the raw token.
  *   - Carries the GDPR Art. 13 / PDPA § 23 notice with the privacy-notice link
  *     (FR-010).
- *   - 320 px: single column; sections are real fieldsets with legends.
+ *   - 320 px: single column; sections are Cards with a real `<h2>` heading
+ *     (`CardTitle` renders a div — see ui/card.tsx; no radio / checkbox groups
+ *     here, so no fieldset is needed).
  */
 import { useId, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -65,6 +67,12 @@ export type ChangeRequestFormValues = {
   billPostalCode: string;
   billCountry: string;
 };
+
+/**
+ * The billing group is ONE unit — the schema's `superRefine` and the labels'
+ * `billTouched` must read the same seven fields, so they read this list.
+ */
+const BILLING_GROUP_FIELDS = ['billLine1', 'billLine2', 'billSubDistrict', 'billCity', 'billProvince', 'billPostalCode', 'billCountry'] as const;
 
 function buildSchema(tv: Translator, tf: (key: string) => string, canProposeCompanyFields: boolean) {
   const line = (max: number) => boundedText(tv, max);
@@ -127,8 +135,7 @@ function buildSchema(tv: Translator, tf: (key: string) => string, canProposeComp
     billCountry: z.string().refine((v) => v === '' || /^[A-Za-z]{2}$/.test(v), { message: tf('errors.country') }),
   }).superRefine((v, ctx) => {
     // the billing group is ONE unit: any line ⇒ line1 + city + postal code + country
-    const lines = [v.billLine1, v.billLine2, v.billSubDistrict, v.billCity, v.billProvince, v.billPostalCode, v.billCountry];
-    if (!lines.some((l) => l.trim() !== '')) return;
+    if (!BILLING_GROUP_FIELDS.some((k) => v[k].trim() !== '')) return;
     for (const key of ['billLine1', 'billCity', 'billPostalCode', 'billCountry'] as const) {
       if (v[key].trim() === '') ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: tf('errors.billingIncomplete') });
     }
@@ -223,6 +230,7 @@ export function PortalChangeRequestForm({
 }: PortalChangeRequestFormProps) {
   const t = useTranslations('portal.changeRequests.form');
   const tStatus = useTranslations('portal.changeRequests.status');
+  const tReplaced = useTranslations('portal.changeRequests.replaced');
   const tErrors = useTranslations('portal.changeRequests.errors');
   const tv = useTranslations('shared.validation');
   const locale = useLocale();
@@ -241,6 +249,26 @@ export function PortalChangeRequestForm({
   });
   const { errors } = form.formState;
 
+  /**
+   * PER RULE (PR-1 review, UX M12): the server refuses what the client schema
+   * let through — its phone parser is stricter, a website scheme, a length
+   * bound, the country code — and the member must learn WHICH rule, not
+   * "check this value". Ordered: the most specific rule wins.
+   */
+  function serverIssueMessage(
+    field: Path<ChangeRequestFormValues>,
+    issue: { readonly message: string; readonly code: unknown; readonly maximum: unknown },
+  ): string {
+    const { message, code, maximum } = issue;
+    if (message === 'billing_address_incomplete') return t('errors.billingIncomplete');
+    if (message.startsWith('invalid phone')) return t('errors.phone');
+    if (message === 'website scheme not allowed' || (code === 'invalid_string' && field === 'website')) return t('errors.website');
+    if (field === 'billCountry') return t('errors.country');
+    if (code === 'too_big' && typeof maximum === 'number') return tv('tooLong', { max: maximum });
+    if (code === 'too_small') return tv('required');
+    return tErrors('field');
+  }
+
   const onSubmit = async (values: ChangeRequestFormValues) => {
     setSubmitting(true);
     setStatus({ kind: null });
@@ -251,12 +279,13 @@ export function PortalChangeRequestForm({
         body: JSON.stringify(buildProposalBody(values, canProposeCompanyFields)),
       });
       const data = (await res.json().catch(() => null)) as
-        | { outcome?: string; unchanged?: boolean; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
+        | { outcome?: string; unchanged?: boolean; replaced?: string | null; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
         | null;
 
       if (res.ok) {
         if (data?.outcome === 'submitted') {
-          toast.success(tStatus('submitted'));
+          // US5 AS2: a resubmit REPLACED the earlier pending request — say so
+          toast.success(typeof data.replaced === 'string' ? tReplaced('status') : tStatus('submitted'));
           router.push('/portal/profile');
           return;
         }
@@ -284,7 +313,12 @@ export function PortalChangeRequestForm({
           const path = Array.isArray(issue.path) ? issue.path.join('.') : '';
           const field = PATH_TO_FIELD[path];
           if (field) {
-            const message = (issue as { message?: unknown }).message === 'billing_address_incomplete' ? t('errors.billingIncomplete') : tErrors('field');
+            const raw = (issue as { message?: unknown }).message;
+            const message = serverIssueMessage(field, {
+              message: typeof raw === 'string' ? raw : '',
+              code: (issue as { code?: unknown }).code,
+              maximum: (issue as { maximum?: unknown }).maximum,
+            });
             form.setError(field, { type: 'server', message });
             if (!focused) {
               form.setFocus(field);
@@ -313,13 +347,9 @@ export function PortalChangeRequestForm({
         return;
       }
       const code = data?.error;
-      toast.error(
-        code === 'member_archived'
-          ? tErrors('archived')
-          : code === 'forbidden' || code === 'company_fields_require_primary'
-            ? tErrors('forbidden')
-            : tErrors('generic'),
-      );
+      if (code === 'member_archived') toast.error(tErrors('archived'));
+      else if (code === 'forbidden' || code === 'company_fields_require_primary') toast.error(tErrors('forbidden'));
+      else toast.error(tErrors('generic'));
     } catch (e) {
       // a client-side bug in this block must not be indistinguishable from a
       // network drop (round 6, silent-failure #12)
@@ -356,20 +386,39 @@ export function PortalChangeRequestForm({
     );
   }
 
-  const statusMessage =
-    status.kind === 'nothing_to_submit'
-      ? tStatus('nothingToSubmit')
-      : status.kind === 'already_pending'
-        ? tStatus('alreadyPending')
-        : status.kind === 'already_pending_unchanged'
-          ? tStatus('alreadyPendingUnchanged')
-        : status.kind === 'rate_limited'
-          ? (status.retryAt ? tStatus('rateLimited', { retryAt: status.retryAt }) : tStatus('rateLimitedGeneric'))
-          : '';
+  // the billing group is ONE unit (the schema's superRefine): once any line
+  // is filled, line 1 / city / postal code / country are required — say so on
+  // the labels, not only in the error (PR-1 review, UX M11)
+  const billTouched = BILLING_GROUP_FIELDS.some((k) => (form.watch(k) ?? '').trim() !== '');
+
+  function statusMessageOf(s: { kind: StatusKind; retryAt?: string }): string {
+    switch (s.kind) {
+      case 'nothing_to_submit':
+        return tStatus('nothingToSubmit');
+      case 'already_pending':
+        return tStatus('alreadyPending');
+      case 'already_pending_unchanged':
+        return tStatus('alreadyPendingUnchanged');
+      case 'rate_limited':
+        // no retry hint at all when the server sent none
+        return s.retryAt ? tStatus('rateLimited', { retryAt: s.retryAt }) : tStatus('rateLimitedGeneric');
+      case null:
+        return '';
+      default: {
+        const _exhaustive: never = s.kind;
+        void _exhaustive;
+        return '';
+      }
+    }
+  }
+  const statusMessage = statusMessageOf(status);
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate data-testid="change-request-form">
+    <form onSubmit={form.handleSubmit(onSubmit)} method="post" noValidate aria-describedby="cr-required-fields-note" data-testid="change-request-form">
       <div className="space-y-6">
+        <p className="text-sm text-muted-foreground" id="cr-required-fields-note">
+          {t('requiredNote')}
+        </p>
         {resubmitOf && resubmitOf.decisionReason ? (
           <InlineAlert tone="warning" role="status" data-testid="resubmit-reason">
             <p className="font-medium">{t('resubmitTitle')}</p>
@@ -451,13 +500,13 @@ export function PortalChangeRequestForm({
                 <p className="text-caption text-muted-foreground">{t('billingAddressHint')}</p>
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-2">
-                {field('billLine1', t('fields.line1'))}
+                {field('billLine1', t('fields.line1'), { required: billTouched })}
                 {field('billLine2', t('fields.line2'))}
                 {field('billSubDistrict', t('fields.subDistrict'))}
-                {field('billCity', t('fields.city'))}
+                {field('billCity', t('fields.city'), { required: billTouched })}
                 {field('billProvince', t('fields.province'))}
-                {field('billPostalCode', t('fields.postalCode'))}
-                {field('billCountry', t('fields.country'), { autoComplete: 'country' })}
+                {field('billPostalCode', t('fields.postalCode'), { required: billTouched })}
+                {field('billCountry', t('fields.country'), { autoComplete: 'country', required: billTouched })}
               </CardContent>
             </Card>
           </>

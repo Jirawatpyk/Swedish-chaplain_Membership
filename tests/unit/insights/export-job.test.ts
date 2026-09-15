@@ -177,6 +177,16 @@ describe('isStuckProcessing (reclaim window, critique E2)', () => {
   });
 });
 
+describe('exportJobIdempotencyInput — F114 T079: two people asking for the same member in the same minute get two jobs', () => {
+  it('differs by requestedBy', () => {
+    const base = { tenantId: 'swecham', kind: 'gdpr_member_archive' as const, subjectMemberId: 'm-1', requestedForPeriod: '2026-09-12T09:34' };
+    const anna = exportJobIdempotencyInput({ ...base, requestedBy: 'u-anna' });
+    const bo = exportJobIdempotencyInput({ ...base, requestedBy: 'u-bo' });
+    expect(anna).not.toBe(bo);
+    expect(exportJobIdempotencyInput({ ...base, requestedBy: 'u-anna' })).toBe(anna);
+  });
+});
+
 describe('exportJobIdempotencyInput (Principle VIII)', () => {
   it('is deterministic for identical components', () => {
     const a = exportJobIdempotencyInput({
@@ -208,21 +218,49 @@ describe('exportJobIdempotencyInput (Principle VIII)', () => {
   });
 
   it('differs across tenant, kind, subject, and period', () => {
+    // `ExportJobIdempotencyParts` is keyed on `kind`: the gdpr arm REQUIRES
+    // `requestedBy`, the directory arms forbid it — so the kind variant needs
+    // its own fixture rather than a spread of this one.
     const base = {
       tenantId: 'swecham',
       kind: 'gdpr_member_archive' as const,
       subjectMemberId: 'm1',
       requestedForPeriod: '2026',
+      requestedBy: 'u-anna',
     };
     const variants = [
       { ...base, tenantId: 'other' },
-      { ...base, kind: 'directory_ebook' as const },
       { ...base, subjectMemberId: 'm2' },
       { ...base, requestedForPeriod: '2027' },
+      { ...base, requestedBy: 'u-bo' },
     ];
     const baseKey = exportJobIdempotencyInput(base);
     for (const v of variants) {
       expect(exportJobIdempotencyInput(v)).not.toBe(baseKey);
     }
+    const directory = { tenantId: 'swecham', kind: 'directory_ebook' as const, subjectMemberId: 'm1', requestedForPeriod: '2026' };
+    expect(exportJobIdempotencyInput(directory)).not.toBe(baseKey);
+    expect(exportJobIdempotencyInput({ ...directory, kind: 'directory_json' as const })).not.toBe(
+      exportJobIdempotencyInput(directory),
+    );
+  });
+
+  it('is an EXACT pipe-join: four segments for a directory kind, and NO trailing empty one when requestedBy is absent', () => {
+    // The `requestedBy` segment is appended only when GIVEN (a spread, not a
+    // `?? ''`): a directory key must be byte-identical to what it was before
+    // F114 T079 widened the parts, or every existing `export_jobs`
+    // idempotency_key stops matching and the dedupe silently re-runs builds.
+    expect(
+      exportJobIdempotencyInput({ tenantId: 'swecham', kind: 'directory_ebook', subjectMemberId: null, requestedForPeriod: '2026' }),
+    ).toBe('swecham|directory_ebook||2026');
+    expect(
+      exportJobIdempotencyInput({
+        tenantId: 'swecham',
+        kind: 'gdpr_member_archive',
+        subjectMemberId: 'm-1',
+        requestedForPeriod: '2026-09-12T09:34',
+        requestedBy: 'u-anna',
+      }),
+    ).toBe('swecham|gdpr_member_archive|m-1|2026-09-12T09:34|u-anna');
   });
 });

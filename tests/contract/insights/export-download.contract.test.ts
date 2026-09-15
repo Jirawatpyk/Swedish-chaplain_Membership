@@ -226,6 +226,17 @@ describe('downloadExport — authz matrix (T073a)', () => {
     expect(a.recordInTx).toHaveBeenCalledOnce(); // data_export_downloaded
   });
 
+  it("403: a member cannot download a GDPR archive of their OWN member that ANOTHER user requested (a colleague's or an admin on-behalf job — F114 T079, the artefact's scope is the requester's)", async () => {
+    const token = mintDownloadToken();
+    const repo = stubRepo(
+      job({ kind: 'gdpr_member_archive', subjectMemberId: 'm-1', requestedBy: 'someone-else', downloadTokenHash: hashDownloadToken(JOB_ID, token) }),
+    );
+    const r = await downloadExport({ jobId: JOB_ID, token }, member('m-1'), ctx, downloadDeps(repo, stubBlob()));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('forbidden');
+    expect(repo.consumeForDownloadInTx).not.toHaveBeenCalled();
+  });
+
   it('success: the subject member may download their own GDPR archive', async () => {
     const token = mintDownloadToken();
     const repo = stubRepo(

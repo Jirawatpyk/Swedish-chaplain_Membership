@@ -3,9 +3,9 @@
 /**
  * F114 — one proposed / seen / current value rendered for people: a scalar
  * as text, `null`/'' as the localised "(empty)" sentinel (muted — see memory
- * "muted = empty sentinel"), an address group as a labelled line list. Shared
- * by the staff decision table (US2) and the history surfaces; the portal diff
- * table carries its own inline copy of the same rule.
+ * "muted = empty sentinel"), an address group as a labelled line list. The ONE
+ * copy of that rule: the staff decision table (US2), the history surfaces and
+ * the portal diff table all render values through this component.
  */
 import { useTranslations } from 'next-intl';
 import type { ChangeRequestFieldView } from '@/lib/change-request-portal-view';
@@ -29,6 +29,8 @@ export interface ProposedValueDisplayProps {
 export function ProposedValueDisplay({ fieldKey, value }: ProposedValueDisplayProps) {
   const t = useTranslations('portal.changeRequests.diff');
   if (value === null || value === '') return <span className="text-muted-foreground">{t('empty')}</span>;
+  // a STRING under an address key is the erasure sentinel (FR-030) — text, never "(empty)"
+  if (typeof value === 'string') return <span className="break-words">{value}</span>;
   if (isAddress(value) || isAddressGroupKey(fieldKey)) {
     const obj = (isAddress(value) ? value : {}) as Readonly<Record<string, string | null>>;
     const lines = fieldKey === 'billing_address' ? BILLING_ADDRESS_LINES : REGISTERED_ADDRESS_LINES;

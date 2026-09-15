@@ -29,7 +29,7 @@ import type {
   Reviewer,
   ReviewerDirectoryPort,
 } from '@/modules/members/application/ports/reviewer-directory-port';
-import type { ChangeRequestScrubPort } from '@/modules/members/application/ports/change-request-scrub-port';
+import type { ChangeRequestScrubPort, ClosedChangeRequest } from '@/modules/members/application/ports/change-request-scrub-port';
 import type { TenantMemberChangeSettingsPort } from '@/modules/members/application/ports/tenant-member-change-settings-port';
 import type { EmailEnqueue, EmailPort } from '@/modules/members/application/ports/email-port';
 import type { AuditPort, F3AuditEvent } from '@/modules/members/application/ports/audit-port';
@@ -175,6 +175,15 @@ export function makeInMemoryChangeRequestRepo(seed: readonly ChangeRequest[] = [
 
     async findPendingBySubmitterInTx(_tx, userId) {
       const f = takeFault('findPendingBySubmitterInTx');
+      if (f) return err(f);
+      for (const r of rows.values()) {
+        if (r.submittedByUserId === userId && r.state === 'pending') return ok(r);
+      }
+      return ok(null);
+    },
+
+    async findPendingBySubmitter(_ctx, userId) {
+      const f = takeFault('findPendingBySubmitter');
       if (f) return err(f);
       for (const r of rows.values()) {
         if (r.submittedByUserId === userId && r.state === 'pending') return ok(r);
@@ -432,6 +441,7 @@ export function makeTenantMemberChangeSettingsFake(initial: boolean | null): Ten
 
 export interface ChangeRequestScrubFake extends ChangeRequestScrubPort {
   scrubForMemberInTx: MockedFunction<ChangeRequestScrubPort['scrubForMemberInTx']>;
+  listRequestIdsInTx: MockedFunction<ChangeRequestScrubPort['listRequestIdsInTx']>;
 }
 
 /** Scrubs the in-memory repo the way the Drizzle adapter scrubs the tables (R10). */
@@ -439,7 +449,7 @@ export function makeChangeRequestScrubFake(repo: InMemoryChangeRequestRepo): Cha
   return {
     scrubForMemberInTx: vi.fn(async (_tx, memberId, at) => {
       const scrubbed: ChangeRequestId[] = [];
-      const closed: ChangeRequestId[] = [];
+      const closed: ClosedChangeRequest[] = [];
       for (const [id, row] of repo.rows) {
         if (row.memberId !== memberId) continue;
         const wasPending = row.state === 'pending';
@@ -453,9 +463,10 @@ export function makeChangeRequestScrubFake(repo: InMemoryChangeRequestRepo): Cha
           fields: row.fields.map((f) => ({ ...f, seen: ERASED_SENTINEL, proposed: ERASED_SENTINEL })),
         });
         scrubbed.push(row.id);
-        if (wasPending) closed.push(row.id);
+        if (wasPending) closed.push({ id: row.id, contactId: row.submittedByContactId, scope: row.scope });
       }
-      return ok({ scrubbedRequestIds: scrubbed, closedRequestIds: closed });
+      return ok({ scrubbedRequestIds: scrubbed, closedRequests: closed });
     }),
+    listRequestIdsInTx: vi.fn(async (_tx, memberId) => ok([...repo.rows.values()].filter((r) => r.memberId === memberId).map((r) => r.id))),
   };
 }

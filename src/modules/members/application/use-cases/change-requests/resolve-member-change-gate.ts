@@ -10,9 +10,10 @@
  * layer through a `FlagPort` (no `env` import here — Principle III); the row
  * through `TenantMemberChangeSettingsPort`.
  *
- * One resolver per request: the first `resolve(tenant)` reads the row and the
- * answer is cached for that resolver, so the edit page, the gate route and the
- * narrowed profile PATCH each pay one read.
+ * One read per RESOLVER INSTANCE: the first `resolve(tenant)` reads the row
+ * and the answer is cached on that resolver. `buildMembersDeps` is a plain
+ * factory, so a route that builds its deps twice (the edit page's
+ * `generateMetadata` + its body) pays two reads — one row each.
  *
  * A settings read failure THROWS rather than guessing a mode. Guessing
  * 'immediate' would let a Group B edit bypass the gate on a transient DB
