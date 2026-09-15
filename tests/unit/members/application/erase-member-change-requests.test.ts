@@ -116,9 +116,19 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
     expect(closures).toHaveLength(0);
   });
 
+  // every port failure, WITH a cause (repo.unexpected) and WITHOUT one (the
+  // `'cause' in error` narrowing is a branch of its own — the pinned 100% branch
+  // threshold on erase-member.ts is what caught the rescan arm going untested)
+  const WITH_CAUSE = () => err({ code: 'repo.unexpected' as const, cause: new Error('boom') });
+  const NO_CAUSE = () => err({ code: 'repo.not_found' as const });
   it.each([
-    ['scrub', { scrub: async () => err({ code: 'repo.unexpected' as const, cause: new Error('boom') }) }],
-    ['outbox cancel', { cancel: async () => err({ code: 'repo.unexpected' as const, cause: new Error('boom') }) }],
+    ['scrub', { scrub: async () => WITH_CAUSE() }],
+    ['scrub (no cause)', { scrub: async () => NO_CAUSE() }],
+    ['outbox cancel', { cancel: async () => WITH_CAUSE() }],
+    ['outbox cancel (no cause)', { cancel: async () => NO_CAUSE() }],
+    // the post-lock rescan (seam re-review, #1)
+    ['rescan', { rescan: async () => WITH_CAUSE() }],
+    ['rescan (no cause)', { rescan: async () => NO_CAUSE() }],
   ])('a %s failure aborts the scrub tx → server_error, member_erased never emitted', async (_label, overrides) => {
     const d = deps(overrides);
     const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
@@ -127,10 +137,13 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
     expect(types).not.toContain('member_erased');
   });
 
-  it('an audit failure on a closure aborts the tx → server_error', async () => {
+  it.each([
+    ['with a cause', () => err({ code: 'repo.unexpected' as const, cause: new Error('audit down') })],
+    ['without a cause', () => err({ code: 'repo.not_found' as const })],
+  ])('an audit failure on a closure (%s) aborts the tx → server_error', async (_label, failure) => {
     const d = deps();
     d.audit.recordInTx = vi.fn(async (_tx: unknown, _ctx: unknown, event: { type: string }) =>
-      event.type === 'member_change_request_withdrawn' ? err({ code: 'repo.unexpected' as const, cause: new Error('audit down') }) : ok(undefined),
+      event.type === 'member_change_request_withdrawn' ? failure() : ok(undefined),
     );
     const res = await eraseMember(asMemberId(MEMBER_ID), { reason: 'gdpr_erasure_request' }, META, d);
     expect(res).toMatchObject({ ok: false, error: { type: 'server_error' } });
