@@ -47,6 +47,26 @@ function NavItemLink({ item }: { readonly item: NavItem }) {
       >
         <item.icon className="size-5 shrink-0" aria-hidden />
         <span className="truncate">{t(item.titleKey)}</span>
+        {/* F114 US6 (FR-033) — server-resolved count INSIDE the link so it is
+            part of the accessible name ("Change requests 3 pending change
+            requests"): the visible number + an sr-only noun from
+            `badgeLabelKey`. Not `SidebarMenuBadge` (a sibling outside the
+            link — never announced with it) and no aria-label on a span (axe
+            aria-prohibited-attr). Hidden in the icon rail like the primitive's
+            own badge; the tooltip there carries the title only. The explicit
+            `{' '}` keeps a space in the computed name — flex swallows it
+            visually. */}
+        {typeof item.badgeCount === 'number' && item.badgeCount > 0 ? (
+          <>
+            {' '}
+            <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sidebar-primary px-1 text-xs font-medium tabular-nums text-sidebar-primary-foreground group-data-[collapsible=icon]:hidden">
+              {item.badgeCount}
+              {item.badgeLabelKey ? (
+                <span className="sr-only"> {t(item.badgeLabelKey, { count: item.badgeCount })}</span>
+              ) : null}
+            </span>
+          </>
+        ) : null}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

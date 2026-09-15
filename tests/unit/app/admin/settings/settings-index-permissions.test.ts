@@ -28,6 +28,8 @@ const INDEX_FILE = join(REPO_ROOT, 'src/app/(staff)/admin/settings/page.tsx');
 interface Category {
   readonly href: string;
   readonly permission: PermissionKey;
+  /** Feature-flag dimension, same vocabulary as `nav.ts` (`NavVisibilityFlag`). */
+  readonly visibilityFlag?: string;
 }
 
 /** The `CATEGORIES` array as declared in the page source. */
@@ -46,9 +48,11 @@ function parseCategories(): readonly Category[] {
     // was found to be dropping entries.
     expect(href, `unparsed CATEGORIES entry: ${block}`).not.toBeNull();
     expect(permission, `${href?.[1]} declares no permission`).not.toBeNull();
+    const visibilityFlag = /visibilityFlag: '([^']+)'/.exec(block);
     out.push({
       href: href![1]!,
       permission: permission![1] as PermissionKey,
+      ...(visibilityFlag ? { visibilityFlag: visibilityFlag[1]! } : {}),
     });
   }
   return out;
@@ -59,8 +63,9 @@ const CATEGORIES = parseCategories();
 describe('settings index declares a permission per card', () => {
   it('parses the known cards (the parser actually walked)', () => {
     // 4 since the 016 post-ship review closed the 2-of-4 sidebar-parity gap
-    // (broadcasts + eventcreate cards, both feature-flag-aware).
-    expect(CATEGORIES).toHaveLength(4);
+    // (broadcasts + eventcreate cards, both feature-flag-aware); 5 with the
+    // F114 US6 member-change approval card (flag-aware too).
+    expect(CATEGORIES).toHaveLength(5);
   });
 
   it('the page still filters — `visible` is derived, not the raw list', () => {
@@ -122,5 +127,40 @@ describe('ON-leg visibility per role', () => {
         ).toBe(true);
       }
     }
+  });
+});
+
+describe('F114 US6 — the member-change approval card (permission + flag dimensions)', () => {
+  const HREF = '/admin/settings/member-changes';
+  /** The page's own filter, both dimensions, over the parsed declaration. */
+  function visibleFor(role: Role, flags: Readonly<Record<string, boolean>>): readonly string[] {
+    return CATEGORIES.filter(
+      (c) =>
+        !(c.visibilityFlag !== undefined && !flags[c.visibilityFlag]) &&
+        canPerform(role, c.permission),
+    ).map((c) => c.href);
+  }
+  const ALL_ON = { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true };
+
+  it('is declared with members.write and gated on the memberChangeApproval flag', () => {
+    const card = CATEGORIES.find((c) => c.href === HREF);
+    expect(card).toBeDefined();
+    expect(card!.permission).toBe('members.write');
+    expect(card!.visibilityFlag).toBe('memberChangeApproval');
+    // …and the page resolves that flag name (a flag the page never sets
+    // would hide the card forever — the closed-union safety nav.ts has).
+    expect(readFileSync(INDEX_FILE, 'utf8')).toMatch(/memberChangeApproval: env\.features\.memberChangeApproval/);
+  });
+
+  it('is listed for admin with the flag on', () => {
+    expect(visibleFor('admin', ALL_ON)).toContain(HREF);
+  });
+
+  it('is absent for manager (no members.write) even with the flag on', () => {
+    expect(visibleFor('manager', ALL_ON)).not.toContain(HREF);
+  });
+
+  it('is absent with the flag off even for admin (FR-039 — the page 404s)', () => {
+    expect(visibleFor('admin', { ...ALL_ON, memberChangeApproval: false })).not.toContain(HREF);
   });
 });

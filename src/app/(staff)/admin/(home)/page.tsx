@@ -36,6 +36,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { resolveEventLabel } from '@/lib/audit-event-label';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { readPendingChangeRequests } from '@/lib/pending-change-requests';
 import {
   listDashboard,
   hasFinanceMetrics,
@@ -126,7 +127,7 @@ export default async function StaffHomePage() {
 
   // allSettled (not all) so a thrown activity-feed read can never take down the
   // whole dashboard — the feed is the least-critical widget (FR-003 vs FR-005).
-  const [dashSettled, feedSettled] = await Promise.allSettled([
+  const [dashSettled, feedSettled, pendingChangesSettled] = await Promise.allSettled([
     listDashboard(meta, tenant, makeListDashboardDeps(tenant.slug, canFinance)),
     activityFeedQuery(
       { limit: 15 },
@@ -139,8 +140,18 @@ export default async function StaffHomePage() {
         canPerform(user.role, 'insights.activity_unredacted'),
       ),
     ),
+    // F114 US6 (FR-033; research R12) — the LIVE pending change-request
+    // count + oldest age, one indexed query at render (not the cron
+    // snapshot, so US6 AS3 holds the moment a request lands). The helper
+    // answers `null` without a query when the platform flag is OFF (FR-039)
+    // or the viewer lacks `members.read`, and degrades any fault to `null`
+    // with one log line under this page's own errorId — the item is then
+    // simply absent. Sits in the same allSettled for widget isolation.
+    readPendingChangeRequests(user.role, 'M114.dashboard.pending_count_failed'),
   ]);
   const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
+  const pendingChanges =
+    pendingChangesSettled.status === 'fulfilled' ? pendingChangesSettled.value : null;
 
   if (dashSettled.status === 'rejected') {
     // The dashboard's PRIMARY widget threw outside the Result channel (e.g. a
@@ -268,6 +279,22 @@ export default async function StaffHomePage() {
       : []),
   ];
 
+  // F114 US6 (FR-033) — "oldest 3 days ago": the age of the oldest pending
+  // request rendered through the feed's own relative-time helper (same
+  // `Intl.RelativeTimeFormat` path as the activity rows — locale-aware, no new
+  // dependency; day granularity is what the spec asks for). `null` age means
+  // nothing is pending, and the item below is filtered out at count 0 anyway.
+  const now = new Date();
+  const pendingOldest =
+    pendingChanges !== null && pendingChanges.oldestAgeSeconds !== null
+      ? activityTimeLabels(
+          new Date(now.getTime() - pendingChanges.oldestAgeSeconds * 1000).toISOString(),
+          locale,
+          env.tenant.timezone,
+          now,
+        ).relative
+      : '';
+
   // Only surface items that actually need attention (FR-006) — a "0" with a
   // dead-end link is noise; when all are zero the list shows an "all clear" state.
   const needsAttentionItems: readonly NeedsAttentionItem[] = (
@@ -303,16 +330,29 @@ export default async function StaffHomePage() {
         label: t('needsAttention.broadcasts'),
         href: '/admin/broadcasts',
       },
+      // F114 US6 (FR-033) — live pending change requests → the queue. Count
+      // and age come from `readPendingChangeRequests` above (null → 0 → dropped).
+      {
+        id: 'changeRequests',
+        n: pendingChanges?.count ?? 0,
+        label: t('needsAttention.changeRequests', { oldest: pendingOldest }),
+        href: '/admin/change-requests',
+      },
     ] as const
   )
     // Drop the Broadcasts item when F7 is off — `/admin/broadcasts` 503s via
     // the proxy kill-switch, so surfacing "N awaiting approval" would be a
     // dead-end link. `broadcastsAwaitingApproval` is a plain DB count that can
     // still be >0 from broadcasts submitted before the flag was flipped off.
+    // Same for the change-request item when FEATURE_MEMBER_CHANGE_APPROVAL is
+    // off (`/admin/change-requests` 404s, FR-039) — the read helper already
+    // answers null there; the filter mirrors the broadcasts arm so the rule is
+    // visible where the list is built.
     .filter(
       (item) =>
         item.n > 0 &&
-        (item.id !== 'broadcasts' || env.features.f7Broadcasts),
+        (item.id !== 'broadcasts' || env.features.f7Broadcasts) &&
+        (item.id !== 'changeRequests' || env.features.memberChangeApproval),
     )
     .map((item) => ({
       id: item.id,

@@ -20,6 +20,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
 import { staffNavAllowedHrefs } from '@/lib/nav-permissions';
+import { readPendingChangeRequests } from '@/lib/pending-change-requests';
 
 /**
  * Staff shell layout (T075 / T016).
@@ -41,6 +42,16 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   const cookieStore = await cookies();
   const sidebarCookie = cookieStore.get('sidebar_state');
   const defaultOpen = sidebarCookie ? sidebarCookie.value === 'true' : true;
+
+  // F114 US6 (FR-033) — the change-request nav badge. Resolved HERE (the
+  // sidebar is a client component: no `env`, no `canPerform`, no repo) and
+  // passed across the RSC boundary as a plain href→count map. The helper
+  // answers `null` without a query when the platform flag is OFF (FR-039) or
+  // the viewer lacks `members.read`, and degrades a fault to no badge with one
+  // log line — this layout renders on every staff page and must never 500
+  // because of a number in the sidebar. One indexed count/min query per render
+  // (research R12); no cache layer.
+  const pendingChanges = await readPendingChangeRequests(user.role, 'M114.nav.badge_failed');
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -70,6 +81,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             eventsEnabled: env.features.f6EventCreate,
             memberChangeApproval: env.features.memberChangeApproval,
           }}
+          navBadgeCounts={{ '/admin/change-requests': pendingChanges?.count ?? 0 }}
         />
 
         <SidebarInset>

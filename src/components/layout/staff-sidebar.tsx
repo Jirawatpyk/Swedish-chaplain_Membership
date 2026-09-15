@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import {
   staffNavConfig,
+  applyNavBadges,
   filterNavConfig,
   type NavVisibilityFlags,
 } from '@/config/nav';
@@ -36,15 +37,24 @@ interface StaffSidebarProps {
    * fails CLOSED, so omitting it renders an empty sidebar rather than leaking.
    */
   readonly allowedHrefs: readonly string[];
+  /**
+   * F114 US6 (FR-033) — live counts keyed by href, resolved in the server
+   * layout (`readPendingChangeRequests`). Applied AFTER filtering, so an item
+   * this viewer cannot see (or a flag-off item) never carries a count.
+   * Omitted / 0 → no badge.
+   */
+  readonly navBadgeCounts?: Readonly<Record<string, number>>;
 }
 
 export function StaffSidebar({
   tenantName,
   navVisibilityFlags = {},
   allowedHrefs,
+  navBadgeCounts,
 }: StaffSidebarProps) {
   const t = useTranslations();
-  const filtered = filterNavConfig(staffNavConfig, navVisibilityFlags, new Set(allowedHrefs));
+  const visible = filterNavConfig(staffNavConfig, navVisibilityFlags, new Set(allowedHrefs));
+  const filtered = navBadgeCounts ? applyNavBadges(visible, navBadgeCounts) : visible;
 
   return (
     <Sidebar

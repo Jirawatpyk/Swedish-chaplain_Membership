@@ -472,7 +472,8 @@
         "empty": "All clear — nothing needs attention right now.",
         "overdueInvoices": "Overdue invoices",
         "atRisk": "At-risk members",
-        "broadcasts": "Broadcasts awaiting approval"
+        "broadcasts": "Broadcasts awaiting approval",
+        "changeRequests": "Change requests waiting (oldest {oldest})"
       },
       "trends": {
         "sectionLabel": "Trend charts"
@@ -2024,7 +2025,37 @@
           "integrationsEventcreate": {
             "title": "EventCreate integration",
             "description": "Webhook credentials and attendee-import configuration for EventCreate."
+          },
+          "memberChanges": {
+            "title": "Member change approval",
+            "description": "Whether changes members make to their own company and contact details wait for a staff decision before they apply."
           }
+        }
+      },
+      "memberChanges": {
+        "pageTitle": "Member change approval",
+        "pageDescription": "Decide whether changes members make to their own record need a staff decision before they apply.",
+        "title": "Approval requirement",
+        "cardDescription": "Applies to every member of this chamber. Staff edits are never affected.",
+        "switchLabel": "Require approval for member changes",
+        "description": "When approval is on, member edits to company and contact details wait in the change-request queue for a staff decision. When it is off, those edits apply immediately and are recorded as self-service edits. Requests already waiting stay in the queue and can still be decided either way.",
+        "state": {
+          "on": "Approval is on — new member changes wait for a staff decision.",
+          "off": "Approval is off — new member changes apply immediately."
+        },
+        "offWarning": "{count, plural, one {# request is} other {# requests are}} waiting for a decision. Switching approval off keeps {count, plural, one {it} other {them}} in the queue; only new member edits bypass it.",
+        "confirm": {
+          "title": "Switch approval off?",
+          "body": "{count, plural, one {# pending request stays} other {# pending requests stay}} in the queue and can still be decided. New member edits will apply immediately without review.",
+          "confirm": "Switch off — {count, plural, one {# request stays} other {# requests stay}} in the queue",
+          "cancel": "Keep approval on"
+        },
+        "toast": {
+          "on": "Approval switched on. New member changes now wait for a decision.",
+          "off": "Approval switched off. New member changes now apply immediately."
+        },
+        "errors": {
+          "generic": "The setting could not be changed. Please try again."
         }
       }
     },
@@ -5410,6 +5441,7 @@
     "staff": {
       "dashboard": "Dashboard",
       "changeRequests": "Change requests",
+      "changeRequestsBadge": "{count, plural, one {pending change request} other {pending change requests}}",
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",

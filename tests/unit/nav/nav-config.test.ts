@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { staffNavAllowedHrefs } from '@/lib/nav-permissions';
 import {
+  applyNavBadges,
   filterNavConfig,
   isNavGroup,
   isNavItemActive,
@@ -535,3 +536,59 @@ describe('isNavGroup type guard', () => {
 // The flatten logic still exists in `components/layout/nav-item.tsx`
 // for any future 1-child group; its unit coverage can be added back
 // against a synthetic config when such a group re-emerges.
+
+describe('applyNavBadges — F114 US6 server-resolved badge counts (plan Complexity #2)', () => {
+  const icon = {} as never;
+  const config: NavConfig = {
+    sections: [
+      {
+        titleKey: 'nav.staff.sections.membership',
+        items: [
+          { titleKey: 'a', icon, href: '/admin/a', activePattern: '/admin/a', badgeLabelKey: 'a.badge' },
+          { titleKey: 'b', icon, href: '/admin/b', activePattern: '/admin/b' },
+          {
+            titleKey: 'g',
+            icon,
+            activePattern: '/admin/g',
+            children: [
+              { titleKey: 'c', icon, href: '/admin/g/c', activePattern: '/admin/g/c' },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const leaves = (c: NavConfig) =>
+    c.sections.flatMap((s) => s.items.flatMap((i) => (isNavGroup(i) ? i.children : [i])));
+
+  it('sets badgeCount only where the keyed count is > 0, leaving other items untouched', () => {
+    const out = applyNavBadges(config, { '/admin/a': 3, '/admin/b': 0, '/admin/g/c': 2 });
+    const byHref = Object.fromEntries(leaves(out).map((i) => [i.href, i.badgeCount]));
+    expect(byHref).toEqual({ '/admin/a': 3, '/admin/b': undefined, '/admin/g/c': 2 });
+  });
+
+  it('does not mutate the input config', () => {
+    const before = JSON.stringify(config);
+    const out = applyNavBadges(config, { '/admin/a': 5 });
+    expect(JSON.stringify(config)).toBe(before);
+    expect(out).not.toBe(config);
+    expect(leaves(config).every((i) => i.badgeCount === undefined)).toBe(true);
+  });
+
+  it('ignores hrefs that are not in the config and an empty map is a no-op', () => {
+    const out = applyNavBadges(config, { '/admin/nowhere': 9 });
+    expect(leaves(out).every((i) => i.badgeCount === undefined)).toBe(true);
+    expect(leaves(applyNavBadges(config, {})).every((i) => i.badgeCount === undefined)).toBe(true);
+  });
+
+  it('the static config never authors a badgeCount; changeRequests declares the sr-only label key', () => {
+    // `badgeCount` is server-resolved (staff layout → sidebar); a hand-authored
+    // count in the config would be a stale number on every tenant.
+    const leavesOfStaff = staffNavConfig.sections.flatMap((s) =>
+      s.items.flatMap((i) => (isNavGroup(i) ? i.children : [i])),
+    );
+    expect(leavesOfStaff.every((i) => i.badgeCount === undefined)).toBe(true);
+    const changeRequests = leavesOfStaff.find((i) => i.href === '/admin/change-requests')!;
+    expect(changeRequests.badgeLabelKey).toBe('nav.staff.changeRequestsBadge');
+  });
+});

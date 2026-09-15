@@ -90,6 +90,13 @@ vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
 }));
 
+// F114 US6 — the page now reads the live pending change-request count through
+// `readPendingChangeRequests`; its composition root boots infra clients at
+// import (Upstash via `@/lib/auth-deps`). Stub the two seams; the flag is
+// absent from the env mock above, so the helper answers null without a query.
+vi.mock('@/lib/members-change-request-deps', () => ({ buildChangeRequestDeps: () => ({}) }));
+vi.mock('@/modules/members', () => ({ countPendingChangeRequests: vi.fn() }));
+
 // InsightsPanel / ActivityFeedRefresh / DashboardErrorState all call
 // `useRouter()` — `renderToStaticMarkup` has no real Next.js App Router
 // context mounted, so this must be stubbed (same pattern as

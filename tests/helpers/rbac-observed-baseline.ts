@@ -78,6 +78,9 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin/renewals/tier-upgrades', kind: 'page', key: 'renewals.write' },
   { surface: '/admin/settings/broadcasts', kind: 'page', key: 'settings.broadcasts' },
   { surface: '/admin/settings/integrations/eventcreate', kind: 'page', key: 'settings.integrations' },
+  // F114 US6 — the member-change approval setting; `members.write` like the
+  // PATCH route behind it (an admin surface, never manager / marketing).
+  { surface: '/admin/settings/member-changes', kind: 'page', key: 'members.write' },
 ];
 
 /**
