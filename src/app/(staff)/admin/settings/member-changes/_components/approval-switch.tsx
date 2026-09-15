@@ -5,22 +5,37 @@
  * approval for member changes" switch on `/admin/settings/member-changes`.
  *
  * Behaviour:
- *   - the control is a labelled Base UI `Switch`; the visible state line is
- *     a `role="status"` live region, so a screen-reader user hears the new
- *     state when the server confirms it (no optimistic flip — the switch
- *     shows the server truth, so `aria-checked` never lies on a refusal);
+ *   - the control is a Base UI `Switch` named through `aria-labelledby` →
+ *     the visible `<Label>` (the house idiom — `renewal-reminders-toggle.tsx`):
+ *     with `nativeButton=false` the primitive puts the caller `id` on its
+ *     hidden `<input type=checkbox>` ON PURPOSE (`useLabelableId`), so the
+ *     `<Label htmlFor>` still toggles the switch on a pointer click through
+ *     the native label activation, while `aria-labelledby` names the
+ *     `role=switch` element for AT on first paint (UX M1 re-read against the
+ *     primitive: the `for` is for the mouse, the `aria-labelledby` for AT).
+ *     No optimistic
+ *     flip — the switch shows the server truth, so `aria-checked` never lies
+ *     on a refusal; the visible state line is plain text, not a live region
+ *     (the success toast is the one announcement — UX M3);
+ *   - a pending-count note is rendered whenever requests are waiting, in BOTH
+ *     setting states (the OFF copy is FR-032's "still decidable"), with the
+ *     count as an underlined link to the queue (UX H2);
  *   - switching OFF while requests are waiting opens the platform
  *     confirmation dialog (plain tier — nothing is destroyed: pending
- *     requests stay decidable, FR-032) whose confirm button states the
- *     count; Cancel sends nothing;
+ *     requests stay decidable, FR-032) whose body states the consequence and
+ *     whose confirm button is the short count-bearing form ("Switch off (3)"
+ *     — the sentence overflowed the 320 px footer, UX H1); Cancel sends
+ *     nothing;
  *   - `PATCH /api/admin/settings/member-changes { approvalEnabled }`, same
  *     origin; while in flight the switch is `aria-busy` + dimmed, never
  *     `disabled` (a disabled control drops focus to `<body>`);
- *   - success → toast + status line; a 503 read-only refusal → the platform
- *     read-only copy inline (`role="alert"`), any other failure → the generic
- *     inline alert; state unchanged either way (ux-standards § 4.1).
+ *   - success → toast + state line; a 503 read-only refusal → the
+ *     setting-specific read-only copy inline (`role="alert"`, UX M5), any
+ *     other failure → the generic inline alert; state unchanged either way
+ *     (ux-standards § 4.1).
  */
 import { useId, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
@@ -50,7 +65,6 @@ export function ApprovalSwitch({
   readonly pendingCount: number;
 }): React.ReactElement {
   const t = useTranslations('admin.settings.memberChanges');
-  const tErrors = useTranslations('errors');
   const switchId = useId();
   const labelId = useId();
   const descriptionId = useId();
@@ -72,7 +86,7 @@ export function ApprovalSwitch({
       });
       const body = (await res.json().catch(() => ({}))) as ResponseBody;
       if (!res.ok) {
-        setError(isReadOnlyRefusal(res.status, body) ? tErrors('readOnlyMode') : t('errors.generic'));
+        setError(isReadOnlyRefusal(res.status, body) ? t('errors.readOnly') : t('errors.generic'));
         return;
       }
       // The server's value, not our request — an unchanged no-op still
@@ -106,8 +120,10 @@ export function ApprovalSwitch({
             void send(next);
           }}
         />
+        {/* `mb-0`: the primitive's `mb-[var(--field-label-gap)]` doubled the gap
+            inside this `grid gap-1` (UX L7). */}
         <div className="grid gap-1">
-          <Label id={labelId} htmlFor={switchId}>
+          <Label id={labelId} htmlFor={switchId} className="mb-0">
             {t('switchLabel')}
           </Label>
           <p id={descriptionId} className="text-sm text-muted-foreground">
@@ -116,13 +132,26 @@ export function ApprovalSwitch({
         </div>
       </div>
 
-      <p role="status" aria-live="polite" className="text-sm font-medium">
-        {enabled ? t('state.on') : t('state.off')}
-      </p>
+      {/* Plain text on purpose: the toast already announces the change; a
+          second polite region read the same news twice (UX M3). */}
+      <p className="text-sm font-medium">{enabled ? t('state.on') : t('state.off')}</p>
 
-      {enabled && pendingCount > 0 ? (
+      {pendingCount > 0 ? (
         <InlineAlert tone="info" role="note">
-          {t('offWarning', { count: pendingCount })}
+          {t.rich(enabled ? 'pending.on' : 'pending.off', {
+            count: pendingCount,
+            // Persistent underline — an in-paragraph link's only non-colour
+            // affordance (WCAG 1.4.1; the ledger's M5 rule). The alert's own
+            // `text-info` colour is kept — never muted on a link.
+            link: (chunks) => (
+              <Link
+                href="/admin/change-requests"
+                className="rounded-xs font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                {chunks}
+              </Link>
+            ),
+          })}
         </InlineAlert>
       ) : null}
 

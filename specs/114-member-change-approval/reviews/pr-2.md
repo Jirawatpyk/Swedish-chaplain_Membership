@@ -422,3 +422,82 @@ per bullet; the coordinator runs e2e.
   not the single-table proxy). Run alone by path: 6 passed, the p95 asserted under
   `ciScaled(400)` (50 pages in 14.1 s). Also re-run by path after the use-case changes:
   `change-requests-rate-cap`, `-repo`, `-decide-rollback`, `-submit-atomicity`.
+
+## PR-3 US6 UX review (enterprise-ux-designer, 2026-09-15)
+
+On the US6 UI (`467f7e7d9`): 14 findings, 13 taken, 1 recorded. Each behaviour change was TDD'd —
+the RED run is quoted per item; copy-only items ride `pnpm check:i18n`.
+
+- **H1 — the confirm button overflowed at 320 px** (`max-w-xs` popup, `whitespace-nowrap`
+  button, a 41-char sentence). TAKEN, copy: `confirm.confirm` → "Switch off ({count})" /
+  "ปิดการอนุมัติ ({count})" / "Stäng av ({count})"; the consequence sentence stays in
+  `confirm.body` (FR-034's "state what will happen"). RED: `Unable to find … role "button" and
+  name "Switch off (3)"`.
+- **H2 — the pending note vanished in exactly the FR-032 state; no link to the queue.** TAKEN:
+  rendered whenever `pendingCount > 0`, copy branched on the setting (`pending.on` /
+  `pending.off` — ICU plural EN/SV, TH `{count}` only; `offWarning` removed), the count is a
+  `next/link` to `/admin/change-requests` through `t.rich` with a `<link>` tag, persistent
+  `underline` (the M5 in-paragraph rule; the alert's `text-info` kept, never muted). RED: `Unable
+  to find … role "note"` (OFF state) and `… role "link" and name "3 requests"` (ON state); absent
+  at 0 asserted in both states.
+- **M1 — `id` landed on the aria-hidden `<input>`, not the `role="switch"` element.** TAKEN AS
+  RE-READ against the primitive (the maintainer's call after the first closure dropped the
+  `htmlFor` and lost the pointer path): Base UI's `useLabelableId` puts the caller `id` on its
+  hidden `<input type=checkbox>` ON PURPOSE — that is the `<label for>` activation target, so a
+  click on the label text toggles the switch through the native checkbox change. The AT name
+  comes from `aria-labelledby` → the visible `<Label>` (the house idiom of
+  `renewal-reminders-toggle.tsx`), so the finding's real risk — a name that depends on `for`
+  reaching an aria-hidden control — never applied. Final shape: `<Label id htmlFor className="mb-0">`
+  + `Switch id aria-labelledby aria-describedby`. Test: the switch is named through
+  `aria-labelledby`, the label's `for` target IS an `<input>`, and `fireEvent.click(label)` sends
+  `PATCH { approvalEnabled: true }` (the pointer path proven, not assumed).
+- **M2 — past ~30 days the dashboard showed a date, not an age** (`formatRelativeTime`'s
+  absolute-date fallback, inside the FR-037 window). TAKEN: whole days from `oldestAgeSeconds`
+  (`Math.floor(/ 86_400)`) into `needsAttention.changeRequests` = "Change requests waiting (oldest
+  {days, plural, =0 {today} one {# day} other {# days}})" ×3; the relative-time helper is no
+  longer on this path. RED: `to contain 'Change requests waiting (oldest 45 days)'` (the old path
+  rendered a calendar date), plus "today" / "1 day". The dashboard test now formats through
+  next-intl's `createTranslator` (real ICU, missing key throws) instead of a regex stand-in.
+- **M3 — double announcement on success** (toast + `role="status"` line). TAKEN: the state line
+  is a plain `<p>` — the role dropped rather than `aria-live="off"`, because a `<p>` has no live
+  semantics to switch off and an explicit "off" reads as intent to announce elsewhere; the toast
+  is the one announcement. RED: `expected <p role="status" …> to be null`; green asserts
+  `toast.success` called exactly once and no `status` region before or after.
+- **M4 — the loading skeleton under-reserved the description.** TAKEN: a fourth description
+  line in `loading.tsx` (the SV copy wraps to four). No test (skeleton geometry); `check:layout`
+  green.
+- **M5 — generic read-only copy.** TAKEN: `admin.settings.memberChanges.errors.readOnly` ×3
+  ("The system is in read-only mode — the setting was not changed." / TH / SV) replaces the
+  platform `errors.readOnlyMode` on the 503 arm. RED: the 503 case (`toHaveTextContent` on the
+  new key); green also asserts the platform copy is NOT rendered.
+- **L1 — badge noun.** TAKEN: `nav.staff.changeRequestsBadge` → "pending" / "รายการรอการพิจารณา"
+  (classifier after the numeral) / "väntande" — plain strings, the ICU plural dropped. RED:
+  `Unable to find … role "link" and name "Change requests 3 pending"`.
+- **L2 — no `error.tsx`.** TAKEN: `admin/settings/member-changes/error.tsx` in the
+  `FormContainer` shape (mirrors `admin/change-requests/error.tsx`: `errors.generic` /
+  `errors.errorId` / `buttons.retry`, the page's own title + subtitle). No test; `check:layout`
+  green (136 page/loading files, pairs consistent — `error.tsx` is outside the pair set).
+- **L3 — no pending signal in the icon rail.** TAKEN: the tooltip is
+  `nav.staff.badgeTooltip` = "{title} ({count})" ×3 when a badge is present, the title alone
+  otherwise. RED: the `data-tooltip` assertion (the sidebar stub now forwards `tooltip`).
+- **L4 — the badge is resolved in the staff layout, which Next keeps across client navigations,
+  so the count can lag until a hard reload.** NOT TAKEN, accepted for PR-3: the dashboard item is
+  fresh per page render and the queue page itself shows the live count; a `router.refresh()`
+  after a decision is the PR-4 follow-up if staff notice it.
+- **L5 — `count > 0 && oldestAgeSeconds === null` rendered "(oldest )".** TAKEN with the M2
+  reshape: `needsAttention.changeRequestsNoAge` = "Change requests waiting" ×3 when the age is
+  null. RED: `to contain 'Change requests waiting<'` + `not.toContain('(oldest')`.
+- **L6 — copy.** TAKEN: SV `confirm.cancel` "Behåll godkännandet på"; TH bare "คำขอ" →
+  "คำขอแก้ไขข้อมูล" in `description`, `confirm.body` and the new `pending.*` (the old
+  `offWarning` / `confirm.confirm` occurrences are gone with H1/H2).
+- **L7 — double gap under the switch label.** TAKEN: the `<Label>` gets `mb-0`, so the
+  `grid gap-1` is the only gap.
+
+Untouched by design: `tasks.md` (T112's round is still to come); the tasks' "done" notes still
+describe the pre-review shape (`offWarning`, "oldest 3 days ago", `errors.readOnlyMode`) — this
+section is the record.
+
+Gates at this tree (foreground, 2026-09-15): `pnpm typecheck` exit 0 · full `pnpm lint` exit 0 · `pnpm check:i18n` OK (5530 keys × 3) · `pnpm check:layout` OK (136 files, pairs consistent) · `pnpm check:strict-aria` OK (0 across 632 TSX) · `pnpm vitest run tests/unit/nav/ tests/unit/app/admin/ tests/unit/members/presentation/ tests/unit/components/ tests/unit/architecture/` 256 files / 2432 tests passed (258 s). One earlier run of the same folders, taken while typecheck + lint ran concurrently, timed out `broadcasts-barrel.test.ts` at 30 s (a source scan; 740 ms alone) — contention, not code; the idle re-run above is the evidence.
+
+**Verdict**: MERGEABLE on the US6 UX axis — the two HIGH items and every MEDIUM/LOW except L4
+(recorded, PR-4) are closed with RED→GREEN evidence.

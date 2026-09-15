@@ -7,7 +7,11 @@
  *
  * Pinned:
  *   - flag ON + count > 0 → the item, its count, its href, and the oldest
- *     age in the label (US6 AS3);
+ *     age in the label (US6 AS3) as WHOLE DAYS through an ICU plural — never
+ *     the relative-time helper, whose >30-day arm renders a calendar date in
+ *     exactly the FR-037 one-month window (UX M2); "today" under a day;
+ *   - count > 0 with a null age → the label without the age clause, never
+ *     "(oldest )" (UX L5);
  *   - count 0 → no item (a "0" with a dead-end link is noise, FR-006);
  *   - flag OFF → no item even with rows waiting, and NO query (FR-039 —
  *     the T118 dashboard half);
@@ -17,28 +21,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
-import { NextIntlClientProvider } from 'next-intl';
+import { createTranslator, NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import type { DashboardSnapshot } from '@/modules/insights';
 
-type Messages = Record<string, unknown>;
-
-function getPath(obj: unknown, path: string): unknown {
-  return path
-    .split('.')
-    .reduce<unknown>((acc, k) => (acc && typeof acc === 'object' ? (acc as Messages)[k] : undefined), obj);
-}
-
+// The REAL ICU formatter over the real `en.json` (the age label is a plural
+// message); a missing key THROWS instead of rendering a placeholder.
 function makeRealTranslator(ns: string) {
-  return (key: string, params?: Record<string, unknown>): string => {
-    const nsObj = getPath(en as unknown, ns);
-    if (!nsObj) return `MISSING_NS:${ns}`;
-    const val = getPath(nsObj, key);
-    if (val === undefined || val === null) return `MISSING_KEY:${ns}.${key}`;
-    if (typeof val !== 'string') return `NOT_STRING:${ns}.${key}`;
-    if (!params) return val;
-    return val.replace(/\{(\w+)[^}]*\}/g, (_, k: string) => (params[k] !== undefined ? String(params[k]) : `{${k}}`));
-  };
+  return createTranslator({
+    locale: 'en',
+    messages: en,
+    namespace: ns,
+    onError: (e: Error) => {
+      throw e;
+    },
+  } as unknown as Parameters<typeof createTranslator>[0]);
 }
 
 const h = vi.hoisted(() => ({
@@ -135,11 +132,33 @@ describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => 
     h.count.mockResolvedValue({ ok: true, value: { count: 3, oldestAgeSeconds: THREE_DAYS } });
     const html = await renderPage();
     expect(html).toContain('href="/admin/change-requests"');
-    expect(html).toContain('Change requests waiting (oldest 3 days ago)');
+    expect(html).toContain('Change requests waiting (oldest 3 days)');
     expect(html).toContain('<span class="tabular-nums font-medium">3</span>');
     expect(html).not.toContain(en.admin.dashboard.needsAttention.empty);
-    expect(html).not.toContain('MISSING_KEY:');
     expect(h.count).toHaveBeenCalledTimes(1);
+  });
+
+  it('45 days → "oldest 45 days", never a calendar date (UX M2 — the FR-037 window)', async () => {
+    h.count.mockResolvedValue({ ok: true, value: { count: 2, oldestAgeSeconds: 45 * 86_400 + 3_600 } });
+    const html = await renderPage();
+    expect(html).toContain('Change requests waiting (oldest 45 days)');
+    // the relative-time helper's >30-day fallback: "(oldest Aug 1, 2026)"
+    expect(html).not.toMatch(/\(oldest [A-Z][a-z]{2} \d/);
+  });
+
+  it('under a day → "today"; exactly one day → "1 day" (UX M2)', async () => {
+    h.count.mockResolvedValue({ ok: true, value: { count: 1, oldestAgeSeconds: 5 * 3_600 } });
+    expect(await renderPage()).toContain('Change requests waiting (oldest today)');
+    h.count.mockResolvedValue({ ok: true, value: { count: 1, oldestAgeSeconds: 86_400 } });
+    expect(await renderPage()).toContain('Change requests waiting (oldest 1 day)');
+  });
+
+  it('count > 0 with a null age → the label without the age clause (UX L5)', async () => {
+    h.count.mockResolvedValue({ ok: true, value: { count: 2, oldestAgeSeconds: null } });
+    const html = await renderPage();
+    expect(html).toContain('href="/admin/change-requests"');
+    expect(html).toContain('Change requests waiting<');
+    expect(html).not.toContain('(oldest');
   });
 
   it('count 0 → no item (the list shows its all-clear state)', async () => {

@@ -279,21 +279,16 @@ export default async function StaffHomePage() {
       : []),
   ];
 
-  // F114 US6 (FR-033) — "oldest 3 days ago": the age of the oldest pending
-  // request rendered through the feed's own relative-time helper (same
-  // `Intl.RelativeTimeFormat` path as the activity rows — locale-aware, no new
-  // dependency; day granularity is what the spec asks for). `null` age means
-  // nothing is pending, and the item below is filtered out at count 0 anyway.
-  const now = new Date();
-  const pendingOldest =
+  // F114 US6 (FR-033) — "oldest 45 days": the age of the oldest pending
+  // request as WHOLE DAYS through an ICU plural, NOT the feed's relative-time
+  // helper — its >30-day arm renders a calendar date, i.e. an age stops being
+  // an age in exactly the FR-037 one-month window (UX M2). A `null` age with a
+  // positive count (a race between the two reads) drops the clause rather
+  // than rendering "(oldest )" (UX L5).
+  const oldestDays =
     pendingChanges !== null && pendingChanges.oldestAgeSeconds !== null
-      ? activityTimeLabels(
-          new Date(now.getTime() - pendingChanges.oldestAgeSeconds * 1000).toISOString(),
-          locale,
-          env.tenant.timezone,
-          now,
-        ).relative
-      : '';
+      ? Math.floor(pendingChanges.oldestAgeSeconds / 86_400)
+      : null;
 
   // Only surface items that actually need attention (FR-006) — a "0" with a
   // dead-end link is noise; when all are zero the list shows an "all clear" state.
@@ -335,7 +330,10 @@ export default async function StaffHomePage() {
       {
         id: 'changeRequests',
         n: pendingChanges?.count ?? 0,
-        label: t('needsAttention.changeRequests', { oldest: pendingOldest }),
+        label:
+          oldestDays === null
+            ? t('needsAttention.changeRequestsNoAge')
+            : t('needsAttention.changeRequests', { days: oldestDays }),
         href: '/admin/change-requests',
       },
     ] as const

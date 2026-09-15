@@ -473,7 +473,8 @@
         "overdueInvoices": "Overdue invoices",
         "atRisk": "At-risk members",
         "broadcasts": "Broadcasts awaiting approval",
-        "changeRequests": "Change requests waiting (oldest {oldest})"
+        "changeRequests": "Change requests waiting (oldest {days, plural, =0 {today} one {# day} other {# days}})",
+        "changeRequestsNoAge": "Change requests waiting"
       },
       "trends": {
         "sectionLabel": "Trend charts"
@@ -2045,11 +2046,14 @@
           "on": "Approval is on — new member changes wait for a staff decision.",
           "off": "Approval is off — new member changes apply immediately."
         },
-        "offWarning": "{count, plural, one {# request is} other {# requests are}} waiting for a decision. Switching approval off keeps {count, plural, one {it} other {them}} in the queue; only new member edits bypass it.",
+        "pending": {
+          "on": "<link>{count, plural, one {# request} other {# requests}}</link> {count, plural, one {is} other {are}} waiting for a decision.",
+          "off": "<link>{count, plural, one {# request} other {# requests}}</link> submitted earlier {count, plural, one {stays} other {stay}} in the queue and can still be decided."
+        },
         "confirm": {
           "title": "Switch approval off?",
           "body": "{count, plural, one {# pending request stays} other {# pending requests stay}} in the queue and can still be decided. New member edits will apply immediately without review.",
-          "confirm": "Switch off — {count, plural, one {# request stays} other {# requests stay}} in the queue",
+          "confirm": "Switch off ({count})",
           "cancel": "Keep approval on"
         },
         "toast": {
@@ -2057,7 +2061,8 @@
           "off": "Approval switched off. New member changes now apply immediately."
         },
         "errors": {
-          "generic": "The setting could not be changed. Please try again."
+          "generic": "The setting could not be changed. Please try again.",
+          "readOnly": "The system is in read-only mode — the setting was not changed."
         }
       }
     },
@@ -5443,7 +5448,8 @@
     "staff": {
       "dashboard": "Dashboard",
       "changeRequests": "Change requests",
-      "changeRequestsBadge": "{count, plural, one {pending change request} other {pending change requests}}",
+      "changeRequestsBadge": "pending",
+      "badgeTooltip": "{title} ({count})",
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",

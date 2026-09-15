@@ -1,8 +1,10 @@
 /**
  * F114 US6 (FR-033; plan Complexity Tracking #2) — the staff nav item renders
  * its server-resolved `badgeCount` INSIDE the link, so the count is part of
- * the link's accessible name ("Change requests 3 pending change requests"),
- * and renders nothing badge-shaped when the count is 0 / absent.
+ * the link's accessible name ("Change requests 3 pending" — the short noun,
+ * UX L1), carries the count into the icon-rail tooltip ("Change requests (3)",
+ * UX L3 — the rail hides the badge), and renders nothing badge-shaped when the
+ * count is 0 / absent.
  *
  * The sidebar primitives are stubbed: `SidebarMenuButton` composes a Base UI
  * `useRender` + Tooltip and `useSidebar` needs the provider + `matchMedia`;
@@ -23,8 +25,9 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/admin' }));
 vi.mock('@/components/ui/sidebar', () => ({
   useSidebar: () => ({ isMobile: false, setOpenMobile: vi.fn() }),
   SidebarMenuItem: ({ children }: { children: ReactNode }) => <li>{children}</li>,
-  SidebarMenuButton: ({ render: el, children }: { render: ReactElement; children: ReactNode }) =>
-    cloneElement(el, {}, children),
+  // `tooltip` is forwarded as a data attribute so the rail signal is testable.
+  SidebarMenuButton: ({ render: el, children, tooltip }: { render: ReactElement; children: ReactNode; tooltip?: string }) =>
+    cloneElement(el, { 'data-tooltip': tooltip } as Record<string, unknown>, children),
   SidebarMenuSub: ({ children }: { children: ReactNode }) => <ul>{children}</ul>,
   SidebarMenuSubItem: ({ children }: { children: ReactNode }) => <li>{children}</li>,
   SidebarMenuSubButton: ({ render: el, children }: { render: ReactElement; children: ReactNode }) =>
@@ -54,18 +57,26 @@ afterEach(() => cleanup());
 describe('NavItemLink badge (F114 US6)', () => {
   it('a positive badgeCount is in the accessible name: count + sr-only suffix', () => {
     renderItem({ ...base, badgeCount: 3 });
-    const link = screen.getByRole('link', { name: 'Change requests 3 pending change requests' });
+    const link = screen.getByRole('link', { name: 'Change requests 3 pending' });
     expect(link).toHaveAttribute('href', '/admin/change-requests');
     // the visible number, then the suffix hidden visually but read by AT
     expect(link).toHaveTextContent('3');
-    expect(link.querySelector('.sr-only')).toHaveTextContent('pending change requests');
+    expect(link.querySelector('.sr-only')).toHaveTextContent('pending');
     // no role-less aria-label (axe aria-prohibited-attr) anywhere in the link
     expect(link.querySelector('span[aria-label]')).toBeNull();
   });
 
-  it('singular count reads as one request', () => {
+  it('singular count reads the same short noun', () => {
     renderItem({ ...base, badgeCount: 1 });
-    expect(screen.getByRole('link', { name: 'Change requests 1 pending change request' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Change requests 1 pending' })).toBeInTheDocument();
+  });
+
+  it('the tooltip carries the count when a badge is present (UX L3 — the icon rail hides the badge)', () => {
+    const { unmount } = renderItem({ ...base, badgeCount: 3 });
+    expect(screen.getByRole('link', { name: 'Change requests 3 pending' })).toHaveAttribute('data-tooltip', 'Change requests (3)');
+    unmount();
+    renderItem(base);
+    expect(screen.getByRole('link', { name: 'Change requests' })).toHaveAttribute('data-tooltip', 'Change requests');
   });
 
   it('renders no badge at 0 and when badgeCount is absent — the name is the title alone', () => {

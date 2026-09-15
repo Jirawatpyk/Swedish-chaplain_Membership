@@ -30,6 +30,8 @@ function NavItemLink({ item }: { readonly item: NavItem }) {
   const t = useTranslations();
   const { isMobile, setOpenMobile } = useSidebar();
   const active = isNavItemActive(pathname, item.activePattern);
+  const title = t(item.titleKey);
+  const badgeCount = typeof item.badgeCount === 'number' && item.badgeCount > 0 ? item.badgeCount : null;
 
   return (
     <SidebarMenuItem>
@@ -43,26 +45,27 @@ function NavItemLink({ item }: { readonly item: NavItem }) {
           />
         }
         isActive={active}
-        tooltip={t(item.titleKey)}
+        // The icon rail hides the badge, so the count rides the tooltip there
+        // ("Change requests (3)") — the rail still signals (UX L3).
+        tooltip={badgeCount !== null ? t('nav.staff.badgeTooltip', { title, count: badgeCount }) : title}
       >
         <item.icon className="size-5 shrink-0" aria-hidden />
-        <span className="truncate">{t(item.titleKey)}</span>
+        <span className="truncate">{title}</span>
         {/* F114 US6 (FR-033) — server-resolved count INSIDE the link so it is
-            part of the accessible name ("Change requests 3 pending change
-            requests"): the visible number + an sr-only noun from
-            `badgeLabelKey`. Not `SidebarMenuBadge` (a sibling outside the
-            link — never announced with it) and no aria-label on a span (axe
-            aria-prohibited-attr). Hidden in the icon rail like the primitive's
-            own badge; the tooltip there carries the title only. The explicit
-            `{' '}` keeps a space in the computed name — flex swallows it
-            visually. */}
-        {typeof item.badgeCount === 'number' && item.badgeCount > 0 ? (
+            part of the accessible name ("Change requests 3 pending"): the
+            visible number + an sr-only noun from `badgeLabelKey`. Not
+            `SidebarMenuBadge` (a sibling outside the link — never announced
+            with it) and no aria-label on a span (axe aria-prohibited-attr).
+            Hidden in the icon rail like the primitive's own badge (the
+            tooltip carries the count there). The explicit `{' '}` keeps a
+            space in the computed name — flex swallows it visually. */}
+        {badgeCount !== null ? (
           <>
             {' '}
             <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sidebar-primary px-1 text-xs font-medium tabular-nums text-sidebar-primary-foreground group-data-[collapsible=icon]:hidden">
-              {item.badgeCount}
+              {badgeCount}
               {item.badgeLabelKey ? (
-                <span className="sr-only"> {t(item.badgeLabelKey, { count: item.badgeCount })}</span>
+                <span className="sr-only"> {t(item.badgeLabelKey, { count: badgeCount })}</span>
               ) : null}
             </span>
           </>

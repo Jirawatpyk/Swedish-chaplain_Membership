@@ -15,9 +15,11 @@ import {
 
 /**
  * Mirrors `/admin/settings/broadcasts/loading.tsx` — real PageHeader +
- * Card title/description from i18n; skeleton only the switch row, the
- * state line and the note, so nothing but the interactive part shimmers
- * (ux-standards § 2.1).
+ * Card title/description from i18n; skeleton only the switch row and the
+ * state line, so nothing but the interactive part shimmers (ux-standards
+ * § 2.1). The description block reserves FOUR lines — the SV copy wraps to
+ * four at the form width, and under-reserving shifts the state line on swap
+ * (UX M4).
  */
 export default async function Loading() {
   const t = await getTranslations('admin.settings.memberChanges');
@@ -39,6 +41,8 @@ export default async function Loading() {
                 <SkeletonBlock className="mt-0.5 h-[18px] w-8 shrink-0 rounded-full" />
                 <div className="grid w-full gap-2">
                   <SkeletonBlock className="h-4 w-56 max-w-full" />
+                  <SkeletonBlock className="h-3 w-full" />
+                  <SkeletonBlock className="h-3 w-full" />
                   <SkeletonBlock className="h-3 w-full" />
                   <SkeletonBlock className="h-3 w-3/4" />
                 </div>
