@@ -171,9 +171,11 @@ else
       INTEG_DIR="tests/integration/$module"
       if [ -d "$INTEG_DIR" ]; then
         echo "[pre-push] running integration tests for src/modules/$module → $INTEG_DIR"
-        # INTEGRATION_FOLDER_RUN: the whole folder runs concurrently against one
-        # shared Neon compute — a suite that measures per-query latency cannot
-        # assert its budget here (tests/helpers/ci-latency.ts); it reports instead
+        # INTEGRATION_FOLDER_RUN: the whole folder runs in ONE long-lived fork
+        # (vitest.integration.config.ts `singleFork`) — by the 100th file its
+        # client-side timers carry that process's retained state and GC, so a
+        # suite that measures per-query latency cannot assert its budget here
+        # (tests/helpers/ci-latency.ts); it reports instead
         INTEGRATION_FOLDER_RUN=1 pnpm test:integration "$INTEG_DIR/" || {
           echo "[pre-push] ❌ integration tests failed for module: $module"
           echo "[pre-push]    Fix the failures OR set SKIP_INTEGRATION_PREPUSH=1 to push anyway"

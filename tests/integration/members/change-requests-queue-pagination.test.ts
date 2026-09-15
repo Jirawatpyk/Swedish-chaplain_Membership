@@ -43,9 +43,11 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { ciScaled } from '../../helpers/ci-latency';
 
 // The p95 is a PERFORMANCE budget, not an anti-hang guard: it measures the repo
-// call on a shared Neon compute. Inside the pre-push folder run (108 files at
-// once, `INTEGRATION_FOLDER_RUN=1` from `.husky/pre-push`) the same walk that
-// takes ~290 ms a page alone measured 1,315 ms — contention, not a regression
+// call, client-side, on a shared Neon compute. Inside the pre-push folder run
+// (`INTEGRATION_FOLDER_RUN=1` from `.husky/pre-push`: 108 files in ONE
+// long-lived fork — `singleFork` — so by this file the timer carries that
+// process's retained state and GC, plus whatever shares the compute) the same
+// walk that takes ~290 ms a page alone measured 1,315 ms — not a regression
 // (the third push of PR #366 happened to pass, the fourth did not). Per
 // `ci-latency.ts`: a per-query budget takes its threshold from an env var or
 // does not run in the sweep — so the folder run REPORTS the p95 and asserts
@@ -210,7 +212,7 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
     if (ASSERT_P95) {
       expect(p95, `p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms (budget p95 < ${P95_BUDGET_MS} ms)`).toBeLessThan(P95_BUDGET_MS);
     } else {
-      console.warn(`[queue-pagination] folder run — p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms measured under a concurrent sweep; the budget (< ${P95_BUDGET_MS} ms) is asserted only when the file runs alone`);
+      console.warn(`[queue-pagination] folder run — p95 page ${p95.toFixed(0)} ms, slowest ${slowest.toFixed(0)} ms measured inside the folder run; the budget (< ${P95_BUDGET_MS} ms) is asserted only when the file runs alone`);
     }
   }, 300_000);
 

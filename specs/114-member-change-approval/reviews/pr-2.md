@@ -292,8 +292,10 @@ the real-query EXPLAIN is PR-3 with T119's revisit); the `repoErrorCause` helper
 ### The fourth push — the queue p95 budget inside the pre-push folder run
 
 The push carrying the review closure was refused by its own gate: the 5,000-row pagination suite's
-p95 measured 1,315 ms (budget 400) inside the members folder run — 108 files against one shared Neon
-compute — while the same walk alone measures ~300 ms a page (14.7 s for 50 pages, re-run right after).
+p95 measured 1,315 ms (budget 400) inside the members folder run — 108 files in ONE long-lived fork
+(`singleFork`), so the client-side timer carries that process's retained state and GC on top of
+whatever shares the Neon compute — while the same walk alone measures ~300 ms a page (14.7 s for 50
+pages, re-run right after).
 The third push had passed the same assertion by luck. `tests/helpers/ci-latency.ts` already states the
 rule: a per-query budget "should take its threshold from an env var the workflow sets, or not run in
 the sweep at all". So `.husky/pre-push` now runs a module folder with `INTEGRATION_FOLDER_RUN=1`, and
