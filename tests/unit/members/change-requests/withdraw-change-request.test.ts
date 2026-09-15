@@ -91,7 +91,7 @@ function makeDeps(seed: readonly ChangeRequest[] = [pending()]) {
   return { deps, repo, audit };
 }
 
-const input = { actorUserId: USER, actorRole: 'member', requestId: 'req-w1' };
+const input = { actorUserId: USER, actorRole: 'member' as const, requestId: 'req-w1' };
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -203,5 +203,17 @@ describe('withdrawChangeRequest', () => {
     const r = await withdrawChangeRequest(deps, input);
     expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'withdraw: TypeError' } });
     expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'TypeError' }), expect.any(String));
+  });
+});
+
+describe('withdrawChangeRequest — a throw that is not an Error (T105 coverage)', () => {
+  it('the driver rejecting with a string is logged in its string form', async () => {
+    const { deps, repo } = makeDeps();
+    repo.findPendingBySubmitterInTx = async () => {
+      throw 'connection reset';
+    };
+    const r = await withdrawChangeRequest(deps, input);
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'withdraw: connection reset' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset', cause: undefined }), expect.any(String));
   });
 });

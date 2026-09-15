@@ -10,6 +10,7 @@ import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 // F114 FR-004 / R6 — the contact's OWN email language (Group A) lives here.
 import { ContactLanguageForm } from '@/components/portal/contact-language-form';
 import { DataExportPanel } from '@/components/data-export/data-export-panel';
+import { InlineAlert } from '@/components/ui/inline-alert';
 import {
   buildDataExportLabels,
   buildDataExportRows,
@@ -242,16 +243,22 @@ export default async function MemberAccountPage() {
   }
 
   // Best-effort, like the seeds above: a transient Neon/RLS error here must
-  // NOT 500 the whole hub (the doc-comment promise). Fall back to [] + warn.
+  // NOT 500 the whole hub (the doc-comment promise). A read FAULT is its own
+  // state (`role=status` "could not load your exports"), never the empty
+  // state that says "you have not requested one" — the profile page's
+  // `ownRequestReadFailed` rule (PR-3 polish, silent S-6).
   let exportJobs: Awaited<ReturnType<typeof listMemberDataExports>> = [];
+  let exportsReadFailed = false;
   if (env.features.f9Dashboard && memberId) {
     try {
       // only the archives THIS person requested — a colleague's file is scoped
       // to the colleague (F114 FR-029; review round 1, C1)
       exportJobs = await listMemberDataExports(tenant, memberId, { requestedBy: user.id });
     } catch (err) {
-      logger.warn(
+      exportsReadFailed = true;
+      logger.error(
         {
+          errorId: 'M114.portal.account.exports_read_failed',
           errKind: errKind(err),
           tenantId: tenant.slug,
           userIdHash: hashId(user.id),
@@ -338,10 +345,16 @@ export default async function MemberAccountPage() {
           <p className="max-w-prose text-sm text-muted-foreground">
             {tExport('description')}
           </p>
-          <DataExportPanel
-            rows={buildDataExportRows(exportJobs, tExport, locale)}
-            labels={buildDataExportLabels(tExport)}
-          />
+          {exportsReadFailed ? (
+            <InlineAlert tone="destructive" role="status" data-testid="portal-exports-unavailable">
+              <p className="text-sm">{tExport('loadFailed')}</p>
+            </InlineAlert>
+          ) : (
+            <DataExportPanel
+              rows={buildDataExportRows(exportJobs, tExport, locale)}
+              labels={buildDataExportLabels(tExport)}
+            />
+          )}
         </HubCard>
       ) : null}
 

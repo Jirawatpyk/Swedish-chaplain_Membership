@@ -152,6 +152,29 @@ describe('PendingRequestBanner — withdraw (T089)', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it('a 404 whose body is NOT no_pending_request (the platform flag turned off between render and click — PR-3 S-4) renders NOTHING: no "gone" message, no console.error, and refreshes so the server tree drops the banner', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'not_found' }), { status: 404 }));
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.button }));
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.confirm }));
+    await waitFor(() => expect(screen.queryByTestId('pending-request-banner')).toBeNull());
+    expect(screen.queryByTestId('withdraw-result')).toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('a 404 with an unreadable body is the silent case too — never a "gone" message the server cannot confirm', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('<html>', { status: 404 }));
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.button }));
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.confirm }));
+    await waitFor(() => expect(screen.queryByTestId('pending-request-banner')).toBeNull());
+    expect(screen.queryByTestId('withdraw-result')).toBeNull();
+    expect(refresh).toHaveBeenCalled();
+  });
+
   it('a 5xx keeps the banner and announces the error inline', async () => {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'server_error' }), { status: 500 }));
     renderBanner();

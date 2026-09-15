@@ -605,6 +605,52 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F114 T105 — the change-request approval workflow: the six security-
+        // critical use cases (PII writes behind the tenant gate, the durable
+        // cap, the probe audit, the tenant switch) + the gate resolver pinned
+        // at 100 % branches per plan § Constitution Check II. Measured
+        // 100/100/100/100 on 2026-09-15 with `vitest run tests/unit/members/
+        // tests/contract/members/ tests/contract/portal/ --coverage` before
+        // pinning; the four defence arms no input can reach carry `v8 ignore`
+        // markers naming the guard that makes them unreachable
+        // (decide-change-request.ts). The Domain half (`domain/change-request/**`)
+        // is covered by the `src/modules/members/domain/**/*.ts` pin above.
+        'src/modules/members/application/use-cases/change-requests/submit-change-request.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/members/application/use-cases/change-requests/withdraw-change-request.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/members/application/use-cases/change-requests/decide-change-request.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/members/application/use-cases/change-requests/acknowledge-change-request.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/members/application/use-cases/change-requests/set-member-change-approval-enabled.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/members/application/use-cases/change-requests/resolve-member-change-gate.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // 108 PR-C (review 2026-09-07, tests MEDIUM) — the resolver is the ONE
         // source of truth for who receives a marketing email (compose count,
         // submit and every dispatch tick); every drop rule, the orphan reasons

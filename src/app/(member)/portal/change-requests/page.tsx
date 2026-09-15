@@ -33,7 +33,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ChangeRequestDiffTable } from '@/components/members/change-requests/change-request-diff-table';
-import { ChangeRequestStatusBadge } from '@/components/members/change-requests/change-request-status-badge';
+import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 
 const PAGE = 20;
 
@@ -123,7 +123,7 @@ export default async function PortalChangeRequestHistoryPage({ searchParams }: P
                       {r.decidedAt ? ` · ${t('decidedOn', { decidedAt: fmt(r.decidedAt) })}` : null}
                     </p>
                   </div>
-                  <ChangeRequestStatusBadge state={r.state} outcome={r.outcome} withdrawnReason={r.withdrawnReason} audience="portal" />
+                  <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <ChangeRequestDiffTable fields={r.fields} showOutcome={r.state === 'decided'} />

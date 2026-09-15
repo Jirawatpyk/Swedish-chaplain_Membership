@@ -65,7 +65,7 @@ const APPROVE_ALL = {
   ],
   reason: null,
   note: null,
-  actorRole: 'admin',
+  actorRole: 'admin' as const,
 };
 
 async function snapshot() {
@@ -139,7 +139,7 @@ describe('decideChangeRequest — throw-to-rollback on live Neon (T048)', () => 
         contactId: asContactId(contactId),
         rawBody: { contact: { phone: '+66899999999' }, company: { description: 'A new description' } },
         actorUserId: mu(member.userId),
-        actorRole: 'member',
+        actorRole: 'member' as const,
         requestId: `req-${randomUUID().slice(0, 8)}`,
       },
     );

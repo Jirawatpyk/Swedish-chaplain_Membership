@@ -45,7 +45,7 @@ function makeDeps(initial: boolean | null) {
   return { deps, settings, audit };
 }
 
-const input = { enabled: true, actorUserId: ADMIN, actorRole: 'admin', requestId: 'req-s1' };
+const input = { enabled: true, actorUserId: ADMIN, actorRole: 'admin' as const, requestId: 'req-s1' };
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -144,5 +144,18 @@ describe('setMemberChangeApprovalEnabled', () => {
     const r = await setMemberChangeApprovalEnabled(deps, input);
     expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'set-approval: TypeError' } });
     expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'TypeError' }), expect.any(String));
+  });
+});
+
+
+describe('setMemberChangeApprovalEnabled — a throw that is not an Error (T105 coverage)', () => {
+  it('the driver rejecting with a string is logged in its string form', async () => {
+    const { deps, settings } = makeDeps(false);
+    settings.setApprovalEnabledInTx.mockImplementationOnce(async () => {
+      throw 'connection reset';
+    });
+    const r = await setMemberChangeApprovalEnabled(deps, input);
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'set-approval: connection reset' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset', cause: undefined }), expect.any(String));
   });
 });

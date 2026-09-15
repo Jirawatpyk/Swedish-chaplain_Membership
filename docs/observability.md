@@ -418,7 +418,7 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `members_change_request_decision_email_skipped_total` | counter (watch only) | `{tenant, reason}` `reason ∈ {recipient_gone}` | F114 — a decision committed but the submitting contact is gone / unlinked, so FR-023's email was skipped (the decided audit event carries `member_notified: false`) |
 | `members_change_request_submitted_total` | counter | `{tenant, scope, coalesced}` | F114 — one per created request (`coalesced` is always `false` until T087) |
 | `members_change_request_decided_total` | counter | `{tenant, outcome}` | F114 — one per decision (`approved` / `partially_approved` / `rejected`) |
-| `members_change_request_refused_total` | counter | `{tenant, reason}` `reason ∈ {rate_limited, forbidden, archived, already_decided, validation, not_owner}` | F114 — a submit / decide / acknowledge refused with nothing persisted; `rate_limited` is the interim route cap |
+| `members_change_request_refused_total` | counter | `{tenant, reason}` `reason ∈ {rate_limited, attempt_throttled, forbidden, archived, already_decided, validation, not_owner}` | F114 — a submit / decide / acknowledge / by-id read refused with nothing persisted; `rate_limited` is the durable 10 / 24 h cap, `attempt_throttled` a route's per-actor attempt bucket (full catalogue § 27.1) |
 | `members_change_request_decide_ms` | histogram | `{tenant}` | F114 — `decideChangeRequest` transaction wall time |
 | `members_change_requests_pending_count` | gauge | `{tenant}` | F114 — pending requests per tenant; emitted by the per-tenant gauges tick (`broadcasts-gauges`, every 5 min) — full catalogue + alerts in § 27 |
 | `members_change_request_oldest_age_seconds` | gauge | `{tenant}` | F114 — age of the oldest pending request; emitted by the same tick, 0 when nothing is pending; FR-037's alerts bind to it (§ 27.3) |
@@ -2081,7 +2081,7 @@ Labels are bounded enums + `tenant` — never a user id, an email, a field value
 | `members_change_request_oldest_age_seconds` | gauge | `tenant` | same block | `now() - MIN(submitted_at)` over the pending rows, whole seconds, clamped at 0. **0 when nothing is pending** (metric convention; the read model `countPendingChangeRequests` answers `null` so the UI renders nothing). FR-037's two alerts bind here. |
 | `members_change_request_submitted_total` | counter | `tenant`, `scope`, `coalesced` | `submitChangeRequest` | One per created request; `coalesced` = the submit replaced the person's earlier pending request (US5). |
 | `members_change_request_decided_total` | counter | `tenant`, `outcome` | `decideChangeRequest` | `approved` / `partially_approved` / `rejected`. |
-| `members_change_request_refused_total` | counter | `tenant`, `reason` | submit / decide / acknowledge | `reason ∈ {rate_limited, forbidden, archived, already_decided, validation, not_owner}` — nothing persisted. |
+| `members_change_request_refused_total` | counter | `tenant`, `reason` | submit / decide / acknowledge / the by-id portal reads / withdraw | `reason ∈ {rate_limited, attempt_throttled, forbidden, archived, already_decided, validation, not_owner}` — nothing persisted. `rate_limited` = the DURABLE 10 / 24 h cap (counted from the request table, audited `member_change_request_rate_limited`); `attempt_throttled` = a route's per-actor ATTEMPT bucket refused before any read (submit + withdraw 60 / 10 min, the by-id read + acknowledge 10 / 10 min — the latter bound the `member_cross_tenant_probe` row a miss writes; no audit row, logged `M114.<route>.attempts_exhausted`). A sustained `attempt_throttled` rate from one tenant is an enumeration attempt; the `rate_limited` rate is a member re-submitting. |
 | `members_change_request_no_reviewers_total` | counter | `tenant` | `submitChangeRequest` | A submit found no active reviewer: the request exists, nobody is emailed (alert § 27.3). |
 | `members_change_request_decision_email_skipped_total` | counter | `tenant`, `reason` | `decideChangeRequest` | `reason ∈ {recipient_gone}` — the decision committed, the submitting contact is gone; the decided audit event carries `member_notified: false`. |
 | `members_change_request_decide_ms` | histogram | `tenant` | `decideChangeRequest` | Transaction wall time of a decision (apply + audit + email row). |
@@ -2099,6 +2099,21 @@ Five audit events (`member_change_request_submitted`, `_decided`, `_withdrawn`,
 logs `errorId: M114.<portal|admin>.<route>.<arm>` (guarded by
 `tests/unit/architecture/change-requests-error-id.test.ts`); alert rules on the 500 class key on
 the route prefix, e.g. `M114.admin.decide.*`.
+
+Two spans on the tracer `swecham.members` (T106, `src/lib/otel-tracer.ts` `membersTracer()`),
+each wrapping the ONE transaction of its use case so the auto-instrumented Drizzle statements
+parent under it:
+
+| Span | Wraps | Attributes (bounded — § 27.5) |
+|---|---|---|
+| `members.change_request.submit` | `submitChangeRequest`'s `runInTenant` (the pending read, the durable cap, the insert, the audit row, the outbox rows) — a refusal BEFORE the transaction (forged keys, validation, archived) opens no span | `tenant.slug`, `change_request.id` (the id the insert will carry), `change_request.scope`, `change_request.field_count` |
+| `members.change_request.decide` | `decideChangeRequest`'s `runInTenant` (the FOR UPDATE read through the member email row) | `tenant.slug`, `change_request.id`, `change_request.scope` (set once the row is read), `change_request.field_count` (the decisions sent), `change_request.outcome` (the recorded outcome, on success) |
+
+A refused or failed arm sets `SpanStatusCode.ERROR` with the error TYPE as the message
+(`member_archived`, `rate_limited`, `not_found`, `server_error`, …) — never a proposed value,
+the decision reason / note, an email or a user id; the span is ended on every path
+(`tests/unit/members/change-requests/change-request-spans.test.ts` pins the names, the exact
+attribute keys and the redaction with a distinctive reason that must appear in no attribute).
 
 ### 27.3 Alerting thresholds
 

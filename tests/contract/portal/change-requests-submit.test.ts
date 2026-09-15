@@ -409,7 +409,9 @@ describe('POST /api/portal/change-requests — review round 1 + the durable cap 
     expect(rateLimitCheckMock).toHaveBeenCalledWith(`f114:submit-attempts:test-swecham:${USER}`, 60, 600);
     expect(resolveGateMock).not.toHaveBeenCalled();
     expect(submitMock).not.toHaveBeenCalled();
-    expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'rate_limited');
+    // the limiter's refusal is `attempt_throttled`; `rate_limited` is the DURABLE cap's reason (PR-3 S-2 split)
+    expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'attempt_throttled');
+    expect(metricRefused).not.toHaveBeenCalledWith('test-swecham', 'rate_limited');
   });
 
   it('a `rate_limited` use-case refusal (the durable FR-008 cap) → 429 rate_limited + Retry-After (the same seconds), NOT remembered under the key', async () => {

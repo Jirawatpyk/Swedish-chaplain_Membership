@@ -48,7 +48,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { ChangeRequestStatusBadge } from '@/components/members/change-requests/change-request-status-badge';
+import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 import { ChangeRequestQueueFilters } from './_components/queue-filters';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -233,7 +233,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </InlineAlert>
       ) : null}
 
-      <ChangeRequestQueueFilters />
+      <ChangeRequestQueueFilters resultCount={page.items.length} hasMore={page.nextCursor !== null} />
       {q.memberId || q.submitter ? (
         <div className="space-y-1">
           {q.memberId ? (
@@ -317,7 +317,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
                     ) : null}
                   </TableCell>
                   <TableCell>
-                    <ChangeRequestStatusBadge state={r.state} outcome={r.outcome} withdrawnReason={r.withdrawnReason} audience="staff" />
+                    <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
                     {r.decidedAt && item.row.decidedBy ? (
                       <div className="mt-1 text-caption text-muted-foreground">
                         {tReview('decidedBy', { name: item.row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}

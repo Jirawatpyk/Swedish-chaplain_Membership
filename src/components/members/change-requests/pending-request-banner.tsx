@@ -15,9 +15,14 @@
  * `DELETE /api/portal/change-requests/current`; a 200 swaps the banner for a
  * `role="status"` "withdrawn" message (the live region announces it) AND
  * refreshes the server tree, so /portal/edit's form + hint stop describing
- * a request that no longer exists (review round 1, UX C2); a 404 means the
- * request was decided or withdrawn meanwhile — the "gone" message + the same
- * refresh so the profile shows whatever landed; a 503 (READ_ONLY_MODE) has
+ * a request that no longer exists (review round 1, UX C2); a 404 is read by
+ * its BODY (PR-3 polish, silent S-4): `no_pending_request` means the request
+ * was decided or withdrawn meanwhile — the "gone" message + the same refresh
+ * so the profile shows whatever landed; any other 404 (`not_found` — the
+ * platform flag turned off between the render and the click) renders nothing
+ * and refreshes, since the server cannot confirm a message and the flag-off
+ * page drops the banner anyway (no error is logged: nothing failed); a 503
+ * (READ_ONLY_MODE) has
  * its own copy; any other failure stays inline in the same live region (no
  * toast — the banner IS the status surface). Focus after the dialog closes
  * goes through the shared `useDialogFinalFocus` (trigger, else the page
@@ -42,7 +47,8 @@ export interface PendingRequestBannerProps {
   readonly showEditLink?: boolean;
 }
 
-type WithdrawResult = 'withdrawn' | 'gone' | null;
+/** `hidden` — a 404 the server cannot explain (the flag-off race): render nothing, let the refresh decide. */
+type WithdrawResult = 'withdrawn' | 'gone' | 'hidden' | null;
 type WithdrawFailure = 'error' | 'read_only' | null;
 
 export function PendingRequestBanner({ request, showEditLink = true }: PendingRequestBannerProps) {
@@ -74,9 +80,13 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
         return;
       }
       if (res.status === 404) {
-        // decided or withdrawn under us — let the server say what landed
+        // the body says which 404 this is: `no_pending_request` = decided or
+        // withdrawn under us (say so, let the server show what landed);
+        // anything else = the flag-off race — nothing to announce
+        const body: unknown = await res.json().catch(() => null);
+        const gone = typeof body === 'object' && body !== null && (body as { error?: unknown }).error === 'no_pending_request';
         closedViaSuccessRef.current = true;
-        setResult('gone');
+        setResult(gone ? 'gone' : 'hidden');
         startTransition(() => router.refresh());
         return;
       }
@@ -87,6 +97,7 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
     }
   }
 
+  if (result === 'hidden') return null;
   if (result !== null) {
     return (
       <InlineAlert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">

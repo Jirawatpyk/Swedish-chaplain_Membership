@@ -1010,7 +1010,9 @@
           "removeMember": "Show all members",
           "submitterChip": "Showing one person's requests.",
           "removeSubmitter": "Show everyone's requests",
-          "unknownMember": "a member that could not be found"
+          "unknownMember": "a member that could not be found",
+          "resultCount": "{count, plural, =0 {No requests to show} one {Showing # request} other {Showing # requests}}",
+          "resultCountMore": "Showing the first {count} requests — more on the next page"
         },
       "queue": {
           "emptyFiltered": "No change requests match these filters.",
@@ -7243,6 +7245,7 @@
     "statusFailed": "Failed",
     "download": "Download",
     "expiresHint": "Download links expire 1 hour after the archive is ready, for your security. Request a new export if a link has expired.",
+    "loadFailed": "We couldn't load your data exports right now. Refresh to try again — any export you requested is still being prepared.",
     "empty": "You have not requested a data export yet.",
     "errorTitle": "Could not request export",
     "errorBody": "Something went wrong requesting your data export. Please try again.",

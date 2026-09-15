@@ -6059,7 +6059,11 @@ export const insightsMetrics = {
 
 /** Bounded refusal reasons for `members_change_request_refused_total` (contracts § 4). */
 export type ChangeRequestRefusedReason =
+  // the DURABLE FR-008 cap (10 created requests / 24 h, counted from the request table)
   | 'rate_limited'
+  // PR-3 S-2 — the per-actor ATTEMPT bucket on a route refused BEFORE any read
+  // (submit 60 / 10 min; the by-id portal reads 10 / 10 min; withdraw 60 / 10 min)
+  | 'attempt_throttled'
   | 'forbidden'
   | 'archived'
   | 'already_decided'

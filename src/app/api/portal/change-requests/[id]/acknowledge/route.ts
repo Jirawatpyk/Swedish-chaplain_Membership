@@ -8,12 +8,17 @@
  * gate is NOT consulted: a decision shown to a person may be dismissed even
  * after the tenant switched approval off. Envelope `{ error }` on failure;
  * the portal view never carries the reviewer's identity or the staff note.
+ * A miss on the id writes a `member_cross_tenant_probe` row, so every call
+ * first consumes the per-actor probe bucket (10 / 10 min per tenant + user;
+ * 429 `rate_limited` + `Retry-After`, counted `attempt_throttled`, after
+ * READ_ONLY_MODE and before any read — PR-3 S-2).
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
+import { ATTEMPT_WINDOW_SECONDS, PROBE_ATTEMPTS_PER_WINDOW, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 import { acknowledgeChangeRequest, type ChangeRequestId } from '@/modules/members';
@@ -35,6 +40,18 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   // FR-036 — READ_ONLY_MODE (T116): 503 after auth, before any write.
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
+
+  // the probe bucket — consumed on every call, before the id is even parsed
+  const throttled = await refuseWhenAttemptsExhausted({
+    key: `f114:acknowledge-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
+    max: PROBE_ATTEMPTS_PER_WINDOW,
+    windowSeconds: ATTEMPT_WINDOW_SECONDS,
+    errorIdPrefix: ERROR_ID,
+    logPrefix: 'change-requests.acknowledge',
+    requestId: ctx.requestId,
+    tenantId: ctx.tenant.slug,
+  });
+  if (throttled) return throttled;
 
   const { id } = await context.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not_found' }, { status: 404 });

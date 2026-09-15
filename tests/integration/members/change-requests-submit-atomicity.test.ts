@@ -73,7 +73,7 @@ const input = (rawBody: unknown) => ({
   contactId: asContactId(contactId),
   rawBody,
   actorUserId: mu(user.userId),
-  actorRole: 'member',
+  actorRole: 'member' as const,
   requestId: `req-${randomUUID().slice(0, 8)}`,
 });
 

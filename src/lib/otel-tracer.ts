@@ -111,6 +111,26 @@ export function eventsTracer(): Tracer {
 }
 
 /**
+ * F114 T106 — OTel tracer for the members bounded context (the change-request
+ * approval workflow). Trace tree documented in `docs/observability.md § 27`:
+ * `members.change_request.submit → members.change_request.decide`.
+ *
+ * Attribute-redaction contract (§ 27.5): no proposed field VALUE, no decision
+ * reason / note, no member or contact email, no user id. Bounded-cardinality
+ * attributes only: tenant.slug, change_request.id, change_request.scope,
+ * change_request.outcome, change_request.field_count.
+ */
+const MEMBERS_TRACER_NAME = 'swecham.members';
+let cachedMembersTracer: Tracer | null = null;
+
+export function membersTracer(): Tracer {
+  if (!cachedMembersTracer) {
+    cachedMembersTracer = trace.getTracer(MEMBERS_TRACER_NAME, '1.0.0');
+  }
+  return cachedMembersTracer;
+}
+
+/**
  * Round 5 simplification — span lifecycle helper.
  *
  * Wraps `tracer.startSpan(name, {attributes}) → fn(span) → catch:

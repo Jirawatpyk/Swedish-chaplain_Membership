@@ -5,7 +5,10 @@
  *
  * Platform flag OFF → 404 before any session work (dark ship). Member context
  * (member role only; the proxy already applied the CSRF Origin allow-list) →
- * in-route READ_ONLY_MODE 503 (T116) → the use case. There is no id in the
+ * in-route READ_ONLY_MODE 503 (T116) → the submit route's attempt bucket
+ * (60 / 10 min per tenant + user; 429 `rate_limited` + `Retry-After`, counted
+ * `attempt_throttled` — a write is bounded like the write that created the
+ * row, PR-3 S-5) → the use case. There is no id in the
  * URL: the request withdrawn is the one the SESSION's user submitted, so a
  * colleague's request can never be named. 200 with the portal view
  * (`withdrawn/member`), 404 `no_pending_request` when none (a second call is
@@ -19,6 +22,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
+import { ATTEMPT_WINDOW_SECONDS, SUBMIT_ATTEMPTS_PER_WINDOW, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 import { withdrawChangeRequest } from '@/modules/members';
@@ -39,6 +43,17 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   // FR-036 — READ_ONLY_MODE (T116): 503 after auth, before any write.
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
+
+  const throttled = await refuseWhenAttemptsExhausted({
+    key: `f114:withdraw-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
+    max: SUBMIT_ATTEMPTS_PER_WINDOW,
+    windowSeconds: ATTEMPT_WINDOW_SECONDS,
+    errorIdPrefix: ERROR_ID,
+    logPrefix: 'change-requests.withdraw',
+    requestId: ctx.requestId,
+    tenantId: ctx.tenant.slug,
+  });
+  if (throttled) return throttled;
 
   const deps = buildChangeRequestDeps(ctx.tenant);
   const result = await withdrawChangeRequest(deps, {

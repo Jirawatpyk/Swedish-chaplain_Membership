@@ -16,6 +16,16 @@
  */
 import type { TenantContext } from '@/modules/tenants';
 import type { GdprAuditEntry } from '../gdpr-audit-subset';
+import type {
+  ChangeRequestOutcome,
+  ChangeRequestScope,
+  ChangeRequestState,
+  FieldOutcome,
+  ProposableFieldKey,
+  ProposedFieldTarget,
+  ProposedValue,
+  WithdrawnReason,
+} from '@/modules/members';
 
 /** One invoice: serialisable record fields + its PDF bytes (null if undocumented). */
 export interface GdprInvoiceEntry {
@@ -36,25 +46,28 @@ export type GdprTruncatableCategory = 'invoices' | 'events' | 'broadcasts' | 'au
  */
 export interface GdprChangeRequestEntry {
   readonly id: string;
-  readonly scope: string;
-  readonly state: string;
-  readonly outcome: string | null;
-  readonly withdrawnReason: string | null;
+  readonly scope: ChangeRequestScope;
+  readonly state: ChangeRequestState;
+  readonly outcome: ChangeRequestOutcome | null;
+  readonly withdrawnReason: WithdrawnReason | null;
   readonly submittedAt: string;
   readonly submittedBy: { readonly contactId: string; readonly displayName: string };
   readonly decidedAt: string | null;
   readonly decidedBy: 'organisation';
   readonly decisionReason: string | null;
   readonly decisionNote: string | null;
-  readonly fields: readonly {
-    readonly key: string;
-    readonly target: string;
-    readonly seen: unknown;
-    readonly proposed: unknown;
-    readonly outcome: string | null;
-    readonly appliedAt: string | null;
-    readonly affectsTaxDocuments: boolean;
-  }[];
+  readonly fields: readonly GdprChangeRequestFieldEntry[];
+}
+
+/** One proposed field of the entry — the closed unions of the members Domain, ISO-8601 for the date (PR-3 polish, types S4). */
+export interface GdprChangeRequestFieldEntry {
+  readonly key: ProposableFieldKey;
+  readonly target: ProposedFieldTarget;
+  readonly seen: ProposedValue;
+  readonly proposed: ProposedValue;
+  readonly outcome: FieldOutcome | null;
+  readonly appliedAt: string | null;
+  readonly affectsTaxDocuments: boolean;
 }
 
 /**

@@ -23,6 +23,7 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import type { UserId } from '../../../domain/value-objects/user-id';
 import type { AuditPort, ChangeRequestAuditPayload } from '../../ports/audit-port';
@@ -42,7 +43,7 @@ export type SetMemberChangeApprovalEnabledInput = {
   readonly enabled: boolean;
   readonly actorUserId: UserId;
   /** The SESSION role — recorded in the audit payload as `actor_role` (`null` when absent). */
-  readonly actorRole?: string | null;
+  readonly actorRole?: Role | null;
   readonly requestId: string;
 };
 

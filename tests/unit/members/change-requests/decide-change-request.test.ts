@@ -235,7 +235,7 @@ const input = (decisions: ReadonlyArray<{ key: string; outcome: 'approved' | 're
   reason,
   note,
   actorUserId: REVIEWER,
-  actorRole: 'admin',
+  actorRole: 'admin' as const,
   requestId: 'req-d1',
 });
 
@@ -587,5 +587,109 @@ describe('decideChangeRequest — the tx_aborted log carries the CAUSE (round 7,
     const r = await decideChangeRequest(deps, input(ALL_APPROVED));
     expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
     expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected', cause: 'TypeError' }), 'change-request.decide.tx_aborted');
+  });
+});
+
+describe('decideChangeRequest — T105 coverage: every field key applies, every narrowing exercised', () => {
+  const REGISTERED_CURRENT = { line1: '1 Main Rd', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110' };
+  const BILLING_EMPTY = { line1: null, line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null };
+  const field = (key: string, target: 'contact' | 'member', seen: unknown, proposed: unknown) =>
+    ({ key, target, seen, proposed, affectsTaxDocuments: false, outcome: null, appliedAt: null }) as ChangeRequest['fields'][number];
+
+  it('the other seven keys apply: first / last name, role title, a CLEARED phone, company name, website and the registered address', async () => {
+    const request = pendingRequest({
+      fields: [
+        field('first_name', 'contact', 'Anna', 'Annika'),
+        field('last_name', 'contact', 'Svensson', 'Lind'),
+        field('role_title', 'contact', null, 'CEO'),
+        field('phone', 'contact', '+66812345678', null),
+        field('company_name', 'member', 'Nordic Co', 'Nordic Company'),
+        field('website', 'member', 'https://nordic.example', 'https://nordic.se'),
+        field('registered_address', 'member', REGISTERED_CURRENT, { ...REGISTERED_CURRENT, line1: '2 New Rd' }),
+      ],
+    });
+    const { deps, contactRepo, memberRepo } = makeDeps({ request });
+    const keys = request.fields.map((f) => ({ key: f.key, outcome: 'approved' as const }));
+    const r = await decideChangeRequest(deps, input(keys));
+    expect(r.ok && r.value.request.outcome).toBe('approved');
+    expect(contactRepo.updateInTx).toHaveBeenCalledWith(expect.anything(), CONTACT, { firstName: 'Annika', lastName: 'Lind', roleTitle: 'CEO', phone: null });
+    expect(memberRepo.updateFieldsInTx).toHaveBeenCalledWith(expect.anything(), MEMBER, {
+      companyName: 'Nordic Company',
+      website: 'https://nordic.se',
+      addressLine1: '2 New Rd',
+      addressLine2: null,
+      subDistrict: null,
+      city: 'Bangkok',
+      province: null,
+      postalCode: '10110',
+    });
+  });
+
+  it('every key whose proposed value already equals the record is approved WITHOUT a write (FR-015, all nine keys)', async () => {
+    const request = pendingRequest({
+      fields: [
+        field('first_name', 'contact', 'Anna', 'Anna'),
+        field('last_name', 'contact', 'Svensson', 'Svensson'),
+        field('role_title', 'contact', null, null),
+        field('phone', 'contact', '+66812345678', '+66812345678'),
+        field('company_name', 'member', 'Nordic Co', 'Nordic Co'),
+        field('website', 'member', 'https://nordic.example', 'https://nordic.example'),
+        field('description', 'member', null, null),
+        field('registered_address', 'member', REGISTERED_CURRENT, REGISTERED_CURRENT),
+        field('billing_address', 'member', BILLING_EMPTY, BILLING_EMPTY),
+      ],
+    });
+    const { deps, contactRepo, memberRepo } = makeDeps({ request });
+    const r = await decideChangeRequest(deps, input(request.fields.map((f) => ({ key: f.key, outcome: 'approved' as const }))));
+    expect(r.ok && r.value.request.outcome).toBe('approved');
+    expect(contactRepo.updateInTx).not.toHaveBeenCalled();
+    expect(memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
+  });
+
+  it('a decided request answered with a decision of a DIFFERENT LENGTH is already_decided (never a repeat, never coverage-checked first)', async () => {
+    const request = pendingRequest({
+      state: 'decided',
+      outcome: 'approved',
+      decidedAt: NOW,
+      decidedByUserId: REVIEWER,
+      fields: pendingRequest().fields.map((f) => ({ ...f, outcome: 'approved' as const, appliedAt: NOW })),
+    });
+    const { deps } = makeDeps({ request });
+    const r = await decideChangeRequest(deps, input([{ key: 'phone', outcome: 'approved' }]));
+    expect(r).toMatchObject({ ok: false, error: { type: 'already_decided', decided: { byUserId: REVIEWER, outcome: 'approved' } } });
+  });
+
+  it('a fault on the decision write that is NOT the lock race → server_error (tx aborted)', async () => {
+    const { deps, repo, audit } = makeDeps();
+    repo.failNext('decideInTx', { code: 'repo.unexpected' });
+    const r = await decideChangeRequest(deps, input(ALL_APPROVED));
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'decide: repo.unexpected' } });
+    expect(audit.events).toHaveLength(0);
+  });
+
+  it('a NON-Error throw inside the transaction is logged in its string form', async () => {
+    const { deps, repo } = makeDeps();
+    repo.findByIdInTx = async () => {
+      throw 'connection reset';
+    };
+    const r = await decideChangeRequest(deps, input(ALL_APPROVED));
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'decide: unexpected' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset' }), 'change-request.decide.unexpected');
+  });
+
+  it('the probe audit itself failing is logged (the not_found refusal stands regardless)', async () => {
+    const { deps, audit } = makeDeps();
+    audit.failNext();
+    const r = await decideChangeRequest(deps, { ...input(ALL_APPROVED), changeRequestId: '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId });
+    expect(r).toEqual({ ok: false, error: { type: 'not_found' } });
+    expect(audit.events).toHaveLength(0);
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected' }), 'change-request.probe_audit_failed');
+  });
+
+  it('a submitting contact whose preferred language is neither th nor sv is emailed in English (the locale fallback)', async () => {
+    const { deps, emails } = makeDeps({ contacts: [contact({ preferredLanguage: 'en' })] });
+    const r = await decideChangeRequest(deps, input(ALL_APPROVED));
+    expect(r.ok).toBe(true);
+    expect(emails.enqueued).toEqual([expect.objectContaining({ type: 'member_change_request_decided_member', locale: 'en' })]);
   });
 });

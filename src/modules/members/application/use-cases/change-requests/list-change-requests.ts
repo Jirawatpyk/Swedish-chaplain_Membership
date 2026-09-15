@@ -38,6 +38,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import { OVERDUE_AFTER_DAYS, type ChangeRequest, type ChangeRequestId, type ChangeRequestState } from '../../../domain/change-request/change-request';
 import type { MemberId } from '../../../domain/member';
@@ -281,7 +282,7 @@ export async function getPortalChangeRequest(
     readonly changeRequestId: ChangeRequestId;
     readonly userId: UserId;
     readonly memberId: MemberId;
-    readonly actorRole: string | null;
+    readonly actorRole: Role | null;
     readonly requestId: string;
   },
 ): Promise<Result<ChangeRequestListRow, { readonly type: 'not_found' } | ListChangeRequestsError>> {

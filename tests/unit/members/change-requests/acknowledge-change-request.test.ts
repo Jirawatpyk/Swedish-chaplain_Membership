@@ -31,6 +31,8 @@ vi.mock('@/lib/metrics', () => ({
   },
 }));
 
+import { err } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId, asContactId } from '@/modules/members';
 import type { UserId } from '@/modules/members/domain/value-objects/user-id';
@@ -144,5 +146,32 @@ describe('acknowledgeChangeRequest', () => {
     const b = makeDeps();
     b.repo.failNext('acknowledgeInTx');
     expect(await acknowledgeChangeRequest(b.deps, { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member', requestId: 'req-ack' })).toMatchObject({ ok: false, error: { type: 'server_error' } });
+  });
+});
+
+describe('acknowledgeChangeRequest — the failure log (T105: every narrowing exercised both ways)', () => {
+  const input = { changeRequestId: REQ, actorUserId: SUBMITTER, actorRole: 'member' as const, requestId: 'req-ack' };
+
+  it('a repo fault WITH a cause logs err: <code> + cause: <error kind>', async () => {
+    const { deps, repo } = makeDeps();
+    repo.findByIdInTx = async () => err({ code: 'repo.unexpected' as const, cause: new TypeError('column missing') });
+    const r = await acknowledgeChangeRequest(deps, input);
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'acknowledge: repo.unexpected' } });
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected', cause: 'TypeError' }), 'change-request.acknowledge.failed');
+  });
+
+  it('a throw that is not a repo error is logged by its class name (an Error) or its string form (a non-Error), cause undefined', async () => {
+    const a = makeDeps();
+    a.repo.findByIdInTx = async () => {
+      throw new TypeError('connection reset');
+    };
+    expect(await acknowledgeChangeRequest(a.deps, input)).toEqual({ ok: false, error: { type: 'server_error', message: 'acknowledge: TypeError' } });
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.objectContaining({ err: 'TypeError', cause: undefined }), 'change-request.acknowledge.failed');
+    const b = makeDeps();
+    b.repo.findByIdInTx = async () => {
+      throw 'connection reset';
+    };
+    expect(await acknowledgeChangeRequest(b.deps, input)).toEqual({ ok: false, error: { type: 'server_error', message: 'acknowledge: connection reset' } });
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset', cause: undefined }), 'change-request.acknowledge.failed');
   });
 });

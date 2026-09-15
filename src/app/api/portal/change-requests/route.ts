@@ -50,10 +50,8 @@ import {
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { rateLimiter } from '@/lib/auth-deps';
-import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
-import { membersMetrics } from '@/lib/metrics';
 import { requireMemberContext } from '@/lib/member-context';
+import { ATTEMPT_WINDOW_SECONDS, SUBMIT_ATTEMPTS_PER_WINDOW, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { z } from 'zod';
@@ -71,8 +69,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ERROR_ID = 'M114.portal.submit';
-const SUBMIT_ATTEMPTS_PER_WINDOW = 60;
-const SUBMIT_ATTEMPT_WINDOW_SECONDS = 600;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // FR-039 — dark ship: 404 before any session work.
@@ -90,33 +86,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (roResp) return roResp;
 
   // The attempt bucket (see the docblock) — before the gate and the body, so
-  // a refused attempt costs one Redis round-trip and nothing else.
-  const attempts = await rateLimiter.check(
-    `f114:submit-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
-    SUBMIT_ATTEMPTS_PER_WINDOW,
-    SUBMIT_ATTEMPT_WINDOW_SECONDS,
-  );
-  if ('fellBack' in attempts && attempts.fellBack === true) {
-    // the fallback is a per-process window, not open — but the cap is now per
-    // instance, and an operator reading a 429 spike needs to know which world
-    logger.warn(
-      { errorId: `${ERROR_ID}.attempt_bucket_fell_back`, requestId: ctx.requestId, tenantId: ctx.tenant.slug },
-      'change-requests.submit: attempt bucket on the in-process fallback (Upstash unreachable)',
-    );
-  }
-  if (!attempts.success) {
-    // the one F114 refusal with no audit row (the durable cap writes one) — so it logs
-    logger.warn(
-      { errorId: `${ERROR_ID}.attempts_exhausted`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, reset: attempts.reset },
-      'change-requests.submit: attempt bucket exhausted',
-    );
-    membersMetrics.changeRequests.refused(ctx.tenant.slug, 'rate_limited');
-    const retryAfterSeconds = retryAfterSecondsFromRl({ reset: attempts.reset });
-    return NextResponse.json(
-      { error: 'rate_limited', retryAfterSeconds },
-      { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
-    );
-  }
+  // a refused attempt costs one Redis round-trip and nothing else; counted
+  // `attempt_throttled`, apart from the durable cap's `rate_limited` (PR-3 S-2).
+  const throttled = await refuseWhenAttemptsExhausted({
+    key: `f114:submit-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
+    max: SUBMIT_ATTEMPTS_PER_WINDOW,
+    windowSeconds: ATTEMPT_WINDOW_SECONDS,
+    errorIdPrefix: ERROR_ID,
+    logPrefix: 'change-requests.submit',
+    requestId: ctx.requestId,
+    tenantId: ctx.tenant.slug,
+  });
+  if (throttled) return throttled;
 
   const deps = buildChangeRequestDeps(ctx.tenant);
 

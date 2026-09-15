@@ -1010,7 +1010,9 @@
           "removeMember": "Visa alla medlemmar",
           "submitterChip": "Visar en persons begäranden.",
           "removeSubmitter": "Visa allas begäranden",
-          "unknownMember": "en medlem som inte kunde hittas"
+          "unknownMember": "en medlem som inte kunde hittas",
+          "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",
+          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida"
         },
       "queue": {
           "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
@@ -7243,6 +7245,7 @@
     "statusFailed": "Misslyckades",
     "download": "Ladda ner",
     "expiresHint": "Nedladdningslänkar upphör att gälla 1 timme efter att arkivet är klart, för din säkerhet. Begär en ny export om en länk har gått ut.",
+    "loadFailed": "Vi kunde inte läsa in dina dataexporter just nu. Uppdatera sidan för att försöka igen – en export du har begärt förbereds fortfarande.",
     "empty": "Du har inte begärt någon dataexport ännu.",
     "errorTitle": "Kunde inte begära export",
     "errorBody": "Något gick fel när din dataexport begärdes. Försök igen.",

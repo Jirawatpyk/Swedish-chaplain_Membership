@@ -561,8 +561,9 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     // accname (like jsdom's) still honours `label[for]` → button, so the
     // regression guard is the unit test's `toHaveAttribute('aria-label', …)`;
     // axe's `aria-input-field-name` skips buttons altogether
-    await expect(page.locator('#cr-filter-state')).toHaveAccessibleName(adminCopy.filters.state);
-    await expect(page.locator('#cr-filter-outcome')).toHaveAccessibleName(adminCopy.filters.outcome);
+    // the ids are `useId()`-minted (PR-3 L5), so the triggers are found by their accessible name
+    await expect(page.getByRole('combobox', { name: adminCopy.filters.state })).toHaveAccessibleName(adminCopy.filters.state);
+    await expect(page.getByRole('combobox', { name: adminCopy.filters.outcome })).toHaveAccessibleName(adminCopy.filters.outcome);
     // Apply is a same-page navigation: the pressed button keeps focus — the bar
     // is never remounted on a filter change (UX re-review N1 / R2)
     const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });

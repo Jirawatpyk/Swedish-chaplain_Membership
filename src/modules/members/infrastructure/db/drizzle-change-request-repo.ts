@@ -282,6 +282,49 @@ function afterCursor(cursor: ChangeRequestCursor | null, oldestFirst: boolean) {
     : or(lt(t, cursor.submittedAt), and(eq(t, cursor.submittedAt), lt(i, cursor.id)));
 }
 
+function pageLimit(page: ChangeRequestPage): number {
+  return Math.max(1, Math.min(page.limit, 100));
+}
+
+/** The ONE page statement every list runs: the joined select, the keyset predicate, the order, `limit + 1` for `hasMore`. */
+function listQuery(tx: TenantTx, where: ReturnType<typeof and>, oldestFirst: boolean, page: ChangeRequestPage) {
+  const order = oldestFirst
+    ? [asc(memberChangeRequests.submittedAt), asc(memberChangeRequests.id)]
+    : [desc(memberChangeRequests.submittedAt), desc(memberChangeRequests.id)];
+  return joinedSelect(tx)
+    .where(and(where, afterCursor(page.cursor, oldestFirst)))
+    .orderBy(...order)
+    .limit(pageLimit(page) + 1);
+}
+
+/** The queue predicate `listQueue` applies — one source for the repo method and the EXPLAIN control. */
+function queueWhere(filter: ChangeRequestListFilter): { readonly state: ChangeRequestState; readonly where: ReturnType<typeof and> } {
+  const state = filter.state ?? 'pending';
+  return {
+    state,
+    where: and(
+      eq(memberChangeRequests.state, state),
+      filter.outcome ? eq(memberChangeRequests.outcome, filter.outcome) : undefined,
+      filter.memberId ? eq(memberChangeRequests.memberId, filter.memberId) : undefined,
+      filter.submitterUserId ? eq(memberChangeRequests.submittedByUserId, filter.submitterUserId) : undefined,
+      filter.from ? gte(memberChangeRequests.submittedAt, filter.from) : undefined,
+      filter.to ? lte(memberChangeRequests.submittedAt, filter.to) : undefined,
+    ),
+  };
+}
+
+/**
+ * The exact statement `listQueue` issues for a filter + page, as a query
+ * builder — for the live `EXPLAIN` control in
+ * `tests/integration/members/change-requests-queue-pagination.test.ts` (the
+ * REAL joined query, not a single-table proxy — PR-3 polish). Never a second
+ * read path: `listQueue` → `runList` runs this same builder.
+ */
+export function queueListQuery(tx: TenantTx, filter: ChangeRequestListFilter, page: ChangeRequestPage) {
+  const { state, where } = queueWhere(filter);
+  return listQuery(tx, where, state === 'pending', page);
+}
+
 async function runList(
   ctx: TenantContext,
   where: ReturnType<typeof and>,
@@ -289,15 +332,9 @@ async function runList(
   page: ChangeRequestPage,
 ): Promise<Result<ChangeRequestListResult, RepoError>> {
   try {
-    const limit = Math.max(1, Math.min(page.limit, 100));
+    const limit = pageLimit(page);
     return await runInTenant(ctx, async (tx) => {
-      const order = oldestFirst
-        ? [asc(memberChangeRequests.submittedAt), asc(memberChangeRequests.id)]
-        : [desc(memberChangeRequests.submittedAt), desc(memberChangeRequests.id)];
-      const rows = await joinedSelect(tx)
-        .where(and(where, afterCursor(page.cursor, oldestFirst)))
-        .orderBy(...order)
-        .limit(limit + 1);
+      const rows = await listQuery(tx, where, oldestFirst, page);
       const hasMore = rows.length > limit;
       const slice = hasMore ? rows.slice(0, limit) : rows;
       const fields = await loadFields(
@@ -543,15 +580,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
   },
 
   async listQueue(ctx, filter: ChangeRequestListFilter, page) {
-    const state = filter.state ?? 'pending';
-    const where = and(
-      eq(memberChangeRequests.state, state),
-      filter.outcome ? eq(memberChangeRequests.outcome, filter.outcome) : undefined,
-      filter.memberId ? eq(memberChangeRequests.memberId, filter.memberId) : undefined,
-      filter.submitterUserId ? eq(memberChangeRequests.submittedByUserId, filter.submitterUserId) : undefined,
-      filter.from ? gte(memberChangeRequests.submittedAt, filter.from) : undefined,
-      filter.to ? lte(memberChangeRequests.submittedAt, filter.to) : undefined,
-    );
+    const { state, where } = queueWhere(filter);
     // FR-027: pending = oldest waiting on top; history = newest first.
     return runList(ctx, where, state === 'pending', page);
   },
