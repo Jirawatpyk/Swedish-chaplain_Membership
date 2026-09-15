@@ -29,7 +29,7 @@ import type { UserId } from '../../../domain/value-objects/user-id';
 import type { AuditPort, ChangeRequestAuditPayload } from '../../ports/audit-port';
 import type { ChangeRequestRepo } from '../../ports/change-request-repo';
 import type { ClockPort } from '../../ports/clock-port';
-import { isRepoError, type RepoError } from '../../ports/member-repo';
+import { isRepoError, repoErrorCause, type RepoError } from '../../ports/member-repo';
 import { UseCaseAbort } from '../../tx-abort';
 
 export type WithdrawChangeRequestDeps = {
@@ -92,10 +92,16 @@ export async function withdrawChangeRequest(
     return ok({ request });
   } catch (e) {
     if (e instanceof Refusal) return err(e.error);
-    const code = e instanceof UseCaseAbort && isRepoError(e.error) ? e.error.code : e instanceof Error ? e.name : String(e);
-    const cause = e instanceof UseCaseAbort && isRepoError(e.error) ? errKind('cause' in e.error ? e.error.cause : undefined) : undefined;
+    // an aborted tx carries the repo's own code + cause; anything else is a throw
+    const repoError = e instanceof UseCaseAbort && isRepoError(e.error) ? e.error : null;
+    const code = repoError?.code ?? (e instanceof Error ? e.name : String(e));
     logger.error(
-      { tenantId: deps.tenant.slug, requestId: input.requestId, err: code, cause },
+      {
+        tenantId: deps.tenant.slug,
+        requestId: input.requestId,
+        err: code,
+        cause: repoError === null ? undefined : errKind(repoErrorCause(repoError)),
+      },
       'change-request.withdraw.failed',
     );
     return err({ type: 'server_error', message: `withdraw: ${code}` });

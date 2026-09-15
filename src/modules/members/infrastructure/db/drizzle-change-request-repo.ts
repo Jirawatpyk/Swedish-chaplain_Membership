@@ -68,12 +68,6 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * `jsonb` is unconstrained: a value must be a string, null, or an address
- * object of string / null lines — anything else is a corrupt row and throws
- * (→ `repo.unexpected`), never a `number` handed to `.trim()` on the review
- * page (round 6, types F8).
- */
-/**
  * A row that contradicts the schema's own rules — a key outside the CHECK, a
  * value of the wrong shape, a state whose columns disagree. Named so `errKind`
  * yields something an operator can grep, and LOGGED at the throw with the
@@ -91,6 +85,12 @@ function corruptRow(message: string, ids: Record<string, string>): ChangeRequest
   return new ChangeRequestRowError(message);
 }
 
+/**
+ * `jsonb` is unconstrained: a value must be a string, null, or an address
+ * object of string / null lines — anything else is a corrupt row and throws
+ * (→ `repo.unexpected`), never a `number` handed to `.trim()` on the review
+ * page (round 6, types F8).
+ */
 function parseProposedValue(raw: unknown, key: ProposableFieldKey, column: string, requestId: string): ProposedValue {
   const address = isAddressGroupKey(key);
   if (raw === null || raw === undefined) return null;
@@ -347,25 +347,24 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
       // A unique violation from here on is the (request_id, field_key)
       // uniqueness of the field rows — a caller bug, never the one-pending
       // race the outer catch maps (review: migration M-4).
-      let fieldRows: MemberChangeRequestFieldRow[];
+      let fieldRows: MemberChangeRequestFieldRow[] = [];
       try {
-        fieldRows =
-        draft.fields.length === 0
-          ? []
-          : await tx
-              .insert(memberChangeRequestFields)
-              .values(
-                draft.fields.map((f) => ({
-                  tenantId: draft.tenantId,
-                  requestId: row.id,
-                  fieldKey: f.key,
-                  target: f.target,
-                  seenValue: f.seen,
-                  proposedValue: f.proposed,
-                  affectsTaxDocuments: f.affectsTaxDocuments,
-                })),
-              )
-              .returning();
+        if (draft.fields.length > 0) {
+          fieldRows = await tx
+            .insert(memberChangeRequestFields)
+            .values(
+              draft.fields.map((f) => ({
+                tenantId: draft.tenantId,
+                requestId: row.id,
+                fieldKey: f.key,
+                target: f.target,
+                seenValue: f.seen,
+                proposedValue: f.proposed,
+                affectsTaxDocuments: f.affectsTaxDocuments,
+              })),
+            )
+            .returning();
+        }
       } catch (e) {
         return err(unexpected(e));
       }

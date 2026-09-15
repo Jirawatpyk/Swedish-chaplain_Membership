@@ -67,8 +67,6 @@ import {
 } from '@/modules/members';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 
-type SubmitRefusalError = SubmitChangeRequestError;
-
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -279,7 +277,7 @@ function rememberableBody(body: {
 }
 
 /** The 4xx arms the client can act on — stable for a given body, hence rememberable. */
-function mapRefusal(error: SubmitRefusalError): Refusal | null {
+function mapRefusal(error: SubmitChangeRequestError): Refusal | null {
   switch (error.type) {
     case 'forbidden':
       return {

@@ -3,9 +3,9 @@
 /**
  * F114 — one proposed / seen / current value rendered for people: a scalar
  * as text, `null`/'' as the localised "(empty)" sentinel (muted — see memory
- * "muted = empty sentinel"), an address group as a labelled line list. Shared
- * by the staff decision table (US2) and the history surfaces; the portal diff
- * table carries its own inline copy of the same rule.
+ * "muted = empty sentinel"), an address group as a labelled line list. The ONE
+ * copy of that rule: the staff decision table (US2), the history surfaces and
+ * the portal diff table all render values through this component.
  */
 import { useTranslations } from 'next-intl';
 import type { ChangeRequestFieldView } from '@/lib/change-request-portal-view';

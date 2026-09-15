@@ -35,7 +35,6 @@
  * own truth, not a hand-copied constant (review round 1, P-6 / SEC-S2).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import type { TenantTx } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 import type { ChangeRequestScrubPort, ClosedChangeRequest } from '../../application/ports/change-request-scrub-port';
 import type { ChangeRequestId, ChangeRequestScope } from '../../domain/change-request/change-request';
@@ -55,8 +54,7 @@ export const REQUEST_SCRUBBED_COLUMNS: ReadonlyArray<(typeof REASON_COLUMNS)[num
 ];
 
 export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
-  async scrubForMemberInTx(txUnknown, memberId, at) {
-    const tx = txUnknown as TenantTx;
+  async scrubForMemberInTx(tx, memberId, at) {
     try {
       const ids = (
         await tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId)).for('update')
@@ -98,8 +96,7 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
   },
 
   // the post-member-lock rescan (see the port) — a plain read on the same tx
-  async listRequestIdsInTx(txUnknown, memberId) {
-    const tx = txUnknown as TenantTx;
+  async listRequestIdsInTx(tx, memberId) {
     try {
       const rows = await tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId));
       return ok(rows.map((r) => r.id as ChangeRequestId));

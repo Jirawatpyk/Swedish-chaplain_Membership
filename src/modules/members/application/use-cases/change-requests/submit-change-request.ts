@@ -82,7 +82,7 @@ import type { ChangeRequestDraft, ChangeRequestRepo } from '../../ports/change-r
 import type { ClockPort } from '../../ports/clock-port';
 import type { ContactRepo } from '../../ports/contact-repo';
 import type { EmailPort } from '../../ports/email-port';
-import { isRepoError, type MemberRepo, type RepoError } from '../../ports/member-repo';
+import { isRepoError, repoErrorCause, type MemberRepo, type RepoError } from '../../ports/member-repo';
 import type { ReviewerDirectoryPort, Reviewer } from '../../ports/reviewer-directory-port';
 import { UseCaseAbort } from '../../tx-abort';
 
@@ -361,10 +361,14 @@ export async function submitChangeRequest(
   // `already_pending` (the member cannot silently "revert" it — withdrawing
   // is US5), never "nothing to submit" (round 6, code #5)
   const nothingDiffers = fields.length === 0;
-  const scopeResult = nothingDiffers ? ok('company' as ChangeRequestScope) : deriveScope(
-    fields.map((f) => f.key),
-    submitterIsPrimary,
-  );
+  // `deriveScope([])` refuses `no_fields`, and a no-op submit never reaches a
+  // write — so it parks a placeholder the tx returns before reading `scope`
+  const scopeResult = nothingDiffers
+    ? ok<ChangeRequestScope>('company')
+    : deriveScope(
+        fields.map((f) => f.key),
+        submitterIsPrimary,
+      );
   if (!scopeResult.ok) {
     // Unreachable after the company-key guard above; kept as a typed refusal
     // rather than a cast so a future Domain rule change surfaces here.
@@ -606,7 +610,7 @@ export async function submitChangeRequest(
         }
       }
       logger.error(
-        { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code, cause: errKind('cause' in re ? re.cause : undefined) },
+        { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code, cause: errKind(repoErrorCause(re)) },
         'change-request.submit.tx_aborted',
       );
       return err({ type: 'server_error', message: `submit: ${re.code}` });
@@ -642,7 +646,7 @@ function mapLoadError(
   if (error.code === 'repo.not_found') return { type: 'not_found' };
   // the pre-tx reads used to fail without a line (the tx path logs its cause) — PR review
   logger.error(
-    { ...at, err: error.code, cause: errKind(error.code === 'repo.unexpected' ? error.cause : undefined) },
+    { ...at, err: error.code, cause: errKind(repoErrorCause(error)) },
     'change-request.submit: pre-tx read failed',
   );
   return { type: 'server_error', message: error.code };

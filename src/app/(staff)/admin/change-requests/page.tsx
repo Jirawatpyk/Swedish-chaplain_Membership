@@ -181,8 +181,10 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   }
   const defaultView = !filtered && !q.cursor;
 
-  // a chip's "show all" link keeps every OTHER filter (UX I3)
-  const hrefWithout = (drop: 'memberId' | 'submitter') => {
+  // This view's filters as query params, minus the one a chip drops — the
+  // chips and the "Next page" link rebuild the SAME view (never the cursor:
+  // a chip restarts paging, and "Next page" sets its own).
+  const filterParams = (drop?: 'memberId' | 'submitter') => {
     const params = new URLSearchParams();
     if (q.state) params.set('state', q.state);
     if (outcome) params.set('outcome', outcome);
@@ -190,20 +192,19 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     if (q.submitter && drop !== 'submitter') params.set('submitter', q.submitter);
     if (q.from) params.set('from', q.from);
     if (q.to) params.set('to', q.to);
-    const qs = params.toString();
+    return params;
+  };
+
+  // a chip's "show all" link keeps every OTHER filter (UX I3)
+  const hrefWithout = (drop: 'memberId' | 'submitter') => {
+    const qs = filterParams(drop).toString();
     return qs ? `/admin/change-requests?${qs}` : '/admin/change-requests';
   };
 
   // the "Next page" link keeps every filter, swaps the cursor
   const nextHref = (() => {
     if (!page.nextCursor) return null;
-    const params = new URLSearchParams();
-    if (q.state) params.set('state', q.state);
-    if (outcome) params.set('outcome', outcome);
-    if (q.memberId) params.set('memberId', q.memberId);
-    if (q.submitter) params.set('submitter', q.submitter);
-    if (q.from) params.set('from', q.from);
-    if (q.to) params.set('to', q.to);
+    const params = filterParams();
     params.set('cursor', page.nextCursor);
     return `/admin/change-requests?${params.toString()}`;
   })();

@@ -302,6 +302,19 @@ folder run it REPORTS the p95 and still asserts the walk, the order, no gap / du
 control. Both modes proven: `QUEUE_PAGE_P95_BUDGET_MS=1` under the folder flag fails (312 ms > 1), the
 folder flag alone reports and passes.
 
+### code-simplifier pass (the maintainer's "รันเลย", Opus, source only)
+
+Seventeen source files, no test edited, behaviour kept — `repoErrorCause(RepoError)` for the eight
+`'cause' in error` narrowings this branch added; the diff table renders `ProposedValueDisplay` instead
+of its byte-identical inline copy; `pickDecidedBy`, `filterParams(drop?)`, `SCOPE_PARAMS` +
+`stagedState` / `stagedOutcome`, `BILLING_GROUP_FIELDS` shared by the schema and `billTouched`,
+`parseCursor`; the port-typed `tx` in the two adapters (four casts gone) and three `as UserId` casts
+on the GDPR requester; nested ternaries → named rules with `void _exhaustive` (`waitedUntil`,
+`statusMessage`), so a fourth state is a compile error. Left on purpose: the badge's fail-soft `else`,
+the POST success-shape ternary, JSX conditional chains. Gates after the pass: typecheck 0, full lint,
+unit + contract 410 files / 3,952 tests, integration by path (erasure-scrub, repo, rate-cap), e2e US4 +
+US5 on chromium 6 passed / 1 skipped (persona).
+
 ## Gate output at the branch head `39e5fcbb6` (after the PR-1 closures + their re-reviews)
 
 | Gate | Result |

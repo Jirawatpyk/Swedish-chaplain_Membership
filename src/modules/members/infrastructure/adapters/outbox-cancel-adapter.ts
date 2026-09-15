@@ -38,16 +38,14 @@
  * safety.
  */
 import { sql } from 'drizzle-orm';
-import type { TenantTx } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 import type { OutboxCancelPort } from '../../application/ports/outbox-cancel-port';
 
 export const outboxCancelAdapter: OutboxCancelPort = {
-  async cancelPendingForEmailsInTx(txUnknown, emails, erasedMemberId) {
+  async cancelPendingForEmailsInTx(tx, emails, erasedMemberId) {
     // Empty work-list → no-op (avoid a degenerate `ANY('{}')` scan). Cheap
     // guard so an erased member with no queued mail does not touch the table.
     if (emails.length === 0) return ok({ cancelledCount: 0 });
-    const tx = txUnknown as TenantTx;
     try {
       // Raw DELETE so the two cross-member ownership guards (NOT EXISTS
       // anti-joins on `contacts` / `contacts ⨝ users`) can sit in the WHERE
@@ -96,8 +94,7 @@ export const outboxCancelAdapter: OutboxCancelPort = {
   // member's still-pending rows are found by that key (no ownership guard is
   // needed — the key IS the owner). Only `pending` rows go; sent /
   // permanently_failed history survives.
-  async cancelPendingForMemberInTx(txUnknown, erasedMemberId) {
-    const tx = txUnknown as TenantTx;
+  async cancelPendingForMemberInTx(tx, erasedMemberId) {
     try {
       const deleted = (await tx.execute(sql`
         DELETE FROM notifications_outbox o

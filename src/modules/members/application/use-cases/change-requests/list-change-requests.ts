@@ -50,7 +50,7 @@ import type {
   ChangeRequestRepo,
 } from '../../ports/change-request-repo';
 import type { ClockPort } from '../../ports/clock-port';
-import type { RepoError } from '../../ports/member-repo';
+import { repoErrorCause, type RepoError } from '../../ports/member-repo';
 import { auditChangeRequestProbe } from './decide-change-request';
 
 // ---------------------------------------------------------------------------
@@ -135,10 +135,36 @@ function clamp(limit: number, max: number, fallback: number): number {
   return Math.max(1, Math.min(Math.trunc(limit), max));
 }
 
+/**
+ * `null` raw = the first page; a raw the decoder refuses is `invalid_cursor`
+ * (a 400), never page one silently — one rule for all three list use cases.
+ */
+function parseCursor(raw: string | null): Result<ChangeRequestCursor | null, ListChangeRequestsError> {
+  if (raw === null) return ok(null);
+  const cursor = decodeChangeRequestCursor(raw);
+  return cursor === null ? err({ type: 'invalid_cursor' }) : ok(cursor);
+}
+
+/** The instant a request STOPPED waiting; `null` while it still is (or when the column is missing). */
+function waitedUntil(request: ChangeRequest): Date | null {
+  switch (request.state) {
+    case 'decided':
+      return request.decidedAt;
+    case 'withdrawn':
+      return request.withdrawnAt;
+    case 'pending':
+      return null;
+    default: {
+      const _exhaustive: never = request.state;
+      void _exhaustive;
+      return null;
+    }
+  }
+}
+
 /** Seconds a request waited — to now while pending, to its terminal transition otherwise. */
 export function waitingSecondsOf(request: ChangeRequest, now: Date): number {
-  const end =
-    request.state === 'decided' ? (request.decidedAt ?? now) : request.state === 'withdrawn' ? (request.withdrawnAt ?? now) : now;
+  const end = waitedUntil(request) ?? now;
   return Math.max(0, Math.floor((end.getTime() - request.submittedAt.getTime()) / 1000));
 }
 
@@ -183,7 +209,7 @@ function visibleTo(row: ChangeRequestListRow, viewerUserId: UserId, memberId: Me
 
 function serverError(deps: ListChangeRequestsDeps, what: string, error: RepoError): ListChangeRequestsError {
   logger.error(
-    { tenantId: deps.tenant.slug, err: error.code, cause: errKind('cause' in error ? error.cause : undefined) },
+    { tenantId: deps.tenant.slug, err: error.code, cause: errKind(repoErrorCause(error)) },
     `change-request.list.${what}_failed`,
   );
   return { type: 'server_error', message: `${what}: ${error.code}` };
@@ -197,11 +223,11 @@ export async function listChangeRequestQueue(
   deps: ListChangeRequestsDeps,
   input: { readonly filter: ChangeRequestListFilter; readonly cursor: string | null; readonly limit: number },
 ): Promise<Result<ChangeRequestQueuePage, ListChangeRequestsError>> {
-  const cursor = input.cursor === null ? null : decodeChangeRequestCursor(input.cursor);
-  if (input.cursor !== null && cursor === null) return err({ type: 'invalid_cursor' });
+  const cursor = parseCursor(input.cursor);
+  if (!cursor.ok) return err(cursor.error);
   const now = deps.clock.now();
   const [page, stats] = await Promise.all([
-    deps.changeRequestRepo.listQueue(deps.tenant, input.filter, { cursor, limit: clamp(input.limit, QUEUE_PAGE_MAX, QUEUE_PAGE_DEFAULT) }),
+    deps.changeRequestRepo.listQueue(deps.tenant, input.filter, { cursor: cursor.value, limit: clamp(input.limit, QUEUE_PAGE_MAX, QUEUE_PAGE_DEFAULT) }),
     deps.changeRequestRepo.pendingStats(deps.tenant),
   ]);
   if (!page.ok) return err(serverError(deps, 'queue', page.error));
@@ -218,10 +244,10 @@ export async function listMemberChangeRequests(
   deps: ListChangeRequestsDeps,
   input: { readonly memberId: MemberId; readonly cursor: string | null; readonly limit: number },
 ): Promise<Result<ChangeRequestHistoryPage, ListChangeRequestsError>> {
-  const cursor = input.cursor === null ? null : decodeChangeRequestCursor(input.cursor);
-  if (input.cursor !== null && cursor === null) return err({ type: 'invalid_cursor' });
+  const cursor = parseCursor(input.cursor);
+  if (!cursor.ok) return err(cursor.error);
   const now = deps.clock.now();
-  const page = await deps.changeRequestRepo.listByMember(deps.tenant, input.memberId, { cursor, limit: clamp(input.limit, QUEUE_PAGE_MAX, QUEUE_PAGE_DEFAULT) });
+  const page = await deps.changeRequestRepo.listByMember(deps.tenant, input.memberId, { cursor: cursor.value, limit: clamp(input.limit, QUEUE_PAGE_MAX, QUEUE_PAGE_DEFAULT) });
   if (!page.ok) return err(serverError(deps, 'member_history', page.error));
   return ok({
     items: page.value.items.map((row) => toItem(row, now)),
@@ -233,10 +259,10 @@ export async function listPortalChangeRequests(
   deps: ListChangeRequestsDeps,
   input: { readonly userId: UserId; readonly memberId: MemberId; readonly state?: ChangeRequestState; readonly cursor: string | null; readonly limit: number },
 ): Promise<Result<PortalChangeRequestPage, ListChangeRequestsError>> {
-  const cursor = input.cursor === null ? null : decodeChangeRequestCursor(input.cursor);
-  if (input.cursor !== null && cursor === null) return err({ type: 'invalid_cursor' });
+  const cursor = parseCursor(input.cursor);
+  if (!cursor.ok) return err(cursor.error);
   const page = await deps.changeRequestRepo.listVisibleToUser(deps.tenant, input.userId, input.memberId, {
-    cursor,
+    cursor: cursor.value,
     limit: clamp(input.limit, PORTAL_PAGE_MAX, PORTAL_PAGE_DEFAULT),
     ...(input.state ? { state: input.state } : {}),
   });

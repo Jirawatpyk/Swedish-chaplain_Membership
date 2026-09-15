@@ -40,6 +40,15 @@ export interface ChangeRequestQueueItemView {
   readonly decidedBy: { readonly displayName: string; readonly deactivated: boolean } | null;
 }
 
+/**
+ * An explicit pick — a wider `decidedBy` (say, an email) must never ride out
+ * through a pass-through (PR review, types I6). Both staff views serialise the
+ * reviewer through here, so the rule has one home.
+ */
+function pickDecidedBy(decidedBy: ChangeRequestListRow['decidedBy']): { readonly displayName: string; readonly deactivated: boolean } | null {
+  return decidedBy === null ? null : { displayName: decidedBy.displayName, deactivated: decidedBy.deactivated };
+}
+
 export function serialiseQueueItem(item: ChangeRequestQueueItem): ChangeRequestQueueItemView {
   const { row } = item;
   const r = row.request;
@@ -63,8 +72,7 @@ export function serialiseQueueItem(item: ChangeRequestQueueItem): ChangeRequestQ
     waitingSeconds: item.waitingSeconds,
     overdue: item.overdue,
     decidedAt: r.decidedAt?.toISOString() ?? null,
-    // an explicit pick — a wider `decidedBy` (say, an email) must never ride out through a pass-through (PR review, types I6)
-    decidedBy: row.decidedBy ? { displayName: row.decidedBy.displayName, deactivated: row.decidedBy.deactivated } : null,
+    decidedBy: pickDecidedBy(row.decidedBy),
   };
 }
 
@@ -118,8 +126,7 @@ export function serialiseChangeRequestForStaff(row: ChangeRequestListRow): Staff
       roleAtSubmission: r.submitterRoleAtSubmission,
     },
     decidedAt: r.decidedAt?.toISOString() ?? null,
-    // an explicit pick — a wider `decidedBy` (say, an email) must never ride out through a pass-through (PR review, types I6)
-    decidedBy: row.decidedBy ? { displayName: row.decidedBy.displayName, deactivated: row.decidedBy.deactivated } : null,
+    decidedBy: pickDecidedBy(row.decidedBy),
     decisionReason: r.decisionReason,
     decisionNote: r.decisionNote,
     withdrawnAt: r.withdrawnAt?.toISOString() ?? null,

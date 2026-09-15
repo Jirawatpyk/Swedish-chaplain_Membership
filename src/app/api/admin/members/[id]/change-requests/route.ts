@@ -54,7 +54,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   }
 
   const deps = buildChangeRequestDeps(resolveTenantFromRequest(request));
-  const member = await deps.memberRepo.findById(deps.tenant, asMemberId(memberId));
+  const id = asMemberId(memberId);
+  const member = await deps.memberRepo.findById(deps.tenant, id);
   if (!member.ok) {
     if (member.error.code === 'repo.not_found') {
       // the adapter answers a Result — read it, or a failed probe write would
@@ -81,7 +82,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     return problemResponse(500, 'server_error', 'Could not load the member', undefined, { extras: { requestId: ctx.requestId } });
   }
 
-  const result = await listMemberChangeRequests(deps, { memberId: asMemberId(memberId), cursor: parsed.data.cursor ?? null, limit: parsed.data.limit });
+  const result = await listMemberChangeRequests(deps, { memberId: id, cursor: parsed.data.cursor ?? null, limit: parsed.data.limit });
   if (!result.ok) {
     if (result.error.type === 'invalid_cursor') {
       return problemResponse(400, 'invalid_query', 'Invalid cursor', undefined, { extras: { requestId: ctx.requestId } });

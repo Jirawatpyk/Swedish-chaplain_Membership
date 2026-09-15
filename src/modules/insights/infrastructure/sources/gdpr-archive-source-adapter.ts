@@ -78,7 +78,6 @@ function isoOrNull(d: Date | string | null): string | null {
  */
 function serialiseChangeRequest(row: ChangeRequestListRow): GdprChangeRequestEntry {
   const r = row.request;
-  const fields = r.fields;
   return {
     id: r.id,
     scope: r.scope,
@@ -91,7 +90,7 @@ function serialiseChangeRequest(row: ChangeRequestListRow): GdprChangeRequestEnt
     decidedBy: 'organisation',
     decisionReason: r.decisionReason,
     decisionNote: r.decisionNote,
-    fields: fields.map((f) => ({
+    fields: r.fields.map((f) => ({
       key: f.key,
       target: f.target,
       seen: f.seen,
@@ -303,18 +302,18 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         'gdpr gather: the requester is not a linked contact of the member — change-request history scoped to company level',
       );
     }
-    const requesterUserId = requesterIsLinked ? (opts.requestedByUserId as UserId) : null;
+    const requesterUserId: UserId | null = requesterIsLinked ? (opts.requestedByUserId as UserId) : null;
     const changeRequests: GdprChangeRequestEntry[] = [];
     let crCursor: ChangeRequestCursor | null = null;
     for (;;) {
       const page: Awaited<ReturnType<typeof memberDeps.changeRequestRepo.listByMember>> =
         requesterUserId !== null
-          ? await memberDeps.changeRequestRepo.listVisibleToUser(ctx, requesterUserId as UserId, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE })
+          ? await memberDeps.changeRequestRepo.listVisibleToUser(ctx, requesterUserId, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE })
           : await memberDeps.changeRequestRepo.listByMember(ctx, memberId, { cursor: crCursor, limit: CHANGE_REQUEST_PAGE });
       if (!page.ok) throw new Error(`GDPR gather: change-request list failed (${page.error.code})`);
       for (const row of page.value.items) {
         if (requesterUserId === null && row.request.scope === 'own_contact') continue; // a contact's own request is theirs alone
-        changeRequests.push(serialiseChangeRequest(projectChangeRequestForViewer(row, requesterUserId as UserId | null)));
+        changeRequests.push(serialiseChangeRequest(projectChangeRequestForViewer(row, requesterUserId)));
         if (changeRequests.length > MAX_CHANGE_REQUESTS) break; // one probe row past the cap
       }
       crCursor = page.value.nextCursor;

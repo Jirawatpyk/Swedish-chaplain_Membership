@@ -50,12 +50,22 @@ import {
 
 const ANY_OUTCOME = 'any' as const;
 const DEFAULT_STATE: ChangeRequestState = 'pending';
+/** Member / submitter scoping — the chips own it: Apply keeps it, Clear drops it. */
+const SCOPE_PARAMS = ['memberId', 'submitter'] as const;
 
 function isState(v: string | null): v is ChangeRequestState {
   return v !== null && (CHANGE_REQUEST_STATES as readonly string[]).includes(v);
 }
 function isOutcome(v: string | null): v is ChangeRequestOutcome {
   return v !== null && (CHANGE_REQUEST_OUTCOMES as readonly string[]).includes(v);
+}
+// what the controls STAGE for a raw URL value — the initial mount and the
+// re-stage below must agree, so both read it from here
+function stagedState(v: string | null): ChangeRequestState {
+  return isState(v) ? v : DEFAULT_STATE;
+}
+function stagedOutcome(v: string | null): ChangeRequestOutcome | typeof ANY_OUTCOME {
+  return isOutcome(v) ? v : ANY_OUTCOME;
 }
 // the page's rule (`isYmd`: a REAL calendar day, not only the shape — the
 // tenant-day helper throws on `2026-02-30`) without js-joda in the client
@@ -79,8 +89,8 @@ export function ChangeRequestQueueFilters() {
 
   const urlState = params.get('state');
   const urlOutcome = params.get('outcome');
-  const [state, setState] = useState<ChangeRequestState>(isState(urlState) ? urlState : DEFAULT_STATE);
-  const [outcome, setOutcome] = useState<ChangeRequestOutcome | typeof ANY_OUTCOME>(isOutcome(urlOutcome) ? urlOutcome : ANY_OUTCOME);
+  const [state, setState] = useState<ChangeRequestState>(stagedState(urlState));
+  const [outcome, setOutcome] = useState<ChangeRequestOutcome | typeof ANY_OUTCOME>(stagedOutcome(urlOutcome));
   const urlFrom = ymd(params.get('from'));
   const urlTo = ymd(params.get('to'));
   const [from, setFrom] = useState(urlFrom);
@@ -92,8 +102,8 @@ export function ChangeRequestQueueFilters() {
   const [stagedFor, setStagedFor] = useState(urlKey);
   if (stagedFor !== urlKey) {
     setStagedFor(urlKey);
-    setState(isState(urlState) ? urlState : DEFAULT_STATE);
-    setOutcome(isOutcome(urlOutcome) ? urlOutcome : ANY_OUTCOME);
+    setState(stagedState(urlState));
+    setOutcome(stagedOutcome(urlOutcome));
     setFrom(urlFrom);
     setTo(urlTo);
   }
@@ -102,12 +112,10 @@ export function ChangeRequestQueueFilters() {
   // would drop (`?state=bogus`) is no filter, `state=pending` is the default
   // view, an outcome counts only under `decided`, member and submitter
   // scoping count
-  const p = (k: string) => params.get(k) ?? '';
   const hasFilters =
     (isState(urlState) && urlState !== DEFAULT_STATE) ||
     (urlState === 'decided' && isOutcome(urlOutcome)) ||
-    p('memberId') !== '' ||
-    p('submitter') !== '' ||
+    SCOPE_PARAMS.some((k) => Boolean(params.get(k))) ||
     urlFrom !== '' ||
     urlTo !== '';
 
@@ -129,7 +137,7 @@ export function ChangeRequestQueueFilters() {
     // URL-less one (`defaultView` gates the pending summary)
     if (state !== DEFAULT_STATE) next.set('state', state);
     if (state === 'decided' && outcome !== ANY_OUTCOME) next.set('outcome', outcome);
-    for (const keep of ['memberId', 'submitter'] as const) {
+    for (const keep of SCOPE_PARAMS) {
       const v = params.get(keep);
       if (v) next.set(keep, v);
     }
@@ -151,7 +159,7 @@ export function ChangeRequestQueueFilters() {
   };
 
   const onStateChange = (v: string | null) => {
-    const nextState = isState(v) ? v : DEFAULT_STATE;
+    const nextState = stagedState(v);
     setState(nextState);
     if (nextState !== 'decided') setOutcome(ANY_OUTCOME);
   };
@@ -185,7 +193,7 @@ export function ChangeRequestQueueFilters() {
       {state === 'decided' ? (
         <div className="flex flex-col">
           <Label htmlFor="cr-filter-outcome">{tFilters('outcome')}</Label>
-          <Select value={outcome} onValueChange={(v) => setOutcome(isOutcome(v) ? v : ANY_OUTCOME)}>
+          <Select value={outcome} onValueChange={(v) => setOutcome(stagedOutcome(v))}>
             <SelectTrigger id="cr-filter-outcome" className="w-full" aria-label={tFilters('outcome')}>
               <TranslatedSelectValue translate={(v) => (isOutcome(v) ? tReview(`outcome.${v}`) : tFilters('anyOutcome'))} />
             </SelectTrigger>

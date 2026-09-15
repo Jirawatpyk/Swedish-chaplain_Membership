@@ -30,7 +30,7 @@ import { erasureMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '../../domain/member';
-import type { MemberRepo } from '../ports/member-repo';
+import { repoErrorCause, type MemberRepo } from '../ports/member-repo';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { AuditPort, ChangeRequestAuditPayload } from '../ports/audit-port';
 import type { ChangeRequestScrubPort } from '../ports/change-request-scrub-port';
@@ -385,7 +385,7 @@ export async function eraseMember(
       const scrubChangeRequests = await deps.changeRequestScrub.scrubForMemberInTx(tx, memberId, now);
       if (!scrubChangeRequests.ok)
         throw new Error(`change_request_scrub_failed:${scrubChangeRequests.error.code}`, {
-          cause: 'cause' in scrubChangeRequests.error ? scrubChangeRequests.error.cause : undefined,
+          cause: repoErrorCause(scrubChangeRequests.error),
         });
       for (const closed of scrubChangeRequests.value.closedRequests) {
         const closureAudit = await deps.audit.recordInTx(tx, deps.tenant, {
@@ -402,10 +402,7 @@ export async function eraseMember(
             actor_role: 'system',
           } satisfies ChangeRequestAuditPayload['member_change_request_withdrawn']),
         });
-        if (!closureAudit.ok)
-          throw new Error('audit_failed', {
-            cause: 'cause' in closureAudit.error ? closureAudit.error.cause : undefined,
-          });
+        if (!closureAudit.ok) throw new Error('audit_failed', { cause: repoErrorCause(closureAudit.error) });
       }
 
       // findByIdInTx takes a SELECT … FOR UPDATE row lock (mirrors
@@ -434,9 +431,7 @@ export async function eraseMember(
       // admin's retry (or the reconciler's re-drive) scrubs the new row too.
       const rescan = await deps.changeRequestScrub.listRequestIdsInTx(tx, memberId);
       if (!rescan.ok)
-        throw new Error(`change_request_rescan_failed:${rescan.error.code}`, {
-          cause: 'cause' in rescan.error ? rescan.error.cause : undefined,
-        });
+        throw new Error(`change_request_rescan_failed:${rescan.error.code}`, { cause: repoErrorCause(rescan.error) });
       const scrubbedIds = new Set<string>(scrubChangeRequests.value.scrubbedRequestIds);
       const unseen = rescan.value.filter((id) => !scrubbedIds.has(id));
       if (unseen.length > 0) throw new Error(`change_request_race:${unseen.length}`);
@@ -730,9 +725,7 @@ export async function eraseMember(
       // rows unconditionally (the port's docblock has the full argument).
       const memberOutboxCancel = await deps.outboxCancel.cancelPendingForMemberInTx(tx, memberId);
       if (!memberOutboxCancel.ok)
-        throw new Error(`outbox_cancel_failed:${memberOutboxCancel.error.code}`, {
-          cause: 'cause' in memberOutboxCancel.error ? memberOutboxCancel.error.cause : undefined,
-        });
+        throw new Error(`outbox_cancel_failed:${memberOutboxCancel.error.code}`, { cause: repoErrorCause(memberOutboxCancel.error) });
     });
   } catch (e) {
     if (e instanceof EraseNotFoundError) return err({ type: 'not_found' });
