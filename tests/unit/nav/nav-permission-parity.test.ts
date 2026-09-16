@@ -69,7 +69,9 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     // sidebar gains or loses an entry.
     // 108 PR-D: +1 — the Marketing audience page under Engagement.
     // F114: +1 — the change-request queue under Membership.
-    expect(STAFF_ITEMS).toHaveLength(18);
+    // F114 US6: +1 — the member-change approval SETTING under Settings, which
+    // shipped reachable only from the /admin/settings hub card.
+    expect(STAFF_ITEMS).toHaveLength(19);
   });
 
   it('every staff nav item declares a guard', () => {
@@ -251,6 +253,8 @@ describe('ON-leg sidebar per role (T063)', () => {
       '/admin/settings/renewals/schedules',
       '/admin/settings/broadcasts',
       '/admin/settings/integrations/eventcreate',
+      // F114 US6 — `members.write`: marketing reads the queue, never the switch.
+      '/admin/settings/member-changes',
     ]) {
       expect(hrefs, `${denied} must not be in the marketing sidebar`).not.toContain(denied);
     }

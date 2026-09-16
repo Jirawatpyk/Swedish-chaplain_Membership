@@ -503,6 +503,25 @@ export const staffNavConfig: NavConfig = {
           guard: defineGuard('settings.renewal_schedules'),
           activePattern: '/admin/settings/renewals',
         },
+        // F114 US6 — the per-tenant member-change approval switch. It shipped
+        // reachable ONLY from the `/admin/settings` hub card, whose docblock
+        // claims the cards "mirror the sidebar entries exactly" — this was the
+        // one Settings surface with no sidebar entry. `members.write` mirrors
+        // the page guard AND the PATCH route behind the switch (an admin
+        // surface: manager / marketing see neither the card nor this entry).
+        // Flag-gated like the change-request queue: the page `notFound()`s
+        // while FEATURE_MEMBER_CHANGE_APPROVAL is off, so no dead link.
+        // `ClipboardCheckIcon` is the glyph the hub card for this destination
+        // already uses (Settings2Icon is taken by Broadcast settings two rows
+        // down), so the card and the sidebar row read as the same surface.
+        {
+          titleKey: 'nav.staff.settingsMemberChanges',
+          icon: ClipboardCheckIcon,
+          href: '/admin/settings/member-changes',
+          guard: defineGuard('members.write'),
+          activePattern: '/admin/settings/member-changes',
+          visibilityFlag: 'memberChangeApproval',
+        },
         // F7.1a US2 — Broadcast settings (image-source allowlist).
         // Relocated 2026-05-21 from `/admin/broadcasts/settings` to
         // `/admin/settings/broadcasts` per the centralised-settings IA

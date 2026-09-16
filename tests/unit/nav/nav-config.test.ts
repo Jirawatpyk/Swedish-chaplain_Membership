@@ -105,7 +105,7 @@ describe('staffNavConfig', () => {
     expect(erasureLog.guard?.key).toBe('members.erasure_log_read');
   });
 
-  it('section 6 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {
+  it('section 6 is Settings with Invoice + RenewalSchedules + MemberChanges + BroadcastSettings + EventCreate', () => {
     // R7 consolidation removed the Fee Configuration page (VAT + currency
     // + registration fee live in Invoice Settings). F8 added Reminder
     // schedules; F6 added the EventCreate setup wizard; F7.1a US2 added
@@ -113,7 +113,7 @@ describe('staffNavConfig', () => {
     // broadcasts. The Settings header is unchanged by the 5-group regroup.
     const settingsSection = staffNavConfig.sections[6]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
-    expect(settingsSection.items).toHaveLength(4);
+    expect(settingsSection.items).toHaveLength(5);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
     const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
     expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
@@ -124,11 +124,25 @@ describe('staffNavConfig', () => {
     expect(renewalSchedulesItem.href).toBe(
       '/admin/settings/renewals/schedules',
     );
-    // F7.1a US2 — broadcast settings (image-source allowlist).
+    // F114 US6 — the per-tenant member-change approval switch. It was
+    // reachable ONLY from the /admin/settings hub card, whose own docblock
+    // claims the cards "mirror the sidebar entries exactly"; they did not.
+    // Same permission + flag as that card and as the page itself.
     expect(settingsSection.items[2]!.titleKey).toBe(
+      'nav.staff.settingsMemberChanges',
+    );
+    const memberChangesItem = settingsSection.items[2]! as NavItem;
+    expect(memberChangesItem.href).toBe('/admin/settings/member-changes');
+    expect(memberChangesItem.guard?.key).toBe('members.write');
+    expect(memberChangesItem.visibilityFlag).toBe('memberChangeApproval');
+    // Prefix form, like all four siblings — a future sub-route keeps the
+    // parent highlighted.
+    expect(memberChangesItem.activePattern).toBe('/admin/settings/member-changes');
+    // F7.1a US2 — broadcast settings (image-source allowlist).
+    expect(settingsSection.items[3]!.titleKey).toBe(
       'nav.staff.settingsBroadcasts',
     );
-    const broadcastSettingsItem = settingsSection.items[2]! as NavItem;
+    const broadcastSettingsItem = settingsSection.items[3]! as NavItem;
     expect(broadcastSettingsItem.href).toBe('/admin/settings/broadcasts');
 
     // Structural sibling — survives nav reordering. If a future commit
@@ -143,10 +157,10 @@ describe('staffNavConfig', () => {
     expect(broadcastsByHref?.titleKey).toBe('nav.staff.settingsBroadcasts');
 
     // F6 Phase 5 — integration setup wizard entry.
-    expect(settingsSection.items[3]!.titleKey).toBe(
+    expect(settingsSection.items[4]!.titleKey).toBe(
       'nav.staff.settingsIntegrationEventcreate',
     );
-    const integrationItem = settingsSection.items[3]! as NavItem;
+    const integrationItem = settingsSection.items[4]! as NavItem;
     expect(integrationItem.href).toBe(
       '/admin/settings/integrations/eventcreate',
     );
@@ -313,6 +327,35 @@ describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)',
     expect(all).not.toContain('/admin/settings/integrations/eventcreate');
     // F114 (FR-039 dark ship) — the change-request queue rides visibilityFlag
     expect(all).not.toContain('/admin/change-requests');
+    // …and so does its Settings entry (US6), which 404s on the same flag.
+    expect(all).not.toContain('/admin/settings/member-changes');
+  });
+
+  // F114 US6 — the approval SETTING shares `memberChangeApproval` with the
+  // queue: the page `notFound()`s while the platform flag is off, so the
+  // sidebar entry must disappear with it rather than offer a dead link.
+  it('memberChangeApproval OFF → the Settings member-changes entry is dropped', () => {
+    const all = staffHrefs({
+      broadcastsEnabled: true,
+      eventsEnabled: true,
+      memberChangeApproval: false,
+    });
+    expect(all).not.toContain('/admin/settings/member-changes');
+    // The queue rides the same flag — the two must not drift apart.
+    expect(all).not.toContain('/admin/change-requests');
+    // The rest of Settings is untouched by this flag.
+    expect(all).toContain('/admin/settings/renewals/schedules');
+    expect(all).toContain('/admin/settings/broadcasts');
+  });
+
+  it('memberChangeApproval ON → the Settings member-changes entry is present', () => {
+    const all = staffHrefs({
+      broadcastsEnabled: true,
+      eventsEnabled: true,
+      memberChangeApproval: true,
+    });
+    expect(all).toContain('/admin/settings/member-changes');
+    expect(all).toContain('/admin/change-requests');
   });
 });
 

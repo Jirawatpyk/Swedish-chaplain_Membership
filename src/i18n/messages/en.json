@@ -5457,6 +5457,7 @@
       "events": "Events",
       "settingsInvoices": "Invoice settings",
       "settingsRenewalSchedules": "Reminder schedules",
+      "settingsMemberChanges": "Member change approval",
       "settingsBroadcasts": "Broadcast settings",
       "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
