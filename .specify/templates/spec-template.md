@@ -100,6 +100,21 @@
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
+### Chamber-OS cross-cutting requirements *(mandatory — answer each; "N/A because …" is an answer, a blank is not)*
+
+<!--
+  These are the questions /speckit.clarify otherwise asks on every feature. Answering them here
+  keeps the spec technology-agnostic while pinning the constraints the Constitution imposes.
+-->
+
+- **Roles & permissions**: which of `admin` / `manager` / `member` / `super_admin` / `marketing` can do what; which permission keys are new (catalogue in `src/modules/auth/domain/permissions/`)
+- **Tenant scope**: which data is tenant-scoped; what must never be visible across tenants (every tenant-scoped table implies a cross-tenant probe test)
+- **Locales**: user-facing text in EN (canonical) + TH + SV; TH mandatory if the feature produces a tax document; dates displayed in Buddhist Era for `th-TH` only
+- **Personal data**: fields collected or displayed, lawful basis (PDPA §19 / GDPR Art. 6), retention, how erasure (Art. 17) and export (Art. 15/20) reach it
+- **Audit trail**: which state changes must be auditable, by whom, and what a reviewer needs to reconstruct afterwards
+- **Money & tax** *(if touched)*: amounts, currency, VAT treatment, which document types / states change, what must reconcile with what
+- **Feature flag / kill-switch**: `FEATURE_*` name, default, and what stays live on merge even with the flag off
+
 ## Success Criteria *(mandatory)*
 
 <!--

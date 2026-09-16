@@ -4,15 +4,16 @@ Paste the relevant preset as `$ARGUMENTS` when invoking `/speckit.implement`.
 These complement (do NOT replace) the rules already encoded in `CLAUDE.md`
 and `.specify/memory/constitution.md`.
 
-Decision rule for which preset to use:
+Decision rule for which preset to use — by **blast radius**, not by task count
+(tasks.md is one task per behaviour since 2026-09-12, so counts no longer measure size):
 
-- **Small**: < 30 tasks in tasks.md, single bounded context, no payment/tax/PII
-- **Medium**: 30–100 tasks, 2–3 bounded contexts, 1 domain specialist gate
-- **Large**: 100+ tasks, multi-domain, ≥ 2 NON-NEGOTIABLE Constitution gates
+- **Small**: single bounded context; touches none of money / tax / tenant-scoped tables / auth & RBAC / PII / migrations; can ship behind a flag or is reversible
+- **Medium**: exactly one of those surfaces, or 2–3 bounded contexts, or one new migration → one domain specialist gate + a fresh-context review pass
+- **Large**: two or more of those surfaces, or any migration on a money / tenant table → sequential specialist gates + the `review-branch` workflow before the PR opens
 
 ---
 
-## Preset 1 — Small spec (< 30 tasks)
+## Preset 1 — Small spec (no regulated surface)
 
 ```text
 Main-solo. Follow [P] in tasks.md. Stop + ask for schema / audit enum / arch decisions.
@@ -24,7 +25,7 @@ only if you discover a specialist gate you did not anticipate.
 
 ---
 
-## Preset 2 — Medium spec (30–100 tasks)
+## Preset 2 — Medium spec (one regulated surface)
 
 ```text
 Orchestration:
@@ -42,14 +43,14 @@ Specialist catalogue (pick only what the spec needs):
 - chamber-os-ux-architect       — UX standards after UI phase
 - drizzle-migration-reviewer    — schema + RLS review per migration
 - senior-tester                 — coverage audit after implementation
-- feature-dev:code-reviewer     — code quality after major milestones
+- whole-branch-reviewer         — fresh-eyes seam pass on the whole diff before the PR opens
 ```
 
 Fill in the specialist lines based on spec domain. Delete unused lines.
 
 ---
 
-## Preset 3 — Large spec (100+ tasks, multi-domain)
+## Preset 3 — Large spec (money / tenant / migration, multi-domain)
 
 ```text
 Orchestration:
@@ -65,7 +66,8 @@ Orchestration:
 - Respect [P] markers in tasks.md for parallel-safe task groups
 - Commit cadence: atomic per logical unit, not 1-per-task
 - Report after each phase: commit hashes, test counts, gate status, next phase
-- Dispatch feature-dev:code-reviewer every 3 phases for checkpoint review
+- Dispatch `whole-branch-reviewer` at every phase boundary that touches money / tenant / migration
+- Before the PR opens: run the `review-branch` workflow (per-module finders → adversarial verify → seam pass); after a defect class is found once, `sweep-class` closes it everywhere
 
 Specialist gates (adjust to domain):
 - pci-saqa-guardian             — MANDATORY if touching payment / Stripe
@@ -94,7 +96,8 @@ Stop + ask for:
 - `/speckit.implement ทำทุกอย่างแบบ sub` — main loses roadmap
 - `/speckit.implement spawn 10 sub ขนาน` — file races + context loss
 - `/speckit.implement ข้าม gate ได้` — debug pain compounds
-- Pasting the Large preset for a 15-task spec — over-engineering kills velocity
+- Pasting the Large preset for a single-context spec with no regulated surface — over-engineering kills velocity
+- Sizing by task count — a 12-task tasks.md that touches `invoices` is Large
 
 ---
 
@@ -109,3 +112,4 @@ as paste-time `$ARGUMENTS`.
 
 ## Changelog
 - 2026-04-22: Initial 3 presets — Small / Medium / Large
+- 2026-09-12: Presets keyed on blast radius instead of task count (tasks.md became one-task-per-behaviour); `whole-branch-reviewer` + `review-branch` / `sweep-class` workflows replace the plugin code-reviewer cadence
