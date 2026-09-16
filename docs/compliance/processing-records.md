@@ -11,7 +11,7 @@ retention periods, and technical + organisational measures (TOMs).
 chamber legal-counsel for regulatory updates and with platform
 on-call for technical detail.
 
-**Last reviewed**: 2026-08-12 (016 PR 4 — Staff Role Administration + Marketing Scope RoPA authored, then corrected against the implementation in the PR-4 privacy review)
+**Last reviewed**: 2026-09-16 (F114 — Member change requests / approval workflow RoPA authored before the SweCham tenant switch, per FR-040)
 
 > **AUTHORED 2026-06-21 (COMP-1 US3-E)**: the **F3 — Members & Contacts** core
 > RoPA and the **COMP-1 — Member Erasure (Art. 17 / §33)** processing-activity
@@ -1523,3 +1523,184 @@ Same as F7.
 |---|---|---|
 | 2026-08-12 | Record authored for 016 RBAC v2 — staff role administration + marketing member-read scope; DPIA answer (CHK035) and last-SA-erase vs Art. 17 rationale (CHK041) recorded; cross-ref to `docs/runbooks/rbac-v2-cutover.md` | 016 PR 4 (T060) |
 | 2026-08-12 | **Corrected before sign-off** following the PR-4 privacy review, which found six claims the implementation contradicted. (1) DoB was described as having a single chokepoint; there are five egresses on three keys, and the two subsumption invariants that hold them are now named. (2) "the other DoB-class fields" described an empty set while the fields marketing DOES receive — tax ID, addresses, notes, contact email/phone — went unlisted. (3) CHK041 cited `seed-bootstrap-admin.ts` as the successor path; that script refuses whenever a super_admin exists, i.e. exactly this scenario. Replaced with promotion + a named operator break-glass step. (4) CHK041 addressed only the staff-operator case; the guard's realistic firing is a MEMBER's Art. 17 cascade, now recorded as deferral with the Art. 12 clock and its remediation. (5) The record claimed a reduction in audit-log recipients; Migration C promoted both incumbents, so the count went 2→3 and what narrowed is future grants. (6) 5-year retention was stated as applied; it is a classification with no purge job, now recorded as a residual. Also: the PDPA was said to have a DPIA trigger (it has none), "no profiling" was too broad (Art. 4(4) profiling occurs via `insights.engagement`; what is absent is Art. 22), and the title and scope understated the bundle's `broadcasts.send` / `events.write` authority. | 016 PR 4 review |
+
+---
+
+## F114 — Member Change Requests (member-proposed changes under staff approval)
+
+**Status**: SHIPPED DARK → **being switched on for SweCham on 2026-09-16** — branch
+`114-member-change-approval` (PR-1 #360, PR-2 #366, PR-3 #367). The platform flag
+`FEATURE_MEMBER_CHANGE_APPROVAL` is live on production since 2026-09-16 12:18; the per-tenant
+switch (`tenant_member_settings.member_change_approval_enabled`) is what starts the processing
+for a chamber. **This record MUST exist before that switch goes on** (spec FR-040) — it was
+authored for that purpose. Authority: `specs/114-member-change-approval/spec.md` (FR-001…FR-040),
+`contracts/notifications-and-audit.md`, `quickstart.md` § 3 cutover + rollback matrix,
+`docs/observability.md` § 27, `docs/runbooks/member-change-requests.md`.
+
+### What the processing is
+
+When the chamber's approval switch is on, a member contact's edit to a **Group B** field of the
+member record (company name, website, description, registered / billing address, and the contact's
+own name, phone and job title — spec § Group B; tax id, legal entity type and the other Group C
+fields stay staff-only)  is **not written to the record**. It is
+stored as a *change request* — one pending request per submitting person — reviewed by a staff
+user holding `members.write`, who approves or rejects it **field by field** with a reason for
+any rejection. Approved fields apply to the member / contact record inside the same transaction;
+the submitting person is emailed the outcome; every request and decision is kept as an
+accountable history visible to staff and to the person who submitted it. When the switch is off,
+the F3 immediate self-service edit path applies unchanged.
+
+### Controller
+
+The chamber tenant operating the Chamber-OS deployment (single-tenant deployment = Thai-Swedish
+Chamber of Commerce / SweCham / TSCC). The chamber is the controller of the proposed data and of
+the decision history.
+
+### Processors
+
+The shared F1–F9 set, no new processor:
+
+- **Vercel Inc.** (`sin1`) — hosting + route handlers; the per-tenant gauges cron.
+- **Neon, Inc.** (`ap-southeast-1`) — Postgres holding `member_change_requests` +
+  `member_change_request_fields` (migrations 0300–0302), the `notifications_outbox` rows of the
+  two new notification types, and the `audit_log` rows of the five new event types.
+- **Upstash, Inc.** (Singapore) — Redis: the per-actor *attempt* buckets on the change-request
+  routes (keys carry the tenant slug + the user's uuid — a pseudonymous id, 600 s TTL — the
+  house convention, e.g. the F3 marketing-preference limiter) and the `Idempotency-Key` record
+  of a submit (ids + outcome only; no proposed value, since PR-2). The 10-per-24 h cap itself
+  is counted from the durable request table, not from Redis (SC-013).
+- **Resend Inc.** (US) — **transactional** email only: the staff notification
+  (`member_change_request_submitted_staff`, to every active reviewer, one per submitting person
+  per hour) and the member outcome email (`member_change_request_decided_member`). The email
+  bodies name the member, the submitter and each field's old and proposed value (spec SC-002);
+  they are rendered at send time from ids and never stored as bodies. Existing DPA + SCCs.
+
+### Categories of data subjects
+
+- **Member contacts** (primary and secondary) who submit a change request — the submitter's
+  identity (user id, contact id, role at submission) is part of the record.
+- **Member contacts whose data is proposed** — a primary contact may propose company-level
+  changes; a contact may propose changes to their own name / phone / role title only (FR-004:
+  the contact's email-language preference and the email-change / invite / marketing flows are
+  outside this activity).
+- **Staff reviewers** (admin / super_admin) — the deciding user's id is recorded on the request
+  (`decided_by`); a deactivated reviewer keeps the attribution (FR-026).
+
+### Categories of personal data
+
+| Category | Field | Notes |
+|---|---|---|
+| **Proposed values (the payload)** | `member_change_request_fields.seen_value`, `proposed_value` (jsonb) | The "as seen" and "as proposed" value of each Group B field — company name, website, description, registered + billing address, the contact's first / last name, phone, role title. Tax id, legal entity type, country, founded year, turnover and the money / tier fields are Group C (staff-only) and never appear here. `affects_tax_documents` flags the fields that feed §86/4 buyer blocks. The same validation rule set as a staff edit (FR-014). |
+| **Identity of the actors** | `submitted_by_user_id`, `submitted_by_contact_id`, `submitter_role_at_submission`, `decided_by` | ids only; the display name is joined at read time. |
+| **Free-text operational** | `decision_reason`, `decision_note` (staff) | The rejection reason is shown to the member (FR-020); the note is staff-only. Both bounded. |
+| **Lifecycle state** | `state`, `scope`, `outcome` per field, `submitted_at`, `decided_at`, `withdrawn_at`, `withdrawn_reason`, `replaced_by_request_id`, `staff_notified_at`, `outcome_acknowledged_at` | Non-identifying. |
+| **Audit** | `audit_log` events `member_change_request_{submitted,decided,withdrawn,rate_limited}`, `member_change_approval_setting_changed` | Payloads carry **ids, field KEYS and outcomes only** — never a value, a reason text or an email (`contracts/notifications-and-audit.md`); `actor_role` is the session role, never a literal. |
+| **Notification context** | `notifications_outbox.context_data` | ids only (tenant, request, member, submitter, reviewer, field keys); the dispatcher re-reads the request under the tenant transaction at send time (research § V3). |
+
+**No special categories (Art. 9 / PDPA §26)** — the Group B field set contains none. No
+automated decision (Art. 22): every outcome is a staff decision.
+
+### Purpose of processing
+
+1. **Reviewing member-proposed changes before they apply** — keeping the member register
+   accurate and the tax-document buyer block (company name, billing address — the fields flagged
+   `affects_tax_documents`) under staff control (spec FR-001, FR-019, FR-022; SC-012: no issued tax document changes as a result of an
+   approval).
+2. **Keeping an accountable history** of who proposed what, who decided it and why (FR-026,
+   FR-027; US4).
+3. **Notifying** the reviewers of a submission and the submitter of the outcome (FR-011, FR-020).
+
+### Lawful basis (spec FR-040)
+
+- **Performance of the membership contract** — GDPR Art. 6(1)(b) / PDPA §24(3): the member is
+  entitled to keep its register entry current and the chamber is obliged to maintain it.
+- **Legitimate interest of the chamber in an accurate member register and a reviewable change
+  history** — GDPR Art. 6(1)(f) / PDPA §24(5): balancing — the data is the member's own
+  register data that the member itself proposes; the review adds a staff decision and a
+  bounded reason; the person sees the outcome and the reason and can withdraw a pending
+  proposal at any time (US5); no profiling, no automated decision.
+- **Transparency** — the submission form carries the Art. 13 / PDPA §23 notice with a link to
+  the chamber's privacy policy (`TENANT_PRIVACY_POLICY_URL`, FR-010).
+
+### Recipients of personal data
+
+- **Chamber reviewers** (`admin`, `super_admin`) — the queue `/admin/change-requests`, the
+  review page, the member-record section; the staff notification email.
+- **Managers / marketing users** — read-only (`members.read`): the queue and the history, the
+  dashboard count and the nav badge (count + oldest age only), never the decision controls.
+- **The submitting person** — their own request history on `/portal/change-requests`
+  (own-request scope: the person's own requests plus company-level ones, FR-029/FR-030), the
+  pending / decision banners, the outcome email.
+- **Resend Inc. (processor)** — receives the two transactional emails.
+- **Chamber DPO + legal counsel** — for compliance review.
+
+### Cross-border data transfers
+
+Same as F3 — **Singapore** (Vercel `sin1` / Neon `ap-southeast-1` / Upstash SG): Thailand →
+Singapore under **PDPA §28**; Swedish / EU contacts under **GDPR SCCs** with Vercel, Neon and
+Upstash; Resend under its DPA + SCCs. The documented F1 hosting deviation applies.
+
+### Retention periods
+
+| Resource | Retention | Authority |
+|---|---|---|
+| `member_change_requests` + `member_change_request_fields` | **For the life of the member record** — the history is the accountability record (FR-026/027). On **member erasure (COMP-1)** the erasure scrub replaces every value, reason and note with the `[erased]` sentinel, closes pending rows as `withdrawn / erasure` and cancels (deletes) the queued outbox rows — the row skeleton (ids, states, timestamps) stays as the erasure evidence (FR-030; `change-requests-erasure-scrub.test.ts`). | Contract + legitimate interest; COMP-1 record |
+| `notifications_outbox` rows of the two F114 types | **COMP-1 outbox retention** — a SENT `member_change_request_decided_member` row keeps the subject's address frozen at enqueue under the existing outbox purge cron (`/api/cron/outbox-purge`); pending rows for an erased member are deleted by the scrub | COMP-1 record |
+| `audit_log` rows (five F114 events) | **5 years** | Constitution Principle VIII; `audit_log.retention_years DEFAULT 5` |
+| Upstash attempt buckets / idempotency records | **600 s / the idempotency window** (ids only) | Operational |
+
+### Technical + organisational measures (TOMs)
+
+- **Two-layer tenant isolation (NON-NEGOTIABLE)** — both tables carry `ENABLE` + `FORCE ROW
+  LEVEL SECURITY` with the `tenant_id = current_setting('app.current_tenant')` policy (0300);
+  every read / write runs under `runInTenant`; the live two-tenant test
+  (`change-requests-tenant-isolation.test.ts`) covers reads, decisions **and the tenant-setting
+  write**; a cross-tenant probe by id is refused and audited (`member_cross_tenant_probe`).
+- **Least privilege** — seeing needs `members.read`, deciding and flipping the switch need
+  `members.write`; the switch itself is audited `{ previous, next, actor_role }`.
+- **Data minimisation in the side channels** — audit payloads, outbox context, logs, OTel spans
+  (`members.change_request.*`) and metric labels carry ids / field keys / outcomes only; no
+  proposed value, reason, email or user id reaches a log line or a span attribute
+  (`docs/observability.md` § 27.5; the span test feeds a secret reason and asserts its absence).
+- **Integrity of decisions** — decide is one transaction (apply + audit + email row) with a
+  `FOR UPDATE` lock; "first committed transition wins" (FR-017); approved values pass the same
+  validation as a staff edit; issued tax documents are never rewritten (SC-012).
+- **Abuse limits** — one pending request per submitting person (partial unique index); the
+  durable 10-per-24 h cap counted from the request table (holds with Redis down); per-actor
+  attempt buckets on the by-id routes; `Idempotency-Key` on submit; every state-changing route
+  refused under `READ_ONLY_MODE` (FR-036); no Server Actions (FR-038, guarded by an
+  architecture test).
+- **Availability of the review** — the queue and the dashboard count the pending work; the
+  `members_change_request_oldest_age_seconds` gauge pages at 14 days so no proposal ages past
+  half of the one-month data-subject-request clock (FR-037; `docs/observability.md` § 27.3).
+- **Two rollback layers without a code change** — the tenant switch (seconds; pending rows stay
+  decidable, FR-032) and the platform flag (routes 404, rows retained; FR-039).
+
+### Data subject rights — exercise procedures
+
+| Right (GDPR / PDPA) | Procedure |
+|---|---|
+| **Access (Art. 15 / §30)** | The F9 GDPR archive gains `change-requests.json` — **scoped to the requester** (the person's own requests plus company-level ones, FR-029) — for both the member self-service and the staff on-behalf export; the person also sees the same history on `/portal/change-requests`. |
+| **Rectification (Art. 16 / §31)** | **This activity IS the rectification path** for Group B fields while the switch is on: the person proposes, staff decide field by field, a rejection carries a reason and the person may resubmit (US3). Group A (the contact's email-language preference) and the email-change flow stay immediate (FR-004). |
+| **Erasure (Art. 17 / §33)** | The COMP-1 member-erasure flow runs the change-request scrub inside its atomic transaction (FR-030): values / reasons / notes → `[erased]`, pending → `withdrawn / erasure` with one audit row each, queued outbox rows deleted; see `docs/runbooks/member-erasure.md`. |
+| **Restrict (Art. 18 / §34)** | Withdrawing a pending request (US5); the chamber can stop the activity for everyone with the tenant switch (FR-031/032). |
+| **Portability (Art. 20)** | The same `change-requests.json` in the portable ZIP. |
+| **Object (Art. 21 / §32)** | Not applicable — no marketing, no profiling; the person controls whether to submit at all. |
+| **No automated decision (Art. 22)** | Every outcome is a staff decision with a recorded actor; the system applies nothing on its own. |
+
+### DPIA
+
+Not triggered under the `dpia-template.md` criteria: no special-category data, no large-scale
+or systematic monitoring, no automated decision, no new processor, no new transfer — the
+activity re-routes an existing self-service edit through a human review and keeps a history.
+Recorded here for the annual review.
+
+### DPO contact
+
+Same as F7.
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-09-16 | Record authored for F114 before the SweCham tenant switch (spec FR-040 precondition); cross-refs to the cutover record `specs/114-member-change-approval/reviews/cutover.md` | F114 cutover (T114) |
