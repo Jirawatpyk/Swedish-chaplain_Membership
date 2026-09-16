@@ -197,3 +197,6 @@ google-credentials.json
 *-credentials.json
 *credentials*.json
 service-account*.json
+
+# claude plugin eval run artefacts (traces, reports, per-run cost) — never commit
+eval-suites/**/results/
