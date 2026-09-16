@@ -579,12 +579,14 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });
     await applyButton.focus();
     await applyButton.press('Enter');
-    // Apply is a router.replace inside a transition: React keeps the OLD table
-    // while the new RSC payload streams, so the DOM briefly holds two — let the
-    // navigation settle before the strict single-table check.
+    // Apply is a router.replace: Next keeps the PREVIOUS segment's DOM in the
+    // page, hidden, after a client navigation (measured 2026-09-16: two
+    // `queue-table` elements, one `hidden`), so the strict check is scoped to
+    // the VISIBLE table — axe ignores hidden content as well.
     await page.waitForLoadState('networkidle');
-    await expect(page.getByTestId('queue-table')).toHaveCount(1, { timeout: 30_000 });
-    await expect(page.getByTestId('queue-table')).toBeVisible();
+    const visibleTable = page.locator('[data-testid="queue-table"]:visible');
+    await expect(visibleTable).toHaveCount(1, { timeout: 30_000 });
+    await expect(visibleTable).toBeVisible();
     await expect(applyButton).toBeFocused();
     await runAxeScan(page, testInfo, { include: 'main' });
     await page.goto(`/admin/members/${member!.memberId}`);
