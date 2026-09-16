@@ -243,6 +243,13 @@ export {
   type GetChangeRequestReviewInput,
   type TaxHint,
 } from './application/use-cases/change-requests/get-change-request-review';
+// F114 T120 — which request a queued staff-notification row renders (the
+// coalescing chain). Application layer; the dispatcher passes the repo read.
+export {
+  MAX_REPLACEMENT_HOPS,
+  resolveStaffEmailTarget,
+  type StaffEmailTarget,
+} from './application/use-cases/change-requests/resolve-staff-email-target';
 // F114 email builders — rendered by the outbox dispatcher at send time (R8).
 export {
   buildChangeRequestSubmittedStaffEmail,

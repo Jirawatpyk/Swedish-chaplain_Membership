@@ -210,6 +210,24 @@ describe('listChangeRequestQueue (FR-027, FR-033)', () => {
     expect(clamped.ok).toBe(true);
   });
 
+  // T129 (post-ship review #10): the queue page's two deep-link probes only
+  // need the ROWS — running `pendingStats` on each of them is a second
+  // tenant-wide aggregate per render. `includeStats: false` skips it and the
+  // two counters answer `null` (not measured), never a fabricated 0.
+  it('includeStats false runs NO pendingStats read; the default page call runs exactly one', async () => {
+    const { deps, repo } = makeDeps();
+    const spy = vi.spyOn(repo, 'pendingStats');
+    const probe = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: SECONDARY }, cursor: null, limit: 2, includeStats: false });
+    expect(probe.ok).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(0);
+    expect(probe.ok && probe.value.pendingCount).toBeNull();
+    expect(probe.ok && probe.value.oldestPendingAgeSeconds).toBeNull();
+    const page = await listChangeRequestQueue(deps, { filter: {}, cursor: null, limit: 50 });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(page.ok && page.value.pendingCount).toBe(3);
+    expect(page.ok && page.value.oldestPendingAgeSeconds).toBe(4 * 86_400);
+  });
+
   it('a malformed cursor → invalid_cursor; a repo fault → server_error', async () => {
     const { deps, repo } = makeDeps();
     expect(await listChangeRequestQueue(deps, { filter: {}, cursor: 'garbage', limit: 10 })).toEqual({ ok: false, error: { type: 'invalid_cursor' } });

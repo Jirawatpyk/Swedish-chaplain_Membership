@@ -196,7 +196,9 @@ the setting off does not retire the entry, and rolling it back on without one is
 FR-040 gap the first cutover had to close. The card's own description says so; the full text is
 `quickstart.md` § 3 step 3.
 
-Never rolled back by any layer: migrations 0300 / 0301 / 0302, the seven enum values, the
+Never rolled back by any layer: migrations 0300 / 0301 / 0302 / 0303 (0303 = the reason CHECK also
+covers `partially_approved`; its deploy-time pre-check refuses the release while a partially-approved row
+has no reason — recovery in `quickstart.md` § 3 step 1), the seven enum values, the
 `tenant_member_settings` column, and the unflagged PR-2 and PR-3 items listed in `quickstart.md` § 3.
 
 ## Related

@@ -56,8 +56,9 @@ is pending → **200 `{ "outcome": "already_pending", "unchanged": true, "reques
 replaced rows included — the use case consults no rate-limiting service, so the cap holds with
 Upstash absent) → **429 `rate_limited`** with `Retry-After` and the same `retryAfterSeconds` in
 the body (when the OLDEST row leaves the window), audited `member_change_request_rate_limited
-{ related_member_id, window_count, retry_after_seconds, actor_role }` (`related_member_id` — a
-refused attempt is not member activity), counted on
+{ related_member_id, contact_id, window_count, retry_after_seconds, actor_role }`
+(`related_member_id` — a refused attempt is not member activity; `contact_id` is the submitter's,
+so their OWN refusal stays on their portal timeline — T127), counted on
 `members_change_request_refused_total{reason=rate_limited}`, and never remembered under an
 `Idempotency-Key` (transient). A second 429 with the SAME envelope guards the route itself: an
 ATTEMPT bucket of 60 / 10 min per tenant + user (Upstash, atomic `check`, consumed on EVERY
@@ -72,11 +73,19 @@ The same bucket guards `DELETE …/current` (60 / 10 min — a write, PR-3 S-5),
 per-actor PROBE bucket (10 / 10 min per tenant + user) guards `GET …/[id]` and
 `POST …/[id]/acknowledge`, whose misses write a `member_cross_tenant_probe` row into the
 append-only trail: the 11th call inside the window is 429 `rate_limited` + `Retry-After` before
-any read, `attempt_throttled`, no audit row. **After a durable-cap 429 the client mints a NEW `Idempotency-Key`** (the attempt-bucket
-429 fires before the body and reserves nothing): the record was reserved
-before the refusal and a same-key retry inside the record's 24 h TTL answers 422
-`idempotency-key-reused` (review round 1, SEC-S1 — the portal form mints one key per attempt);
-member archived → **403 `member_archived`**. The no-op answers
+any read, `attempt_throttled`, no audit row. **After a durable-cap 429 the client REUSES its `Idempotency-Key`** (T121, post-ship review
+2026-09-16): the reservation written before the use case is RELEASED on the 429 and on a 500 —
+never remember a refusal that is time-bound or a fault — so the same key + the same body is
+evaluated afresh and answers 429 again, never 422 `idempotency-key-reused`. (Before T121 the
+reservation was left behind and the correct retry read as a conflict for the record's whole 24 h
+TTL; the earlier advice to mint a new key per attempt was the workaround for that bug, and the
+form now mints ONE key per submission attempt sequence — T122.) The attempt-bucket 429 fires
+before the body is read and reserves nothing, so there is no reservation to release and the same
+key is simply reused on the retry. Every OTHER refusal is remembered under the key — the
+validation **422**, **403 `forbidden`** / **403 `company_fields_require_primary`**, **404
+`not_found`**, and a member archived → **403 `member_archived`** — so a client that changes its
+body after one of those MUST mint a new key or read back 422 `idempotency-key-reused` (the form
+ends its attempt sequence on every status but 429 / 5xx — seam pass 2026-09-16). The no-op answers
 come BEFORE the cap: at the cap an identical or record-matching proposal is still
 `nothing_to_submit` / `already_pending`, never 429.
 

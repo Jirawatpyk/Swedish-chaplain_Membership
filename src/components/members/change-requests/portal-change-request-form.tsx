@@ -20,7 +20,7 @@
  *     (`CardTitle` renders a div — see ui/card.tsx; no radio / checkbox groups
  *     here, so no fieldset is needed).
  */
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Controller, useForm, type Path } from 'react-hook-form';
@@ -269,18 +269,56 @@ export function PortalChangeRequestForm({
     return tErrors('field');
   }
 
+  /**
+   * ONE `Idempotency-Key` per submission ATTEMPT SEQUENCE (T122, post-ship
+   * review #3). A key minted per ATTEMPT made the header decorative: a
+   * double-click or a retry after a dropped response reached the server as two
+   * distinct requests, and the second one REPLACED the first (the
+   * one-pending-per-submitter rule) while burning another of the member's ten
+   * daily submissions.
+   *
+   * Minted lazily (never during render, so a StrictMode remount just mints on
+   * first use) and kept ONLY for the arms the route leaves retryable: a 429
+   * (either bucket) and any 5xx — those release the reservation (T121) and
+   * evaluate the retry afresh — plus a network drop, where nothing came back
+   * at all. EVERY other response ends the sequence, because the route
+   * REMEMBERS its answer under the key (`mapRefusal`: the 2xx bodies, the
+   * validation 422, 403 `forbidden` / `company_fields_require_primary` /
+   * `member_archived`, 404 `not_found`), and a remembered key answers a
+   * CHANGED body with 422 `idempotency-key-reused` — so a member who fixed
+   * what the refusal named would have been stuck until they reloaded (seam
+   * pass 2026-09-16, finding #1). A 422 `idempotency-key-reused` is terminal
+   * for the same reason in reverse: that key is already burnt.
+   */
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const takeIdempotencyKey = (): string => {
+    idempotencyKeyRef.current ??= crypto.randomUUID();
+    return idempotencyKeyRef.current;
+  };
+  const endAttemptSequence = (): void => {
+    idempotencyKeyRef.current = null;
+  };
+  /** The two arms the route leaves retryable under the SAME key (T121): the 429s and every 5xx. */
+  const keySurvives = (status: number): boolean => status === 429 || status >= 500;
+
   const onSubmit = async (values: ChangeRequestFormValues) => {
     setSubmitting(true);
     setStatus({ kind: null });
     try {
       const res = await fetch('/api/portal/change-requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': takeIdempotencyKey() },
         body: JSON.stringify(buildProposalBody(values, canProposeCompanyFields)),
       });
       const data = (await res.json().catch(() => null)) as
         | { outcome?: string; unchanged?: boolean; replaced?: string | null; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
         | null;
+
+      // ONE decision for the whole response table: anything the route can
+      // REMEMBER under this key ends the attempt sequence, so the member's
+      // next (changed) body travels under a fresh key instead of reading back
+      // as `idempotency-key-reused`. Only the retryable arms keep it.
+      if (!keySurvives(res.status)) endAttemptSequence();
 
       if (res.ok) {
         if (data?.outcome === 'submitted') {

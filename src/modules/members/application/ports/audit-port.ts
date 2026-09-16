@@ -243,6 +243,14 @@ export type ChangeRequestAuditPayload = {
   member_change_request_rate_limited: {
     readonly related_member_id: string;
     readonly member_id?: never;
+    /**
+     * The submitter's contact id (T127 / post-ship review #8). The FR-029
+     * timeline projection admits a change-request row on `contact_id === mine`
+     * or `scope === 'company'`; a refusal proposes nothing, so it carries no
+     * scope and this key is the ONLY thing that keeps the person's own
+     * refusal on their own portal timeline. A colleague still never sees it.
+     */
+    readonly contact_id: string;
     readonly window_count: number;
     readonly retry_after_seconds: number;
     readonly actor_role: Role;

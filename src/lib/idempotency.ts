@@ -231,6 +231,33 @@ export async function reserveIdempotencyRecord(
 }
 
 /**
+ * Drop a reservation the handler is NOT going to answer.
+ *
+ * `reserveIdempotencyRecord` writes `response: null`, and
+ * `classifyIdempotencyRequest` reads a reserved-but-unwritten record as a
+ * CONFLICT (another worker is mid-flight). That is right while the handler
+ * runs — and wrong once it has finished with an outcome it must not remember:
+ * a 429 (time-bound) or a 5xx (a fault). Leaving the reservation behind makes
+ * the SAME key + the SAME body answer 422 `idempotency-key-reused` for the
+ * full 24 h TTL, so the client's correct retry can never succeed
+ * (F114 post-ship review #2 / T121).
+ *
+ * Best-effort: a Redis outage here leaves the reservation to expire on its
+ * TTL, which is the pre-existing behaviour — it must never turn a 429 into a
+ * 500.
+ */
+export async function releaseIdempotencyRecord(tenant: TenantContext, key: string): Promise<void> {
+  try {
+    await redis.del(redisKey(tenant, key));
+  } catch (e) {
+    logger.warn(
+      { err: e instanceof Error ? e.message : String(e), tenant: tenant.slug, key },
+      'idempotency: Redis release failed — the reservation expires on its TTL',
+    );
+  }
+}
+
+/**
  * Store the final response after the handler finishes. Subsequent
  * identical requests within the 24h window will be classified as
  * replays and returned from this stored record.

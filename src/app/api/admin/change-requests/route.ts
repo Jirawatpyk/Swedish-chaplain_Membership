@@ -95,7 +95,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json({
     items: page.items.map(serialiseQueueItem),
     nextCursor: page.nextCursor,
-    pendingCount: page.pendingCount,
+    // this route never passes `includeStats: false`, so the count is always
+    // measured here; `?? 0` keeps the contract's `number` honest at the type
+    // level (T129)
+    pendingCount: page.pendingCount ?? 0,
     oldestPendingAgeSeconds: page.oldestPendingAgeSeconds,
   });
 }

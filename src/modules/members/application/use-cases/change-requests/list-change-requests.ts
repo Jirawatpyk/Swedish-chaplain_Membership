@@ -83,8 +83,12 @@ export type ChangeRequestQueueItem = {
 export type ChangeRequestQueuePage = {
   readonly items: readonly ChangeRequestQueueItem[];
   readonly nextCursor: string | null;
-  /** The tenant's pending count (not the page's) — the dashboard / nav fact (FR-033). */
-  readonly pendingCount: number;
+  /**
+   * The tenant's pending count (not the page's) — the dashboard / nav fact
+   * (FR-033). `null` when the caller passed `includeStats: false`: NOT
+   * MEASURED, never a fabricated 0 (post-ship review #10 / T129).
+   */
+  readonly pendingCount: number | null;
   readonly oldestPendingAgeSeconds: number | null;
 };
 
@@ -222,22 +226,35 @@ function serverError(deps: ListChangeRequestsDeps, what: string, error: RepoErro
 
 export async function listChangeRequestQueue(
   deps: ListChangeRequestsDeps,
-  input: { readonly filter: ChangeRequestListFilter; readonly cursor: string | null; readonly limit: number },
+  input: {
+    readonly filter: ChangeRequestListFilter;
+    readonly cursor: string | null;
+    readonly limit: number;
+    /**
+     * T129 — the tenant-wide `pendingStats` aggregate is the queue PAGE's
+     * banner fact; the two deep-link probes (staff email → the submitter's
+     * current request) only need the rows. Default `true` so every existing
+     * caller is unchanged; the probes pass `false`.
+     */
+    readonly includeStats?: boolean;
+  },
 ): Promise<Result<ChangeRequestQueuePage, ListChangeRequestsError>> {
   const cursor = parseCursor(input.cursor);
   if (!cursor.ok) return err(cursor.error);
   const now = deps.clock.now();
+  const wantStats = input.includeStats !== false;
   const [page, stats] = await Promise.all([
     deps.changeRequestRepo.listQueue(deps.tenant, input.filter, { cursor: cursor.value, limit: clamp(input.limit, QUEUE_PAGE_MAX, QUEUE_PAGE_DEFAULT) }),
-    deps.changeRequestRepo.pendingStats(deps.tenant),
+    wantStats ? deps.changeRequestRepo.pendingStats(deps.tenant) : null,
   ]);
   if (!page.ok) return err(serverError(deps, 'queue', page.error));
-  if (!stats.ok) return err(serverError(deps, 'pending_stats', stats.error));
+  if (stats !== null && !stats.ok) return err(serverError(deps, 'pending_stats', stats.error));
+  const counted = stats !== null && stats.ok ? stats.value : null;
   return ok({
     items: page.value.items.map((row) => toItem(row, now)),
     nextCursor: page.value.nextCursor ? encodeChangeRequestCursor(page.value.nextCursor) : null,
-    pendingCount: stats.value.count,
-    oldestPendingAgeSeconds: stats.value.oldestSubmittedAt ? Math.max(0, Math.floor((now.getTime() - stats.value.oldestSubmittedAt.getTime()) / 1000)) : null,
+    pendingCount: counted === null ? null : counted.count,
+    oldestPendingAgeSeconds: counted?.oldestSubmittedAt ? Math.max(0, Math.floor((now.getTime() - counted.oldestSubmittedAt.getTime()) / 1000)) : null,
   });
 }
 

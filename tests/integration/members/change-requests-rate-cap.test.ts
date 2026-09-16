@@ -194,7 +194,7 @@ describe('durable submission cap + coalescing on live Neon (T084)', () => {
       .from(auditLog)
       .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.eventType, 'member_change_request_rate_limited')));
     expect(refusals).toHaveLength(1);
-    expect(refusals[0]!.payload).toMatchObject({ related_member_id: memberId, window_count: 10, actor_role: 'member' });
+    expect(refusals[0]!.payload).toMatchObject({ related_member_id: memberId, contact_id: contactId, window_count: 10, actor_role: 'member' });
     expect(refusals[0]!.payload).not.toHaveProperty('member_id');
     expect(JSON.stringify(refusals[0]!.payload)).not.toContain('+668');
 
@@ -223,5 +223,25 @@ describe('durable submission cap + coalescing on live Neon (T084)', () => {
     rows = await myRows();
     expect(rows.filter((r) => r.state === 'pending')).toHaveLength(0);
     expect(rows).toHaveLength(11);
+  });
+
+  // T128 (post-ship review #9) — FR-008 says "10 submissions in 24 hours", so
+  // the trailing window is INCLUSIVE at its boundary. This runs on the eleven
+  // rows the case above left: ten at T0 .. T0+9 min and one at T0+24 h+1 s.
+  // At exactly now = T0 + 24 h the window starts at T0, so the FIRST row is
+  // still in it: eleven counted, and the oldest leaves the window NOW
+  // (retry-after clamps to 1 s). An exclusive `>` would count ten and name
+  // T0+1 min as the oldest -> 60 s, refusing on a window one row short.
+  it('the trailing 24 h window is inclusive at its boundary: the row stamped exactly now - 24 h still counts', async () => {
+    now = new Date(T0.getTime() + 24 * HOUR);
+    const r = await submit('+66822222222');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('rate_limited');
+    if (r.error.type !== 'rate_limited') return;
+    expect(r.error.windowCount).toBe(11);
+    expect(r.error.retryAfterSeconds).toBe(1);
+    // nothing created: the refusal happens before the first write
+    expect(await myRows()).toHaveLength(11);
   });
 });

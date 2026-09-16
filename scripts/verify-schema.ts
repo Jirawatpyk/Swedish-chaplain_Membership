@@ -133,6 +133,15 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE (SELECT count(*) FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel IN ('member_change_request_submitted','member_change_request_decided','member_change_request_withdrawn','member_change_request_rate_limited','member_change_approval_setting_changed')) = 5 AND (SELECT count(*) FROM pg_enum WHERE enumtypid = 'notification_type'::regtype AND enumlabel IN ('member_change_request_submitted_staff','member_change_request_decided_member')) = 2`,
       },
       {
+        // FR-014 — a reason is owed whenever ANY field is rejected, so the
+        // CHECK must name `partially_approved` as well as `rejected`. 0303
+        // re-created the constraint UNDER THE SAME NAME, so its mere existence
+        // proves nothing: the canary reads the PREDICATE (post-ship review #6
+        // / T125). `conname` alone was the 0302 lesson.
+        name: 'member_change_requests decision-reason CHECK covers partially_approved (mig 0303)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'member_change_requests_reason_iff_rejected_ck' AND conrelid = 'public.member_change_requests'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%partially_approved%' AND pg_get_constraintdef(oid) LIKE '%rejected%')`,
+      },
+      {
         name: 'tenant_member_settings.member_change_approval_enabled column (mig 0300)',
         query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'tenant_member_settings' AND column_name = 'member_change_approval_enabled'`,
       },

@@ -152,12 +152,12 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
   // reads the member record through its repo, the member-page idiom).
   let deepLinkNotice: string | null = null;
   if (submitter && state === 'pending' && !q.cursor) {
-    const pending = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: submitter }, cursor: null, limit: 2 });
+    const pending = await listChangeRequestQueue(deps, { filter: { state: 'pending', submitterUserId: submitter }, cursor: null, limit: 2, includeStats: false });
     if (!pending.ok) fail('deep_link_pending_read_failed', pending.error.type === 'server_error' ? pending.error.message : pending.error.type);
     const rows = pending.value.items;
     if (rows.length === 1 && rows[0]) redirect(`/admin/change-requests/${rows[0].row.request.id}`);
     if (rows.length === 0) {
-      const decided = await listChangeRequestQueue(deps, { filter: { state: 'decided', submitterUserId: submitter }, cursor: null, limit: 1 });
+      const decided = await listChangeRequestQueue(deps, { filter: { state: 'decided', submitterUserId: submitter }, cursor: null, limit: 1, includeStats: false });
       if (!decided.ok) fail('deep_link_decided_read_failed', decided.error.type === 'server_error' ? decided.error.message : decided.error.type);
       const last = decided.value.items[0]?.row;
       deepLinkNotice =
@@ -233,10 +233,10 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         actions={
           // the tenant's pending fact belongs to the DEFAULT view — on a
           // filtered page it reads as a count of what is shown (UX I8)
-          defaultView && page.pendingCount > 0 ? (
+          defaultView && (page.pendingCount ?? 0) > 0 ? (
             <p className="text-sm" data-testid="queue-pending-count">
               {t('pendingSummary', {
-                count: page.pendingCount,
+                count: page.pendingCount ?? 0,
                 oldestDays: page.oldestPendingAgeSeconds === null ? 0 : Math.floor(page.oldestPendingAgeSeconds / 86_400),
               })}
             </p>

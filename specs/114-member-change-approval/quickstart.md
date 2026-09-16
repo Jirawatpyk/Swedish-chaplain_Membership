@@ -104,7 +104,7 @@ moment the flag is set:
 | `TENANT_PRIVACY_POLICY_URL` set in Vercel | The FR-010 privacy link on the portal form hides when the variable is unset (review round 1, UX Critical: a dead `/privacy` link); with it unset the member is asked to propose PII changes with no link to the policy — PDPA §23 notice. | before flip (operator) |
 | Command-palette entry for `/admin/change-requests` (the navigate registry in `src/modules/plans/application/search-plans.ts`) | **CLOSED in PR-2**: `nav.changeRequests` (`members.read`, feature-gated `memberChangeApproval` — stripped while the flag is off, like the F6 / F7 entries). | PR-2 — done |
 
-1. Merge → prod auto-migrates 0300–0302 on deploy (`vercel-build`; 0302 shipped with PR-2 on 2026-09-15); `pnpm db:verify:prod`.
+1. Merge → prod auto-migrates 0300–0303 on deploy (`vercel-build`; 0302 shipped with PR-2 on 2026-09-15, 0303 with the post-ship review PR); `pnpm db:verify:prod` must show the `partially_approved` CHECK canary (0303). **If the 0303 pre-check refuses the deploy** (`member_change_requests_partially_approved_without_reason`): the migrator runs the batch in ONE transaction, so the whole release is blocked — find the rows (`SELECT id FROM member_change_requests WHERE outcome = 'partially_approved' AND decision_reason IS NULL`), agree a reason with the reviewer who decided them, `UPDATE` it by hand (a reason is human text — never backfill a placeholder), redeploy.
 2. Set `FEATURE_MEMBER_CHANGE_APPROVAL=true` in Vercel **only when ready to redeploy immediately**
    (setting the env var IS the flip on this repo — no `ignoreCommand`) **and only after every
    pre-flip gate above is merged**.
@@ -143,6 +143,8 @@ moment the flag is set:
 **Unflagged and live on merge** — none of the layers above undoes these (re-derived from the
 final tree after review rounds 1–3; the review rounds themselves added the last four):
 
+- migration `0303` tightens `member_change_requests_reason_iff_rejected_ck` to cover `partially_approved`
+  (FR-014) and `0302` adds the FK-column indexes — no layer undoes either; a reversal is a new migration;
 - migration `0300` (two tables, `outcome_acknowledged_at`, the `tenant_member_settings` column) and
   the seven enum values in `0301` (`ADD VALUE` is irreversible);
 - the `ReasonConfirmationDialog` promotion to `components/shell/` (the old path re-exports), the nav

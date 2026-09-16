@@ -573,6 +573,10 @@ export async function submitChangeRequest(
           // the 0009 trigger key `member_id` (review round 1, REL-3 / P-7)
           payload: {
             related_member_id: input.memberId,
+            // T127: the submitter's own contact — the FR-029 timeline
+            // projection keeps a change-request row for `contact_id === mine`,
+            // and a refusal carries no `scope` to admit it any other way
+            contact_id: input.contactId,
             window_count: e.windowCount,
             retry_after_seconds: e.retryAfterSeconds,
             actor_role: input.actorRole,

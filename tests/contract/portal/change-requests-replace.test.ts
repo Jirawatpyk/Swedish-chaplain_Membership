@@ -45,6 +45,7 @@ import {
 
 const requireMemberContextMock = vi.fn();
 const rememberMock = vi.fn(async () => undefined);
+const releaseMock = vi.fn(async () => undefined);
 const metricRefused = vi.fn();
 const loggerError = vi.fn();
 let flagOn = true;
@@ -123,6 +124,9 @@ vi.mock('@/lib/idempotency', () => ({
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' } })),
   rememberIdempotentResponse: (...args: unknown[]) => rememberMock(...(args as [])),
+  // T121 — the 429 / 500 arms RELEASE the reservation so a same-key retry is
+  // evaluated afresh instead of reading as a conflict for 24 h
+  releaseIdempotencyRecord: (...args: unknown[]) => releaseMock(...(args as [])),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
 vi.mock('@/lib/logger', () => ({
@@ -277,11 +281,14 @@ describe('POST /api/portal/change-requests — resubmit replaces, coalesces, and
     expect(audit.events.at(-1)).toMatchObject({
       type: 'member_change_request_rate_limited',
       actorUserId: USER,
-      payload: { related_member_id: MEMBER, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
+      payload: { related_member_id: MEMBER, contact_id: CONTACT, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
     });
     expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'rate_limited');
     // transient: never remembered under the key, so the retry after the window is not replayed as a 429
     expect(rememberMock).not.toHaveBeenCalled();
+    // T121: and the RESERVATION is released, so the retry after the window is a
+    // fresh evaluation rather than 422 `idempotency-key-reused` for 24 h
+    expect(releaseMock).toHaveBeenCalledWith(expect.anything(), 'idem-cap');
     expect(loggerError).not.toHaveBeenCalled();
   });
 

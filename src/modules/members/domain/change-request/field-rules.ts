@@ -123,7 +123,39 @@ const contactProposalSchema = z
       }
     }
   });
-const registeredAddressSchema = z.object(REGISTERED_ADDRESS_LINE_RULES).strict();
+/**
+ * T123 (post-ship review #4) — an address group is ONE unit at the KEY level
+ * too: every line must be PRESENT, its value possibly `null` (the explicit
+ * clear). Without this `fillLines` widened an omitted line to null, so an API
+ * client proposing `{ city: 'Bangkok' }` silently proposed CLEARING the other
+ * five lines — and the reviewer saw a legitimate-looking "clear this line"
+ * diff. The browser form always sends the whole object (`buildProposalBody`),
+ * so it is unaffected.
+ *
+ * Returns true when a line was missing, so the caller can skip the
+ * value-level group rule instead of stacking two issues on one path.
+ */
+function refuseMissingLines<L extends string>(
+  lines: readonly L[],
+  group: Partial<Record<L, unknown>>,
+  ctx: z.RefinementCtx,
+): boolean {
+  let missing = false;
+  for (const line of lines) {
+    if (group[line] === undefined) {
+      missing = true;
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [line], message: 'address_line_missing' });
+    }
+  }
+  return missing;
+}
+
+const registeredAddressSchema = z
+  .object(REGISTERED_ADDRESS_LINE_RULES)
+  .strict()
+  .superRefine((group, ctx) => {
+    refuseMissingLines(REGISTERED_ADDRESS_LINES, group, ctx);
+  });
 /**
  * The billing group is ONE unit (member-billing-address 0284,
  * `members_billing_address_group_ck`): any line present ⇒ line1 + city +
@@ -137,6 +169,9 @@ const billingAddressSchema = z
   .object(BILLING_ADDRESS_LINE_RULES)
   .strict()
   .superRefine((group, ctx) => {
+    // the KEY-level rule first (T123): an incomplete OBJECT is refused by the
+    // missing lines themselves, never re-refused by the value-level group rule
+    if (refuseMissingLines(BILLING_ADDRESS_LINES, group, ctx)) return;
     const present = (v: unknown) => typeof v === 'string' && v.trim() !== '';
     const anyPresent = BILLING_ADDRESS_LINES.some((line) => present(group[line]));
     if (!anyPresent) return;
@@ -182,8 +217,11 @@ function fillLines<L extends string>(
 /**
  * Validates a raw proposal against the staff rules and normalises it:
  * trims where the staff rule trims, `''` website → `null` (clear), phone
- * through `asPhone` (E.164), address groups filled to every line (a missing
- * line is `null` — a group is one unit; the client sends the whole object).
+ * through `asPhone` (E.164), address groups filled to every line — `''` is
+ * normalised to `null` (the explicit clear), while an OMITTED line is a
+ * validation issue on that line (`address_line_missing`, T123): a group is
+ * one unit and a partial object must never be widened into a clear. The
+ * browser form always sends the whole object (`buildProposalBody`).
  *
  * Issues use zod paths (`contact.phone`, `company.billing_address.country`)
  * so the route can map them back to form fields.

@@ -118,6 +118,19 @@ let clockOffsetMs = 0;
 
 async function submit(rawBody: unknown) {
   clockOffsetMs += 61 * 60_000;
+  return submitAtCurrentClock(rawBody);
+}
+
+/**
+ * A resubmit INSIDE the 1 h coalescing window (the clock does NOT move): the
+ * new request inherits `staff_notified_at` and queues NO outbox row of its
+ * own, so the EARLIER request's pending row is the only email in flight.
+ */
+async function submitCoalesced(rawBody: unknown) {
+  return submitAtCurrentClock(rawBody);
+}
+
+async function submitAtCurrentClock(rawBody: unknown) {
   const deps: SubmitChangeRequestDeps = {
     tenant: tenant.ctx,
     changeRequestRepo: drizzleChangeRequestRepo,
@@ -288,6 +301,41 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     } finally {
       await db.update(users).set({ status: 'active' }).where(eq(users.id, reviewer.userId));
     }
+  });
+
+  // T120 (post-ship `/code-review` 2026-09-16, finding #1) — the coalescing
+  // that keeps reviewers to one email per submitter per hour must never DROP
+  // that email. A resubmit inside the window inherits `staff_notified_at` and
+  // queues nothing, so the earlier request's pending row is the only one in
+  // flight; skipping it as `request_superseded` left nobody notified.
+  it('a resubmit INSIDE the coalescing window: the earlier row is SENT, rendering the replacement — exactly one staff email (FR-011 / SC-013)', async () => {
+    const first = await submit({ contact: { phone: '+66833333331' } });
+    expect(first.ok && first.value.outcome).toBe('submitted');
+    expect(first.ok && first.value.outcome === 'submitted' && first.value.staffNotified).toBe(true);
+    const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : '';
+    // no clock step: inside the 1 h window
+    const second = await submitCoalesced({ contact: { phone: '+66833333332' } });
+    expect(second.ok && second.value.outcome).toBe('submitted');
+    // coalesced: the replacement queued NO row of its own
+    expect(second.ok && second.value.outcome === 'submitted' && second.value.staffNotified).toBe(false);
+    const secondId = second.ok && second.value.outcome === 'submitted' ? second.value.request.id : '';
+    const rowsBefore = await db
+      .select()
+      .from(notificationsOutbox)
+      .where(and(eq(notificationsOutbox.tenantId, tenant.ctx.slug), eq(notificationsOutbox.notificationType, 'member_change_request_submitted_staff')));
+    expect(rowsBefore.filter((x) => (x.contextData as { requestId?: string }).requestId === secondId)).toHaveLength(0);
+
+    const sentBefore = sent.length;
+    const row = await tickUntilSettled(firstId);
+    expect(row?.status, JSON.stringify({ attempts: row?.attempts, lastError: row?.lastError })).toBe('sent');
+    // exactly ONE email, and it carries the CURRENT proposal (the replacement),
+    // never the superseded one
+    const mine = sent.slice(sentBefore).filter((m) => m.text.includes('+6683333333'));
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.text).toContain('+66833333332');
+    expect(mine[0]?.text).not.toContain('+66833333331');
+    // SC-013: the deep link opens the submitter's CURRENT pending request
+    expect(mine[0]?.text).toContain(`/admin/change-requests?submitter=${user.userId}&state=pending`);
   });
 
   it('a hard-deleted request row permanently fails the outbox row on the first tick with reason request_gone', async () => {

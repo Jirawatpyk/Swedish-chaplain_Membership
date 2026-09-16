@@ -169,6 +169,19 @@ describe('F9 directory — integration (T074/T078)', () => {
     expect(payload.changed_fields).toEqual(
       expect.arrayContaining(['listed', 'field_visibility', 'industry']),
     );
+
+    // F114 T131 (post-ship review #12) — the public-directory listing is a
+    // SEPARATE self-service surface: its `description` / `website` are the
+    // LISTING's own columns (`directory_listings`, CHECKs from 0187), never
+    // the member record's. That is why `POST /api/portal/directory` stays
+    // immediate while the same-named member fields go through approval: a
+    // listing value can never reach a tax document or an invoice snapshot.
+    const memberRow = await db
+      .select({ description: members.description, website: members.website })
+      .from(members)
+      .where(and(eq(members.tenantId, tenant.ctx.slug), eq(members.memberId, m1)));
+    expect(memberRow[0]?.description).toBeNull();
+    expect(memberRow[0]?.website).toBeNull();
   });
 
   it('admin edits archived member on-behalf (listed=true) — allowed', async () => {

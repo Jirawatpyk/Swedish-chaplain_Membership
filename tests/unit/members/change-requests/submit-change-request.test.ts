@@ -859,7 +859,9 @@ describe('submitChangeRequest — the durable 10 / 24 h cap counted from the req
       type: 'member_change_request_rate_limited',
       actorUserId: USER,
       requestId: 'req-1',
-      payload: { related_member_id: MEMBER, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
+      // T127 (post-ship review #8): `contact_id` is the submitter's — without
+      // it the FR-029 timeline projection drops the person's OWN refusal
+      payload: { related_member_id: MEMBER, contact_id: CONTACT, window_count: 10, retry_after_seconds: expectedRetry, actor_role: 'member' },
     });
     // a REFUSED attempt is not member activity: `related_member_id`, never the
     // 0009 trigger key `member_id` (review round 1, REL-3 / P-7)

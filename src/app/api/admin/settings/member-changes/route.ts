@@ -1,7 +1,11 @@
 /**
  * F114 — `GET` + `PATCH /api/admin/settings/member-changes` — the per-tenant
  * approval switch (US6 AS2, AS4; contracts/admin-change-requests-api.md
- * § settings; FR-031, FR-032, FR-036, FR-038, FR-039).
+ * § settings; FR-031, FR-032, FR-036, FR-039, and FR-038's route-handler half
+ * — NOT its `Idempotency-Key` half, which is the SUBMIT endpoint's: this PATCH
+ * parses no key and needs none, being idempotent by construction (it writes one
+ * boolean and answers the same state for the same body; an unchanged value is a
+ * no-op with no audit row). T130, post-ship review 2026-09-16.
  *
  * Platform flag OFF → 404 before any session work (dark ship — the flag is
  * the platform's layer, the setting the tenant's: flag first, then setting).

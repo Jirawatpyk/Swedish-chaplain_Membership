@@ -45,6 +45,7 @@ import {
   classifyIdempotencyRequest,
   hashRequestBody,
   parseIdempotencyKey,
+  releaseIdempotencyRecord,
   rememberIdempotentResponse,
   reserveIdempotencyRecord,
 } from '@/lib/idempotency';
@@ -195,25 +196,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // The durable cap (FR-008): 429 + Retry-After, the same seconds in the
   // body for the form's "try again after <time>"; audited + counted by the
-  // use case. Transient by nature — never remembered under the key.
+  // use case. Transient by nature — never remembered under the key, and the
+  // RESERVATION is released (T121): a reserved-but-unwritten record classifies
+  // as a CONFLICT, so leaving it behind would answer the client's correct
+  // retry — same key, same body — with 422 for the full 24 h TTL.
   if (result.error.type === 'rate_limited') {
+    if (idem) await releaseIdempotencyRecord(ctx.tenant, idem.key);
     return NextResponse.json(
       { error: 'rate_limited', retryAfterSeconds: result.error.retryAfterSeconds },
       { status: 429, headers: { 'Retry-After': String(result.error.retryAfterSeconds) } },
     );
   }
 
-  // A deterministic refusal is remembered under the key too — otherwise a
-  // retry with the same key + body reads the reserved-but-empty record as a
-  // CONFLICT and answers 422 `idempotency-key-reused` forever (review:
-  // security M-2). Transient 5xx / 429 are NOT remembered so the retry can
-  // succeed.
+  // A deterministic refusal is remembered under the key — a retry with the
+  // same key + body then REPLAYS that answer instead of reading the
+  // reserved-but-empty record as a CONFLICT and answering 422
+  // `idempotency-key-reused` forever (review: security M-2). A transient
+  // 5xx / 429 is the mirror image: not remembered, and the reservation
+  // RELEASED (T121) so the retry is evaluated afresh.
   const refusal = mapRefusal(result.error);
   if (refusal) {
     if (idem) await rememberIdempotentResponse(ctx.tenant, idem.key, idem.bodyHash, refusal);
     return NextResponse.json(refusal.body, { status: refusal.status });
   }
   const error = result.error;
+  if (idem) await releaseIdempotencyRecord(ctx.tenant, idem.key);
   logger.error(
     // the repo code rides in `message` — `type` alone is always 'server_error' here
     { errorId: `${ERROR_ID}.use_case_failed`, requestId: ctx.requestId, tenantId: ctx.tenant.slug, err: error.type === 'server_error' ? error.message : error.type },
