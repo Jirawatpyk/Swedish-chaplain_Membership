@@ -119,6 +119,41 @@ describe('PortalChangeRequestForm — one Idempotency-Key per attempt sequence (
     expect(keys[1]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it('after a 403 the NEXT submission carries a DIFFERENT key (the route REMEMBERS the refusal under the key)', async () => {
+    // `mapRefusal` in `src/app/api/portal/change-requests/route.ts` remembers
+    // 403 `forbidden` / `company_fields_require_primary` / `member_archived`
+    // and 404 `not_found` under the key, exactly as it remembers the
+    // validation 422. Keeping the key past one of those answered the member's
+    // corrected, CHANGED body with 422 `idempotency-key-reused` until they
+    // reloaded the page (seam pass, 2026-09-16, finding #1).
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: 'forbidden', fields: ['company_name'] }), { status: 403, headers: { 'content-type': 'application/json' } }));
+    renderForm();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const keys = keysSent();
+    expect(keys[1]).not.toBe(keys[0]);
+    expect(keys[1]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('a network error and the retry after it carry the SAME key (nothing was reserved, or the reservation is still live)', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      fetchMock.mockRejectedValue(new Error('network down'));
+      renderForm();
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      fireEvent.click(submitButton());
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      const keys = keysSent();
+      expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(keys[1]).toBe(keys[0]);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('after a validation 422 the NEXT submission carries a DIFFERENT key (the refusal is remembered under the old one)', async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ error: 'validation_error', issues: [{ path: ['contact', 'phone'], code: 'custom', message: 'invalid phone: not_e164' }] }), {

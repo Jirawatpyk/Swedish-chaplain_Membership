@@ -217,8 +217,11 @@ function fillLines<L extends string>(
 /**
  * Validates a raw proposal against the staff rules and normalises it:
  * trims where the staff rule trims, `''` website → `null` (clear), phone
- * through `asPhone` (E.164), address groups filled to every line (a missing
- * line is `null` — a group is one unit; the client sends the whole object).
+ * through `asPhone` (E.164), address groups filled to every line — `''` is
+ * normalised to `null` (the explicit clear), while an OMITTED line is a
+ * validation issue on that line (`address_line_missing`, T123): a group is
+ * one unit and a partial object must never be widened into a clear. The
+ * browser form always sends the whole object (`buildProposalBody`).
  *
  * Issues use zod paths (`contact.phone`, `company.billing_address.country`)
  * so the route can map them back to form fields.

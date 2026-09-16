@@ -386,6 +386,14 @@ export function queueListQuery(tx: TenantTx, filter: ChangeRequestListFilter, pa
   return listQuery(tx, where, state === 'pending', page);
 }
 
+/**
+ * How many EXTRA pages a list walks when T124's skip emptied the one it read.
+ * Bounded so a table with a large corrupt run cannot turn one request into an
+ * unbounded scan; at the bound the caller gets `items: []` WITH the cursor and
+ * can page on deliberately.
+ */
+const MAX_EMPTY_PAGE_CONTINUATIONS = 5;
+
 async function runList(
   ctx: TenantContext,
   where: ReturnType<typeof and>,
@@ -395,22 +403,31 @@ async function runList(
   try {
     const limit = pageLimit(page);
     return await runInTenant(ctx, async (tx) => {
-      const rows = await listQuery(tx, where, oldestFirst, page);
-      const hasMore = rows.length > limit;
-      const slice = hasMore ? rows.slice(0, limit) : rows;
-      const fields = await loadFields(
-        tx,
-        slice.map((r) => r.request.id),
-      );
-      const items = projectListRows(ctx, slice, fields);
-      const last = slice[slice.length - 1];
-      return ok({
-        items,
-        nextCursor:
+      let current = page;
+      for (let continuations = 0; ; continuations += 1) {
+        const rows = await listQuery(tx, where, oldestFirst, current);
+        const hasMore = rows.length > limit;
+        const slice = hasMore ? rows.slice(0, limit) : rows;
+        const fields = await loadFields(
+          tx,
+          slice.map((r) => r.request.id),
+        );
+        const items = projectListRows(ctx, slice, fields);
+        const last = slice[slice.length - 1];
+        const nextCursor =
           hasMore && last
             ? { submittedAt: last.request.submittedAt, id: last.request.id as ChangeRequestId }
-            : null,
-      });
+            : null;
+        // A page whose rows were ALL skipped (T124) answered `items: []` with
+        // a non-null cursor, and every surface that reads an empty page as the
+        // empty state stopped there — the valid rows behind the corrupt run
+        // were unreachable (seam pass 2026-09-16, finding #2). Walk on instead;
+        // the per-row log line still fires once per skipped row.
+        if (items.length > 0 || nextCursor === null || continuations >= MAX_EMPTY_PAGE_CONTINUATIONS) {
+          return ok({ items, nextCursor });
+        }
+        current = { ...current, cursor: nextCursor };
+      }
     });
   } catch (e) {
     return err(unexpected(e));

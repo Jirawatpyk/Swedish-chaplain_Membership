@@ -436,8 +436,14 @@ async function buildPayload(
       const target = await resolveStaffEmailTarget(request.value, (id) => drizzleChangeRequestRepo.findById(tenantCtx, id));
       if (target.kind === 'superseded') return { miss: 'request_superseded' };
       if (target.kind === 'gone') return { miss: 'request_gone' };
-      // a transient repo fault stays on the retry ladder (the roster-read rule
-      // below), never a silent null the ladder labels `no_template_handler`
+      // A transient repo fault stays on the retry ladder — `null`, like the
+      // roster read below. It is NOT distinguishable there: if the ladder
+      // exhausts `MAX_ATTEMPTS` the row's `last_error` reads
+      // `no_template_handler`, the label every transient null ends under. The
+      // log line right here is what tells ops a replacement read failed
+      // rather than a template lookup (R-3 rule; the same trade-off the
+      // roster read takes) — a transient marker threaded out to the ladder
+      // would be the alternative, and is deliberately not taken.
       if (target.kind !== 'render') {
         logger.warn({ outboxRowId: row.id, tenantId: row.tenantId }, 'cron.outbox_dispatch.change_request.replacement_read_failed');
         return null;

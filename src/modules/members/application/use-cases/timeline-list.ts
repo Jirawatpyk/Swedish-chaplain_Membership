@@ -362,8 +362,11 @@ export async function timelineList(
   // permission decisions are the route gate above and `invoicingRead` below.
   // The FR-029 projection runs on the RAW rows (before redaction — round 2,
   // security R-3: a future deny-list entry for `contact_id` must not fail it
-  // open) and covers all three change-request events: `submitted`, `decided`
-  // and `withdrawn` all carry `scope` + `contact_id`. A colleague's
+  // open) and covers all FOUR change-request events: `submitted`, `decided`
+  // and `withdrawn` carry `scope` + `contact_id`; `rate_limited` proposes
+  // nothing, so it has no scope and rides on `contact_id` alone — which is
+  // what keeps the submitter's OWN refusal on their own timeline while a
+  // colleague never sees it (T127). A colleague's
   // own_contact row is DROPPED; a mixed row (company keys + the primary's own
   // keys) is kept with its per-field keys stripped for anyone but its
   // submitter (round 2, privacy I-1 residual).

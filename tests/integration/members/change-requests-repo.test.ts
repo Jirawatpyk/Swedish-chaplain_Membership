@@ -671,6 +671,58 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     }
   });
 
+  it('seam pass #2: a page whose rows were ALL skipped continues to the next one instead of answering empty-with-a-cursor', async () => {
+    // T124 made ONE corrupt row survivable. A page whose EVERY row is corrupt
+    // still answered `items: []` with a non-null `nextCursor`, and a UI that
+    // reads an empty page as the empty state stops there — the valid rows
+    // behind it are unreachable. Newest-first (`listByMember`), so the two
+    // corrupt rows are the whole first page and the valid one is behind it.
+    const good = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: new Date('2026-09-11T16:00:00Z') });
+    const bad1 = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: new Date('2026-09-11T16:05:00Z') });
+    const bad2 = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: new Date('2026-09-11T16:10:00Z') });
+    // one pending per submitter: chain them the way a resubmit does
+    const seeded = await runInTenant(a.tenant.ctx, async (tx) => {
+      const i1 = await drizzleChangeRequestRepo.insertInTx(tx, good);
+      if (!i1.ok) return i1;
+      const w1 = await drizzleChangeRequestRepo.withdrawInTx(tx, good.id, {
+        reason: 'replaced',
+        withdrawnAt: new Date('2026-09-11T16:05:00Z'),
+        replacedByRequestId: bad1.id,
+      });
+      if (!w1.ok) return w1;
+      const i2 = await drizzleChangeRequestRepo.insertInTx(tx, bad1);
+      if (!i2.ok) return i2;
+      const w2 = await drizzleChangeRequestRepo.withdrawInTx(tx, bad1.id, {
+        reason: 'replaced',
+        withdrawnAt: new Date('2026-09-11T16:10:00Z'),
+        replacedByRequestId: bad2.id,
+      });
+      if (!w2.ok) return w2;
+      return drizzleChangeRequestRepo.insertInTx(tx, bad2);
+    });
+    expect(seeded.ok).toBe(true);
+    const errorSpy = vi.spyOn(logger, 'error');
+    try {
+      await db
+        .update(memberChangeRequestFields)
+        .set({ seenValue: 42 as unknown as string })
+        .where(and(inArray(memberChangeRequestFields.requestId, [bad1.id, bad2.id]), eq(memberChangeRequestFields.fieldKey, 'phone')));
+
+      const page = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor: null, limit: 2 });
+      expect(page.ok).toBe(true);
+      if (!page.ok) return;
+      const ids = page.value.items.map((r) => r.request.id);
+      expect(ids, 'the all-skipped page must not answer empty while rows remain behind it').toContain(good.id);
+      expect(ids).not.toContain(bad1.id);
+      expect(ids).not.toContain(bad2.id);
+      const skips = errorSpy.mock.calls.filter((c) => (c[0] as { errorId?: string }).errorId === 'M114.repo.row_invalid');
+      expect(skips.length, 'one log line per skipped row, continuation included').toBe(2);
+    } finally {
+      errorSpy.mockRestore();
+      await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, [good.id, bad1.id, bad2.id]));
+    }
+  });
+
   it('T125: the CHECK refuses a partially_approved decision with NO decision_reason (FR-014, migration 0303)', async () => {
     const d = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: new Date('2026-09-11T15:00:00Z') });
     const reviewer = await createActiveTestUser('admin');

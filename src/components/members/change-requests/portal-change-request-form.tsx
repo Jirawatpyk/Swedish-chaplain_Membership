@@ -278,11 +278,17 @@ export function PortalChangeRequestForm({
    * daily submissions.
    *
    * Minted lazily (never during render, so a StrictMode remount just mints on
-   * first use) and cleared only on a TERMINAL outcome — a 2xx or a validation
-   * 422, both of which the server remembers under the key, so reusing it would
-   * replay the old answer. A 429 / 5xx / network drop keeps the key: the route
-   * releases its reservation on those arms (T121) and evaluates the retry
-   * afresh.
+   * first use) and kept ONLY for the arms the route leaves retryable: a 429
+   * (either bucket) and any 5xx — those release the reservation (T121) and
+   * evaluate the retry afresh — plus a network drop, where nothing came back
+   * at all. EVERY other response ends the sequence, because the route
+   * REMEMBERS its answer under the key (`mapRefusal`: the 2xx bodies, the
+   * validation 422, 403 `forbidden` / `company_fields_require_primary` /
+   * `member_archived`, 404 `not_found`), and a remembered key answers a
+   * CHANGED body with 422 `idempotency-key-reused` — so a member who fixed
+   * what the refusal named would have been stuck until they reloaded (seam
+   * pass 2026-09-16, finding #1). A 422 `idempotency-key-reused` is terminal
+   * for the same reason in reverse: that key is already burnt.
    */
   const idempotencyKeyRef = useRef<string | null>(null);
   const takeIdempotencyKey = (): string => {
@@ -292,6 +298,8 @@ export function PortalChangeRequestForm({
   const endAttemptSequence = (): void => {
     idempotencyKeyRef.current = null;
   };
+  /** The two arms the route leaves retryable under the SAME key (T121): the 429s and every 5xx. */
+  const keySurvives = (status: number): boolean => status === 429 || status >= 500;
 
   const onSubmit = async (values: ChangeRequestFormValues) => {
     setSubmitting(true);
@@ -306,10 +314,13 @@ export function PortalChangeRequestForm({
         | { outcome?: string; unchanged?: boolean; replaced?: string | null; error?: string; issues?: Array<{ path?: unknown }>; retryAfterSeconds?: number }
         | null;
 
+      // ONE decision for the whole response table: anything the route can
+      // REMEMBER under this key ends the attempt sequence, so the member's
+      // next (changed) body travels under a fresh key instead of reading back
+      // as `idempotency-key-reused`. Only the retryable arms keep it.
+      if (!keySurvives(res.status)) endAttemptSequence();
+
       if (res.ok) {
-        // terminal: the server REMEMBERED this key's response, so the next
-        // submission needs a fresh one (a replay would answer this outcome)
-        endAttemptSequence();
         if (data?.outcome === 'submitted') {
           // US5 AS2: a resubmit REPLACED the earlier pending request — say so
           toast.success(typeof data.replaced === 'string' ? tReplaced('status') : tStatus('submitted'));
@@ -335,9 +346,6 @@ export function PortalChangeRequestForm({
       }
 
       if (res.status === 422 && data?.error === 'validation_error' && Array.isArray(data.issues)) {
-        // terminal too: a deterministic refusal is remembered under the key,
-        // so the corrected values must travel under a new one
-        endAttemptSequence();
         let focused = false;
         for (const issue of data.issues) {
           const path = Array.isArray(issue.path) ? issue.path.join('.') : '';

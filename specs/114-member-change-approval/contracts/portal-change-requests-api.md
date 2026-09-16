@@ -80,8 +80,12 @@ evaluated afresh and answers 429 again, never 422 `idempotency-key-reused`. (Bef
 reservation was left behind and the correct retry read as a conflict for the record's whole 24 h
 TTL; the earlier advice to mint a new key per attempt was the workaround for that bug, and the
 form now mints ONE key per submission attempt sequence — T122.) The attempt-bucket 429 fires
-before the body and reserves nothing;
-member archived → **403 `member_archived`**. The no-op answers
+before the body is read and reserves nothing, so there is no reservation to release and the same
+key is simply reused on the retry. Every OTHER refusal is remembered under the key — the
+validation **422**, **403 `forbidden`** / **403 `company_fields_require_primary`**, **404
+`not_found`**, and a member archived → **403 `member_archived`** — so a client that changes its
+body after one of those MUST mint a new key or read back 422 `idempotency-key-reused` (the form
+ends its attempt sequence on every status but 429 / 5xx — seam pass 2026-09-16). The no-op answers
 come BEFORE the cap: at the cap an identical or record-matching proposal is still
 `nothing_to_submit` / `already_pending`, never 429.
 
