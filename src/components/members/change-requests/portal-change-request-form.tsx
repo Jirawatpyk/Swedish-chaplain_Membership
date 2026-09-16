@@ -20,7 +20,7 @@
  *     (`CardTitle` renders a div — see ui/card.tsx; no radio / checkbox groups
  *     here, so no fieldset is needed).
  */
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Controller, useForm, type Path } from 'react-hook-form';
@@ -269,13 +269,37 @@ export function PortalChangeRequestForm({
     return tErrors('field');
   }
 
+  /**
+   * ONE `Idempotency-Key` per submission ATTEMPT SEQUENCE (T122, post-ship
+   * review #3). A key minted per ATTEMPT made the header decorative: a
+   * double-click or a retry after a dropped response reached the server as two
+   * distinct requests, and the second one REPLACED the first (the
+   * one-pending-per-submitter rule) while burning another of the member's ten
+   * daily submissions.
+   *
+   * Minted lazily (never during render, so a StrictMode remount just mints on
+   * first use) and cleared only on a TERMINAL outcome — a 2xx or a validation
+   * 422, both of which the server remembers under the key, so reusing it would
+   * replay the old answer. A 429 / 5xx / network drop keeps the key: the route
+   * releases its reservation on those arms (T121) and evaluates the retry
+   * afresh.
+   */
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const takeIdempotencyKey = (): string => {
+    idempotencyKeyRef.current ??= crypto.randomUUID();
+    return idempotencyKeyRef.current;
+  };
+  const endAttemptSequence = (): void => {
+    idempotencyKeyRef.current = null;
+  };
+
   const onSubmit = async (values: ChangeRequestFormValues) => {
     setSubmitting(true);
     setStatus({ kind: null });
     try {
       const res = await fetch('/api/portal/change-requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': takeIdempotencyKey() },
         body: JSON.stringify(buildProposalBody(values, canProposeCompanyFields)),
       });
       const data = (await res.json().catch(() => null)) as
@@ -283,6 +307,9 @@ export function PortalChangeRequestForm({
         | null;
 
       if (res.ok) {
+        // terminal: the server REMEMBERED this key's response, so the next
+        // submission needs a fresh one (a replay would answer this outcome)
+        endAttemptSequence();
         if (data?.outcome === 'submitted') {
           // US5 AS2: a resubmit REPLACED the earlier pending request — say so
           toast.success(typeof data.replaced === 'string' ? tReplaced('status') : tStatus('submitted'));
@@ -308,6 +335,9 @@ export function PortalChangeRequestForm({
       }
 
       if (res.status === 422 && data?.error === 'validation_error' && Array.isArray(data.issues)) {
+        // terminal too: a deterministic refusal is remembered under the key,
+        // so the corrected values must travel under a new one
+        endAttemptSequence();
         let focused = false;
         for (const issue of data.issues) {
           const path = Array.isArray(issue.path) ? issue.path.join('.') : '';

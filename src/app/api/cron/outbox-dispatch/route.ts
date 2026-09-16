@@ -71,6 +71,7 @@ import {
   drizzleMemberSettingsRepo,
   formatMemberNumber,
   resolveMemberNumberPrefix,
+  resolveStaffEmailTarget,
   type ChangeRequestId,
 } from '@/modules/members';
  
@@ -423,10 +424,25 @@ async function buildPayload(
       const tenantCtx = asTenantContext(row.tenantId);
       const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
       if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
-      // A request replaced (or otherwise closed) before this row was sent
-      // must not reach the reviewer — the replacement queued its own rows
-      // (review: reliability I-4).
-      if (request.value.state !== 'pending') return { miss: 'request_superseded' };
+      // A request replaced (or otherwise closed) before this row was sent must
+      // not reach the reviewer AS IT IS — but a resubmit that COALESCED
+      // (FR-011: inside 1 h it inherits `staff_notified_at` and queues no row
+      // of its own) leaves THIS row as the only email in flight. Skipping it
+      // then dropped the notification entirely for an hour (T120, post-ship
+      // review #1). Follow the replace chain to the pending head and render
+      // that — the deep link opens the current values (SC-013). A replacement
+      // past the window stamped its own time and HAS its own row, so this one
+      // stays `request_superseded`: no duplicate (review: reliability I-4).
+      const target = await resolveStaffEmailTarget(request.value, (id) => drizzleChangeRequestRepo.findById(tenantCtx, id));
+      if (target.kind === 'superseded') return { miss: 'request_superseded' };
+      if (target.kind === 'gone') return { miss: 'request_gone' };
+      // a transient repo fault stays on the retry ladder (the roster-read rule
+      // below), never a silent null the ladder labels `no_template_handler`
+      if (target.kind !== 'render') {
+        logger.warn({ outboxRowId: row.id, tenantId: row.tenantId }, 'cron.outbox_dispatch.change_request.replacement_read_failed');
+        return null;
+      }
+      const current = target.request;
       // The recipient must STILL be an active reviewer at send time: an
       // admin disabled between enqueue and dispatch gets no member PII
       // (review: security I-4). The roster read throws (no Result): a
@@ -452,9 +468,9 @@ async function buildPayload(
           ? reviewers.find((r) => r.id === reviewerUserId)
           : reviewers.find((r) => r.email.toLowerCase() === row.toEmail.toLowerCase());
       if (!reviewer) return { miss: 'recipient_gone' };
-      const member = await drizzleMemberRepo.findById(tenantCtx, request.value.memberId);
+      const member = await drizzleMemberRepo.findById(tenantCtx, current.memberId);
       if (!member.ok) return member.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
-      const contact = await drizzleContactRepo.findById(tenantCtx, request.value.submittedByContactId);
+      const contact = await drizzleContactRepo.findById(tenantCtx, current.submittedByContactId);
       if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
       // The prefix read throws (no Result); a transient failure must stay on
       // the retry ladder, not escape the tick with `attempts` unbumped
@@ -471,10 +487,10 @@ async function buildPayload(
         companyName: member.value.companyName,
         memberNumber: formatMemberNumber(prefix, member.value.memberNumber),
         submitterName: `${contact.value.firstName} ${contact.value.lastName}`.trim(),
-        submitterRole: request.value.submitterRoleAtSubmission,
-        submittedAt: request.value.submittedAt,
-        submitterUserId: request.value.submittedByUserId,
-        fields: request.value.fields.map((f) => ({
+        submitterRole: current.submitterRoleAtSubmission,
+        submittedAt: current.submittedAt,
+        submitterUserId: current.submittedByUserId,
+        fields: current.fields.map((f) => ({
           key: f.key,
           current: f.seen,
           proposed: f.proposed,

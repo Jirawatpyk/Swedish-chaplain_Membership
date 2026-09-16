@@ -2059,6 +2059,13 @@
       "when": 1798543500000,
       "tag": "0302_member_change_request_fk_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 304,
+      "version": "7",
+      "when": 1798543600000,
+      "tag": "0303_member_change_requests_reason_partial_ck",
+      "breakpoints": true
     }
   ]
 }

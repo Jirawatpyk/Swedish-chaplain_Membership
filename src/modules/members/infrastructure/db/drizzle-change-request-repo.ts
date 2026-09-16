@@ -22,6 +22,8 @@ import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, sql } from 'drizzle-
 import type { Member } from '../../domain/member';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
+import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 // The outbox / users tables live in the auth-shared schema. Same documented
@@ -247,7 +249,31 @@ function joinedSelect(tx: TenantTx) {
     .leftJoin(users, eq(users.id, memberChangeRequests.decidedByUserId));
 }
 
-function toListRow(j: JoinedRow, fieldRows: readonly MemberChangeRequestFieldRow[]): ChangeRequestListRow {
+/**
+ * T126 (post-ship review #7) — the `users` LEFT JOIN can miss for a row that
+ * HAS a `decided_by_user_id` (the account was hard-deleted, or the join was
+ * cut by a future RLS policy on `users`). `displayName: ''` +
+ * `deactivated: false` then reads as a real, ACTIVE reviewer everywhere the
+ * shape travels. The UI already renders `displayName || unknownReviewer`, so
+ * the empty name is the right VALUE — what was missing is the operator
+ * signal. Ids only in the log: never a name, never a company.
+ */
+function reviewerOf(j: JoinedRow, decidedByUserId: UserId): { displayName: string; deactivated: boolean } {
+  if (j.decidedByName === null) {
+    logger.warn(
+      {
+        errorId: 'M114.repo.reviewer_join_missed',
+        tenantId: j.request.tenantId,
+        changeRequestId: j.request.id,
+        decidedByUserId,
+      },
+      'member_change_requests: decided_by_user_id has no users row — the UI falls back to unknownReviewer',
+    );
+  }
+  return { displayName: j.decidedByName ?? '', deactivated: j.decidedByStatus === 'disabled' };
+}
+
+export function toListRow(j: JoinedRow, fieldRows: readonly MemberChangeRequestFieldRow[]): ChangeRequestListRow {
   const request = rowToDomain(j.request, fieldRows);
   return {
     request,
@@ -258,14 +284,49 @@ function toListRow(j: JoinedRow, fieldRows: readonly MemberChangeRequestFieldRow
       archived: j.memberStatus === 'archived',
     },
     submitter: { displayName: `${j.submitterFirstName} ${j.submitterLastName}`.trim() },
-    decidedBy:
-      request.decidedByUserId === null
-        ? null
-        : {
-            displayName: j.decidedByName ?? '',
-            deactivated: j.decidedByStatus === 'disabled',
-          },
+    decidedBy: request.decidedByUserId === null ? null : reviewerOf(j, request.decidedByUserId),
   };
+}
+
+/**
+ * The list projection for a page of joined rows.
+ *
+ * T124 (post-ship review #5) — `rowToDomain` THROWS on a row outside the
+ * Domain shape (a `seen_value` that is a number, an unknown `field_key`, a
+ * state that contradicts its columns). A single such row used to fail the
+ * WHOLE page: the reviewer queue, the member history and the portal archive
+ * all answered 500 until someone fixed the row by hand. A page skips it
+ * instead, names it in the log (ids only — never a value) and counts it, so
+ * the other requests stay decidable and ops still sees the corruption.
+ *
+ * A SINGLE-row read (`findById`, `findPendingBySubmitter`) still throws:
+ * answering "not found" for a row that exists would be worse than a 500.
+ */
+export function projectListRows(
+  ctx: TenantContext,
+  slice: readonly JoinedRow[],
+  fields: Map<string, MemberChangeRequestFieldRow[]>,
+): ChangeRequestListRow[] {
+  const items: ChangeRequestListRow[] = [];
+  for (const j of slice) {
+    try {
+      items.push(toListRow(j, fields.get(j.request.id) ?? []));
+    } catch (e) {
+      if (!(e instanceof ChangeRequestRowError)) throw e;
+      logger.error(
+        {
+          errorId: 'M114.repo.row_invalid',
+          tenantId: ctx.slug,
+          changeRequestId: j.request.id,
+          memberId: j.request.memberId,
+          err: errKind(e),
+        },
+        'member_change_requests: row outside the Domain shape skipped from the list',
+      );
+      membersMetrics.changeRequests.rowInvalid(ctx.slug);
+    }
+  }
+  return items;
 }
 
 /**
@@ -341,7 +402,7 @@ async function runList(
         tx,
         slice.map((r) => r.request.id),
       );
-      const items = slice.map((j) => toListRow(j, fields.get(j.request.id) ?? []));
+      const items = projectListRows(ctx, slice, fields);
       const last = slice[slice.length - 1];
       return ok({
         items,
@@ -567,7 +628,12 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         })
         .from(memberChangeRequests)
         .where(
-          and(eq(memberChangeRequests.submittedByUserId, userId), gt(memberChangeRequests.submittedAt, since)),
+          // FR-008 "10 submissions in 24 hours" — the trailing window is
+          // INCLUSIVE at its boundary (T128 / post-ship review #9): a row
+          // stamped exactly `now - 24 h` is IN the window, and
+          // `oldestSubmittedAt` (the MIN over this same set) moves with it, so
+          // `retryAfterSeconds` names when that row actually falls out.
+          and(eq(memberChangeRequests.submittedByUserId, userId), gte(memberChangeRequests.submittedAt, since)),
         );
       const oldestRaw = row?.oldest ?? null;
       return ok({

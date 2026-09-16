@@ -22,10 +22,11 @@
  * Seeds: two tenants, each with a plan + member + primary contact + a portal
  * user linked to it, so every FK (member, contact, user) is satisfied.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { asMemberId, asContactId, type UserId } from '@/modules/members';
 import type { ChangeRequestId } from '@/modules/members/domain/change-request/change-request';
 import { PROPOSABLE_FIELD_KEYS } from '@/modules/members/domain/change-request/proposable-fields';
@@ -620,6 +621,128 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     const fieldRows = await db.select().from(memberChangeRequestFields).where(inArray(memberChangeRequestFields.requestId, [id]));
     expect(fieldRows.length).toBe(keys.length);
     expect(fieldRows.every((f) => f.outcome === null)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 10 (post-ship `/code-review` 2026-09-16)
+  // -------------------------------------------------------------------------
+
+  it('T124: ONE corrupt row is skipped from a list page (logged M114.repo.row_invalid) - the rest of the page still renders', async () => {
+    // submitted by b.user INSIDE tenant A (the `pendingStats` case's idiom):
+    // a.user already carries a pending row from the earlier cases here, and
+    // the partial unique index allows exactly one per submitter
+    const good = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: new Date('2026-09-11T14:00:00Z') });
+    const corrupt = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: new Date('2026-09-11T14:05:00Z') });
+    const seeded = await runInTenant(a.tenant.ctx, async (tx) => {
+      const i1 = await drizzleChangeRequestRepo.insertInTx(tx, good);
+      if (!i1.ok) return i1;
+      const w = await drizzleChangeRequestRepo.withdrawInTx(tx, good.id, {
+        reason: 'replaced',
+        withdrawnAt: new Date('2026-09-11T14:05:00Z'),
+        replacedByRequestId: corrupt.id,
+      });
+      if (!w.ok) return w;
+      return drizzleChangeRequestRepo.insertInTx(tx, corrupt);
+    });
+    expect(seeded.ok).toBe(true);
+    const errorSpy = vi.spyOn(logger, 'error');
+    try {
+      // `jsonb` is unconstrained: a NUMBER in `seen_value` is outside the
+      // Domain shape. Bare `db` (owner) - the app has no way to write this.
+      await db
+        .update(memberChangeRequestFields)
+        .set({ seenValue: 42 as unknown as string })
+        .where(and(eq(memberChangeRequestFields.requestId, corrupt.id), eq(memberChangeRequestFields.fieldKey, 'phone')));
+
+      const page = await drizzleChangeRequestRepo.listByMember(a.tenant.ctx, asMemberId(a.memberId), { cursor: null, limit: 50 });
+      expect(page.ok).toBe(true);
+      if (!page.ok) return;
+      const ids = page.value.items.map((r) => r.request.id);
+      expect(ids).toContain(good.id);
+      expect(ids).not.toContain(corrupt.id);
+      const skipped = errorSpy.mock.calls.find((c) => (c[0] as { errorId?: string }).errorId === 'M114.repo.row_invalid');
+      expect(skipped, 'the skip must name itself in the log').toBeDefined();
+      expect(skipped?.[0]).toMatchObject({ tenantId: a.tenant.ctx.slug, changeRequestId: corrupt.id });
+      // ids only - no proposed value rides in the log line
+      expect(JSON.stringify(skipped?.[0])).not.toContain('+668');
+    } finally {
+      errorSpy.mockRestore();
+      await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, [good.id, corrupt.id]));
+    }
+  });
+
+  it('T125: the CHECK refuses a partially_approved decision with NO decision_reason (FR-014, migration 0303)', async () => {
+    const d = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: new Date('2026-09-11T15:00:00Z') });
+    const reviewer = await createActiveTestUser('admin');
+    lateUsers.push(reviewer);
+    await runInTenant(a.tenant.ctx, async (tx) => {
+      const ins = await drizzleChangeRequestRepo.insertInTx(tx, d);
+      if (!ins.ok) throw new UseCaseAbort(ins.error);
+      const dec = await drizzleChangeRequestRepo.decideInTx(tx, d.id, {
+        decidedAt: new Date('2026-09-11T15:10:00Z'),
+        decidedByUserId: mu(reviewer.userId),
+        outcome: 'partially_approved',
+        reason: 'one field rejected',
+        note: null,
+        fields: [
+          { key: 'phone', outcome: 'approved' as const, appliedAt: new Date('2026-09-11T15:10:00Z') },
+          { key: 'billing_address', outcome: 'rejected' as const, appliedAt: null },
+        ],
+      });
+      if (!dec.ok) throw new UseCaseAbort(dec.error);
+    });
+    try {
+      // bare `db` (owner) - the DB is the LAST line: a repo bug or a
+      // hand-written UPDATE must not be able to strip the reason
+      let caught: unknown;
+      try {
+        await db.execute(sql`UPDATE "member_change_requests" SET "decision_reason" = NULL WHERE "id" = ${d.id}`);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, 'the UPDATE must be refused by the CHECK').toBeDefined();
+      // Drizzle wraps the driver error and hangs the original off `.cause`
+      // (the last-admin-guard precedent) - walk the chain for the SQLSTATE
+      let cur: unknown = caught;
+      let pg: { code?: string; constraint_name?: string } | undefined;
+      while (cur !== null && cur !== undefined) {
+        const candidate = cur as { code?: string; constraint_name?: string; cause?: unknown };
+        if (candidate.code === '23514') {
+          pg = candidate;
+          break;
+        }
+        cur = candidate.cause;
+      }
+      expect(pg, 'no 23514 in the cause chain').toBeDefined();
+      expect(pg?.constraint_name).toBe('member_change_requests_reason_iff_rejected_ck');
+      const [row] = await db.select().from(memberChangeRequests).where(inArray(memberChangeRequests.id, [d.id]));
+      expect(row?.decisionReason).toBe('one field rejected');
+      // the OTHER arms are unchanged: an `approved` decision needs no reason
+      await db.execute(sql`UPDATE "member_change_requests" SET "outcome" = 'approved', "decision_reason" = NULL WHERE "id" = ${d.id}`);
+      const [approved] = await db.select().from(memberChangeRequests).where(inArray(memberChangeRequests.id, [d.id]));
+      expect(approved?.decisionReason).toBeNull();
+    } finally {
+      await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, [d.id]));
+    }
+  });
+
+  it('T128: countSubmittedSince is INCLUSIVE at the window boundary (FR-008 "in 24 hours")', async () => {
+    const at = new Date('2026-09-20T08:00:00Z');
+    const d = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: at, staffNotifiedAt: at });
+    const ins = await runInTenant(a.tenant.ctx, (tx) => drizzleChangeRequestRepo.insertInTx(tx, d));
+    expect(ins.ok).toBe(true);
+    try {
+      const atBoundary = await runInTenant(a.tenant.ctx, (tx) =>
+        drizzleChangeRequestRepo.countSubmittedSince(tx, mu(b.user.userId), at),
+      );
+      expect(atBoundary.ok && atBoundary.value).toEqual({ count: 1, oldestSubmittedAt: at });
+      const justAfter = await runInTenant(a.tenant.ctx, (tx) =>
+        drizzleChangeRequestRepo.countSubmittedSince(tx, mu(b.user.userId), new Date(at.getTime() + 1)),
+      );
+      expect(justAfter.ok && justAfter.value).toEqual({ count: 0, oldestSubmittedAt: null });
+    } finally {
+      await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, [d.id]));
+    }
   });
 });
 

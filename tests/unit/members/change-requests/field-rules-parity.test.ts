@@ -118,22 +118,43 @@ describe('validateProposal (the member-side gate over the same rules)', () => {
     });
     expect(bad.ok).toBe(false);
     if (bad.ok) return;
-    // the malformed country AND (review tax I-2) the group rule's missing
-    // required lines are collected in ONE pass (zod 4 keeps refining)
+    // the malformed country AND (T123) every MISSING line are collected in ONE
+    // pass (zod 4 keeps refining). The value-level group rule is skipped here:
+    // an incomplete OBJECT is already refused line by line, so a path never
+    // carries two issues.
     expect(bad.error.map((i) => i.path.join('.'))).toEqual([
       'company.billing_address.country',
+      'company.billing_address.line2',
+      'company.billing_address.sub_district',
       'company.billing_address.city',
+      'company.billing_address.province',
       'company.billing_address.postal_code',
     ]);
     const unknownLine = validateProposal({ company: { registered_address: { street: 'x' } } });
     expect(unknownLine.ok).toBe(false);
   });
 
-  it('the billing group is one unit (tax I-2): a partial group is refused at the missing required lines; a blank group is a clear', () => {
+  it('the billing group is one unit (tax I-2): a partial OBJECT is refused line by line; a complete object with empty required lines is refused by the group rule; a blank group is a clear', () => {
+    // T123 — a partial OBJECT is refused at every missing KEY first
     const partial = validateProposal({ company: { billing_address: { line1: 'Box 9' } } });
     expect(partial.ok).toBe(false);
     if (partial.ok) return;
     expect(partial.error.map((i) => [i.path.join('.'), i.message])).toEqual([
+      ['company.billing_address.line2', 'address_line_missing'],
+      ['company.billing_address.sub_district', 'address_line_missing'],
+      ['company.billing_address.city', 'address_line_missing'],
+      ['company.billing_address.province', 'address_line_missing'],
+      ['company.billing_address.postal_code', 'address_line_missing'],
+      ['company.billing_address.country', 'address_line_missing'],
+    ]);
+    // the WHOLE object with a VALUE on one line and nulls on the required ones
+    // is what the tax I-2 group rule is for — it still fires
+    const incomplete = validateProposal({
+      company: { billing_address: { line1: 'Box 9', line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null } },
+    });
+    expect(incomplete.ok).toBe(false);
+    if (incomplete.ok) return;
+    expect(incomplete.error.map((i) => [i.path.join('.'), i.message])).toEqual([
       ['company.billing_address.city', 'billing_address_incomplete'],
       ['company.billing_address.postal_code', 'billing_address_incomplete'],
       ['company.billing_address.country', 'billing_address_incomplete'],
@@ -143,6 +164,37 @@ describe('validateProposal (the member-side gate over the same rules)', () => {
     expect(nulls.ok).toBe(true);
     if (!nulls.ok) return;
     expect(nulls.value.company?.billing_address).toEqual({ line1: null, line2: null, sub_district: null, city: null, province: null, postal_code: null, country: null });
+  });
+
+  // T123 (post-ship review #4): `fillLines` used to widen an omitted line to
+  // null, so an API client proposing ONE line silently proposed CLEARING the
+  // other five. A group is one unit: every line key must be PRESENT (its
+  // value may be null — that is the explicit clear).
+  it('a partial address group is REFUSED at the missing lines, never widened into a clear', () => {
+    const partial = validateProposal({ company: { registered_address: { city: 'Bangkok' } } });
+    expect(partial.ok).toBe(false);
+    if (partial.ok) return;
+    expect(partial.error.map((i) => [i.path.join('.'), i.message])).toEqual([
+      ['company.registered_address.line1', 'address_line_missing'],
+      ['company.registered_address.line2', 'address_line_missing'],
+      ['company.registered_address.sub_district', 'address_line_missing'],
+      ['company.registered_address.province', 'address_line_missing'],
+      ['company.registered_address.postal_code', 'address_line_missing'],
+    ]);
+    // the WHOLE object (nulls allowed) still passes — what the browser form sends
+    const full = validateProposal({
+      company: { registered_address: { line1: '1 Main Rd', line2: null, sub_district: null, city: 'Bangkok', province: null, postal_code: '10110' } },
+    });
+    expect(full.ok).toBe(true);
+    // billing carries the country line too
+    const billingPartial = validateProposal({ company: { billing_address: { line1: 'Box 9', city: 'Stockholm', postal_code: '11122', country: 'SE' } } });
+    expect(billingPartial.ok).toBe(false);
+    if (billingPartial.ok) return;
+    expect(billingPartial.error.map((i) => i.path.join('.'))).toEqual([
+      'company.billing_address.line2',
+      'company.billing_address.sub_district',
+      'company.billing_address.province',
+    ]);
   });
 
   it('a null phone clears it without E.164 parsing; an empty company name is refused', () => {
@@ -156,9 +208,11 @@ describe('validateProposal (the member-side gate over the same rules)', () => {
     expect(normalisePhoneValue('not a phone')).toBe('not a phone');
   });
 
-  it('address lines: an omitted or whitespace-only line is stored as null, a value is kept, a null stays null (the group CHECK reasons in NULLs)', () => {
+  it('address lines: a whitespace-only line is stored as null, a value is kept, a null stays null (the group CHECK reasons in NULLs)', () => {
+    // T123: every line KEY is present — an OMITTED one is a refusal now, not a
+    // silent null (its own case above)
     const r = validateProposal({
-      company: { registered_address: { line1: '1 Main Rd', line2: '   ', sub_district: null, city: 'Bangkok', postal_code: '10110' } },
+      company: { registered_address: { line1: '1 Main Rd', line2: '   ', sub_district: null, city: 'Bangkok', province: null, postal_code: '10110' } },
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;

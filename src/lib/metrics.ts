@@ -6199,6 +6199,21 @@ export const membersMetrics = {
      * decided audit event carries the same fact (`member_notified: false`).
      * Alert: watch only; a rate that tracks contact removals is expected.
      */
+    /**
+     * `members_change_request_row_invalid_total{tenant}` — a stored request
+     * row outside the Domain shape, SKIPPED from a list page instead of
+     * failing it (T124 / post-ship review #5). The matching log line is
+     * `errorId M114.repo.row_invalid` with the request + member ids.
+     * Alert: any non-zero value is a data-corruption investigation — a list
+     * silently shows fewer requests than the tenant has.
+     */
+    rowInvalid(tenantId: string): void {
+      safeMetric(() => {
+        counter('members_change_request_row_invalid_total', 'Stored change-request rows outside the Domain shape, skipped from a list page').add(1, {
+          tenant: tenantId,
+        });
+      });
+    },
     decisionEmailSkipped(tenantId: string, reason: 'recipient_gone'): void {
       safeMetric(() => {
         counter('members_change_request_decision_email_skipped_total', 'Change-request decisions whose member email was skipped').add(1, {

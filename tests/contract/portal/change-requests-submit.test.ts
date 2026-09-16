@@ -31,6 +31,7 @@ type Classification = {
 const classifyMock = vi.fn(async (): Promise<Classification> => ({ kind: 'first' }));
 const reserveMock = vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } }));
 const rememberMock = vi.fn(async () => undefined);
+const releaseMock = vi.fn(async () => undefined);
 const loggerError = vi.fn();
 let flagOn = true;
 let readOnly = false;
@@ -101,6 +102,7 @@ vi.mock('@/lib/idempotency', () => ({
   classifyIdempotencyRequest: (...args: unknown[]) => classifyMock(...(args as [])),
   reserveIdempotencyRecord: (...args: unknown[]) => reserveMock(...(args as [])),
   rememberIdempotentResponse: (...args: unknown[]) => rememberMock(...(args as [])),
+  releaseIdempotencyRecord: (...args: unknown[]) => releaseMock(...(args as [])),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
 vi.mock('@/lib/logger', () => ({
@@ -431,8 +433,54 @@ describe('POST /api/portal/change-requests — review round 1 + the durable cap 
     // the refusal is audited + counted by the use case; the route only maps it —
     // and never writes it under the key (transient: the retry after the window must succeed)
     expect(rememberMock).not.toHaveBeenCalled();
+    // T121 (post-ship review #2): NOT remembering is not enough — the
+    // RESERVATION written before the use case must be RELEASED, or the same
+    // key + the same body reads as a conflict and answers 422 for 24 h
+    expect(releaseMock).toHaveBeenCalledWith(expect.anything(), 'idem-429');
     expect(loggerError).not.toHaveBeenCalled();
   });
+
+  it('T121: after a 429 the SAME key + body is evaluated afresh — 429 again, never 422 idempotency-key-reused', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext).mockResolvedValueOnce(memberContext);
+    submitMock
+      .mockResolvedValueOnce(err({ type: 'rate_limited', retryAfterSeconds: 85_800, windowCount: 10 }))
+      .mockResolvedValueOnce(err({ type: 'rate_limited', retryAfterSeconds: 85_800, windowCount: 10 }));
+    const { POST } = await import('@/app/api/portal/change-requests/route');
+    const send = () =>
+      POST(
+        new NextRequest('http://localhost/api/portal/change-requests', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': 'idem-retry' },
+          body: JSON.stringify({ contact: { phone: '+66899999999' } }),
+        }),
+      );
+    const first = await send();
+    expect(first.status).toBe(429);
+    expect(releaseMock).toHaveBeenCalledWith(expect.anything(), 'idem-retry');
+    // the release is what keeps the NEXT classify a `first`: the reservation
+    // is gone, so the real Redis answers no record at all
+    const second = await send();
+    expect(second.status).toBe(429);
+    expect(await second.json()).toMatchObject({ error: 'rate_limited' });
+    expect(submitMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('T121: a 500 releases the reservation too — a retry re-enters the use case instead of answering 422 for 24 h', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    submitMock.mockResolvedValueOnce(err({ type: 'server_error', message: 'repo.unexpected' }));
+    const { POST } = await import('@/app/api/portal/change-requests/route');
+    const res = await POST(
+      new NextRequest('http://localhost/api/portal/change-requests', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': 'idem-500' },
+        body: JSON.stringify({ contact: { phone: '+66899999999' } }),
+      }),
+    );
+    expect(res.status).toBe(500);
+    expect(rememberMock).not.toHaveBeenCalled();
+    expect(releaseMock).toHaveBeenCalledWith(expect.anything(), 'idem-500');
+  });
+
 
   it('the attempt bucket is consumed once per request on EVERY outcome (a forged-key flood is bounded); the durable count stays the FR-008 rule', async () => {
     requireMemberContextMock.mockResolvedValue(memberContext);
@@ -482,6 +530,9 @@ describe('POST /api/portal/change-requests — review round 1 + the durable cap 
     );
     expect(res.status).toBe(422);
     expect(rememberMock).toHaveBeenCalledWith(expect.anything(), 'idem-422', 'hash', { status: 422, body: expect.objectContaining({ error: 'validation_error' }) });
+    // T121: a DETERMINISTIC refusal is remembered, never released — the same
+    // body must keep getting the same answer for the key's whole TTL
+    expect(releaseMock).not.toHaveBeenCalled();
   });
 
   it('a server_error is NOT remembered (the retry must be able to succeed)', async () => {

@@ -569,6 +569,22 @@ describe('timelineList — F114 own-contact change requests stay per person (pri
     expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-mine-noscope']);
   });
 
+  // T127 (post-ship review #8): a rate-limit refusal is the submitter's OWN
+  // event — it explains why their submit was refused. It carries no `scope`
+  // (nothing was proposed), so the projection admits it on `contact_id` alone;
+  // a colleague's refusal stays theirs (the fail-closed default arm).
+  it("a member sees their OWN rate_limited row and never a colleague's", async () => {
+    const rateLimited = (contactId: string) => ({
+      ...submitted(contactId, 'own_contact'),
+      id: `cr-rl-${contactId}`,
+      eventType: 'member_change_request_rate_limited',
+      payload: { related_member_id: MEMBER, contact_id: contactId, window_count: 10, retry_after_seconds: 3600 },
+    });
+    const { deps } = makeDeps([rateLimited('c-me'), rateLimited('c-other')]);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, { ...META, actorRole: 'member' }, CTX, { ...deps, invoicingRead: true, viewerContactId: 'c-me' });
+    expect(r.ok && r.value.events.map((e) => e.id)).toEqual(['cr-rl-c-me']);
+  });
+
   it('a staff viewer is not filtered', async () => {
     const { deps } = makeDeps([submitted('c-me', 'own_contact'), submitted('c-other', 'own_contact')]);
     const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, { ...deps, invoicingRead: true });

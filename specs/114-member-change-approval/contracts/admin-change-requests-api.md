@@ -116,7 +116,9 @@ reviewer with the "deactivated" marker, the reason as plain text) and links to t
 Upserts `tenant_member_settings.member_change_approval_enabled`; audit
 `member_change_approval_setting_changed { previous, next }`; no-op when unchanged (no audit).
 `GET` returns `{ "approvalEnabled": boolean, "pendingCount": n }` so the settings card can warn
-when switching off with requests pending (they stay decidable — FR-032).
+when switching off with requests pending (they stay decidable — FR-032). No `Idempotency-Key`:
+FR-038's key clause is the SUBMIT endpoint's, and this PATCH is idempotent by construction — it
+writes one boolean and an unchanged value is a no-op (T130).
 
 ---
 
