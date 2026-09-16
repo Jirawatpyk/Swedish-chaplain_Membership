@@ -61,6 +61,7 @@ vi.mock('@/lib/idempotency', () => ({
     classifyIdempotencyRequestMock(...args),
   reserveIdempotencyRecord: (...args: unknown[]) =>
     reserveIdempotencyRecordMock(...args),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -292,6 +293,27 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('server_error');
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildEraseMemberDepsMock.mockReturnValueOnce({});
+    eraseMemberMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+
+    const res = await invoke(VALID_BODY);
+
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-1',
+    );
   });
 
   it('409 idempotency_conflict — eraseMember not called', async () => {

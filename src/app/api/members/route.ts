@@ -18,9 +18,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
 import { createMember, directorySearch } from '@/modules/members';
@@ -184,162 +184,164 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const deps = buildMembersDeps(tenant);
-  // F8-completion Slice 1 · Task 1.6 — wire the F8 onboarding listener
-  // (create the new member's initial renewal cycle) into the create path
-  // when F8 is enabled. The listener runs POST-COMMIT — AFTER the member +
-  // contact + audit rows have committed durably — in its OWN runInTenant tx
-  // (best-effort; a failure is logged + counted and does NOT roll back the
-  // already-committed member create). Mirrors the changePlan wiring at
-  // [memberId]/route.ts. When F8 is off, createMember is unchanged.
-  const createDeps = env.features.f8Renewals
-    ? {
-        ...deps,
-        onboardingListeners: (
-          await import('@/modules/renewals')
-        ).f8OnCreateMemberCallbacks(tenant.slug),
-      }
-    : deps;
-  const result = await createMember(
-    rawBody,
-    {
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-    },
-    createDeps,
-  );
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildMembersDeps(tenant);
+    // F8-completion Slice 1 · Task 1.6 — wire the F8 onboarding listener
+    // (create the new member's initial renewal cycle) into the create path
+    // when F8 is enabled. The listener runs POST-COMMIT — AFTER the member +
+    // contact + audit rows have committed durably — in its OWN runInTenant tx
+    // (best-effort; a failure is logged + counted and does NOT roll back the
+    // already-committed member create). Mirrors the changePlan wiring at
+    // [memberId]/route.ts. When F8 is off, createMember is unchanged.
+    const createDeps = env.features.f8Renewals
+      ? {
+          ...deps,
+          onboardingListeners: (
+            await import('@/modules/renewals')
+          ).f8OnCreateMemberCallbacks(tenant.slug),
+        }
+      : deps;
+    const result = await createMember(
+      rawBody,
+      {
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+      },
+      createDeps,
+    );
 
-  if (result.ok) {
-    const body = {
-      member_id: result.value.memberId as MemberId,
-      primary_contact_id: result.value.contactId,
-    };
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 201,
-      body,
-    });
-    return NextResponse.json(body, { status: 201 });
-  }
+    if (result.ok) {
+      const body = {
+        member_id: result.value.memberId as MemberId,
+        primary_contact_id: result.value.contactId,
+      };
+      await remember({
+        status: 201,
+        body,
+      });
+      return NextResponse.json(body, { status: 201 });
+    }
 
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: 'Body failed validation.',
-            details: { issues: result.error.issues },
+    switch (result.error.type) {
+      case 'invalid_body':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_body',
+              message: 'Body failed validation.',
+              details: { issues: result.error.issues },
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'invalid_email':
-    case 'invalid_phone':
-    case 'invalid_country':
-    // member-billing-address (0284) — partial billing group, same 400 shape.
-    case 'billing_address_incomplete':
-    case 'invalid_tax_id':
-    case 'invalid_override_reason':
-    // PR-B task 8 — secondary-contact domain validation, same 400 shape.
-    case 'invalid_secondary_email':
-    case 'invalid_secondary_phone':
-    case 'secondary_email_same_as_primary':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'validation_error',
-            message: 'Domain validation failed.',
-            details: result.error,
+          { status: 400 },
+        );
+      case 'invalid_email':
+      case 'invalid_phone':
+      case 'invalid_country':
+      // member-billing-address (0284) — partial billing group, same 400 shape.
+      case 'billing_address_incomplete':
+      case 'invalid_tax_id':
+      case 'invalid_override_reason':
+      // PR-B task 8 — secondary-contact domain validation, same 400 shape.
+      case 'invalid_secondary_email':
+      case 'invalid_secondary_phone':
+      case 'secondary_email_same_as_primary':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'validation_error',
+              message: 'Domain validation failed.',
+              details: result.error,
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'plan_not_found':
-      return NextResponse.json(
-        { error: { code: 'plan_not_found', message: 'Plan not found.' } },
-        { status: 404 },
-      );
-    case 'turnover_out_of_band':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'turnover_warning',
-            message: 'Turnover is outside the plan band. Provide override_reason_code to confirm.',
-            details: result.error,
+          { status: 400 },
+        );
+      case 'plan_not_found':
+        return NextResponse.json(
+          { error: { code: 'plan_not_found', message: 'Plan not found.' } },
+          { status: 404 },
+        );
+      case 'turnover_out_of_band':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'turnover_warning',
+              message: 'Turnover is outside the plan band. Provide override_reason_code to confirm.',
+              details: result.error,
+            },
           },
-        },
-        { status: 422 },
-      );
-    case 'age_not_eligible':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'age_warning',
-            message: 'Primary contact does not meet plan age requirement.',
-            details: result.error,
+          { status: 422 },
+        );
+      case 'age_not_eligible':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'age_warning',
+              message: 'Primary contact does not meet plan age requirement.',
+              details: result.error,
+            },
           },
-        },
-        { status: 422 },
-      );
-    case 'startup_too_old':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'startup_warning',
-            message: 'Founded year exceeds plan duration limit.',
-            details: result.error,
+          { status: 422 },
+        );
+      case 'startup_too_old':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'startup_warning',
+              message: 'Founded year exceeds plan duration limit.',
+              details: result.error,
+            },
           },
-        },
-        { status: 422 },
-      );
-    case 'soft_duplicate':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'soft_duplicate',
-            message:
-              'A member with the same company name + country already exists. Re-submit with confirm_soft_duplicate:true to proceed.',
-            details: result.error,
+          { status: 422 },
+        );
+      case 'soft_duplicate':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'soft_duplicate',
+              message:
+                'A member with the same company name + country already exists. Re-submit with confirm_soft_duplicate:true to proceed.',
+              details: result.error,
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'conflict':
-      // PR-B task 8 — `reason` moved OUT of the user-visible `message` and
-      // into `details.reason` (the `soft_duplicate` arm above is the
-      // in-repo precedent for a discriminator living in `details`). `code`
-      // stays 'conflict' so existing clients keep working; the message is
-      // now a fixed, non-leaking string and `mapMemberCreateServerError`
-      // switches on `details.reason` to highlight the field that actually
-      // collided (member / primary contact / secondary contact).
-      return NextResponse.json(
-        {
-          error: {
-            code: 'conflict',
-            message: 'A record with this value already exists.',
-            details: { reason: result.error.reason },
+          { status: 409 },
+        );
+      case 'conflict':
+        // PR-B task 8 — `reason` moved OUT of the user-visible `message` and
+        // into `details.reason` (the `soft_duplicate` arm above is the
+        // in-repo precedent for a discriminator living in `details`). `code`
+        // stays 'conflict' so existing clients keep working; the message is
+        // now a fixed, non-leaking string and `mapMemberCreateServerError`
+        // switches on `details.reason` to highlight the field that actually
+        // collided (member / primary contact / secondary contact).
+        return NextResponse.json(
+          {
+            error: {
+              code: 'conflict',
+              message: 'A record with this value already exists.',
+              details: { reason: result.error.reason },
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'audit_failed':
-      logger.error(
-        { requestId: ctx.requestId },
-        'create-member: audit write failed',
-      );
-      return NextResponse.json(
-        { error: { code: 'audit_failed', message: 'Audit trail failed.' } },
-        { status: 500 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'create-member: unhandled',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          { status: 409 },
+        );
+      case 'audit_failed':
+        logger.error(
+          { requestId: ctx.requestId },
+          'create-member: audit write failed',
+        );
+        return NextResponse.json(
+          { error: { code: 'audit_failed', message: 'Audit trail failed.' } },
+          { status: 500 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'create-member: unhandled',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

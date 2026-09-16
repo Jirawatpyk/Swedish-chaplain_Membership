@@ -65,6 +65,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: (...args: unknown[]) => classifyMock(...(args as [])),
   reserveIdempotencyRecord: (...args: unknown[]) => reserveMock(...(args as [])),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: (...args: unknown[]) => rememberMock(...(args as [])),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -347,5 +348,24 @@ describe('contract: POST /api/admin/contacts/[contactId]/marketing (108 PR-D T04
     const res = await POST(makeRequest({ state: 'off' }), { params: routeParams() });
     expect(res.status).toBe(500);
     expect(JSON.stringify(await res.json())).not.toContain('pool exhausted');
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(contextFor('admin'));
+    setContactMarketingOptOutMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'set-marketing: repo.unexpected pool exhausted' }),
+    );
+    const { POST } = await loadRoute();
+    const res = await POST(makeRequest({ state: 'off' }), { params: routeParams() });
+    expect(res.status).toBe(500);
+    expect(rememberMock).not.toHaveBeenCalled();
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'key-1',
+    );
   });
 });

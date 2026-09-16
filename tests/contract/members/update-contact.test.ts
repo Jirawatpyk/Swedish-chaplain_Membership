@@ -73,6 +73,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: rememberIdempotentResponseMock,
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -351,6 +352,30 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('server_error');
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
+    changeContactEmailMock.mockResolvedValueOnce(
+      err({ code: 'server_error', cause: new Error('db timeout') }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'alice@new.example' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-uc',
+    );
   });
 
   // --- Partial-save marker (finding 6/8) -------------------------------------

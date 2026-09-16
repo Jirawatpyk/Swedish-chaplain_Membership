@@ -47,6 +47,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'deterministic-hash'),
 }));
@@ -176,5 +177,29 @@ describe('contract: DELETE /api/plans/[year]/[planId] (T123)', () => {
     const body = await res.json();
     expect(body.error?.code).toBe('missing_idempotency_key');
     expect(softDeletePlanMock).not.toHaveBeenCalled();
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without this the client's
+  // correct retry (same key, same body) could never succeed.
+  // (This suite has no other 5xx case; `audit_failed` is the route's 500 arm.)
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+    softDeletePlanMock.mockResolvedValueOnce(
+      err({ type: 'audit_failed', message: 'db down' }),
+    );
+
+    const { DELETE } = await import('@/app/api/plans/[year]/[planId]/route');
+    const res = await DELETE(makeRequest('2026', 'premium'), {
+      params: params('2026', 'premium'),
+    });
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-del-1',
+    );
   });
 });

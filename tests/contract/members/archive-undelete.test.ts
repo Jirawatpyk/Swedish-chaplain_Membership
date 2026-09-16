@@ -43,6 +43,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -198,6 +199,25 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
     const res = await invokeArchive({});
     expect(res.status).toBe(500);
   });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    archiveMemberMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+    const res = await invokeArchive({});
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-1',
+    );
+  });
 });
 
 describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
@@ -279,6 +299,25 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
     );
     const res = await invokeUndelete();
     expect(res.status).toBe(500);
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+    const res = await invokeUndelete();
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-1',
+    );
   });
 
   // --- 108 T033 (US2 / FR-014) — designate a primary while unarchiving ------

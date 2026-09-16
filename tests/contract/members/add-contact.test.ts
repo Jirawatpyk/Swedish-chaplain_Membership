@@ -54,6 +54,7 @@ vi.mock('@/lib/idempotency', () => ({
     ok: true,
     value: { kind: 'reserved' as const },
   })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -240,6 +241,27 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('server_error');
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    addContactMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+    const { POST } = await import(
+      '@/app/api/members/[memberId]/contacts/route'
+    );
+    const res = await POST(makeRequest(validBody), { params: routeParams() });
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-add',
+    );
   });
 
   it('401 when admin-context short-circuits (auth gate)', async () => {

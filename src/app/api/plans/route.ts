@@ -23,9 +23,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import { listPlans, asPlanYear, createPlan } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -211,117 +211,119 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const deps = buildPlansDeps(tenant);
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildPlansDeps(tenant);
 
-  const sourceIp = ctx.sourceIp ?? null;
-  const result = await createPlan(
-    {
-      input: rawBody as Parameters<typeof createPlan>[0]['input'],
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-      sourceIp,
-      idempotencyKey: keyCheck.key,
-    },
-    {
-      tenant: deps.tenant,
-      planRepo: deps.planRepo,
-      audit: deps.audit,
-      clock: deps.clock,
-      members: deps.members,
-    },
-  );
+    const sourceIp = ctx.sourceIp ?? null;
+    const result = await createPlan(
+      {
+        input: rawBody as Parameters<typeof createPlan>[0]['input'],
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        sourceIp,
+        idempotencyKey: keyCheck.key,
+      },
+      {
+        tenant: deps.tenant,
+        planRepo: deps.planRepo,
+        audit: deps.audit,
+        clock: deps.clock,
+        members: deps.members,
+      },
+    );
 
-  if (result.ok) {
-    const body = serialisePlan(result.value);
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 201,
-      body,
-    });
-    return NextResponse.json(body, { status: 201 });
-  }
-
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: 'Plan body failed validation.',
-            details: { issues: result.error.issues },
-          },
-        },
-        { status: 400 },
-      );
-    case 'partnership_corporate_mismatch':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'partnership_corporate_mismatch',
-            message: 'Partnership/corporate integrity rule violated.',
-            details: { issues: result.error.issues },
-          },
-        },
-        { status: 422 },
-      );
-    case 'duplicate_plan':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'duplicate_plan',
-            message:
-              'A plan with the same plan_id and plan_year already exists for this tenant.',
-          },
-        },
-        { status: 409 },
-      );
-    case 'idempotency_conflict':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'idempotency_conflict',
-            message: 'Idempotency-Key was reused with a different body.',
-          },
-        },
-        { status: 409 },
-      );
-    case 'audit_failed': {
-      // create-plan inserts the row BEFORE emitting audit, so a failure
-      // here means the plan IS in the database but the audit trail is
-      // missing. Surface plan_id in the structured log so on-call can
-      // backfill the audit row from the request payload — the previous
-      // message claimed "NOT persisted" which was a lie and triggered
-      // client retries → duplicate_plan 409.
-      const planRef =
-        rawBody && typeof rawBody === 'object'
-          ? {
-              plan_id: (rawBody as { plan_id?: unknown }).plan_id ?? null,
-              plan_year: (rawBody as { plan_year?: unknown }).plan_year ?? null,
-            }
-          : { plan_id: null, plan_year: null };
-      logger.error(
-        { requestId: ctx.requestId, ...planRef, err: result.error },
-        'create-plan: row persisted but audit write failed — operator backfill needed',
-      );
-      return NextResponse.json(
-        {
-          error: {
-            code: 'audit_failed',
-            message:
-              'Plan was created but audit trail write failed. Contact ops.',
-          },
-        },
-        { status: 500 },
-      );
+    if (result.ok) {
+      const body = serialisePlan(result.value);
+      await remember({
+        status: 201,
+        body,
+      });
+      return NextResponse.json(body, { status: 201 });
     }
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'create-plan: unhandled error',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+
+    switch (result.error.type) {
+      case 'invalid_body':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_body',
+              message: 'Plan body failed validation.',
+              details: { issues: result.error.issues },
+            },
+          },
+          { status: 400 },
+        );
+      case 'partnership_corporate_mismatch':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'partnership_corporate_mismatch',
+              message: 'Partnership/corporate integrity rule violated.',
+              details: { issues: result.error.issues },
+            },
+          },
+          { status: 422 },
+        );
+      case 'duplicate_plan':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'duplicate_plan',
+              message:
+                'A plan with the same plan_id and plan_year already exists for this tenant.',
+            },
+          },
+          { status: 409 },
+        );
+      case 'idempotency_conflict':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'idempotency_conflict',
+              message: 'Idempotency-Key was reused with a different body.',
+            },
+          },
+          { status: 409 },
+        );
+      case 'audit_failed': {
+        // create-plan inserts the row BEFORE emitting audit, so a failure
+        // here means the plan IS in the database but the audit trail is
+        // missing. Surface plan_id in the structured log so on-call can
+        // backfill the audit row from the request payload — the previous
+        // message claimed "NOT persisted" which was a lie and triggered
+        // client retries → duplicate_plan 409.
+        const planRef =
+          rawBody && typeof rawBody === 'object'
+            ? {
+                plan_id: (rawBody as { plan_id?: unknown }).plan_id ?? null,
+                plan_year: (rawBody as { plan_year?: unknown }).plan_year ?? null,
+              }
+            : { plan_id: null, plan_year: null };
+        logger.error(
+          { requestId: ctx.requestId, ...planRef, err: result.error },
+          'create-plan: row persisted but audit write failed — operator backfill needed',
+        );
+        return NextResponse.json(
+          {
+            error: {
+              code: 'audit_failed',
+              message:
+                'Plan was created but audit trail write failed. Contact ops.',
+            },
+          },
+          { status: 500 },
+        );
+      }
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'create-plan: unhandled error',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

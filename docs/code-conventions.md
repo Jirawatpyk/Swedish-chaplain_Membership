@@ -326,6 +326,50 @@ is the highest-variance change of the nine and the one with the least proof.
 
 ---
 
+## 9. Idempotency-Key routes: reserve → run → remember **or RELEASE**
+
+`reserveIdempotencyRecord` (directly, via `withIdempotency`, or via
+`src/app/api/plans/_idempotency-guard.ts`) writes `{ bodyHash, response: null }`
+under a **24 h** TTL, and `classifyIdempotencyRequest` reads a
+reserved-but-unwritten record as a **CONFLICT** — "another worker is still
+working". That is correct while the handler runs, and wrong the instant it
+finishes with an outcome it must not remember.
+
+So every arm that exits after the reservation without calling
+`rememberIdempotentResponse` **burns the key**: the client's retry — the one
+`Retry-After` and every HTTP client's retry policy tell it to make, same key,
+same body — gets 422 / 409 for the full TTL and can never succeed.
+
+The rule:
+
+| outcome | what to do |
+| --- | --- |
+| 2xx | **remember** — that is the point of the key |
+| a deterministic 4xx the route chooses to cache (validation, `no_primary_contact`) | **remember** — a retry should replay the same refusal |
+| 429 | **release** — time-bound; the retry after the window must re-evaluate |
+| any 5xx | **release** — never remember a fault, and never leave it reserved |
+| a 4xx the route does not cache | **release** — a burnt key is worse than a re-run |
+| a thrown error | **release**, then rethrow |
+
+**Use the helper, do not hand-write the release.** `runIdempotent(tenant,
+{ key, bodyHash }, work)` from `@/lib/idempotency-run` runs the tail inside a
+`try`/`finally` and releases on every exit that did not remember — including
+the arms nobody wrote down. Inside `work`, call `remember(response)` in place
+of `rememberIdempotentResponse(tenant, key, hash, response)`; it refuses a 429
+or 5xx and releases instead. Routes that came through the plans guard use
+`idempotentRun(guard, work)`, which is the same thing bound to the guard's
+reservation. Pass `null` for the reservation where the `Idempotency-Key`
+header is optional and absent.
+
+The class recurred because a hand-written release has to be repeated at every
+exit and a new arm added later gets none — which is why
+`tests/unit/architecture/idempotency-release-coverage.test.ts` fails any file
+under `src/app/**` that reserves without a release path, and any literal 5xx
+handed to a remember call. 117 closed it across 20 routes + the shared guard;
+`docs/reviews/idempotency-release-sweep-20260916.md` is the ledger.
+
+---
+
 ## 7. Sources & Cross-References
 
 - Review-tag rot policy precedent: F6 Phase 9 staff-review review-20260516-155013.md R-S04

@@ -33,9 +33,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { createHash } from 'node:crypto';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -144,50 +144,52 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const result = await uploadTenantLogo(makeUploadTenantLogoDeps(), {
-    tenantId: tenantCtx.slug,
-    actorUserId: ctx.current.user.id,
-    requestId,
-    bytes,
-    declaredMime: file.type,
-    declaredSize: file.size,
-  });
+  return runIdempotent(tenantCtxKeyed, idempotencyParsed.ok && bodyHash ? { key: idempotencyParsed.key, bodyHash } : null, async ({ remember }) => {
+    const result = await uploadTenantLogo(makeUploadTenantLogoDeps(), {
+      tenantId: tenantCtx.slug,
+      actorUserId: ctx.current.user.id,
+      requestId,
+      bytes,
+      declaredMime: file.type,
+      declaredSize: file.size,
+    });
 
-  if (!result.ok) {
-    const errorCode = result.error.code;
-    const status =
-      errorCode === 'mime_rejected' || errorCode === 'dimensions_out_of_range'
-        ? 415
-        : errorCode === 'too_large'
-          ? 413
-          : errorCode === 'logo_history_cap_reached'
-            ? 409
-            : 400;
-    logger.warn(
-      { requestId, tenantSlug: tenantCtx.slug, err: result.error },
-      'tenant logo upload rejected',
-    );
-    // F-01 fix — cache the 4xx response under the idempotency key so a
-    // replay of the same key+body returns the SAME error verbatim
-    // instead of the shared infra's null-response branch returning 409
-    // conflict. Matches HTTP idempotency semantics: replay of a request
-    // that validation-rejected yields the same rejection.
-    const errorBody = { error: result.error };
+    if (!result.ok) {
+      const errorCode = result.error.code;
+      const status =
+        errorCode === 'mime_rejected' || errorCode === 'dimensions_out_of_range'
+          ? 415
+          : errorCode === 'too_large'
+            ? 413
+            : errorCode === 'logo_history_cap_reached'
+              ? 409
+              : 400;
+      logger.warn(
+        { requestId, tenantSlug: tenantCtx.slug, err: result.error },
+        'tenant logo upload rejected',
+      );
+      // F-01 fix — cache the 4xx response under the idempotency key so a
+      // replay of the same key+body returns the SAME error verbatim
+      // instead of the shared infra's null-response branch returning 409
+      // conflict. Matches HTTP idempotency semantics: replay of a request
+      // that validation-rejected yields the same rejection.
+      const errorBody = { error: result.error };
+      if (idempotencyParsed.ok && bodyHash) {
+        await remember({
+          status,
+          body: errorBody,
+        });
+      }
+      return NextResponse.json(errorBody, { status });
+    }
+
+    const body = { logo_blob_key: result.value.logoBlobKey };
     if (idempotencyParsed.ok && bodyHash) {
-      await rememberIdempotentResponse(tenantCtxKeyed, idempotencyParsed.key, bodyHash, {
-        status,
-        body: errorBody,
+      await remember({
+        status: 201,
+        body,
       });
     }
-    return NextResponse.json(errorBody, { status });
-  }
-
-  const body = { logo_blob_key: result.value.logoBlobKey };
-  if (idempotencyParsed.ok && bodyHash) {
-    await rememberIdempotentResponse(tenantCtxKeyed, idempotencyParsed.key, bodyHash, {
-      status: 201,
-      body,
-    });
-  }
-  return NextResponse.json(body, { status: 201 });
+    return NextResponse.json(body, { status: 201 });
+  });
 }

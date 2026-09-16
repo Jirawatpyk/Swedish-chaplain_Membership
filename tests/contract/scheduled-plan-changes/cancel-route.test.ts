@@ -57,6 +57,7 @@ vi.mock('@/lib/idempotency', () => ({
     ok: true,
     value: { kind: 'reserved' as const },
   })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -380,6 +381,52 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     ];
     expect(structured.errorId).toBe('F2.PLAN_CHANGE.CANCEL_SERVER_ERROR');
     expect(structured.recheckErrMessage).toBeUndefined();
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation the shared guard made. A
+  // reserved-but-unwritten record classifies as a CONFLICT for 24 h, so the
+  // client's correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    cancelScheduledPlanChangeMock.mockResolvedValueOnce(
+      err({
+        code: 'server_error',
+        recheckFailed: false as const,
+        message: 'postgres timeout',
+      }),
+    );
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(makeRequest(validBody), {
+      params: params(SCHEDULED_ID),
+    });
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-cancel-1',
+    );
+  });
+
+  // 117 — a THROWN error must release too: the `default:` arm calls
+  // `assertNever`, and a use case that throws escapes the same way. The
+  // release is in a `finally`, so the rejection still propagates.
+  it('117: releases the idempotency reservation when the use case throws', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    cancelScheduledPlanChangeMock.mockRejectedValueOnce(new Error('boom'));
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    await expect(
+      POST(makeRequest(validBody), { params: params(SCHEDULED_ID) }),
+    ).rejects.toThrow('boom');
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-cancel-1',
+    );
   });
 
   it('500 server_error (recheck failed) — single logger.error with F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED + recheckErrMessage field', async () => {

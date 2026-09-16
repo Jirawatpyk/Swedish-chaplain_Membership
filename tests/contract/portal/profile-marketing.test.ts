@@ -64,6 +64,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: (...args: unknown[]) => classifyMock(...(args as [])),
   reserveIdempotencyRecord: (...args: unknown[]) => reserveMock(...(args as [])),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: (...args: unknown[]) => rememberMock(...(args as [])),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -309,6 +310,37 @@ describe('contract: PATCH /api/portal/profile/marketing (108 PR-D T061)', () => 
     const res = await PATCH(patchRequest({ optOut: true }));
     expect(res.status).toBe(500);
     expect(JSON.stringify(await res.json())).not.toContain('pool exhausted');
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without this the client's
+  // correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    setContactMarketingOptOutMock.mockResolvedValueOnce(err({ type: 'server_error', message: 'pool exhausted' }));
+    const { PATCH } = await loadMarketingRoute();
+    const res = await PATCH(patchRequest({ optOut: true }));
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(rememberMock).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'key-1',
+    );
+  });
+
+  // 117 — `suppression_unavailable` answers 503: a dependency being down is
+  // transient by definition, so the retry must be free to re-evaluate.
+  it('117: releases the idempotency reservation on the 503 arm', async () => {
+    setContactMarketingOptOutMock.mockResolvedValueOnce(err({ type: 'suppression_unavailable' }));
+    const { PATCH } = await loadMarketingRoute();
+    const res = await PATCH(patchRequest({ optOut: false }));
+    expect(res.status).toBe(503);
+    const idem = await import('@/lib/idempotency');
+    expect(rememberMock).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'key-1',
+    );
   });
 });
 

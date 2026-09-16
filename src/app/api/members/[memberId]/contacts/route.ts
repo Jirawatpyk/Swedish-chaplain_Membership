@@ -13,9 +13,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import { addContact } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
@@ -108,86 +108,88 @@ export async function POST(
     );
   }
 
-  const deps = buildMembersDeps(tenant);
-  const result = await addContact(
-    memberId,
-    rawBody,
-    { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
-    deps,
-  );
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildMembersDeps(tenant);
+    const result = await addContact(
+      memberId,
+      rawBody,
+      { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
+      deps,
+    );
 
-  if (result.ok) {
-    const body = serialiseContact(result.value);
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 201,
-      body,
-    });
-    return NextResponse.json(body, { status: 201 });
-  }
+    if (result.ok) {
+      const body = serialiseContact(result.value);
+      await remember({
+        status: 201,
+        body,
+      });
+      return NextResponse.json(body, { status: 201 });
+    }
 
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: 'Body failed validation.',
-            details: { issues: result.error.issues },
+    switch (result.error.type) {
+      case 'invalid_body':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_body',
+              message: 'Body failed validation.',
+              details: { issues: result.error.issues },
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'invalid_email':
-    case 'invalid_phone':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'validation_error',
-            message: 'Domain validation failed.',
-            details: result.error,
+          { status: 400 },
+        );
+      case 'invalid_email':
+      case 'invalid_phone':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'validation_error',
+              message: 'Domain validation failed.',
+              details: result.error,
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'conflict':
-      // Task 8 review-fix (Important 2) — `result.error.reason` is a
-      // `RepoConflictReason` machine token (e.g. 'contact_email_in_use'),
-      // not a sentence. Task 8 narrowed the type from `string` but this
-      // route still forwarded it straight into the user-visible `message`.
-      // Mirror the `members/route.ts` POST precedent: fixed message, token
-      // in `details.reason`. `code` is unchanged.
-      return NextResponse.json(
-        {
-          error: {
-            code: 'conflict',
-            // Round 4 (F4-#2): only an email collision is about the email.
-            // The primacy reasons mean the member's contacts changed under
-            // this request; the client keys its copy on `details.reason`.
-            message:
-              result.error.reason === 'contact_email_in_use'
-                ? 'A contact with this email address already exists.'
-                : "The member's contacts changed while this request ran. Refresh and try again.",
-            details: { reason: result.error.reason },
+          { status: 400 },
+        );
+      case 'conflict':
+        // Task 8 review-fix (Important 2) — `result.error.reason` is a
+        // `RepoConflictReason` machine token (e.g. 'contact_email_in_use'),
+        // not a sentence. Task 8 narrowed the type from `string` but this
+        // route still forwarded it straight into the user-visible `message`.
+        // Mirror the `members/route.ts` POST precedent: fixed message, token
+        // in `details.reason`. `code` is unchanged.
+        return NextResponse.json(
+          {
+            error: {
+              code: 'conflict',
+              // Round 4 (F4-#2): only an email collision is about the email.
+              // The primacy reasons mean the member's contacts changed under
+              // this request; the client keys its copy on `details.reason`.
+              message:
+                result.error.reason === 'contact_email_in_use'
+                  ? 'A contact with this email address already exists.'
+                  : "The member's contacts changed while this request ran. Refresh and try again.",
+              details: { reason: result.error.reason },
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'not_found':
-      // 108 PR-B — the member lock is the first read of addContact; a missing
-      // or another tenant's member is a 404, not the FK 500 it used to be.
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Member not found.' } },
-        { status: 404 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'add-contact: unhandled',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          { status: 409 },
+        );
+      case 'not_found':
+        // 108 PR-B — the member lock is the first read of addContact; a missing
+        // or another tenant's member is a 404, not the FK 500 it used to be.
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Member not found.' } },
+          { status: 404 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'add-contact: unhandled',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

@@ -20,9 +20,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import { getMember, updateMember, changePlan } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
@@ -192,43 +192,135 @@ export async function PATCH(
     );
   }
 
-  const deps = buildMembersDeps(tenant);
-  const meta = { actorUserId: ctx.current.user.id, requestId: ctx.requestId };
-  const body = rawBody as Record<string, unknown>;
-  const isPlanChange = typeof body['new_plan_id'] === 'string';
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildMembersDeps(tenant);
+    const meta = { actorUserId: ctx.current.user.id, requestId: ctx.requestId };
+    const body = rawBody as Record<string, unknown>;
+    const isPlanChange = typeof body['new_plan_id'] === 'string';
 
-  if (isPlanChange) {
-    // F8 Phase 7 T188 / 063 Option A — wire the F8 listener pair (supersede
-    // pending tier-upgrade + reschedule renewal cadence) into the change-plan
-    // call. The listeners run POST-COMMIT — AFTER the F3 plan-flip and
-    // member_plan_manually_changed audit have committed durably. Each listener
-    // opens its OWN runInTenant tx (best-effort; a listener failure is logged,
-    // counted, and swallowed and does NOT roll back the already-committed
-    // plan-flip). See f2-plan-change-bridge.ts § Failure semantics.
-    const { f8OnManualPlanChangeCallbacks } = await import('@/modules/renewals');
-    const planChangeDeps = {
-      ...deps,
-      manualPlanChangeListeners: f8OnManualPlanChangeCallbacks(tenant.slug),
-    };
-    const result = await changePlan(memberId, rawBody, meta, planChangeDeps);
-    if (result.ok) {
-      // Phase 2 — `changePlan` returns `{ member, billingEffect }`. Surface the
-      // billing effect (applied-now vs applies-next-cycle) on the plan-change
-      // response so the edit client can toast the ACTUAL outcome. snake_case
-      // wire per the codebase convention; null-safe — `billingEffect` is null
-      // until the Phase-2 renewals dep is wired (the current flag-off default).
-      const { billingEffect } = result.value;
-      const responseBody = {
-        ...serialiseMember(result.value.member),
-        billing_effect: billingEffect
-          ? {
-              effect: billingEffect.effect,
-              cycle_id: billingEffect.cycleId,
-              blocking_invoice_id: billingEffect.blockingInvoiceId,
-            }
-          : null,
+    if (isPlanChange) {
+      // F8 Phase 7 T188 / 063 Option A — wire the F8 listener pair (supersede
+      // pending tier-upgrade + reschedule renewal cadence) into the change-plan
+      // call. The listeners run POST-COMMIT — AFTER the F3 plan-flip and
+      // member_plan_manually_changed audit have committed durably. Each listener
+      // opens its OWN runInTenant tx (best-effort; a listener failure is logged,
+      // counted, and swallowed and does NOT roll back the already-committed
+      // plan-flip). See f2-plan-change-bridge.ts § Failure semantics.
+      const { f8OnManualPlanChangeCallbacks } = await import('@/modules/renewals');
+      const planChangeDeps = {
+        ...deps,
+        manualPlanChangeListeners: f8OnManualPlanChangeCallbacks(tenant.slug),
       };
-      await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+      const result = await changePlan(memberId, rawBody, meta, planChangeDeps);
+      if (result.ok) {
+        // Phase 2 — `changePlan` returns `{ member, billingEffect }`. Surface the
+        // billing effect (applied-now vs applies-next-cycle) on the plan-change
+        // response so the edit client can toast the ACTUAL outcome. snake_case
+        // wire per the codebase convention; null-safe — `billingEffect` is null
+        // until the Phase-2 renewals dep is wired (the current flag-off default).
+        const { billingEffect } = result.value;
+        const responseBody = {
+          ...serialiseMember(result.value.member),
+          billing_effect: billingEffect
+            ? {
+                effect: billingEffect.effect,
+                cycle_id: billingEffect.cycleId,
+                blocking_invoice_id: billingEffect.blockingInvoiceId,
+              }
+            : null,
+        };
+        await remember({
+          status: 200,
+          body: responseBody,
+        });
+        return NextResponse.json(responseBody, { status: 200 });
+      }
+      switch (result.error.type) {
+        case 'invalid_body':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'invalid_body',
+                message: 'Body failed validation.',
+                details: { issues: result.error.issues },
+              },
+            },
+            { status: 400 },
+          );
+        case 'invalid_override_reason':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'validation_error',
+                message: 'Invalid override reason.',
+                details: result.error,
+              },
+            },
+            { status: 400 },
+          );
+        case 'not_found':
+          return NextResponse.json(
+            { error: { code: 'not_found', message: 'Member not found.' } },
+            { status: 404 },
+          );
+        case 'plan_not_found':
+          return NextResponse.json(
+            { error: { code: 'plan_not_found', message: 'Target plan not found.' } },
+            { status: 404 },
+          );
+        case 'bundle_change_requires_confirmation':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'bundle_change_requires_confirmation',
+                message:
+                  'Bundle change requires confirmation. Re-submit with confirm_bundle_change=true.',
+                details: result.error,
+              },
+            },
+            { status: 409 },
+          );
+        case 'turnover_out_of_band':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'turnover_warning',
+                message:
+                  'Turnover is outside the new plan band. Provide override_reason_code to confirm.',
+                details: result.error,
+              },
+            },
+            { status: 422 },
+          );
+        case 'startup_too_old':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'startup_warning',
+                message: 'Founded year exceeds new plan duration limit.',
+                details: result.error,
+              },
+            },
+            { status: 422 },
+          );
+        case 'server_error':
+        default:
+          logger.error(
+            { requestId: ctx.requestId, err: result.error },
+            'change-plan: unhandled',
+          );
+          return NextResponse.json(
+            { error: { code: 'server_error', message: 'Internal server error.' } },
+            { status: 500 },
+          );
+      }
+    }
+
+    // Plain field update
+    const result = await updateMember(memberId, rawBody, meta, deps);
+    if (result.ok) {
+      const responseBody = serialiseMember(result.value);
+      await remember({
         status: 200,
         body: responseBody,
       });
@@ -246,12 +338,29 @@ export async function PATCH(
           },
           { status: 400 },
         );
-      case 'invalid_override_reason':
+      case 'invalid_country':
+      case 'invalid_tax_id':
+      // 059 / PR-A Task 4 — the registrant ⇒ TIN invariant, checked in the
+      // use-case body against the RESULTING (current + patch) state. Same 400
+      // validation_error shape as the other domain-validation rejections above.
+      case 'vat_registrant_requires_tax_id':
+      // 059 / PR-A Task 5 — the branch ⇒ VAT-registrant invariant, same
+      // resulting-state posture as Task 4's check directly above.
+      case 'branch_requires_vat_registrant':
+      // 059 / PR-A Task 5 fix (pre-existing since 0232/0236, surfaced by the
+      // 0248 tightening) — the head-office ⇔ branch-code structural pairing,
+      // same resulting-state posture. Without this case a PATCH touching only
+      // `branch_code` fell through to the `server_error` 500 branch below.
+      case 'head_office_branch_code_mismatch':
+      // member-billing-address (0284) — partial billing group (any field set
+      // without line1 + city + postal_code + country), same resulting-state
+      // posture as the invariants above.
+      case 'billing_address_incomplete':
         return NextResponse.json(
           {
             error: {
               code: 'validation_error',
-              message: 'Invalid override reason.',
+              message: 'Domain validation failed.',
               details: result.error,
             },
           },
@@ -262,123 +371,16 @@ export async function PATCH(
           { error: { code: 'not_found', message: 'Member not found.' } },
           { status: 404 },
         );
-      case 'plan_not_found':
-        return NextResponse.json(
-          { error: { code: 'plan_not_found', message: 'Target plan not found.' } },
-          { status: 404 },
-        );
-      case 'bundle_change_requires_confirmation':
-        return NextResponse.json(
-          {
-            error: {
-              code: 'bundle_change_requires_confirmation',
-              message:
-                'Bundle change requires confirmation. Re-submit with confirm_bundle_change=true.',
-              details: result.error,
-            },
-          },
-          { status: 409 },
-        );
-      case 'turnover_out_of_band':
-        return NextResponse.json(
-          {
-            error: {
-              code: 'turnover_warning',
-              message:
-                'Turnover is outside the new plan band. Provide override_reason_code to confirm.',
-              details: result.error,
-            },
-          },
-          { status: 422 },
-        );
-      case 'startup_too_old':
-        return NextResponse.json(
-          {
-            error: {
-              code: 'startup_warning',
-              message: 'Founded year exceeds new plan duration limit.',
-              details: result.error,
-            },
-          },
-          { status: 422 },
-        );
       case 'server_error':
       default:
         logger.error(
           { requestId: ctx.requestId, err: result.error },
-          'change-plan: unhandled',
+          'update-member: unhandled',
         );
         return NextResponse.json(
           { error: { code: 'server_error', message: 'Internal server error.' } },
           { status: 500 },
         );
     }
-  }
-
-  // Plain field update
-  const result = await updateMember(memberId, rawBody, meta, deps);
-  if (result.ok) {
-    const responseBody = serialiseMember(result.value);
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 200,
-      body: responseBody,
-    });
-    return NextResponse.json(responseBody, { status: 200 });
-  }
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: 'Body failed validation.',
-            details: { issues: result.error.issues },
-          },
-        },
-        { status: 400 },
-      );
-    case 'invalid_country':
-    case 'invalid_tax_id':
-    // 059 / PR-A Task 4 — the registrant ⇒ TIN invariant, checked in the
-    // use-case body against the RESULTING (current + patch) state. Same 400
-    // validation_error shape as the other domain-validation rejections above.
-    case 'vat_registrant_requires_tax_id':
-    // 059 / PR-A Task 5 — the branch ⇒ VAT-registrant invariant, same
-    // resulting-state posture as Task 4's check directly above.
-    case 'branch_requires_vat_registrant':
-    // 059 / PR-A Task 5 fix (pre-existing since 0232/0236, surfaced by the
-    // 0248 tightening) — the head-office ⇔ branch-code structural pairing,
-    // same resulting-state posture. Without this case a PATCH touching only
-    // `branch_code` fell through to the `server_error` 500 branch below.
-    case 'head_office_branch_code_mismatch':
-    // member-billing-address (0284) — partial billing group (any field set
-    // without line1 + city + postal_code + country), same resulting-state
-    // posture as the invariants above.
-    case 'billing_address_incomplete':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'validation_error',
-            message: 'Domain validation failed.',
-            details: result.error,
-          },
-        },
-        { status: 400 },
-      );
-    case 'not_found':
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Member not found.' } },
-        { status: 404 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'update-member: unhandled',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+  });
 }

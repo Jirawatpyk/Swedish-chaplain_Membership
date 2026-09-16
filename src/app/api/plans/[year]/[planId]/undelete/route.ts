@@ -9,13 +9,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { undeletePlan, asPlanSlug, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { serialisePlan } from '@/app/api/plans/_serialise-plan';
 import { planPathSchema as pathSchema } from '@/app/api/plans/_schemas';
-import { runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
+import { idempotentRun, runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 export async function POST(
@@ -52,69 +51,68 @@ export async function POST(
   );
   if (guard.kind === 'response') return guard.response;
 
-  const deps = buildPlansDeps(tenant);
+  return idempotentRun(guard, async ({ remember }) => {
+    const deps = buildPlansDeps(tenant);
 
-  const result = await undeletePlan(
-    {
-      planId: asPlanSlug(parsedPath.data.planId),
-      year: asPlanYear(parsedPath.data.year),
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-      sourceIp: ctx.sourceIp ?? null,
-      idempotencyKey: guard.key,
-    },
-    {
-      tenant: deps.tenant,
-      planRepo: deps.planRepo,
-      audit: deps.audit,
-      clock: deps.clock,
-      members: deps.members,
-    },
-  );
+    const result = await undeletePlan(
+      {
+        planId: asPlanSlug(parsedPath.data.planId),
+        year: asPlanYear(parsedPath.data.year),
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        sourceIp: ctx.sourceIp ?? null,
+        idempotencyKey: guard.key,
+      },
+      {
+        tenant: deps.tenant,
+        planRepo: deps.planRepo,
+        audit: deps.audit,
+        clock: deps.clock,
+        members: deps.members,
+      },
+    );
 
-  if (result.ok) {
-    const body = serialisePlan(result.value);
-    await rememberIdempotentResponse(tenant, guard.key, guard.bodyHash, {
-      status: 200,
-      body,
-    });
-    return NextResponse.json(body, { status: 200 });
-  }
+    if (result.ok) {
+      const body = serialisePlan(result.value);
+      await remember({ status: 200, body });
+      return NextResponse.json(body, { status: 200 });
+    }
 
-  switch (result.error.type) {
-    case 'not_found':
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Plan not found.' } },
-        { status: 404 },
-      );
-    case 'idempotency_conflict':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'idempotency_conflict',
-            message: 'Idempotency-Key was reused with a different body.',
+    switch (result.error.type) {
+      case 'not_found':
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Plan not found.' } },
+          { status: 404 },
+        );
+      case 'idempotency_conflict':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'idempotency_conflict',
+              message: 'Idempotency-Key was reused with a different body.',
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'audit_failed':
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'undelete-plan: audit write failed',
-      );
-      return NextResponse.json(
-        { error: { code: 'audit_failed', message: 'Audit trail write failed.' } },
-        { status: 500 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'undelete-plan: unhandled error',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          { status: 409 },
+        );
+      case 'audit_failed':
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'undelete-plan: audit write failed',
+        );
+        return NextResponse.json(
+          { error: { code: 'audit_failed', message: 'Audit trail write failed.' } },
+          { status: 500 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'undelete-plan: unhandled error',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

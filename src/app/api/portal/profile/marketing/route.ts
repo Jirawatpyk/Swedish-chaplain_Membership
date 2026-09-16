@@ -22,9 +22,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/modules/auth';
@@ -95,65 +95,67 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const result = await setContactMarketingOptOut(
-    {
-      contactId: ctx.ownContactId,
-      state: parsed.data.optOut ? 'off' : 'on',
-      actor: { userId: actorUserId, role: ctx.current.user.role, source: 'self' },
-      requestId: ctx.requestId,
-    },
-    buildContactMarketingDeps(ctx.tenant),
-  );
+  return runIdempotent(ctx.tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const result = await setContactMarketingOptOut(
+      {
+        contactId: ctx.ownContactId,
+        state: parsed.data.optOut ? 'off' : 'on',
+        actor: { userId: actorUserId, role: ctx.current.user.role, source: 'self' },
+        requestId: ctx.requestId,
+      },
+      buildContactMarketingDeps(ctx.tenant),
+    );
 
-  if (result.ok) {
-    // The DISPLAYED state after the change (suppression > opt-out > on).
-    // "on" succeeded ⇒ not suppressed; "off" may still sit under an
-    // unsubscribe, so ask — and degrade honestly if the list is unreadable.
-    let suppressed: boolean | 'unknown' = false;
-    if (parsed.data.optOut) {
-      try {
-        suppressed = await makeMarketingSuppressionLookup(ctx.tenant).isSuppressed(
-          result.value.contact.email,
-        );
-      } catch {
-        suppressed = 'unknown';
+    if (result.ok) {
+      // The DISPLAYED state after the change (suppression > opt-out > on).
+      // "on" succeeded ⇒ not suppressed; "off" may still sit under an
+      // unsubscribe, so ask — and degrade honestly if the list is unreadable.
+      let suppressed: boolean | 'unknown' = false;
+      if (parsed.data.optOut) {
+        try {
+          suppressed = await makeMarketingSuppressionLookup(ctx.tenant).isSuppressed(
+            result.value.contact.email,
+          );
+        } catch {
+          suppressed = 'unknown';
+        }
       }
+      const body = {
+        outcome: result.value.outcome,
+        marketing: { state: deriveMarketingState(result.value.contact.marketing, suppressed) },
+      };
+      await remember({ status: 200, body });
+      return NextResponse.json(body, { status: 200 });
     }
-    const body = {
-      outcome: result.value.outcome,
-      marketing: { state: deriveMarketingState(result.value.contact.marketing, suppressed) },
-    };
-    await rememberIdempotentResponse(ctx.tenant, keyCheck.key, bodyHash, { status: 200, body });
-    return NextResponse.json(body, { status: 200 });
-  }
 
-  switch (result.error.type) {
-    case 'not_found':
-    case 'removed':
-      return errorJson(404, 'not_found');
-    case 'self_opted_out':
-      // Unreachable for `source: 'self'` (the contact may always lift their
-      // own opt-out) — mapped for exhaustiveness.
-      return errorJson(409, 'self_opted_out');
-    case 'suppressed':
-      return errorJson(
-        409,
-        'suppressed',
-        'You unsubscribed from marketing emails; that choice stays in force.',
-      );
-    case 'suppression_unavailable':
-      return errorJson(
-        503,
-        'suppression_unavailable',
-        'Unsubscribe status is temporarily unavailable. Retry shortly.',
-        { 'Retry-After': '5' },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error.message },
-        'portal.profile.marketing.patch.error',
-      );
-      return errorJson(500, 'internal');
-  }
+    switch (result.error.type) {
+      case 'not_found':
+      case 'removed':
+        return errorJson(404, 'not_found');
+      case 'self_opted_out':
+        // Unreachable for `source: 'self'` (the contact may always lift their
+        // own opt-out) — mapped for exhaustiveness.
+        return errorJson(409, 'self_opted_out');
+      case 'suppressed':
+        return errorJson(
+          409,
+          'suppressed',
+          'You unsubscribed from marketing emails; that choice stays in force.',
+        );
+      case 'suppression_unavailable':
+        return errorJson(
+          503,
+          'suppression_unavailable',
+          'Unsubscribe status is temporarily unavailable. Retry shortly.',
+          { 'Retry-After': '5' },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error.message },
+          'portal.profile.marketing.patch.error',
+        );
+        return errorJson(500, 'internal');
+    }
+  });
 }

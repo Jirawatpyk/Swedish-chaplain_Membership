@@ -32,9 +32,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import { undeleteMember } from '@/modules/members';
 import type { ContactId, MemberId } from '@/modules/members';
@@ -161,104 +161,106 @@ export async function POST(
     );
   }
 
-  const deps = buildMembersDeps(tenant);
-  const meta = { actorUserId: ctx.current.user.id, requestId: ctx.requestId };
-  const designate = body.designate_primary_contact_id;
-  const result =
-    designate === undefined
-      ? await undeleteMember(memberId, meta, deps)
-      : await undeleteMember(memberId, meta, deps, {
-          designatePrimaryContactId: designate as ContactId,
-        });
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildMembersDeps(tenant);
+    const meta = { actorUserId: ctx.current.user.id, requestId: ctx.requestId };
+    const designate = body.designate_primary_contact_id;
+    const result =
+      designate === undefined
+        ? await undeleteMember(memberId, meta, deps)
+        : await undeleteMember(memberId, meta, deps, {
+            designatePrimaryContactId: designate as ContactId,
+          });
 
-  if (result.ok) {
-    const responseBody = {
-      ...serialiseMember(result.value.member),
-      // Which contact this call made primary, or null when none was needed —
-      // the client's "primary contact set" copy keys on this, not on what it
-      // sent (a primary can appear between a 409 and the retry).
-      designated_primary_contact_id: result.value.designatedContactId,
-    };
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 200,
-      body: responseBody,
-    });
-    return NextResponse.json(responseBody, { status: 200 });
-  }
+    if (result.ok) {
+      const responseBody = {
+        ...serialiseMember(result.value.member),
+        // Which contact this call made primary, or null when none was needed —
+        // the client's "primary contact set" copy keys on this, not on what it
+        // sent (a primary can appear between a 409 and the retry).
+        designated_primary_contact_id: result.value.designatedContactId,
+      };
+      await remember({
+        status: 200,
+        body: responseBody,
+      });
+      return NextResponse.json(responseBody, { status: 200 });
+    }
 
-  switch (result.error.type) {
-    case 'not_found':
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Member not found.' } },
-        { status: 404 },
-      );
-    case 'state_error':
-      if (result.error.code === 'no_primary_contact') {
-        // Remembered under the key like every other terminal response: the
-        // key was RESERVED before the use case ran, so leaving it without a
-        // response makes a replay of the same call an `idempotency_conflict`
-        // rather than a repeat of this (non-mutating, safe-to-replay) answer
-        // (T041 security review, M2). A new designation is a NEW key — the
-        // UI mints one per click.
-        const body = {
-          error: {
-            code: 'no_primary_contact',
-            message: 'This member has no primary contact. Choose one to restore.',
-            details: {
-              designatable: (result.error.designatable ?? []).map((c) => ({
-                contact_id: c.contactId,
-                first_name: c.firstName,
-                last_name: c.lastName,
-                email: c.email,
-              })),
+    switch (result.error.type) {
+      case 'not_found':
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Member not found.' } },
+          { status: 404 },
+        );
+      case 'state_error':
+        if (result.error.code === 'no_primary_contact') {
+          // Remembered under the key like every other terminal response: the
+          // key was RESERVED before the use case ran, so leaving it without a
+          // response makes a replay of the same call an `idempotency_conflict`
+          // rather than a repeat of this (non-mutating, safe-to-replay) answer
+          // (T041 security review, M2). A new designation is a NEW key — the
+          // UI mints one per click.
+          const body = {
+            error: {
+              code: 'no_primary_contact',
+              message: 'This member has no primary contact. Choose one to restore.',
+              details: {
+                designatable: (result.error.designatable ?? []).map((c) => ({
+                  contact_id: c.contactId,
+                  first_name: c.firstName,
+                  last_name: c.lastName,
+                  email: c.email,
+                })),
+              },
             },
-          },
-        };
-        await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-          status: 409,
-          body,
-        });
-        return NextResponse.json(body, { status: 409 });
-      }
-      if (result.error.code === 'state.undelete_window_expired') {
+          };
+          await remember({
+            status: 409,
+            body,
+          });
+          return NextResponse.json(body, { status: 409 });
+        }
+        if (result.error.code === 'state.undelete_window_expired') {
+          return NextResponse.json(
+            {
+              error: {
+                code: 'archive_window_expired',
+                message:
+                  'Archive window (90 days) has expired. Contact platform admin to restore.',
+                details: {
+                  daysSinceArchive: result.error.daysSinceArchive,
+                },
+              },
+            },
+            { status: 403 },
+          );
+        }
         return NextResponse.json(
           {
             error: {
-              code: 'archive_window_expired',
+              code: 'state_error',
+              // Round 4 (F4-#8): the message must state the truth for every
+              // code — an erased member IS archived; it cannot be restored.
               message:
-                'Archive window (90 days) has expired. Contact platform admin to restore.',
-              details: {
-                daysSinceArchive: result.error.daysSinceArchive,
-              },
+                result.error.code === 'undelete_erased'
+                  ? 'Member has been erased and cannot be restored.'
+                  : 'Member is not archived.',
+              details: { code: result.error.code },
             },
           },
-          { status: 403 },
+          { status: 409 },
         );
-      }
-      return NextResponse.json(
-        {
-          error: {
-            code: 'state_error',
-            // Round 4 (F4-#8): the message must state the truth for every
-            // code — an erased member IS archived; it cannot be restored.
-            message:
-              result.error.code === 'undelete_erased'
-                ? 'Member has been erased and cannot be restored.'
-                : 'Member is not archived.',
-            details: { code: result.error.code },
-          },
-        },
-        { status: 409 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'undelete-member: unhandled',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'undelete-member: unhandled',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }
