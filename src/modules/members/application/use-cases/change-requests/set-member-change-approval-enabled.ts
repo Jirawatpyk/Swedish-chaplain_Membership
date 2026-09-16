@@ -52,14 +52,22 @@ export type SetMemberChangeApprovalEnabledInput = {
   readonly requestId: string;
 };
 
-export type SetMemberChangeApprovalEnabledOutcome = {
-  readonly approvalEnabled: boolean;
-  readonly previous: boolean;
-  /** `false` when the stored value already matched — the upsert still ran, no audit row was written. */
-  readonly changed: boolean;
-  /** The clock instant of the transition; `null` when nothing transitioned (the card then shows no toast). */
-  readonly changedAt: Date | null;
-};
+/**
+ * The write's outcome, discriminated on `changed` (PR-3 review B3).
+ *
+ * The audit branch IS the `changed: true` branch: a transition is exactly what
+ * gets a `member_change_approval_setting_changed` row, and `changedAt` is the
+ * instant that row records. As two independent fields (`changed: boolean` +
+ * `changedAt: Date | null`) the impossible pairs were representable — a
+ * transition with no instant, an instant with no transition — and every
+ * consumer had to re-derive which one it was looking at. Narrow on `changed`
+ * and the instant is simply there, or simply absent.
+ */
+export type SetMemberChangeApprovalEnabledOutcome =
+  /** The stored value already matched: the upsert still ran (and stamped `updated_at`), no audit row was written. */
+  | { readonly changed: false; readonly approvalEnabled: boolean; readonly previous: boolean }
+  /** A real transition: ONE audit row, stamped at `changedAt` from the injected clock. */
+  | { readonly changed: true; readonly approvalEnabled: boolean; readonly previous: boolean; readonly changedAt: Date };
 
 export type SetMemberChangeApprovalEnabledError = { readonly type: 'server_error'; readonly message: string };
 
@@ -75,7 +83,7 @@ export async function setMemberChangeApprovalEnabled(
 
       const previous = written.value.previous;
       if (previous === input.enabled) {
-        return { approvalEnabled: input.enabled, previous, changed: false, changedAt: null };
+        return { changed: false, approvalEnabled: input.enabled, previous };
       }
 
       const audited = await deps.audit.recordInTx(tx, deps.tenant, {
@@ -91,7 +99,7 @@ export async function setMemberChangeApprovalEnabled(
       });
       if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
 
-      return { approvalEnabled: input.enabled, previous, changed: true, changedAt: now };
+      return { changed: true, approvalEnabled: input.enabled, previous, changedAt: now };
     });
     return ok(outcome);
   } catch (e) {

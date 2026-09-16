@@ -9,9 +9,17 @@
  * exactly `tenant.slug`, `change_request.id`, `change_request.scope`,
  * `change_request.field_count` (+ `change_request.outcome` on decide) and no
  * attribute VALUE ever equals a proposed field value, the reviewer's reason
- * or note, an email or a user id. A refused / failed arm sets
- * `SpanStatusCode.ERROR` with the error TYPE as its message — never the
- * reason text. The span is ended on every path.
+ * or note, an email or a user id. The span is ended on every path.
+ *
+ * STATUS (PR-3 review B10): `SpanStatusCode.ERROR` means the system failed —
+ * `server_error` and an escaped throw, nothing else. Every EXPECTED refusal
+ * (`member_archived`, `rate_limited`, `not_found`, `already_decided`, a
+ * validation error …) is the product working: the request was refused for a
+ * stated reason and the caller was told. Marking those ERROR made the two
+ * F114 spans' error rate a measure of how often members mistype a phone
+ * number, which is not a signal anyone can act on and buries the one that is.
+ * A refusal sets `change_request.refusal = <type>` instead and leaves the
+ * status UNSET, so a dashboard can still slice by refusal reason.
  *
  * The tracer is a spy (`vi.mock('@/lib/otel-tracer')`) — the use cases run
  * for real over the in-memory fakes.
@@ -46,6 +54,7 @@ type SpanRecord = {
   name: string;
   attributes: Record<string, unknown>;
   statuses: Array<{ code: SpanStatusCode; message?: string }>;
+  exceptions: unknown[];
   ended: number;
 };
 const spans: SpanRecord[] = [];
@@ -61,7 +70,7 @@ vi.mock('@/lib/otel-tracer', () => ({
         end: () => void;
       }) => Promise<unknown>,
     ) => {
-      const rec: SpanRecord = { name, attributes: { ...(options.attributes ?? {}) }, statuses: [], ended: 0 };
+      const rec: SpanRecord = { name, attributes: { ...(options.attributes ?? {}) }, statuses: [], exceptions: [], ended: 0 };
       spans.push(rec);
       return fn({
         setAttribute: (k, v) => {
@@ -70,7 +79,9 @@ vi.mock('@/lib/otel-tracer', () => ({
         setStatus: (s) => {
           rec.statuses.push(s);
         },
-        recordException: () => undefined,
+        recordException: (e) => {
+          rec.exceptions.push(e);
+        },
         end: () => {
           rec.ended += 1;
         },
@@ -240,14 +251,30 @@ describe('members.change_request.submit', () => {
     expect(span.ended).toBe(1);
   });
 
-  it('a refusal inside the transaction (archived by a concurrent transition) sets ERROR with the error TYPE as the message and still ends the span', async () => {
+  it('a refusal inside the transaction (archived by a concurrent transition) is NOT an ERROR — it is an attribute, and the span still ends', async () => {
     const deps = submitDeps({ memberInTx: { ...member(), status: 'archived' } as Member });
     const r = await submitChangeRequest(deps, { memberId: MEMBER, contactId: CONTACT, rawBody: { contact: { phone: PROPOSED_PHONE } }, actorUserId: USER, actorRole: 'member', requestId: 'req-2' });
     expect(r).toEqual({ ok: false, error: { type: 'member_archived' } });
     const span = spans[0]!;
-    expect(span.statuses).toEqual([{ code: SpanStatusCode.ERROR, message: 'member_archived' }]);
+    // the product refused, correctly, for a stated reason: status UNSET
+    expect(span.statuses).toEqual([]);
+    expect(span.attributes['change_request.refusal']).toBe('member_archived');
     expect(span.ended).toBe(1);
     for (const v of attributeValues(span)) expect(v).not.toContain(PROPOSED_PHONE);
+  });
+
+  it('a server_error IS an ERROR — the one arm that means the system failed', async () => {
+    const deps = submitDeps();
+    (deps.changeRequestRepo as unknown as { insertInTx: unknown }).insertInTx = async () => ({ ok: false as const, error: { code: 'repo.unexpected' as const } });
+    const r = await submitChangeRequest(deps, { memberId: MEMBER, contactId: CONTACT, rawBody: { contact: { phone: PROPOSED_PHONE } }, actorUserId: USER, actorRole: 'member', requestId: 'req-2b' });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('server_error');
+    const span = spans[0]!;
+    expect(span.statuses).toEqual([{ code: SpanStatusCode.ERROR, message: 'server_error' }]);
+    // never BOTH: a failure is not also a refusal reason
+    expect(span.attributes).not.toHaveProperty('change_request.refusal');
+    expect(span.ended).toBe(1);
   });
 
   it('a refusal BEFORE the transaction (forged keys) opens no span at all — the span is the transaction', async () => {
@@ -284,11 +311,64 @@ describe('members.change_request.decide', () => {
     expect(span.ended).toBe(1);
   });
 
-  it('a refused decision (unknown id) sets ERROR with the error TYPE — the reason text is not the message, and no attribute carries it', async () => {
+  it('a refused decision (unknown id) is an attribute, not an ERROR — and the reason text reaches NO attribute', async () => {
     const r = await decideChangeRequest(decideDeps(), { ...decision(SECRET_REASON, null), changeRequestId: '00000000-0000-4000-8000-0000000000ff' as ChangeRequestId });
     expect(r).toEqual({ ok: false, error: { type: 'not_found' } });
     const span = spans[0]!;
-    expect(span.statuses).toEqual([{ code: SpanStatusCode.ERROR, message: 'not_found' }]);
+    expect(span.statuses).toEqual([]);
+    expect(span.attributes['change_request.refusal']).toBe('not_found');
+    expect(span.ended).toBe(1);
+    expect(JSON.stringify(span)).not.toContain('SECRET');
+  });
+
+  it('a repo FAULT is the ERROR arm, and the reason still reaches no attribute or status', async () => {
+    const deps = decideDeps();
+    (deps.changeRequestRepo as unknown as { decideInTx: unknown }).decideInTx = async () => ({ ok: false as const, error: { code: 'repo.unexpected' as const } });
+    const r = await decideChangeRequest(deps, decision(SECRET_REASON, SECRET_NOTE));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('server_error');
+    const span = spans[0]!;
+    expect(span.statuses).toEqual([{ code: SpanStatusCode.ERROR, message: 'server_error' }]);
+    expect(span.attributes).not.toHaveProperty('change_request.refusal');
+    expect(span.ended).toBe(1);
+    expect(JSON.stringify(span)).not.toContain('SECRET');
+  });
+});
+
+/**
+ * PR-3 review B10 — a THROW inside the transaction.
+ *
+ * Both use cases convert every fault to a `Result` inside their own
+ * `decideTransaction` / `submitTransaction` body, so a throw never escapes to
+ * the span callback; the callback's `catch` is defence-in-depth for what
+ * bypasses that contract (an OOM, a tracer-internal throw, a later edit that
+ * moves a statement above the try), `v8 ignore`d like the payments idiom it
+ * mirrors (`confirm-payment.ts`). What IS observable is pinned here: a throw
+ * carrying the reviewer's reason as its MESSAGE ends the span exactly once,
+ * marks it ERROR as a `server_error`, and puts that message nowhere.
+ */
+describe('a throw inside the transaction still ends the span, and leaks no message', () => {
+  it('the thrown message never reaches a status, an attribute or a recorded exception', async () => {
+    const deps = decideDeps();
+    (deps.changeRequestRepo as unknown as { findByIdInTx: unknown }).findByIdInTx = async () => {
+      throw new EvalError(SECRET_REASON);
+    };
+    const r = await decideChangeRequest(deps, {
+      changeRequestId: REQ,
+      decisions: [{ key: 'phone', outcome: 'rejected' as const }],
+      reason: SECRET_REASON,
+      note: null,
+      actorUserId: REVIEWER,
+      actorRole: 'admin' as const,
+      requestId: 'req-d2',
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('server_error');
+    const span = spans[0]!;
+    expect(span.statuses).toEqual([{ code: SpanStatusCode.ERROR, message: 'server_error' }]);
+    expect(span.exceptions).toEqual([]);
     expect(span.ended).toBe(1);
     expect(JSON.stringify(span)).not.toContain('SECRET');
   });

@@ -266,3 +266,48 @@ describe('ApprovalSwitch — the unchanged no-op is not announced (R-L5)', () =>
     expect(toast.success).toHaveBeenCalledWith(t.toast.off);
   });
 });
+
+/**
+ * PR-3 review round 2 (B7) — a 200 whose body does NOT carry a boolean
+ * `approvalEnabled` is not a success the card can render. The old
+ * `body.approvalEnabled === true` coerced every other shape to `false`, so a
+ * truncated / proxied / reshaped 200 on a switch-ON made the card announce
+ * "Approval is off" about a tenant the server had just switched ON — the
+ * state line then disagrees with the stored value and with the audit row.
+ * The only honest answer is the generic failure and NO state change.
+ */
+describe('ApprovalSwitch — a 200 the card cannot read is a failure, not a false (B7)', () => {
+  it.each([
+    ['no approvalEnabled key', { changedAt: '2026-09-15T10:00:00.000Z' }],
+    ['a non-boolean approvalEnabled', { approvalEnabled: 'true', changedAt: '2026-09-15T10:00:00.000Z' }],
+    ['an unparsable body', null],
+  ])('%s → the generic alert, state unchanged, no toast', async (_name, body) => {
+    const fn =
+      body === null
+        ? vi.fn(async () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } }))
+        : vi.fn(async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fn);
+    renderSwitch({ initialEnabled: false, pendingCount: 0 });
+
+    const sw = screen.getByRole('switch', { name: t.switchLabel });
+    fireEvent.click(sw);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(t.errors.generic);
+    // the switch still shows the pre-click server truth, never a coerced `false`
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText(t.state.off)).toBeInTheDocument();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('a 200 carrying `approvalEnabled: false` is still a real answer — the guard is the MISSING boolean, not the value', async () => {
+    stubFetch(200, { approvalEnabled: false, changedAt: '2026-09-15T10:00:00.000Z' });
+    renderSwitch({ initialEnabled: true, pendingCount: 0 });
+
+    fireEvent.click(screen.getByRole('switch', { name: t.switchLabel }));
+
+    await waitFor(() => expect(screen.getByRole('switch', { name: t.switchLabel })).toHaveAttribute('aria-checked', 'false'));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(toast.success).toHaveBeenCalledTimes(1);
+  });
+});

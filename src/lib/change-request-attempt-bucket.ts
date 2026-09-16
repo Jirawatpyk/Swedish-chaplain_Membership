@@ -12,6 +12,12 @@
  * handful of times a session); withdraw is a write and takes the submit
  * bucket's size.
  *
+ * The three things a caller could previously get wrong are types now (PR-3
+ * review B1): the key comes from {@link attemptBucketKey} and is BRANDED (a
+ * hand-assembled one that drops the tenant segment would make one global
+ * bucket), the size is one of the two documented names rather than two free
+ * numbers, and the errorId prefix is shaped `M114.<surface>.<route>`.
+ *
  * A refusal answers the same envelope as the durable FR-008 cap
  * (`{ error: 'rate_limited', retryAfterSeconds }` + `Retry-After`) but is
  * COUNTED apart: `members_change_request_refused_total{reason=attempt_throttled}`
@@ -42,13 +48,63 @@ export const SUBMIT_ATTEMPTS_PER_WINDOW = 60;
 export const PROBE_ATTEMPTS_PER_WINDOW = 10;
 export const ATTEMPT_WINDOW_SECONDS = 600;
 
+/**
+ * The four F114 routes that carry a bucket, spelled as the KEY segment each
+ * one uses. These strings are live Redis keys — renaming one to something
+ * tidier empties the in-flight bucket for every actor on that route.
+ */
+export type AttemptBucketRoute = 'submit' | 'withdraw' | 'history-item' | 'acknowledge';
+
+declare const attemptBucketKeyBrand: unique symbol;
+/**
+ * A bucket key built by {@link attemptBucketKey}, and only by it.
+ *
+ * The key has a grammar — `f114:<route>-attempts:<tenant>:<user>` — and every
+ * segment is load-bearing. A hand-assembled key that drops the tenant makes
+ * one GLOBAL bucket: tenant B is then refused because tenant A was noisy, and
+ * nothing anywhere says so (PR-3 review B1). The brand makes that a compile
+ * error instead of an incident.
+ */
+export type AttemptBucketKey = string & { readonly [attemptBucketKeyBrand]: true };
+
+/** The only way to mint an {@link AttemptBucketKey}. */
+export function attemptBucketKey(route: AttemptBucketRoute, tenantSlug: string, userId: string): AttemptBucketKey {
+  return `f114:${route}-attempts:${tenantSlug}:${userId}` as AttemptBucketKey;
+}
+
+/**
+ * The two documented bucket sizes — the ONE choice a route makes.
+ *
+ * `max` and `windowSeconds` used to be two independent numbers on the input,
+ * so a fifth route could invent a size that matches neither the runbook nor
+ * `docs/observability.md` § 27.1 and still typecheck.
+ */
+export type AttemptBucketSizeName = 'submit' | 'probe';
+
+const SIZES: Readonly<Record<AttemptBucketSizeName, { readonly max: number; readonly windowSeconds: number }>> = {
+  submit: { max: SUBMIT_ATTEMPTS_PER_WINDOW, windowSeconds: ATTEMPT_WINDOW_SECONDS },
+  probe: { max: PROBE_ATTEMPTS_PER_WINDOW, windowSeconds: ATTEMPT_WINDOW_SECONDS },
+};
+
+/** Resolve a size name to its `{ max, windowSeconds }` — exported for the pin. */
+export function attemptBucketSize(name: AttemptBucketSizeName): { readonly max: number; readonly windowSeconds: number } {
+  return SIZES[name];
+}
+
+/**
+ * The CALLER's own `M114.<surface>.<route>` prefix — `.attempts_exhausted` /
+ * `.attempt_bucket_fell_back` are appended to it. Shaped at the type level so
+ * a two-segment id cannot be handed over; that it is the caller's OWN id (not
+ * a neighbour's const) is checked by the source scan in
+ * `tests/unit/architecture/change-requests-error-id.test.ts`.
+ */
+export type AttemptBucketErrorIdPrefix = `M114.${string}.${string}`;
+
 export type AttemptBucketInput = {
-  /** `f114:<route>-attempts:<tenant>:<user>` — one bucket per route. */
-  readonly key: string;
-  readonly max: number;
-  readonly windowSeconds: number;
-  /** The CALLER's `M114.<surface>.<route>` prefix — the arms are appended here. */
-  readonly errorIdPrefix: string;
+  /** From {@link attemptBucketKey} — one bucket per route + tenant + user. */
+  readonly key: AttemptBucketKey;
+  readonly size: AttemptBucketSizeName;
+  readonly errorIdPrefix: AttemptBucketErrorIdPrefix;
   /** The caller's log-line prefix, e.g. `change-requests.submit`. */
   readonly logPrefix: string;
   readonly requestId: string;
@@ -60,7 +116,8 @@ export type AttemptBucketInput = {
  * when the caller may proceed.
  */
 export async function refuseWhenAttemptsExhausted(input: AttemptBucketInput): Promise<NextResponse | null> {
-  const attempts = await rateLimiter.check(input.key, input.max, input.windowSeconds);
+  const { max, windowSeconds } = SIZES[input.size];
+  const attempts = await rateLimiter.check(input.key, max, windowSeconds);
   if ('fellBack' in attempts && attempts.fellBack === true) {
     logger.warn(
       { errorId: `${input.errorIdPrefix}.attempt_bucket_fell_back`, requestId: input.requestId, tenantId: input.tenantId },

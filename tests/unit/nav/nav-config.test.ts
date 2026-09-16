@@ -9,9 +9,11 @@ import {
   memberNavConfig,
   memberBottomTabItems,
   staffNavConfig,
+  type NavBadgeCounts,
   type NavConfig,
   type NavGroup,
   type NavItem,
+  type RenderedNavConfig,
 } from '@/config/nav';
 
 /**
@@ -544,51 +546,74 @@ describe('applyNavBadges — F114 US6 server-resolved badge counts (plan Complex
       {
         titleKey: 'nav.staff.sections.membership',
         items: [
-          { titleKey: 'a', icon, href: '/admin/a', activePattern: '/admin/a', badgeLabelKey: 'a.badge' },
+          { titleKey: 'a', icon, href: '/admin/a', activePattern: '/admin/a', badge: { labelKey: 'a.badge' } },
           { titleKey: 'b', icon, href: '/admin/b', activePattern: '/admin/b' },
           {
             titleKey: 'g',
             icon,
             activePattern: '/admin/g',
             children: [
-              { titleKey: 'c', icon, href: '/admin/g/c', activePattern: '/admin/g/c' },
+              { titleKey: 'c', icon, href: '/admin/g/c', activePattern: '/admin/g/c', badge: { labelKey: 'c.badge' } },
             ],
           },
         ],
       },
     ],
   };
-  const leaves = (c: NavConfig) =>
+  const leaves = (c: RenderedNavConfig) =>
     c.sections.flatMap((s) => s.items.flatMap((i) => (isNavGroup(i) ? i.children : [i])));
+  // The production map is keyed by `BadgeableNavHref` so a typo'd href in the
+  // staff layout is a compile error (B2). This synthetic config uses hrefs of
+  // its own, so the key is widened HERE and nowhere else.
+  const counts = (m: Readonly<Record<string, number>>): NavBadgeCounts => m as NavBadgeCounts;
 
   it('sets badgeCount only where the keyed count is > 0, leaving other items untouched', () => {
-    const out = applyNavBadges(config, { '/admin/a': 3, '/admin/b': 0, '/admin/g/c': 2 });
+    const out = applyNavBadges(config, counts({ '/admin/a': 3, '/admin/b': 0, '/admin/g/c': 2 }));
     const byHref = Object.fromEntries(leaves(out).map((i) => [i.href, i.badgeCount]));
     expect(byHref).toEqual({ '/admin/a': 3, '/admin/b': undefined, '/admin/g/c': 2 });
   });
 
   it('does not mutate the input config', () => {
     const before = JSON.stringify(config);
-    const out = applyNavBadges(config, { '/admin/a': 5 });
+    const out = applyNavBadges(config, counts({ '/admin/a': 5 }));
     expect(JSON.stringify(config)).toBe(before);
     expect(out).not.toBe(config);
     expect(leaves(config).every((i) => i.badgeCount === undefined)).toBe(true);
   });
 
   it('ignores hrefs that are not in the config and an empty map is a no-op', () => {
-    const out = applyNavBadges(config, { '/admin/nowhere': 9 });
+    const out = applyNavBadges(config, counts({ '/admin/nowhere': 9 }));
     expect(leaves(out).every((i) => i.badgeCount === undefined)).toBe(true);
     expect(leaves(applyNavBadges(config, {})).every((i) => i.badgeCount === undefined)).toBe(true);
   });
 
+  /**
+   * PR-3 review round 2 (B2) — `badgeCount` and `badgeLabelKey` used to be two
+   * INDEPENDENT optionals, so "a count with no noun to announce it" and "a
+   * noun with no count" were both representable. `applyNavBadges` stamped a
+   * count on ANY href present in the map, so an item that never declared a
+   * badge rendered a bare number with no sr-only suffix — an accessible name
+   * reading "Plans 3". The DECLARATION is the gate now.
+   */
+  it('an href in the map whose item declares NO badge is ignored — never a bare number in the accessible name', () => {
+    const out = applyNavBadges(config, counts({ '/admin/a': 3, '/admin/b': 7 }));
+    const byHref = Object.fromEntries(leaves(out).map((i) => [i.href, i.badgeCount]));
+    // `b` declares no `badge`, so it takes no count however loud the map is
+    expect(byHref).toEqual({ '/admin/a': 3, '/admin/b': undefined, '/admin/g/c': undefined });
+  });
+
   it('the static config never authors a badgeCount; changeRequests declares the sr-only label key', () => {
     // `badgeCount` is server-resolved (staff layout → sidebar); a hand-authored
-    // count in the config would be a stale number on every tenant.
+    // count in the config would be a stale number on every tenant — and the
+    // authored `badge` carries the LABEL KEY only, never a number.
     const leavesOfStaff = staffNavConfig.sections.flatMap((s) =>
       s.items.flatMap((i) => (isNavGroup(i) ? i.children : [i])),
     );
-    expect(leavesOfStaff.every((i) => i.badgeCount === undefined)).toBe(true);
+    expect(leavesOfStaff.every((i) => !('badgeCount' in i))).toBe(true);
     const changeRequests = leavesOfStaff.find((i) => i.href === '/admin/change-requests')!;
-    expect(changeRequests.badgeLabelKey).toBe('nav.staff.changeRequestsBadge');
+    expect(changeRequests.badge).toEqual({ labelKey: 'nav.staff.changeRequestsBadge' });
+    // the ONLY badgeable item today — `BadgeableNavHref` says so in the type
+    // system; this pins that the config agrees
+    expect(leavesOfStaff.filter((i) => i.badge !== undefined).map((i) => i.href)).toEqual(['/admin/change-requests']);
   });
 });

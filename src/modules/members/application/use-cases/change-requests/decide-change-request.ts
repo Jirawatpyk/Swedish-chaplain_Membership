@@ -348,8 +348,9 @@ export async function decideChangeRequest(
 
   // ONE transaction under the `members.change_request.decide` span (T106;
   // docs/observability.md § 27): bounded ids / keys / the recorded outcome
-  // only (§ 27.5) — a refused or failed arm marks the span ERROR with the
-  // error TYPE, never the reason or a value.
+  // only (§ 27.5). A `server_error` marks the span ERROR with the error TYPE;
+  // every expected refusal is `change_request.refusal = <type>` with the
+  // status left UNSET (B10). Never the reason or a value, on either path.
   const decideTransaction = async (span: Span): Promise<Result<DecideChangeRequestOutcome, DecideChangeRequestError>> => {
     try {
       const outcome = await runInTenant(deps.tenant, async (tx): Promise<DecideChangeRequestOutcome> => {
@@ -562,8 +563,28 @@ export async function decideChangeRequest(
     async (span) => {
       try {
         const result = await decideTransaction(span);
-        if (!result.ok) span.setStatus({ code: SpanStatusCode.ERROR, message: result.error.type });
+        if (!result.ok) {
+          // B10: ERROR is a system failure. Every other arm is a stated
+          // refusal — an attribute, not an error (see the docblock above).
+          if (result.error.type === 'server_error') {
+            span.setStatus({ code: SpanStatusCode.ERROR, message: result.error.type });
+          } else {
+            span.setAttribute('change_request.refusal', result.error.type);
+          }
+        }
         return result;
+        /* v8 ignore start — defence-in-depth, exactly as `confirm-payment.ts`
+         * documents it: `decideTransaction` converts every fault to a
+         * `Result` in its own catch, so nothing reaches here. Unreachable
+         * to a test, kept so an OOM / tracer-internal throw / a later edit
+         * above the try cannot end this span UNSET as though it succeeded. */
+      } catch (e) {
+        // the constructor NAME only — `.message` can carry the reviewer's reason
+        const name = e instanceof Error ? e.constructor.name : 'decide_threw';
+        span.setStatus({ code: SpanStatusCode.ERROR, message: name });
+        span.recordException({ name });
+        throw e;
+        /* v8 ignore stop */
       } finally {
         span.end();
       }

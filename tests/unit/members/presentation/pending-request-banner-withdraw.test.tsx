@@ -152,7 +152,7 @@ describe('PendingRequestBanner — withdraw (T089)', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it('a 404 whose body is NOT no_pending_request (the platform flag turned off between render and click — PR-3 S-4) renders NOTHING: no "gone" message, no console.error, and refreshes so the server tree drops the banner', async () => {
+  it('a FLAT 404 not_found (the platform flag turned off between render and click — PR-3 S-4) renders NOTHING: no "gone" message, no console.error, and refreshes so the server tree drops the banner', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'not_found' }), { status: 404 }));
     renderBanner();
@@ -164,15 +164,60 @@ describe('PendingRequestBanner — withdraw (T089)', () => {
     expect(refresh).toHaveBeenCalled();
     consoleError.mockRestore();
   });
+});
 
-  it('a 404 with an unreadable body is the silent case too — never a "gone" message the server cannot confirm', async () => {
+/**
+ * PR-3 review round 2 (A1) — the 404 split was by BODY SHAPE, and it only knew
+ * two flat strings. `requireMemberContext` (`src/lib/member-context.ts`)
+ * answers a NESTED `{ error: { code: 'not_found' } }` when the caller's member
+ * or contact is not linked under their user — a real data inconsistency — and
+ * that fell into the "hidden" arm: the banner vanished, `router.refresh()`
+ * repainted the pending banner from the server, and nothing was logged. Only
+ * the two 404s the withdraw ROUTE itself can answer may be silent; every other
+ * 404 is a failure the person must see.
+ */
+describe('PendingRequestBanner — a 404 the banner cannot explain is an error (A1)', () => {
+  it('the NESTED member-context not_found shows the inline error and does NOT refresh the banner away', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'not_found', message: 'Contact not linked' } }), { status: 404 }));
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.button }));
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.confirm }));
+    await waitFor(() => expect(screen.getByTestId('withdraw-error')).toBeTruthy());
+    expect(screen.getByTestId('withdraw-error').textContent).toContain(copy.withdraw.error);
+    // the banner stays (the request is still pending as far as anyone knows)
+    expect(screen.getByTestId('pending-request-banner')).toBeTruthy();
+    expect(screen.queryByTestId('withdraw-result')).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
+    // the log names the status so a 404 is distinguishable from the 5xx arm
+    expect(JSON.stringify(consoleError.mock.calls)).toContain('404');
+    consoleError.mockRestore();
+  });
+
+  it('a 404 with an unreadable body is the same error — never a silent disappearance the server cannot confirm', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     fetchMock.mockResolvedValueOnce(new Response('<html>', { status: 404 }));
     renderBanner();
     fireEvent.click(screen.getByRole('button', { name: copy.withdraw.button }));
     fireEvent.click(screen.getByRole('button', { name: copy.withdraw.confirm }));
-    await waitFor(() => expect(screen.queryByTestId('pending-request-banner')).toBeNull());
-    expect(screen.queryByTestId('withdraw-result')).toBeNull();
-    expect(refresh).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('withdraw-error')).toBeTruthy());
+    expect(screen.getByTestId('pending-request-banner')).toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('a 404 with an unknown flat code is the error arm too — only the route’s OWN two codes are silent', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'member_not_found' }), { status: 404 }));
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.button }));
+    fireEvent.click(screen.getByRole('button', { name: copy.withdraw.confirm }));
+    await waitFor(() => expect(screen.getByTestId('withdraw-error')).toBeTruthy());
+    expect(refresh).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it('a 5xx keeps the banner and announces the error inline', async () => {

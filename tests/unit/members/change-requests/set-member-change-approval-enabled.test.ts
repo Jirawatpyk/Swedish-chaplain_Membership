@@ -54,6 +54,11 @@ describe('setMemberChangeApprovalEnabled', () => {
     const { deps, settings, audit } = makeDeps(false);
     const r = await setMemberChangeApprovalEnabled(deps, input);
     expect(r).toEqual({ ok: true, value: { approvalEnabled: true, previous: false, changed: true, changedAt: NOW } });
+    // the AUDIT branch IS the `changed: true` branch — B3: `changedAt` is
+    // reachable only after narrowing on `changed`, so a caller cannot ask
+    // for the instant of a transition that did not happen
+    if (r.ok && r.value.changed) expect(r.value.changedAt).toEqual(NOW);
+    else expect.unreachable('a real transition must report changed: true');
     expect(settings.state).toEqual({ enabled: true });
     expect(runInTenantMock).toHaveBeenCalledTimes(1);
     expect(runInTenantMock).toHaveBeenCalledWith(tenant, expect.any(Function));
@@ -98,7 +103,10 @@ describe('setMemberChangeApprovalEnabled', () => {
   it('an UNCHANGED value → changed: false, NO audit row (the upsert reports the same previous value)', async () => {
     const { deps, settings, audit } = makeDeps(true);
     const r = await setMemberChangeApprovalEnabled(deps, input);
-    expect(r).toEqual({ ok: true, value: { approvalEnabled: true, previous: true, changed: false, changedAt: null } });
+    expect(r).toEqual({ ok: true, value: { approvalEnabled: true, previous: true, changed: false } });
+    // `changedAt` does not EXIST on the no-op arm (B3), rather than being
+    // a null every consumer has to remember to check
+    expect(r.ok && 'changedAt' in r.value).toBe(false);
     expect(settings.state).toEqual({ enabled: true });
     expect(audit.events).toHaveLength(0);
     expect(audit.recordInTx).not.toHaveBeenCalled();
@@ -107,7 +115,7 @@ describe('setMemberChangeApprovalEnabled', () => {
   it('no row yet (new tenant, default off) + off → no audit; no row + on → audited from the default', async () => {
     const off = makeDeps(null);
     const r1 = await setMemberChangeApprovalEnabled(off.deps, { ...input, enabled: false });
-    expect(r1).toEqual({ ok: true, value: { approvalEnabled: false, previous: false, changed: false, changedAt: null } });
+    expect(r1).toEqual({ ok: true, value: { approvalEnabled: false, previous: false, changed: false } });
     expect(off.audit.events).toHaveLength(0);
 
     const on = makeDeps(null);

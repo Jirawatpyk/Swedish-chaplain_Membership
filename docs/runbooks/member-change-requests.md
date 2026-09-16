@@ -142,7 +142,14 @@ A sustained `attempt_throttled` rate from one tenant reads as enumeration; a sus
 ## Alarm 4 — the gauges are blind (`membersGaugesOk = false`, three ticks)
 
 Log line `cron.broadcasts_gauges.members_query_failed` with `err`. The broadcasts half of the
-tick and its 200 are unaffected by design; both age alerts above are blind until this clears.
+tick still runs and still emits its samples — the halves are independent by design (SEC-1) — but
+the tick answers **500** when either half fails (PR-3 review B9), so read `broadcastsGaugesOk` /
+`membersGaugesOk` in the body to tell which one, never the status code alone.
+
+Both members series go **absent**, not stale: the catch forgets the two labels for every tenant in
+the last successful tick's set, because `observeGauge` re-reports the last value at every scrape
+and a frozen "oldest 13 d" would never cross the 14 d page threshold. So the two age alerts read
+"no data" while this is open — expected, and the reason this alarm exists.
 
 1. `pnpm db:verify:prod` — the `member_change_requests` canaries (migrations 0300 / 0302) must be
    present on the deployed branch.

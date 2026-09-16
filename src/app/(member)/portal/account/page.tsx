@@ -259,7 +259,10 @@ export default async function MemberAccountPage() {
       logger.error(
         {
           errorId: 'M114.portal.account.exports_read_failed',
-          errKind: errKind(err),
+          // `err`, the house field name for an error kind (C6) — the four
+          // older `errKind:` lines in this file predate F114 and are left as
+          // they are; this is the only one PR-3 added.
+          err: errKind(err),
           tenantId: tenant.slug,
           userIdHash: hashId(user.id),
         },

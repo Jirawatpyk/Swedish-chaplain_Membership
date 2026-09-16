@@ -3,7 +3,7 @@
  * research R11 "dark ship"). `FEATURE_MEMBER_CHANGE_APPROVAL=false` while the
  * in-memory repo holds rows from a previous flag-on run:
  *
- *   - every F114 route answers 404 BEFORE any session work — the eleven
+ *   - every F114 route answers 404 BEFORE any session work — the twelve
  *     handlers in ten route files are enumerated here by hand from
  *     `src/app/api/{portal,admin}/**` (a route added without a row fails the
  *     count control at the bottom);

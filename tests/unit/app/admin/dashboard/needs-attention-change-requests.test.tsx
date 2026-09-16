@@ -47,6 +47,7 @@ const h = vi.hoisted(() => ({
   features: { f9Dashboard: true, f7Broadcasts: true, memberChangeApproval: true },
   count: vi.fn(),
   logError: vi.fn(),
+  buildDeps: vi.fn(() => ({ tenant: { slug: 'tenant-a' } })),
 }));
 
 vi.mock('@/lib/env', () => ({
@@ -89,7 +90,7 @@ vi.mock('next-intl/server', () => ({
 // The members composition root boots infra clients at import; only the two
 // seams the page touches are needed here.
 vi.mock('@/lib/members-change-request-deps', () => ({
-  buildChangeRequestDeps: () => ({ tenant: { slug: 'tenant-a' } }),
+  buildChangeRequestDeps: h.buildDeps,
 }));
 vi.mock('@/modules/members', () => ({ countPendingChangeRequests: h.count }));
 
@@ -137,6 +138,8 @@ beforeEach(() => {
   h.features.memberChangeApproval = true;
   h.count.mockReset();
   h.logError.mockReset();
+  h.buildDeps.mockReset();
+  h.buildDeps.mockReturnValue({ tenant: { slug: 'tenant-a' } });
 });
 
 describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => {
@@ -218,5 +221,26 @@ describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => 
     expect(html).not.toContain(en.admin.dashboard.needsAttention.changeRequestsUnavailable);
     expect(html).toContain(en.admin.dashboard.needsAttention.empty);
     expect(h.count).not.toHaveBeenCalled();
+  });
+
+  /**
+   * PR-3 review round 2 (B8) — the `allSettled` REJECTED arm. The helper
+   * swallows both its own channels, so this fires only on a throw ABOVE its
+   * try (here: the deps composition root). It mapped to `unavailable` — the
+   * right SURFACE — with no log line at all, so the one arm nobody can
+   * reproduce was also the one arm that left no trace. The file's other arms
+   * (`listDashboard`, the activity feed) each log; this one now does too.
+   */
+  it('a throw ABOVE the helper’s try (the deps root) is the unavailable surface AND is logged under the dashboard errorId', async () => {
+    h.buildDeps.mockImplementation(() => {
+      throw new TypeError('deps root exploded');
+    });
+    const html = await renderPage();
+    expect(html).toContain(en.admin.dashboard.needsAttention.changeRequestsUnavailable);
+    expect(html).not.toContain(en.admin.dashboard.needsAttention.empty);
+    const call = h.logError.mock.calls.find((c) => (c[0] as { errorId?: string }).errorId === 'M114.dashboard.pending_count_failed');
+    expect(call, 'the rejected arm logs under the dashboard errorId').toBeDefined();
+    // `errKind`, never the raw error: a message can carry a value (log hygiene)
+    expect(call![0]).toMatchObject({ err: 'TypeError' });
   });
 });

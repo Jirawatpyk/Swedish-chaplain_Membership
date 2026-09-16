@@ -249,6 +249,9 @@ describe('PATCH /api/admin/settings/member-changes', () => {
     expect(repo.rows.get(R(2))?.state).toBe('pending');
   });
 
+  // The WIRE shape is unchanged by B3 (the union is an Application-layer
+  // type): the no-op still answers `changedAt: null`, because the card
+  // branches on it to decide whether to toast (R-L5).
   it('the unchanged value → 200 with changedAt null and NO audit row', async () => {
     const res = await patch({ approvalEnabled: false });
     expect(res.status).toBe(200);

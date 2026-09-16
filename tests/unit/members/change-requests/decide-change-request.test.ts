@@ -723,9 +723,15 @@ describe('decideChangeRequest — a stored field_key outside the Domain union (P
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error.type).toBe('validation_error');
-    const issues = (r.error as { issues: ReadonlyArray<{ path: readonly (string | number)[]; message?: string }> }).issues;
+    const issues = (r.error as { issues: ReadonlyArray<{ code?: string; path: readonly (string | number)[]; message?: string }> }).issues;
     expect(issues.length).toBeGreaterThan(0);
     expect(JSON.stringify(issues)).toContain('legacy_fax');
+    // NAME the layer that refused (C4): `unrecognized_keys` is zod's
+    // strict-object refusal, i.e. `validateProposal` at step 6 — which is
+    // the whole point of the `v8 ignore` on `patchesOf`'s default arm. A
+    // bare "some issue exists" assertion would still pass if the refusal
+    // moved to `patchesOf`, and the proof would quietly stop proving it.
+    expect(issues[0]!.code).toBe('unrecognized_keys');
     // refused BEFORE any write: the row is still pending
     expect(repo.rows.get(REQ)!.state).toBe('pending');
   });

@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ChevronRightIcon } from 'lucide-react';
 
-import { isNavGroup, isNavItemActive, type NavGroup, type NavItem } from '@/config/nav';
+import { isNavGroup, isNavItemActive, type RenderedNavGroup, type RenderedNavItem } from '@/config/nav';
 import {
   Collapsible,
   CollapsibleContent,
@@ -25,13 +25,19 @@ import {
 // Flat NavItem renderer
 // ---------------------------------------------------------------------------
 
-function NavItemLink({ item }: { readonly item: NavItem }) {
+function NavItemLink({ item }: { readonly item: RenderedNavItem }) {
   const pathname = usePathname();
   const t = useTranslations();
   const { isMobile, setOpenMobile } = useSidebar();
   const active = isNavItemActive(pathname, item.activePattern);
   const title = t(item.titleKey);
-  const badgeCount = typeof item.badgeCount === 'number' && item.badgeCount > 0 ? item.badgeCount : null;
+  // Both halves are required: the DECLARATION (which carries the sr-only
+  // noun) and a positive server-resolved count. A count without a
+  // declaration would announce a bare number (B2); `applyNavBadges` no
+  // longer produces one, and this is the second layer.
+  const badge = item.badge;
+  const badgeCount =
+    badge !== undefined && typeof item.badgeCount === 'number' && item.badgeCount > 0 ? item.badgeCount : null;
 
   return (
     <SidebarMenuItem>
@@ -53,20 +59,19 @@ function NavItemLink({ item }: { readonly item: NavItem }) {
         <span className="truncate">{title}</span>
         {/* F114 US6 (FR-033) — server-resolved count INSIDE the link so it is
             part of the accessible name ("Change requests 3 pending"): the
-            visible number + an sr-only noun from `badgeLabelKey`. Not
+            visible number + an sr-only noun from the item's `badge`
+            declaration. Not
             `SidebarMenuBadge` (a sibling outside the link — never announced
             with it) and no aria-label on a span (axe aria-prohibited-attr).
             Hidden in the icon rail like the primitive's own badge (the
             tooltip carries the count there). The explicit `{' '}` keeps a
             space in the computed name — flex swallows it visually. */}
-        {badgeCount !== null ? (
+        {badgeCount !== null && badge !== undefined ? (
           <>
             {' '}
             <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sidebar-primary px-1 text-xs font-medium tabular-nums text-sidebar-primary-foreground group-data-[collapsible=icon]:hidden">
               {badgeCount}
-              {item.badgeLabelKey ? (
-                <span className="sr-only"> {t(item.badgeLabelKey, { count: badgeCount })}</span>
-              ) : null}
+              <span className="sr-only"> {t(badge.labelKey, { count: badgeCount })}</span>
             </span>
           </>
         ) : null}
@@ -79,7 +84,7 @@ function NavItemLink({ item }: { readonly item: NavItem }) {
 // NavGroup renderer (expandable collapsible group)
 // ---------------------------------------------------------------------------
 
-function NavGroupCollapsible({ group }: { readonly group: NavGroup }) {
+function NavGroupCollapsible({ group }: { readonly group: RenderedNavGroup }) {
   const pathname = usePathname();
   const t = useTranslations();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -154,7 +159,7 @@ function NavGroupCollapsible({ group }: { readonly group: NavGroup }) {
 // Public — renders either NavItem or NavGroup
 // ---------------------------------------------------------------------------
 
-export function NavEntry({ item }: { readonly item: NavItem | NavGroup }) {
+export function NavEntry({ item }: { readonly item: RenderedNavItem | RenderedNavGroup }) {
   if (isNavGroup(item)) {
     return <NavGroupCollapsible group={item} />;
   }

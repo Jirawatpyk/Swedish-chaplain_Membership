@@ -60,6 +60,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { MoneyDisplay } from './money-display';
 import { LocaleTextDisplay } from './locale-text-display';
 import type { PlanListItem } from '@/modules/plans';
@@ -181,10 +182,13 @@ export function PlansTable({
             | string
             | { code?: string; details?: { affected_member_count?: number } };
         } | null;
-        // read-only-mode 503: flat string (proxy) OR nested code (route guard).
+        // read-only-mode 503: flat string (proxy) OR nested code (route guard)
+        // — both shapes and both spellings live in `problemCode` /
+        // `isReadOnlyCode` now (PR-3 review B7). The status is NOT part of the
+        // test here, exactly as before: this ladder branches on the code alone.
         const errObj = body?.error;
-        const code = typeof errObj === 'string' ? errObj : errObj?.code;
-        if (code === 'read_only_mode' || code === 'read-only-mode') {
+        const code = problemCode(body);
+        if (isReadOnlyCode(code)) {
           toast.error(tErrors('readOnlyMode'));
         } else if (code === 'plan_has_active_members') {
           toast.error(

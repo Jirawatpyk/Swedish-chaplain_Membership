@@ -232,8 +232,8 @@ snapshot, so US6 AS3 holds immediately. (2) The staff nav item `nav.staff.change
 the Membership section (`src/config/nav.ts:224`, `defineGuard('members.read')`) carries an
 optional `badgeCount` resolved server-side in the staff shell — the nav config has no badge slot
 today (panel theme 7); adding one optional field to the item type is the smallest change and stays
-declarative. (3) Gauge `members.change_requests_pending_count{tenant}` +
-`members.change_request_oldest_age_seconds{tenant}` in `membersMetrics` (`src/lib/metrics.ts`),
+declarative. (3) Gauge `members_change_requests_pending_count{tenant}` +
+`members_change_request_oldest_age_seconds{tenant}` in `membersMetrics` (`src/lib/metrics.ts`),
 emitted by the existing `broadcasts-gauges` cron route generalised to a per-tenant gauges tick —
 **no new cron**: `vercel.json` has 37 of the Pro plan's 40 jobs.
 **R**: Spec FR-033/FR-037/SC-008; the cron budget is the binding constraint.
@@ -431,8 +431,9 @@ correct, not a bug; (3) the reviewer fan-out is 3 outbox rows per submission (�
 
 ### § V2 — per-tenant gauges tick hosts the members gauges (T092)
 
-**Measured 2026-09-15** (`src/app/api/internal/metrics/broadcasts-gauges/route.ts`, 296 lines;
-`vercel.json` cron count = **37** of the Pro plan's 40):
+**As measured BEFORE PR-3** (2026-09-15, `src/app/api/internal/metrics/broadcasts-gauges/route.ts`,
+296 lines; `vercel.json` cron count = **37** of the Pro plan's 40). The route is now TWO
+transactions with a flag per half — see the supersession below:
 
 - The route is ONE `db.transaction` on the pool-global `db` (owner role, BYPASSRLS — every gauge
   here is a cross-tenant `GROUP BY tenant_id`, the accepted pattern for internal metrics), one

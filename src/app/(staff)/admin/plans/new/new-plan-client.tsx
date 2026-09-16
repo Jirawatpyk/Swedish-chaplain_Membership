@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { PlanFormWizard } from '@/components/plans/plan-form-wizard';
 import type { PlanSchemaInput } from '@/modules/plans';
 import { resolvePlanCreateErrorKey } from './error-key';
@@ -53,12 +54,11 @@ export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProp
       }
       // read-only-mode (503) comes back in TWO shapes: the prod proxy emits
       // a flat hyphenated string `error: "read-only-mode"`; the route guard
-      // emits a nested underscored `error.code: "read_only_mode"`. Normalize
-      // both, and branch FIRST so neither is shadowed by the generic fallback.
-      const errorObj = body?.error;
-      const errorCode =
-        typeof errorObj === 'string' ? errorObj : (errorObj?.code ?? 'generic');
-      if (errorCode === 'read_only_mode' || errorCode === 'read-only-mode') {
+      // emits a nested underscored `error.code: "read_only_mode"`.
+      // `problemCode` normalizes both (PR-3 review B7), and this branch runs
+      // FIRST so neither is shadowed by the generic fallback.
+      const errorCode = problemCode(body) ?? 'generic';
+      if (isReadOnlyCode(errorCode)) {
         toast.error(t('errors.readOnlyMode'));
       } else {
         // API error codes are snake_case; a couple differ from their i18n

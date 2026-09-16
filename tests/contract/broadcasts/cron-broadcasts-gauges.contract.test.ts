@@ -106,6 +106,13 @@ beforeEach(() => {
   envMock.isDevelopment = false;
   envMock.features.memberChangeApproval = true;
   dbTransactionMock.mockReset();
+  // The tick runs TWO transactions (broadcasts, then members). The
+  // broadcasts-only cases below mock the first with `…Once` and say nothing
+  // about the second; before B9 the members half then threw on `undefined`
+  // and it cost nothing but a log line, because only the broadcasts flag
+  // decided the status. Now either half failing is a 500, so the default
+  // implementation answers a quiet members half and each case opts in to more.
+  dbTransactionMock.mockImplementation(async () => ({ tenantRows: [], pendingRows: [] }));
   queuePendingSpy.mockReset();
   stuckSendingCountSpy.mockReset();
   dispatchFailureRateSpy.mockReset();
@@ -504,7 +511,13 @@ describe('GET /api/internal/metrics/broadcasts-gauges — members change-request
     expect(membersOldestAgeSecondsSpy).toHaveBeenCalledWith('swecham', 100);
   });
 
-  it('the members query throwing → the broadcasts gauges are still emitted, 200 still returned, the members error logged', async () => {
+  // PR-3 review round 2 (B9a) — a members-half fault is a 500 too. It used to
+  // answer 200 with `membersGaugesOk: false` buried in the body, so the ONE
+  // thing every cron monitor checks (the status code) said the tick was fine
+  // while the FR-037 age gauge — the 30-day data-subject-request backstop —
+  // was stale. The broadcasts gauges and their totals are still emitted: the
+  // halves stay independent, only the verdict is shared.
+  it('the members query throwing → the broadcasts gauges are still emitted, the members error is logged, and the tick answers 500', async () => {
     dbTransactionMock.mockImplementationOnce(async () => ({
       ...broadcastsQuiet(),
       tenantRows: [{ tenant_id: 't1' }],
@@ -516,16 +529,55 @@ describe('GET /api/internal/metrics/broadcasts-gauges — members change-request
 
     const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
     const res = await GET(makeRequest('Bearer test-cron-secret'));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
 
     expect(queuePendingSpy).toHaveBeenCalledWith('t1', 5);
     expect(membersPendingCountSpy).not.toHaveBeenCalled();
     expect(membersOldestAgeSecondsSpy).not.toHaveBeenCalled();
     expect(loggerErrorSpy).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(String) }), 'cron.broadcasts_gauges.members_query_failed');
-    const body = (await res.json()) as { ok: boolean; pendingTotal: number; membersGaugesOk: boolean };
-    expect(body.ok).toBe(true);
-    expect(body.pendingTotal).toBe(5);
+    const body = (await res.json()) as { ok: boolean; error?: string; pendingTotal: number; broadcastsGaugesOk: boolean; membersGaugesOk: boolean };
+    // `ok` is the whole tick's verdict; each half still reports separately so
+    // the alert rules can tell WHICH one failed (§ 27.3).
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe('query_failed');
+    expect(body.broadcastsGaugesOk).toBe(true);
     expect(body.membersGaugesOk).toBe(false);
+    expect(body.pendingTotal).toBe(5);
+  });
+
+  // PR-3 review round 2 (B9b) — the latch, one layer below B9a. `observeGauge`
+  // re-reports the last value at every scrape, and a members-half fault emits
+  // nothing, so a sustained outage read as a FROZEN queue depth and a frozen
+  // age: "3 pending, oldest 13 d" forever, never crossing 14 d, never paging.
+  // A fault must read as ABSENCE, which means forgetting the labels — and the
+  // tenant set to forget is unknowable while the query is failing, so the last
+  // successful tick's set is remembered per process.
+  it('the members query throwing FORGETS both series for the last-known tenant set — a sustained outage is absence, not a frozen value', async () => {
+    const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
+
+    // tick 1: healthy, two tenants observed
+    dbTransactionMock.mockImplementationOnce(async () => broadcastsQuiet());
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 'swecham' }, { tenant_id: 'other' }],
+      pendingRows: [{ tenant_id: 'swecham', count: 3, oldest_age_seconds: 1_123_200 }],
+    }));
+    expect((await GET(makeRequest('Bearer test-cron-secret'))).status).toBe(200);
+    expect(membersForgetGaugesSpy).not.toHaveBeenCalled();
+
+    // tick 2: the members half faults
+    membersForgetGaugesSpy.mockReset();
+    membersPendingCountSpy.mockReset();
+    membersOldestAgeSecondsSpy.mockReset();
+    dbTransactionMock.mockImplementationOnce(async () => broadcastsQuiet());
+    dbTransactionMock.mockImplementationOnce(async () => {
+      throw new Error('Neon: connection terminated');
+    });
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(500);
+    expect(membersForgetGaugesSpy.mock.calls.map((c) => c[0]).sort()).toEqual(['other', 'swecham']);
+    // forgotten, never re-stated: a 0 would assert "the queue is empty"
+    expect(membersPendingCountSpy).not.toHaveBeenCalled();
+    expect(membersOldestAgeSecondsSpy).not.toHaveBeenCalled();
   });
 
   // SEC-1 (PR-3 review) — the two halves are independent BOTH ways. The

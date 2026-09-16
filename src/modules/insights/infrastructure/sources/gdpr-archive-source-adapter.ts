@@ -84,7 +84,12 @@ function serialiseChangeRequest(row: ChangeRequestListRow): GdprChangeRequestEnt
     state: r.state,
     outcome: r.outcome,
     withdrawnReason: r.withdrawnReason,
-    submittedAt: isoOrNull(r.submittedAt) ?? '',
+    // NOT NULL in migration 0300, and `ChangeRequest.submittedAt` is a
+    // `Date` — so the nullable reader plus an empty-string fallback said
+    // a row could arrive without a submission time and the archive would
+    // ship `"submittedAt": ""` rather than fail (C3). It cannot; the JSON
+    // is byte-identical either way.
+    submittedAt: r.submittedAt.toISOString(),
     submittedBy: { contactId: r.submittedByContactId, displayName: row.submitter.displayName },
     decidedAt: isoOrNull(r.decidedAt),
     decidedBy: 'organisation',

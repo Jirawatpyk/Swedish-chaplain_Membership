@@ -18,7 +18,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { ClipboardCheckIcon } from 'lucide-react';
 import en from '@/i18n/messages/en.json';
 import { NavEntry } from '@/components/layout/nav-item';
-import type { NavItem } from '@/config/nav';
+import type { RenderedNavItem } from '@/config/nav';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/admin' }));
 
@@ -34,15 +34,15 @@ vi.mock('@/components/ui/sidebar', () => ({
     cloneElement(el, {}, children),
 }));
 
-const base: NavItem = {
+const base: RenderedNavItem = {
   titleKey: 'nav.staff.changeRequests',
   icon: ClipboardCheckIcon,
   href: '/admin/change-requests',
   activePattern: '/admin/change-requests',
-  badgeLabelKey: 'nav.staff.changeRequestsBadge',
+  badge: { labelKey: 'nav.staff.changeRequestsBadge' },
 };
 
-function renderItem(item: NavItem) {
+function renderItem(item: RenderedNavItem) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
       <ul>
@@ -77,6 +77,14 @@ describe('NavItemLink badge (F114 US6)', () => {
     unmount();
     renderItem(base);
     expect(screen.getByRole('link', { name: 'Change requests' })).toHaveAttribute('data-tooltip', 'Change requests');
+  });
+
+  it('an item WITHOUT a badge declaration renders no badge even when a count rides along (B2)', () => {
+    const { badge: _badge, ...noDeclaration } = base;
+    renderItem({ ...noDeclaration, badgeCount: 3 });
+    // never "Change requests 3" — a number with no noun to announce it
+    expect(screen.getByRole('link', { name: 'Change requests' })).toBeInTheDocument();
+    expect(screen.queryByText('3')).toBeNull();
   });
 
   it('renders no badge at 0 and when badgeCount is absent — the name is the title alone', () => {

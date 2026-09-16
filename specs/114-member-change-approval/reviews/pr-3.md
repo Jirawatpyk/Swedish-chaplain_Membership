@@ -596,3 +596,454 @@ page and hub card. Refuted: an `X-Tenant` crash (gated by `E2E_X_TENANT_HEADER_E
 `main` before PR-3); a "forged" audit on an admin flip mid-edit (`gate_narrowed` is its own
 refusal); the settings GET's two reads not being one snapshot (no consumer needs one).
 
+
+## PR review — /pr-review-toolkit:review-pr #367 (five Opus reviewers, 2026-09-16)
+
+`code-reviewer`, `pr-test-analyzer`, `comment-analyzer`, `silent-failure-hunter`,
+`type-design-analyzer` — concurrent, read-only, on the PR-3 tree at `1f6b3dc34`
+(range `321d813ee..HEAD`). Every behaviour change below was TDD'd; the RED run is quoted per
+item. This round does not undo any closure from the round above.
+
+### C1 — REFUTED before the round started: "RLS zeroes the members gauges"
+
+One reviewer held that the gauges tick's members block reads nothing, because its cross-tenant
+`GROUP BY tenant_id` runs on the pool-global `db` under RLS.
+
+**Measured on the `dev` branch, 2026-09-16**: the pool connects as `neondb_owner`;
+`current_user = neondb_owner`, `rolbypassrls = true`, and that role OWNS all three tables the
+tick reads (`broadcasts`, `tenant_member_settings`, `member_change_requests`). RLS does not
+apply. The cross-tenant reads are correct as written, and the B4 live test below now proves it
+end-to-end: the tick counts a seeded pending row through the real schema
+(`membersPendingTotal: 1`, `membersOldestAgeSecondsMax: 413017`).
+
+Standing caveat (`reference_ops_gauge_bare_db_bypasses_rls`): this holds because of the ROLE, not
+the code. A deployment whose pool connects as `chamber_app` (NOBYPASSRLS) would read 0 silently.
+
+---
+
+## A. Critical
+
+### A1 — TAKEN. The withdraw banner read a 404 by a flat string, and `requireMemberContext` answers a nested one
+
+`pending-request-banner.tsx` split the 404 on `body.error === 'no_pending_request'`: that string
+meant "gone", and **everything else** meant `hidden` + `return null` + `router.refresh()`.
+`requireMemberContext` (`src/lib/member-context.ts` ~108 / ~172) answers a NESTED
+`{ error: { code: 'not_found' } }` when the caller's member or contact is not linked under their
+user — a real data inconsistency. It took the silent arm: the banner vanished, the refresh
+repainted it from the server, and the person watched their click do nothing, with nothing logged.
+
+**Fix**: only the two codes the withdraw ROUTE itself answers are silent, and the FLAT shape is
+the discriminator — the route answers flat, a guard in front of it answers nested, and the two
+spell `not_found` identically while meaning opposite things. Flat `no_pending_request` → "gone";
+flat `not_found` → hidden (the flag-off race, unchanged); **anything else** → `setFailed('error')`
++ `console.error` naming the status and the code. The narrowing is the B7 helper's
+`readProblemCode`, which returns `{ code, shape }`.
+
+**RED** (`tests/unit/members/presentation/pending-request-banner-withdraw.test.tsx`): 3 failed /
+10 — all three new cases `Unable to find an element by: [data-testid="withdraw-error"]`.
+**GREEN**: 10 passed. The nested case asserts the alert, the banner STILL PRESENT, `refresh` NOT
+called and a console line carrying `404`; the unparsable-body and unknown-flat-code cases assert
+the same; the two silent arms are pinned unchanged.
+
+Files: `src/components/members/change-requests/pending-request-banner.tsx`, its unit test,
+`src/lib/http/read-only-refusal.ts` (B7).
+
+### A2 — TAKEN (comment). `(home)/page.tsx` ~372
+
+"the read helper already answers null there" → "answers `hidden` (no query) there". The helper
+stopped answering `null` in the previous round (R-H2).
+
+---
+
+## B. Important
+
+### B1 — TAKEN. The attempt bucket's input was four strings and numbers
+
+`src/lib/change-request-attempt-bucket.ts` took `{ key: string; max: number; windowSeconds: number;
+errorIdPrefix: string }`. The key has a grammar (`f114:<route>-attempts:<tenant>:<user>`) and every
+segment is load-bearing: one assembled by hand without the tenant segment is a GLOBAL bucket, and
+the symptom is tenant B being refused because tenant A was noisy — with nothing anywhere saying
+so. `max` + `windowSeconds` as two free numbers let a fifth route invent a size matching neither
+the runbook nor § 27.1.
+
+**Fix**: `attemptBucketKey(route, tenantSlug, userId)` returns a BRANDED `AttemptBucketKey` and is
+the only way to mint one; `size: 'submit' | 'probe'` resolves `{ max, windowSeconds }` inside
+(60/600, 10/600); `errorIdPrefix` is typed `` `M114.${string}.${string}` ``. The four route call
+sites pass the route name as the KEY SEGMENT it already used (`submit`, `withdraw`,
+`history-item`, `acknowledge`) so the live Redis keys are byte-identical — a tidier spelling would
+have emptied every in-flight bucket.
+
+**RED** (new `tests/unit/lib/change-request-attempt-bucket.test.ts`):
+`TypeError: attemptBucketKey is not a function` — 4 failed / 5.
+**GREEN**: 5 passed. The four production keys are asserted verbatim; two tenants and two users
+never share a bucket; the two sizes equal the documented 60 / 10 min and 10 / 10 min. The
+type-level pin is a `@ts-expect-error` on assigning a raw string to `AttemptBucketKey` — and
+`pnpm typecheck` exiting 0 is what proves it, since an unused `@ts-expect-error` is TS2578.
+`tests/unit/architecture/change-requests-error-id.test.ts` (15) and the 19 portal contract files
+(167) stayed green — the source scan still sees `errorIdPrefix: ERROR_ID`.
+
+### B2 — TAKEN. `badgeCount` and `badgeLabelKey` were independent optionals
+
+`NavItem` carried both, so "a count with no noun to announce it" and "a noun with no count" were
+equally representable — and `applyNavBadges` stamped a count on ANY href in its map, so an item
+that never declared a badge rendered a bare number with no sr-only suffix (an accessible name
+reading "Plans 3").
+
+**Fix**: one authored field `badge?: { labelKey: string }`; `applyNavBadges` returns
+`RenderedNavConfig` whose items are `RenderedNavItem = NavItem & { badgeCount?: number }` and
+stamps a count ONLY on items that declare a `badge`; the map is
+`NavBadgeCounts = Partial<Record<BadgeableNavHref, number>>` with
+`BadgeableNavHref = '/admin/change-requests'`, so a typo'd href in the staff layout is a compile
+error. `nav-item.tsx` requires both halves (second layer). The nav.ts JSDoc no longer carries the
+wrong "3 pending change requests" example and points at `nav-item.tsx` for the rendered shape.
+
+**RED** (`tests/unit/nav/nav-config.test.ts` + `tests/unit/components/layout/nav-item-badge.test.tsx`):
+6 failed / 42 — `expected { '/admin/a': 3, '/admin/b': 7, …} to deeply equal { '/admin/a': 3, …}`,
+`expected undefined to deeply equal { Object (labelKey) }`, and four
+`Unable to find an accessible element with the role "link" and name "Change requests 3 pending"`.
+**GREEN**: 72 passed across `tests/unit/nav/` + `tests/unit/components/layout/`. New cases: an
+href in the map whose item declares no badge is ignored; an item without a declaration renders no
+badge even when a count rides along; the staff config authors no `badgeCount` and
+`/admin/change-requests` is the ONLY badgeable item (so the type and the config agree).
+
+Files: `src/config/nav.ts`, `src/components/layout/nav-item.tsx`,
+`src/components/layout/staff-sidebar.tsx`, the two unit tests.
+
+### B3 — TAKEN. The setting outcome allowed a transition with no instant, and an instant with no transition
+
+`SetMemberChangeApprovalEnabledOutcome` was `{ changed: boolean; changedAt: Date | null }` — two
+independent fields for one fact. The audit branch IS the `changed: true` branch.
+
+**Fix**: a union discriminated on `changed`; `changedAt: Date` exists only on the `true` arm. The
+WIRE shape is unchanged (`changedAt: null` on the no-op — the card branches on it to decide
+whether to toast, R-L5); the route mints that null at the boundary.
+
+**RED** (`tests/unit/members/change-requests/set-member-change-approval-enabled.test.ts`): 2 failed
+/ 10 — `expected { ok: true, value: { …(4) } } to deeply equal { ok: true, value: { …(3) } }`.
+**GREEN**: 10 + the 14 contract cases in `admin-member-changes-setting.test.ts` = 24 passed. The
+no-op case now asserts `'changedAt' in value` is FALSE; the transition case narrows on `changed`
+before reading `changedAt`.
+
+### B4 — TAKEN. The gauges tick's members half had no live coverage
+
+`tests/integration/broadcasts/broadcasts-gauges-cron.test.ts` is the API-route gate file for
+`broadcasts-gauges/route.ts`, and it exists precisely because a wrong column would fail every five
+minutes with every static gate green. T102 added two statements to it with no live assertion.
+
+**Fix**: the file seeds a plan → member → primary contact → portal user and one PENDING change
+request (the `change-requests-repo.test.ts` recipe, `submittedAt` in the past), drives `GET`, and
+asserts `membersGaugesOk === true`, `membersGaugesSkipped === null`,
+`membersPendingTenantCount >= 1`, `membersPendingTotal >= 1`, `membersOldestAgeSecondsMax > 0`.
+Floors, not equalities — other tenants live on `dev` — but zero would mean the scan found nothing.
+The seed's `ok` is asserted so a silent seed failure cannot make the assertions vacuous.
+
+**GREEN** (live Neon `dev`, by path): 3 passed, 29.5 s. The tick logged
+`membersGaugesOk: true, membersPendingTenantCount: 1, membersPendingTotal: 1,
+membersOldestAgeSecondsMax: 413017`.
+
+### B5 — TAKEN (live half); the FAKE half was already correct, and that is measured
+
+The live assertion at `change-requests-repo.test.ts` ran against a tenant holding nothing but
+pending rows, so it held whether or not the SQL filtered at all.
+
+**Fix (live)**: two NON-pending rows are seeded into tenant A first — both submitted
+2026-09-01, i.e. EARLIER than the pending row — by withdrawing one and deciding the other. They
+are submitted by tenant B's user under tenant A, because the partial unique index is per
+(tenant, submitter) and that is the only way to hold a second request in this tenant. Both are
+deleted in a `finally` (they hang off tenant A's member and four later assertions in the file
+count its rows).
+
+**Mutation-proven**: removing `.where(eq(memberChangeRequests.state, 'pending'))` from
+`drizzleChangeRequestRepo.pendingStats` fails the case — `expected 3 to be 1` — and the repo was
+restored byte-identical (`git diff --stat` empty). **GREEN**: 15 passed, 45.3 s.
+
+**The fake half needed no change, and that is measured too.**
+`tests/helpers/change-request-fakes.ts` `pendingStats` already computes over ALL rows and filters
+`state === 'pending'` inside, the way the SQL does; and
+`tests/unit/members/change-requests/count-pending-change-requests.test.ts` already seeds a decided
+and a withdrawn row alongside two pending ones. Removing the filter from the fake fails that case
+— `expected { count: 4 } to deeply equal { count: 2 }` — so the unit case measures the projection,
+not the fake. Restored byte-identical. Recorded rather than "fixed".
+
+### B6 — TAKEN. The e2e US6 assertions could not fail on the numbers
+
+(a) The audit test depended on the test ABOVE it having flipped the setting (`--workers=1` fixes
+the order; a skip, a retry or a reorder does not) and asserted `toContainText` on the whole table
+— which the FILTER CHIP echoing the event type satisfies on an EMPTY result. It now makes its own
+transition as the ADMIN persona (`page.request.patch('/api/admin/settings/member-changes')` with
+the Origin header, off then on so a transition exists whatever state the tenant was in), clears
+cookies, signs in as super_admin, and asserts `getByRole('row')` count ≥ 2 (header + one) with
+row 1 containing the setting label.
+
+(b) The first test asserted `toBeVisible()` on a `/^Change requests \d+ pending$/` badge, which
+passes on any number including a stale one. It now pins the SEEDED count (`beforeAll` wipes this
+persona and seeds exactly one): the dashboard row's count, the nav badge's number and the queue's
+`queue-row` count are all read and must all equal 1, and the seeded row must be present in the
+queue. The dashboard count is read from the row's digits-only node, not from the link — the link's
+own text contains "oldest 1 day", so asserting the count on it would have passed vacuously.
+
+Not run here (the coordinator runs US6 + US4). Selectors stay by accessible name.
+
+### B7 — TAKEN. A 200 the card could not read became "Approval is off"
+
+`approval-switch.tsx` did `const value = body.approvalEnabled === true`, so a 200 whose body
+carries no boolean — a truncated body, a reshaped envelope, a proxy's HTML page — coerced to
+`false` and the card announced "Approval is off" about a tenant the server had just switched ON.
+The state line then disagreed with both the stored value and the audit row.
+
+**Fix**: a `readApproval(body: unknown)` narrowing; a body without a boolean `approvalEnabled` is
+`t('errors.generic')` and NO state change.
+
+**RED**: 3 failed / 15 — `Unable to find an element by: [role="alert"]`, with the rendered DOM
+showing "Approval is off — new member changes apply immediately."
+**GREEN**: 15 passed. Three shapes (no key, a non-boolean, an unparsable body) all alert; a 200
+carrying `approvalEnabled: false` is pinned as a REAL answer, so the guard cannot widen into
+"never trust a false".
+
+**The extraction**: the six verbatim copies of the read-only 503 check (`approval-switch.tsx`,
+`plans-table.tsx`, `invoice-settings-form.tsx`, `clone-year-client.tsx`, `new-plan-client.tsx`,
+`edit-plan-client.tsx`) now compose `src/lib/http/read-only-refusal.ts`. Each copy had to get
+both envelopes AND both spellings right, and a seventh caller getting one wrong shows the operator
+"save failed, try again" during a write freeze.
+
+**Byte-identical behaviour, deliberately in two pieces.** `isReadOnlyRefusal(status, body)`
+requires the 503 and is used by `approval-switch.tsx`, which already checked it. The other five
+branch on the code ALONE (they also handle `not_found`, `plan_has_active_members`,
+`idempotency_conflict`, …) and never looked at the status — so they compose
+`problemCode(body) ?? 'generic'` with `isReadOnlyCode(code)`, and the helper does not silently add
+a status condition to a ladder that never had one. A1 needs the SHAPE as well as the code, so
+`readProblemCode` returns `{ code, shape: 'flat' | 'nested' }` and `problemCode` is the
+shape-blind reading of it.
+
+New `tests/unit/lib/http/read-only-refusal.test.ts` (10): both envelopes, both spellings, every
+non-body (`null`, a string, an array, a number, `{ error: {} }`, `{ error: { code: 7 } }`) → null,
+the flat/nested split, and `isReadOnlyRefusal`'s status condition in both directions. The five
+callers' existing tests are unchanged and green (`clone-year-client` 5,
+`invoice-settings-save-affordances` 10, `plans-table-affordances` 5, `tests/contract/plans/` in
+the 62-file contract run).
+
+### B8 — TAKEN. The dashboard's `allSettled` rejected arm left no trace
+
+`(home)/page.tsx` mapped a rejection to `unavailable` — the right SURFACE — with no log at all,
+while every other arm in the file logs its own rejection. It is also the one arm nobody can
+reproduce, since the helper swallows both of its own channels: it fires only on a throw ABOVE the
+helper's try (env / RBAC / the deps composition root).
+
+**Fix**: `logger.error({ errorId: 'M114.dashboard.pending_count_failed', tenantId, err: errKind(reason) })`.
+
+**RED** (`tests/unit/app/admin/dashboard/needs-attention-change-requests.test.tsx`, a new case
+making `buildChangeRequestDeps` throw): 1 failed / 10 —
+`the rejected arm logs under the dashboard errorId: expected undefined to be defined`.
+**GREEN**: 29 passed across `tests/unit/app/admin/dashboard/`. The case also pins `err: 'TypeError'`
+— `errKind`, never the raw error.
+
+### B9 — TAKEN. A members-half fault answered 200, and latched both series
+
+(a) The tick answered **200** when only the members half failed, with the bad news in
+`membersGaugesOk: false` inside the body — so the one thing every cron monitor checks said the
+tick was healthy while the FR-037 age gauge, the 30-day data-subject-request backstop, was stale.
+It now answers **500** with `error: 'query_failed'` when EITHER half failed; the per-half flags and
+both log names are unchanged, so the alert rules that name a half keep working.
+
+(b) Emitting nothing on a fault is not neutral: `observeGauge` re-reports the last value at every
+scrape, so a sustained outage froze the queue depth and the age — "3 pending, oldest 13 d" forever,
+never crossing 14 d, indistinguishable from a quiet week. The members catch now FORGETS both
+labels for every tenant in `lastMembersTenantSet`, a module-level set updated on every successful
+tick. Documented as PER SERVERLESS PROCESS: a cold instance has emitted nothing and has nothing to
+forget, and the next healthy tick re-observes the real set. Best-effort de-latch, not a durable
+record.
+
+**RED** (`tests/contract/broadcasts/cron-broadcasts-gauges.contract.test.ts`): 2 failed / 21 —
+`expected 200 to be 500` on both new cases.
+**GREEN**: 21 passed. The de-latch case runs a healthy tick, asserts nothing was forgotten, then a
+faulting tick and asserts `forgetGauges` for exactly `['other', 'swecham']` with neither gauge
+re-stated (a 0 would assert "the queue is empty", a different fact).
+
+**A finding inside the finding**: seven broadcasts-only cases in that file mocked only the FIRST
+`db.transaction` and said nothing about the second, so the members half was throwing on
+`undefined` in each of them — invisible while only the broadcasts flag decided the status. A
+default `dbTransactionMock.mockImplementation` answering a quiet members half was added in
+`beforeEach`, and each case opts in to more.
+
+Docs: `docs/observability.md` § 27.1 (the status rule + the forget-on-fault paragraph) and § 27.3
+(the members row now says HTTP 500 and "absent, by design"), plus the runbook's Alarm 4.
+
+### B10 — TAKEN. `SpanStatusCode.ERROR` on every refusal made the error rate a typo counter
+
+Both span wrappers set ERROR with the error TYPE as the message for EVERY `!result.ok`. Most of
+those arms are the product working as specified — `member_archived`, `rate_limited`, `not_found`,
+`already_decided`, `validation_error` — so the two F114 spans' error rate measured how often a
+member mistypes a phone number, burying the one signal an operator can act on.
+
+**Fix**: ERROR only for `server_error`; every expected refusal sets
+`change_request.refusal = <type>` and leaves the status UNSET, so the reason is still sliceable.
+A `catch` was added before the `finally { span.end() }` in both, marking the span with the error's
+CONSTRUCTOR NAME and re-throwing — `recordException({ name })`, never `.message`, which can carry
+a proposed value or the reviewer's reason. It mirrors `confirm-payment.ts` exactly, `v8 ignore`d
+for the same reason: both use cases convert every fault to a `Result` inside their own transaction
+body, so nothing reaches it. Recorded as defence-in-depth rather than pretended to be tested.
+
+**RED** (`tests/unit/members/change-requests/change-request-spans.test.ts`): 2 failed / 8 —
+`expected [ { code: 2, message: 'not_found' } ] to deeply equal []`.
+**GREEN**: 8 passed. Two NEW non-mutant cases pin that a `server_error` IS the ERROR arm on both
+spans and carries NO `change_request.refusal` (never both); the `SECRET-REASON` redaction assertion
+holds on the refusal arms, the server_error arms, and a throw whose MESSAGE is the reviewer's
+reason (status ERROR `server_error`, no recorded exception, span ended once, "SECRET" nowhere in
+the serialised span).
+
+Docs: § 27.2 rewritten (the status rule, the refusal attribute, the constructor-name rule).
+
+### B11 — TAKEN (comments / docs), five one-liners
+
+| Where | Change |
+|---|---|
+| `tests/contract/portal/change-requests-flag-off.test.ts:6-7` | "the eleven handlers" → "the twelve handlers" (the file's own positive control says `toHaveLength(12)`) |
+| `approval-switch.tsx:10` | the `nativeButton=false` clause dropped — Base UI puts the caller `id` on its hidden `<input type=checkbox>` (`useLabelableId`) regardless |
+| `docs/observability.md` § 27.2, submit row | `change_request.id` is "a freshly minted request id — the id the insert WOULD carry; on the coalesce / no-op / refused arms no row carries it" |
+| `docs/observability.md` § 27.5 | "registers no instrumentations beyond `registerOTel({ serviceName })` — the file's only other call is a boot-time env assertion (`assertVercelDeploymentForTrustedXff`)" (verified against `instrumentation.ts`) |
+| `research.md` § V2 | "Measured 2026-09-15" → "As measured BEFORE PR-3 … the route is now TWO transactions with a flag per half — see the supersession below" |
+
+### B12 — TAKEN. The dotted gauge names do not exist
+
+The emitters are underscored (`src/lib/metrics.ts` 6093 / 6111):
+`members_change_requests_pending_count`, `members_change_request_oldest_age_seconds`. The dotted
+spelling appeared in six documents — an operator pasting one into a metrics query gets no data and
+no error. Swept in `docs/runbooks/cron-jobs.md` (2), `research.md` (2), `tasks.md` (4),
+`quickstart.md` (1) and `CLAUDE.md` (3). `docs/changelog.md` and
+`docs/runbooks/member-change-requests.md` were already correct (grepped).
+`.specify/bridge-snapshots/**` is frozen bridge state and was left alone.
+
+### B13 — NOT TAKEN (the settings PATCH bucket) / TAKEN-as-composition (the layout test)
+
+**The settings PATCH attempt bucket: not taken.** No staff route in this repo carries one — the
+`permission_denied` audit row on a refused staff call is the house pattern, and a bucket there
+would be the first of 119 routes. The four F114 buckets exist because their routes are
+MEMBER-facing and one of them writes an append-only probe row per miss; neither applies to a
+`members.write` PATCH behind the staff RBAC gate.
+
+**The layout RSC test: taken as a composition test.** An RSC test of `layout.tsx` would be a test
+of `requireSession` + `cookies()` + `<StaffSidebar>`, none of which is the property in question.
+The property is: whichever of the three kinds the read answers, what `badgeCount` reaches the
+rendered nav? One case in `tests/unit/lib/pending-change-requests.test.ts` pipes all three through
+the layout's own expression (`kind === 'ok' ? summary.count : 0`) into the REAL `applyNavBadges`
+over the REAL `staffNavConfig`: `ok` at 7 badges 7; `ok` at 0, `hidden` and `unavailable` all
+render no badge. **Mutation-proven**: `count > 0` → `count >= 0` in `applyNavBadges` fails it
+(`expected +0 to be undefined`); restored.
+
+---
+
+## C. Suggestions
+
+### C1 — TAKEN. `hidden` now says WHICH gate answered
+
+`{ kind: 'hidden' }` → `{ kind: 'hidden'; reason: 'flag_off' | 'not_permitted' }`. One surface, two
+facts: the first is every viewer (FR-039), the second is this viewer alone (FR-026) and goes away
+with a role change. Collapsed, a manager's own blank badge reads as evidence the flag is off
+during a cutover check.
+
+**RED** (`tests/unit/lib/pending-change-requests.test.ts`): 4 failed / 10 —
+`expected { kind: 'hidden' } to deeply equal { kind: 'hidden', reason: 'flag_off' }`.
+**GREEN**: 11 passed (10 + the B13 composition case). A new case pins that the two reasons are
+distinguishable AND that the FLAG gate answers first, for a role the permission gate would also
+have refused.
+
+### C2 — TAKEN. `[] as MembersPendingRow[]` and the `as ResponseBody` cast
+
+The route's empty-rows literal keeps its annotation as the typed empty the flag-off arm returns
+(it is the arm's value, not a cast of a wider one); `approval-switch.tsx`'s
+`(await res.json()) as ResponseBody` is now `unknown` narrowed by `readApproval` / the B7 helper,
+so a missing field can no longer look like a present one.
+
+### C3 — TAKEN. `isoOrNull(r.submittedAt) ?? ''`
+
+`member_change_requests.submitted_at` is NOT NULL (migration 0300) and `ChangeRequest.submittedAt`
+is a `Date`, so the nullable reader plus an empty-string fallback said a row could arrive without a
+submission time and the archive would ship `"submittedAt": ""` rather than fail. Now
+`r.submittedAt.toISOString()`; the exact-JSON test is byte-identical.
+
+### C4 — TAKEN. The R-M5 proof now names the layer that refused
+
+`decide-change-request.test.ts` asserted only that the issue list was non-empty and mentioned
+`legacy_fax` — which would still pass if the refusal MOVED to `patchesOf`, and the `v8 ignore`
+proof would quietly stop proving anything. It now asserts `issues[0].code === 'unrecognized_keys'`,
+zod's strict-object refusal, i.e. `validateProposal` at step 6.
+
+### C5 — TAKEN. `?? false` could only fabricate a `previous`
+
+`drizzle-tenant-member-change-settings-repo.ts`: after the materialising
+`INSERT … ON CONFLICT DO NOTHING`, the locked read always has a row — the insert either created one
+or waited for the writer that did. `?? false` therefore could not be a default; it could only
+supply a fabricated `previous` for an audit row stating a transition that never happened, which is
+the invariant this repo exists to hold. It now returns `err(unexpected(...))`.
+
+Defensive and unreachable, so no test reaches it; the reachable path is unchanged and
+**GREEN** on live Neon by path: `change-requests-tenant-isolation.test.ts` 9 passed, 52.2 s,
+including the two overlapping-transaction cases and the Constitution I.3 cross-tenant case.
+
+### C6 — TAKEN. `errKind:` → `err:`
+
+`portal/account/page.tsx` ~262, the F114 exports-read log — the house field name for an error kind.
+The four older `errKind:` lines in that file predate F114 and were left alone (out of this PR's
+scope). Its test assertion moved with it.
+
+### C7 — NOT TAKEN, recorded
+
+1. **The summary union** `{ count: 0; oldestAgeSeconds: null } | { count > 0; number }` — all three
+   consumers already branch on `null`, and the type cannot express "> 0" without a brand and a
+   constructor. Principle X.
+2. **The 429 copy in the two banners** — acknowledge's bucket is 10 / 10 min, reachable only by
+   dismissing ten outcomes in ten minutes. Follow-up, not this PR.
+3. **A `fellBack` dimension on the refused metric** — the limiter logs and meters its own fallback;
+   a second dimension on a counter that already carries `reason` would double-count the same
+   outage.
+4. **`forgetGauges` throwing / an empty tenant set in the gauges tick** — `forgetGauges` is a
+   `safeMetric` wrapper over two `Map.delete` calls, and an empty set is the cold-process state
+   B9 documents.
+5. **A timer-cleared assertion on the nav read's fast path** — `clearTimeout` is in a `finally`;
+   asserting it would test `finally`.
+
+---
+
+## Gates at this tree (foreground, 2026-09-16)
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | exit 0 (no tsc output) |
+| `pnpm lint` (full) | exit 0 |
+| `pnpm check:i18n` | OK — 5,531 keys in all 3 locales |
+| `pnpm check:layout` | OK — 136 page/loading files, pairs consistent |
+| `pnpm check:audit-events` | OK — F5 count 20; F9 enum ↔ taxonomy 16 match |
+| `pnpm check:strict-aria` | OK — 0 hardcoded aria-text attributes across 632 TSX files |
+| `vitest run tests/unit/{members,lib,app,nav,components,architecture,insights}/` | **514 files / 5,093 tests passed** |
+| `vitest run tests/contract/{members,portal,plans}/ + cron-broadcasts-gauges` | **62 files / 574 tests passed** |
+| integration by path — `broadcasts-gauges-cron.test.ts` | **3 passed** (29.5 s, live Neon `dev`) |
+| integration by path — `change-requests-repo.test.ts` | **15 passed** (45.3 s) |
+| integration by path — `change-requests-tenant-isolation.test.ts` | **9 passed** (52.2 s) |
+| scoped coverage — the six pinned use cases | **100 / 100 / 100 / 100** (229 files / 2,130 tests) |
+
+**e2e not run in this pass** — the coordinator runs US6 + US4.
+
+## Decisions recorded
+
+1. **The "RLS zeroes the gauges" premise is refuted, with the role facts measured** — the pool is
+   `neondb_owner`, `rolbypassrls = true`, owner of all three tables. B4 now proves the read
+   end-to-end against live Neon.
+2. **`isReadOnlyRefusal` requires the 503; the five ladder callers compose `problemCode` +
+   `isReadOnlyCode` instead** — the extraction must not silently add a status condition to five
+   ladders that never had one. Byte-identical behaviour was the constraint, not tidiness.
+3. **The A1 discriminator is the ENVELOPE SHAPE, not the code** — our routes answer flat, a guard
+   in front of them answers nested, and both spell `not_found`. `readProblemCode` returns the
+   shape so the banner can tell "the route answered my own 404" from "a guard answered a different
+   one".
+4. **The four bucket route names are the KEY SEGMENTS, hyphen included (`history-item`)** — they
+   are live Redis keys; a tidier spelling would empty every in-flight bucket.
+5. **The span catch is `v8 ignore`d defence-in-depth, mirroring `confirm-payment.ts`** — both
+   transaction bodies convert every fault to a `Result`, so it is unreachable to a test. Recorded
+   rather than covered by a test that would only exercise the mock.
+6. **`lastMembersTenantSet` is per serverless process and documented as such** — a durable record
+   would need a store; the de-latch is best-effort and the next healthy tick re-observes the real
+   set.
+7. **B5's fake half was already correct** — mutation-proven, and recorded as a refutation rather
+   than changed.
+8. **The settings PATCH carries no attempt bucket (B13)** — no staff route in this repo does; the
+   `permission_denied` audit row is the house pattern.

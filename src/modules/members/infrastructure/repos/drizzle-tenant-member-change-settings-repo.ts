@@ -65,7 +65,18 @@ export const drizzleTenantMemberChangeSettingsRepo: TenantMemberChangeSettingsPo
          WHERE tenant_id = ${tenantId}
            FOR UPDATE
       `)) as unknown as Array<{ member_change_approval_enabled: boolean }>;
-      const previous = before[0]?.member_change_approval_enabled ?? false;
+      // After the materialising INSERT above, the locked read ALWAYS has a
+      // row: `ON CONFLICT (tenant_id) DO NOTHING` either inserted one or
+      // waited for the writer that did. `?? false` therefore could not be a
+      // default — it could only be a fabricated `previous` for an audit row
+      // stating a transition that never happened (C5; the audit-truth
+      // invariant this repo exists to hold). If it ever fires, something is
+      // wrong enough that refusing is the only honest answer.
+      const before0 = before[0];
+      if (before0 === undefined) {
+        return err(unexpected(new Error('tenant_member_settings row missing after materialising insert')));
+      }
+      const previous = before0.member_change_approval_enabled;
       await tx.execute(sql`
         INSERT INTO tenant_member_settings (tenant_id, member_change_approval_enabled)
         VALUES (${tenantId}, ${enabled})

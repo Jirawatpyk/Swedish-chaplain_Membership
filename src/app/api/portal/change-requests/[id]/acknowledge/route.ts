@@ -18,7 +18,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
-import { ATTEMPT_WINDOW_SECONDS, PROBE_ATTEMPTS_PER_WINDOW, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
+import { attemptBucketKey, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 import { acknowledgeChangeRequest, type ChangeRequestId } from '@/modules/members';
@@ -43,9 +43,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   // the probe bucket — consumed on every call, before the id is even parsed
   const throttled = await refuseWhenAttemptsExhausted({
-    key: `f114:acknowledge-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
-    max: PROBE_ATTEMPTS_PER_WINDOW,
-    windowSeconds: ATTEMPT_WINDOW_SECONDS,
+    key: attemptBucketKey('acknowledge', ctx.tenant.slug, ctx.current.user.id),
+    size: 'probe',
     errorIdPrefix: ERROR_ID,
     logPrefix: 'change-requests.acknowledge',
     requestId: ctx.requestId,

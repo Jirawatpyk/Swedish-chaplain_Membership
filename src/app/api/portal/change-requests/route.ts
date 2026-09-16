@@ -51,7 +51,7 @@ import {
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireMemberContext } from '@/lib/member-context';
-import { ATTEMPT_WINDOW_SECONDS, SUBMIT_ATTEMPTS_PER_WINDOW, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
+import { attemptBucketKey, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { z } from 'zod';
@@ -89,9 +89,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // a refused attempt costs one Redis round-trip and nothing else; counted
   // `attempt_throttled`, apart from the durable cap's `rate_limited` (PR-3 S-2).
   const throttled = await refuseWhenAttemptsExhausted({
-    key: `f114:submit-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
-    max: SUBMIT_ATTEMPTS_PER_WINDOW,
-    windowSeconds: ATTEMPT_WINDOW_SECONDS,
+    key: attemptBucketKey('submit', ctx.tenant.slug, ctx.current.user.id),
+    size: 'submit',
     errorIdPrefix: ERROR_ID,
     logPrefix: 'change-requests.submit',
     requestId: ctx.requestId,

@@ -23,6 +23,13 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
+import {
+  applyNavBadges,
+  isNavGroup,
+  staffNavConfig,
+  type BadgeableNavHref,
+  type NavBadgeCounts,
+} from '@/config/nav';
 
 const h = vi.hoisted(() => ({
   features: { memberChangeApproval: true } as { memberChangeApproval: boolean },
@@ -73,14 +80,31 @@ describe('readPendingChangeRequests', () => {
   it('flag OFF → hidden and NO query (FR-039: nav and dashboard show no count)', async () => {
     h.features.memberChangeApproval = false;
     h.count.mockResolvedValue({ ok: true, value: { count: 3, oldestAgeSeconds: 10 } });
-    await expect(readPendingChangeRequests(TENANT, 'admin', 'M114.test.x')).resolves.toEqual({ kind: 'hidden' });
+    await expect(readPendingChangeRequests(TENANT, 'admin', 'M114.test.x')).resolves.toEqual({ kind: 'hidden', reason: 'flag_off' });
     expect(h.count).not.toHaveBeenCalled();
     expect(h.build).not.toHaveBeenCalled();
   });
 
   it('a viewer without members.read → hidden and NO query', async () => {
     h.count.mockResolvedValue({ ok: true, value: { count: 3, oldestAgeSeconds: 10 } });
-    await expect(readPendingChangeRequests(TENANT, 'member', 'M114.test.x')).resolves.toEqual({ kind: 'hidden' });
+    await expect(readPendingChangeRequests(TENANT, 'member', 'M114.test.x')).resolves.toEqual({ kind: 'hidden', reason: 'not_permitted' });
+    expect(h.count).not.toHaveBeenCalled();
+  });
+
+  /**
+   * PR-3 review round 2 (C1) — the two `hidden` answers are the same SURFACE
+   * (nothing rendered) but different FACTS: "the whole feature is dark" vs
+   * "this viewer may not see the queue". Only the second one changes when a
+   * role changes, and a flag-flip readiness check that cannot tell them apart
+   * reads a manager's own `hidden` as proof the flag is off. The gates run in
+   * that order, so the reason also states WHICH gate answered first.
+   */
+  it('the two hidden reasons are distinguishable, and the FLAG is checked first', async () => {
+    h.features.memberChangeApproval = false;
+    // a role that would be refused by the permission gate too: the flag wins
+    await expect(readPendingChangeRequests(TENANT, 'member', 'M114.test.x')).resolves.toEqual({ kind: 'hidden', reason: 'flag_off' });
+    h.features.memberChangeApproval = true;
+    await expect(readPendingChangeRequests(TENANT, 'member', 'M114.test.x')).resolves.toEqual({ kind: 'hidden', reason: 'not_permitted' });
     expect(h.count).not.toHaveBeenCalled();
   });
 
@@ -132,7 +156,7 @@ describe('readPendingChangeRequestsForNav — the layout read is time-boxed (R-H
 
   it('a gate that answers without a query is not time-boxed into a fault: flag OFF stays hidden', async () => {
     h.features.memberChangeApproval = false;
-    await expect(readPendingChangeRequestsForNav(TENANT, 'admin')).resolves.toEqual({ kind: 'hidden' });
+    await expect(readPendingChangeRequestsForNav(TENANT, 'admin')).resolves.toEqual({ kind: 'hidden', reason: 'flag_off' });
     expect(h.count).not.toHaveBeenCalled();
     expect(h.logError).not.toHaveBeenCalled();
   });
@@ -142,5 +166,54 @@ describe('readPendingChangeRequestsForNav — the layout read is time-boxed (R-H
     await expect(readPendingChangeRequestsForNav(TENANT, 'admin')).resolves.toEqual({ kind: 'unavailable' });
     expect(h.logError).toHaveBeenCalledTimes(1);
     expect(h.logError.mock.calls[0]![0]).toMatchObject({ errorId: 'M114.nav.badge_failed' });
+  });
+});
+
+/**
+ * PR-3 review round 2 (B13) — the staff layout's badge SEAM, tested as the
+ * composition it is.
+ *
+ * An RSC test of `layout.tsx` itself would be a test of `requireSession` +
+ * `cookies()` + `<StaffSidebar>`, none of which is the property in question.
+ * The property is: whichever of the three kinds the read answers, what
+ * `badgeCount` reaches the rendered nav? The layout's own line is
+ * `kind === 'ok' ? summary.count : 0`, so this pipes all three through the
+ * same expression into the real `applyNavBadges` over the real
+ * `staffNavConfig` — the two pure halves the reviewer wanted joined.
+ */
+describe('the staff layout seam: read kind → applyNavBadges → badgeCount', () => {
+  const CHANGE_REQUESTS: BadgeableNavHref = '/admin/change-requests';
+
+  /** The staff layout's own line (`src/app/(staff)/admin/layout.tsx`). */
+  function navBadgeCounts(read: Awaited<ReturnType<typeof readPendingChangeRequestsForNav>>): NavBadgeCounts {
+    return { [CHANGE_REQUESTS]: read.kind === 'ok' ? read.summary.count : 0 };
+  }
+
+  function badgeCountFor(config: ReturnType<typeof applyNavBadges>): number | undefined {
+    const leaves = config.sections.flatMap((s) => s.items.flatMap((i) => (isNavGroup(i) ? i.children : [i])));
+    return leaves.find((i) => i.href === CHANGE_REQUESTS)?.badgeCount;
+  }
+
+  it('ok with a count badges it; ok at 0, hidden and unavailable all render NO badge', async () => {
+    h.count.mockResolvedValue({ ok: true, value: { count: 7, oldestAgeSeconds: 60 } });
+    const ok = await readPendingChangeRequestsForNav(TENANT, 'admin');
+    expect(badgeCountFor(applyNavBadges(staffNavConfig, navBadgeCounts(ok)))).toBe(7);
+
+    h.count.mockResolvedValue({ ok: true, value: { count: 0, oldestAgeSeconds: null } });
+    const empty = await readPendingChangeRequestsForNav(TENANT, 'admin');
+    expect(badgeCountFor(applyNavBadges(staffNavConfig, navBadgeCounts(empty)))).toBeUndefined();
+
+    // `hidden` and `unavailable` are DIFFERENT facts and the SAME badge: a
+    // count we do not have is never rendered as a zero (the layout's comment).
+    h.features.memberChangeApproval = false;
+    const hidden = await readPendingChangeRequestsForNav(TENANT, 'admin');
+    expect(hidden.kind).toBe('hidden');
+    expect(badgeCountFor(applyNavBadges(staffNavConfig, navBadgeCounts(hidden)))).toBeUndefined();
+
+    h.features.memberChangeApproval = true;
+    h.count.mockRejectedValue(new Error('neon down'));
+    const unavailable = await readPendingChangeRequestsForNav(TENANT, 'admin');
+    expect(unavailable.kind).toBe('unavailable');
+    expect(badgeCountFor(applyNavBadges(staffNavConfig, navBadgeCounts(unavailable)))).toBeUndefined();
   });
 });

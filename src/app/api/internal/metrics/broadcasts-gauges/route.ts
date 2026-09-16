@@ -31,16 +31,21 @@
  * `members_change_request_oldest_age_seconds{tenant}`. A members-half
  * failure is logged (`cron.broadcasts_gauges.members_query_failed`) and
  * reported as `membersGaugesOk: false`; it never costs the broadcasts
- * samples or the 200. No `broadcasts_*` metric is renamed — the names live
- * on the `*Metrics` objects, not on this route.
+ * samples. No `broadcasts_*` metric is renamed — the names live on the
+ * `*Metrics` objects, not on this route.
  *
  * The independence is symmetric (PR-3 review, SEC-1): the BROADCASTS catch no
  * longer returns early either, so a broadcasts outage cannot take the FR-037
  * age gauge down with it. Its arrays stay empty (no sample is invented), the
- * members block runs, and the 500 + `error: 'query_failed'` is answered at the
- * END alongside `broadcastsGaugesOk: false`. The body therefore carries an
- * independent OK flag per half, and `membersGaugesSkipped: 'flag_off'` when
- * the members half is deliberately dark (SEC-5).
+ * members block runs, and the body carries an independent OK flag per half,
+ * plus `membersGaugesSkipped: 'flag_off'` when the members half is
+ * deliberately dark (SEC-5).
+ *
+ * The STATUS is the whole tick's verdict (PR-3 review B9): EITHER half failing
+ * answers 500. A members-half fault used to answer 200 with the bad news only
+ * in the body, so the one thing a cron monitor checks said the tick was fine
+ * while the FR-037 age gauge was stale. Which half failed is still in the body
+ * and the logs — that is what the alert rules key on (§ 27.3).
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from 'drizzle-orm';
@@ -80,6 +85,25 @@ interface DispatchRatioRow extends Record<string, unknown> {
 }
 
 const DISPATCH_FAILURE_WINDOW_HOURS = 1;
+
+/**
+ * The members tenant set observed by the last SUCCESSFUL tick of this process
+ * (PR-3 review B9).
+ *
+ * `observeGauge` re-reports a gauge's last value at every scrape, so a
+ * members-half fault that emits nothing leaves both series FROZEN: a queue
+ * that read "3 pending, oldest 13 d" keeps reading it, never crosses the 14 d
+ * page threshold, and the outage looks like a quiet week. Forgetting the
+ * labels is the honest answer (the SEC-5 flag-off path already does exactly
+ * that) — but the set to forget is precisely what the failing query cannot
+ * tell us, so the last one is remembered.
+ *
+ * PER PROCESS, deliberately: a fresh serverless instance has never emitted a
+ * members gauge, so it has nothing to forget, and the next successful tick
+ * re-observes the real set either way. It is a best-effort de-latch, not a
+ * durable record.
+ */
+let lastMembersTenantSet: ReadonlySet<string> = new Set();
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
@@ -358,9 +382,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       membersPendingByTenant.set(row.tenant_id, row);
       membersObserved.add(row.tenant_id);
     }
+    lastMembersTenantSet = new Set(membersObserved);
   } catch (e) {
     membersGaugesOk = false;
     logger.error({ requestId, err: errKind(e) }, 'cron.broadcasts_gauges.members_query_failed');
+    // B9: de-latch. Nothing was read, so nothing can be stated — and leaving
+    // the last values in place turns a sustained outage into a frozen queue
+    // depth and a frozen age that never reaches the 14 d page.
+    for (const tenantId of lastMembersTenantSet) {
+      membersMetrics.changeRequests.forgetGauges(tenantId);
+    }
   }
   let membersPendingTotal = 0;
   let membersOldestAgeSecondsMax = 0;
@@ -403,13 +434,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     'cron.broadcasts_gauges.completed',
   );
 
+  // B9: EITHER half failing is a failed tick. The per-half flags below say
+  // WHICH, and the two log names are unchanged, so the existing alert rules
+  // keep working (§ 27.3).
+  const tickOk = broadcastsGaugesOk && membersGaugesOk;
   return NextResponse.json(
     {
-      // SEC-1: the broadcasts half failing is still a 500 (the tick did not do
-      // its whole job) — answered HERE, after the members gauges are emitted,
-      // keeping the body and log names the alerting already keys on.
-      ok: broadcastsGaugesOk,
-      ...(broadcastsGaugesOk ? {} : { error: 'query_failed' }),
+      // SEC-1 + B9: answered HERE, after BOTH halves have run, keeping the
+      // body and log names the alerting already keys on.
+      ok: tickOk,
+      ...(tickOk ? {} : { error: 'query_failed' }),
       broadcastsGaugesOk,
       pendingTenantCount: pending.length,
       stuckTenantCount: stuck.length,
@@ -427,6 +461,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       membersPendingTotal,
       membersOldestAgeSecondsMax,
     },
-    { status: broadcastsGaugesOk ? 200 : 500 },
+    { status: tickOk ? 200 : 500 },
   );
 }

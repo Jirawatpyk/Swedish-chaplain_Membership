@@ -6,6 +6,7 @@ import {
   staffNavConfig,
   applyNavBadges,
   filterNavConfig,
+  type NavBadgeCounts,
   type NavVisibilityFlags,
 } from '@/config/nav';
 import { NavEntry } from '@/components/layout/nav-item';
@@ -38,12 +39,14 @@ interface StaffSidebarProps {
    */
   readonly allowedHrefs: readonly string[];
   /**
-   * F114 US6 (FR-033) — live counts keyed by href, resolved in the server
-   * layout (`readPendingChangeRequests`). Applied AFTER filtering, so an item
-   * this viewer cannot see (or a flag-off item) never carries a count.
+   * F114 US6 (FR-033) — live counts keyed by {@link BadgeableNavHref},
+   * resolved in the server layout (`readPendingChangeRequestsForNav`).
+   * Applied AFTER filtering, so an item this viewer cannot see (or a flag-off
+   * item) never carries a count; and only onto items that DECLARE a `badge`,
+   * so a count can never render as a bare unannounced number (B2).
    * Omitted / 0 → no badge.
    */
-  readonly navBadgeCounts?: Readonly<Record<string, number>>;
+  readonly navBadgeCounts?: NavBadgeCounts;
 }
 
 export function StaffSidebar({

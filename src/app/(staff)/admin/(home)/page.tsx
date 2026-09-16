@@ -164,9 +164,24 @@ export default async function StaffHomePage() {
   const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
   // An allSettled REJECTION is the same fact as an `unavailable` answer: the
   // helper swallows both channels itself, so this arm only fires on a throw
-  // it could not (an env/RBAC fault above its try) — still not "all clear".
-  const pendingChanges: PendingChangeRequestsRead =
-    pendingChangesSettled.status === 'fulfilled' ? pendingChangesSettled.value : { kind: 'unavailable' };
+  // it could not (an env/RBAC/deps-root fault above its try) — still not
+  // "all clear". It is also the one arm nobody can reproduce, so it LOGS
+  // (PR-3 review B8): it used to map to the surface with no trace at all,
+  // while every other arm in this file logs its own rejection.
+  let pendingChanges: PendingChangeRequestsRead;
+  if (pendingChangesSettled.status === 'fulfilled') {
+    pendingChanges = pendingChangesSettled.value;
+  } else {
+    pendingChanges = { kind: 'unavailable' };
+    logger.error(
+      {
+        errorId: 'M114.dashboard.pending_count_failed',
+        tenantId: tenant.slug,
+        err: errKind(pendingChangesSettled.reason),
+      },
+      'change-requests.pending-summary: dashboard read rejected',
+    );
+  }
 
   if (dashSettled.status === 'rejected') {
     // The dashboard's PRIMARY widget threw outside the Result channel (e.g. a
@@ -369,8 +384,8 @@ export default async function StaffHomePage() {
     // still be >0 from broadcasts submitted before the flag was flipped off.
     // Same for the change-request item when FEATURE_MEMBER_CHANGE_APPROVAL is
     // off (`/admin/change-requests` 404s, FR-039) — the read helper already
-    // answers null there; the filter mirrors the broadcasts arm so the rule is
-    // visible where the list is built.
+    // answers `hidden` (no query) there; the filter mirrors the broadcasts arm
+    // so the rule is visible where the list is built.
     .filter(
       (item) =>
         item.n > 0 &&

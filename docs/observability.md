@@ -2097,15 +2097,30 @@ The tick's completion log `cron.broadcasts_gauges.completed` carries `broadcasts
 `membersGaugesOk`, `membersGaugesSkipped`, `membersPendingTenantCount`, `membersPendingTotal`,
 `membersOldestAgeSecondsMax`; a members-half fault logs
 `cron.broadcasts_gauges.members_query_failed` and answers `membersGaugesOk: false` in the tick
-body while the broadcasts gauges and the 200 are unaffected.
+body while the broadcasts gauges are unaffected.
 
-**The two halves are independent BOTH ways** (PR-3 review SEC-1). The broadcasts half failing
-logs `cron.broadcasts_gauges.query_failed`, emits no broadcasts sample, sets
-`broadcastsGaugesOk: false` and still answers **500** — but only at the END of the tick, after
-the members gauges are emitted. It used to `return` the 500 immediately, which took the FR-037
-age gauge down with it: the one alert whose threshold doubles as the 30-day data-subject-request
-backstop, blind for the duration of an unrelated broadcasts outage. Alert on each flag
-separately; a 500 no longer implies the members series are stale.
+**The two halves are independent BOTH ways** (PR-3 review SEC-1) — the broadcasts half failing
+logs `cron.broadcasts_gauges.query_failed`, emits no broadcasts sample and sets
+`broadcastsGaugesOk: false`, and the members block still runs. It used to `return` the 500
+immediately, which took the FR-037 age gauge down with it: the one alert whose threshold doubles
+as the 30-day data-subject-request backstop, blind for the duration of an unrelated broadcasts
+outage.
+
+**The STATUS is the whole tick's verdict** (PR-3 review B9): the tick answers **500** with
+`error: 'query_failed'` when EITHER half failed, at the END, after both halves have run. A
+members-half fault used to answer **200** with the bad news only in the body, so the one thing
+every cron monitor checks said the tick was healthy while the FR-037 age gauge was stale. Which
+half failed is in `broadcastsGaugesOk` / `membersGaugesOk` and in the two (unchanged) log names —
+alert on each flag separately, and never read the status code as naming a half.
+
+**`membersGaugesOk = false` → 500 + the two members series ABSENT** (PR-3 review B9). Emitting
+nothing on a fault is not neutral: `observeGauge` re-reports the last value at every scrape, so a
+sustained outage froze the queue depth and the age — "3 pending, oldest 13 d" forever, never
+crossing the 14 d page threshold, indistinguishable from a quiet week. The catch therefore
+FORGETS both labels for every tenant in the last successful tick's set (`lastMembersTenantSet`,
+a module-level value, so PER SERVERLESS PROCESS: a cold instance has emitted nothing and has
+nothing to forget, and the next healthy tick re-observes the real set). A monitor sees "no data",
+which is the truth, instead of a number nobody is computing any more.
 
 **While `FEATURE_MEMBER_CHANGE_APPROVAL` is OFF** (PR-3 review SEC-5) the tick skips the pending
 scan and FORGETS both members series for every tenant in the tenant set, answering
@@ -2130,14 +2145,23 @@ database instrumentation, § 27.5):
 
 | Span | Wraps | Attributes (bounded — § 27.5) |
 |---|---|---|
-| `members.change_request.submit` | `submitChangeRequest`'s `runInTenant` (the pending read, the durable cap, the insert, the audit row, the outbox rows) — a refusal BEFORE the transaction (forged keys, validation, archived) opens no span | `tenant.slug`, `change_request.id` (the id the insert will carry), `change_request.scope`, `change_request.field_count` |
+| `members.change_request.submit` | `submitChangeRequest`'s `runInTenant` (the pending read, the durable cap, the insert, the audit row, the outbox rows) — a refusal BEFORE the transaction (forged keys, validation, archived) opens no span | `tenant.slug`, `change_request.id` (a freshly minted request id — the id the insert WOULD carry; on the coalesce / no-op / refused arms no row carries it), `change_request.scope`, `change_request.field_count` |
 | `members.change_request.decide` | `decideChangeRequest`'s `runInTenant` (the FOR UPDATE read through the member email row) | `tenant.slug`, `change_request.id`, `change_request.scope` (set once the row is read), `change_request.field_count` (the decisions sent), `change_request.outcome` (the recorded outcome, on success) |
 
-A refused or failed arm sets `SpanStatusCode.ERROR` with the error TYPE as the message
-(`member_archived`, `rate_limited`, `not_found`, `server_error`, …) — never a proposed value,
-the decision reason / note, an email or a user id; the span is ended on every path
+`SpanStatusCode.ERROR` is reserved for a system FAILURE — `server_error`, and an escaped throw
+(marked with the error's CONSTRUCTOR NAME, never `.message`, which can carry a proposed value or
+a decision reason; the `catch` mirrors the payments idiom in `confirm-payment.ts` and is
+defence-in-depth, since both use cases convert every fault to a `Result` inside their own
+transaction body). Every EXPECTED refusal — `member_archived`, `rate_limited`, `not_found`,
+`already_decided`, `validation_error`, … — sets the attribute
+**`change_request.refusal = <type>`** and leaves the status UNSET (PR-3 review B10). Marking
+those ERROR made these two spans' error rate a measure of how often a member mistypes a phone
+number, which buried the one signal an operator can act on; the refusal reason stays sliceable as
+an attribute. No status or attribute ever carries a proposed value, the decision reason / note,
+an email or a user id, and the span is ended on every path
 (`tests/unit/members/change-requests/change-request-spans.test.ts` pins the names, the exact
-attribute keys and the redaction with a distinctive reason that must appear in no attribute).
+attribute keys, the status split and the redaction with a distinctive reason that must appear in
+no attribute).
 
 ### 27.3 Alerting thresholds
 
@@ -2150,7 +2174,7 @@ decided well before the month a data subject may hold the chamber to.
 | **Page** | `members_change_request_oldest_age_seconds` | > 14 d (1,209,600 s), any tenant | A member's proposal has aged half-way through the 30-day clock. Open `/admin/change-requests` (oldest first) and decide it; if no reviewer can, escalate to the chamber's data-protection contact the same day. Runbook § 27.4. |
 | Warning | `members_change_request_oldest_age_seconds` | > 7 d (604,800 s), any tenant | Nudge the reviewers: the queue is not being worked. Check the staff email did arrive (`outbox` rows for `member_change_request_submitted_staff`) and that the tenant still has an active reviewer. |
 | Warning | `members_change_request_no_reviewers_total` | `rate > 0` | A tenant with no active `admin` / `super_admin`: every submit is created and nobody is emailed. Re-enable a reviewer; the pending rows drain on the next decide. |
-| Warning | tick body `membersGaugesOk = false` (log `cron.broadcasts_gauges.members_query_failed`) | 3 consecutive ticks (15 min) | The members gauges are stale — both age alerts above are blind. Check the migration state of `member_change_requests` on the deployed branch and the tick's statement timeout. NOT the same as `membersGaugesSkipped: 'flag_off'`, which is the deliberate dark state (§ 27.1). |
+| Warning | tick body `membersGaugesOk = false` (log `cron.broadcasts_gauges.members_query_failed`, HTTP 500) | 3 consecutive ticks (15 min) | The members gauges are ABSENT — both age alerts above go to "no data", by design (B9: the labels are forgotten so a fault cannot read as a frozen level). Check the migration state of `member_change_requests` on the deployed branch and the tick's statement timeout. NOT the same as `membersGaugesSkipped: 'flag_off'`, which is the deliberate dark state (§ 27.1), and note the 500 does NOT say which half failed — read the flags. |
 | Warning | tick body `broadcastsGaugesOk = false` (log `cron.broadcasts_gauges.query_failed`, HTTP 500) | 3 consecutive ticks (15 min) | The BROADCASTS half of the shared tick is failing; the members gauges above are unaffected (SEC-1). § 22.3 owns the broadcasts alert rows. |
 | Watch | `members_change_requests_pending_count` | dashboard panel, no threshold | Backlog level per tenant; the age gauge is the alarm, the count is the context. |
 
@@ -2171,8 +2195,10 @@ contact emails never reach a log line or a metric label — ids, field KEYS and 
 The same holds for TRACES, and it holds because of a configuration rather than a filter: the two
 spans of § 27.2 carry only the bounded attributes listed there, and no SQL text or bind
 parameter is recorded anywhere else in the span tree because `instrumentation.ts` (repo root)
-calls `registerOTel({ serviceName })` and nothing else — **no pg / database instrumentation** is
-registered, so there is no auto-instrumented statement span to leak a proposed value into. If
+registers no instrumentations beyond `registerOTel({ serviceName })` — the file's only other call
+is a boot-time env assertion (`assertVercelDeploymentForTrustedXff`), so **no pg / database
+instrumentation** is registered and there is no auto-instrumented statement span to leak a
+proposed value into. If
 database instrumentation is ever added, leave
 `enhancedDatabaseReporting` OFF: it attaches statement text and parameters to every span, which
 would put proposed PII values and member emails into the trace backend, outside every filter

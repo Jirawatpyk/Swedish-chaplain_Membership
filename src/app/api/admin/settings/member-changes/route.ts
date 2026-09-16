@@ -113,8 +113,12 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     return problemResponse(500, 'server_error', 'Could not change the setting', undefined, { extras });
   }
 
+  // The WIRE shape keeps `changedAt: null` for the no-op (the card branches on
+  // it to decide whether to toast, R-L5); the Application outcome is a union
+  // discriminated on `changed` (B3), so the null is minted HERE rather than
+  // carried through the use case as a second field that could disagree.
   return NextResponse.json({
     approvalEnabled: result.value.approvalEnabled,
-    changedAt: result.value.changedAt === null ? null : result.value.changedAt.toISOString(),
+    changedAt: result.value.changed ? result.value.changedAt.toISOString() : null,
   });
 }

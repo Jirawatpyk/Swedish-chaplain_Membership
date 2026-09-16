@@ -22,7 +22,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireMemberContext } from '@/lib/member-context';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
-import { ATTEMPT_WINDOW_SECONDS, SUBMIT_ATTEMPTS_PER_WINDOW, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
+import { attemptBucketKey, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 import { withdrawChangeRequest } from '@/modules/members';
@@ -45,9 +45,9 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   if (roResp) return roResp;
 
   const throttled = await refuseWhenAttemptsExhausted({
-    key: `f114:withdraw-attempts:${ctx.tenant.slug}:${ctx.current.user.id}`,
-    max: SUBMIT_ATTEMPTS_PER_WINDOW,
-    windowSeconds: ATTEMPT_WINDOW_SECONDS,
+    key: attemptBucketKey('withdraw', ctx.tenant.slug, ctx.current.user.id),
+    // a write: the submit size, not the probe one
+    size: 'submit',
     errorIdPrefix: ERROR_ID,
     logPrefix: 'change-requests.withdraw',
     requestId: ctx.requestId,

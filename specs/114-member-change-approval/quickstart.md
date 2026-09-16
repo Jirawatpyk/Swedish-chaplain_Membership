@@ -195,6 +195,6 @@ Rolling any of these back is a new migration / code change, not a flag flip.
 
 ## 4. Watch after cutover
 
-- `members.change_request_oldest_age_seconds` — warning at 7 d, page at 14 d (FR-037).
+- `members_change_request_oldest_age_seconds` — warning at 7 d, page at 14 d (FR-037).
 - `email_dispatch_failed` audit rows with `notification_type` starting `member_change_request_`.
 - `member_self_update_forbidden` spikes (a client still posting Group B keys to `/api/portal/profile`).

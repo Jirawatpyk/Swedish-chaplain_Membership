@@ -579,6 +579,10 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     const applyButton = page.getByRole('button', { name: adminCopy.filters.apply });
     await applyButton.focus();
     await applyButton.press('Enter');
+    // Apply is a router.replace inside a transition: React keeps the OLD table
+    // while the new RSC payload streams, so the DOM briefly holds two — let the
+    // navigation settle before the strict single-table check.
+    await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('queue-table')).toHaveCount(1, { timeout: 30_000 });
     await expect(page.getByTestId('queue-table')).toBeVisible();
     await expect(applyButton).toBeFocused();
@@ -775,14 +779,36 @@ test.describe('@change-requests US6 — tenant switch, dashboard count, nav badg
     await signInAsAdmin(page);
     await skipUnlessFlagOn(page);
 
-    // FR-033 — the "Needs attention" row links to the queue; the count is ≥ 1.
+    // FR-033 — the "Needs attention" row links to the queue, and the three
+    // surfaces that show this number must agree with each other AND with what
+    // was seeded (PR-3 review B6). `beforeAll` wipes this persona's requests
+    // and seeds exactly ONE, so the expected count is 1: a `toBeVisible()` on
+    // a `\d+` pattern passed on any number at all, including a stale one from
+    // a previous run.
+    const SEEDED_PENDING = 1;
     await page.goto('/admin');
     const attention = page.getByRole('link', { name: /^Change requests waiting/ });
     await expect(attention).toBeVisible();
     await expect(attention).toHaveAttribute('href', '/admin/change-requests');
+    // The count is a SIBLING of the link, not part of it — asserting it on the
+    // link itself would be satisfied by the age in the label ("oldest 1 day").
+    // Read the row's digits-only node instead.
+    const attentionRow = page.locator('li').filter({ has: attention });
+    const dashboardCount = Number((await attentionRow.getByText(/^\d+$/).innerText()).trim());
+    expect(dashboardCount).toBe(SEEDED_PENDING);
     // The nav badge is part of the link's accessible name ("Change requests N pending").
     const nav = page.getByRole('navigation', { name: en.nav.staff.ariaLabel });
-    await expect(nav.getByRole('link', { name: /^Change requests \d+ pending$/ })).toBeVisible();
+    const badge = nav.getByRole('link', { name: /^Change requests \d+ pending$/ });
+    await expect(badge).toBeVisible();
+    const badgeName = (await badge.getAttribute('aria-label')) ?? (await badge.textContent()) ?? '';
+    const badgeCount = Number(/(\d+)/.exec(badgeName)?.[1]);
+    expect(badgeCount).toBe(SEEDED_PENDING);
+
+    // …and the queue itself lists exactly that many rows, including the
+    // seeded one: the badge, the dashboard item and the page are one number.
+    await page.goto('/admin/change-requests');
+    await expect(page.locator(`[data-testid="queue-row"][data-request-id="${seeded!.requestId}"]`)).toBeVisible();
+    await expect(page.locator('[data-testid="queue-row"]')).toHaveCount(badgeCount);
 
     // The settings card: ON, the pending note links to the queue.
     await page.goto('/admin/settings/member-changes');
@@ -828,14 +854,41 @@ test.describe('@change-requests US6 — tenant switch, dashboard count, nav badg
     }
   });
 
+  // PR-3 review B6 — this test used to depend on the test ABOVE having flipped
+  // the setting (Playwright gives no such guarantee: `--workers=1` fixes the
+  // order but a skip, a retry or a reorder does not), and then asserted only
+  // `toContainText` on the whole table — which the FILTER CHIP satisfies on an
+  // empty result, so it passed with zero audit rows. It now makes its own
+  // transition as the admin persona and counts rows.
   test('super_admin: /admin/audit lists the setting event (US6 AS4)', async ({ page }) => {
     test.skip(!process.env.E2E_SUPER_ADMIN_EMAIL || !process.env.E2E_SUPER_ADMIN_PASSWORD, 'Set E2E_SUPER_ADMIN_EMAIL + E2E_SUPER_ADMIN_PASSWORD');
-    await signInAsSuperAdmin(page);
+    // 1. as ADMIN (`audit.read` is superAdminOnly since 016 D4, but the
+    //    SETTING is `members.write`): force a real transition, off then on, so
+    //    at least one `member_change_approval_setting_changed` row exists
+    //    whatever state the tenant was left in.
+    await signInAsAdmin(page);
     await skipUnlessFlagOn(page);
+    const origin = new URL(page.url()).origin;
+    for (const approvalEnabled of [false, true]) {
+      const res = await page.request.patch('/api/admin/settings/member-changes', {
+        headers: { Origin: origin },
+        data: { approvalEnabled },
+      });
+      expect(res.status()).toBe(200);
+    }
+    await page.context().clearCookies();
+
+    // 2. as SUPER_ADMIN: the viewer.
+    await signInAsSuperAdmin(page);
     await page.goto('/admin/audit?eventType=member_change_approval_setting_changed');
     const table = page.getByRole('table');
     await expect(table).toBeVisible();
-    await expect(table).toContainText(en.audit.eventType.member_change_approval_setting_changed);
+    // header + at least one data row. `toContainText` on the table alone is
+    // satisfied by the filter chip echoing the event type, so an EMPTY result
+    // passed it.
+    const rows = table.getByRole('row');
+    expect(await rows.count()).toBeGreaterThanOrEqual(2);
+    await expect(rows.nth(1)).toContainText(en.audit.eventType.member_change_approval_setting_changed);
   });
 
   test('@a11y axe: the settings card at 320 px', async ({ page }, testInfo) => {

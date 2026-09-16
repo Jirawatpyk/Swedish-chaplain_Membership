@@ -7,12 +7,12 @@
  * Behaviour:
  *   - the control is a Base UI `Switch` named through `aria-labelledby` →
  *     the visible `<Label>` (the house idiom — `renewal-reminders-toggle.tsx`):
- *     with `nativeButton=false` the primitive puts the caller `id` on its
- *     hidden `<input type=checkbox>` ON PURPOSE (`useLabelableId`), so the
- *     `<Label htmlFor>` still toggles the switch on a pointer click through
- *     the native label activation, while `aria-labelledby` names the
- *     `role=switch` element for AT on first paint (UX M1 re-read against the
- *     primitive: the `for` is for the mouse, the `aria-labelledby` for AT).
+ *     Base UI puts the caller `id` on its hidden `<input type=checkbox>`
+ *     (`useLabelableId`), so the `<Label htmlFor>` still toggles the switch on
+ *     a pointer click through the native label activation, while
+ *     `aria-labelledby` names the `role=switch` element for AT on first paint
+ *     (UX M1 re-read against the primitive: the `for` is for the mouse, the
+ *     `aria-labelledby` for AT).
  *     No optimistic
  *     flip — the switch shows the server truth, so `aria-checked` never lies
  *     on a refusal; the visible state line is plain text, not a live region
@@ -34,30 +34,34 @@
  *     audit row, so announcing "switched on" would claim a change the trail
  *     does not have); a 503 read-only refusal → the setting-specific
  *     read-only copy inline (`role="alert"`, UX M5), any other failure → the
- *     generic inline alert; state unchanged either way (ux-standards § 4.1).
+ *     generic inline alert; state unchanged either way (ux-standards § 4.1);
+ *   - a 200 whose body carries no BOOLEAN `approvalEnabled` is one of those
+ *     failures, not a `false` (PR-3 review B7): the card shows the stored
+ *     value, so inventing one it never read would announce "Approval is off"
+ *     about a tenant the server had just switched on.
  */
 import { useId, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { InlineAlert } from '@/components/ui/inline-alert';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
-type ResponseBody = {
-  readonly approvalEnabled?: unknown;
-  /** ISO instant of the change; `null` when the stored value already matched. */
-  readonly changedAt?: unknown;
-  // read-only-mode 503: flat string (proxy-level gate) OR nested `{ code }`
-  // (the route guard) — same dual-shape check as `plans-table.tsx`.
-  readonly error?: string | { readonly code?: string };
-};
-
-function isReadOnlyRefusal(status: number, body: ResponseBody): boolean {
-  if (status !== 503) return false;
-  const code = typeof body.error === 'string' ? body.error : body.error?.code;
-  return code === 'read_only_mode' || code === 'read-only-mode';
+/**
+ * The 200 body this card can act on. Read off an `unknown` (C2): `res.json()`
+ * answers whatever came back, so the two fields are NARROWED here rather than
+ * asserted with a cast that would make a missing field look like a present
+ * one.
+ */
+function readApproval(body: unknown): { readonly approvalEnabled: boolean; readonly changed: boolean } | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const value = (body as { approvalEnabled?: unknown }).approvalEnabled;
+  if (typeof value !== 'boolean') return null;
+  const changedAt = (body as { changedAt?: unknown }).changedAt;
+  return { approvalEnabled: value, changed: changedAt !== null && changedAt !== undefined };
 }
 
 export function ApprovalSwitch({
@@ -88,22 +92,31 @@ export function ApprovalSwitch({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approvalEnabled: next }),
       });
-      const body = (await res.json().catch(() => ({}))) as ResponseBody;
+      const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
         setError(isReadOnlyRefusal(res.status, body) ? t('errors.readOnly') : t('errors.generic'));
         return;
       }
       // The server's value, not our request — an unchanged no-op still
-      // answers with the stored state.
-      const value = body.approvalEnabled === true;
-      setEnabled(value);
+      // answers with the stored state. A 200 the card cannot READ (no
+      // boolean `approvalEnabled`: a truncated body, a reshaped envelope, a
+      // proxy's HTML page) is a FAILURE, not a `false` (PR-3 review B7):
+      // coercing it announced "Approval is off" about a tenant the server had
+      // just switched on, and the state line then disagreed with both the
+      // stored value and the audit row.
+      const answer = readApproval(body);
+      if (answer === null) {
+        setError(t('errors.generic'));
+        return;
+      }
+      setEnabled(answer.approvalEnabled);
       // `changedAt: null` = the stored value already matched: the upsert ran
       // (and stamped `updated_at`) but nothing TRANSITIONED, so there is no
       // audit row — and "Approval switched on" would claim a change the trail
       // does not record (UX/reliability R-L5). The state line above already
       // shows the stored value, so the no-op needs no announcement.
-      if (body.changedAt !== null && body.changedAt !== undefined) {
-        toast.success(value ? t('toast.on') : t('toast.off'));
+      if (answer.changed) {
+        toast.success(answer.approvalEnabled ? t('toast.on') : t('toast.off'));
       }
     } catch {
       setError(t('errors.generic'));

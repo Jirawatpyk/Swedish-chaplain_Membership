@@ -363,7 +363,9 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       expect(alert.textContent).toContain(enMessages.dataExport.loadFailed);
       expect(within(section as HTMLElement).queryByText(enMessages.dataExport.empty)).toBeNull();
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ errorId: 'M114.portal.account.exports_read_failed', errKind: expect.any(String) }),
+        // `err`, the house field name for an error kind (PR-3 review C6) —
+        // this line was the only F114 log in the file still on `errKind:`
+        expect.objectContaining({ errorId: 'M114.portal.account.exports_read_failed', err: expect.any(String) }),
         'portal.account.data_export_list_failed',
       );
       expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), 'portal.account.data_export_list_failed');

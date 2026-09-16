@@ -646,8 +646,28 @@ export async function submitChangeRequest(
     async (span) => {
       try {
         const result = await submitTransaction();
-        if (!result.ok) span.setStatus({ code: SpanStatusCode.ERROR, message: result.error.type });
+        if (!result.ok) {
+          // B10: ERROR is a system failure. Every other arm is a stated
+          // refusal — an attribute, not an error (see the docblock above).
+          if (result.error.type === 'server_error') {
+            span.setStatus({ code: SpanStatusCode.ERROR, message: result.error.type });
+          } else {
+            span.setAttribute('change_request.refusal', result.error.type);
+          }
+        }
         return result;
+        /* v8 ignore start — defence-in-depth, exactly as `confirm-payment.ts`
+         * documents it: `submitTransaction` converts every fault to a
+         * `Result` in its own catch, so nothing reaches here. Unreachable
+         * to a test, kept so an OOM / tracer-internal throw / a later edit
+         * above the try cannot end this span UNSET as though it succeeded. */
+      } catch (e) {
+        // the constructor NAME only — `.message` can carry a proposed value
+        const name = e instanceof Error ? e.constructor.name : 'submit_threw';
+        span.setStatus({ code: SpanStatusCode.ERROR, message: name });
+        span.recordException({ name });
+        throw e;
+        /* v8 ignore stop */
       } finally {
         span.end();
       }
