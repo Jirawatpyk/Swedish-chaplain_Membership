@@ -24,6 +24,7 @@ import { getTranslations } from 'next-intl/server';
 import {
   FileCog2Icon,
   CalendarClockIcon,
+  ClipboardCheckIcon,
   Settings2Icon,
   PlugZapIcon,
 } from 'lucide-react';
@@ -96,6 +97,18 @@ const CATEGORIES = [
     permission: 'settings.integrations',
     visibilityFlag: 'eventsEnabled',
   },
+  // F114 US6 (FR-031) — the per-tenant member-change approval switch.
+  // `members.write` mirrors the page guard AND the PATCH route (an admin
+  // surface: manager / marketing never see it). Flag-aware like the two
+  // above: the page `notFound()`s while FEATURE_MEMBER_CHANGE_APPROVAL is off.
+  {
+    titleKey: 'categories.memberChanges.title',
+    descriptionKey: 'categories.memberChanges.description',
+    href: '/admin/settings/member-changes',
+    icon: ClipboardCheckIcon,
+    permission: 'members.write',
+    visibilityFlag: 'memberChangeApproval',
+  },
 ] as const;
 
 export default async function SettingsIndexPage() {
@@ -105,6 +118,7 @@ export default async function SettingsIndexPage() {
   const flags = {
     broadcastsEnabled: env.features.f7Broadcasts,
     eventsEnabled: env.features.f6EventCreate,
+    memberChangeApproval: env.features.memberChangeApproval,
   } as const;
   const visible = CATEGORIES.filter(
     (c) =>

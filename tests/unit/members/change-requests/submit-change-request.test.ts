@@ -51,7 +51,16 @@ vi.mock('@/lib/metrics', () => ({
   },
 }));
 
+// the Domain scope rule is spied so its refusal arm — unreachable through the
+// use case's own company-key guard — can be driven once (T105 coverage)
+vi.mock('@/modules/members/domain/change-request/policies', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/modules/members/domain/change-request/policies')>();
+  return { ...actual, deriveScope: vi.fn(actual.deriveScope) };
+});
+
 import { runInTenant } from '@/lib/db';
+import { deriveScope } from '@/modules/members/domain/change-request/policies';
+import type { Role } from '@/modules/auth';
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId, asContactId, type Member, type Contact } from '@/modules/members';
 import type { UserId } from '@/modules/members/domain/value-objects/user-id';
@@ -175,7 +184,7 @@ function makeDeps(opts: { member?: Member; contact?: Contact | null; reviewers?:
   return { deps, repo, audit, emails, reviewers, memberRepo, contactRepo, clock };
 }
 
-const input = (rawBody: unknown, actorRole = 'member') => ({
+const input = (rawBody: unknown, actorRole: Role = 'member') => ({
   memberId: MEMBER,
   contactId: CONTACT,
   rawBody,
@@ -918,5 +927,94 @@ describe('submitChangeRequest — a THROWING reviewer roster read (round 7, sile
     const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
     expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
     expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'Error' }), 'change-request.submit.roster_read_failed');
+  });
+});
+
+describe('submitChangeRequest — T105 coverage: every narrowing and defence arm exercised', () => {
+  it('a body that is not an object carries no forged keys and fails the staff rules (validation_error), creating nothing', async () => {
+    const { deps, repo, audit } = makeDeps();
+    const r = await submitChangeRequest(deps, input(null));
+    expect(r).toMatchObject({ ok: false, error: { type: 'validation_error' } });
+    expect(repo.rows.size).toBe(0);
+    expect(audit.events).toHaveLength(0);
+  });
+
+  it('an unknown BILLING address line is forged too (the registered-address twin of the key scan)', async () => {
+    const { deps } = makeDeps();
+    const r = await submitChangeRequest(deps, input({ company: { billing_address: { line1: 'Box 9', evil: 1 } } }));
+    expect(r).toEqual({ ok: false, error: { type: 'forbidden', reason: 'forged_fields', fields: ['company.billing_address.evil'] } });
+  });
+
+  it('a record with NO company name reads as "" on the Group B view, so a proposed name is a change from ""', async () => {
+    const { deps, repo } = makeDeps({ member: member({ companyName: null as unknown as string }) });
+    const r = await submitChangeRequest(deps, input({ company: { company_name: 'Nordic Company' } }));
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const row = [...repo.rows.values()][0]!;
+    // the record view reads '' for the missing name; the diff then normalises the seen value ('' → null) like every text field
+    expect(row.fields).toEqual([expect.objectContaining({ key: 'company_name', seen: null, proposed: 'Nordic Company' })]);
+  });
+
+  it('a pending request with a DIFFERENT number of fields is a different proposal — replaced, never already_pending', async () => {
+    const { deps, repo } = makeDeps();
+    const first = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    const firstId = first.ok && first.value.outcome === 'submitted' ? first.value.request.id : 'x';
+    const second = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999', role_title: 'CEO' } }));
+    expect(second.ok && second.value.outcome).toBe('submitted');
+    expect(second.ok && second.value.outcome === 'submitted' && second.value.replaced).toBe(firstId);
+    expect(repo.rows.get(firstId)?.state).toBe('withdrawn');
+  });
+
+  it('the Domain scope rule refusing after the company-key guard passed (a future rule change) surfaces as a typed forbidden refusal, not a cast', async () => {
+    const { deps, repo } = makeDeps();
+    vi.mocked(deriveScope).mockReturnValueOnce(err({ code: 'no_fields' }));
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toEqual({ ok: false, error: { type: 'forbidden', reason: 'company_fields_require_primary', fields: [] } });
+    expect(metricRefused).toHaveBeenCalledWith('test-tenant', 'forbidden');
+    expect(repo.rows.size).toBe(0);
+  });
+
+  it('at the cap with NO oldest row reported (a count without a timestamp), retry-after falls back to the full window', async () => {
+    const { deps, repo } = makeDeps();
+    repo.countSubmittedSince = async () => ok({ count: 10, oldestSubmittedAt: null });
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toEqual({ ok: false, error: { type: 'rate_limited', retryAfterSeconds: 24 * 3600, windowCount: 10 } });
+  });
+
+  it('a fault on the erased_at read inside the tx → server_error (the tx is aborted before the insert)', async () => {
+    const { deps, memberRepo, repo } = makeDeps();
+    memberRepo.findErasedAtByIdInTx.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const }));
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(repo.rows.size).toBe(0);
+  });
+
+  it('an audit write failure on the REPLACED request (the withdrawn event) aborts the replace — server_error, tx_aborted logged', async () => {
+    const { deps, audit } = makeDeps();
+    await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    audit.failNext();
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66877777777' } }));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'repo.unexpected', cause: 'Error' }), 'change-request.submit.tx_aborted');
+  });
+
+  it('the conflict re-read rejecting with a NON-Error is logged in its string form and falls through to server_error', async () => {
+    const { deps, repo } = makeDeps();
+    repo.failNext('insertInTx', { code: 'repo.conflict', reason: 'change_request_pending_exists' });
+    vi.mocked(runInTenant)
+      .mockImplementationOnce(async (_ctx, fn) => (fn as (tx: unknown) => Promise<unknown>)({ __tx: true }) as never)
+      .mockRejectedValueOnce('neon down');
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toMatchObject({ ok: false, error: { type: 'server_error' } });
+    expect(loggerWarn).toHaveBeenCalledWith(expect.objectContaining({ err: 'neon down' }), 'change-request.submit.conflict_reread_failed');
+  });
+
+  it('a NON-Error throw inside the transaction is logged in its string form — server_error, never a swallowed success', async () => {
+    const { deps, repo } = makeDeps();
+    repo.findPendingBySubmitterInTx = async () => {
+      throw 'connection reset';
+    };
+    const r = await submitChangeRequest(deps, input({ contact: { phone: '+66899999999' } }));
+    expect(r).toEqual({ ok: false, error: { type: 'server_error', message: 'submit: unexpected' } });
+    expect(loggerError).toHaveBeenCalledWith(expect.objectContaining({ err: 'connection reset' }), 'change-request.submit.unexpected');
   });
 });

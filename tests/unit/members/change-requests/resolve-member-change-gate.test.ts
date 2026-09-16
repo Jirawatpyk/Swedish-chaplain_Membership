@@ -15,6 +15,7 @@ import { ok, err } from '@/lib/result';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import {
   makeMemberChangeGateResolver,
+  resolveMemberChangeGate,
   type MemberChangeGateDeps,
 } from '@/modules/members/application/use-cases/change-requests/resolve-member-change-gate';
 
@@ -68,5 +69,19 @@ describe('resolveMemberChangeGate', () => {
   it('a settings read failure fails CLOSED to the immediate path? No — it fails LOUD (the caller decides)', async () => {
     const gate = makeMemberChangeGateResolver(deps({ flag: true, row: 'error' }));
     await expect(gate.resolve(tenant)).rejects.toThrow(/tenant_member_settings/);
+  });
+});
+
+describe('resolveMemberChangeGate — the one-shot convenience (T105 coverage)', () => {
+  it('resolves once through a fresh resolver: flag ON + approval=true → approval, one row read', async () => {
+    const d = deps({ flag: true, row: true });
+    await expect(resolveMemberChangeGate(d, tenant)).resolves.toBe('approval');
+    expect(d.readSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('flag OFF → immediate without a read', async () => {
+    const d = deps({ flag: false, row: true });
+    await expect(resolveMemberChangeGate(d, tenant)).resolves.toBe('immediate');
+    expect(d.readSettings).not.toHaveBeenCalled();
   });
 });

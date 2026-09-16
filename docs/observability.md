@@ -418,10 +418,10 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `members_change_request_decision_email_skipped_total` | counter (watch only) | `{tenant, reason}` `reason ∈ {recipient_gone}` | F114 — a decision committed but the submitting contact is gone / unlinked, so FR-023's email was skipped (the decided audit event carries `member_notified: false`) |
 | `members_change_request_submitted_total` | counter | `{tenant, scope, coalesced}` | F114 — one per created request (`coalesced` is always `false` until T087) |
 | `members_change_request_decided_total` | counter | `{tenant, outcome}` | F114 — one per decision (`approved` / `partially_approved` / `rejected`) |
-| `members_change_request_refused_total` | counter | `{tenant, reason}` `reason ∈ {rate_limited, forbidden, archived, already_decided, validation, not_owner}` | F114 — a submit / decide / acknowledge refused with nothing persisted; `rate_limited` is the interim route cap |
+| `members_change_request_refused_total` | counter | `{tenant, reason}` `reason ∈ {rate_limited, attempt_throttled, forbidden, archived, already_decided, validation, not_owner}` | F114 — a submit / decide / acknowledge / by-id read refused with nothing persisted; `rate_limited` is the durable 10 / 24 h cap, `attempt_throttled` a route's per-actor attempt bucket (full catalogue § 27.1) |
 | `members_change_request_decide_ms` | histogram | `{tenant}` | F114 — `decideChangeRequest` transaction wall time |
-| `members_change_requests_pending_count` | gauge — **NO emitter yet (T102, PR-3)** | `{tenant}` | F114 — pending requests per tenant |
-| `members_change_request_oldest_age_seconds` | gauge — **NO emitter yet (T102, PR-3)** | `{tenant}` | F114 — age of the oldest pending request; FR-037's alerts below bind to it |
+| `members_change_requests_pending_count` | gauge | `{tenant}` | F114 — pending requests per tenant; emitted by the per-tenant gauges tick (`broadcasts-gauges`, every 5 min) — full catalogue + alerts in § 27 |
+| `members_change_request_oldest_age_seconds` | gauge | `{tenant}` | F114 — age of the oldest pending request; emitted by the same tick, 0 when nothing is pending; FR-037's alerts bind to it (§ 27.3) |
 | `outbox_stuck_rows_total` | counter (rate-alerted) | — | pending rows > 30 min past `next_retry_at` at cron tick time; rate > 0 = cron is down or lost `CRON_SECRET` |
 | `members.invite.count` | counter | `{outcome}` (`sent`/`already_linked`/`no_email`) | portal invite events |
 | `members.archive.count` | counter | `{cascade_sessions}` (`0`/`1`/`2+`) | archive cascade cardinality signal |
@@ -450,13 +450,13 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `outbox_stuck_rows_total` | `rate > 0` sustained 5 min | Cron dispatcher is down or lost `CRON_SECRET`. Verify Vercel Cron schedule + env var + recent function logs for `cron.outbox_dispatch.*`. |
 | `members.api.latency_ms` p95 | > 1 s for 5 consecutive min | Alarm → check Neon query plan, pg_trgm index health. |
 | `members_change_request_no_reviewers_total` | `rate > 0` | F114 — a tenant with no active `admin` / `super_admin`: every submit is created and nobody is emailed. Re-enable a reviewer; the pending rows drain on the next decide. |
-| `members_change_request_oldest_age_seconds` | > 14 d | F114 FR-037 — a member's proposal has aged half-way through the 30-day data-subject-request clock; open `/admin/change-requests` and decide it. **Bound to a gauge that has no emitter until T102 (PR-3)** — written here so the flip's pre-flight sees the rule. |
+| `members_change_request_oldest_age_seconds` | > 14 d | F114 FR-037 — a member's proposal has aged half-way through the 30-day data-subject-request clock; open `/admin/change-requests` and decide it. Emitter: the per-tenant gauges tick (§ 27.1); runbook § 27.4. |
 
 #### Medium severity (notify on-call, investigate next business hour)
 
 | Event / Metric | Threshold | Action |
 |---|---|---|
-| `members_change_request_oldest_age_seconds` | > 7 d | F114 FR-037 (warning; the > 14 d page is in the High table) — a member's proposal is ageing inside the 30-day data-subject-request clock; open `/admin/change-requests`. **Bound to a gauge that has no emitter until T102 (PR-3)** — the rule is written here so the flip's gate list can point at it. |
+| `members_change_request_oldest_age_seconds` | > 7 d | F114 FR-037 (warning; the > 14 d page is in the High table) — a member's proposal is ageing inside the 30-day data-subject-request clock; open `/admin/change-requests`. Emitter: the per-tenant gauges tick (§ 27.1); runbook § 27.4. |
 | `member_self_update_forbidden` | ≥ 5 events in 10 min per actor | Investigate forged portal payload; possible script or compromised member session. Time-to-triage: 10 min. |
 | `outbox_permanent_failures_total` | ≥ 3 failures in 30 min | Check Resend rate limits and outbox `last_error` distribution. |
 | `members.bulk.rows_per_action` p95 | > 8 s for 100-row action | Bulk endpoint degraded — profile DB query + RLS policy latency. |
@@ -2057,3 +2057,149 @@ closed before or shortly after flag-flip.
 | 3 | **No p95 SLO for the auto-draft pass.** | See § 26.4. Needs a maintainer decision before flag-flip. |
 | 4 | **The two pre-existing F8 gauges still go stale on failure.** `observeCycleStateGauge` and `observeMembershipSuspendedCountGauge` keep re-reporting their last value forever if their feed breaks; only the three auto-invoice gauges are cleared (`forgetAutoInvoiceGauges`). | Deliberately out of scope for Task 16 — nothing pages on those two today. Worth fixing when either becomes an alert source. |
 | 5 | **Gauge cadence is daily.** A cycle that wedges and is repaired inside 24 h may never be sampled. | Matches the `observeCycleStateGauge` precedent and is adequate for a backlog signal, but it is not incident-response-grade. Raising it means a separate 5-minute gauge cron (the `payments.stale_pending_count` pattern). |
+
+## 27. F114 Member change requests — observability (T102)
+
+Feature shape: a member proposes edits to Group B fields from the portal; the proposal sits in a
+per-tenant queue until a staff user holding `members.write` decides it field by field; the
+tenant switch (`tenant_member_settings.member_change_approval_enabled`) and the platform flag
+(`FEATURE_MEMBER_CHANGE_APPROVAL`, default OFF) gate the whole path. § 14 is F3's section; the
+F114 rows that were parked in § 14.1 / § 14.3 before the emitter existed now point here.
+
+Owner: Membership (members module). Tracer: `swecham.members`. Runbook:
+`docs/runbooks/member-change-requests.md` (written in the US6 runbook slice — the link is
+load-bearing for the alert rows below and is expected to resolve before the flag flips).
+
+### 27.1 Metrics catalogue
+
+All instruments are `safeMetric`-wrapped on `membersMetrics.changeRequests` (`src/lib/metrics.ts`).
+Labels are bounded enums + `tenant` — never a user id, an email, a field value or a reason text.
+
+| Metric | Type | Labels | Source | Notes |
+|---|---|---|---|---|
+| `members_change_requests_pending_count` | gauge | `tenant` | per-tenant gauges tick `/api/internal/metrics/broadcasts-gauges` (native Vercel Cron, every 5 min, UTC) — the `members` block, its own `db.transaction` + try/catch (research § V2) | `COUNT(*)` over `member_change_requests WHERE state = 'pending'` per tenant. **Zero-filled**: every tenant in the tenant set is observed, 0 included (the C9 latch rule — `observeGauge` re-reports the last value at every scrape). The tenant set is `tenant_member_settings` (one row per PROVISIONED tenant) ∪ the pending `GROUP BY` keys — never a `DISTINCT` scan of the request table, whose cost grew with retention rather than with the number of tenants (PR-3 review A4). |
+| `members_change_request_oldest_age_seconds` | gauge | `tenant` | same block | `now() - MIN(submitted_at)` over the pending rows, whole seconds, clamped at 0. **0 when nothing is pending** (metric convention; the read model `countPendingChangeRequests` answers `null` so the UI renders nothing). FR-037's two alerts bind here. |
+| `members_change_request_submitted_total` | counter | `tenant`, `scope`, `coalesced` | `submitChangeRequest` | One per created request; `coalesced` = the submit replaced the person's earlier pending request (US5). |
+| `members_change_request_decided_total` | counter | `tenant`, `outcome` | `decideChangeRequest` | `approved` / `partially_approved` / `rejected`. |
+| `members_change_request_refused_total` | counter | `tenant`, `reason` | submit / decide / acknowledge / the by-id portal reads / withdraw | `reason ∈ {rate_limited, attempt_throttled, forbidden, archived, already_decided, validation, not_owner}` — nothing persisted. `rate_limited` = the DURABLE 10 / 24 h cap (counted from the request table, audited `member_change_request_rate_limited`); `attempt_throttled` = a route's per-actor ATTEMPT bucket refused before any read (submit + withdraw 60 / 10 min, the by-id read + acknowledge 10 / 10 min — the latter bound the `member_cross_tenant_probe` row a miss writes; no audit row, logged `M114.<route>.attempts_exhausted`). A sustained `attempt_throttled` rate from one tenant is an enumeration attempt; the `rate_limited` rate is a member re-submitting. |
+| `members_change_request_no_reviewers_total` | counter | `tenant` | `submitChangeRequest` | A submit found no active reviewer: the request exists, nobody is emailed (alert § 27.3). |
+| `members_change_request_decision_email_skipped_total` | counter | `tenant`, `reason` | `decideChangeRequest` | `reason ∈ {recipient_gone}` — the decision committed, the submitting contact is gone; the decided audit event carries `member_notified: false`. |
+| `members_change_request_decide_ms` | histogram | `tenant` | `decideChangeRequest` | Transaction wall time of a decision (apply + audit + email row). |
+
+Forget set on the dark path (seam pass 2026-09-15): with the flag OFF the tick forgets the two
+series for every tenant in `tenant_member_settings`, which is the observe set's first half only —
+a tenant that has request rows but no settings row would keep its last value across a flag flip.
+Unreachable in production (a submission needs the gate `approval`, i.e. a settings row with the
+switch ON, and PR-3's upsert materialises the row); reachable only by seeding rows directly on
+`dev` / `ci`.
+
+The tick's completion log `cron.broadcasts_gauges.completed` carries `broadcastsGaugesOk`,
+`membersGaugesOk`, `membersGaugesSkipped`, `membersPendingTenantCount`, `membersPendingTotal`,
+`membersOldestAgeSecondsMax`; a members-half fault logs
+`cron.broadcasts_gauges.members_query_failed` and answers `membersGaugesOk: false` in the tick
+body while the broadcasts gauges are unaffected.
+
+**The two halves are independent BOTH ways** (PR-3 review SEC-1) — the broadcasts half failing
+logs `cron.broadcasts_gauges.query_failed`, emits no broadcasts sample and sets
+`broadcastsGaugesOk: false`, and the members block still runs. It used to `return` the 500
+immediately, which took the FR-037 age gauge down with it: the one alert whose threshold doubles
+as the 30-day data-subject-request backstop, blind for the duration of an unrelated broadcasts
+outage.
+
+**The STATUS is the whole tick's verdict** (PR-3 review B9): the tick answers **500** with
+`error: 'query_failed'` when EITHER half failed, at the END, after both halves have run. A
+members-half fault used to answer **200** with the bad news only in the body, so the one thing
+every cron monitor checks said the tick was healthy while the FR-037 age gauge was stale. Which
+half failed is in `broadcastsGaugesOk` / `membersGaugesOk` and in the two (unchanged) log names —
+alert on each flag separately, and never read the status code as naming a half.
+
+**`membersGaugesOk = false` → 500 + the two members series ABSENT** (PR-3 review B9). Emitting
+nothing on a fault is not neutral: `observeGauge` re-reports the last value at every scrape, so a
+sustained outage froze the queue depth and the age — "3 pending, oldest 13 d" forever, never
+crossing the 14 d page threshold, indistinguishable from a quiet week. The catch therefore
+FORGETS both labels for every tenant in the last successful tick's set (`lastMembersTenantSet`,
+a module-level value, so PER SERVERLESS PROCESS: a cold instance has emitted nothing and has
+nothing to forget, and the next healthy tick re-observes the real set). A monitor sees "no data",
+which is the truth, instead of a number nobody is computing any more.
+
+**While `FEATURE_MEMBER_CHANGE_APPROVAL` is OFF** (PR-3 review SEC-5) the tick skips the pending
+scan and FORGETS both members series for every tenant in the tenant set, answering
+`membersGaugesSkipped: 'flag_off'` with `membersGaugesOk: true`. The series go ABSENT rather
+than reporting a queue nobody can decide (the routes 404 while dark), and no value can latch
+across a flag flip. Absence is the honest answer here, not a zero: a 0 would assert "the queue
+is empty", which is a different fact. Both FR-037 alert rows below therefore read "no data"
+while the feature is dark — expected, not an outage.
+
+### 27.2 Audit / log events
+
+Five audit events (`member_change_request_submitted`, `_decided`, `_withdrawn`,
+`_rate_limited`, `member_change_approval_setting_changed`) — payloads in
+`specs/114-member-change-approval/contracts/notifications-and-audit.md`. Every failing route arm
+logs `errorId: M114.<portal|admin>.<route>.<arm>` (guarded by
+`tests/unit/architecture/change-requests-error-id.test.ts`); alert rules on the 500 class key on
+the route prefix, e.g. `M114.admin.decide.*`.
+
+Two spans on the tracer `swecham.members` (T106, `src/lib/otel-tracer.ts` `membersTracer()`),
+each wrapping the ONE transaction of its use case (no statement spans parent under them — there is no
+database instrumentation, § 27.5):
+
+| Span | Wraps | Attributes (bounded — § 27.5) |
+|---|---|---|
+| `members.change_request.submit` | `submitChangeRequest`'s `runInTenant` (the pending read, the durable cap, the insert, the audit row, the outbox rows) — a refusal BEFORE the transaction (forged keys, validation, archived) opens no span | `tenant.slug`, `change_request.id` (a freshly minted request id — the id the insert WOULD carry; on the coalesce / no-op / refused arms no row carries it), `change_request.scope`, `change_request.field_count` |
+| `members.change_request.decide` | `decideChangeRequest`'s `runInTenant` (the FOR UPDATE read through the member email row) | `tenant.slug`, `change_request.id`, `change_request.scope` (set once the row is read), `change_request.field_count` (the decisions sent), `change_request.outcome` (the recorded outcome, on success) |
+
+`SpanStatusCode.ERROR` is reserved for a system FAILURE — `server_error`, and an escaped throw
+(marked with the error's CONSTRUCTOR NAME, never `.message`, which can carry a proposed value or
+a decision reason; the `catch` mirrors the payments idiom in `confirm-payment.ts` and is
+defence-in-depth, since both use cases convert every fault to a `Result` inside their own
+transaction body). Every EXPECTED refusal — `member_archived`, `rate_limited`, `not_found`,
+`already_decided`, `validation_error`, … — sets the attribute
+**`change_request.refusal = <type>`** and leaves the status UNSET (PR-3 review B10). Marking
+those ERROR made these two spans' error rate a measure of how often a member mistypes a phone
+number, which buried the one signal an operator can act on; the refusal reason stays sliceable as
+an attribute. No status or attribute ever carries a proposed value, the decision reason / note,
+an email or a user id, and the span is ended on every path
+(`tests/unit/members/change-requests/change-request-spans.test.ts` pins the names, the exact
+attribute keys, the status split and the redaction with a distinctive reason that must appear in
+no attribute).
+
+### 27.3 Alerting thresholds
+
+Both age thresholds are bound to the one-month data-subject-request clock (GDPR Art. 12(3) /
+PDPA § 30, FR-037): the operational alarm doubles as the statutory backstop, so a proposal is
+decided well before the month a data subject may hold the chamber to.
+
+| Severity | Metric | Threshold | Action |
+|---|---|---|---|
+| **Page** | `members_change_request_oldest_age_seconds` | > 14 d (1,209,600 s), any tenant | A member's proposal has aged half-way through the 30-day clock. Open `/admin/change-requests` (oldest first) and decide it; if no reviewer can, escalate to the chamber's data-protection contact the same day. Runbook § 27.4. |
+| Warning | `members_change_request_oldest_age_seconds` | > 7 d (604,800 s), any tenant | Nudge the reviewers: the queue is not being worked. Check the staff email did arrive (`outbox` rows for `member_change_request_submitted_staff`) and that the tenant still has an active reviewer. |
+| Warning | `members_change_request_no_reviewers_total` | `rate > 0` | A tenant with no active `admin` / `super_admin`: every submit is created and nobody is emailed. Re-enable a reviewer; the pending rows drain on the next decide. |
+| Warning | tick body `membersGaugesOk = false` (log `cron.broadcasts_gauges.members_query_failed`, HTTP 500) | 3 consecutive ticks (15 min) | The members gauges are ABSENT — both age alerts above go to "no data", by design (B9: the labels are forgotten so a fault cannot read as a frozen level). Check the migration state of `member_change_requests` on the deployed branch and the tick's statement timeout. NOT the same as `membersGaugesSkipped: 'flag_off'`, which is the deliberate dark state (§ 27.1), and note the 500 does NOT say which half failed — read the flags. |
+| Warning | tick body `broadcastsGaugesOk = false` (log `cron.broadcasts_gauges.query_failed`, HTTP 500) | 3 consecutive ticks (15 min) | The BROADCASTS half of the shared tick is failing; the members gauges above are unaffected (SEC-1). § 22.3 owns the broadcasts alert rows. |
+| Watch | `members_change_requests_pending_count` | dashboard panel, no threshold | Backlog level per tenant; the age gauge is the alarm, the count is the context. |
+
+### 27.4 Runbook
+
+`docs/runbooks/member-change-requests.md` — triage order: (1) is the flag on and the tenant
+setting on (`GET /api/admin/settings/member-changes`)? (2) does the queue show the row
+(`/admin/change-requests`)? (3) were the reviewers emailed (`outbox`)? (4) decide, or reject
+with a reason so the member is told. Turning the tenant setting off is the first rollback layer
+(pending rows stay decidable — FR-032), the platform flag the second (routes 404, rows retained,
+decidable again when it returns — FR-039).
+
+### 27.5 Forbidden log fields
+
+No feature-specific extension beyond § 3: proposed field VALUES, decision reasons and member /
+contact emails never reach a log line or a metric label — ids, field KEYS and outcomes only.
+
+The same holds for TRACES, and it holds because of a configuration rather than a filter: the two
+spans of § 27.2 carry only the bounded attributes listed there, and no SQL text or bind
+parameter is recorded anywhere else in the span tree because `instrumentation.ts` (repo root)
+registers no instrumentations beyond `registerOTel({ serviceName })` — the file's only other call
+is a boot-time env assertion (`assertVercelDeploymentForTrustedXff`), so **no pg / database
+instrumentation** is registered and there is no auto-instrumented statement span to leak a
+proposed value into. If
+database instrumentation is ever added, leave
+`enhancedDatabaseReporting` OFF: it attaches statement text and parameters to every span, which
+would put proposed PII values and member emails into the trace backend, outside every filter
+this section describes (privacy review P-L2).

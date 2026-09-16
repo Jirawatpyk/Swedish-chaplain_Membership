@@ -20,6 +20,11 @@ import { makeAuditPortFake, makeClockFake, makeInMemoryChangeRequestRepo, type A
 
 const requireMemberContextMock = vi.fn();
 const loggerError = vi.fn();
+const rateLimitCheckMock = vi.fn(async () => ({ success: true, reset: Date.now() + 60_000 }));
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: { check: (...args: unknown[]) => rateLimitCheckMock(...(args as [])) },
+}));
+const metricRefused = vi.fn();
 let flagOn = true;
 let repo: InMemoryChangeRequestRepo;
 let audit: AuditPortFake;
@@ -53,7 +58,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: (...a: unknown[]) => loggerError(...a), warn: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('@/lib/metrics', () => ({
-  membersMetrics: { changeRequests: { refused: vi.fn(), submitted: vi.fn(), decided: vi.fn(), decideDurationMs: vi.fn(), pendingCount: vi.fn(), oldestAgeSeconds: vi.fn() } },
+  membersMetrics: { changeRequests: { refused: (...a: unknown[]) => metricRefused(...a), submitted: vi.fn(), decided: vi.fn(), decideDurationMs: vi.fn(), pendingCount: vi.fn(), oldestAgeSeconds: vi.fn() } },
 }));
 
 import { GET as listHistory } from '@/app/api/portal/change-requests/route';
@@ -226,6 +231,20 @@ describe('GET /api/portal/change-requests/[id]', () => {
     const probes = audit.events.filter((e) => e.type === 'member_cross_tenant_probe');
     expect(probes.map((e) => e.payload['attempted_change_request_id'])).toEqual([R(9)]);
     expect(probes[0]).toMatchObject({ actorUserId: PRIMARY, payload: { actor_tenant_id: 'test-swecham', action: 'history_item' } });
+  });
+
+  it('the probe bucket (10 / 10 min per tenant + user — PR-3 S-2): the 11th call → 429 rate_limited + Retry-After BEFORE any read — no probe audit row, metric attempt_throttled', async () => {
+    rateLimitCheckMock.mockResolvedValueOnce({ success: false, reset: Date.now() + 120_000 });
+    const res = await one('00000000-0000-4000-8000-0000000000ff');
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(await res.json()).toMatchObject({ error: 'rate_limited' });
+    expect(rateLimitCheckMock).toHaveBeenCalledWith(`f114:history-item-attempts:test-swecham:${PRIMARY}`, 10, 600);
+    expect(audit.events).toHaveLength(0);
+    expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'attempt_throttled');
+    // the bucket is consumed on an in-scope hit too — every by-id call counts, never only misses
+    expect((await one(R(1))).status).toBe(200);
+    expect(rateLimitCheckMock).toHaveBeenCalledTimes(2);
   });
 
   it('flag OFF → 404 before the member context; a repo fault → 500 named in the errorId taxonomy', async () => {

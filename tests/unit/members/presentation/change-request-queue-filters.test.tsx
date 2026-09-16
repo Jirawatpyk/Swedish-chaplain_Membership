@@ -56,17 +56,24 @@ const MEMBER = '11111111-1111-4111-8111-111111111111';
 const SUBMITTER = '22222222-2222-4222-8222-222222222222';
 
 // a FRESH element per render — RTL's rerender bails out on the same element
-function bar() {
+function bar(result: { resultCount: number; hasMore: boolean } = { resultCount: 2, hasMore: false }) {
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <ChangeRequestQueueFilters />
+      <ChangeRequestQueueFilters resultCount={result.resultCount} hasMore={result.hasMore} />
     </NextIntlClientProvider>
   );
 }
 
-function renderBar(query = '') {
+function renderBar(query = '', result?: { resultCount: number; hasMore: boolean }) {
   nav.searchParams.current = new URLSearchParams(query);
-  return render(bar());
+  return render(bar(result));
+}
+
+/** What a pre-hydration native GET submit would send — every named control, empty values dropped like the page's zod drops them. */
+function nativeQuery(form: HTMLFormElement): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of new FormData(form).entries()) if (typeof v === 'string' && v !== '') out[k] = v;
+  return out;
 }
 
 /** the navigation landed: the URL changed under the SAME instance (no remount) */
@@ -181,5 +188,59 @@ describe('<ChangeRequestQueueFilters>', () => {
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Withdrawn');
     expect(screen.queryByRole('combobox', { name: 'Outcome' })).toBeNull();
     expect(screen.getByLabelText('Submitted up to and including')).toHaveValue('2026-03-31');
+  });
+});
+
+describe('<ChangeRequestQueueFilters> — PR-3 polish (useId · the live result region · pre-hydration submit)', () => {
+  it('control ids come from useId — no hard-coded #cr-filter-* — and each visible label still points at its control (L5)', () => {
+    const { container } = renderBar('state=decided');
+    expect(container.querySelector('#cr-filter-state')).toBeNull();
+    expect(container.querySelector('#cr-filter-outcome')).toBeNull();
+    for (const name of ['Status', 'Outcome']) {
+      const trigger = screen.getByRole('combobox', { name });
+      expect(trigger.id).not.toBe('');
+      const label = container.querySelector(`label[for="${trigger.id}"]`);
+      expect(label?.textContent).toBe(name);
+    }
+    expect(screen.getByLabelText('Submitted from').id).not.toBe('');
+  });
+
+  it('announces the applied result through ONE role=status region that updates in place — the same element, focus untouched (H2)', () => {
+    const { rerender } = renderBar('', { resultCount: 2, hasMore: false });
+    const region = screen.getByRole('status');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region.textContent).toBe('Showing 2 requests');
+    const applyButton = screen.getByRole('button', { name: 'Apply' });
+    applyButton.focus();
+    fireEvent.click(applyButton);
+    nav.searchParams.current = new URLSearchParams('state=withdrawn');
+    rerender(bar({ resultCount: 1, hasMore: false }));
+    expect(screen.getByRole('status')).toBe(region);
+    expect(region.textContent).toBe('Showing 1 request');
+    expect(applyButton).toHaveFocus();
+    rerender(bar({ resultCount: 100, hasMore: true }));
+    expect(region.textContent).toBe('Showing the first 100 requests — more on the next page');
+    rerender(bar({ resultCount: 0, hasMore: false }));
+    expect(region.textContent).toBe('No requests to show');
+  });
+
+  it('is a real GET form whose native submit (before hydration) carries the SAME query as apply(): staged state + outcome, the scope params, the dates — never the cursor (N4)', () => {
+    renderBar(`state=decided&outcome=rejected&memberId=${MEMBER}&from=2026-09-01&cursor=abc`);
+    const form = screen.getByRole('form', { name: 'Filter change requests' }) as HTMLFormElement;
+    expect(form.getAttribute('method')).toBe('get');
+    expect(form.getAttribute('action')).toBe('/admin/change-requests');
+    const native = nativeQuery(form);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    const [href] = nav.replaceMock.mock.calls[0]!;
+    const clientQuery = Object.fromEntries(new URL(String(href), 'http://x').searchParams);
+    expect(native).toEqual(clientQuery);
+    expect(native).toEqual({ state: 'decided', outcome: 'rejected', memberId: MEMBER, from: '2026-09-01' });
+  });
+
+  it('the default view submits NO state param natively either, and an outcome staged away from "decided" is not carried', () => {
+    renderBar('state=decided&outcome=rejected');
+    fireEvent.click(screen.getByRole('option', { name: 'Awaiting decision' }));
+    const form = screen.getByRole('form', { name: 'Filter change requests' }) as HTMLFormElement;
+    expect(nativeQuery(form)).toEqual({});
   });
 });

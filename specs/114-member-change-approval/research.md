@@ -232,8 +232,8 @@ snapshot, so US6 AS3 holds immediately. (2) The staff nav item `nav.staff.change
 the Membership section (`src/config/nav.ts:224`, `defineGuard('members.read')`) carries an
 optional `badgeCount` resolved server-side in the staff shell — the nav config has no badge slot
 today (panel theme 7); adding one optional field to the item type is the smallest change and stays
-declarative. (3) Gauge `members.change_requests_pending_count{tenant}` +
-`members.change_request_oldest_age_seconds{tenant}` in `membersMetrics` (`src/lib/metrics.ts`),
+declarative. (3) Gauge `members_change_requests_pending_count{tenant}` +
+`members_change_request_oldest_age_seconds{tenant}` in `membersMetrics` (`src/lib/metrics.ts`),
 emitted by the existing `broadcasts-gauges` cron route generalised to a per-tenant gauges tick —
 **no new cron**: `vercel.json` has 37 of the Pro plan's 40 jobs.
 **R**: Spec FR-033/FR-037/SC-008; the cron budget is the binding constraint.
@@ -428,3 +428,53 @@ addresses the `registered_address` row is tax-affecting for every SweCham member
 "registered address is the buyer address when no billing address is set") — the review page will
 show the flag on every registered-address proposal until members get billing addresses, which is
 correct, not a bug; (3) the reviewer fan-out is 3 outbox rows per submission (≤ 5 assumed).
+
+### § V2 — per-tenant gauges tick hosts the members gauges (T092)
+
+**As measured BEFORE PR-3** (2026-09-15, `src/app/api/internal/metrics/broadcasts-gauges/route.ts`,
+296 lines; `vercel.json` cron count = **37** of the Pro plan's 40). The route is now TWO
+transactions with a flag per half — see the supersession below:
+
+- The route is ONE `db.transaction` on the pool-global `db` (owner role, BYPASSRLS — every gauge
+  here is a cross-tenant `GROUP BY tenant_id`, the accepted pattern for internal metrics), one
+  `SET LOCAL statement_timeout = '10s'`, six `broadcasts` / `marketing_unsubscribes` queries, one
+  try/catch that answers **500 `query_failed`** for the whole tick, and then the emit loops.
+- Every metric name is a hard literal on `broadcastsMetrics.*` (`broadcasts_queue_pending`,
+  `broadcasts_stuck_sending_count`, `broadcasts_dispatch_failure_rate`,
+  `broadcasts_suppression_list_size`, `broadcasts_approved_overdue_count`,
+  `broadcasts_audience_import_stuck_count`); the route name, the log names
+  (`cron.broadcasts_gauges.*`) and the runbook entry all carry `broadcasts`. Nothing in the
+  emitters is parameterised by module.
+- The zero-fill rule is explicit (the "C9 latch" comments): a COUNT gauge is observed for every
+  tenant the tick scanned, 0 included, because `observeGauge` re-reports the last value at every
+  scrape; only the RATIO is forgotten instead.
+
+**Answer**: it can host a second module's gauges **without renaming any `broadcasts_*` metric**,
+because the metric names live on the `*Metrics` objects, not on the route — but NOT inside the
+same transaction: the single try/catch would turn a `member_change_requests` fault into a 500
+that also drops the six broadcasts samples (and the reverse), and the one 10 s timeout would be
+shared. So the plan's fallback IS the design: a **`members` block in the SAME tick** — its own
+`db.transaction` (own `SET LOCAL statement_timeout`), its own try/catch that logs
+`cron.broadcasts_gauges.members_query_failed` and answers `membersGaugesOk: false` in the body
+while the broadcasts half still emits and the tick still returns 200 — never a new cron (37/40).
+
+**Decision rule** (binding on T102): the members block reads
+`SELECT tenant_id, COUNT(*)::int, EXTRACT(EPOCH FROM (now() - MIN(submitted_at)))::int FROM
+member_change_requests WHERE state = 'pending' GROUP BY tenant_id` plus
+`SELECT DISTINCT tenant_id FROM member_change_requests`, and emits
+`membersMetrics.changeRequests.pendingCount(tenant, n)` + `oldestAgeSeconds(tenant, s)` for
+the UNION of the two key sets — a tenant with rows but none pending gets `0` / `0` (the C9 rule:
+a count gauge reports 0, never its last value; the read model's `null` age is a UI convention,
+the gauge's `0` a metric one). The route file keeps its name — renaming it would touch
+`vercel.json`, the runbook and the alert rules for no observable gain (Principle X); the
+"generalised per-tenant gauges tick" of plan § Project Structure is this file with two blocks.
+Observability rows: `docs/observability.md § 27` (§ 14 is F3's; the F114 rows that were parked
+in § 14.1 / § 14.3 now point at the emitter).
+
+**Superseded in the PR-3 review round (2026-09-15, `reviews/pr-3.md`)** — three parts of the
+decision rule above changed before merge: the tenant set for the zero-fill comes from
+`tenant_member_settings` ∪ the pending `GROUP BY` keys, never a `DISTINCT tenant_id` scan of the
+request table (reliability R-M4); a broadcasts-half fault no longer returns early — the members
+half runs and the tick answers 500 at the end with `broadcastsGaugesOk: false` (security SEC-1);
+with the platform flag OFF the pending scan is skipped and both series are forgotten per tenant
+(security SEC-5). The contract test pins all three.

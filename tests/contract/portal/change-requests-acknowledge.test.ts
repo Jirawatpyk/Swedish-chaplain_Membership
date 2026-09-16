@@ -18,6 +18,14 @@ import { makeAuditPortFake, makeClockFake, makeInMemoryChangeRequestRepo, type A
 
 const requireMemberContextMock = vi.fn();
 const loggerError = vi.fn();
+const rateLimitCheckMock = vi.fn(async () => ({ success: true, reset: Date.now() + 60_000 }));
+vi.mock('@/lib/auth-deps', () => ({
+  rateLimiter: { check: (...args: unknown[]) => rateLimitCheckMock(...(args as [])) },
+}));
+const metricRefused = vi.fn();
+vi.mock('@/lib/metrics', () => ({
+  membersMetrics: { changeRequests: { refused: (...a: unknown[]) => metricRefused(...a), submitted: vi.fn(), decided: vi.fn(), decideDurationMs: vi.fn(), pendingCount: vi.fn(), oldestAgeSeconds: vi.fn() } },
+}));
 let flagOn = true;
 let readOnly = false;
 let repo: InMemoryChangeRequestRepo;
@@ -120,6 +128,18 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('POST /api/portal/change-requests/[id]/acknowledge', () => {
+  it('the probe bucket (10 / 10 min per tenant + user — PR-3 S-2): the 11th call → 429 rate_limited + Retry-After BEFORE any read — nothing stamped, no probe audit row, metric attempt_throttled', async () => {
+    rateLimitCheckMock.mockResolvedValueOnce({ success: false, reset: Date.now() + 120_000 });
+    const res = await call('00000000-0000-4000-8000-0000000000ff');
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(await res.json()).toMatchObject({ error: 'rate_limited' });
+    expect(rateLimitCheckMock).toHaveBeenCalledWith(`f114:acknowledge-attempts:test-swecham:${SUBMITTER}`, 10, 600);
+    expect(audit.events).toHaveLength(0);
+    expect(repo.rows.get(REQ)?.outcomeAcknowledgedAt).toBeNull();
+    expect(metricRefused).toHaveBeenCalledWith('test-swecham', 'attempt_throttled');
+  });
+
   it('404 while the flag is off — before the member context', async () => {
     flagOn = false;
     expect((await call()).status).toBe(404);

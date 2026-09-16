@@ -348,19 +348,27 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       listMemberDataExports.mockResolvedValue([]);
     });
 
-    it('still renders the hub + the data-privacy section (degraded, no crash)', async () => {
+    it('still renders the hub + the data-privacy section, with a role=status "could not load your exports" alert in place of the empty state, logged under its own errorId (PR-3 S-6)', async () => {
       const { container } = await renderHub();
       expect(container.querySelector('#account')).not.toBeNull();
       expect(
       within(container).queryByRole('button', { name: /^sign out$/i }),
     ).toBeNull();
-      // f9 ON + linked member → section renders; the export list degrades to []
-      // inside the panel rather than 500-ing the page.
-      expect(container.querySelector('#data-privacy')).not.toBeNull();
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ errKind: expect.any(String) }),
+      // f9 ON + linked member → the section renders; a read FAULT is its own
+      // state — never the empty state that says "you have not requested one"
+      const section = container.querySelector('#data-privacy');
+      expect(section).not.toBeNull();
+      const alert = within(section as HTMLElement).getByTestId('portal-exports-unavailable');
+      expect(alert.getAttribute('role')).toBe('status');
+      expect(alert.textContent).toContain(enMessages.dataExport.loadFailed);
+      expect(within(section as HTMLElement).queryByText(enMessages.dataExport.empty)).toBeNull();
+      expect(logger.error).toHaveBeenCalledWith(
+        // `err`, the house field name for an error kind (PR-3 review C6) —
+        // this line was the only F114 log in the file still on `errKind:`
+        expect.objectContaining({ errorId: 'M114.portal.account.exports_read_failed', err: expect.any(String) }),
         'portal.account.data_export_list_failed',
       );
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), 'portal.account.data_export_list_failed');
     });
   });
 });

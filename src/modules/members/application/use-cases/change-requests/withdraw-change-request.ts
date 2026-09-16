@@ -23,6 +23,7 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import type { ChangeRequest } from '../../../domain/change-request/change-request';
 import type { UserId } from '../../../domain/value-objects/user-id';
@@ -42,7 +43,7 @@ export type WithdrawChangeRequestDeps = {
 export type WithdrawChangeRequestInput = {
   readonly actorUserId: UserId;
   /** The SESSION role — recorded in the audit payload as `actor_role`. */
-  readonly actorRole: string;
+  readonly actorRole: Role;
   readonly requestId: string;
 };
 

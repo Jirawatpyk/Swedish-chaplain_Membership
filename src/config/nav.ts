@@ -77,7 +77,31 @@ export interface NavItem {
    * received a webhook delivery in 30 days (round-2 R1).
    */
   readonly visibilityFlag?: NavVisibilityFlag;
+  /**
+   * F114 US6 (FR-033; plan Complexity Tracking #2) — this item CARRIES a live
+   * count badge, and `labelKey` is the ICU key (taking `{count}`) for the
+   * visually-hidden suffix that makes the number part of the link's
+   * accessible name ("Change requests 3 pending").
+   *
+   * One field, not two (PR-3 review B2). The declaration and the noun used to
+   * be independent optionals alongside a `badgeCount`, so "a count with no
+   * noun" was representable — and `applyNavBadges` stamped a count on ANY
+   * href in its map, which rendered a bare number announced as "Plans 3". The
+   * COUNT itself is never authored here: it is server-resolved per request
+   * and applied by {@link applyNavBadges}, which stamps it only on items
+   * carrying this declaration. See `components/layout/nav-item.tsx` for the
+   * rendered shape.
+   */
+  readonly badge?: { readonly labelKey: string };
 }
+
+/**
+ * A {@link NavItem} after {@link applyNavBadges} — the same item plus the
+ * server-resolved count, which exists only on the RENDER side. `NavItem` is
+ * assignable to it (the extra field is optional), so an unbadged config still
+ * flows into the sidebar unchanged.
+ */
+export type RenderedNavItem = NavItem & { readonly badgeCount?: number };
 
 /**
  * Named visibility flags resolved at request time and passed to the
@@ -122,6 +146,25 @@ export interface NavSection {
 /** Top-level nav configuration for a portal. */
 export interface NavConfig {
   readonly sections: readonly NavSection[];
+}
+
+/** {@link NavGroup} on the render side — its children may carry counts. */
+export interface RenderedNavGroup extends Omit<NavGroup, 'children'> {
+  readonly children: readonly RenderedNavItem[];
+}
+
+/** {@link NavSection} on the render side. */
+export interface RenderedNavSection {
+  readonly titleKey?: string;
+  readonly items: ReadonlyArray<RenderedNavItem | RenderedNavGroup>;
+}
+
+/**
+ * What {@link applyNavBadges} answers. Structurally a superset of
+ * {@link NavConfig}, so the sidebar can render either.
+ */
+export interface RenderedNavConfig {
+  readonly sections: readonly RenderedNavSection[];
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +250,55 @@ export function filterNavConfig(
   };
 }
 
+/**
+ * The hrefs a badge count may be resolved for (PR-3 review B2).
+ *
+ * A closed union rather than `string`, so a typo'd href in the staff layout's
+ * count map is a COMPILE error instead of a badge that silently never
+ * appears. Add an entry here (and a `badge` declaration on the item) when a
+ * second feature wants one.
+ */
+export type BadgeableNavHref = '/admin/change-requests';
+
+/** Server-resolved counts keyed by {@link BadgeableNavHref}. */
+export type NavBadgeCounts = Partial<Record<BadgeableNavHref, number>>;
+
+/**
+ * Apply server-resolved badge counts to a (filtered) nav config (F114 US6,
+ * FR-033). Pure, like {@link filterNavConfig}: returns a NEW config in which
+ * an item carries `badgeCount` iff it DECLARES a `badge` and its href has a
+ * count `> 0` in `badges`. Every other item is returned as-is (no
+ * `badgeCount` key is added for 0, negative, or absent counts). Hrefs not in
+ * the config are ignored, and so is an href whose item declares no `badge` —
+ * stamping one there rendered a bare number with no noun to announce it
+ * (PR-3 review B2). Recurses into NavGroup children.
+ *
+ * Keyed by href (the stable identity the permission resolver already uses),
+ * so the layout passes `{ '/admin/change-requests': n }` and nothing here
+ * knows which feature owns the number.
+ */
+export function applyNavBadges(
+  config: NavConfig,
+  badges: NavBadgeCounts,
+): RenderedNavConfig {
+  function badgeItem(item: NavItem): RenderedNavItem {
+    if (item.badge === undefined) return item;
+    const count = (badges as Readonly<Record<string, number | undefined>>)[item.href];
+    return count !== undefined && count > 0 ? { ...item, badgeCount: count } : item;
+  }
+  function badgeEntry(entry: NavItem | NavGroup): RenderedNavItem | RenderedNavGroup {
+    return isNavGroup(entry)
+      ? { ...entry, children: entry.children.map(badgeItem) }
+      : badgeItem(entry);
+  }
+  return {
+    sections: config.sections.map((section) => ({
+      ...section,
+      items: section.items.map(badgeEntry),
+    })),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Staff navigation (T007)
 // ---------------------------------------------------------------------------
@@ -247,6 +339,11 @@ export const staffNavConfig: NavConfig = {
           guard: defineGuard('members.read'),
           activePattern: '/admin/change-requests',
           visibilityFlag: 'memberChangeApproval',
+          // US6 (FR-033) — the pending count is resolved per request in the
+          // staff layout (`readPendingChangeRequestsForNav`) and applied
+          // through `applyNavBadges`; this declaration carries only the
+          // sr-only noun, never a number.
+          badge: { labelKey: 'nav.staff.changeRequestsBadge' },
         },
         {
           titleKey: 'nav.staff.plans',

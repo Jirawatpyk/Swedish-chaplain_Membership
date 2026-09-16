@@ -35,11 +35,14 @@
  * or the reason text (R7). `actor_role` is the session role passed in.
  */
 import type { z } from 'zod';
+import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
+import { membersTracer } from '@/lib/otel-tracer';
 import { err, ok, type Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import { isDecided, DECISION_NOTE_MAX_LENGTH, DECISION_REASON_MAX_LENGTH, type ChangeRequest, type ChangeRequestId, type ChangeRequestOutcome, type FieldOutcome, type ProposedField, type ProposedValue } from '../../../domain/change-request/change-request';
 import { validateProposal } from '../../../domain/change-request/field-rules';
@@ -81,7 +84,7 @@ export type DecideChangeRequestInput = {
   readonly note: string | null;
   readonly actorUserId: UserId;
   /** The SESSION role — recorded in the audit payload as `actor_role`. */
-  readonly actorRole: string;
+  readonly actorRole: Role;
   readonly requestId: string;
 };
 
@@ -223,7 +226,11 @@ function patchesOf(
           break;
         }
         const phone = asPhone(v);
+        /* v8 ignore start — defence in depth: `validateProposal` (step 6) already
+         * ran `asPhone` inside its superRefine, so an unparsable phone is refused
+         * before `patchesOf` runs; this arm guards a future rule divergence. */
         if (!phone.ok) return err({ type: 'validation_error', issues: [namedIssue(['contact', 'phone'], `phone.${phone.error.code}`)] });
+        /* v8 ignore stop */
         contact.phone = phone.value;
         break;
       }
@@ -256,11 +263,24 @@ function patchesOf(
         Object.assign(member, billing.value);
         break;
       }
+      /* v8 ignore start — a key outside the union cannot reach here, and PR-3
+       * review R-M5 asked whether a stored `field_key` (TEXT + CHECK in 0300,
+       * not a Domain enum) could: it cannot. Step 6 re-validates the APPROVED
+       * values through the strict proposal schema, which refuses an
+       * unrecognised key — naming it — before `patchesOf` runs; a REJECTED
+       * unknown key never enters `approved` at all. Both paths are pinned by
+       * "a stored field_key outside the Domain union" in
+       * decide-change-request.test.ts, which is why this arm keeps its marker
+       * instead of a test. It stays as the compile-time exhaustiveness check
+       * plus a NAMED runtime refusal: `issues: []` was a 422 that told the
+       * reviewer nothing, against this file's own rule (round 6,
+       * silent-failure #22). */
       default: {
         const _exhaustive: never = key;
         void _exhaustive;
-        return err({ type: 'validation_error', issues: [] });
+        return err({ type: 'validation_error', issues: [namedIssue([String(key)], 'unknown_field')] });
       }
+      /* v8 ignore stop */
     }
   }
   return ok({ contact, member });
@@ -304,6 +324,9 @@ function billingPatch(v: BillingAddress): Result<MemberPatch, DecideChangeReques
 // Use case
 // ---------------------------------------------------------------------------
 
+/** T106 — the span over the decide transaction (docs/observability.md § 27.2). */
+const DECIDE_SPAN = 'members.change_request.decide';
+
 /** A refusal thrown inside the tx — rolls back (nothing written) and surfaces typed. */
 class Refusal extends UseCaseAbort<DecideChangeRequestError> {}
 
@@ -323,198 +346,250 @@ export async function decideChangeRequest(
   const note = normaliseText(input.note);
   const now = deps.clock.now();
 
-  try {
-    const outcome = await runInTenant(deps.tenant, async (tx): Promise<DecideChangeRequestOutcome> => {
-      // 1. the request, FOR UPDATE (R4).
-      const found = await deps.changeRequestRepo.findByIdInTx(tx, input.changeRequestId);
-      if (!found.ok) {
-        if (found.error.code === 'repo.not_found') throw new Refusal({ type: 'not_found' });
-        throw new UseCaseAbort<RepoError>(found.error);
-      }
-      const request = found.value;
-
-      // 2. state (FR-017).
-      if (request.state === 'withdrawn') throw new Refusal({ type: 'not_pending' });
-      if (isDecided(request)) {
-        if (sameDecision(request, input)) {
-          return { request, repeated: true, applied: [], rejected: [] };
+  // ONE transaction under the `members.change_request.decide` span (T106;
+  // docs/observability.md § 27): bounded ids / keys / the recorded outcome
+  // only (§ 27.5). A `server_error` marks the span ERROR with the error TYPE;
+  // every expected refusal is `change_request.refusal = <type>` with the
+  // status left UNSET (B10). Never the reason or a value, on either path.
+  const decideTransaction = async (span: Span): Promise<Result<DecideChangeRequestOutcome, DecideChangeRequestError>> => {
+    try {
+      const outcome = await runInTenant(deps.tenant, async (tx): Promise<DecideChangeRequestOutcome> => {
+        // 1. the request, FOR UPDATE (R4).
+        const found = await deps.changeRequestRepo.findByIdInTx(tx, input.changeRequestId);
+        if (!found.ok) {
+          if (found.error.code === 'repo.not_found') throw new Refusal({ type: 'not_found' });
+          throw new UseCaseAbort<RepoError>(found.error);
         }
-        // narrowed: a decided row always carries who / when / what (F6)
-        throw new Refusal({
-          type: 'already_decided',
-          decided: { byUserId: request.decidedByUserId, at: request.decidedAt, outcome: request.outcome },
-        });
-      }
+        const request = found.value;
+        span.setAttribute('change_request.scope', request.scope);
 
-      // 3. every field decided exactly once.
-      const coverage = checkCoverage(request, input.decisions);
-      if (coverage !== null) throw new Refusal(coverage);
-      const outcomeByKey = new Map(input.decisions.map((d) => [d.key, d.outcome]));
-      const approvedFields = request.fields.filter((f) => outcomeByKey.get(f.key) === 'approved');
-      const rejectedFields = request.fields.filter((f) => outcomeByKey.get(f.key) === 'rejected');
-      const approvedKeys = approvedFields.map((f) => f.key);
-      const rejectedKeys = rejectedFields.map((f) => f.key);
-
-      // 4. the member: FOR UPDATE first, THEN the erasure check on the same
-      //    tx — an erasure that commits between the two reads is seen (it
-      //    waits on our lock); a check-before-lock on another connection
-      //    would let a decision write PII back into an erased record
-      //    (review: reliability I-2 / security I-2). Archived → refused (FR-020).
-      const memberResult = await deps.memberRepo.findByIdInTx(tx, request.memberId);
-      if (!memberResult.ok) throw new UseCaseAbort<RepoError>(memberResult.error);
-      const member: Member = memberResult.value;
-      const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, request.memberId);
-      if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
-      if (erased.value.erasedAt !== null) throw new Refusal({ type: 'member_erasing' });
-      if (member.status === 'archived') throw new Refusal({ type: 'member_archived' });
-
-      // 5. the submitting contact — gone ⇒ its rows may only be rejected.
-      const contactsResult = await deps.contactRepo.listByMemberInTx(tx, request.memberId);
-      if (!contactsResult.ok) throw new UseCaseAbort<RepoError>(contactsResult.error);
-      const contact = contactsResult.value.find((c) => c.contactId === request.submittedByContactId) ?? null;
-      const contactGone = contact === null || contact.removedAt !== null || contact.linkedUserId === null;
-      if (contactGone) {
-        const approvedContactKeys = approvedFields.filter((f) => f.target === 'contact').map((f) => f.key);
-        if (approvedContactKeys.length > 0) throw new Refusal({ type: 'contact_removed', keys: approvedContactKeys });
-      }
-
-      // 6. approved values re-validated with the staff rules (FR-006).
-      const validated = validateProposal(proposalOf(approvedFields));
-      if (!validated.ok) throw new Refusal({ type: 'validation_error', issues: validated.error });
-      const record = groupBRecordOf(member, contact ?? removedContactStandIn());
-      const patches = patchesOf(validated.value, approvedKeys, record);
-      if (!patches.ok) throw new Refusal(patches.error);
-
-      // 7. apply (FR-015) — contact first, then member. A contact patch with
-      //    no contact cannot happen (step 5 refuses approved contact keys when
-      //    the contact is gone); if it ever does, abort loudly rather than
-      //    silently dropping the approved values (review: reliability M-6).
-      if (Object.keys(patches.value.contact).length > 0) {
-        if (contact === null) throw new UseCaseAbort<RepoError>({ code: 'repo.unexpected', cause: 'contact patch without a contact' });
-        const updated = await deps.contactRepo.updateInTx(tx, contact.contactId, patches.value.contact);
-        if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
-      }
-      if (Object.keys(patches.value.member).length > 0) {
-        const updated = await deps.memberRepo.updateFieldsInTx(tx, request.memberId, patches.value.member);
-        if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
-      }
-
-      // 8. the decision rows.
-      // `checkCoverage` proved every key is present; a checked lookup keeps
-      // that proof visible instead of three casts (round 7, types N3)
-      const outcomeOf = (key: string): FieldOutcome => {
-        const o = outcomeByKey.get(key);
-        if (o === undefined) throw new Error(`decide: no decision for field ${key} after coverage check`);
-        return o;
-      };
-      const overall = deriveOutcome(request.fields.map((f) => outcomeOf(f.key)));
-      const decision: ChangeRequestDecision = {
-        decidedAt: now,
-        decidedByUserId: input.actorUserId,
-        outcome: overall,
-        reason,
-        note,
-        fields: request.fields.map((f) => {
-          const o = outcomeOf(f.key);
-          return { key: f.key, outcome: o, appliedAt: o === 'approved' ? now : null };
-        }),
-      };
-      const decided = await deps.changeRequestRepo.decideInTx(tx, request.id, decision);
-      if (!decided.ok) {
-        // 0 rows matched `state = 'pending'`: a concurrent decision won the lock race.
-        if (decided.error.code === 'repo.not_found') {
-          throw new Refusal({ type: 'already_decided', decided: null });
+        // 2. state (FR-017).
+        if (request.state === 'withdrawn') throw new Refusal({ type: 'not_pending' });
+        if (isDecided(request)) {
+          if (sameDecision(request, input)) {
+            return { request, repeated: true, applied: [], rejected: [] };
+          }
+          // narrowed: a decided row always carries who / when / what (F6)
+          throw new Refusal({
+            type: 'already_decided',
+            decided: { byUserId: request.decidedByUserId, at: request.decidedAt, outcome: request.outcome },
+          });
         }
-        throw new UseCaseAbort<RepoError>(decided.error);
-      }
 
-      // 9. audit — the REVIEWER is the actor; ids/keys/outcomes only (R7).
-      const audited = await deps.audit.recordInTx(tx, deps.tenant, {
-        type: 'member_change_request_decided',
-        actorUserId: input.actorUserId,
-        requestId: input.requestId,
-        summary: `change request ${request.id} ${overall} (${approvedKeys.length} approved, ${rejectedKeys.length} rejected)`,
-        payload: ({
-          related_member_id: request.memberId,
-          request_id: request.id,
-          contact_id: request.submittedByContactId,
-          scope: request.scope,
+        // 3. every field decided exactly once.
+        const coverage = checkCoverage(request, input.decisions);
+        if (coverage !== null) throw new Refusal(coverage);
+        const outcomeByKey = new Map(input.decisions.map((d) => [d.key, d.outcome]));
+        const approvedFields = request.fields.filter((f) => outcomeByKey.get(f.key) === 'approved');
+        const rejectedFields = request.fields.filter((f) => outcomeByKey.get(f.key) === 'rejected');
+        const approvedKeys = approvedFields.map((f) => f.key);
+        const rejectedKeys = rejectedFields.map((f) => f.key);
+
+        // 4. the member: FOR UPDATE first, THEN the erasure check on the same
+        //    tx — an erasure that commits between the two reads is seen (it
+        //    waits on our lock); a check-before-lock on another connection
+        //    would let a decision write PII back into an erased record
+        //    (review: reliability I-2 / security I-2). Archived → refused (FR-020).
+        const memberResult = await deps.memberRepo.findByIdInTx(tx, request.memberId);
+        if (!memberResult.ok) throw new UseCaseAbort<RepoError>(memberResult.error);
+        const member: Member = memberResult.value;
+        const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, request.memberId);
+        if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
+        if (erased.value.erasedAt !== null) throw new Refusal({ type: 'member_erasing' });
+        if (member.status === 'archived') throw new Refusal({ type: 'member_archived' });
+
+        // 5. the submitting contact — gone ⇒ its rows may only be rejected.
+        const contactsResult = await deps.contactRepo.listByMemberInTx(tx, request.memberId);
+        if (!contactsResult.ok) throw new UseCaseAbort<RepoError>(contactsResult.error);
+        const contact = contactsResult.value.find((c) => c.contactId === request.submittedByContactId) ?? null;
+        const contactGone = contact === null || contact.removedAt !== null || contact.linkedUserId === null;
+        if (contactGone) {
+          const approvedContactKeys = approvedFields.filter((f) => f.target === 'contact').map((f) => f.key);
+          if (approvedContactKeys.length > 0) throw new Refusal({ type: 'contact_removed', keys: approvedContactKeys });
+        }
+
+        // 6. approved values re-validated with the staff rules (FR-006).
+        const validated = validateProposal(proposalOf(approvedFields));
+        if (!validated.ok) throw new Refusal({ type: 'validation_error', issues: validated.error });
+        const record = groupBRecordOf(member, contact ?? removedContactStandIn());
+        const patches = patchesOf(validated.value, approvedKeys, record);
+        if (!patches.ok) throw new Refusal(patches.error);
+
+        // 7. apply (FR-015) — contact first, then member. A contact patch with
+        //    no contact cannot happen (step 5 refuses approved contact keys when
+        //    the contact is gone); if it ever does, abort loudly rather than
+        //    silently dropping the approved values (review: reliability M-6).
+        if (Object.keys(patches.value.contact).length > 0) {
+          /* v8 ignore start — step 5 refuses approved contact keys when the contact is gone, and
+           * the strict schema refuses a contact key filed under `company`, so no input reaches this. */
+          if (contact === null) throw new UseCaseAbort<RepoError>({ code: 'repo.unexpected', cause: 'contact patch without a contact' });
+          /* v8 ignore stop */
+          const updated = await deps.contactRepo.updateInTx(tx, contact.contactId, patches.value.contact);
+          if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
+        }
+        if (Object.keys(patches.value.member).length > 0) {
+          const updated = await deps.memberRepo.updateFieldsInTx(tx, request.memberId, patches.value.member);
+          if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
+        }
+
+        // 8. the decision rows.
+        // `checkCoverage` proved every key is present; a checked lookup keeps
+        // that proof visible instead of three casts (round 7, types N3)
+        const outcomeOf = (key: string): FieldOutcome => {
+          const o = outcomeByKey.get(key);
+          /* v8 ignore next — `checkCoverage` proved the key set equal; unreachable by construction. */
+          if (o === undefined) throw new Error(`decide: no decision for field ${key} after coverage check`);
+          return o;
+        };
+        const overall = deriveOutcome(request.fields.map((f) => outcomeOf(f.key)));
+        const decision: ChangeRequestDecision = {
+          decidedAt: now,
+          decidedByUserId: input.actorUserId,
           outcome: overall,
-          fields: request.fields.map((f) => ({ key: f.key, outcome: outcomeOf(f.key) })),
-          reason_length: reason?.length ?? 0,
-          // round 5 (silent-failure #3) — a decision nobody was told about is
-          // a fact on the trail (DSAR-visible via related_member_id), not an
-          // info line: FR-023's email is skipped only when the submitting
-          // contact is gone / unlinked
-          member_notified: !contactGone,
-          ...(contactGone ? { member_notification_skipped: 'recipient_gone' } : {}),
-          actor_role: input.actorRole,
-        } satisfies ChangeRequestAuditPayload['member_change_request_decided']),
-      });
-      if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
+          reason,
+          note,
+          fields: request.fields.map((f) => {
+            const o = outcomeOf(f.key);
+            return { key: f.key, outcome: o, appliedAt: o === 'approved' ? now : null };
+          }),
+        };
+        const decided = await deps.changeRequestRepo.decideInTx(tx, request.id, decision);
+        if (!decided.ok) {
+          // 0 rows matched `state = 'pending'`: a concurrent decision won the lock race.
+          if (decided.error.code === 'repo.not_found') {
+            throw new Refusal({ type: 'already_decided', decided: null });
+          }
+          throw new UseCaseAbort<RepoError>(decided.error);
+        }
 
-      // 10. the member email (FR-023) — to the submitter's CURRENT address.
-      if (contactGone) {
-        logger.info(
-          { tenantId, changeRequestId: request.id, memberId: request.memberId, requestId: input.requestId, reason: 'recipient_gone' },
-          'change-request.decide.member_email_skipped',
-        );
-        membersMetrics.changeRequests.decisionEmailSkipped(tenantId, 'recipient_gone');
-      } else {
-        const queued = await deps.emails.enqueueInTx(tx, deps.tenant, {
-          type: 'member_change_request_decided_member',
-          toEmail: contact.email,
-          locale: emailLocale(contact.preferredLanguage),
-          contextData: {
-            tenantId,
-            requestId: request.id,
-            memberId: request.memberId,
-            submitterUserId: request.submittedByUserId,
-          },
-        });
-        if (!queued.ok) throw new UseCaseAbort<RepoError>(queued.error);
-      }
-
-      return { request: decided.value, repeated: false, applied: approvedKeys, rejected: rejectedKeys };
-    });
-
-    if (!outcome.repeated && isDecided(outcome.request)) {
-      membersMetrics.changeRequests.decided(tenantId, outcome.request.outcome);
-      membersMetrics.changeRequests.decideDurationMs(tenantId, Date.now() - startedAt);
-    }
-    return ok(outcome);
-  } catch (e) {
-    if (e instanceof Refusal) {
-      const refusedReason = refusedMetricReason(e.error);
-      if (refusedReason !== null) membersMetrics.changeRequests.refused(tenantId, refusedReason);
-      if (e.error.type === 'not_found') {
-        await auditProbe(deps.audit, deps.tenant, {
-          changeRequestId: input.changeRequestId,
+        // 9. audit — the REVIEWER is the actor; ids/keys/outcomes only (R7).
+        const audited = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'member_change_request_decided',
           actorUserId: input.actorUserId,
-          actorRole: input.actorRole,
           requestId: input.requestId,
-          action: 'decide',
+          summary: `change request ${request.id} ${overall} (${approvedKeys.length} approved, ${rejectedKeys.length} rejected)`,
+          payload: ({
+            related_member_id: request.memberId,
+            request_id: request.id,
+            contact_id: request.submittedByContactId,
+            scope: request.scope,
+            outcome: overall,
+            fields: request.fields.map((f) => ({ key: f.key, outcome: outcomeOf(f.key) })),
+            reason_length: reason?.length ?? 0,
+            // round 5 (silent-failure #3) — a decision nobody was told about is
+            // a fact on the trail (DSAR-visible via related_member_id), not an
+            // info line: FR-023's email is skipped only when the submitting
+            // contact is gone / unlinked
+            member_notified: !contactGone,
+            ...(contactGone ? { member_notification_skipped: 'recipient_gone' } : {}),
+            actor_role: input.actorRole,
+          } satisfies ChangeRequestAuditPayload['member_change_request_decided']),
         });
+        if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
+
+        // 10. the member email (FR-023) — to the submitter's CURRENT address.
+        if (contactGone) {
+          logger.info(
+            { tenantId, changeRequestId: request.id, memberId: request.memberId, requestId: input.requestId, reason: 'recipient_gone' },
+            'change-request.decide.member_email_skipped',
+          );
+          membersMetrics.changeRequests.decisionEmailSkipped(tenantId, 'recipient_gone');
+        } else {
+          const queued = await deps.emails.enqueueInTx(tx, deps.tenant, {
+            type: 'member_change_request_decided_member',
+            toEmail: contact.email,
+            locale: emailLocale(contact.preferredLanguage),
+            contextData: {
+              tenantId,
+              requestId: request.id,
+              memberId: request.memberId,
+              submitterUserId: request.submittedByUserId,
+            },
+          });
+          if (!queued.ok) throw new UseCaseAbort<RepoError>(queued.error);
+        }
+
+        return { request: decided.value, repeated: false, applied: approvedKeys, rejected: rejectedKeys };
+      });
+
+      if (isDecided(outcome.request)) span.setAttribute('change_request.outcome', outcome.request.outcome);
+      if (!outcome.repeated && isDecided(outcome.request)) {
+        membersMetrics.changeRequests.decided(tenantId, outcome.request.outcome);
+        membersMetrics.changeRequests.decideDurationMs(tenantId, Date.now() - startedAt);
       }
-      return err(e.error);
-    }
-    if (e instanceof UseCaseAbort && isRepoError(e.error)) {
-      const re = e.error;
+      return ok(outcome);
+    } catch (e) {
+      if (e instanceof Refusal) {
+        const refusedReason = refusedMetricReason(e.error);
+        if (refusedReason !== null) membersMetrics.changeRequests.refused(tenantId, refusedReason);
+        if (e.error.type === 'not_found') {
+          await auditProbe(deps.audit, deps.tenant, {
+            changeRequestId: input.changeRequestId,
+            actorUserId: input.actorUserId,
+            actorRole: input.actorRole,
+            requestId: input.requestId,
+            action: 'decide',
+          });
+        }
+        return err(e.error);
+      }
+      if (e instanceof UseCaseAbort && isRepoError(e.error)) {
+        const re = e.error;
+        logger.error(
+          // `re.code` is the constant `repo.unexpected` for every non-conflict
+          // fault; the CAUSE (SQLSTATE / constraint / driver) is what on-call
+          // needs (round 5, silent-failure #9 — the set-contact-marketing precedent)
+          { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: re.code, cause: errKind('cause' in re ? re.cause : undefined) },
+          'change-request.decide.tx_aborted',
+        );
+        return err({ type: 'server_error', message: `decide: ${re.code}` });
+      }
       logger.error(
-        // `re.code` is the constant `repo.unexpected` for every non-conflict
-        // fault; the CAUSE (SQLSTATE / constraint / driver) is what on-call
-        // needs (round 5, silent-failure #9 — the set-contact-marketing precedent)
-        { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: re.code, cause: errKind('cause' in re ? re.cause : undefined) },
-        'change-request.decide.tx_aborted',
+        { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
+        'change-request.decide.unexpected',
       );
-      return err({ type: 'server_error', message: `decide: ${re.code}` });
+      return err({ type: 'server_error', message: 'decide: unexpected' });
     }
-    logger.error(
-      { tenantId, changeRequestId: input.changeRequestId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
-      'change-request.decide.unexpected',
-    );
-    return err({ type: 'server_error', message: 'decide: unexpected' });
-  }
+  };
+  return membersTracer().startActiveSpan(
+    DECIDE_SPAN,
+    {
+      attributes: {
+        'tenant.slug': tenantId,
+        'change_request.id': input.changeRequestId,
+        'change_request.field_count': input.decisions.length,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await decideTransaction(span);
+        if (!result.ok) {
+          // B10: ERROR is a system failure. Every other arm is a stated
+          // refusal — an attribute, not an error (see the docblock above).
+          if (result.error.type === 'server_error') {
+            span.setStatus({ code: SpanStatusCode.ERROR, message: result.error.type });
+          } else {
+            span.setAttribute('change_request.refusal', result.error.type);
+          }
+        }
+        return result;
+        /* v8 ignore start — defence-in-depth, exactly as `confirm-payment.ts`
+         * documents it: `decideTransaction` converts every fault to a
+         * `Result` in its own catch, so nothing reaches here. Unreachable
+         * to a test, kept so an OOM / tracer-internal throw / a later edit
+         * above the try cannot end this span UNSET as though it succeeded. */
+      } catch (e) {
+        // the constructor NAME only — `.message` can carry the reviewer's reason
+        const name = e instanceof Error ? e.constructor.name : 'decide_threw';
+        span.setStatus({ code: SpanStatusCode.ERROR, message: name });
+        span.recordException({ name });
+        throw e;
+        /* v8 ignore stop */
+      } finally {
+        span.end();
+      }
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -532,7 +607,7 @@ export { auditProbe as auditChangeRequestProbe };
 async function auditProbe(
   audit: Pick<AuditPort, 'record'>,
   tenant: TenantContext,
-  p: { changeRequestId: ChangeRequestId; actorUserId: UserId; actorRole: string | null; requestId: string; action: 'decide' | 'acknowledge' | 'review' | 'history_item' },
+  p: { changeRequestId: ChangeRequestId; actorUserId: UserId; actorRole: Role | null; requestId: string; action: 'decide' | 'acknowledge' | 'review' | 'history_item' },
 ): Promise<void> {
   const audited = await audit.record(tenant, {
     type: 'member_cross_tenant_probe',

@@ -338,3 +338,166 @@ US5 on chromium 6 passed / 1 skipped (persona).
 | erase unit suites after the rescan (`b7afc1bcb`) | 87 passed |
 | integration (live Neon `dev`, by path) | after round 1: rate-cap 2 · erasure-scrub 1 · tenant-isolation 6 · queue-pagination 4 · export-job-repo · account-hub-cross-tenant · erase-member — 34 passed; after round 2: erasure-scrub · submit-atomicity · concurrency · erase-member — 8 passed; after the rescan: erasure-scrub · erase-member · erase-member-cascade — 8 passed |
 | e2e | still NOT RUN (T066 / T081 / T091 partial — the dev server env needs the flag) |
+
+## PR-3 polish — the items parked in PR-2 (2026-09-15)
+
+Each item TDD'd on the branch after US6 (`467f7e7d9`): the RED evidence is the failing run named
+per bullet; the coordinator runs e2e.
+
+- **S-2 the by-id probe audit has no attempt bound + the metric split.** `GET …/[id]` and
+  `POST …/[id]/acknowledge` now consume a per-actor PROBE bucket (10 / 10 min per tenant + user,
+  `f114:history-item-attempts:…` / `f114:acknowledge-attempts:…`) after the member context (and
+  READ_ONLY_MODE on the write), before the id is parsed — so the `member_cross_tenant_probe` row a
+  miss writes into the append-only trail is bounded; `ChangeRequestRefusedReason` gains
+  `attempt_throttled` (the limiter refused before any read) and the submit route's bucket now
+  counts that instead of `rate_limited`, which is the DURABLE cap's reason alone. The three
+  routes share `src/lib/change-request-attempt-bucket.ts` (`refuseWhenAttemptsExhausted` — the
+  caller passes its own `M114.<route>` prefix, so T107's "names itself" rule holds; no shared
+  literal). RED: `change-requests-history.test.ts` + `change-requests-acknowledge.test.ts` (the
+  11th call → 429 + `Retry-After`, no audit row, nothing stamped, metric `attempt_throttled`;
+  the bucket consumed on a hit too) and the submit test's reason assertion — 4 failed, then green
+  (9 files / 100 tests across the portal contract suites + the error-id guard). Docs: § 14.1 /
+  § 27.1 reason lists, `contracts/portal-change-requests-api.md` (the two 429s, the probe bucket,
+  the test map). Decision the ledger did not settle: the probe size is 10, not the submit
+  route's 60 — no UI calls `GET …/[id]`, the decision banner posts one acknowledge per dismiss,
+  and 10 is the figure the durable cap already uses per day.
+- **S-4 the banner reads the 404 body.** `pending-request-banner.tsx`: `no_pending_request` →
+  the "gone" message + refresh (unchanged); any other 404 (`not_found` — the platform flag turned
+  off between render and click) or an unreadable body → `hidden`: renders nothing, refreshes,
+  logs nothing (nothing failed). RED: two cases in `pending-request-banner-withdraw.test.tsx`
+  (rendered "gone" for the flag-off body) → green (9 cases).
+- **S-5 `DELETE …/current` has no attempt bucket.** The submit route's bucket
+  (60 / 10 min, `f114:withdraw-attempts:…`) after READ_ONLY_MODE, before the use case. RED:
+  `change-requests-withdraw.test.ts` (exhausted → 429, the row still pending, no audit row,
+  `attempt_throttled`; READ_ONLY_MODE answers before the bucket is consumed) → green.
+- **S-6 the account hub's export list degrades to empty on a read fault.**
+  `src/app/(member)/portal/account/page.tsx`: `exportsReadFailed` renders a
+  `role=status` destructive `InlineAlert` (`dataExport.loadFailed`, EN + TH + SV) in place of the
+  panel, logged `logger.error` `errorId: M114.portal.account.exports_read_failed` (was a warn
+  with no id — the profile page's `ownRequestReadFailed` pattern). RED: the RSC case in
+  `tests/unit/app/portal/account-hub.test.tsx` (no alert, the empty state rendered) → green.
+- **Types I3 the status badge's flat props.** `change-request-status-badge.tsx` takes one
+  `ChangeRequestStatus` union (`pending` · `decided` + outcome · `withdrawn` + reason) built by
+  `changeRequestStatusOf(row)` at the three call sites (queue, member section, portal history);
+  the fail-soft arm (a decided row with no outcome — unreachable under the DB CHECK) stays and
+  renders the pending badge; both switches close with `void _exhaustive`. Typecheck is the test,
+  plus the new `change-request-status-badge.test.tsx` (4 cases, RED on the missing export).
+- **Types S4 / S6 the GDPR entry + `actor_role` typing.** `GdprChangeRequestEntry` /
+  `GdprChangeRequestFieldEntry` (`insights/application/ports/gdpr-archive-source.ts`) carry the
+  members Domain unions (`ChangeRequestScope` / `State` / `Outcome`, `WithdrawnReason`,
+  `ProposableFieldKey`, `ProposedFieldTarget`, `ProposedValue`, `FieldOutcome`) through the
+  members barrel — the adapter's serialiser is unchanged and its exact-JSON assertions still pass
+  (byte-identical output). `actor_role` on the five F114 audit payloads and every use-case
+  `actorRole` input is the closed `Role` union (`| null` on the probe and the setting flip;
+  `| 'system'` on the withdrawn payload alone — the erasure closure's system identity, which no
+  session holds), so a fabricated role is now a compile error, not only a `check:actor-role-truth`
+  finding. Typecheck swept 9 test helpers whose `'admin'` / `'member'` literals had widened to
+  `string` (`as const`).
+- **`useId` on the queue filter bar (L5).** `queue-filters.tsx` mints its four control ids with
+  `useId()`; `tests/e2e/change-requests.spec.ts` finds the triggers by accessible name instead
+  of `#cr-filter-*`. RED: the unit case asserting no `#cr-filter-state` and a `label[for]`
+  pointing at each control.
+- **H2 the live region after Apply.** The bar takes `resultCount` + `hasMore` from the page and
+  renders ONE `role="status"` / `aria-live="polite"` line (`filters.resultCount` ICU plural /
+  `resultCountMore`, EN + TH + SV) that updates in place on every Apply — the same element across
+  navigations, so the announcement never steals focus. RED: the unit case (no status region) →
+  green, incl. the same-element + focus-kept assertion.
+- **N4 pre-hydration Enter.** The bar is a real `<form method="get" action="/admin/change-requests">`:
+  the date inputs are named, and hidden `state` / `outcome` / `memberId` / `submitter` inputs
+  mirror exactly what `apply()` writes (no state on the pending default, an outcome only under
+  `decided`, never the cursor); the client `onSubmit` still prevents default and runs `apply()`.
+  RED: the unit case builds `FormData` from the form and asserts it equals the `router.replace`
+  query. The one documented difference: a native submit sends an empty `from=` / `to=` for a
+  blank date, which the page's zod drops on its own (`.catch(undefined)`) — same view, and the
+  next client Apply writes the canonical URL.
+- **L5** is the `useId` item above (the ledger's "L5 (`useId` — single instance…)") — closed
+  with it.
+- **The real-query EXPLAIN.** `drizzle-change-request-repo.ts` exports `queueListQuery(tx,
+  filter, page)` — the SAME builder `listQueue` → `runList` executes (the predicate moved into
+  `queueWhere`, the statement into `listQuery`; no second read path).
+  `change-requests-queue-pagination.test.ts` runs `EXPLAIN` on it for the decided history and the
+  pending default over the 5,000-row seed: driven by
+  `member_change_requests_tenant_state_submitted_idx`, no seq scan on the request table, no Sort
+  node, and the `members` / `contacts` joins present in the plan (this is the joined statement,
+  not the single-table proxy). Run alone by path: 6 passed, the p95 asserted under
+  `ciScaled(400)` (50 pages in 14.1 s). Also re-run by path after the use-case changes:
+  `change-requests-rate-cap`, `-repo`, `-decide-rollback`, `-submit-atomicity`.
+
+## PR-3 US6 UX review (enterprise-ux-designer, 2026-09-15)
+
+On the US6 UI (`467f7e7d9`): 14 findings, 13 taken, 1 recorded. Each behaviour change was TDD'd —
+the RED run is quoted per item; copy-only items ride `pnpm check:i18n`.
+
+- **H1 — the confirm button overflowed at 320 px** (`max-w-xs` popup, `whitespace-nowrap`
+  button, a 41-char sentence). TAKEN, copy: `confirm.confirm` → "Switch off ({count})" /
+  "ปิดการอนุมัติ ({count})" / "Stäng av ({count})"; the consequence sentence stays in
+  `confirm.body` (FR-034's "state what will happen"). RED: `Unable to find … role "button" and
+  name "Switch off (3)"`.
+- **H2 — the pending note vanished in exactly the FR-032 state; no link to the queue.** TAKEN:
+  rendered whenever `pendingCount > 0`, copy branched on the setting (`pending.on` /
+  `pending.off` — ICU plural EN/SV, TH `{count}` only; `offWarning` removed), the count is a
+  `next/link` to `/admin/change-requests` through `t.rich` with a `<link>` tag, persistent
+  `underline` (the M5 in-paragraph rule; the alert's `text-info` kept, never muted). RED: `Unable
+  to find … role "note"` (OFF state) and `… role "link" and name "3 requests"` (ON state); absent
+  at 0 asserted in both states.
+- **M1 — `id` landed on the aria-hidden `<input>`, not the `role="switch"` element.** TAKEN AS
+  RE-READ against the primitive (the maintainer's call after the first closure dropped the
+  `htmlFor` and lost the pointer path): Base UI's `useLabelableId` puts the caller `id` on its
+  hidden `<input type=checkbox>` ON PURPOSE — that is the `<label for>` activation target, so a
+  click on the label text toggles the switch through the native checkbox change. The AT name
+  comes from `aria-labelledby` → the visible `<Label>` (the house idiom of
+  `renewal-reminders-toggle.tsx`), so the finding's real risk — a name that depends on `for`
+  reaching an aria-hidden control — never applied. Final shape: `<Label id htmlFor className="mb-0">`
+  + `Switch id aria-labelledby aria-describedby`. Test: the switch is named through
+  `aria-labelledby`, the label's `for` target IS an `<input>`, and `fireEvent.click(label)` sends
+  `PATCH { approvalEnabled: true }` (the pointer path proven, not assumed).
+- **M2 — past ~30 days the dashboard showed a date, not an age** (`formatRelativeTime`'s
+  absolute-date fallback, inside the FR-037 window). TAKEN: whole days from `oldestAgeSeconds`
+  (`Math.floor(/ 86_400)`) into `needsAttention.changeRequests` = "Change requests waiting (oldest
+  {days, plural, =0 {today} one {# day} other {# days}})" ×3; the relative-time helper is no
+  longer on this path. RED: `to contain 'Change requests waiting (oldest 45 days)'` (the old path
+  rendered a calendar date), plus "today" / "1 day". The dashboard test now formats through
+  next-intl's `createTranslator` (real ICU, missing key throws) instead of a regex stand-in.
+- **M3 — double announcement on success** (toast + `role="status"` line). TAKEN: the state line
+  is a plain `<p>` — the role dropped rather than `aria-live="off"`, because a `<p>` has no live
+  semantics to switch off and an explicit "off" reads as intent to announce elsewhere; the toast
+  is the one announcement. RED: `expected <p role="status" …> to be null`; green asserts
+  `toast.success` called exactly once and no `status` region before or after.
+- **M4 — the loading skeleton under-reserved the description.** TAKEN: a fourth description
+  line in `loading.tsx` (the SV copy wraps to four). No test (skeleton geometry); `check:layout`
+  green.
+- **M5 — generic read-only copy.** TAKEN: `admin.settings.memberChanges.errors.readOnly` ×3
+  ("The system is in read-only mode — the setting was not changed." / TH / SV) replaces the
+  platform `errors.readOnlyMode` on the 503 arm. RED: the 503 case (`toHaveTextContent` on the
+  new key); green also asserts the platform copy is NOT rendered.
+- **L1 — badge noun.** TAKEN: `nav.staff.changeRequestsBadge` → "pending" / "รายการรอการพิจารณา"
+  (classifier after the numeral) / "väntande" — plain strings, the ICU plural dropped. RED:
+  `Unable to find … role "link" and name "Change requests 3 pending"`.
+- **L2 — no `error.tsx`.** TAKEN: `admin/settings/member-changes/error.tsx` in the
+  `FormContainer` shape (mirrors `admin/change-requests/error.tsx`: `errors.generic` /
+  `errors.errorId` / `buttons.retry`, the page's own title + subtitle). No test; `check:layout`
+  green (136 page/loading files, pairs consistent — `error.tsx` is outside the pair set).
+- **L3 — no pending signal in the icon rail.** TAKEN: the tooltip is
+  `nav.staff.badgeTooltip` = "{title} ({count})" ×3 when a badge is present, the title alone
+  otherwise. RED: the `data-tooltip` assertion (the sidebar stub now forwards `tooltip`).
+- **L4 — the badge is resolved in the staff layout, which Next keeps across client navigations,
+  so the count can lag until a hard reload.** NOT TAKEN, accepted for PR-3: the dashboard item is
+  fresh per page render and the queue page itself shows the live count; a `router.refresh()`
+  after a decision is the PR-4 follow-up if staff notice it.
+- **L5 — `count > 0 && oldestAgeSeconds === null` rendered "(oldest )".** TAKEN with the M2
+  reshape: `needsAttention.changeRequestsNoAge` = "Change requests waiting" ×3 when the age is
+  null. RED: `to contain 'Change requests waiting<'` + `not.toContain('(oldest')`.
+- **L6 — copy.** TAKEN: SV `confirm.cancel` "Behåll godkännandet på"; TH bare "คำขอ" →
+  "คำขอแก้ไขข้อมูล" in `description`, `confirm.body` and the new `pending.*` (the old
+  `offWarning` / `confirm.confirm` occurrences are gone with H1/H2).
+- **L7 — double gap under the switch label.** TAKEN: the `<Label>` gets `mb-0`, so the
+  `grid gap-1` is the only gap.
+
+Untouched by design: `tasks.md` (T112's round is still to come); the tasks' "done" notes still
+describe the pre-review shape (`offWarning`, "oldest 3 days ago", `errors.readOnlyMode`) — this
+section is the record.
+
+Gates at this tree (foreground, 2026-09-15): `pnpm typecheck` exit 0 · full `pnpm lint` exit 0 · `pnpm check:i18n` OK (5530 keys × 3) · `pnpm check:layout` OK (136 files, pairs consistent) · `pnpm check:strict-aria` OK (0 across 632 TSX) · `pnpm vitest run tests/unit/nav/ tests/unit/app/admin/ tests/unit/members/presentation/ tests/unit/components/ tests/unit/architecture/` 256 files / 2432 tests passed (258 s). One earlier run of the same folders, taken while typecheck + lint ran concurrently, timed out `broadcasts-barrel.test.ts` at 30 s (a source scan; 740 ms alone) — contention, not code; the idle re-run above is the evidence.
+
+**Verdict**: MERGEABLE on the US6 UX axis — the two HIGH items and every MEDIUM/LOW except L4
+(recorded, PR-4) are closed with RED→GREEN evidence.

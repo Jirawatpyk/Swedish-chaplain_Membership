@@ -18,6 +18,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import type { ChangeRequestId, ProposedField, ProposedValue } from '../../../domain/change-request/change-request';
 import { proposedValuesEqual, type GroupBRecord } from '../../../domain/change-request/policies';
@@ -72,7 +73,7 @@ export type GetChangeRequestReviewInput = {
   readonly changeRequestId: ChangeRequestId;
   /** The caller's `members.write` answer from the permission evaluator. */
   readonly canWrite: boolean;
-  readonly actor: { readonly userId: UserId; readonly role: string; readonly requestId: string };
+  readonly actor: { readonly userId: UserId; readonly role: Role; readonly requestId: string };
 };
 
 export type GetChangeRequestReviewError = { readonly type: 'not_found' } | { readonly type: 'server_error'; readonly message: string };

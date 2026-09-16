@@ -31,8 +31,26 @@
  * button that turns disabled drops focus to `<body>`); `aria-busy` + a
  * re-entry guard do that job, and Clear hands focus to Apply before it
  * unmounts itself.
+ *
+ * PR-3 polish: the control ids are `useId()`-minted (L5 — the bar is one
+ * instance today, a second would collide on a literal id); the applied result
+ * is announced through ONE `role="status"` / `aria-live="polite"` line
+ * ("Showing N requests") the page feeds from its result, updated in place on
+ * every Apply so the announcement never steals focus (H2); and the bar is a
+ * REAL `<form method="get" action={pathname}>` — `usePathname()`, so the
+ * target is the route the bar is mounted on and never a literal that could
+ * drift from it; the value is framework-supplied and same-origin by
+ * construction, so there is no redirect surface here (PR-3 review SEC-6,
+ * which read the earlier docblock's hardcoded `/admin/change-requests` as the
+ * code). Its named controls — the two date inputs plus hidden `state` /
+ * `outcome` / scope inputs mirroring what `apply()` writes — make a
+ * pre-hydration Enter submit the same query natively (N4). The one
+ * difference: a native submit sends an
+ * EMPTY `from=` / `to=` for a blank date input; the page's zod drops an
+ * invalid date on its own (`.catch(undefined)`), so the view is the same and
+ * the next client-side Apply writes the canonical URL.
  */
-import { useCallback, useRef, useState, useTransition } from 'react';
+import { useCallback, useId, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -78,7 +96,15 @@ function ymd(v: string | null): string {
   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v ? '' : v;
 }
 
-export function ChangeRequestQueueFilters() {
+export interface ChangeRequestQueueFiltersProps {
+  /** The rows the page is showing — announced after each Apply (H2). */
+  readonly resultCount: number;
+  /** A next page exists — the announcement says "the first N". */
+  readonly hasMore: boolean;
+}
+
+export function ChangeRequestQueueFilters({ resultCount, hasMore }: ChangeRequestQueueFiltersProps) {
+  const ids = useId();
   const tFilters = useTranslations('admin.changeRequests.filters');
   const tReview = useTranslations('admin.changeRequests.review');
   const router = useRouter();
@@ -166,6 +192,8 @@ export function ChangeRequestQueueFilters() {
 
   return (
     <form
+      method="get"
+      action={pathname}
       className="grid gap-3 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end"
       aria-label={tFilters('label')}
       aria-busy={pending}
@@ -175,10 +203,19 @@ export function ChangeRequestQueueFilters() {
         apply();
       }}
     >
+      {/* the native (pre-hydration) submit carries exactly what apply() writes —
+          the pending default writes no state, an outcome only under decided,
+          the scope params as they stand; never the cursor */}
+      {state !== DEFAULT_STATE ? <input type="hidden" name="state" value={state} /> : null}
+      {state === 'decided' && outcome !== ANY_OUTCOME ? <input type="hidden" name="outcome" value={outcome} /> : null}
+      {SCOPE_PARAMS.map((keep) => {
+        const v = params.get(keep);
+        return v ? <input key={keep} type="hidden" name={keep} value={v} /> : null;
+      })}
       <div className="flex flex-col">
-        <Label htmlFor="cr-filter-state">{tFilters('state')}</Label>
+        <Label htmlFor={`${ids}-state`}>{tFilters('state')}</Label>
         <Select value={state} onValueChange={onStateChange}>
-          <SelectTrigger id="cr-filter-state" className="w-full" aria-label={tFilters('state')}>
+          <SelectTrigger id={`${ids}-state`} className="w-full" aria-label={tFilters('state')}>
             <TranslatedSelectValue translate={(v) => (isState(v) ? tReview(`state.${v}`) : null)} />
           </SelectTrigger>
           <SelectContent>
@@ -192,9 +229,9 @@ export function ChangeRequestQueueFilters() {
       </div>
       {state === 'decided' ? (
         <div className="flex flex-col">
-          <Label htmlFor="cr-filter-outcome">{tFilters('outcome')}</Label>
+          <Label htmlFor={`${ids}-outcome`}>{tFilters('outcome')}</Label>
           <Select value={outcome} onValueChange={(v) => setOutcome(stagedOutcome(v))}>
-            <SelectTrigger id="cr-filter-outcome" className="w-full" aria-label={tFilters('outcome')}>
+            <SelectTrigger id={`${ids}-outcome`} className="w-full" aria-label={tFilters('outcome')}>
               <TranslatedSelectValue translate={(v) => (isOutcome(v) ? tReview(`outcome.${v}`) : tFilters('anyOutcome'))} />
             </SelectTrigger>
             <SelectContent>
@@ -209,12 +246,12 @@ export function ChangeRequestQueueFilters() {
         </div>
       ) : null}
       <div className="flex flex-col">
-        <Label htmlFor="cr-filter-from">{tFilters('from')}</Label>
-        <Input id="cr-filter-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <Label htmlFor={`${ids}-from`}>{tFilters('from')}</Label>
+        <Input id={`${ids}-from`} name="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
       </div>
       <div className="flex flex-col">
-        <Label htmlFor="cr-filter-to">{tFilters('to')}</Label>
-        <Input id="cr-filter-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        <Label htmlFor={`${ids}-to`}>{tFilters('to')}</Label>
+        <Input id={`${ids}-to`} name="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
       </div>
       {/* the buttons keep the last (auto) column whether or not the outcome
           control is in the row, so choosing "Decided" does not shove them;
@@ -231,6 +268,11 @@ export function ChangeRequestQueueFilters() {
           </Button>
         ) : null}
       </div>
+      {/* the applied result, announced politely — one region that lives across
+          every Apply (a fresh element per navigation would not be announced) */}
+      <p role="status" aria-live="polite" className="text-sm text-muted-foreground sm:col-span-2 lg:col-span-5" data-testid="queue-result-count">
+        {hasMore ? tFilters('resultCountMore', { count: resultCount }) : tFilters('resultCount', { count: resultCount })}
+      </p>
     </form>
   );
 }

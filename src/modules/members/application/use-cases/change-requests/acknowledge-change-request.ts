@@ -15,6 +15,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import type { ChangeRequest, ChangeRequestId } from '../../../domain/change-request/change-request';
 import type { UserId } from '../../../domain/value-objects/user-id';
@@ -37,7 +38,7 @@ export type AcknowledgeChangeRequestInput = {
   readonly changeRequestId: ChangeRequestId;
   readonly actorUserId: UserId;
   /** The SESSION role — recorded on the probe audit only. */
-  readonly actorRole: string;
+  readonly actorRole: Role;
   readonly requestId: string;
 };
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Suspense } from 'react';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
@@ -20,6 +20,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
 import { staffNavAllowedHrefs } from '@/lib/nav-permissions';
+import { readPendingChangeRequestsForNav } from '@/lib/pending-change-requests';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 
 /**
  * Staff shell layout (T075 / T016).
@@ -41,6 +43,26 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   const cookieStore = await cookies();
   const sidebarCookie = cookieStore.get('sidebar_state');
   const defaultOpen = sidebarCookie ? sidebarCookie.value === 'true' : true;
+
+  // F114 US6 (FR-033) — the change-request nav badge. Resolved HERE (the
+  // sidebar is a client component: no `env`, no `canPerform`, no repo) and
+  // passed across the RSC boundary as a plain href→count map. The helper
+  // answers `hidden` without a query when the platform flag is OFF (FR-039)
+  // or the viewer lacks `members.read`, and `unavailable` on a fault — both
+  // render no badge, with one log line on the fault. One indexed count/min
+  // query per render (research R12); no cache layer.
+  //
+  // NO `<Suspense>` here (PR-3 review, reliability R-H1): the count is not a
+  // subtree this layout renders — it feeds `navBadgeCounts`, a prop of the
+  // client `<StaffSidebar>`, and the nav config it belongs to carries Lucide
+  // icon FUNCTIONS that cannot cross the RSC boundary, so the map must be
+  // complete before the sidebar element is created. The read is TIME-BOXED
+  // instead (`readPendingChangeRequestsForNav`, 1,500 ms): this layout renders
+  // on EVERY `/admin/**` page and `src/lib/db.ts` bounds a pooled query at
+  // `statement_timeout 5s` + `connect_timeout 3`, so an unbounded badge read
+  // could add ~8 s to every staff page's TTFB for a number in the sidebar.
+  const tenant = resolveTenantFromHeaders(await headers());
+  const pendingChanges = await readPendingChangeRequestsForNav(tenant, user.role);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -69,6 +91,11 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             broadcastsEnabled: env.features.f7Broadcasts,
             eventsEnabled: env.features.f6EventCreate,
             memberChangeApproval: env.features.memberChangeApproval,
+          }}
+          navBadgeCounts={{
+            // `hidden` and `unavailable` are both "no badge" here — a count we
+            // do not have is never rendered as a zero the nav would hide anyway.
+            '/admin/change-requests': pendingChanges.kind === 'ok' ? pendingChanges.summary.count : 0,
           }}
         />
 

@@ -10,13 +10,17 @@
  * is answered with its company fields only and without the reviewer's reason
  * (FR-014 — the reason is the submitting person's). The portal view never
  * carries the reviewer's identity or the staff note. A miss on the id is
- * audited `member_cross_tenant_probe` by the use case (FR-035).
+ * audited `member_cross_tenant_probe` by the use case (FR-035) — an
+ * append-only row an attacker could drive, so every call first consumes the
+ * per-actor probe bucket (10 / 10 min per tenant + user; 429 `rate_limited`
+ * + `Retry-After`, counted `attempt_throttled`, before any read — PR-3 S-2).
  * `M114.portal.history_item.<arm>`.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireMemberContext } from '@/lib/member-context';
+import { attemptBucketKey, refuseWhenAttemptsExhausted } from '@/lib/change-request-attempt-bucket';
 import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal } from '@/lib/change-request-portal-view';
 import { getPortalChangeRequest, type ChangeRequestId } from '@/modules/members';
@@ -34,6 +38,17 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
   const ctx = await requireMemberContext(request);
   if ('response' in ctx) return ctx.response;
+
+  // the probe bucket — consumed on every call (a hit too), before the id is even parsed
+  const throttled = await refuseWhenAttemptsExhausted({
+    key: attemptBucketKey('history-item', ctx.tenant.slug, ctx.current.user.id),
+    size: 'probe',
+    errorIdPrefix: ERROR_ID,
+    logPrefix: 'change-requests.history-item',
+    requestId: ctx.requestId,
+    tenantId: ctx.tenant.slug,
+  });
+  if (throttled) return throttled;
 
   const { id } = await context.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not_found' }, { status: 404 });

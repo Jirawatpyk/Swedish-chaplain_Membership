@@ -204,18 +204,65 @@ describe('DrizzleChangeRequestRepo (live Neon)', () => {
     expect(bStill.ok && bStill.value.state).toBe('pending');
   });
 
-  it('pendingStats + countSubmittedSince read the durable rows', async () => {
-    const stats = await drizzleChangeRequestRepo.pendingStats(a.tenant.ctx);
-    expect(stats.ok && stats.value.count).toBe(1);
-    expect(stats.ok && stats.value.oldestSubmittedAt?.toISOString()).toBe('2026-09-11T08:00:00.000Z');
-    const window = await runInTenant(a.tenant.ctx, (tx) =>
-      drizzleChangeRequestRepo.countSubmittedSince(tx, mu(a.user.userId), new Date('2026-09-10T08:00:00Z')),
-    );
-    expect(window.ok && window.value).toEqual({ count: 1, oldestSubmittedAt: new Date('2026-09-11T08:00:00Z') });
-    const outside = await runInTenant(a.tenant.ctx, (tx) =>
-      drizzleChangeRequestRepo.countSubmittedSince(tx, mu(a.user.userId), new Date('2026-09-11T09:00:00Z')),
-    );
-    expect(outside.ok && outside.value).toEqual({ count: 0, oldestSubmittedAt: null });
+  // PR-3 review round 2 (B5) — the `state = 'pending'` predicate, MEASURED.
+  // The assertion below used to run against a tenant that held nothing but
+  // pending rows, so it held whether or not the SQL filtered at all: dropping
+  // the WHERE clause changed no number. Two NON-pending rows are seeded first,
+  // both submitted EARLIER than the pending one, so an unfiltered scan would
+  // move the count (1 → 3) AND the oldest timestamp. They are submitted by
+  // tenant B's user under tenant A: the partial unique index is per
+  // (tenant, submitter), so this is the only way to hold a second request in
+  // this tenant, and each is taken out of `pending` before the next is added.
+  it('pendingStats + countSubmittedSince read the durable rows — and pendingStats counts ONLY pending ones', async () => {
+    const OLDER = new Date('2026-09-01T08:00:00Z');
+    const withdrawnDraft = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: OLDER, staffNotifiedAt: OLDER });
+    await runInTenant(a.tenant.ctx, async (tx) => {
+      const ins = await drizzleChangeRequestRepo.insertInTx(tx, withdrawnDraft);
+      if (!ins.ok) throw new UseCaseAbort(ins.error);
+      const w = await drizzleChangeRequestRepo.withdrawInTx(tx, withdrawnDraft.id, { reason: 'member', withdrawnAt: new Date('2026-09-02T08:00:00Z') });
+      if (!w.ok) throw new UseCaseAbort(w.error);
+    });
+    const decidedDraft = draft(a, { submittedByUserId: mu(b.user.userId), submittedAt: OLDER, staffNotifiedAt: OLDER });
+    const reviewer = await createActiveTestUser('admin');
+    try {
+      await runInTenant(a.tenant.ctx, async (tx) => {
+        const ins = await drizzleChangeRequestRepo.insertInTx(tx, decidedDraft);
+        if (!ins.ok) throw new UseCaseAbort(ins.error);
+        const d = await drizzleChangeRequestRepo.decideInTx(tx, decidedDraft.id, {
+          decidedAt: new Date('2026-09-02T09:00:00Z'),
+          decidedByUserId: mu(reviewer.userId),
+          outcome: 'rejected',
+          reason: 'seeded for the pendingStats predicate',
+          note: null,
+          fields: decidedDraft.fields.map((f) => ({ key: f.key, outcome: 'rejected' as const, appliedAt: null })),
+        });
+        if (!d.ok) throw new UseCaseAbort(d.error);
+      });
+
+      const stats = await drizzleChangeRequestRepo.pendingStats(a.tenant.ctx);
+      // 3 rows in the tenant, 1 pending: an unfiltered COUNT reads 3
+      expect(stats.ok && stats.value.count).toBe(1);
+      // and an unfiltered MIN reads 2026-09-01, not the pending row's date
+      expect(stats.ok && stats.value.oldestSubmittedAt?.toISOString()).toBe('2026-09-11T08:00:00.000Z');
+      const window = await runInTenant(a.tenant.ctx, (tx) =>
+        drizzleChangeRequestRepo.countSubmittedSince(tx, mu(a.user.userId), new Date('2026-09-10T08:00:00Z')),
+      );
+      expect(window.ok && window.value).toEqual({ count: 1, oldestSubmittedAt: new Date('2026-09-11T08:00:00Z') });
+      const outside = await runInTenant(a.tenant.ctx, (tx) =>
+        drizzleChangeRequestRepo.countSubmittedSince(tx, mu(a.user.userId), new Date('2026-09-11T09:00:00Z')),
+      );
+      expect(outside.ok && outside.value).toEqual({ count: 0, oldestSubmittedAt: null });
+    } finally {
+      // The two seeded rows hang off tenant A's member, so the later
+      // `listByMember` / history assertions in this file would see them. They
+      // exist for the two `pendingStats` assertions above and nothing else —
+      // remove them here rather than teaching four other tests about them.
+      // Bare `db` (owner, BYPASSRLS): the tenant tx is already closed.
+      const seededIds = [withdrawnDraft.id, decidedDraft.id];
+      await db.delete(memberChangeRequestFields).where(inArray(memberChangeRequestFields.requestId, seededIds));
+      await db.delete(memberChangeRequests).where(inArray(memberChangeRequests.id, seededIds));
+      await deleteTestUser(reviewer).catch(() => {});
+    }
   });
 
   it.each([

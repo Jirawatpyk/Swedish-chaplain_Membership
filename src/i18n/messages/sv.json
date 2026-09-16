@@ -472,7 +472,10 @@
         "empty": "Allt klart – inget behöver åtgärdas just nu.",
         "overdueInvoices": "Förfallna fakturor",
         "atRisk": "Medlemmar i riskzonen",
-        "broadcasts": "Utskick som väntar på godkännande"
+        "broadcasts": "Utskick som väntar på godkännande",
+        "changeRequests": "Ändringsbegäranden som väntar (äldsta {days, plural, =0 {inkom idag} one {inkom för # dag sedan} other {inkom för # dagar sedan}})",
+        "changeRequestsNoAge": "Ändringsbegäranden som väntar",
+        "changeRequestsUnavailable": "Ändringsbegäranden som väntar kunde inte räknas. Ladda om sidan för att försöka igen, eller öppna kön."
       },
       "trends": {
         "sectionLabel": "Trenddiagram"
@@ -1009,7 +1012,9 @@
           "removeMember": "Visa alla medlemmar",
           "submitterChip": "Visar en persons begäranden.",
           "removeSubmitter": "Visa allas begäranden",
-          "unknownMember": "en medlem som inte kunde hittas"
+          "unknownMember": "en medlem som inte kunde hittas",
+          "resultCount": "{count, plural, =0 {Inga begäranden att visa} one {Visar # begäran} other {Visar # begäranden}}",
+          "resultCountMore": "Visar de första {count} begärandena – fler på nästa sida"
         },
       "queue": {
           "emptyFiltered": "Inga ändringsbegäranden matchar dessa filter.",
@@ -2024,7 +2029,41 @@
           "integrationsEventcreate": {
             "title": "EventCreate-integration",
             "description": "Webhook-uppgifter och konfiguration för import av deltagare från EventCreate."
+          },
+          "memberChanges": {
+            "title": "Godkännande av medlemsändringar",
+            "description": "Om ändringar som medlemmar gör i sina egna företags- och kontaktuppgifter ska vänta på ett personalbeslut innan de tillämpas."
           }
+        }
+      },
+      "memberChanges": {
+        "pageTitle": "Godkännande av medlemsändringar",
+        "pageDescription": "Avgör om ändringar som medlemmar gör i sin egen medlemspost kräver ett personalbeslut innan de tillämpas.",
+        "title": "Krav på godkännande",
+        "cardDescription": "Gäller alla medlemmar i den här kammaren. Personalens ändringar påverkas aldrig. Innan godkännande slås på för en kammare måste dess registerförteckning ta upp den här behandlingen — se driftsättningsrunbooken.",
+        "switchLabel": "Kräv godkännande för medlemsändringar",
+        "description": "När godkännande är på väntar medlemmars ändringar av företags- och kontaktuppgifter i kön för ändringsbegäranden tills personalen fattar beslut. När det är av tillämpas ändringarna direkt och registreras som självbetjäningsändringar. Begäranden som redan väntar ligger kvar i kön och kan fortfarande avgöras oavsett läge.",
+        "state": {
+          "on": "Godkännande är på — nya medlemsändringar väntar på ett personalbeslut.",
+          "off": "Godkännande är av — nya medlemsändringar tillämpas direkt."
+        },
+        "pending": {
+          "on": "<link>{count, plural, one {# begäran} other {# begäranden}}</link> väntar på beslut.",
+          "off": "<link>{count, plural, one {# begäran} other {# begäranden}}</link> som skickades in tidigare ligger kvar i kön och kan fortfarande avgöras."
+        },
+        "confirm": {
+          "title": "Stänga av godkännande?",
+          "body": "{count, plural, one {# väntande begäran ligger} other {# väntande begäranden ligger}} kvar i kön och kan fortfarande avgöras. Nya medlemsändringar tillämpas direkt utan granskning.",
+          "confirm": "Stäng av ({count})",
+          "cancel": "Behåll godkännandet påslaget"
+        },
+        "toast": {
+          "on": "Godkännande är påslaget. Nya medlemsändringar väntar nu på beslut.",
+          "off": "Godkännande är avstängt. Nya medlemsändringar tillämpas nu direkt."
+        },
+        "errors": {
+          "generic": "Inställningen kunde inte ändras. Försök igen.",
+          "readOnly": "Systemet är i skrivskyddat läge — inställningen ändrades inte."
         }
       }
     },
@@ -5410,6 +5449,8 @@
     "staff": {
       "dashboard": "Instrumentpanel",
       "changeRequests": "Ändringsbegäranden",
+      "changeRequestsBadge": "som väntar",
+      "badgeTooltip": "{title} ({count})",
       "plans": "Paket",
       "users": "Användare",
       "settings": "Inställningar",
@@ -7211,6 +7252,7 @@
     "statusFailed": "Misslyckades",
     "download": "Ladda ner",
     "expiresHint": "Nedladdningslänkar upphör att gälla 1 timme efter att arkivet är klart, för din säkerhet. Begär en ny export om en länk har gått ut.",
+    "loadFailed": "Vi kunde inte läsa in dina dataexporter just nu. Uppdatera sidan för att försöka igen — en export du har begärt förbereds fortfarande.",
     "empty": "Du har inte begärt någon dataexport ännu.",
     "errorTitle": "Kunde inte begära export",
     "errorBody": "Något gick fel när din dataexport begärdes. Försök igen.",

@@ -17,6 +17,7 @@
  */
 import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import type { RepoError } from './member-repo';
 
@@ -222,7 +223,7 @@ export type ChangeRequestAuditPayload = {
     readonly field_keys: readonly string[];
     readonly replaced_request_id: string | null;
     readonly coalesced: boolean;
-    readonly actor_role: string;
+    readonly actor_role: Role;
   };
   member_change_request_decided: {
     readonly related_member_id: string;
@@ -235,7 +236,7 @@ export type ChangeRequestAuditPayload = {
     readonly outcome: 'approved' | 'partially_approved' | 'rejected';
     readonly fields: readonly { readonly key: string; readonly outcome: 'approved' | 'rejected' }[];
     readonly reason_length: number;
-    readonly actor_role: string;
+    readonly actor_role: Role;
     readonly member_notified: boolean;
     readonly member_notification_skipped?: 'recipient_gone';
   };
@@ -244,7 +245,7 @@ export type ChangeRequestAuditPayload = {
     readonly member_id?: never;
     readonly window_count: number;
     readonly retry_after_seconds: number;
-    readonly actor_role: string;
+    readonly actor_role: Role;
   };
   member_change_request_withdrawn: (
     | { readonly member_id: string; readonly related_member_id?: never }
@@ -255,7 +256,19 @@ export type ChangeRequestAuditPayload = {
     readonly scope: 'own_contact' | 'company' | 'mixed';
     readonly withdrawn_reason: 'member' | 'replaced' | 'erasure';
     readonly replaced_by_request_id?: string;
-    readonly actor_role: string;
+    // the SESSION role — or the erasure use case's `system` identity on the
+    // `erasure` closure (no session holds that role; never a staff literal)
+    readonly actor_role: Role | 'system';
+  };
+  member_change_approval_setting_changed: {
+    readonly previous: boolean;
+    readonly next: boolean;
+    // the SESSION role or null — never a literal (audit-truth invariant); the
+    // closed union so a fabricated role is a compile error (PR-3 polish, types S6)
+    readonly actor_role: Role | null;
+    // a setting flip is not member activity: no 0009 trigger key, no member key at all
+    readonly member_id?: never;
+    readonly related_member_id?: never;
   };
 };
 

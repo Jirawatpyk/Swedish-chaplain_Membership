@@ -15,9 +15,18 @@
  * `DELETE /api/portal/change-requests/current`; a 200 swaps the banner for a
  * `role="status"` "withdrawn" message (the live region announces it) AND
  * refreshes the server tree, so /portal/edit's form + hint stop describing
- * a request that no longer exists (review round 1, UX C2); a 404 means the
- * request was decided or withdrawn meanwhile — the "gone" message + the same
- * refresh so the profile shows whatever landed; a 503 (READ_ONLY_MODE) has
+ * a request that no longer exists (review round 1, UX C2); a 404 is read by
+ * its BODY (PR-3 polish, silent S-4), and only the two codes the withdraw
+ * ROUTE itself answers are silent: flat `no_pending_request` = decided or
+ * withdrawn meanwhile (the "gone" message + the same refresh, so the profile
+ * shows whatever landed), flat `not_found` = the platform flag turned off
+ * between the render and the click (render nothing and refresh — the flag-off
+ * page drops the banner anyway, and nothing failed). EVERY other 404 is the
+ * error arm (PR-3 review A1): the NESTED `{ error: { code: 'not_found' } }`
+ * that `requireMemberContext` answers for an unlinked member / contact, an
+ * unparsable body, an unknown string. Those used to take the silent arm — the
+ * banner disappeared, `router.refresh()` repainted it from the server, and the
+ * person watched their click do nothing. A 503 (READ_ONLY_MODE) has
  * its own copy; any other failure stays inline in the same live region (no
  * toast — the banner IS the status surface). Focus after the dialog closes
  * goes through the shared `useDialogFinalFocus` (trigger, else the page
@@ -33,6 +42,7 @@ import { InlineAlert } from '@/components/ui/inline-alert';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/shell/reason-confirmation-dialog';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { readProblemCode } from '@/lib/http/read-only-refusal';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { ChangeRequestDiffTable } from './change-request-diff-table';
 
@@ -42,7 +52,8 @@ export interface PendingRequestBannerProps {
   readonly showEditLink?: boolean;
 }
 
-type WithdrawResult = 'withdrawn' | 'gone' | null;
+/** `hidden` — a 404 the server cannot explain (the flag-off race): render nothing, let the refresh decide. */
+type WithdrawResult = 'withdrawn' | 'gone' | 'hidden' | null;
 type WithdrawFailure = 'error' | 'read_only' | null;
 
 export function PendingRequestBanner({ request, showEditLink = true }: PendingRequestBannerProps) {
@@ -74,10 +85,31 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
         return;
       }
       if (res.status === 404) {
-        // decided or withdrawn under us — let the server say what landed
-        closedViaSuccessRef.current = true;
-        setResult('gone');
-        startTransition(() => router.refresh());
+        // The body says WHICH 404 this is, and only the two the withdraw route
+        // itself can answer are silent (PR-3 review A1):
+        //   - flat `no_pending_request` → decided or withdrawn under us: say
+        //     so, and let the refresh show what landed;
+        //   - flat `not_found` → the route's own flag-off race: render
+        //     nothing, the refreshed page drops the banner anyway.
+        // Anything else — the NESTED `{ error: { code: 'not_found' } }`
+        // `requireMemberContext` answers when the member / contact is not
+        // linked under this user, an unparsable body, an unknown string —
+        // falls through to the same handling as a 5xx. It used to land in the
+        // silent arm: the banner vanished, `router.refresh()` repainted it
+        // from the server, and the person saw their click do nothing.
+        const body: unknown = await res.json().catch(() => null);
+        const problem = readProblemCode(body);
+        // FLAT is the discriminator, not the string: the route answers its own
+        // codes flat, `requireMemberContext` answers `not_found` NESTED, and
+        // the two spell it identically while meaning opposite things.
+        if (problem?.shape === 'flat' && (problem.code === 'no_pending_request' || problem.code === 'not_found')) {
+          closedViaSuccessRef.current = true;
+          setResult(problem.code === 'no_pending_request' ? 'gone' : 'hidden');
+          startTransition(() => router.refresh());
+          return;
+        }
+        console.error('[pending-request-banner] withdraw: unexplained 404', { status: res.status, code: problem?.code ?? null });
+        setFailed('error');
         return;
       }
       setFailed(res.status === 503 ? 'read_only' : 'error');
@@ -87,6 +119,7 @@ export function PendingRequestBanner({ request, showEditLink = true }: PendingRe
     }
   }
 
+  if (result === 'hidden') return null;
   if (result !== null) {
     return (
       <InlineAlert tone={result === 'withdrawn' ? 'success' : 'info'} role="status" data-testid="withdraw-result">

@@ -65,7 +65,14 @@ POST — refusals, validation errors and malformed keys included — before the 
 body), so a client cannot drive the gate / validation / count path at line rate under a rotating
 key; on an Upstash outage the limiter falls back to a per-process window (the cap holds per
 serverless instance — weaker, never open), and the durable cap still holds then (review round 1,
-SEC-I2). **After a durable-cap 429 the client mints a NEW `Idempotency-Key`** (the attempt-bucket
+SEC-I2). The two 429s are counted apart: the bucket's refusal is
+`members_change_request_refused_total{reason=attempt_throttled}` (no audit row; logged
+`M114.portal.submit.attempts_exhausted`), the durable cap's is `reason=rate_limited` (PR-3 S-2).
+The same bucket guards `DELETE …/current` (60 / 10 min — a write, PR-3 S-5), and a smaller
+per-actor PROBE bucket (10 / 10 min per tenant + user) guards `GET …/[id]` and
+`POST …/[id]/acknowledge`, whose misses write a `member_cross_tenant_probe` row into the
+append-only trail: the 11th call inside the window is 429 `rate_limited` + `Retry-After` before
+any read, `attempt_throttled`, no audit row. **After a durable-cap 429 the client mints a NEW `Idempotency-Key`** (the attempt-bucket
 429 fires before the body and reserves nothing): the record was reserved
 before the refusal and a same-key retry inside the record's 24 h TTL answers 422
 `idempotency-key-reused` (review round 1, SEC-S1 — the portal form mints one key per attempt);
@@ -184,5 +191,9 @@ the client formats (BE for `th-TH`, display-only).
   own-field request, another member's row, an unknown or malformed id) with the unknown id
   audited as a probe and the colleague's row not.
 - POST attempt bucket (`change-requests-submit.test.ts`): an exhausted bucket → 429 before the
-  gate and the use case; the bucket is consumed once per POST on every outcome.
+  gate and the use case; the bucket is consumed once per POST on every outcome, counted
+  `attempt_throttled`. The probe bucket on `GET …/[id]` (`change-requests-history.test.ts`) and
+  `POST …/[id]/acknowledge` (`change-requests-acknowledge.test.ts`): the 11th call → 429 with
+  `Retry-After`, no probe audit row, nothing stamped; the withdraw bucket
+  (`change-requests-withdraw.test.ts`): exhausted → 429 after READ_ONLY_MODE, nothing withdrawn.
 - DELETE: 200 then 404 (`change-requests-withdraw.test.ts`); a colleague's pending request untouched.

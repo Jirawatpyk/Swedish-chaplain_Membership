@@ -6059,7 +6059,11 @@ export const insightsMetrics = {
 
 /** Bounded refusal reasons for `members_change_request_refused_total` (contracts § 4). */
 export type ChangeRequestRefusedReason =
+  // the DURABLE FR-008 cap (10 created requests / 24 h, counted from the request table)
   | 'rate_limited'
+  // PR-3 S-2 — the per-actor ATTEMPT bucket on a route refused BEFORE any read
+  // (submit 60 / 10 min; the by-id portal reads 10 / 10 min; withdraw 60 / 10 min)
+  | 'attempt_throttled'
   | 'forbidden'
   | 'archived'
   | 'already_decided'
@@ -6078,9 +6082,10 @@ export const membersMetrics = {
   changeRequests: {
     /**
      * `members_change_requests_pending_count{tenant}` — async gauge over
-     * `member_change_requests WHERE state = 'pending'`. NO caller yet: the
-     * per-tenant gauges tick is wired in Phase 8 (research R12 / V2, T102 —
-     * a pre-flip gate in quickstart § 3). Alert: see oldest age.
+     * `member_change_requests WHERE state = 'pending'`, emitted by the
+     * per-tenant gauges tick (`/api/internal/metrics/broadcasts-gauges`,
+     * every 5 min — research R12 / § V2, T102) for every tenant with any
+     * change-request row, 0 included (the C9 latch rule). Alert: see oldest age.
      */
     pendingCount(tenantId: string, count: number): void {
       safeMetric(() => {
@@ -6094,10 +6099,11 @@ export const membersMetrics = {
     },
     /**
      * `members_change_request_oldest_age_seconds{tenant}` — age of the oldest
-     * pending request. NO caller yet (Phase 8, T102 — with `pendingCount`);
-     * the FR-037 alert rows (> 7 d warning, > 14 d page, both inside the
-     * 30-day data-subject-request clock) and the catalogue rows are ALREADY
-     * in `docs/observability.md § 14.1 / § 14.3` — T102 adds the emitter only.
+     * pending request, emitted by the same tick as `pendingCount` (0 when
+     * nothing is pending — the gauge convention; the read model answers
+     * `null`). The FR-037 alert rows (> 7 d warning, > 14 d page, both inside
+     * the 30-day data-subject-request clock) live in
+     * `docs/observability.md § 27.3` (catalogue § 27.1; § 14.1 / § 14.3 point there).
      */
     oldestAgeSeconds(tenantId: string, seconds: number): void {
       safeMetric(() => {
@@ -6107,6 +6113,25 @@ export const membersMetrics = {
           { tenant: tenantId },
           seconds,
         );
+      });
+    },
+    /**
+     * PR-3 review (SEC-5) — drop one tenant's labels from BOTH change-request
+     * gauges so the series go ABSENT rather than frozen at their last value.
+     * Same shape and reasoning as `forgetDispatchFailureRate`: the gauges tick
+     * skips the pending scan while `FEATURE_MEMBER_CHANGE_APPROVAL` is OFF
+     * (the routes 404, so a retained queue is one nobody can decide), and
+     * `observeGauge` would otherwise keep re-reporting the last count and age
+     * at every scrape — paging "> 14 d" (FR-037) at an operator with no
+     * action available. A zero-fill would be the wrong answer here: 0 asserts
+     * "the queue is empty", which is a different fact from "the feature is
+     * dark and this number means nothing".
+     */
+    forgetGauges(tenantId: string): void {
+      safeMetric(() => {
+        const label = JSON.stringify({ tenant: tenantId });
+        gaugeValues.get('members_change_requests_pending_count')?.delete(label);
+        gaugeValues.get('members_change_request_oldest_age_seconds')?.delete(label);
       });
     },
     /** `members_change_request_submitted_total{tenant,scope,coalesced}` — one per created request. */

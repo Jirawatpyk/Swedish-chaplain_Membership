@@ -43,6 +43,7 @@ import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -603,12 +604,13 @@ export function InvoiceSettingsForm({
             };
       };
       // read-only-mode 503: flat string (proxy-level gate, `src/proxy.ts`)
-      // OR nested `{ code }` (a route-level guard) — same dual-shape check
-      // as `plans-table.tsx`. This route only ever hits the proxy-level
-      // gate today; the shape check costs nothing and stays consistent.
+      // OR nested `{ code }` (a route-level guard) — both shapes and both
+      // spellings live in `problemCode` / `isReadOnlyCode` now (PR-3 review
+      // B7). This route only ever hits the proxy-level gate today; the shape
+      // check costs nothing and stays consistent.
       const errObj = errBody.error;
-      const code = (typeof errObj === 'string' ? errObj : errObj?.code) ?? 'generic';
-      if (code === 'read-only-mode' || code === 'read_only_mode') {
+      const code = problemCode(errBody) ?? 'generic';
+      if (isReadOnlyCode(code)) {
         // Retrying immediately won't help — say so instead of the generic
         // "save failed, try again".
         setError(t('errors.readOnly'));

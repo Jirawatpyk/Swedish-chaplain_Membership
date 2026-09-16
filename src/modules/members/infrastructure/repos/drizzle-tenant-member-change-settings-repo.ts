@@ -4,10 +4,17 @@
  *
  * `readInTenant` opens its own `runInTenant` (RLS) — a tenant provisioned
  * before the 0209 seed has NO row, which the gate resolver reads as
- * "approval off". `setApprovalEnabledInTx` upserts inside the caller's tx and
- * returns the PREVIOUS value so the use case can audit `{ previous, next }`
- * and no-op on an unchanged value. The 055 prefix column is never touched
- * (its DEFAULT applies on a fresh insert).
+ * "approval off". `setApprovalEnabledInTx` materialises-then-locks-then-updates
+ * inside the caller's tx and returns the PREVIOUS value so the use case can
+ * audit `{ previous, next }` and skip the audit on an unchanged value. The 055
+ * prefix column is never touched (its DEFAULT applies on a fresh insert).
+ *
+ * The three statements are one serialisation point per tenant: the insert
+ * makes the row exist (so `FOR UPDATE` has something to hold and a concurrent
+ * writer queues on the unique index), the locked read is the audited
+ * `previous`, and the update is the only writer of the new value. Pinned on
+ * live Neon by the two overlapping transactions in
+ * `tests/integration/members/change-requests-tenant-isolation.test.ts`.
  */
 import { sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
@@ -35,13 +42,41 @@ export const drizzleTenantMemberChangeSettingsRepo: TenantMemberChangeSettingsPo
 
   async setApprovalEnabledInTx(tx: TenantTx, tenantId: TenantId, enabled: boolean) {
     try {
+      // PR-3 review (reliability R-M1): MATERIALISE the row before locking it.
+      // `SELECT … FOR UPDATE` cannot lock a row that does not exist, and a
+      // tenant provisioned before the 0209 seed has none — so two concurrent
+      // PATCHes both read `previous = false` and one of them audits
+      // `{ previous: false, next: … }` for a transition the stored value does
+      // not match. `ON CONFLICT DO NOTHING` makes the second writer wait on
+      // the unique index instead, and the `FOR UPDATE` below then always has a
+      // row to hold. The insert seeds the CURRENT value (`false`, the
+      // new-tenant default of FR-031), never `enabled` — the UPDATE below is
+      // the one writer of the new value, so `previous` stays truthful on both
+      // the create and the update path. The 055 prefix column is untouched and
+      // takes its DEFAULT.
+      await tx.execute(sql`
+        INSERT INTO tenant_member_settings (tenant_id, member_change_approval_enabled)
+        VALUES (${tenantId}, false)
+        ON CONFLICT (tenant_id) DO NOTHING
+      `);
       const before = (await tx.execute(sql`
         SELECT member_change_approval_enabled
           FROM tenant_member_settings
          WHERE tenant_id = ${tenantId}
            FOR UPDATE
       `)) as unknown as Array<{ member_change_approval_enabled: boolean }>;
-      const previous = before[0]?.member_change_approval_enabled ?? false;
+      // After the materialising INSERT above, the locked read ALWAYS has a
+      // row: `ON CONFLICT (tenant_id) DO NOTHING` either inserted one or
+      // waited for the writer that did. `?? false` therefore could not be a
+      // default — it could only be a fabricated `previous` for an audit row
+      // stating a transition that never happened (C5; the audit-truth
+      // invariant this repo exists to hold). If it ever fires, something is
+      // wrong enough that refusing is the only honest answer.
+      const before0 = before[0];
+      if (before0 === undefined) {
+        return err(unexpected(new Error('tenant_member_settings row missing after materialising insert')));
+      }
+      const previous = before0.member_change_approval_enabled;
       await tx.execute(sql`
         INSERT INTO tenant_member_settings (tenant_id, member_change_approval_enabled)
         VALUES (${tenantId}, ${enabled})

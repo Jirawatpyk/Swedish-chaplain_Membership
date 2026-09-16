@@ -48,7 +48,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { EmptyState } from '@/components/shell/empty-state';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { ChangeRequestStatusBadge } from '@/components/members/change-requests/change-request-status-badge';
+import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 import { ChangeRequestQueueFilters } from './_components/queue-filters';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -84,6 +84,22 @@ function one(v: string | string[] | undefined): string | undefined {
   return s === undefined || s === '' ? undefined : s;
 }
 
+/**
+ * The first value of a repeated param WITHOUT `one()`'s empty→undefined
+ * collapse (PR-3 review, reliability R-L3).
+ *
+ * `one()` is the LENIENT reader: an empty filter is the same as an absent
+ * one, which is what "a bad link drops only itself" means. The cursor is the
+ * one param that is not lenient — `?cursor=` used to reach the schema as
+ * `undefined` and silently render page one against the docblock's own rule,
+ * which is exactly the "you have seen the whole queue" lie the strict rule
+ * exists to prevent. An empty cursor is a malformed cursor: `z.string().min(1)`
+ * refuses it and the page 404s.
+ */
+function oneRaw(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
 /** Whole days / hours for the waiting column — the exact seconds are not what a reviewer scans for. */
 function waitingParts(seconds: number): { days: number; hours: number } {
   return { days: Math.floor(seconds / 86_400), hours: Math.floor((seconds % 86_400) / 3600) };
@@ -116,7 +132,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
     submitter: one(sp.submitter),
     from: one(sp.from),
     to: one(sp.to),
-    cursor: one(sp.cursor),
+    cursor: oneRaw(sp.cursor),
   });
   if (!parsed.success) notFound();
   const q = parsed.data;
@@ -233,7 +249,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
         </InlineAlert>
       ) : null}
 
-      <ChangeRequestQueueFilters />
+      <ChangeRequestQueueFilters resultCount={page.items.length} hasMore={page.nextCursor !== null} />
       {q.memberId || q.submitter ? (
         <div className="space-y-1">
           {q.memberId ? (
@@ -317,7 +333,7 @@ export default async function ChangeRequestsQueuePage({ searchParams }: PageProp
                     ) : null}
                   </TableCell>
                   <TableCell>
-                    <ChangeRequestStatusBadge state={r.state} outcome={r.outcome} withdrawnReason={r.withdrawnReason} audience="staff" />
+                    <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
                     {r.decidedAt && item.row.decidedBy ? (
                       <div className="mt-1 text-caption text-muted-foreground">
                         {tReview('decidedBy', { name: item.row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}

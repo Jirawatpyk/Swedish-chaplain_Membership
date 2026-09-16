@@ -30,7 +30,7 @@ import { serialiseField } from '@/lib/change-request-portal-view';
 import { asMemberId, listMemberChangeRequests, type ChangeRequestQueueItem } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import { ChangeRequestDiffTable } from '@/components/members/change-requests/change-request-diff-table';
-import { ChangeRequestStatusBadge } from '@/components/members/change-requests/change-request-status-badge';
+import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 
 const SECTION_LIMIT = 10;
 
@@ -104,7 +104,7 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <ChangeRequestStatusBadge state={r.state} outcome={r.outcome} withdrawnReason={r.withdrawnReason} audience="staff" />
+                        <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
                         <Link href={`/admin/change-requests/${r.id}`} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
                           {r.state === 'pending' ? t('review') : t('open')}
                         </Link>

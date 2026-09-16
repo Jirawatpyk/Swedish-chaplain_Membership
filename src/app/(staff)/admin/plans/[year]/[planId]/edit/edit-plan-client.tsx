@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { PlanEditForm } from '@/components/plans/plan-edit-form';
 import type { PlanSchemaInput } from '@/modules/plans';
 
@@ -90,11 +91,11 @@ export function EditPlanClient({
       }
 
       // read-only-mode 503 arrives as a flat string (proxy) OR nested code
-      // (route guard) — normalize both; branch FIRST so it isn't shadowed.
+      // (route guard) — `problemCode` normalizes both (PR-3 review B7); branch
+      // FIRST so it isn't shadowed.
       const errorObj = body?.error;
-      const errorCode =
-        typeof errorObj === 'string' ? errorObj : (errorObj?.code ?? 'generic');
-      if (errorCode === 'read_only_mode' || errorCode === 'read-only-mode') {
+      const errorCode = problemCode(body) ?? 'generic';
+      if (isReadOnlyCode(errorCode)) {
         toast.error(t('errors.readOnlyMode'));
       } else if (errorCode === 'prior_year_locked_fields') {
         const fields = (errorObj?.details?.locked_fields ?? []).join(', ');

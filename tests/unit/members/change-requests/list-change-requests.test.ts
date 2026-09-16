@@ -328,7 +328,7 @@ describe('FR-029 — the portal projection', () => {
 
   it('getPortalChangeRequest: an UNKNOWN id (a foreign tenant is invisible under RLS) is audited as member_cross_tenant_probe; an in-tenant "not yours" is counted, never audited as a probe (FR-035)', async () => {
     const { deps, audit } = makeDeps();
-    const actor = { actorRole: 'member', requestId: 'req-probe' };
+    const actor = { actorRole: 'member' as const, requestId: 'req-probe' };
     expect(await getPortalChangeRequest(deps, { changeRequestId: R(9) as ChangeRequestId, userId: PRIMARY, memberId: MEMBER, ...actor })).toEqual({ ok: false, error: { type: 'not_found' } });
     expect(audit.events).toHaveLength(1);
     expect(audit.events[0]).toMatchObject({

@@ -134,7 +134,7 @@ function makeDeps(opts: { request?: ChangeRequest; member?: Member; contacts?: C
   return { deps: { tenant, changeRequestRepo: repo, memberRepo, contactRepo, audit }, repo, memberRepo, contactRepo, audit };
 }
 
-const ACTOR = { userId: 'a6c5b1a2-0000-4000-8000-00000000aaaa' as UserId, role: 'admin', requestId: 'req-review' };
+const ACTOR = { userId: 'a6c5b1a2-0000-4000-8000-00000000aaaa' as UserId, role: 'admin' as const, requestId: 'req-review' };
 
 describe('getChangeRequestReview', () => {
   it('reads current values LIVE and flags changedSinceSubmitted / alreadyCurrent per field', async () => {

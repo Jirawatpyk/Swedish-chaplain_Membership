@@ -299,3 +299,124 @@ describe('change requests — two-layer tenant isolation on live Neon (T033)', (
     }, 60_000);
   });
 });
+
+/**
+ * F114 PR-3 review (reliability R-M1 + SEC test gap 1) — the tenant SWITCH
+ * write path (`setApprovalEnabledInTx`), on live Neon.
+ *
+ * `SELECT … FOR UPDATE` cannot lock a row that does not exist, and a tenant
+ * provisioned before the 0209 seed has NO `tenant_member_settings` row. Two
+ * concurrent PATCHes therefore both read `previous = false`, and the audit
+ * trail can end up asserting a transition the stored value does not match —
+ * `member_change_approval_setting_changed { previous: false, next: true }`
+ * committed next to a stored `false`, which is the audit-truth invariant this
+ * repo guards everywhere else. The fix materialises the row first
+ * (`INSERT … ON CONFLICT DO NOTHING` — the 055 prefix column takes its
+ * DEFAULT), so the `FOR UPDATE` that follows always has a row to hold.
+ *
+ * Plus the Constitution I.3 cross-tenant test this write path never had.
+ */
+describe('F114 — the tenant approval switch write path (live Neon)', () => {
+  const created: TestTenant[] = [];
+
+  afterAll(async () => {
+    for (const t of created) await t.cleanup().catch(() => {});
+  });
+
+  async function freshTenant(prefix: 'test-swecham' | 'test-chamber'): Promise<TestTenant> {
+    const t = await createTestTenant(prefix);
+    created.push(t);
+    return t;
+  }
+
+  const readEnabled = async (t: TestTenant): Promise<boolean | null> => {
+    const row = await drizzleTenantMemberChangeSettingsRepo.readInTenant(t.ctx);
+    if (!row.ok) throw new Error('read failed');
+    return row.value === null ? null : row.value.memberChangeApprovalEnabled;
+  };
+
+  it('a tenant with NO settings row: the first flip reports previous=false, materialises the row, and an identical second flip is a no-op', async () => {
+    const t = await freshTenant('test-swecham');
+    expect(await readEnabled(t)).toBeNull();
+
+    const first = await runInTenant(t.ctx, (tx) =>
+      drizzleTenantMemberChangeSettingsRepo.setApprovalEnabledInTx(tx, t.ctx.slug, true),
+    );
+    expect(first.ok && first.value.previous).toBe(false);
+    expect(await readEnabled(t)).toBe(true);
+
+    const second = await runInTenant(t.ctx, (tx) =>
+      drizzleTenantMemberChangeSettingsRepo.setApprovalEnabledInTx(tx, t.ctx.slug, true),
+    );
+    // previous === next ⇒ the use case writes NO audit row
+    expect(second.ok && second.value.previous).toBe(true);
+    expect(await readEnabled(t)).toBe(true);
+  }, 60_000);
+
+  it('two OVERLAPPING flips on a tenant with no row serialise: the second reads the first as its previous value (R-M1)', async () => {
+    const t = await freshTenant('test-chamber');
+    expect(await readEnabled(t)).toBeNull();
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstPrevious: boolean | null = null;
+    let secondPrevious: boolean | null = null;
+    let secondDone = false;
+
+    // tx1 takes the row and HOLDS the transaction open
+    const tx1 = runInTenant(t.ctx, async (tx) => {
+      const w = await drizzleTenantMemberChangeSettingsRepo.setApprovalEnabledInTx(tx, t.ctx.slug, true);
+      firstPrevious = w.ok ? w.value.previous : null;
+      await held;
+    });
+    await new Promise((r) => setTimeout(r, 500));
+
+    // tx2 starts while tx1 still holds — it must not observe the pre-tx1 world
+    const tx2 = runInTenant(t.ctx, async (tx) => {
+      const w = await drizzleTenantMemberChangeSettingsRepo.setApprovalEnabledInTx(tx, t.ctx.slug, false);
+      secondPrevious = w.ok ? w.value.previous : null;
+      secondDone = true;
+    });
+    await new Promise((r) => setTimeout(r, 1_000));
+    expect(secondDone, 'the second writer must block on the first, not race it').toBe(false);
+
+    release();
+    await tx1;
+    await tx2;
+
+    expect(firstPrevious).toBe(false);
+    // the defect: `FOR UPDATE` over zero rows took no lock, so this read
+    // `false` and its audit row claimed a transition off a value that was
+    // already `true` by the time it committed
+    expect(secondPrevious).toBe(true);
+    expect(await readEnabled(t)).toBe(false);
+  }, 90_000);
+
+  it('Constitution I.3 — flipping tenant A leaves tenant B row-less, and B gate answers immediate', async () => {
+    const tA = await freshTenant('test-swecham');
+    const tB = await freshTenant('test-chamber');
+    const gate = makeMemberChangeGateResolver({
+      flags: { memberChangeApproval: () => true },
+      tenantMemberSettings: drizzleTenantMemberChangeSettingsRepo,
+    });
+
+    const flipped = await runInTenant(tA.ctx, (tx) =>
+      drizzleTenantMemberChangeSettingsRepo.setApprovalEnabledInTx(tx, tA.ctx.slug, true),
+    );
+    expect(flipped.ok).toBe(true);
+
+    expect(await readEnabled(tA)).toBe(true);
+    expect(await readEnabled(tB)).toBeNull();
+    expect(await gate.resolve(tA.ctx)).toBe('approval');
+    expect(await gate.resolve(tB.ctx)).toBe('immediate');
+
+    // and back the other way: B's own flip does not disturb A
+    await runInTenant(tB.ctx, (tx) =>
+      drizzleTenantMemberChangeSettingsRepo.setApprovalEnabledInTx(tx, tB.ctx.slug, false),
+    );
+    expect(await readEnabled(tA)).toBe(true);
+    expect(await readEnabled(tB)).toBe(false);
+  }, 60_000);
+});

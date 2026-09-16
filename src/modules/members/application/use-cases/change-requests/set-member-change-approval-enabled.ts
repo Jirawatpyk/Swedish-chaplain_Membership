@@ -1,0 +1,120 @@
+/**
+ * F114 — `setMemberChangeApprovalEnabled` (US6 AS4; FR-031; research R11;
+ * contracts/admin-change-requests-api.md § settings).
+ *
+ * The per-tenant approval switch: one `runInTenant` → the upsert of
+ * `tenant_member_settings.member_change_approval_enabled` (the port
+ * materialises the row if it is missing and returns the PREVIOUS value) →
+ * ONE audit row `member_change_approval_setting_changed
+ * { previous, next, actor_role }` when the value actually changed.
+ *
+ * An unchanged value answers `changed: false` with NO audit row (R-L4: the
+ * word "no-op" in an earlier draft of this docblock was wrong about the
+ * write — the upsert still runs and still stamps `updated_at`; what is
+ * skipped is the AUDIT, because the trail records transitions, not clicks).
+ * Re-writing the same value is idempotent, so nothing downstream observes a
+ * difference. No member key in the payload: a setting flip is not member
+ * activity, so migration 0009's `last_activity_at` trigger has nothing to
+ * fire on.
+ *
+ * `actor_role` is the SESSION role the route passes, `null` when it has
+ * none — never a literal (`check:actor-role-truth`).
+ *
+ * Every fault after the first write is a `UseCaseAbort` — never `return
+ * err()` inside the callback (a resolved refusal COMMITS under
+ * `runInTenant`).
+ */
+import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
+import { err, ok, type Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
+import type { TenantContext } from '@/modules/tenants';
+import type { UserId } from '../../../domain/value-objects/user-id';
+import type { AuditPort, ChangeRequestAuditPayload } from '../../ports/audit-port';
+import type { ClockPort } from '../../ports/clock-port';
+import { isRepoError, repoErrorCause, type RepoError } from '../../ports/member-repo';
+import type { TenantMemberChangeSettingsPort } from '../../ports/tenant-member-change-settings-port';
+import { UseCaseAbort } from '../../tx-abort';
+
+export type SetMemberChangeApprovalEnabledDeps = {
+  readonly tenant: TenantContext;
+  readonly tenantMemberChangeSettings: Pick<TenantMemberChangeSettingsPort, 'setApprovalEnabledInTx'>;
+  readonly audit: Pick<AuditPort, 'recordInTx'>;
+  readonly clock: ClockPort;
+};
+
+export type SetMemberChangeApprovalEnabledInput = {
+  readonly enabled: boolean;
+  readonly actorUserId: UserId;
+  /** The SESSION role — recorded in the audit payload as `actor_role` (`null` when absent). */
+  readonly actorRole?: Role | null;
+  readonly requestId: string;
+};
+
+/**
+ * The write's outcome, discriminated on `changed` (PR-3 review B3).
+ *
+ * The audit branch IS the `changed: true` branch: a transition is exactly what
+ * gets a `member_change_approval_setting_changed` row, and `changedAt` is the
+ * instant that row records. As two independent fields (`changed: boolean` +
+ * `changedAt: Date | null`) the impossible pairs were representable — a
+ * transition with no instant, an instant with no transition — and every
+ * consumer had to re-derive which one it was looking at. Narrow on `changed`
+ * and the instant is simply there, or simply absent.
+ */
+export type SetMemberChangeApprovalEnabledOutcome =
+  /** The stored value already matched: the upsert still ran (and stamped `updated_at`), no audit row was written. */
+  | { readonly changed: false; readonly approvalEnabled: boolean; readonly previous: boolean }
+  /** A real transition: ONE audit row, stamped at `changedAt` from the injected clock. */
+  | { readonly changed: true; readonly approvalEnabled: boolean; readonly previous: boolean; readonly changedAt: Date };
+
+export type SetMemberChangeApprovalEnabledError = { readonly type: 'server_error'; readonly message: string };
+
+export async function setMemberChangeApprovalEnabled(
+  deps: SetMemberChangeApprovalEnabledDeps,
+  input: SetMemberChangeApprovalEnabledInput,
+): Promise<Result<SetMemberChangeApprovalEnabledOutcome, SetMemberChangeApprovalEnabledError>> {
+  const now = deps.clock.now();
+  try {
+    const outcome = await runInTenant(deps.tenant, async (tx): Promise<SetMemberChangeApprovalEnabledOutcome> => {
+      const written = await deps.tenantMemberChangeSettings.setApprovalEnabledInTx(tx, deps.tenant.slug, input.enabled);
+      if (!written.ok) throw new UseCaseAbort<RepoError>(written.error);
+
+      const previous = written.value.previous;
+      if (previous === input.enabled) {
+        return { changed: false, approvalEnabled: input.enabled, previous };
+      }
+
+      const audited = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_change_approval_setting_changed',
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        summary: `member change approval ${previous ? 'on' : 'off'} → ${input.enabled ? 'on' : 'off'}`,
+        payload: ({
+          previous,
+          next: input.enabled,
+          actor_role: input.actorRole ?? null,
+        } satisfies ChangeRequestAuditPayload['member_change_approval_setting_changed']),
+      });
+      if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
+
+      return { changed: true, approvalEnabled: input.enabled, previous, changedAt: now };
+    });
+    return ok(outcome);
+  } catch (e) {
+    // an aborted tx carries the repo's own code + cause; anything else is a throw
+    const repoError = e instanceof UseCaseAbort && isRepoError(e.error) ? e.error : null;
+    const code = repoError?.code ?? (e instanceof Error ? e.name : String(e));
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        requestId: input.requestId,
+        err: code,
+        cause: repoError === null ? undefined : errKind(repoErrorCause(repoError)),
+      },
+      'change-request.setting.failed',
+    );
+    return err({ type: 'server_error', message: `set-approval: ${code}` });
+  }
+}

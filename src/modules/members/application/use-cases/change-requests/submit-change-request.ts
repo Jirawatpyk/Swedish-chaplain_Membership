@@ -42,11 +42,14 @@
  * literal (check:actor-role-truth).
  */
 import type { z } from 'zod';
+import { SpanStatusCode } from '@opentelemetry/api';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { membersMetrics } from '@/lib/metrics';
+import { membersTracer } from '@/lib/otel-tracer';
 import { err, ok, type Result } from '@/lib/result';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import {
   STAFF_NOTIFICATION_COALESCE_HOURS,
@@ -97,7 +100,7 @@ export type SubmitChangeRequestInput = {
   readonly rawBody: unknown;
   readonly actorUserId: UserId;
   /** The SESSION role — recorded in every audit payload as `actor_role`. */
-  readonly actorRole: string;
+  readonly actorRole: Role;
   readonly requestId: string;
 };
 
@@ -203,6 +206,9 @@ export function detectForbiddenProposalKeys(raw: unknown): string[] {
   }
   return forbidden;
 }
+
+/** T106 — the span over the submit transaction (docs/observability.md § 27.2). */
+const SUBMIT_SPAN = 'members.change_request.submit';
 
 const FORGED_KEYS_MAX = 20;
 const FORGED_KEY_MAX_LENGTH = 64;
@@ -397,230 +403,276 @@ export async function submitChangeRequest(
   const now = deps.clock.now();
   const newId = deps.newRequestId();
 
-  // 6. ONE transaction — throw-to-rollback after the first write.
-  try {
-    const outcome = await runInTenant(deps.tenant, async (tx): Promise<SubmitChangeRequestOutcome> => {
-      const pendingResult = await deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId);
-      if (!pendingResult.ok) throw new UseCaseAbort<RepoError>(pendingResult.error);
-      const pending = pendingResult.value;
-      if (nothingDiffers) {
-        return pending !== null ? { outcome: 'already_pending', request: pending, unchanged: true } : { outcome: 'nothing_to_submit' };
-      }
-      if (pending !== null && sameProposal(pending, fields)) {
-        return { outcome: 'already_pending', request: pending, unchanged: false };
-      }
+  // 6. ONE transaction — throw-to-rollback after the first write — under the
+  //    `members.change_request.submit` span (T106; docs/observability.md § 27).
+  //    The attributes are the bounded ids / keys only (§ 27.5); a refused or
+  //    failed arm marks the span ERROR with the error TYPE — never a proposed
+  //    value, a reason, an email or a user id.
+  const submitTransaction = async (): Promise<Result<SubmitChangeRequestOutcome, SubmitChangeRequestError>> => {
+    try {
+      const outcome = await runInTenant(deps.tenant, async (tx): Promise<SubmitChangeRequestOutcome> => {
+        const pendingResult = await deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId);
+        if (!pendingResult.ok) throw new UseCaseAbort<RepoError>(pendingResult.error);
+        const pending = pendingResult.value;
+        if (nothingDiffers) {
+          return pending !== null ? { outcome: 'already_pending', request: pending, unchanged: true } : { outcome: 'nothing_to_submit' };
+        }
+        if (pending !== null && sameProposal(pending, fields)) {
+          return { outcome: 'already_pending', request: pending, unchanged: false };
+        }
 
-      // The durable cap (FR-008, R9) — counted from the rows themselves,
-      // replaced ones included, BEFORE the first write. `retryAfterSeconds`
-      // is when the OLDEST row in the window falls out of it.
-      const windowStart = new Date(now.getTime() - SUBMISSION_WINDOW_HOURS * 3_600_000);
-      const inWindow = await deps.changeRequestRepo.countSubmittedSince(tx, input.actorUserId, windowStart);
-      if (!inWindow.ok) throw new UseCaseAbort<RepoError>(inWindow.error);
-      if (inWindow.value.count >= SUBMISSIONS_PER_WINDOW_CAP) {
-        const oldest = inWindow.value.oldestSubmittedAt ?? now;
-        const retryAfterSeconds = Math.max(1, Math.ceil((oldest.getTime() + SUBMISSION_WINDOW_HOURS * 3_600_000 - now.getTime()) / 1000));
-        throw new RateLimitedAbort(inWindow.value.count, retryAfterSeconds);
-      }
+        // The durable cap (FR-008, R9) — counted from the rows themselves,
+        // replaced ones included, BEFORE the first write. `retryAfterSeconds`
+        // is when the OLDEST row in the window falls out of it.
+        const windowStart = new Date(now.getTime() - SUBMISSION_WINDOW_HOURS * 3_600_000);
+        const inWindow = await deps.changeRequestRepo.countSubmittedSince(tx, input.actorUserId, windowStart);
+        if (!inWindow.ok) throw new UseCaseAbort<RepoError>(inWindow.error);
+        if (inWindow.value.count >= SUBMISSIONS_PER_WINDOW_CAP) {
+          const oldest = inWindow.value.oldestSubmittedAt ?? now;
+          const retryAfterSeconds = Math.max(1, Math.ceil((oldest.getTime() + SUBMISSION_WINDOW_HOURS * 3_600_000 - now.getTime()) / 1000));
+          throw new RateLimitedAbort(inWindow.value.count, retryAfterSeconds);
+        }
 
-      const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
-      if (!fresh.ok) throw new UseCaseAbort<RepoError>(fresh.error);
-      if (fresh.value.status === 'archived') throw new MemberArchivedAbort();
-      // An erasure keeps `status` and stamps only `erased_at`, so the FOR
-      // UPDATE re-read above sees an unchanged row once an erase tx that we
-      // waited on has committed — and this submit would land a pending
-      // request with live PII on an erased record, after the erasure's
-      // scrub + outbox cancel already ran. Read `erased_at` on the SAME tx
-      // (decide's rule — the seam review of PR-2, #2). Refused as
-      // `member_archived`: the member is gone either way, and the contact's
-      // session is revoked by the same erasure.
-      const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, input.memberId);
-      if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
-      if (erased.value.erasedAt !== null) throw new MemberArchivedAbort();
+        const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
+        if (!fresh.ok) throw new UseCaseAbort<RepoError>(fresh.error);
+        if (fresh.value.status === 'archived') throw new MemberArchivedAbort();
+        // An erasure keeps `status` and stamps only `erased_at`, so the FOR
+        // UPDATE re-read above sees an unchanged row once an erase tx that we
+        // waited on has committed — and this submit would land a pending
+        // request with live PII on an erased record, after the erasure's
+        // scrub + outbox cancel already ran. Read `erased_at` on the SAME tx
+        // (decide's rule — the seam review of PR-2, #2). Refused as
+        // `member_archived`: the member is gone either way, and the contact's
+        // session is revoked by the same erasure.
+        const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, input.memberId);
+        if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
+        if (erased.value.erasedAt !== null) throw new MemberArchivedAbort();
 
-      let replaced: ChangeRequestId | null = null;
-      // FR-011 coalescing (R8): no new staff email within 1 h of the last one
-      // for this person — the replaced row carries that time (itself
-      // inherited along a chain of replacements, so a burst of resubmits
-      // yields ONE email per hour, never one per resubmit).
-      const lastNotifiedAt = pending?.staffNotifiedAt ?? null;
-      const coalesced =
-        lastNotifiedAt !== null && now.getTime() - lastNotifiedAt.getTime() < STAFF_NOTIFICATION_COALESCE_HOURS * 3_600_000;
-      if (pending !== null) {
-        const w = await deps.changeRequestRepo.withdrawInTx(tx, pending.id, {
-          reason: 'replaced',
-          withdrawnAt: now,
-          replacedByRequestId: newId,
-        });
-        if (!w.ok) throw new UseCaseAbort<RepoError>(w.error);
-        replaced = pending.id;
-        const wa = await deps.audit.recordInTx(tx, deps.tenant, {
-          type: 'member_change_request_withdrawn',
+        let replaced: ChangeRequestId | null = null;
+        // FR-011 coalescing (R8): no new staff email within 1 h of the last one
+        // for this person — the replaced row carries that time (itself
+        // inherited along a chain of replacements, so a burst of resubmits
+        // yields ONE email per hour, never one per resubmit).
+        const lastNotifiedAt = pending?.staffNotifiedAt ?? null;
+        const coalesced =
+          lastNotifiedAt !== null && now.getTime() - lastNotifiedAt.getTime() < STAFF_NOTIFICATION_COALESCE_HOURS * 3_600_000;
+        if (pending !== null) {
+          const w = await deps.changeRequestRepo.withdrawInTx(tx, pending.id, {
+            reason: 'replaced',
+            withdrawnAt: now,
+            replacedByRequestId: newId,
+          });
+          if (!w.ok) throw new UseCaseAbort<RepoError>(w.error);
+          replaced = pending.id;
+          const wa = await deps.audit.recordInTx(tx, deps.tenant, {
+            type: 'member_change_request_withdrawn',
+            actorUserId: input.actorUserId,
+            requestId: input.requestId,
+            summary: `change request ${pending.id} replaced by ${newId}`,
+            // `withdrawn_reason`, not `reason`: the bare key is on the audit
+            // redaction deny-list (free-text reasons), and this is a closed enum
+            // the manager projection + the member's own archive must keep.
+            payload: ({
+              related_member_id: input.memberId,
+              request_id: pending.id,
+              contact_id: pending.submittedByContactId,
+              scope: pending.scope,
+              withdrawn_reason: 'replaced',
+              replaced_by_request_id: newId,
+              actor_role: input.actorRole,
+            } satisfies ChangeRequestAuditPayload['member_change_request_withdrawn']),
+          });
+          if (!wa.ok) throw new UseCaseAbort<RepoError>(wa.error);
+        }
+
+        const staffNotified = !coalesced && reviewers.length > 0;
+        const draft: ChangeRequestDraft = {
+          id: newId,
+          tenantId: tenantId as TenantId,
+          memberId: input.memberId,
+          submittedByUserId: input.actorUserId,
+          submittedByContactId: input.contactId,
+          submitterRoleAtSubmission: submitterIsPrimary ? 'primary' : 'secondary',
+          scope,
+          submittedAt: now,
+          // inherited when coalesced (the earlier email already leads here)
+          staffNotifiedAt: coalesced ? lastNotifiedAt : staffNotified ? now : null,
+          fields,
+        };
+        const inserted = await deps.changeRequestRepo.insertInTx(tx, draft);
+        if (!inserted.ok) throw new UseCaseAbort<RepoError>(inserted.error);
+
+        const fieldKeys = fields.map((f) => f.key);
+        const audited = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'member_change_request_submitted',
           actorUserId: input.actorUserId,
           requestId: input.requestId,
-          summary: `change request ${pending.id} replaced by ${newId}`,
-          // `withdrawn_reason`, not `reason`: the bare key is on the audit
-          // redaction deny-list (free-text reasons), and this is a closed enum
-          // the manager projection + the member's own archive must keep.
+          summary: `change request ${newId} submitted (${scope}: ${fieldKeys.join(', ')})`,
           payload: ({
-            related_member_id: input.memberId,
-            request_id: pending.id,
-            contact_id: pending.submittedByContactId,
-            scope: pending.scope,
-            withdrawn_reason: 'replaced',
-            replaced_by_request_id: newId,
+            member_id: input.memberId,
+            request_id: newId,
+            contact_id: input.contactId,
+            scope,
+            field_keys: fieldKeys,
+            replaced_request_id: replaced,
+            coalesced,
             actor_role: input.actorRole,
-          } satisfies ChangeRequestAuditPayload['member_change_request_withdrawn']),
+          } satisfies ChangeRequestAuditPayload['member_change_request_submitted']),
         });
-        if (!wa.ok) throw new UseCaseAbort<RepoError>(wa.error);
-      }
+        if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
 
-      const staffNotified = !coalesced && reviewers.length > 0;
-      const draft: ChangeRequestDraft = {
-        id: newId,
-        tenantId: tenantId as TenantId,
-        memberId: input.memberId,
-        submittedByUserId: input.actorUserId,
-        submittedByContactId: input.contactId,
-        submitterRoleAtSubmission: submitterIsPrimary ? 'primary' : 'secondary',
-        scope,
-        submittedAt: now,
-        // inherited when coalesced (the earlier email already leads here)
-        staffNotifiedAt: coalesced ? lastNotifiedAt : staffNotified ? now : null,
-        fields,
-      };
-      const inserted = await deps.changeRequestRepo.insertInTx(tx, draft);
-      if (!inserted.ok) throw new UseCaseAbort<RepoError>(inserted.error);
+        for (const reviewer of coalesced ? [] : reviewers) {
+          const queued = await deps.emails.enqueueInTx(tx, deps.tenant, {
+            type: 'member_change_request_submitted_staff',
+            toEmail: reviewer.email,
+            locale: reviewer.locale,
+            contextData: {
+              tenantId,
+              requestId: newId,
+              memberId: input.memberId,
+              submitterUserId: input.actorUserId,
+              reviewerUserId: reviewer.userId,
+              fieldKeys,
+            },
+          });
+          if (!queued.ok) throw new UseCaseAbort<RepoError>(queued.error);
+        }
 
-      const fieldKeys = fields.map((f) => f.key);
-      const audited = await deps.audit.recordInTx(tx, deps.tenant, {
-        type: 'member_change_request_submitted',
-        actorUserId: input.actorUserId,
-        requestId: input.requestId,
-        summary: `change request ${newId} submitted (${scope}: ${fieldKeys.join(', ')})`,
-        payload: ({
-          member_id: input.memberId,
-          request_id: newId,
-          contact_id: input.contactId,
-          scope,
-          field_keys: fieldKeys,
-          replaced_request_id: replaced,
-          coalesced,
-          actor_role: input.actorRole,
-        } satisfies ChangeRequestAuditPayload['member_change_request_submitted']),
+        return { outcome: 'submitted', request: inserted.value, replaced, staffNotified, coalesced };
       });
-      if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
 
-      for (const reviewer of coalesced ? [] : reviewers) {
-        const queued = await deps.emails.enqueueInTx(tx, deps.tenant, {
-          type: 'member_change_request_submitted_staff',
-          toEmail: reviewer.email,
-          locale: reviewer.locale,
-          contextData: {
-            tenantId,
-            requestId: newId,
-            memberId: input.memberId,
-            submitterUserId: input.actorUserId,
-            reviewerUserId: reviewer.userId,
-            fieldKeys,
-          },
+      if (outcome.outcome === 'submitted') {
+        membersMetrics.changeRequests.submitted(tenantId, scope, outcome.coalesced);
+        if (reviewers.length === 0) {
+          // a CREATED request nobody will be told about (round 5, silent-failure
+          // #5; moved here in round 7 so a no-op submit does not count)
+          logger.warn(
+            { tenantId, memberId: input.memberId, requestId: input.requestId, changeRequestId: outcome.request.id },
+            'change-request.submit.no_reviewers — request created but nobody is notified',
+          );
+          membersMetrics.changeRequests.noReviewers(tenantId);
+        }
+      }
+      return ok(outcome);
+    } catch (e) {
+      if (e instanceof MemberArchivedAbort) {
+        membersMetrics.changeRequests.refused(tenantId, 'archived');
+        return err({ type: 'member_archived' });
+      }
+      if (e instanceof RateLimitedAbort) {
+        // the tx wrote nothing; the refusal itself is recorded OUTSIDE it
+        // (FR-008 "recorded in the audit trail as a rate-limit refusal") —
+        // best-effort like the forgery trail: the refusal stands regardless
+        membersMetrics.changeRequests.refused(tenantId, 'rate_limited');
+        const audited = await deps.audit.record(deps.tenant, {
+          type: 'member_change_request_rate_limited',
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          summary: `change request refused: ${e.windowCount} submissions in ${SUBMISSION_WINDOW_HOURS} h`,
+          // a REFUSED attempt is not member activity: `related_member_id`, never
+          // the 0009 trigger key `member_id` (review round 1, REL-3 / P-7)
+          payload: {
+            related_member_id: input.memberId,
+            window_count: e.windowCount,
+            retry_after_seconds: e.retryAfterSeconds,
+            actor_role: input.actorRole,
+          } satisfies ChangeRequestAuditPayload['member_change_request_rate_limited'],
         });
-        if (!queued.ok) throw new UseCaseAbort<RepoError>(queued.error);
+        if (!audited.ok) {
+          logger.error(
+            { tenantId, memberId: input.memberId, requestId: input.requestId, err: audited.error.code },
+            'change-request.submit: audit write failed on rate_limited path',
+          );
+        }
+        return err({ type: 'rate_limited', retryAfterSeconds: e.retryAfterSeconds, windowCount: e.windowCount });
       }
-
-      return { outcome: 'submitted', request: inserted.value, replaced, staffNotified, coalesced };
-    });
-
-    if (outcome.outcome === 'submitted') {
-      membersMetrics.changeRequests.submitted(tenantId, scope, outcome.coalesced);
-      if (reviewers.length === 0) {
-        // a CREATED request nobody will be told about (round 5, silent-failure
-        // #5; moved here in round 7 so a no-op submit does not count)
-        logger.warn(
-          { tenantId, memberId: input.memberId, requestId: input.requestId, changeRequestId: outcome.request.id },
-          'change-request.submit.no_reviewers — request created but nobody is notified',
-        );
-        membersMetrics.changeRequests.noReviewers(tenantId);
-      }
-    }
-    return ok(outcome);
-  } catch (e) {
-    if (e instanceof MemberArchivedAbort) {
-      membersMetrics.changeRequests.refused(tenantId, 'archived');
-      return err({ type: 'member_archived' });
-    }
-    if (e instanceof RateLimitedAbort) {
-      // the tx wrote nothing; the refusal itself is recorded OUTSIDE it
-      // (FR-008 "recorded in the audit trail as a rate-limit refusal") —
-      // best-effort like the forgery trail: the refusal stands regardless
-      membersMetrics.changeRequests.refused(tenantId, 'rate_limited');
-      const audited = await deps.audit.record(deps.tenant, {
-        type: 'member_change_request_rate_limited',
-        actorUserId: input.actorUserId,
-        requestId: input.requestId,
-        summary: `change request refused: ${e.windowCount} submissions in ${SUBMISSION_WINDOW_HOURS} h`,
-        // a REFUSED attempt is not member activity: `related_member_id`, never
-        // the 0009 trigger key `member_id` (review round 1, REL-3 / P-7)
-        payload: {
-          related_member_id: input.memberId,
-          window_count: e.windowCount,
-          retry_after_seconds: e.retryAfterSeconds,
-          actor_role: input.actorRole,
-        } satisfies ChangeRequestAuditPayload['member_change_request_rate_limited'],
-      });
-      if (!audited.ok) {
+      if (e instanceof UseCaseAbort && isRepoError(e.error)) {
+        const re = e.error;
+        // The partial unique index refused a second pending row: two submits
+        // raced past the (empty) FOR UPDATE read. The loser's proposal is
+        // already pending — answer `already_pending` from a fresh read, never
+        // a 500 (review: reliability I-1). Falls through when the re-read
+        // finds nothing (the winner withdrew in between).
+        if (re.code === 'repo.conflict' && re.reason === 'change_request_pending_exists') {
+          const raced = await runInTenant(deps.tenant, (tx) =>
+            deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId),
+          ).catch((e: unknown) => {
+            logger.warn(
+              { tenantId, memberId: input.memberId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
+              'change-request.submit.conflict_reread_failed',
+            );
+            return null;
+          });
+          // the re-read can also fail as a Result (a throw is caught above) —
+          // log that arm too, or the operator reads the original conflict as the
+          // whole story (round 5, silent-failure #11)
+          if (raced && !raced.ok) {
+            logger.warn(
+              { tenantId, memberId: input.memberId, requestId: input.requestId, err: raced.error.code },
+              'change-request.submit.conflict_reread_failed',
+            );
+          }
+          if (raced && raced.ok && raced.value) {
+            // the winner's proposal IS this one → the harmless answer
+            if (sameProposal(raced.value, fields)) return ok({ outcome: 'already_pending', request: raced.value, unchanged: false });
+            // a DIFFERENT proposal lost the race: one bounded retry now finds the
+            // winner's pending row FOR UPDATE and takes the replace path (FR-008)
+            if (!opts.retriedAfterConflict) return submitChangeRequest(deps, input, { retriedAfterConflict: true });
+          }
+        }
         logger.error(
-          { tenantId, memberId: input.memberId, requestId: input.requestId, err: audited.error.code },
-          'change-request.submit: audit write failed on rate_limited path',
+          { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code, cause: errKind(repoErrorCause(re)) },
+          'change-request.submit.tx_aborted',
         );
-      }
-      return err({ type: 'rate_limited', retryAfterSeconds: e.retryAfterSeconds, windowCount: e.windowCount });
-    }
-    if (e instanceof UseCaseAbort && isRepoError(e.error)) {
-      const re = e.error;
-      // The partial unique index refused a second pending row: two submits
-      // raced past the (empty) FOR UPDATE read. The loser's proposal is
-      // already pending — answer `already_pending` from a fresh read, never
-      // a 500 (review: reliability I-1). Falls through when the re-read
-      // finds nothing (the winner withdrew in between).
-      if (re.code === 'repo.conflict' && re.reason === 'change_request_pending_exists') {
-        const raced = await runInTenant(deps.tenant, (tx) =>
-          deps.changeRequestRepo.findPendingBySubmitterInTx(tx, input.actorUserId),
-        ).catch((e: unknown) => {
-          logger.warn(
-            { tenantId, memberId: input.memberId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
-            'change-request.submit.conflict_reread_failed',
-          );
-          return null;
-        });
-        // the re-read can also fail as a Result (a throw is caught above) —
-        // log that arm too, or the operator reads the original conflict as the
-        // whole story (round 5, silent-failure #11)
-        if (raced && !raced.ok) {
-          logger.warn(
-            { tenantId, memberId: input.memberId, requestId: input.requestId, err: raced.error.code },
-            'change-request.submit.conflict_reread_failed',
-          );
-        }
-        if (raced && raced.ok && raced.value) {
-          // the winner's proposal IS this one → the harmless answer
-          if (sameProposal(raced.value, fields)) return ok({ outcome: 'already_pending', request: raced.value, unchanged: false });
-          // a DIFFERENT proposal lost the race: one bounded retry now finds the
-          // winner's pending row FOR UPDATE and takes the replace path (FR-008)
-          if (!opts.retriedAfterConflict) return submitChangeRequest(deps, input, { retriedAfterConflict: true });
-        }
+        return err({ type: 'server_error', message: `submit: ${re.code}` });
       }
       logger.error(
-        { tenantId, memberId: input.memberId, requestId: input.requestId, err: re.code, cause: errKind(repoErrorCause(re)) },
-        'change-request.submit.tx_aborted',
+        { tenantId, memberId: input.memberId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
+        'change-request.submit.unexpected',
       );
-      return err({ type: 'server_error', message: `submit: ${re.code}` });
+      return err({ type: 'server_error', message: 'submit: unexpected' });
     }
-    logger.error(
-      { tenantId, memberId: input.memberId, requestId: input.requestId, err: e instanceof Error ? e.name : String(e) },
-      'change-request.submit.unexpected',
-    );
-    return err({ type: 'server_error', message: 'submit: unexpected' });
-  }
+  };
+  return membersTracer().startActiveSpan(
+    SUBMIT_SPAN,
+    {
+      attributes: {
+        'tenant.slug': tenantId,
+        'change_request.id': newId,
+        'change_request.scope': scope,
+        'change_request.field_count': fields.length,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await submitTransaction();
+        if (!result.ok) {
+          // B10: ERROR is a system failure. Every other arm is a stated
+          // refusal — an attribute, not an error (see the docblock above).
+          if (result.error.type === 'server_error') {
+            span.setStatus({ code: SpanStatusCode.ERROR, message: result.error.type });
+          } else {
+            span.setAttribute('change_request.refusal', result.error.type);
+          }
+        }
+        return result;
+        /* v8 ignore start — defence-in-depth, exactly as `confirm-payment.ts`
+         * documents it: `submitTransaction` converts every fault to a
+         * `Result` in its own catch, so nothing reaches here. Unreachable
+         * to a test, kept so an OOM / tracer-internal throw / a later edit
+         * above the try cannot end this span UNSET as though it succeeded. */
+      } catch (e) {
+        // the constructor NAME only — `.message` can carry a proposed value
+        const name = e instanceof Error ? e.constructor.name : 'submit_threw';
+        span.setStatus({ code: SpanStatusCode.ERROR, message: name });
+        span.recordException({ name });
+        throw e;
+        /* v8 ignore stop */
+      } finally {
+        span.end();
+      }
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------

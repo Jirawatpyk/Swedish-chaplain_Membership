@@ -21,8 +21,12 @@
  *     (`WHERE state = … ORDER BY submitted_at, id LIMIT n`) for what
  *     `runList` issues, without its `members` / `contacts` / `users` joins —
  *     names the `member_change_requests_tenant_state_submitted_idx` index in
- *     both directions (the planner did not fall back to a seq scan + sort).
- *     The joins' own access paths are NOT covered here.
+ *     both directions (the planner did not fall back to a seq scan + sort);
+ *   - `EXPLAIN` of the REAL joined statement `listQueue` runs
+ *     (`queueListQuery` — the same builder `runList` executes, PR-3 polish):
+ *     the request table is driven by that index, no seq scan on it, and no
+ *     Sort node anywhere — the joins ride the index order (nested loops on
+ *     the members / contacts / users primary keys).
  *
  * `decided` rows are used because the partial unique index allows only one
  * PENDING row per submitter — 5,000 pending rows would need 5,000 users. The
@@ -33,6 +37,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { asMemberId, drizzleChangeRequestRepo, listChangeRequestQueue } from '@/modules/members';
+import { queueListQuery } from '@/modules/members/infrastructure/db/drizzle-change-request-repo';
 import { memberChangeRequestFields, memberChangeRequests } from '@/modules/members/infrastructure/db/schema-change-requests';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
@@ -231,6 +236,23 @@ describe('queue keyset pagination at 5,000 rows (T119, live Neon)', () => {
     });
     expect(plan).toContain('member_change_requests_tenant_state_submitted_idx');
     expect(plan).not.toMatch(/Seq Scan on member_change_requests/);
+  });
+
+  it.each([
+    ['the decided history (newest first)', { state: 'decided' } as const],
+    ['the pending queue default (oldest first — a backward index scan)', { state: 'pending' } as const],
+  ])('the REAL joined page query listQueue runs — %s — is driven by member_change_requests_tenant_state_submitted_idx: no seq scan on the request table, no Sort node (PR-3 polish)', async (_label, filter) => {
+    const plan = await runInTenant(tenant.ctx, async (tx) => {
+      // `getSQL()` — the bare statement; embedding the builder itself would wrap it in parentheses
+      const rows = (await tx.execute(sql`EXPLAIN ${queueListQuery(tx, filter, { cursor: null, limit: PAGE }).getSQL()}`)) as unknown as Array<Record<string, string>>;
+      return rows.map((r) => Object.values(r).join(' ')).join('\n');
+    });
+    expect(plan).toContain('member_change_requests_tenant_state_submitted_idx');
+    expect(plan).not.toMatch(/Seq Scan on member_change_requests/);
+    expect(plan).not.toMatch(/Sort/);
+    // the joins are there — this is the real statement, not the single-table proxy above
+    expect(plan).toMatch(/members/);
+    expect(plan).toMatch(/contacts/);
   });
 
   it('the per-member history stays indexed too — one member, 25 rows newest first', async () => {
