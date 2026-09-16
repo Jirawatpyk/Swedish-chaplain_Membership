@@ -17,28 +17,36 @@
   the iteration process.
 -->
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: TypeScript 5.7+ strict (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) · Node 22 LTS · Next.js 16 App Router · React 19 (locked — see CLAUDE.md § Locked-in tech stack)  
+**Primary Dependencies**: Drizzle ORM · next-intl · react-hook-form + zod · shadcn/ui + Tailwind v4 · Resend · Stripe `^22` (feature-specific additions: [list, or "none" — a new npm dependency needs a Constitution X justification below])  
+**Storage**: Neon Postgres `ap-southeast-1` with RLS + `runInTenant`; Upstash Redis for rate limiting; Vercel Blob for files (tables touched by this feature: [list])  
+**Testing**: Vitest (unit/contract) · live-Neon integration (`pnpm test:integration <path>`) · Playwright + axe (`--workers=1`) — coverage pins in `vitest.config.ts`  
+**Target Platform**: Vercel `sin1` (Fluid Compute, native Vercel Cron, UTC) — documented deviation from Thailand-primary hosting  
+**Bounded contexts touched**: [`src/modules/<context>` list — new context? yes/no]  
+**Performance Goals**: [feature-specific p95 targets per `docs/observability.md`; default API p95 < 400 ms (Constitution VII)]  
+**Constraints**: [feature-specific — e.g. money in satang, §87 gap-free numbering, PDPA lawful basis, feature flag name `FEATURE_*`]  
+**Scale/Scope**: [feature-specific — e.g. 150 members / 5,000 contacts today; rows, screens, cron cadence]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
-*Source: `.specify/memory/constitution.md` v1.0.0*
+*Source: `.specify/memory/constitution.md` (current version — cite principles by number; CLAUDE.md § Governance names the version)*
 
 **NON-NEGOTIABLE gates** (any FAIL blocks the plan; no waivers):
 
 - [ ] **I. Data Privacy & Security** — Lawful basis + purpose documented for any new PII
-      touched; RBAC checks on every new protected route; OWASP risks for touched surfaces
-      identified and mitigated; TLS 1.2+ and at-rest encryption confirmed for new data.
+      touched; permission checks (`hasPermission(role, key)`) on every new protected route,
+      server action and API route; OWASP risks for touched surfaces identified and mitigated;
+      TLS 1.2+ and at-rest encryption confirmed for new data.
+      **Tenant isolation (v1.4.0 sub-clauses, Review-Gate blocker if any is missing)**: every
+      tenant-scoped query runs inside `runInTenant(ctx, tx => …)` and uses that `tx`; every new
+      tenant-scoped table has `tenant_id` + RLS policies + `FORCE ROW LEVEL SECURITY`; a
+      cross-tenant probe integration test is listed in tasks.md; the deny path emits a
+      `*_cross_tenant_probe` audit event; any super-admin bypass is gated, logged and covered.
 - [ ] **II. Test-First Development** — Failing tests (contract / acceptance) planned BEFORE
-      implementation tasks; coverage targets (≥80% business, 100% security-critical) stated.
+      implementation tasks and observed RED first; live-Neon integration test for every new
+      use case; coverage pins acknowledged (Domain 100% line, Application 80% line + branch,
+      100% branch on security-critical use cases — `vitest.config.ts`).
 - [ ] **III. Clean Architecture** — New code maps to Presentation / Application / Domain /
       Infrastructure with the dependency rule preserved; no framework/ORM types leak out
       of Infrastructure; module boundaries named.
@@ -47,8 +55,10 @@
 
 **Core principle gates** (FAIL must be justified in Complexity Tracking):
 
-- [ ] **V. Internationalization (SV/EN)** — All new user-facing strings use i18n keys;
-      SV + EN resources planned; locale-aware formatting for dates/numbers/currency.
+- [ ] **V. Internationalization (EN/TH/SV)** — All new user-facing strings use i18n keys;
+      EN (canonical) + TH + SV resources planned in the same change (`pnpm check:i18n`);
+      TH mandatory for tax documents; locale-aware formatting for dates/numbers/currency;
+      Buddhist Era display-only for `th-TH`, storage stays ISO 8601 UTC.
 - [ ] **VI. Inclusive UX (Mobile First + WCAG 2.1 AA)** — Designs start at 320px;
       WCAG 2.1 AA conformance checklist attached; shared component library used.
 - [ ] **VII. Performance & Observability** — Performance budgets (LCP <2.5s, INP <200ms,
@@ -83,39 +93,24 @@ specs/[###-feature]/
 -->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+# Chamber-OS layout (CLAUDE.md § Source layout) — list only the paths this feature adds or changes
+src/modules/<context>/
+├── index.ts                     # public barrel — the ONLY cross-context import surface
+├── domain/                      # pure types + policies; no next / drizzle-orm / resend / @upstash / react
+├── application/                 # use cases + ports; Result<T,E>; no ORM / HTTP / React
+│   ├── ports/                   # incl. audit-port.ts (event type catalogue lives here)
+│   └── use-cases/
+└── infrastructure/              # Drizzle repos (thread `tx` from runInTenant), gateways, schema.ts
 
-tests/
-├── contract/
-├── integration/
-└── unit/
+src/app/(staff)/admin/<area>/    # staff pages + server actions
+src/app/(member)/portal/<area>/  # member self-service
+src/app/api/<area>/route.ts      # route handlers (cron routes: `export const GET = POST`)
+src/components/<area>/           # presentation only — never imports domain/ or infrastructure/
+src/i18n/messages/{en,th,sv}.json
 
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
+drizzle/migrations/NNNN_<name>.sql + meta/_journal.json   # hand-written SQL, unique `when`
 
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+tests/unit/<context>/  tests/contract/<context>/  tests/integration/<context>/  tests/e2e/
 ```
 
 **Structure Decision**: [Document the selected structure and reference the real
@@ -127,5 +122,5 @@ directories captured above]
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+| [e.g., new npm dependency `x`] | [what the feature cannot do without it] | [why the existing primitive / hand-rolled version was rejected] |
+| [e.g., super-admin path that bypasses `runInTenant`] | [operator need] | [why a tenant-scoped path was insufficient — and how it is gated, logged and tested] |

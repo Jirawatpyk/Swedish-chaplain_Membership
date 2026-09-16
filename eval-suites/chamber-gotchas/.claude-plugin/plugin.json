@@ -1,0 +1,8 @@
+{
+  "name": "chamber-gotchas",
+  "version": "0.1.0",
+  "description": "Eval-only plugin: packages Chamber-OS hard-won defect recipes as a skill so `claude plugin eval` can measure whether that knowledge raises defect detection (with/without ablation). Not for daily use — the source of truth stays in CLAUDE.md and .claude/agents/.",
+  "experimental": {
+    "evals": "evals"
+  }
+}

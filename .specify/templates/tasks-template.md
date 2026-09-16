@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: MANDATORY (Constitution Principle II, NON-NEGOTIABLE). Every user story carries at least one acceptance test that is written first and observed RED before implementation; a story that touches a `tenant_id`-scoped table also carries a cross-tenant probe integration test (Review-Gate blocker). Write one task per behaviour the spec states, naming its test — not one task per test file. Generate from THIS template and the feature's spec/plan, never by copying an earlier feature's tasks.md.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -20,10 +20,10 @@ description: "Task list template for feature implementation"
 
 ## Path Conventions
 
-- **Single project**: `src/`, `tests/` at repository root
-- **Web app**: `backend/src/`, `frontend/src/`
-- **Mobile**: `api/src/`, `ios/src/` or `android/src/`
-- Paths shown below assume single project - adjust based on plan.md structure
+- Bounded contexts: `src/modules/<context>/{domain,application,infrastructure}/` (public barrel `index.ts`; cross-context imports go through it)
+- Presentation: `src/app/(staff)/admin/**`, `src/app/(member)/portal/**`, `src/app/api/**/route.ts`, `src/components/**`
+- Tests: `tests/unit/<module>/`, `tests/contract/<module>/`, `tests/integration/<module>/` (live Neon `dev` branch), `tests/e2e/` (Playwright + axe, `--workers=1`)
+- Migrations: hand-written SQL in `drizzle/migrations/` + `meta/_journal.json` entry (see CLAUDE.md § Gotchas)
 
 <!-- 
   ============================================================================
@@ -79,19 +79,19 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 1 (write first, observe RED)
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T010 [P] [US1] Acceptance test for [AS-1 behaviour] in tests/contract/<module>/[name].test.ts — RED before T012
+- [ ] T011 [P] [US1] Live-Neon integration test for [use case] (+ cross-tenant probe if a `tenant_id` table is touched) in tests/integration/<module>/[name].test.ts — RED before T013
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
-- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
-- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T012 [P] [US1] Domain types/policies for [behaviour] in src/modules/<context>/domain/ (framework-free)
+- [ ] T013 [US1] Use case + ports for [behaviour] in src/modules/<context>/application/use-cases/ (Result<T,E>; audit event on state change)
+- [ ] T014 [US1] Repository/adapter in src/modules/<context>/infrastructure/ (threads `tx` from runInTenant) + migration if a table changes
+- [ ] T015 [US1] Route/server action/UI in src/app/… with i18n keys in en/th/sv
 - [ ] T016 [US1] Add validation and error handling
 - [ ] T017 [US1] Add logging for user story 1 operations
 
@@ -105,16 +105,16 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 2 (write first, observe RED)
 
-- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T018 [P] [US2] Acceptance test for [AS behaviour] in tests/contract/<module>/[name].test.ts — RED first
+- [ ] T019 [P] [US2] Live-Neon integration test for [use case] in tests/integration/<module>/[name].test.ts — RED first
 
 ### Implementation for User Story 2
 
-- [ ] T020 [P] [US2] Create [Entity] model in src/models/[entity].py
-- [ ] T021 [US2] Implement [Service] in src/services/[service].py
-- [ ] T022 [US2] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T020 [P] [US2] Domain changes for [behaviour] in src/modules/<context>/domain/
+- [ ] T021 [US2] Use case for [behaviour] in src/modules/<context>/application/use-cases/
+- [ ] T022 [US2] Adapter/route/UI for [behaviour] (src/modules/<context>/infrastructure/, src/app/…)
 - [ ] T023 [US2] Integrate with User Story 1 components (if needed)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
@@ -127,16 +127,16 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
+### Tests for User Story 3 (write first, observe RED)
 
-- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T024 [P] [US3] Acceptance test for [AS behaviour] in tests/contract/<module>/[name].test.ts — RED first
+- [ ] T025 [P] [US3] Live-Neon integration test for [use case] in tests/integration/<module>/[name].test.ts — RED first
 
 ### Implementation for User Story 3
 
-- [ ] T026 [P] [US3] Create [Entity] model in src/models/[entity].py
-- [ ] T027 [US3] Implement [Service] in src/services/[service].py
-- [ ] T028 [US3] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T026 [P] [US3] Domain changes for [behaviour] in src/modules/<context>/domain/
+- [ ] T027 [US3] Use case for [behaviour] in src/modules/<context>/application/use-cases/
+- [ ] T028 [US3] Adapter/route/UI for [behaviour] (src/modules/<context>/infrastructure/, src/app/…)
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -153,7 +153,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Documentation updates in docs/
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
-- [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
+- [ ] TXXX [P] Unit tests that close the Domain 100% / Application 80% coverage pins in tests/unit/<module>/ (only where the pins demand — no scratch checks)
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 
@@ -178,7 +178,7 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story
 
-- Tests (if included) MUST be written and FAIL before implementation
+- Tests MUST be written and observed FAILING before implementation (commit red, then green)
 - Models before services
 - Services before endpoints
 - Core implementation before integration
@@ -198,13 +198,13 @@ Examples of foundational tasks (adjust based on your project):
 ## Parallel Example: User Story 1
 
 ```bash
-# Launch all tests for User Story 1 together (if tests requested):
-Task: "Contract test for [endpoint] in tests/contract/test_[name].py"
-Task: "Integration test for [user journey] in tests/integration/test_[name].py"
+# Launch all tests for User Story 1 together:
+Task: "Acceptance test for [AS-1 behaviour] in tests/contract/<module>/[name].test.ts"
+Task: "Live-Neon integration test for [use case] in tests/integration/<module>/[name].test.ts"
 
 # Launch all models for User Story 1 together:
-Task: "Create [Entity1] model in src/models/[entity1].py"
-Task: "Create [Entity2] model in src/models/[entity2].py"
+Task: "Domain types/policies for [behaviour] in src/modules/<context>/domain/"
+Task: "Use case + ports for [behaviour] in src/modules/<context>/application/use-cases/"
 ```
 
 ---
@@ -245,7 +245,7 @@ With multiple developers:
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
-- Verify tests fail before implementing
+- Verify tests fail before implementing; commit tests only where the spec states the behaviour (one focused test per behaviour, sized like the neighbouring files)
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
