@@ -5456,6 +5456,7 @@
       "settings": "ตั้งค่า",
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
+      "settingsMemberChanges": "การอนุมัติคำขอแก้ไขข้อมูลของสมาชิก",
       "settingsBroadcasts": "ตั้งค่า E-Blast",
       "settingsIntegrationEventcreate": "การเชื่อมต่อ EventCreate",
       "events": "กิจกรรม",

@@ -74,6 +74,20 @@ const CATEGORIES = [
     icon: CalendarClockIcon,
     permission: 'settings.renewal_schedules',
   },
+  // F114 US6 (FR-031) — the per-tenant member-change approval switch. Third,
+  // like its sidebar row (`nav.staff.settingsMemberChanges`) — the hub mirrors
+  // the sidebar in ORDER as well as in set / permission / flag / label / icon.
+  // `members.write` mirrors the page guard AND the PATCH route (an admin
+  // surface: manager / marketing never see it). Flag-aware like the two
+  // above: the page `notFound()`s while FEATURE_MEMBER_CHANGE_APPROVAL is off.
+  {
+    titleKey: 'categories.memberChanges.title',
+    descriptionKey: 'categories.memberChanges.description',
+    href: '/admin/settings/member-changes',
+    icon: ClipboardCheckIcon,
+    permission: 'members.write',
+    visibilityFlag: 'memberChangeApproval',
+  },
   // 016 post-ship review (below-cap): the index claimed "same contract as the
   // sidebar (T063)" while listing 2 of the sidebar's 4 Settings entries — a
   // super_admin arriving via the breadcrumb from /admin/settings/broadcasts
@@ -96,18 +110,6 @@ const CATEGORIES = [
     icon: PlugZapIcon,
     permission: 'settings.integrations',
     visibilityFlag: 'eventsEnabled',
-  },
-  // F114 US6 (FR-031) — the per-tenant member-change approval switch.
-  // `members.write` mirrors the page guard AND the PATCH route (an admin
-  // surface: manager / marketing never see it). Flag-aware like the two
-  // above: the page `notFound()`s while FEATURE_MEMBER_CHANGE_APPROVAL is off.
-  {
-    titleKey: 'categories.memberChanges.title',
-    descriptionKey: 'categories.memberChanges.description',
-    href: '/admin/settings/member-changes',
-    icon: ClipboardCheckIcon,
-    permission: 'members.write',
-    visibilityFlag: 'memberChangeApproval',
   },
 ] as const;
 
