@@ -17,9 +17,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import { clonePlansToYear, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -137,119 +137,121 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const deps = buildPlansDeps(tenant);
-  const sourceIp = ctx.sourceIp ?? null;
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildPlansDeps(tenant);
+    const sourceIp = ctx.sourceIp ?? null;
 
-  const result = await clonePlansToYear(
-    {
-      sourceYear: asPlanYear(parsed.data.source_year),
-      targetYear: asPlanYear(parsed.data.target_year),
-      activateCloned: parsed.data.activate_cloned ?? false,
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-      sourceIp,
-      idempotencyKey: keyCheck.key,
-    },
-    {
-      tenant: deps.tenant,
-      planRepo: deps.planRepo,
-      audit: deps.audit,
-      clock: deps.clock,
-      members: deps.members,
-    },
-  );
+    const result = await clonePlansToYear(
+      {
+        sourceYear: asPlanYear(parsed.data.source_year),
+        targetYear: asPlanYear(parsed.data.target_year),
+        activateCloned: parsed.data.activate_cloned ?? false,
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        sourceIp,
+        idempotencyKey: keyCheck.key,
+      },
+      {
+        tenant: deps.tenant,
+        planRepo: deps.planRepo,
+        audit: deps.audit,
+        clock: deps.clock,
+        members: deps.members,
+      },
+    );
 
-  if (result.ok) {
-    const body = {
-      source_year: result.value.source_year,
-      target_year: result.value.target_year,
-      cloned_count: result.value.cloned_count,
-      cloned_plan_ids: [...result.value.cloned_plan_ids],
-    };
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 201,
-      body,
-    });
-    return NextResponse.json(body, { status: 201 });
-  }
+    if (result.ok) {
+      const body = {
+        source_year: result.value.source_year,
+        target_year: result.value.target_year,
+        cloned_count: result.value.cloned_count,
+        cloned_plan_ids: [...result.value.cloned_plan_ids],
+      };
+      await remember({
+        status: 201,
+        body,
+      });
+      return NextResponse.json(body, { status: 201 });
+    }
 
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: result.error.message,
+    switch (result.error.type) {
+      case 'invalid_body':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_body',
+              message: result.error.message,
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'target_year_populated':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'target_year_populated',
-            message:
-              'Target year already has plans. Delete or move them before cloning.',
-            details: { existing_count: result.error.existing_count },
+          { status: 400 },
+        );
+      case 'target_year_populated':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'target_year_populated',
+              message:
+                'Target year already has plans. Delete or move them before cloning.',
+              details: { existing_count: result.error.existing_count },
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'source_year_empty':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'source_year_empty',
-            message: 'Source year has no plans to clone.',
+          { status: 409 },
+        );
+      case 'source_year_empty':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'source_year_empty',
+              message: 'Source year has no plans to clone.',
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'idempotency_conflict':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'idempotency_conflict',
-            message: 'Idempotency-Key was reused with a different body.',
+          { status: 409 },
+        );
+      case 'idempotency_conflict':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'idempotency_conflict',
+              message: 'Idempotency-Key was reused with a different body.',
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'audit_failed':
-      // clone-plans commits all N rows inside a single Postgres tx
-      // BEFORE emitting audit, so a failure here means the clone fully
-      // succeeded but the audit trail is missing. "may be partial" was
-      // a lie. Surface source/target years so on-call can backfill the
-      // audit row by scanning the affected plans.
-      logger.error(
-        {
-          requestId: ctx.requestId,
-          source_year: parsed.data.source_year,
-          target_year: parsed.data.target_year,
-          err: result.error,
-        },
-        'clone-plans: rows committed but audit write failed — operator backfill needed',
-      );
-      return NextResponse.json(
-        {
-          error: {
-            code: 'audit_failed',
-            message:
-              'Plans were cloned but audit trail write failed. Contact ops.',
+          { status: 409 },
+        );
+      case 'audit_failed':
+        // clone-plans commits all N rows inside a single Postgres tx
+        // BEFORE emitting audit, so a failure here means the clone fully
+        // succeeded but the audit trail is missing. "may be partial" was
+        // a lie. Surface source/target years so on-call can backfill the
+        // audit row by scanning the affected plans.
+        logger.error(
+          {
+            requestId: ctx.requestId,
+            source_year: parsed.data.source_year,
+            target_year: parsed.data.target_year,
+            err: result.error,
           },
-        },
-        { status: 500 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'clone-plans: unhandled error',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          'clone-plans: rows committed but audit write failed — operator backfill needed',
+        );
+        return NextResponse.json(
+          {
+            error: {
+              code: 'audit_failed',
+              message:
+                'Plans were cloned but audit trail write failed. Contact ops.',
+            },
+          },
+          { status: 500 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'clone-plans: unhandled error',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

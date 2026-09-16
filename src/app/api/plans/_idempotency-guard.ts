@@ -22,6 +22,7 @@ import {
   reserveIdempotencyRecord,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent, type IdempotentRun } from '@/lib/idempotency-run';
 import type { TenantContext } from '@/modules/tenants';
 
 type IdempotencyProceed = {
@@ -140,4 +141,27 @@ export async function runIdempotencyGuard(
   }
 
   return { kind: 'proceed', key: keyCheck.key, bodyHash, tenant };
+}
+
+/**
+ * Run the post-reservation section of a route that came through
+ * `runIdempotencyGuard`, releasing the reservation on every exit that does not
+ * remember a response (117 — see `@/lib/idempotency-run`).
+ *
+ * The guard reserves the key BEFORE the use case runs, and a
+ * reserved-but-unwritten record classifies as a CONFLICT for 24 h — so a route
+ * that answers 404 / 429 / 500, or throws, and simply returns, makes the
+ * client's correct retry (same key, same body) impossible until the TTL
+ * expires. Wrapping the tail here means a new error arm added to one of these
+ * routes later cannot reintroduce the class.
+ *
+ *   const guard = await runIdempotencyGuard(request, tenant, seed, body);
+ *   if (guard.kind === 'response') return guard.response;
+ *   return idempotentRun(guard, async ({ remember }) => { ... });
+ */
+export function idempotentRun<T>(
+  guard: IdempotencyProceed,
+  work: (run: IdempotentRun) => Promise<T>,
+): Promise<T> {
+  return runIdempotent(guard.tenant, { key: guard.key, bodyHash: guard.bodyHash }, work);
 }

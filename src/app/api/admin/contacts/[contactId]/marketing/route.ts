@@ -29,9 +29,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { problemResponse } from '@/lib/http/problem-response';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
@@ -119,77 +119,79 @@ export async function POST(
     );
   }
 
-  const deps = buildContactMarketingDeps(tenant);
-  const result = await setContactMarketingOptOut(
-    {
-      contactId,
-      state: parsedBody.data.state,
-      actor: { userId: actorUserId, role: ctx.current.user.role, source: 'staff' },
-      requestId: ctx.requestId,
-    },
-    deps,
-  );
-
-  if (result.ok) {
-    const body =
-      result.value.outcome === 'changed'
-        ? { outcome: 'changed' as const, contact: serialiseContact(result.value.contact) }
-        : { outcome: 'unchanged' as const };
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, { status: 200, body });
-    return NextResponse.json(body, { status: 200 });
-  }
-
-  switch (result.error.type) {
-    case 'not_found': {
-      // The adapter returns a Result (it never throws) — read it, or a failed
-      // probe write would be silent (security review LOW-2).
-      const probe = await deps.audit.record(tenant, {
-        type: 'member_cross_tenant_probe',
-        actorUserId,
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildContactMarketingDeps(tenant);
+    const result = await setContactMarketingOptOut(
+      {
+        contactId,
+        state: parsedBody.data.state,
+        actor: { userId: actorUserId, role: ctx.current.user.role, source: 'staff' },
         requestId: ctx.requestId,
-        summary: `probe on contact ${contactId}`,
-        payload: { attempted_contact_id: contactId, actor_tenant_id: tenant.slug },
-      });
-      if (!probe.ok) {
-        logger.error(
-          { requestId: ctx.requestId, err: probe.error.code },
-          'contact-marketing: probe audit failed',
-        );
-      }
-      return problemResponse(404, 'not_found', 'Contact not found.');
+      },
+      deps,
+    );
+
+    if (result.ok) {
+      const body =
+        result.value.outcome === 'changed'
+          ? { outcome: 'changed' as const, contact: serialiseContact(result.value.contact) }
+          : { outcome: 'unchanged' as const };
+      await remember({ status: 200, body });
+      return NextResponse.json(body, { status: 200 });
     }
-    case 'removed':
-      // Same 404 to the client (non-disclosure), but NO probe audit: an
-      // in-tenant soft-deleted contact is a benign race (security LOW-1).
-      return problemResponse(404, 'not_found', 'Contact not found.');
-    case 'self_opted_out':
-      return problemResponse(
-        409,
-        'self_opted_out',
-        'Marketing cannot be switched on.',
-        'This person switched marketing off themselves; only they can switch it back on.',
-      );
-    case 'suppressed':
-      return problemResponse(
-        409,
-        'suppressed',
-        'Marketing cannot be switched on.',
-        "This person unsubscribed themselves; their choice takes precedence over a staff change.",
-      );
-    case 'suppression_unavailable':
-      return problemResponse(
-        503,
-        'suppression_unavailable',
-        'Unsubscribe status is temporarily unavailable.',
-        'Switching marketing on needs the unsubscribe list; retry shortly.',
-        { headers: { 'Retry-After': '5' } },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error.message },
-        'contact-marketing: unhandled',
-      );
-      return problemResponse(500, 'server_error', 'Internal server error.');
-  }
+
+    switch (result.error.type) {
+      case 'not_found': {
+        // The adapter returns a Result (it never throws) — read it, or a failed
+        // probe write would be silent (security review LOW-2).
+        const probe = await deps.audit.record(tenant, {
+          type: 'member_cross_tenant_probe',
+          actorUserId,
+          requestId: ctx.requestId,
+          summary: `probe on contact ${contactId}`,
+          payload: { attempted_contact_id: contactId, actor_tenant_id: tenant.slug },
+        });
+        if (!probe.ok) {
+          logger.error(
+            { requestId: ctx.requestId, err: probe.error.code },
+            'contact-marketing: probe audit failed',
+          );
+        }
+        return problemResponse(404, 'not_found', 'Contact not found.');
+      }
+      case 'removed':
+        // Same 404 to the client (non-disclosure), but NO probe audit: an
+        // in-tenant soft-deleted contact is a benign race (security LOW-1).
+        return problemResponse(404, 'not_found', 'Contact not found.');
+      case 'self_opted_out':
+        return problemResponse(
+          409,
+          'self_opted_out',
+          'Marketing cannot be switched on.',
+          'This person switched marketing off themselves; only they can switch it back on.',
+        );
+      case 'suppressed':
+        return problemResponse(
+          409,
+          'suppressed',
+          'Marketing cannot be switched on.',
+          "This person unsubscribed themselves; their choice takes precedence over a staff change.",
+        );
+      case 'suppression_unavailable':
+        return problemResponse(
+          503,
+          'suppression_unavailable',
+          'Unsubscribe status is temporarily unavailable.',
+          'Switching marketing on needs the unsubscribe list; retry shortly.',
+          { headers: { 'Retry-After': '5' } },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error.message },
+          'contact-marketing: unhandled',
+        );
+        return problemResponse(500, 'server_error', 'Internal server error.');
+    }
+  });
 }

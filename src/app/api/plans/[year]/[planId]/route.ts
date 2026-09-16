@@ -27,9 +27,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import {
   asPlanSlug,
@@ -225,115 +225,117 @@ export async function PATCH(
     }
   }
 
-  const deps = buildPlansDeps(tenant);
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildPlansDeps(tenant);
 
-  const result = await updatePlan(
-    {
-      planId: asPlanSlug(parsedPath.data.planId),
-      year: asPlanYear(parsedPath.data.year),
-      patch: rawBody as Parameters<typeof updatePlan>[0]['patch'],
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-      sourceIp: ctx.sourceIp ?? null,
-      idempotencyKey: keyCheck.key,
-    },
-    {
-      tenant: deps.tenant,
-      planRepo: deps.planRepo,
-      audit: deps.audit,
-      clock: deps.clock,
-      members: deps.members,
-    },
-  );
+    const result = await updatePlan(
+      {
+        planId: asPlanSlug(parsedPath.data.planId),
+        year: asPlanYear(parsedPath.data.year),
+        patch: rawBody as Parameters<typeof updatePlan>[0]['patch'],
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        sourceIp: ctx.sourceIp ?? null,
+        idempotencyKey: keyCheck.key,
+      },
+      {
+        tenant: deps.tenant,
+        planRepo: deps.planRepo,
+        audit: deps.audit,
+        clock: deps.clock,
+        members: deps.members,
+      },
+    );
 
-  if (result.ok) {
-    const body = serialisePlan(result.value);
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 200,
-      body,
-    });
-    return NextResponse.json(body, { status: 200 });
-  }
+    if (result.ok) {
+      const body = serialisePlan(result.value);
+      await remember({
+        status: 200,
+        body,
+      });
+      return NextResponse.json(body, { status: 200 });
+    }
 
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: 'Patch body failed validation.',
-            details: { issues: result.error.issues },
-          },
-        },
-        { status: 400 },
-      );
-    case 'partnership_corporate_mismatch':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'partnership_corporate_mismatch',
-            message: 'Partnership/corporate integrity rule violated.',
-            details: { issues: result.error.issues },
-          },
-        },
-        { status: 422 },
-      );
-    case 'not_found':
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Plan not found.' } },
-        { status: 404 },
-      );
-    case 'prior_year_locked_fields':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'prior_year_locked_fields',
-            message:
-              'Cannot edit pricing, eligibility, benefits, or scope on a previous-year plan.',
-            details: {
-              locked_fields: result.error.locked_fields,
-              suggested_action: 'clone_to_current_year',
-              clone_action_path: '/api/plans/clone',
+    switch (result.error.type) {
+      case 'invalid_body':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_body',
+              message: 'Patch body failed validation.',
+              details: { issues: result.error.issues },
             },
           },
-        },
-        { status: 422 },
-      );
-    case 'idempotency_conflict':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'idempotency_conflict',
-            message: 'Idempotency-Key was reused with a different body.',
+          { status: 400 },
+        );
+      case 'partnership_corporate_mismatch':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'partnership_corporate_mismatch',
+              message: 'Partnership/corporate integrity rule violated.',
+              details: { issues: result.error.issues },
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'audit_failed':
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'update-plan: audit write failed',
-      );
-      return NextResponse.json(
-        {
-          error: {
-            code: 'audit_failed',
-            message: 'Audit trail write failed.',
+          { status: 422 },
+        );
+      case 'not_found':
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Plan not found.' } },
+          { status: 404 },
+        );
+      case 'prior_year_locked_fields':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'prior_year_locked_fields',
+              message:
+                'Cannot edit pricing, eligibility, benefits, or scope on a previous-year plan.',
+              details: {
+                locked_fields: result.error.locked_fields,
+                suggested_action: 'clone_to_current_year',
+                clone_action_path: '/api/plans/clone',
+              },
+            },
           },
-        },
-        { status: 500 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'update-plan: unhandled error',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          { status: 422 },
+        );
+      case 'idempotency_conflict':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'idempotency_conflict',
+              message: 'Idempotency-Key was reused with a different body.',
+            },
+          },
+          { status: 409 },
+        );
+      case 'audit_failed':
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'update-plan: audit write failed',
+        );
+        return NextResponse.json(
+          {
+            error: {
+              code: 'audit_failed',
+              message: 'Audit trail write failed.',
+            },
+          },
+          { status: 500 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'update-plan: unhandled error',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -425,80 +427,82 @@ export async function DELETE(
     }
   }
 
-  const deps = buildPlansDeps(tenant);
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildPlansDeps(tenant);
 
-  const result = await softDeletePlan(
-    {
-      planId: asPlanSlug(parsedPath.data.planId),
-      year: asPlanYear(parsedPath.data.year),
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-      sourceIp: ctx.sourceIp ?? null,
-      idempotencyKey: keyCheck.key,
-    },
-    {
-      tenant: deps.tenant,
-      planRepo: deps.planRepo,
-      audit: deps.audit,
-      clock: deps.clock,
-    },
-  );
+    const result = await softDeletePlan(
+      {
+        planId: asPlanSlug(parsedPath.data.planId),
+        year: asPlanYear(parsedPath.data.year),
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        sourceIp: ctx.sourceIp ?? null,
+        idempotencyKey: keyCheck.key,
+      },
+      {
+        tenant: deps.tenant,
+        planRepo: deps.planRepo,
+        audit: deps.audit,
+        clock: deps.clock,
+      },
+    );
 
-  if (result.ok) {
-    const body = serialisePlan(result.value);
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 200,
-      body,
-    });
-    return NextResponse.json(body, { status: 200 });
-  }
+    if (result.ok) {
+      const body = serialisePlan(result.value);
+      await remember({
+        status: 200,
+        body,
+      });
+      return NextResponse.json(body, { status: 200 });
+    }
 
-  switch (result.error.type) {
-    case 'not_found':
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Plan not found.' } },
-        { status: 404 },
-      );
-    case 'has_active_members':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'plan_has_active_members',
-            message:
-              'This plan has active members attached and cannot be deleted.',
-            details: { affected_member_count: result.error.count },
+    switch (result.error.type) {
+      case 'not_found':
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Plan not found.' } },
+          { status: 404 },
+        );
+      case 'has_active_members':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'plan_has_active_members',
+              message:
+                'This plan has active members attached and cannot be deleted.',
+              details: { affected_member_count: result.error.count },
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'idempotency_conflict':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'idempotency_conflict',
-            message: 'Idempotency-Key was reused with a different body.',
+          { status: 409 },
+        );
+      case 'idempotency_conflict':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'idempotency_conflict',
+              message: 'Idempotency-Key was reused with a different body.',
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'audit_failed':
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'soft-delete-plan: audit write failed',
-      );
-      return NextResponse.json(
-        { error: { code: 'audit_failed', message: 'Audit trail write failed.' } },
-        { status: 500 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'soft-delete-plan: unhandled error',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          { status: 409 },
+        );
+      case 'audit_failed':
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'soft-delete-plan: audit write failed',
+        );
+        return NextResponse.json(
+          { error: { code: 'audit_failed', message: 'Audit trail write failed.' } },
+          { status: 500 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'soft-delete-plan: unhandled error',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

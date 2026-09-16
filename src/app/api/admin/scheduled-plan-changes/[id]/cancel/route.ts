@@ -38,7 +38,6 @@ import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
 import { assertNever } from '@/lib/assert-never';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
 import { planMetrics } from '@/lib/metrics';
 import { cancelScheduledPlanChange } from '@/modules/plans';
@@ -46,7 +45,7 @@ import {
   drizzleScheduledPlanChangeRepo,
   planAuditAdapter,
 } from '@/modules/plans/server';
-import { runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
+import { idempotentRun, runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 // scheduledChangeId is a Postgres uuid column. Reject non-UUIDs with
@@ -124,176 +123,171 @@ export async function POST(
   );
   if (guard.kind === 'response') return guard.response;
 
-  // Use-case invocation.
-  const result = await cancelScheduledPlanChange(
-    {
-      tenant,
-      repo: drizzleScheduledPlanChangeRepo,
-      audit: planAuditAdapter,
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-      sourceIp: ctx.sourceIp ?? null,
-    },
-    {
-      scheduledChangeId: parsedPath.data.id,
-      memberId: parsedBody.data.memberId,
-      effectiveAtCycleId: parsedBody.data.effectiveAtCycleId,
-      reason: parsedBody.data.reason ?? null,
-    },
-  );
+  return idempotentRun(guard, async ({ remember }) => {
+    // Use-case invocation.
+    const result = await cancelScheduledPlanChange(
+      {
+        tenant,
+        repo: drizzleScheduledPlanChangeRepo,
+        audit: planAuditAdapter,
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+        sourceIp: ctx.sourceIp ?? null,
+      },
+      {
+        scheduledChangeId: parsedPath.data.id,
+        memberId: parsedBody.data.memberId,
+        effectiveAtCycleId: parsedBody.data.effectiveAtCycleId,
+        reason: parsedBody.data.reason ?? null,
+      },
+    );
 
-  if (result.ok) {
-    const body = {
-      scheduled_change_id: result.value.scheduledChangeId,
-      status: result.value.status,
-      cancelled_at: result.value.cancelledAt,
-    };
-    await rememberIdempotentResponse(tenant, guard.key, guard.bodyHash, {
-      status: 200,
-      body,
-    });
-    return NextResponse.json(body, { status: 200 });
-  }
-
-  switch (result.error.code) {
-    case 'invalid_input':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_input',
-            message: `Invalid input field: ${result.error.field}`,
-          },
-        },
-        { status: 400 },
-      );
-    case 'not_found':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'not_found',
-            message: 'Scheduled plan change not found.',
-          },
-        },
-        { status: 404 },
-      );
-    case 'already_terminal':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'already_terminal',
-            message: `Scheduled plan change is already ${result.error.status}.`,
-            details: { status: result.error.status },
-          },
-        },
-        { status: 409 },
-      );
-    case 'audit_failed': {
-      // Attach errorId mapped from the preserved auditErrorType
-      // discriminator. Alert routing can distinguish zod-rejection
-      // (deploy-skew) from DB-rejection (column drift / pgEnum drift
-      // / RLS).
-      logger.error(
-        {
-          errorId:
-            result.error.auditErrorType === 'invalid_payload'
-              ? 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'
-              : 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED',
-          requestId: ctx.requestId,
-          err: { ...result.error, transitioned: undefined },
-        },
-        'cancel-scheduled-plan-change: audit write failed',
-      );
-      // Emit metric counter so SRE backfill SLO can be graphed
-      // (log-based attribution would be lossy on sampled pipelines).
-      planMetrics.cancelAuditBackfillRequired(
-        tenant.slug,
-        result.error.auditErrorType,
-      );
-      // The row IS cancelled (transitionStatus
-      // landed). Return 200 with the cancelled-row body + diagnostic
-      // header so the UI does not retry a successful mutation. SRE
-      // backfills the audit row out-of-band by alerting on the errorId
-      // above. Mirrors F5 `payment_environment_mismatch` UX pattern.
+    if (result.ok) {
       const body = {
-        scheduled_change_id: result.error.transitioned.scheduledChangeId,
-        status: result.error.transitioned.status,
-        cancelled_at: result.error.transitioned.cancelledAt,
+        scheduled_change_id: result.value.scheduledChangeId,
+        status: result.value.status,
+        cancelled_at: result.value.cancelledAt,
       };
-      // Cache the diagnostic headers alongside body+status so
-      // idempotent replay re-emits them. SRE alert routing keyed on
-      // `X-Audit-Backfill-Required` / `X-Audit-Error-Type` would
-      // otherwise silently lose the discriminator on retry.
-      const headerEntries: Record<string, string> = {
-        'X-Audit-Backfill-Required': '1',
-        'X-Audit-Error-Type': result.error.auditErrorType,
-      };
-      const headers = new Headers(headerEntries);
-      await rememberIdempotentResponse(tenant, guard.key, guard.bodyHash, {
-        status: 200,
-        body,
-        headers: headerEntries,
-      });
-      return NextResponse.json(body, { status: 200, headers });
+      await remember({ status: 200, body });
+      return NextResponse.json(body, { status: 200 });
     }
-    case 'server_error': {
-      // R5-S12 — narrow via the `recheckFailed` boolean discriminator.
-      // The discriminated `server_error` variant has TWO sub-shapes:
-      //   - { recheckFailed: false, message } — primary throw, no recheck failure
-      //   - { recheckFailed: true,  message, recheckErrMessage } — recheck also threw
-      //
-      // R5-I11 collapsed the previous warn + error double-emit into a
-      // single logger.error. The unified emit carries `recheckErrMessage`
-      // as a structured field iff `recheckFailed === true`; errorId
-      // reflects which sub-shape fired.
-      if (result.error.recheckFailed) {
-        logger.error(
+
+    switch (result.error.code) {
+      case 'invalid_input':
+        return NextResponse.json(
           {
-            errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
-            requestId: ctx.requestId,
-            err: result.error,
-            recheckErrMessage: result.error.recheckErrMessage,
+            error: {
+              code: 'invalid_input',
+              message: `Invalid input field: ${result.error.field}`,
+            },
           },
-          'cancel-scheduled-plan-change: TOCTOU recheck failed',
+          { status: 400 },
         );
-      } else {
+      case 'not_found':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'not_found',
+              message: 'Scheduled plan change not found.',
+            },
+          },
+          { status: 404 },
+        );
+      case 'already_terminal':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'already_terminal',
+              message: `Scheduled plan change is already ${result.error.status}.`,
+              details: { status: result.error.status },
+            },
+          },
+          { status: 409 },
+        );
+      case 'audit_failed': {
+        // Attach errorId mapped from the preserved auditErrorType
+        // discriminator. Alert routing can distinguish zod-rejection
+        // (deploy-skew) from DB-rejection (column drift / pgEnum drift
+        // / RLS).
         logger.error(
           {
-            errorId: 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR',
+            errorId:
+              result.error.auditErrorType === 'invalid_payload'
+                ? 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'
+                : 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED',
             requestId: ctx.requestId,
-            err: result.error,
+            err: { ...result.error, transitioned: undefined },
           },
-          'cancel-scheduled-plan-change: server error',
+          'cancel-scheduled-plan-change: audit write failed',
+        );
+        // Emit metric counter so SRE backfill SLO can be graphed
+        // (log-based attribution would be lossy on sampled pipelines).
+        planMetrics.cancelAuditBackfillRequired(
+          tenant.slug,
+          result.error.auditErrorType,
+        );
+        // The row IS cancelled (transitionStatus
+        // landed). Return 200 with the cancelled-row body + diagnostic
+        // header so the UI does not retry a successful mutation. SRE
+        // backfills the audit row out-of-band by alerting on the errorId
+        // above. Mirrors F5 `payment_environment_mismatch` UX pattern.
+        const body = {
+          scheduled_change_id: result.error.transitioned.scheduledChangeId,
+          status: result.error.transitioned.status,
+          cancelled_at: result.error.transitioned.cancelledAt,
+        };
+        // Cache the diagnostic headers alongside body+status so
+        // idempotent replay re-emits them. SRE alert routing keyed on
+        // `X-Audit-Backfill-Required` / `X-Audit-Error-Type` would
+        // otherwise silently lose the discriminator on retry.
+        const headerEntries: Record<string, string> = {
+          'X-Audit-Backfill-Required': '1',
+          'X-Audit-Error-Type': result.error.auditErrorType,
+        };
+        const headers = new Headers(headerEntries);
+        await remember({ status: 200, body, headers: headerEntries });
+        return NextResponse.json(body, { status: 200, headers });
+      }
+      case 'server_error': {
+        // R5-S12 — narrow via the `recheckFailed` boolean discriminator.
+        // The discriminated `server_error` variant has TWO sub-shapes:
+        //   - { recheckFailed: false, message } — primary throw, no recheck failure
+        //   - { recheckFailed: true,  message, recheckErrMessage } — recheck also threw
+        //
+        // R5-I11 collapsed the previous warn + error double-emit into a
+        // single logger.error. The unified emit carries `recheckErrMessage`
+        // as a structured field iff `recheckFailed === true`; errorId
+        // reflects which sub-shape fired.
+        if (result.error.recheckFailed) {
+          logger.error(
+            {
+              errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
+              requestId: ctx.requestId,
+              err: result.error,
+              recheckErrMessage: result.error.recheckErrMessage,
+            },
+            'cancel-scheduled-plan-change: TOCTOU recheck failed',
+          );
+        } else {
+          logger.error(
+            {
+              errorId: 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR',
+              requestId: ctx.requestId,
+              err: result.error,
+            },
+            'cancel-scheduled-plan-change: server error',
+          );
+        }
+        return NextResponse.json(
+          {
+            error: { code: 'server_error', message: 'Internal server error.' },
+          },
+          { status: 500 },
         );
       }
-      return NextResponse.json(
-        {
-          error: { code: 'server_error', message: 'Internal server error.' },
-        },
-        { status: 500 },
-      );
+      default: {
+        // R5-I1 — exhaustiveness guard. Mirrors `accept/route.ts:91-92`.
+        // If a future `CancelScheduledPlanChangeError` variant is added
+        // without a case-arm above, TS narrows `result.error` to a
+        // non-`never` type at this point and the const assignment to
+        // `never` fails compile. The throw is unreachable today (use-case
+        // error union is closed); it's purely a compile-time guard.
+        // docs/code-conventions.md § 8 — was `throw _exhaustive`, which throws
+        // the raw error OBJECT rather than an Error, so it reaches Next with
+        // no message and no stack. (NOTE: unlike the eight renewals routes,
+        // NO catch encloses this switch - the only try in this file wraps
+        // `request.json()` - so neither the "[object Object]" incident nor
+        // the pino-serializer privacy argument applies here. An Error simply
+        // carries a stack and a message where the bare object carried
+        // neither.) Found by sweeping the CLASS rather than the variable
+        // name: at the time this was written the § 8 check greped for
+        // `return` only, so a `throw` was invisible to it. It covers both now.
+        // Note this union discriminates on `code`, not `kind`.
+        return assertNever(
+          result.error,
+          `cancel-scheduled-plan-change: unhandled error code '${(result.error as { readonly code: string }).code}'`,
+        );
+      }
     }
-    default: {
-      // R5-I1 — exhaustiveness guard. Mirrors `accept/route.ts:91-92`.
-      // If a future `CancelScheduledPlanChangeError` variant is added
-      // without a case-arm above, TS narrows `result.error` to a
-      // non-`never` type at this point and the const assignment to
-      // `never` fails compile. The throw is unreachable today (use-case
-      // error union is closed); it's purely a compile-time guard.
-      // docs/code-conventions.md § 8 — was `throw _exhaustive`, which throws
-      // the raw error OBJECT rather than an Error, so it reaches Next with
-      // no message and no stack. (NOTE: unlike the eight renewals routes,
-      // NO catch encloses this switch - the only try in this file wraps
-      // `request.json()` - so neither the "[object Object]" incident nor
-      // the pino-serializer privacy argument applies here. An Error simply
-      // carries a stack and a message where the bare object carried
-      // neither.) Found by sweeping the CLASS rather than the variable
-      // name: at the time this was written the § 8 check greped for
-      // `return` only, so a `throw` was invisible to it. It covers both now.
-      // Note this union discriminates on `code`, not `kind`.
-      return assertNever(
-        result.error,
-        `cancel-scheduled-plan-change: unhandled error code '${(result.error as { readonly code: string }).code}'`,
-      );
-    }
-  }
+  });
 }

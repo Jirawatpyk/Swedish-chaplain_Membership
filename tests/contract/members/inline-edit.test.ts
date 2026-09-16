@@ -47,6 +47,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -238,5 +239,37 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error.code).toBe('invalid_body');
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed. The
+  // header is OPTIONAL on this route, so the request below sends one — with
+  // no key there is no reservation and nothing to release.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    inlineEditMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+    const req = new NextRequest(
+      `http://localhost/api/members/${validMemberId}/inline-edit`,
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': 'idem-ie',
+        },
+        body: JSON.stringify({ field: 'status', value: 'inactive' }),
+      },
+    );
+    const { PATCH } = await import('@/app/api/members/[memberId]/inline-edit/route');
+    const res = await PATCH(req, { params: routeParams()() });
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-ie',
+    );
   });
 });

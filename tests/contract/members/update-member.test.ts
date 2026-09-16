@@ -41,6 +41,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -143,6 +144,29 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
     expect(res.status).toBe(404);
   });
 
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without the release the
+  // client's correct retry (same key, same body) could never succeed. The
+  // suite has no 5xx test of its own, so this one arranges the updateMember
+  // branch's `server_error` directly.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    updateMemberMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+    const { PATCH } = await import('@/app/api/members/[memberId]/route');
+    const res = await PATCH(makeRequest({ company_name: 'X' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-u',
+    );
+  });
+
   it('200 on plan change happy path', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
@@ -225,6 +249,29 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.error.code).toBe('turnover_warning');
+  });
+
+  // 117 — this route has TWO tails under one reservation: the changePlan
+  // branch returns early, before the updateMember branch is ever reached. Its
+  // 5xx arm has to release too, and only a test on THIS branch proves the
+  // wrapper covers the early return rather than just the fall-through.
+  it('117: releases the idempotency reservation on the plan-change 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    changePlanMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+    const { PATCH } = await import('@/app/api/members/[memberId]/route');
+    const res = await PATCH(
+      makeRequest({ new_plan_id: 'premium', new_plan_year: 2026 }),
+      { params: routeParams() },
+    );
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-u',
+    );
   });
 
   it('400 missing Idempotency-Key', async () => {

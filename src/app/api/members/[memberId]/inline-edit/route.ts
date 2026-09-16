@@ -31,9 +31,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import { inlineEdit, asMemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -121,91 +121,93 @@ export async function PATCH(
     }
   }
 
-  const deps = buildMembersDeps(tenant);
+  return runIdempotent(tenant, idempotencyKey && bodyHash ? { key: idempotencyKey, bodyHash } : null, async ({ remember }) => {
+    const deps = buildMembersDeps(tenant);
 
-  const result = await inlineEdit(
-    asMemberId(rawMemberId),
-    rawBody,
-    {
-      actorUserId: ctx.current.user.id,
-      requestId: ctx.requestId,
-    },
-    {
-      tenant,
-      memberRepo: deps.memberRepo,
-      audit: deps.audit,
-      clock: deps.clock,
-    },
-  );
+    const result = await inlineEdit(
+      asMemberId(rawMemberId),
+      rawBody,
+      {
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+      },
+      {
+        tenant,
+        memberRepo: deps.memberRepo,
+        audit: deps.audit,
+        clock: deps.clock,
+      },
+    );
 
-  if (result.ok) {
-    const body = {
-      member_id: result.value.memberId,
-      status: result.value.status,
-      country: result.value.country,
-      notes: result.value.notes,
-      updated_at: result.value.updatedAt.toISOString(),
-    };
-    if (idempotencyKey && bodyHash) {
-      await rememberIdempotentResponse(tenant, idempotencyKey, bodyHash, {
-        status: 200,
-        body,
-      });
+    if (result.ok) {
+      const body = {
+        member_id: result.value.memberId,
+        status: result.value.status,
+        country: result.value.country,
+        notes: result.value.notes,
+        updated_at: result.value.updatedAt.toISOString(),
+      };
+      if (idempotencyKey && bodyHash) {
+        await remember({
+          status: 200,
+          body,
+        });
+      }
+      return NextResponse.json(body, { status: 200 });
     }
-    return NextResponse.json(body, { status: 200 });
-  }
 
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: 'Body failed validation.',
-            details: { issues: result.error.issues },
+    switch (result.error.type) {
+      case 'invalid_body':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_body',
+              message: 'Body failed validation.',
+              details: { issues: result.error.issues },
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'invalid_field_value':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'validation_error',
-            message: result.error.reason,
-            details: { field: result.error.field },
+          { status: 400 },
+        );
+      case 'invalid_field_value':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'validation_error',
+              message: result.error.reason,
+              details: { field: result.error.field },
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'not_found':
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Member not found.' } },
-        { status: 404 },
-      );
-    case 'state_error':
-      // The client maps `code` → localized copy; the message here is a
-      // generic non-leaky fallback (no dev-y "<code>" interpolation). The
-      // domain code is preserved under `details.code` for observability.
-      return NextResponse.json(
-        {
-          error: {
-            code: 'state_error',
-            message: 'Member state transition is not allowed.',
-            details: { code: result.error.code },
+          { status: 400 },
+        );
+      case 'not_found':
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Member not found.' } },
+          { status: 404 },
+        );
+      case 'state_error':
+        // The client maps `code` → localized copy; the message here is a
+        // generic non-leaky fallback (no dev-y "<code>" interpolation). The
+        // domain code is preserved under `details.code` for observability.
+        return NextResponse.json(
+          {
+            error: {
+              code: 'state_error',
+              message: 'Member state transition is not allowed.',
+              details: { code: result.error.code },
+            },
           },
-        },
-        { status: 409 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'inline-edit: unhandled',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          { status: 409 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'inline-edit: unhandled',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

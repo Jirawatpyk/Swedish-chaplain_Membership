@@ -53,6 +53,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'deterministic-hash'),
 }));
@@ -223,5 +224,46 @@ describe('contract: POST /api/plans (T092)', () => {
     const body = await res.json();
     expect(body.error?.code).toBe('missing_idempotency_key');
     expect(createPlanMock).not.toHaveBeenCalled();
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without this the client's
+  // correct retry (same key, same body) could never succeed.
+  // (This suite had no 5xx case; `server_error` is the route's default arm.)
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+    createPlanMock.mockResolvedValueOnce(err({ type: 'server_error' }));
+    const { POST } = await import('@/app/api/plans/route');
+    const res = await POST(makeRequest(validBody));
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-uuid-1',
+    );
+  });
+
+  // 117 — `audit_failed` answers 500 AFTER the plan row has committed. It is
+  // still a 5xx, so it must never be remembered and must release the key:
+  // the operator-guided retry has to reach the route, not a 24 h conflict.
+  it('117: releases the idempotency reservation on the audit_failed 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+    createPlanMock.mockResolvedValueOnce(
+      err({ type: 'audit_failed', message: 'db down' }),
+    );
+    const { POST } = await import('@/app/api/plans/route');
+    const res = await POST(makeRequest(validBody));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error?.code).toBe('audit_failed');
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-uuid-1',
+    );
   });
 });

@@ -60,6 +60,7 @@ vi.mock('@/lib/idempotency', () => ({
     classifyIdempotencyRequestMock(...args),
   reserveIdempotencyRecord: (...args: unknown[]) =>
     reserveIdempotencyRecordMock(...args),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: (...args: unknown[]) =>
     rememberIdempotentResponseMock(...args),
   // Stable hash — identical body across calls maps to the same digest so
@@ -265,5 +266,48 @@ describe('contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)', 
     const body = await res.json();
     expect(body.error?.code).toBe('logo_history_cap_reached');
     expect(body.error?.code).not.toBe('idempotency_conflict');
+  });
+
+  // 117 — this route remembers every status it returns, so its only exposure
+  // to the class is a THROW: `uploadTenantLogo` does a sharp re-encode, a Blob
+  // put and a DB write, any of which can reject. Without a release the
+  // reservation would answer CONFLICT for 24 h on the client's retry.
+  it('117: releases the idempotency reservation when the use case throws', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    classifyIdempotencyRequestMock.mockResolvedValueOnce({ kind: 'first' });
+    uploadTenantLogoMock.mockRejectedValueOnce(new Error('sharp: input buffer unsupported'));
+
+    const { POST } = await import('@/app/api/tenant-invoice-settings/logo/route');
+    await expect(
+      POST(
+        makeMultipartRequest(new Uint8Array([1, 2, 3]), 'image/png', {
+          'idempotency-key': 'idem-logo-throw-1',
+        }),
+      ),
+    ).rejects.toThrow('sharp: input buffer unsupported');
+
+    expect(reserveIdempotencyRecordMock).toHaveBeenCalledTimes(1);
+    expect(rememberIdempotentResponseMock).not.toHaveBeenCalled();
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-logo-throw-1',
+    );
+  });
+
+  // 117 — and with NO key there is nothing reserved, so nothing may be
+  // released: the wrapper must not call through on the keyless path.
+  it('117: does not release when the Idempotency-Key header is absent', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    uploadTenantLogoMock.mockRejectedValueOnce(new Error('boom'));
+
+    const { POST } = await import('@/app/api/tenant-invoice-settings/logo/route');
+    await expect(
+      POST(makeMultipartRequest(new Uint8Array([1, 2, 3]), 'image/png')),
+    ).rejects.toThrow('boom');
+
+    expect(reserveIdempotencyRecordMock).not.toHaveBeenCalled();
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).not.toHaveBeenCalled();
   });
 });

@@ -35,9 +35,9 @@ import {
   parseIdempotencyKey,
   classifyIdempotencyRequest,
   reserveIdempotencyRecord,
-  rememberIdempotentResponse,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import {
   eraseMember,
@@ -161,53 +161,55 @@ export async function POST(
     );
   }
 
-  const deps = buildEraseMemberDeps(tenant);
-  const result = await eraseMember(
-    memberId,
-    parsedBody.data,
-    { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
-    deps,
-  );
+  return runIdempotent(tenant, { key: keyCheck.key, bodyHash }, async ({ remember }) => {
+    const deps = buildEraseMemberDeps(tenant);
+    const result = await eraseMember(
+      memberId,
+      parsedBody.data,
+      { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
+      deps,
+    );
 
-  if (result.ok) {
-    const responseBody = {
-      memberId: result.value.memberId,
-      erasedAt: result.value.erasedAt.toISOString(),
-      cascadesComplete: result.value.cascadesComplete,
-    };
-    await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
-      status: 200,
-      body: responseBody,
-    });
-    return NextResponse.json(responseBody, { status: 200 });
-  }
+    if (result.ok) {
+      const responseBody = {
+        memberId: result.value.memberId,
+        erasedAt: result.value.erasedAt.toISOString(),
+        cascadesComplete: result.value.cascadesComplete,
+      };
+      await remember({
+        status: 200,
+        body: responseBody,
+      });
+      return NextResponse.json(responseBody, { status: 200 });
+    }
 
-  switch (result.error.type) {
-    case 'invalid_body':
-      return NextResponse.json(
-        {
-          error: {
-            code: 'invalid_body',
-            message: 'Body failed validation.',
-            details: { issues: result.error.issues },
+    switch (result.error.type) {
+      case 'invalid_body':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'invalid_body',
+              message: 'Body failed validation.',
+              details: { issues: result.error.issues },
+            },
           },
-        },
-        { status: 400 },
-      );
-    case 'not_found':
-      return NextResponse.json(
-        { error: { code: 'not_found', message: 'Member not found.' } },
-        { status: 404 },
-      );
-    case 'server_error':
-    default:
-      logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'erase-member: unhandled',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error', message: 'Internal server error.' } },
-        { status: 500 },
-      );
-  }
+          { status: 400 },
+        );
+      case 'not_found':
+        return NextResponse.json(
+          { error: { code: 'not_found', message: 'Member not found.' } },
+          { status: 404 },
+        );
+      case 'server_error':
+      default:
+        logger.error(
+          { requestId: ctx.requestId, err: result.error },
+          'erase-member: unhandled',
+        );
+        return NextResponse.json(
+          { error: { code: 'server_error', message: 'Internal server error.' } },
+          { status: 500 },
+        );
+    }
+  });
 }

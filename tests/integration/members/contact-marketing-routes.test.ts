@@ -103,6 +103,12 @@ vi.mock('@/lib/idempotency', async () => {
     ) {
       store.set(k(tenant, key), { bodyHash, response });
     },
+    // 117 — the fake has to model the release too, or a route that correctly
+    // drops its reservation on a 429 / 5xx / throw would still look burnt
+    // here (`response === null` ⇒ conflict, above).
+    async releaseIdempotencyRecord(tenant: { slug: string }, key: string) {
+      store.delete(k(tenant, key));
+    },
   };
 });
 

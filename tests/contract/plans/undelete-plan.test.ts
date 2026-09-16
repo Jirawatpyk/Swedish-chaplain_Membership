@@ -45,6 +45,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'deterministic-hash'),
 }));
@@ -189,6 +190,31 @@ describe('contract: POST /api/plans/[year]/[planId]/undelete (T124)', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error?.code).toBe('audit_failed');
+  });
+
+  // 117 — the 5xx arm must RELEASE the reservation. A reserved-but-unwritten
+  // record classifies as a CONFLICT for 24 h, so without this the client's
+  // correct retry (same key, same body) could never succeed.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+    undeletePlanMock.mockResolvedValueOnce(
+      err({ type: 'audit_failed', message: 'db down' }),
+    );
+
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/undelete/route'
+    );
+    const res = await POST(makeRequest('2026', 'premium'), {
+      params: params('2026', 'premium'),
+    });
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-undel-1',
+    );
   });
 
   it('400 when Idempotency-Key header missing', async () => {

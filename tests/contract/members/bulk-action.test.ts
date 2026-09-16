@@ -56,6 +56,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
+  releaseIdempotencyRecord: vi.fn(async (..._a: unknown[]) => undefined),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -200,6 +201,56 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
     expect(res.status).toBe(429);
     const body = await res.json();
     expect(body.error.code).toBe('bulk_rate_limit_exceeded');
+  });
+
+  // 117 — the rate limit is consumed AFTER the reservation, so the 429 arm is
+  // the worst case of the class: `Retry-After` tells the client to retry the
+  // same key + body, and a reserved-but-unwritten record answers CONFLICT for
+  // 24 h. The reservation must be released.
+  it('117: releases the idempotency reservation on the 429 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    rateLimitCheckMock.mockResolvedValueOnce({
+      success: false,
+      remaining: 0,
+      reset: Date.now() + 300_000,
+    });
+    const { POST } = await import('@/app/api/members/bulk/route');
+    const res = await POST(
+      makeRequest({ action: 'archive', member_ids: ['id-1'] }),
+    );
+    expect(res.status).toBe(429);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-bulk',
+    );
+  });
+
+  // 117 — same for the 5xx arm: an infra fault is deliberately not cached
+  // (the route already says so), which is exactly what burns the key unless
+  // the reservation is dropped with it.
+  it('117: releases the idempotency reservation on the 500 arm', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    rateLimitCheckMock.mockResolvedValueOnce({
+      success: true,
+      remaining: 9,
+      reset: Date.now() + 600_000,
+    });
+    bulkActionMock.mockResolvedValueOnce(
+      err({ type: 'server_error', message: 'boom' }),
+    );
+    const { POST } = await import('@/app/api/members/bulk/route');
+    const res = await POST(
+      makeRequest({ action: 'archive', member_ids: ['id-1'] }),
+    );
+    expect(res.status).toBe(500);
+    const idem = await import('@/lib/idempotency');
+    expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+    expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-bulk',
+    );
   });
 
   it('403 non-admin rejected', async () => {
