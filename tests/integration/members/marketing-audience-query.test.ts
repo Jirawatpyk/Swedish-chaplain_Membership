@@ -271,6 +271,18 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
 // which is REQUIRED on `main`, capped at 20 minutes, and runs against a
 // freshly created (cold, unvacuumed) Neon branch. It runs in the nightly
 // sweep instead, which sets `RUN_SCALE_TESTS=1` — a genuine run, not a skip.
+//
+// The 3 s is SC-004's PRODUCTION number: Vercel `sin1` → Neon
+// `ap-southeast-1`, ~25 ms a round trip. The nightly runner is in the US and
+// pays ~200 ms a statement, twenty files to a fork — it measured 3007 ms on
+// 2026-09-09 and 4047 / 3808 ms on 2026-09-16 with nothing wrong. So the
+// budget takes its value from `PERF_AUDIENCE_PAGE_MS` when the workflow sets
+// one (the `PERF_RLS_P95_MS` / `PERF_AUDIENCE_20K_MS` idiom), and stays the
+// unscaled SLO everywhere else — a run alone, on a workstation in the region,
+// is still held to the 3 s the criterion promises. Disclose any override you
+// use. The SLO itself is asserted in production by the query's own timing,
+// not by a runner an ocean away.
+const AUDIENCE_PAGE_BUDGET_MS = Number(process.env.PERF_AUDIENCE_PAGE_MS ?? 3_000);
 describe.runIf(process.env.RUN_SCALE_TESTS === '1')('108 PR-D — Marketing audience pagination + SC-004 budget (live Neon)', () => {
   let tenant: TestTenant;
   let admin: TestUser;
@@ -331,7 +343,10 @@ describe.runIf(process.env.RUN_SCALE_TESTS === '1')('108 PR-D — Marketing audi
     expect(r.value.total).toBe(MEMBERS * CONTACTS_PER_MEMBER);
     expect(r.value.page).toBe(1);
     expect(r.value.pageSize).toBe(50);
-    expect(elapsedMs, `page 1 took ${elapsedMs.toFixed(0)} ms`).toBeLessThan(3_000);
+    expect(
+      elapsedMs,
+      `page 1 took ${elapsedMs.toFixed(0)} ms (budget ${AUDIENCE_PAGE_BUDGET_MS} ms)`,
+    ).toBeLessThan(AUDIENCE_PAGE_BUDGET_MS);
   }, 60_000);
 
   it('the last page is the remainder and a page past the end is empty', async () => {
@@ -353,6 +368,9 @@ describe.runIf(process.env.RUN_SCALE_TESTS === '1')('108 PR-D — Marketing audi
     const elapsedMs = performance.now() - started;
     if (!r.ok) throw new Error('expected ok');
     expect(r.value.total).toBe(MEMBERS * (CONTACTS_PER_MEMBER - 1));
-    expect(elapsedMs, `preset page 1 took ${elapsedMs.toFixed(0)} ms`).toBeLessThan(3_000);
+    expect(
+      elapsedMs,
+      `preset page 1 took ${elapsedMs.toFixed(0)} ms (budget ${AUDIENCE_PAGE_BUDGET_MS} ms)`,
+    ).toBeLessThan(AUDIENCE_PAGE_BUDGET_MS);
   }, 60_000);
 });

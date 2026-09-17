@@ -17,6 +17,23 @@
  * per-query overhead (e.g. the RLS p95 check) cannot be rescued by a bigger
  * number and should take its threshold from an env var the workflow sets, or
  * not run in the sweep at all.
+ *
+ * The two mechanisms that rule produced, so a new suite copies one instead of
+ * inventing a third:
+ *
+ *   - `INTEGRATION_FOLDER_RUN=1` — set by `.husky/pre-push` and by the nightly
+ *     sweep, both of which run many files in ONE fork against one shared Neon
+ *     compute. A per-query budget REPORTS there and asserts everything that is
+ *     not a clock; it asserts the budget when the file runs alone (see
+ *     `tests/integration/members/change-requests-queue-pagination.test.ts`).
+ *   - A named env knob — `PERF_RLS_P95_MS`, `PERF_AUDIENCE_20K_MS`,
+ *     `PERF_AUDIENCE_PAGE_MS` — when the number is a PRODUCTION SLO measured
+ *     in-region and the runner is not. The default stays the SLO; the workflow
+ *     raises it to a runaway guard and says so in a comment.
+ *
+ * Neither is a licence to widen a budget on a workstation to make a red suite
+ * green: disclose any override you use, and if the number moved on a machine
+ * that should meet it, it is a regression.
  */
 export const CI_LATENCY_FACTOR = process.env.CI ? 6 : 1;
 
