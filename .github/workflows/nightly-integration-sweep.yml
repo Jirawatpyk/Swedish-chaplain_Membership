@@ -124,6 +124,25 @@ jobs:
       # measured 1387 ms. Raised so the check still guards a runaway (a
       # missing index would blow past this) without asserting the network.
       PERF_RLS_P95_MS: '2500'
+      # This sweep runs CHUNK (20) files in ONE fork against one shared Neon
+      # compute, which is the same measurement environment the pre-push folder
+      # run creates — so a suite that measures PER-QUERY latency reports here
+      # instead of asserting (`tests/helpers/ci-latency.ts`: such a budget
+      # "should take its threshold from an env var the workflow sets, or not
+      # run in the sweep at all"). MEASURED on run 35154420655 (2026-09-16):
+      # the F114 queue p95 read 2616 ms against a 2400 ms budget that the same
+      # file measures at ~300 ms a page when it runs alone. The suites keep
+      # asserting everything that is not a clock — the walk, the order, no gap
+      # or duplicate, the EXPLAIN control.
+      INTEGRATION_FOLDER_RUN: '1'
+      # 108 PR-D's marketing-audience budget is SC-004's PRODUCTION number
+      # (< 3 s from `sin1` to Neon `ap-southeast-1`, ~25 ms RTT). A US runner
+      # pays ~200 ms a statement: the same two pages measured 3007 ms on
+      # 2026-09-09 and 4047 / 3808 ms on 2026-09-16. Scaled here the way
+      # PERF_RLS_P95_MS and PERF_AUDIENCE_20K_MS already are, so the check
+      # still catches a runaway (a missing index blows past 18 s) without
+      # asserting the Atlantic.
+      PERF_AUDIENCE_PAGE_MS: '18000'
       # F6 CSV import short-circuits to `timeout` when its 55 s "may a new
       # batch start" budget trips; on the runner's link a fixture that finishes
       # locally returns `timeout` instead of `completed`. 5 minutes here, the
