@@ -578,10 +578,15 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 
 - **FR-021**: The system MUST notify the next party at every hand-off: new submission → marketing;
   version sent → member; member approved → marketing; member requested changes → marketing;
-  schedule confirmed → member; rejected or withdrawn → the other party.
+  schedule confirmed → member; rejected or withdrawn → the other party. **Every one of these
+  emails is governed by the feature switch** (FR-034): with it off the notification rows are
+  enqueued but not delivered, so the "new submission → marketing" email — which is new behaviour on
+  an existing, unflagged action — does not start reaching staff until the flip.
 - **FR-021a**: "Marketing" as a notification recipient means every active user holding the
   `marketing` role in the tenant; when no such user exists, the tenant's admins are notified
   instead. Other staff are never emailed for hand-offs but always see the in-app count (FR-023).
+  Until the switch is on, that roster receives nothing: the submit-time email waits in the outbox
+  with the other four types (FR-034).
 - **FR-021b**: Staff hand-off emails MUST carry only the E-Blast's subject, member company name,
   the new stage and a link — never the body, the member's feedback or notes. Member emails MUST
   state what changed, who acted, the proposed and confirmed send times when they differ, and a
@@ -644,7 +649,12 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-034**: With the new flow switched off, the approve/reject flow MUST behave as today (the
   writing tool and screen fixes of US3/US6 are not governed by the switch), and E-Blasts already
   in a new stage MUST remain completable or cancellable and MUST NOT be sent without the required
-  member approval.
+  member approval. "Behave as today" includes **email**: none of the five new hand-off
+  notifications MUST be delivered while the switch is off. The rows may be enqueued — the
+  state-changing transactions do not branch on the switch — but the outbox drainer MUST skip the
+  five new notification types until it is on, so they wait and then drain (the F114 precedent).
+  That is what keeps FR-021's "new submission → marketing" from changing live behaviour before the
+  flip: today nobody is emailed on submit, and with the switch off nobody is.
 - **FR-035**: A written UAT walkthrough (EN + TH) MUST be delivered that lets SweCham exercise
   every stage using a test member and a staff-only recipient list.
 
@@ -739,8 +749,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-048**: Validation errors on the message MUST be programmatically associated with the editor
   so assistive technology announces them; the toolbar MUST follow the standard toolbar keyboard
   pattern (arrow keys between controls, Home/End, a visible focus state). At 320 px the toolbar
-  wraps onto further rows rather than hiding controls in an overflow menu; the plan's live look
-  confirms the row count *(checklist default)*.
+  wraps onto further rows rather than hiding controls in an overflow menu — the **shape** is
+  decided; the **row count** is measured on the running dev server and recorded here after that
+  check, and no control may clip or be hidden at that width *(checklist default)*.
 - **FR-049**: The member's E-Blast detail page MUST show the E-Blast's subject and content.
 - **FR-050**: The compose screens MUST use a page width that fits the editor and the 600 px email
   preview side by side on large screens and stacked on small ones; the departure from the form
@@ -749,14 +760,18 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-051**: Every E-Blast screen MUST pass the platform's UX checklist (`docs/ux-standards.md`
   § 15) and the existing automated WCAG 2.1 AA scan (axe-core rules, the `@a11y` e2e suite) with
   zero serious or critical findings before the trial starts; "every E-Blast screen" is the finite
-  list of nine: portal compose, portal E-Blast detail/sign-off, portal benefits E-Blast tab, staff
-  queue, staff detail/format, staff compose-on-behalf, template list/new/edit, E-Blast settings,
-  Brand settings. **The pass is taken where each screen is built**: seven of the nine exist in the
-  writing-tool/screen-standard delivery and are gated there; the **portal detail/sign-off compare
-  view** and the **staff detail/format surface** are built with the approval round and take the
-  same pass — the same checklist and the same scan, zero serious or critical — in that delivery
-  instead. No screen ships without its pass, and no pass is deferred past the delivery that builds
-  the screen. Translation keys that no screen uses MUST be removed and components that are never
+  list of nine: (1) portal compose, (2) portal E-Blast detail, (3) portal benefits E-Blast tab,
+  (4) staff queue, (5) staff detail/format, (6) staff compose-on-behalf, (7) template
+  list/new/edit, (8) E-Blast settings, (9) Brand settings. **The pass is taken in every delivery
+  that builds or changes a screen**, named by screen rather than by a count: the
+  writing-tool/screen-standard delivery gates screens 1, 3, 4, 6, 7, 8 and 9 whole, **plus the
+  body view of screen 2**, which it builds; the approval-round delivery gates screen 5, which does
+  not exist until then, **the sign-off compare view of screen 2**, which it rebuilds, **and screen 4
+  again**, because that delivery also carries the dashboard and rebuilds the queue's filters, table,
+  card list and stage vocabulary. Screens 2 and 4 are therefore each scanned once in **both**
+  deliveries because both deliveries change them — that is the rule, not a double count. Same checklist, same scan, zero serious or critical, every time. No screen
+  ships without its pass, and no pass is deferred past the delivery that builds or changes the
+  screen. Translation keys that no screen uses MUST be removed and components that are never
   shown MUST be wired or deleted *(checklist default)*.
 
 ### Key Entities
@@ -793,7 +808,12 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   holds a portal account for the member company may approve only when signed in there as that
   company's user. `manager` can read versions, decisions and history but cannot format, send a
   test copy, confirm a schedule or open Brand settings. New member writes (approve, request
-  changes, withdraw) are rate-limited per user like the existing E-Blast actions (60 per minute);
+  changes, withdraw, **and the inline-image upload**) are rate-limited per user at 60 per minute —
+  a new limit, since today's E-Blast approve/reject/cancel actions carry none and the image upload
+  carries none either (only submit and recipient counting do); the upload is included because a 5 MB
+  cap and a virus scan bound one request, not the rate of them;
+  staff formatting writes — including the widened reject and cancel routes — get their own new
+  per-user limit stated in the contracts;
   test copies at 10 per hour; preview renders at 30 per minute per actor — an amplification guard
   on a server-side render, not a workflow limit *(checklist default)*.
 - **Tenant scope**: versions, member decisions, feedback text, and notifications are all
@@ -833,9 +853,13 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **Money & tax**: N/A — no invoice, payment, or tax document is created or changed. The annual
   E-Blast allowance is a benefit entitlement, not a monetary amount (rules in FR-020).
 - **Feature flag / kill-switch**: `FEATURE_EBLAST_MEMBER_APPROVAL`, default OFF, gates **entry**
-  into the approval round — and only entry. With it off, the single action that starts a formatted
-  version is not offered, so no E-Blast can enter a new stage and today's approve/reject flow is
-  unchanged. It deliberately does **not** gate the exits: an E-Blast already in a new stage when
+  into the approval round — and only entry, which in practice means **one transition,
+  “Awaiting marketing review → In design”, not the whole action**. With it off, starting a formatted
+  version on a **newly submitted** E-Blast is not offered, so no E-Blast can enter a new stage and
+  today's approve/reject flow is unchanged — but marketing may still start the next version of an
+  E-Blast already in the round (one the member sent back with changes requested, or one whose
+  approval a later edit voids), because that is how an in-flight E-Blast is **completed** and the
+  clause below forbids stranding it. It deliberately does **not** gate the exits: an E-Blast already in a new stage when
   the flag goes off stays completable and cancellable (FR-034), which means its hand-off
   notifications, its reminders, the day-23 warning and the day-30 expiry all keep running for that
   row, and the dashboard keeps offering a stage's chip while rows exist in it. Gating those would
@@ -844,7 +868,12 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   improve today's flow and carry no member-approval semantics; a broken design block would be
   rolled back by deploy, so each block ships only with its preview and email rendering tested
   together. Also live regardless of the flag: the new stage values and storage for
-  versions/decisions, the new audit and notification types, and the preserved proposed send time.
+  versions/decisions, the new audit and notification **enum values**, and the preserved proposed
+  send time. **The five hand-off emails themselves are not**: the flag has a second effect beyond
+  the one transition — the outbox drainer skips the five new notification types while it is off, so
+  the rows are written and wait rather than being delivered (FR-034, FR-021). Nothing about the
+  enqueue branches on the variable; only the drainer does, which is why a flag flip needs no
+  backfill and loses no hand-off.
   The existing E-Blast master switch continues to disable everything. Rows already "Awaiting
   marketing review" when the flag turns on gain the new actions like any other — nothing
   distinguishes them. The email produced with no brand data and no design block MUST be
@@ -898,8 +927,11 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   keeps the original guarantee (nobody can alter what a member submitted) while allowing
   formatting.
 - **Member sign-off is required only when content changed**: if marketing approves as submitted,
-  the content is the member's own and no sign-off round is needed. Whether SweCham wants the
-  sign-off round to be mandatory for every E-Blast is a candidate question for `/speckit.clarify`.
+  the content is the member's own and no sign-off round is needed. **Settled as an assumption, not
+  an open question** (`/speckit.analyze` round 2): FR-007 already decides it, and making the
+  sign-off round mandatory for an unformatted E-Blast would ask a member to approve their own
+  words. If SweCham asks for a mandatory round after the trial, it is a per-tenant setting in a
+  later feature, not a change here.
 - **The member gives feedback; marketing makes the fix.** The member does not edit the formatted
   version themselves (matches the requested flow: "if member rejects, it goes back to SweCham to
   fix").
@@ -910,10 +942,13 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   member-approval round approves *content*, not the recipient list. The dashboard sits beside the
   audience page in the same navigation area, so marketing has one place for "what is going out"
   and one for "who receives it".
-- **Delivery may be sliced**: the writing tool and screen fixes (US3, US6), the approval round
-  (US1, US2, US5) and the dashboard (US4) are independently shippable. The tool and the fixes
-  go first: they improve today's flow immediately and the approval round is pointless without
-  the tool.
+- **Delivery is sliced in two, not three**: the writing tool and screen fixes (US3, US6) go first —
+  they improve today's flow immediately and the approval round is pointless without the tool — and
+  everything else (US1, US2, US5, US4, US7) ships together behind the flag. The dashboard was
+  briefly a third slice; it is not independently shippable in practice, because the stage labels it
+  defines, the metric registrations it owns and the accessibility pass on the queue it rebuilds all
+  belong to the same change as the stages themselves, and the trial cannot start without it
+  (maintainer, 2026-09-18; `plan.md` Amendment 8).
 - **The minimum design-block set was chosen without SweCham's samples.** Call-to-action button,
   full-width banner and chamber logo header are what nearly every chamber E-Blast uses; SweCham's
   2–3 real past E-Blasts (requested) may add or reorder blocks but are not expected to remove any.

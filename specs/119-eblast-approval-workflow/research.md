@@ -178,9 +178,9 @@ map and every hand-listed literal set must be visited. The full list, verified 2
 | `drizzle-broadcasts-repo.ts:384` | quota **reserved** `IN ('submitted','approved')` | → `IN_PROGRESS_BROADCAST_STATUSES` (R7) |
 | `drizzle-broadcasts-repo.ts:1322` | `listInFlightOwnedByMember` — the erasure/cancel cascade, the same literal | → the same Domain const |
 | `drizzle-broadcasts-repo.ts:394` | quota **consumed** `['sent','partial_delivery_accepted']` | unchanged — expiry frees, it does not consume |
-| `drizzle-broadcast-approval-counter.ts:24` | `status = 'submitted'` (the "awaiting approval" count) | becomes the marketing-turn set (FR-023) in PR-3 |
+| `drizzle-broadcast-approval-counter.ts:24` | `status = 'submitted'` (the "awaiting approval" count) | becomes the marketing-turn set (FR-023) in PR-2 — T132, the only task that widens it |
 | `domain/policies/cancel-cutoff-policy.ts:47,49` | cancellable iff `submitted`/`approved` (+ `sending` with batches) | widen to the in-progress set (FR-015: cancellable at any pre-send stage) |
-| `src/app/(staff)/admin/broadcasts/page.tsx:78` and `src/app/api/admin/broadcasts/sla-stats/route.ts:64` | SLA window `('approved','rejected','sending','sent')` | leave — the SLA is "time from submit to a marketing decision"; a design round is not a decision. Recorded so PR-3 does not "fix" it by accident |
+| `src/app/(staff)/admin/broadcasts/page.tsx:78` and `src/app/api/admin/broadcasts/sla-stats/route.ts:64` | SLA window `('approved','rejected','sending','sent')` | leave — the SLA is "time from submit to a marketing decision"; a design round is not a decision. Recorded so a later pass does not "fix" it by accident |
 | `src/app/api/internal/metrics/broadcasts-gauges/route.ts:144,150,167-168,173,191,230` | `queuePending IN ('submitted','approved')`, stuck `sending`, failure-rate window, `approved` overdue, import-stuck | **leave `queuePending` alone** (its alert threshold, `docs/observability.md` § 22.3:1382, is calibrated to it) and add four new gauges instead (R21) |
 | `src/app/(staff)/admin/broadcasts/[id]/page.tsx:93,200` · `src/app/(member)/portal/broadcasts/[id]/page.tsx:254` | cancel/approve CTA gating | widen to the in-progress set |
 | `src/modules/insights/.../benefit-consumption-aggregate-adapter.ts:84` · `src/modules/renewals/.../drizzle-at-risk-scorer.ts:416` · `…/drizzle-member-renewal-flags-repo.ts:697` | cross-module `['sent','partial_delivery_accepted']` | unchanged — they count *delivered* benefit, which the new stages are not |
@@ -359,6 +359,28 @@ arm. (2) allowing `style` or `class` through the sanitiser so the editor can ren
 inline — rejected: `FORBID_ATTR: ['style']` is the content-safety rule the spec restates, and it is
 what makes "no user styling" true rather than aspirational.
 
+## R10a — `@tiptap/extension-image` is re-pinned to an exact version (a pin, not a dependency)
+
+**D**: change `@tiptap/extension-image` in `package.json:85` from `^3.22.5` to exact `3.22.5`,
+matching the other four Tiptap packages (`@tiptap/{core,pm,react,starter-kit}`), and refresh
+`pnpm-lock.yaml` (T002).
+
+**R**: R9 makes one sanitiser policy the single source of truth for what survives a send, and R10
+makes the design-block parser key on the exact serialised HTML the editor emits (`<a data-eb="cta">`,
+`<img data-eb="banner">`). A caret lets a patch release change that serialisation — attribute order,
+a wrapper element, a self-closing form — at which point SC-011's element parity fails, or worse,
+passes while the block silently renders as a plain element. The blast radius is live outgoing email
+in an unflagged PR.
+
+**Constitution X**: this is **not** a new dependency and needs no Complexity Tracking entry — the
+package is already installed and already used by the editor; only its range narrows. Recorded here
+because the decision was made at `/speckit.checklist` time and lived only in `quickstart.md` § 3.1,
+which left the reasoning outside the decisions record (`/speckit.analyze` L5).
+
+**A**: leave the caret and rely on the parity test to catch a bad release — rejected: the parity
+test runs on our branches, not on a transitive bump in someone else's, and by the time it goes red
+the release is already in the lockfile of whoever ran `pnpm install` first.
+
 ## R11 — Preview: rendered by the send-time wrapper, over a route, into an iframe
 
 **D**: `POST /api/broadcasts/preview` (member, `requireMemberContext`) and
@@ -536,7 +558,7 @@ hash has no live reference (R17); (2) send day-3 and day-7 reminders and the day
 (3) close at day 30 as `expired_no_member_response`. Route keeps `export const GET = POST` (native
 Vercel Cron invokes GET).
 **R**: `vercel.json` carries **37** of the Pro plan's 40 jobs (counted this gate). The F114
-precedent (`research.md` § V2, superseded by the PR-3 review) established the shape — a second block
+precedent (`research.md` § V2, superseded by the round-3 review) established the shape — a second block
 in an existing tick with its own transaction and its own OK flag, never a new slot and never a
 shared try/catch. The route's own subject is already the *lifetime* of an E-Blast draft, and
 FR-022a's 30-day expiry was chosen (spec § Clarifications) to align with that same 30-day draft
@@ -618,10 +640,11 @@ pattern). The gate applies to:
 
 | surface | flag OFF |
 |---|---|
-| `POST /api/admin/broadcasts/[id]/version` (start formatting) — the **only entry** into the round | **404** |
+| `POST /api/admin/broadcasts/[id]/version` **from `submitted`** — the `submitted → in_design` edge, the **only entry** into the round | **404** |
+| the same `POST` from `changes_requested` / `member_approved` / `approved` (round ≥ 1) — re-opening a working copy on a row already in the round | **201 — available.** The gate is on the **edge**, not the route: FR-034 requires an in-flight E-Blast to stay **completable**, and this write is the only way to complete one the member sent back. A route-wide 404 would dead-end every `changes_requested` row (`/speckit.analyze` round 3 H1) |
 | "Start formatted version" control on the staff detail page | hidden |
 | the new stage chips on the queue | offered **only if** the tenant has ≥ 1 row in a new stage |
-| the marketing waiting-count in the nav (FR-023) | hidden |
+| the marketing waiting-count in the nav (FR-023) | hidden **unless rows exist in a new stage** — the same "flag ON **or** rows exist" rule as the chips, so an in-flight row is never invisible to the people who must act on it (contracts `dashboard-and-notifications.md` § 1.3; round 3 M9) |
 | `PATCH`/`send`/member decision/`schedule` routes for a row **already** in a new stage | **available** |
 | reminders, the day-23 warning and the day-30 expiry for rows already in a new stage | **run** |
 | everything else (writing tool, preview, blocks, brand page, images, screen fixes) | live — not governed by the flag (spec § Feature flag) |
@@ -630,9 +653,13 @@ pattern). The gate applies to:
 completable or cancellable and MUST NOT be sent without the required member approval". A pure
 404-everywhere dark ship (the 108 / 114 pattern) would strand exactly those rows — the member could
 not approve and marketing could not confirm, so the only exit would be cancel, which loses the
-work. Gating the single entry edge is both narrower and sufficient: with the flag off no E-Blast can
+work. Gating the single entry **edge** is both narrower and sufficient: with the flag off no E-Blast can
 *become* a member-approval E-Blast, and today's `submitted → approved | rejected | cancelled` flow
-is untouched (SC-006).
+is untouched (SC-006). **"Edge" is literal and the distinction is load-bearing**: the gate reads the
+status of the row **after** the `FOR UPDATE` re-read and refuses only `submitted`. Gating the route
+instead — which is how T152 and the admin contract first read — would strand exactly the rows R18
+exists to protect, since `changes_requested → in_design` runs through the same handler
+(`/speckit.analyze` round 3 H1).
 **R (chip rule)**: offering a stage chip that can only return zero rows "reads as *it never
 happened* rather than *this can no longer happen*" — the module's own rule for
 `RETIRED_BROADCAST_STATUSES` (`broadcast-status.ts:59-66`). Deriving the offered set from
@@ -679,15 +706,24 @@ edge case, SC-002).
   `marketing`, `admin`, `super_admin`) × flag state; the 404/403/409/422/429 envelopes; the
   brand-cannot-write-the-logo assertion (FR-041b); one arm per new `notification_type`; the
   member-route owning-member check.
-- **Integration** (live Neon dev branch — pass **file paths**, never `-- <pattern>`): the eight
-  suites named in `plan.md` § Project Structure. Cross-tenant isolation on all three new tables in
+- **Integration** (live Neon dev branch — pass **file paths**, never `-- <pattern>`): the **twelve**
+  suites named in `plan.md` § Project Structure (this line read "eight" while that list carried
+  twelve — `/speckit.analyze` round 3 L1). T165 runs them **per PR**: the three PR-1 creates
+  (`eblast-approval-tenant-isolation`, `eblast-content-parity`, `audit-event-type-parity`) in PR-1,
+  all twelve in PR-2 — naming a path the PR has not created makes the gate unsatisfiable (round 3 M1). Cross-tenant isolation on all three new tables in
   both directions is the Constitution I.3 Review-Gate blocker.
 - **Unit**: Domain 100% line (stage map, turn map, transitions, in-progress set, design-block
   serialiser/renderer, contrast helper, reminder/expiry policy, version + decision invariants);
-  Application 80% line + branch with **100% branch** pinned in `vitest.config.ts` on
-  `start-formatted-version`, `send-version-to-member`, `record-member-decision`, `confirm-schedule`,
-  `promote-approved-version` and `set-brand-settings` (member-approval semantics, PII writes and
-  RBAC). A pinned file is measured with
+  Application 80% line + branch with **100% branch** pinned in `vitest.config.ts` on the six
+  security-critical use cases — `startFormattedVersion`, `sendVersionToMember`,
+  `recordMemberDecision`, `confirmSchedule`, `promoteApprovedVersion` and `setBrandSettings`
+  (member-approval semantics, PII writes and RBAC) — which live in **five files**:
+  `start-formatted-version.ts`, `send-version-to-member.ts`, `record-member-decision.ts`,
+  `confirm-schedule.ts` (**`promoteApprovedVersion` is the promotion arm inside it, not its own
+  module** — an earlier draft of this line pinned a `promote-approved-version.ts` that does not
+  exist, and a pin naming a missing path is silently satisfied, so the file stops being measured)
+  and `set-brand-settings.ts`. **Each pin lands in the PR that creates its file** — `set-brand-settings.ts`
+  is PR-1's, the other four are PR-2's (`/speckit.analyze` H6). A pinned file is measured with
   `pnpm vitest run <suites> --coverage --coverage.include=<file>` before pushing — a green
   `pnpm test` is not the CI coverage job.
 - **e2e** (local only, `--workers=1`, ≤ 10-minute foreground chunks): submit → format → request
@@ -800,9 +836,13 @@ dispatcher-internal, so it is reusable outside it. `TestCopyMailerPort` is imple
 broadcasts Infrastructure adapter over that sender (the port keeps Application free of the Resend
 type), sends **synchronously** so the result is reported in-band, and is rate-limited 10 per user
 per hour. **The sixth `notification_type` fallback is withdrawn — it is not built**, so the test
-copy creates no outbox row, adds no enum value, and `notification_type` stays at +5 in `0305`.
-This also keeps the test copy out of `0304`'s scope entirely: PR-1 ships it with no enum change
-at all.
+copy creates no outbox row, adds no **`notification_type`** value, and `notification_type` stays at
++5 in `0305`. That is what the migration split needs: the test copy ships in **PR-1**, whose
+migration `0304` carries no `notification_type` change at all, so a sixth value would have had no
+migration to live in. **It is not true that PR-1 ships the test copy with no enum change of any
+kind** — `0304` does add the `audit_event_type` value `broadcast_test_copy_sent` (R24, data-model
+§ 7.2, T019), because FR-037's send must be auditable. The claim is about `notification_type`
+only (`/speckit.analyze` M10).
 
 ## R24 — Audit events: fourteen, in the DB-only list, with the `broadcast_` prefix
 

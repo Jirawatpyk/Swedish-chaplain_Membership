@@ -10,7 +10,7 @@ kill-switch (`src/proxy.ts:43-68`) → 503 `feature_disabled`.
 | action | key | roles |
 |---|---|---|
 | read the queue, a detail, versions, preview | `broadcasts.read` | super_admin, admin, manager, **marketing** |
-| start / save / send a formatted version, upload an image, reject | `broadcasts.write` | super_admin, admin, marketing |
+| start / save / send a formatted version, upload an image, reject, **cancel** | `broadcasts.write` | super_admin, admin, marketing |
 | confirm, change or cancel the send time | `broadcasts.send` | super_admin, admin, marketing |
 | read / write brand settings | `settings.broadcasts` | super_admin, admin (**not** marketing — `role-bundles.ts:49-64`) |
 | **upload / replace / clear the chamber logo** | `settings.invoicing` | **super_admin only** (`permission-catalogue.ts:98`) — no route here touches it |
@@ -29,23 +29,56 @@ holds both a staff account and a portal account of a member company gives the me
 which one identity can act as the other (FR-013).
 
 **Rate limits**: `POST …/test-copy` is **10 per user per hour** (FR-037, the same bucket as the
-member route); `POST …/preview` is 30 per minute per actor. The formatting and schedule routes keep
-the existing staff buckets.
+member route); `POST …/preview` is 30 per minute per actor. The formatting and schedule routes
+(`…/version` POST and PATCH, `…/version/send`, `…/schedule`, `…/images`, `templates/[id]/images`,
+`…/brand` PATCH) take a **new** per-(tenant, actor) bucket of **30 requests / 60 seconds**, refused
+as `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, over the existing
+`broadcastsRateLimiter` (`src/modules/broadcasts/infrastructure/rate-limiter.ts:14`) and the
+`RECIPIENT_COUNT_RATE_MAX` / `_WINDOW_SECONDS` shape (`src/lib/broadcasts-recipient-count.ts:30-31`),
+with an **atomic** check, never peek-then-act. **The two staff routes T081 widens —
+`POST …/[id]/reject` and `POST …/[id]/cancel` — take the same 30 / 60 s bucket** (round 4 M6): T081
+widens both to `IN_PROGRESS_BROADCAST_STATUSES`, and a state-changing staff route that carries no
+bucket at all is the gap this section exists to close, not one it may leave open.
+**Built by T026a in PR-1** (`…/brand` PATCH,
+`…/images`, `templates/[id]/images`), **T062a in PR-2** (`…/version` POST+PATCH,
+`…/version/send`, `…/schedule`) **and T081 in PR-2** (`…/reject`, `…/cancel`, in the same edit that
+widens their stage set): the bucket was stated here and in spec
+§ Roles but no task built it until round 3 (`/speckit.analyze` round 3 H3).
+**"Keep the existing staff buckets" was wrong — checked against `main`
+(`/speckit.analyze` M14)**: `approve`, `reject` and `cancel` carry no rate limit at all today, so
+there is no staff bucket to keep and every number above is an addition, stated rather than implied.
 
-**Flag rule (research R18)**: `FEATURE_EBLAST_MEMBER_APPROVAL` gates exactly one route —
-`POST …/[id]/version` (start a formatted version), the single **entry** into the approval round →
-**404** while off. Every other route here stays available so an in-flight E-Blast remains
-completable (FR-034).
+**Flag rule (research R18)**: `FEATURE_EBLAST_MEMBER_APPROVAL` gates exactly one **edge**, not a
+route — `submitted → in_design`, the single **entry** into the approval round. `POST …/[id]/version`
+answers **404** while off **only when the re-read row is `submitted`**; the same POST from
+`changes_requested`, `member_approved` or `approved` (round ≥ 1) answers 201 in both flag states,
+because re-opening a working copy is the only way an in-flight E-Blast can be **completed** and
+FR-034 requires it to stay completable, not merely cancellable. An earlier draft of this rule gated
+the whole route and would have dead-ended every row the member had sent back
+(`/speckit.analyze` round 3 H1). Every other route here stays available for the same reason (FR-034). **The gate ships in the same PR as the route** (task T152, plan Amendment 7):
+PR-2 creates `POST …/[id]/version` in T062, and merging it without T152 puts the approval round live
+in production for every `broadcasts.write` holder — hiding the button on the detail page is not a
+gate, and "merge without setting the env var" protects nothing if no code reads the variable
+(`/speckit.analyze` C1).
 
 **Error envelope**: `{ error, message?, stage?, currentUpdatedAt?, retryAfterSeconds?, issues? }`.
 Fault arms are named `M119.admin.<route>.<arm>`. No `Idempotency-Key` on the state-changing routes
 (research R19).
 
+**Audit payloads**: each route below names the event it emits; the **field list for every event is
+in `dashboard-and-notifications.md` § 2**, which is the single source of truth. Where a payload is
+spelled out here it is a quotation of that table, not a second definition — restating field lists in
+two files is how four events drifted apart (`/speckit.analyze` M6). Note especially the **member
+key** column there: `member_id` (snake_case) for member-actor events, `related_member_id` for staff
+and system events; the 0009 `last_activity_at` trigger reads only the former.
+
 ---
 
 ## `POST /api/admin/broadcasts/[id]/version` — start a formatted version (FR-001)
 
-Permission `broadcasts.write`. **Flag-gated** — 404 while `FEATURE_EBLAST_MEMBER_APPROVAL` is off.
+Permission `broadcasts.write`. **Flag-gated on the `submitted` arm only** — 404 while
+`FEATURE_EBLAST_MEMBER_APPROVAL` is off **and** the re-read row is `submitted`; the three other
+accepted stages below are unaffected by the flag (round 3 H1).
 
 Accepted stages: `submitted`, `changes_requested`, and — voiding an approval — `member_approved` or
 `approved` **when `current_round >= 1`** (spec § Edge Cases "Marketing edits after the member
@@ -62,7 +95,9 @@ In one `runInTenant`, with throw-to-rollback:
 4. Transition to `in_design`; stamp `stage_entered_at`.
 5. When coming from `member_approved` / `approved`: clear `approved_version_id`, clear
    `scheduled_for` (trigger exemption E2), and emit `broadcast_member_approval_voided`.
-6. Audit `broadcast_version_started { related_member_id, broadcast_id, version_id, round, actor_role }`.
+6. Audit `broadcast_version_started { related_member_id, broadcast_id, version_id, round, from_stage, actor_role }`
+   — quoted from `dashboard-and-notifications.md` § 2; `from_stage` was missing here while the table
+   and T056 carried it (`/speckit.analyze` round 4 M5).
 
 ```jsonc
 201 { "stage": "in_design", "version": { "id": "uuid", "versionNo": 1, "subject": "…",
@@ -74,7 +109,7 @@ In one `runInTenant`, with throw-to-rollback:
 |---|---|
 | 201 | started (or the existing working copy returned — idempotent) |
 | 403 | `permission_denied` (manager, member session) — audited |
-| 404 | unknown id / other tenant (audited `broadcast_cross_tenant_probe`), **or the flag is off** |
+| 404 | unknown id / other tenant (audited `broadcast_cross_tenant_probe`), **or the flag is off and the row is `submitted`** |
 | 409 `stage_changed` | the broadcast is not in an accepted stage |
 | 409 `round_zero` | `approved`/`member_approved` with `current_round = 0` |
 
@@ -101,14 +136,16 @@ Permission `broadcasts.write`. Stage must be `in_design`.
 | code | rule |
 |---|---|
 | `unsafe_content` | the sanitiser removed something — the body is refused, not silently cleaned |
-| `validation_error` | `subject > 200` or `bodyHtml > 200 KB` (with `issues`) |
+| `validation_error` | `subject > 200`, `bodyHtml > 200 KB`, or **`noteToMember > 1,000` characters** (with `issues`) — the note bound is FR-006's and is enforced in the route's zod schema, so an over-long note is a 422 and never the `broadcast_versions.note_to_member` CHECK, which would surface as a 500 (`/speckit.analyze` M11) |
 | `cta_text_length` | CTA button text outside 1–60 characters (FR-041) |
 | `too_many_cta` | more than 3 CTA buttons in the message (FR-041) |
 | `cta_link_scheme` | a link whose scheme is outside `http` / `https` / `mailto` (FR-038/FR-041) |
 | `banner_alt_required` | a banner or inline image without a 1–125-character description (FR-040) |
 | `image_source_not_allowlisted` | an image whose host is not on the tenant allow-list — the body names **which image** (spec § Edge Cases) |
 
-- No audit event (a save is not a hand-off); counted `broadcasts_version_saved_total`.
+- No audit event (a save is not a hand-off); counted `broadcasts_version_saved_total`, which is
+  registered in `dashboard-and-notifications.md` § 4.2 and in `src/lib/metrics.ts` (T122) — it was
+  previously named only here, so it would have shipped unregistered (`/speckit.analyze` M2).
 
 ```jsonc
 200 { "version": { "id": "uuid", "versionNo": 1, "updatedAt": "…" }, "unsafeImageSources": [] }
@@ -136,7 +173,9 @@ One `runInTenant`: stamp `sent_to_member_at` (the version becomes read-only — 
 `broadcast_versions_immutable_after_send_fn`), `current_round = version_no`, transition to
 `awaiting_member_approval`, stamp `stage_entered_at`, reset `member_reminder_stage = 0` and
 `member_expiry_notified_at = NULL`, audit
-`broadcast_version_sent_to_member { related_member_id, broadcast_id, version_id, round, note_length, actor_role }`,
+`broadcast_version_sent_to_member { related_member_id, broadcast_id, version_id, round, note_length, notified, actor_role }`
+(quoted from `dashboard-and-notifications.md` § 2; the `notified: bool` field was missing here while
+the table and T059 carried it — `/speckit.analyze` round 4 M5),
 enqueue one `eblast_version_sent_member` outbox row to the member's contact in their preferred
 language (FR-024).
 
@@ -219,7 +258,12 @@ second source.
 
 ## `POST /api/admin/broadcasts/[id]/reject` and `…/cancel` (existing routes, widened)
 
-Unchanged contracts. The accepted stage set widens to `IN_PROGRESS_BROADCAST_STATUSES` (FR-015 —
+Both routes name **`broadcasts.write`** through `requireApiPermission`. That is a change for
+`…/cancel`, which named no permission key anywhere in this contract — a state-changing staff route
+with no declared guard is exactly what `check:api-route-guard` exists to catch, and it must be
+named, not inferred (`/speckit.analyze` M8; task T081).
+
+Contracts otherwise unchanged. The accepted stage set widens to `IN_PROGRESS_BROADCAST_STATUSES` (FR-015 —
 marketing may reject with a reason at any stage before **sending begins**, i.e. before entry into
 `sending`; from `sending` onward the route answers **409 `sending_started`** and the send completes),
 and the member notification gains the stage it was rejected from. Reuses the existing
@@ -228,12 +272,29 @@ and the member notification gains the stage it was rejected from. Reuses the exi
 also FR-011's alternative when marketing disagrees with a change request and will not send another
 version.
 
+**Both gain the staff write bucket** — 30 requests / 60 seconds per (tenant, actor), atomic check,
+refused `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, exactly as the formatting
+routes above. Neither carries one today (`/speckit.analyze` M14), and widening their accepted stage
+set without one leaves the only two unbucketed state-changing staff routes in the feature
+(round 4 M6). Built by **T081** itself, in the same edit that widens the stage set.
+
 ## `POST /api/admin/broadcasts/[id]/images` — staff image on the E-Blast being formatted (FR-040)
 
-Permission `broadcasts.write`. `multipart/form-data` with `file`. **Stage must be `in_design`** and
-the broadcast must belong to the caller's tenant — which is the "a staff user adds an image to
-another member's E-Blast: allowed only on the E-Blast they are formatting" edge case, enforced at
-the route rather than assumed.
+Permission `broadcasts.write`. `multipart/form-data` with `file`. The broadcast must belong to the
+caller's tenant, and the **accepted stage set widens across the two PRs** (`/speckit.analyze` H1,
+plan Amendment 6):
+
+| PR | accepted stages | what it serves | refusal outside the set |
+|---|---|---|---|
+| **PR-1** (`0304`, task T106) | `draft`, `submitted` | the staff **compose-on-behalf** draft — the half of US3-AS3 PR-1 can honestly satisfy | 409 `stage_changed` |
+| **PR-2** (`0305`, task T106a) | `draft`, `submitted`, **`in_design`** | marketing illustrating the formatted version — the other half of US3-AS3 | 409 `stage_changed` |
+
+`in_design` is a `broadcast_status` value migration `0305` introduces, so a PR-1 route gated on it
+could only ever answer 409 and its success path could never go green. A **sent** version is
+read-only (FR-003), so `awaiting_member_approval` and everything after it stay refused in both PRs.
+Together with the tenant check this is the "a staff user adds an image to another member's E-Blast:
+allowed only on the E-Blast they are formatting" edge case, enforced at the route rather than
+assumed.
 
 Shares `uploadInlineImage` with the member route, so identical rules apply: ≤ 5 MB
 (`upload-inline-image.ts:38`), MIME ∈ png/jpeg/webp/gif, SHA-256 dedup, **fail-closed ClamAV scan**
@@ -371,9 +432,11 @@ forgotten.
   `marketing` → 200 on format/send/schedule/images, **403 on brand**; `member` session → 403
   everywhere, including for a person who also holds a portal account of the owning member (the
   session decides, spec § Roles).
-- **Flag matrix**: `POST …/[id]/version` → 404 with the flag off, 201 with it on; every other route
-  behaves identically in both states, and a broadcast already in `in_design` can still be saved,
-  sent, decided and scheduled with the flag off (FR-034).
+- **Flag matrix**: `POST …/[id]/version` **on a `submitted` broadcast** → 404 with the flag off, 201
+  with it on; the **same POST on `changes_requested` → 201 in both states** (and on
+  `member_approved`/`approved` with `current_round >= 1` → 201, with `current_round = 0` → 409
+  `round_zero` in both states); every other route behaves identically in both states, and a broadcast
+  already in `in_design` can still be saved, sent, decided and scheduled with the flag off (FR-034).
 - **Concurrency**: two `PATCH`es with the same `expectedUpdatedAt` → the second is
   409 `version_changed`; `PATCH` after `send` → 409 `stage_changed`.
 - **Schedule**: `keep_proposal` with a past proposal → 422 `broadcast_schedule_too_soon`;

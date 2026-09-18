@@ -14,11 +14,13 @@ the id (unknown, or another tenant's — indistinguishable under RLS) answers **
 `broadcast_cross_tenant_probe`; a row belonging to **another member of the same tenant** answers
 **404** and is audited `broadcast_cross_member_probe`. Never 403 — no existence leak.
 
-**Flag rule (FR-034, research R18)**: `FEATURE_EBLAST_MEMBER_APPROVAL` gates **entry** into the
-approval round, which happens on the staff side only. The routes below therefore stay available with
-the flag off for a broadcast already in a new stage, so an in-flight E-Blast stays completable. A
+**Flag rule (FR-034, research R18)**: `FEATURE_EBLAST_MEMBER_APPROVAL` gates one **edge** —
+`submitted → in_design`, on the staff side only. The routes below therefore stay available with the
+flag off for a broadcast already in a new stage, so an in-flight E-Blast stays completable. A
 broadcast that is not in a stage the route accepts answers **409 `stage_changed`** regardless of the
-flag.
+flag. Note the gate is edge-wide rather than route-wide even on the staff side: staff re-entry from
+`changes_requested` stays open with the flag off, because otherwise a member's "request changes"
+would leave the E-Blast with no exit but cancellation (`/speckit.analyze` round 3 H1).
 
 **Error envelope (all routes)**:
 `{ error: <code>, message?: string, stage?: BroadcastStage, retryAfterSeconds?: number, issues?: ZodIssue[] }`
@@ -27,15 +29,31 @@ flag.
 triple is the key, a repeat is answered 409 with the recorded decision, and the routes therefore
 keep working in CI smoke, which has no Redis.
 
+**Audit payloads**: each route below names the event it emits; the **field list for every event is
+in `dashboard-and-notifications.md` § 2**, which is the single source of truth. Anything spelled out
+here quotes that table rather than redefining it (`/speckit.analyze` M6). Its **member key** column
+is load-bearing: member-actor events carry snake_case `member_id`, which is the only key migration
+0009's `last_activity_at` trigger reads.
+
 **Rate limits (spec § Roles)** — per user, atomic check (never a peek-then-act):
 
 | route | limit | over-limit |
 |---|---|---|
-| `POST …/[id]/decision` (approve · request changes · withdraw approval) | **60 / minute** — the existing E-Blast action bucket | 429 `rate_limited` + `Retry-After` |
-| `POST …/[id]/cancel` (withdraw the E-Blast) | 60 / minute, the same bucket | 429 `rate_limited` |
-| `POST /api/broadcasts/test-copy` | **10 / hour** (FR-037) | 429 `rate_limited` |
-| `POST /api/broadcasts/preview` | 30 / minute | 429 `rate_limited` |
-| `POST /api/broadcasts/inline-image-upload` | unchanged from today | unchanged |
+| `POST …/[id]/decision` (approve · request changes · withdraw approval) | **60 / minute** per (tenant, user) — a **new** bucket, see the note below | 429 `broadcast_rate_limit_exceeded` + `Retry-After` |
+| `POST …/[id]/cancel` (withdraw the E-Blast) | 60 / minute, the same new bucket — **built by T081a in PR-2, after T081 widens the route** (T062a covers only the three staff formatting routes — round 5 A1; it was stated here with no task until round 3 H3) | 429 `broadcast_rate_limit_exceeded` |
+| `POST /api/broadcasts/test-copy` | **10 / hour** (FR-037) | 429 `broadcast_rate_limit_exceeded` |
+| `POST /api/broadcasts/preview` | 30 / minute, matching `RECIPIENT_COUNT_RATE_MAX` / `_WINDOW_SECONDS` (`src/lib/broadcasts-recipient-count.ts:30-31`) | 429 `broadcast_rate_limit_exceeded` |
+| `POST /api/broadcasts/inline-image-upload` | **60 / minute** per (tenant, user) — the same new member-write bucket as `…/decision` and `…/cancel`. It carries none today; the 5 MB cap and the fail-closed virus scan are not a rate limit, and an unbucketed member write that stores bytes and runs a scan is the cheapest amplification surface in the feature (maintainer decision, round 4 H5). Atomic check, never peek-then-act, over `broadcastsRateLimiter`. **Built by T026a in PR-1**, because the route and its ownership check are PR-1 (T033/T146) | 429 `broadcast_rate_limit_exceeded` + `Retry-After` |
+
+**"The existing E-Blast action bucket" does not exist — checked against `main`
+(`/speckit.analyze` M14).** The only broadcasts rate limits in the codebase today are
+`RECIPIENT_COUNT_RATE_MAX = 30` / `RECIPIENT_COUNT_RATE_WINDOW_SECONDS = 60`
+(`src/lib/broadcasts-recipient-count.ts:30-31`, per tenant+actor) and `SUBMIT_RATE_LIMIT = 10` /
+`SUBMIT_RATE_WINDOW_SECONDS = 86_400` (`submit-broadcast.ts:77-78`, per tenant+member). The member
+`…/cancel` route has **no** bucket. The 60/minute above is therefore a **new** limit introduced by
+this feature over the existing `broadcastsRateLimiter`
+(`src/modules/broadcasts/infrastructure/rate-limiter.ts:14`), refused as `429` with
+`retryAfterSeconds` in the existing `broadcast_rate_limit_exceeded` shape.
 
 **A lapsed member may still decide** (spec § Edge Cases): reading an E-Blast and deciding on a
 pending version are not benefit actions, so none of the routes below checks membership standing. The
@@ -115,7 +133,7 @@ configuration (spec § Edge Cases). The client renders `html` into an `<iframe s
 |---|---|
 | 200 | rendered |
 | 400 `invalid_body` | missing/oversized fields (`subject` ≤ 200, `bodyHtml` ≤ 200 KB) |
-| 429 `rate_limited` | > 30 renders / minute per actor; `Retry-After` + `retryAfterSeconds` |
+| 429 `broadcast_rate_limit_exceeded` | > 30 renders / minute per actor; `Retry-After` + `retryAfterSeconds` |
 | 503 `feature_disabled` | F7 master off (proxy) |
 
 No audit event (a render is not a state change). Counted `broadcasts_preview_rendered_total`.
@@ -140,8 +158,13 @@ honoured.
 - Changes **no** stage, writes **no** version, consumes **no** allowance (FR-037).
 - Sent through the transactional Resend surface, never the Broadcasts surface — a test must not
   enter the marketing suppression list or reputation pool.
-- Audit `broadcast_test_copy_sent { broadcast_id | null, recipient_hash, actor_role }` —
-  `actor_role` is `member` for a portal user (`check:actor-role-truth`).
+- Audit `broadcast_test_copy_sent { related_member_id, broadcast_id | null, version_id | null,
+  recipient_hash, actor_role }` — quoted from `dashboard-and-notifications.md` § 2, which is the
+  single source of truth; `version_id | null` and the **member key** were missing here
+  (`/speckit.analyze` round 4 M5). The key is `related_member_id` **even for a portal user**,
+  deliberately: a test copy to one's own inbox is not member activity on the E-Blast, so it must not
+  move `last_activity_at` through the 0009 trigger. `actor_role` is `member` for a portal user
+  (`check:actor-role-truth`).
 
 | code | when |
 |---|---|
@@ -149,7 +172,7 @@ honoured.
 | 400 `invalid_body` | as preview |
 | 404 `not_found` | `broadcastId` given and not the caller's |
 | 422 `unsafe_content` · `cta_text_length` · `too_many_cta` · `cta_link_scheme` · `banner_alt_required` | the block rules (FR-041) — a test copy is validated exactly like a save |
-| 429 `rate_limited` | > **10 / hour** per user (FR-037) |
+| 429 `broadcast_rate_limit_exceeded` | > **10 / hour** per user (FR-037) |
 | 502 `send_failed` | the provider refused; nothing is retried (research R23) |
 
 ## `POST /api/broadcasts/[id]/decision` — approve · request changes · withdraw approval
@@ -174,16 +197,16 @@ Server rules:
 | `decision = approved` and the optional note > **500** chars | **422 `validation_error`** with `issues` (FR-009) |
 | `versionId` is not the broadcast's **latest sent** version | **409 `stale_version`** + the current version in the body — the member was looking at an older round |
 | `decision = approved \| changes_requested` while the stage is not `awaiting_member_approval` | **409 `stage_changed`** + current `stage` |
-| `decision = approval_withdrawn` while the stage is not `member_approved` **or** `approved` | **409 `stage_changed`** |
-| `decision = approval_withdrawn` once **sending has begun** — i.e. the stage is `sending` or later (FR-015: "sending begins" = the hand-over to the delivery provider) | **409 `sending_started`** — the send completes (spec § Edge Cases) |
+| `decision = approval_withdrawn` once **sending has begun** — i.e. the stage is `sending` or later (FR-015: "sending begins" = the hand-over to the delivery provider) | **409 `sending_started`** — the send completes (spec § Edge Cases). **This arm is evaluated FIRST**, before the stage arm below: `sending` satisfies both predicates, and the member must be told the send is already under way, not the useless "the stage changed" (`/speckit.analyze` L6) |
+| `decision = approval_withdrawn` while the stage is not `member_approved` **or** `approved`, and sending has **not** begun | **409 `stage_changed`** |
 | the member is suspended / the plan lapsed | **not checked here** — a lapsed member may still decide (spec § Edge Cases); the existing refusal applies at **send** time and marketing sees why it is blocked |
-| > 60 decisions per minute for this user | **429 `rate_limited`** + `Retry-After` |
+| > 60 decisions per minute for this user | **429 `broadcast_rate_limit_exceeded`** + `Retry-After` |
 
 Side effects, all in **one** `runInTenant` with throw-to-rollback:
 
 | decision | transition | writes |
 |---|---|---|
-| `approved` | `awaiting_member_approval → member_approved` | decision row; `approved_version_id = versionId`; `stage_entered_at`; audit `broadcast_member_approved { broadcast_id (snake_case — member activity), version_id, round, reason_length, actor_role }`; one outbox row **per marketing recipient** (`eblast_member_decided_marketing`) |
+| `approved` | `awaiting_member_approval → member_approved` | decision row; `approved_version_id = versionId`; `stage_entered_at`; audit `broadcast_member_approved` — payload per `dashboard-and-notifications.md` § 2: `{ member_id (snake_case — member activity, the 0009 trigger key), broadcast_id, version_id, round, note_length, actor_role }`. It is **`note_length`**, not `reason_length`: an approve carries the optional **note** (≤ 500), not a reason (1–2,000) (`/speckit.analyze` M6); one outbox row **per marketing recipient** (`eblast_member_decided_marketing`) |
 | `changes_requested` | `awaiting_member_approval → changes_requested` | decision row; `stage_entered_at`; `member_reminder_stage = 0`; audit `broadcast_member_changes_requested`; outbox per marketing recipient |
 | `approval_withdrawn` | `member_approved → changes_requested` **or** `approved → changes_requested` | decision row; `approved_version_id = NULL`; **`scheduled_for = NULL`** (trigger exemption E2 — FR-015a "a confirmed schedule is cancelled"); `stage_entered_at`; audit `broadcast_member_approval_withdrawn { …, cancelled_schedule_at }`; outbox per marketing recipient |
 
@@ -224,8 +247,15 @@ US6-AS7):
 
 Otherwise unchanged: ≤ 5 MB, MIME ∈ png/jpeg/webp/gif, SHA-256 dedup, fail-closed ClamAV, per-tenant
 source allow-list. Additionally records a `broadcast_images` row
-(`owner_kind='broadcast', owner_id=<draftId>`) and audits **`broadcast_image_uploaded`**
-`{ owner_kind, owner_id, image_id, byte_size, mime_type, content_hash, actor_role: 'member' }`.
+(`owner_kind='broadcast', owner_id=<draftId>`) and audits **`broadcast_image_uploaded`** with the
+payload in `dashboard-and-notifications.md` § 2 — which for a **member** upload carries snake_case
+**`member_id`**: `{ member_id, owner_kind, owner_id, image_id, byte_size, mime_type, content_hash,
+actor_role: 'member' }`. The `member_id` key is **not optional and not cosmetic**: migration 0009's
+`last_activity_at` SECURITY DEFINER trigger fires on that key and no other, a member illustrating
+their own draft **is** member activity, and two features have already shipped `memberId` in
+camelCase and had the trigger silently never fire (#336/#337). A staff upload carries
+`related_member_id` instead and does not move the member's activity timestamp
+(`/speckit.analyze` H5).
 The **description (alt text, 1–125 chars)** is not part of the upload — the editor's insert dialog
 collects it before the node can exist, its field is labelled, and an empty value is an **announced**
 field error (FR-040).
@@ -289,4 +319,6 @@ the table are created by migration `0305`, which ships with PR-2.
 - **Image upload**: another member's draft → 404 + `broadcast_cross_member_probe` (US6-AS7); a
   terminal broadcast → 409; a success writes a `broadcast_images` row and a
   `broadcast_image_uploaded` audit row with `actor_role: 'member'`.
-- **Rate limits**: the 61st decision in a minute → 429 with `Retry-After`.
+- **Rate limits**: the 61st decision in a minute → 429 with `Retry-After`; the **61st inline-image
+  upload** in a minute → 429 `broadcast_rate_limit_exceeded` with `Retry-After`, **and nothing is
+  stored on the refused call** (round 4 H5).

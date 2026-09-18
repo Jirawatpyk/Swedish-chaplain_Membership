@@ -87,7 +87,16 @@ Append-only. One row per member action on one version.
 | `decided_by_contact_id` | `uuid NOT NULL` | the contact record they were linked to |
 | `decided_at` | `timestamptz NOT NULL DEFAULT now()` | |
 
-**Indexes**: `(tenant_id, broadcast_id, decided_at DESC)` (the thread); `(tenant_id, version_id)`.
+**Indexes**: `(tenant_id, broadcast_id, decided_at DESC)` (the thread); `(tenant_id, version_id)`;
+`(tenant_id, decided_by_contact_id)` — "which contact approved this" is a DSAR and audit-review
+query, and the 0302 FK-column-index lesson applies to the lookup even where no constraint exists.
+
+**No FK on either actor column, by decision.** `decided_by_user_id` points at the cross-tenant
+`users` table, which a composite `(tenant_id, …)` FK from a tenant-scoped table cannot reach;
+`decided_by_contact_id` is left unconstrained for the same reason the erasure scrub keeps the row
+and redacts only `reason` — SC-002's proof of who approved must survive the contact's removal. This
+is recorded rather than left implicit so a later reviewer does not "fix" it into a cascade that
+would delete the proof.
 
 **Triggers**: `broadcast_member_decisions_append_only_fn` — BEFORE UPDATE raises
 `broadcast_decision_append_only` **except** when `app.allow_broadcast_redaction = 'on'` and only
@@ -107,11 +116,30 @@ the parent row, which this trigger does not see).
 | `member_reminder_stage` | `smallint NOT NULL DEFAULT 0 CHECK (BETWEEN 0 AND 3)` | 0 none · 1 day-3 sent · 2 day-7 sent · 3 day-23 warning sent. Reset to 0 on every entry into `awaiting_member_approval` |
 | `member_expiry_notified_at` | `timestamptz NULL` | stamped when the day-30 closure notice is enqueued (idempotency for the daily tick) |
 
-**Backfill** (same migration): `UPDATE broadcasts SET proposed_send_at = scheduled_for WHERE status
-= 'submitted' AND scheduled_for IS NOT NULL;` — only rows still awaiting a decision still carry an
-untouched proposal (`approveBroadcast` overwrites `scheduled_for`,
-`approve-broadcast.ts:118-119,151`). Every other historical row keeps `NULL`, and the UI shows
-"not recorded".
+**Statement order in the file is normative — three steps, in this order**: (1) the
+`ALTER TABLE broadcasts ADD COLUMN` statements for all six columns above; (2) the two backfills
+below; (3) the `CREATE OR REPLACE FUNCTION broadcasts_immutable_after_submit_fn`. Columns before
+backfills is not merely tidy — backfill (1) writes `proposed_send_at`, which does not exist until
+step (1) — and backfills before the function replacement is the H5 rule restated below.
+
+**Backfills** (same migration, and **both MUST precede the `CREATE OR REPLACE` of
+`broadcasts_immutable_after_submit_fn` in the file**):
+
+1. `UPDATE broadcasts SET proposed_send_at = scheduled_for WHERE status = 'submitted' AND
+   scheduled_for IS NOT NULL;` — only rows still awaiting a decision still carry an untouched
+   proposal (`approveBroadcast` overwrites `scheduled_for`, `approve-broadcast.ts:118-119,151`).
+   Every other historical row keeps `NULL`, and the UI shows "not recorded".
+2. `UPDATE broadcasts SET stage_entered_at = COALESCE(submitted_at, updated_at) WHERE
+   stage_entered_at IS DISTINCT FROM COALESCE(submitted_at, updated_at);` — without it the column's
+   `DEFAULT now()` would make **every** pre-existing waiting row look freshly entered, and T117
+   re-bases the existing `ageBadge` on this column, so the live 24 h / 48 h SLA badges would all
+   reset to zero on the deploy (`/speckit.analyze` round 3 M3).
+
+**Why the order is normative**: exemption F1 below adds `proposed_send_at` to the immutability
+function's frozen blocklist, and that function is a **BEFORE UPDATE** trigger. Replace it first and
+backfill (1) — an `UPDATE` of `proposed_send_at` on `submitted` rows — raises
+`broadcast_immutable_after_submit` and aborts the whole migration
+(`/speckit.analyze` round 3 H5). Backfill, then replace.
 
 **New indexes**
 - `broadcasts_stage_queue_idx` — `(tenant_id, status, stage_entered_at DESC)` — the dashboard's
@@ -141,7 +169,7 @@ The record that makes image ownership enforceable and image erasure reachable (R
 | `byte_size` | `integer NOT NULL CHECK (byte_size BETWEEN 1 AND 5*1024*1024)` | mirrors `MAX_BYTES` (`upload-inline-image.ts:38`) |
 | `uploaded_by_user_id` | `uuid NOT NULL` | member or staff |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | |
-| `deleted_at` | `timestamptz NULL` | marked by erasure / withdrawal / rejection; the bytes go on the next sweep |
+| `deleted_at` | `timestamptz NULL` | marked by **erasure** (T082), **member withdrawal** and **staff rejection** (both T081) — each stamping in the same transaction as the state change and auditing `broadcast_image_removed` with the matching `reason`; the bytes go on the next sweep (T035, `reason: 'sweep'`). All four declared reasons therefore have an emit site (`/speckit.analyze` round 3 M4) |
 
 **Indexes**: `(tenant_id, owner_kind, owner_id)`; `(tenant_id, content_hash)` — the
 **last-reference rule** (`DELETE the blob only when no row with the same `content_hash` has
@@ -245,6 +273,13 @@ produced, so none of the fourteen is a 10-year event.
 `default:` arm returns `null` (`:543`), which retries for ~16 h before permanently failing, so an
 arm-less type is a silent outage. Also added to `enum-migration-guard.ts`.
 
+**All five are behind `FEATURE_EBLAST_MEMBER_APPROVAL` at the drainer** (maintainer decision,
+round 4 H2 — the F114 precedent): the enqueue is unconditional, but
+`src/app/api/cron/outbox-dispatch/route.ts` **skips these five values while the flag is off**, so
+with the variable absent nothing is emailed, rows wait, and they drain on the first tick after the
+flip. A skipped row is not an error: no `lastError`, no attempt counted, no `no_template_handler`.
+Contract: `dashboard-and-notifications.md` § 3; task T152a.
+
 **Exactly five — there is no sixth.** The test copy (FR-037) is **not** an outbox type: research V4
 is resolved and it sends synchronously through the shared transactional sender
 (`src/modules/auth/infrastructure/email/resend-client.ts:148`) behind `TestCopyMailerPort`. That
@@ -308,7 +343,8 @@ No closed stage can be reopened; the member submits a new E-Blast (FR-022a).
 `approved` is the **only** dispatchable status (`dispatch-scheduled/route.ts:168-183` scans
 `status = 'approved' AND scheduled_for <= now()`), which is why no waiting stage sits on it (R5).
 "Scheduled" replaces today's "Approved" label in both status namespaces — an unflagged copy change
-shipped with PR-3, not PR-1.
+shipped with PR-2 (which now also carries the dashboard), not PR-1 — and the **five new stage
+labels** ship there too, in the same task (T120), because PR-2's own screens render them.
 
 ### 8.2 Transitions (Domain `TRANSITIONS` and `broadcasts_state_machine_fn`, kept identical)
 
@@ -350,7 +386,14 @@ design round); `→ awaiting_member_approval` requires an unsent version that pa
 and size rules (FR-004); `awaiting_member_approval → member_approved | changes_requested` requires
 a **member** session of the owning member company (FR-013); `member_approved → approved` requires
 `broadcasts.send` and a confirmed time ≥ `now + 5 min` (`approve-broadcast.ts:110-116`);
-`submitted → in_design` requires the feature flag (R18 — the only flagged edge).
+`submitted → in_design` requires the feature flag — **the only flagged edge, and the gate is on the
+edge, not on the route that carries it** (R18): the same `POST …/[id]/version` from
+`changes_requested`, `member_approved` or `approved` is an exit-side write on a row already inside
+the round and stays available with the flag off, because FR-034 requires an in-flight E-Blast to
+remain **completable** and re-opening a working copy is the only way to complete one the member sent
+back (`/speckit.analyze` round 3 H1). The flag's **second** effect is not a transition at all: the
+outbox drainer skips the five new `notification_type` values while it is off (§ 7.3), so no F119
+email leaves the platform in that state even though the enqueues still happen (round 4 H2).
 
 **Expiry scope (FR-022a)**: `→ expired_no_member_response` exists on **one** `from` state,
 `awaiting_member_approval`, and the daily scan's predicate names that same status. Once the member
@@ -445,7 +488,10 @@ type MemberDecision = {
 // pure policies
 isVersionEditable(v: BroadcastVersion): boolean;            // sentToMemberAt === null
 requiresReason(kind: MemberDecisionKind): boolean;          // true unless 'approved'
-reasonBounds(kind: MemberDecisionKind): { min: number; max: number };  // approved 0–500, else 1–2000
+// approved: NULL or 1–500 — never 0–500. A 0-length note passes a {min:0} Domain check and is then
+// refused by the DB CHECK (`reason IS NULL OR char_length BETWEEN 1 AND 500`), i.e. a 500 at runtime
+// instead of a 422. See § 12.
+reasonBounds(kind: MemberDecisionKind): { min: 1; max: 500 | 2000; nullable: boolean };
 nextReminder(stageEnteredAt, now, reminderStage): 'day3'|'day7'|'day23'|'expire'|null;  // FR-022/022a
 scheduleDiffers(proposed: Date | null, confirmed: Date): boolean;                        // FR-018
 

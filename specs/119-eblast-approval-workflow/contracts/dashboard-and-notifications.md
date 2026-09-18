@@ -1,5 +1,13 @@
 # Contract — Dashboard, notifications, audit, metrics and cron
 
+**Delivery**: everything in this file ships in **PR-2**, with the approval round it reports on. The
+dashboard and the trial were originally a third PR; the maintainer merged them into PR-2 on
+2026-09-18 (`plan.md` Amendment 8) because the stage labels § 1.2 relabels, the metric registrations
+§ 4.2 lists and the FR-051 pass on the rebuilt queue all belong in the same PR as the stages and the
+emitters — five round-3 findings (C1, C2, H4, M2, M7) were that boundary and nothing else. The one
+exception is `broadcasts_preview_rendered_total` / `broadcasts_preview_render_ms`, registered in
+**PR-1** by T122a because `POST …/preview` emits them there.
+
 ## 1. Dashboard = the existing queue (FR-030)
 
 `/admin/broadcasts` stays **the** list. No second page, no parallel query, no forked filter bar —
@@ -9,7 +17,7 @@ FR-030 says so in as many words. What changes:
 
 | control | today | after |
 |---|---|---|
-| Stage chips | derived from `OFFERED_BROADCAST_STATUSES` (`:40-75`), grouped by the hand-listed `IN_REVIEW_STATUSES` (`:64-69`) | the five new statuses join `IN_REVIEW_STATUSES`, so all 13 offered stages appear and the loading skeleton (which sizes from `OFFERED_BROADCAST_STATUSES.length`, `loading.tsx:65`) follows automatically |
+| Stage chips | derived from `OFFERED_BROADCAST_STATUSES` (`:40-75`), grouped by the hand-listed `IN_REVIEW_STATUSES` (`:64-69`) | **four** of the five new statuses — `in_design`, `awaiting_member_approval`, `changes_requested`, `member_approved` — join `IN_REVIEW_STATUSES`; the fifth, **`expired_no_member_response`, joins `TERMINAL_STATUSES` (`:74-75`)** because it is a closed outcome in `TERMINAL_BROADCAST_STATUSES` with `turnOf` null (data-model § 8.1b), and filing a terminal stage under "In review" would offer marketing a row nobody can act on (`/speckit.analyze` H4). All 13 offered stages appear either way, and the loading skeleton (which sizes from `OFFERED_BROADCAST_STATUSES.length`, `loading.tsx:65`) follows automatically |
 | Chip label | a **count** per stage (FR-025); selecting a chip filters the list. Count changes are announced through the list's **single existing `role="status"` region** (`queue-table-client.tsx:439-447`) — **never** a second live region. The stage label must fit its chip in EN, TH **and SV**, where strings run up to **+28 %**: the SV lengths of the five new labels are a live-look item (research V2) and the chip truncates with a `title`/tooltip rather than reflowing the strip | new |
 | Chip visibility when the flag is off | n/a | a new-stage chip is offered only when the tenant has ≥ 1 row in it (research R18 — never offer a filter that can only return zero rows) |
 | Member | existing `memberId` dropdown | unchanged (FR-030) |
@@ -89,6 +97,15 @@ trigger fires (it reads only that key); staff- and system-driven events carry
 **`related_member_id`** so a staff decision or a cron closure does not refresh the member's recency
 (the #336/#337 rule).
 
+**This table is the single source of truth for every F119 audit payload.** The route contracts
+(`portal-eblast-approval-api.md`, `admin-eblast-formatting-api.md`) name which event a route emits
+and otherwise **reference this table rather than restating a field list** — restating it is how the
+two files drifted apart on four events (`/speckit.analyze` M6). The **member key** column is
+load-bearing and not cosmetic: migration 0009's `last_activity_at` SECURITY DEFINER trigger fires on
+snake_case **`member_id`** and on no other key, so an event listed here as `member_id` that ships as
+`related_member_id` — or as camelCase `memberId` — silently stops updating the member's activity
+(#336/#337).
+
 | event | actor | member key | payload (beyond the key) |
 |---|---|---|---|
 | `broadcast_version_started` | staff | `related_member_id` | `broadcast_id, version_id, round, from_stage` |
@@ -104,7 +121,7 @@ trigger fires (it reads only that key); staff- and system-driven events carry
 | `broadcast_test_copy_sent` | member or staff | `related_member_id` | `broadcast_id \| null, version_id \| null, recipient_hash` |
 | `broadcast_brand_settings_changed` | staff | — | `previous: { primaryColor, postalAddress }, next: { … }` |
 | `broadcast_image_uploaded` | member or staff | `member_id` (member upload) / `related_member_id` (staff, template) | `owner_kind, owner_id, image_id, byte_size, mime_type, content_hash` |
-| `broadcast_image_removed` | staff or system | `related_member_id` | `owner_kind, owner_id, image_id, blob_deleted: bool, reason: 'erasure'\|'withdrawn'\|'rejected'\|'sweep'` |
+| `broadcast_image_removed` | staff or system | `related_member_id` | `owner_kind, owner_id, image_id, blob_deleted: bool, reason: 'erasure'\|'withdrawn'\|'rejected'\|'sweep'`. **All four reasons have an emit site**: `'erasure'` T082, `'withdrawn'` and `'rejected'` T081 (the member-withdrawal and staff-rejection paths stamp `deleted_at` in the same transaction as the state change), `'sweep'` T035. The middle two had none until round 3 M4, so images of a withdrawn or rejected E-Blast stayed reachable |
 
 The two image values are **new**, not reused. Spec § Audit trail requires "image uploaded / removed"
 to be auditable, and the existing `broadcast_image_*` values are **refusals and configuration only**
@@ -154,6 +171,20 @@ outbox row (retained 90 days by `outbox-purge`) holds no content at all.
 `locale` on the row is the recipient's: the member contact's `preferred_language` for member rows
 (FR-024), the platform default for staff rows (`users` has no locale column — the F114 finding).
 
+**Flag rule — all five are behind `FEATURE_EBLAST_MEMBER_APPROVAL`, at the drainer**
+(maintainer decision, round 4 H2; the F114 precedent). The **enqueue** may still happen — the
+submit transaction writes its `eblast_submitted_marketing` row whatever the flag says, so nothing
+in the state-changing path branches on an env var — but the outbox drainer
+(`src/app/api/cron/outbox-dispatch/route.ts`) **skips these five `notification_type` values while
+the flag is off**, exactly as it skips F114's two. With the variable absent from the environment,
+therefore, **nothing here is emailed to anyone**: rows accumulate, wait, and drain on the first tick
+after the flip. That is what makes FR-034's "behave as today" true for
+`eblast_submitted_marketing` — today nobody is emailed on submit, and with the flag off nobody is.
+A skipped row is **not** an error and must not set `lastError`, must not count an attempt and must
+not reach the `default:` arm's `no_template_handler` ladder; it is simply not selected. Built by
+**T152a**, whose RED lives in `tests/contract/broadcasts/eblast-flag-matrix.test.ts` beside
+T149/T150.
+
 **FR-021b fixes what each side may see, and it is narrower than it looks.**
 
 - **Staff hand-off emails carry four things and nothing else**: the E-Blast's **subject**, the
@@ -168,9 +199,9 @@ outbox row (retained 90 days by `outbox-purge`) holds no content at all.
 
 | type | to | one row per | `context_data` | rendered content |
 |---|---|---|---|---|
-| `eblast_submitted_marketing` | marketing recipients (§ 3.1) | recipient | `{ tenantId, broadcastId, recipientUserId }` | **subject + member company + stage ("Awaiting marketing review") + link** to `/admin/broadcasts/<id>` — nothing more (FR-021b). US5 AS1: staff are **not** notified on submit today |
+| `eblast_submitted_marketing` | marketing recipients (§ 3.1) | recipient | `{ tenantId, broadcastId, recipientUserId }` | **subject + member company + stage ("Awaiting marketing review") + link** to `/admin/broadcasts/<id>` — nothing more (FR-021b). US5 AS1: staff are **not** notified on submit today, and with the flag off they still are not: the row is enqueued and the drainer skips it until the flip (round 4 H2) |
 | `eblast_version_sent_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId, round }` | what changed ("Round N is ready for your approval"), who acted ("the chamber"), marketing's note, the proposed send time, **and the full timeline: a reminder on day 3, a final reminder on day 7, a warning on day 23 and automatic closure on day 30** (FR-021b) — the member is told the clock at the moment it starts. Link to `/portal/broadcasts/<id>` |
-| `eblast_member_decided_marketing` | marketing recipients | recipient | `{ tenantId, broadcastId, versionId, round, decision }` | **subject + member company + the new stage + link**. The `decision` discriminator selects the stage wording (`approved` → "Member approved — awaiting schedule"; `changes_requested` / `approval_withdrawn` → "Changes requested by member"; `withdrawn` → "Withdrawn"). **The member's reason is NOT in the email** (FR-021b) — it is on the detail page |
+| `eblast_member_decided_marketing` | marketing recipients | recipient | `{ tenantId, broadcastId, versionId: string \| null, round: number \| null, decision }` — **`versionId` and `round` are nullable**: the same type carries a whole-E-Blast withdrawal raised from `submitted` or `draft`, where no version and no round exist. The arm MUST render from the broadcast alone in that case and MUST NOT throw; an arm that throws is indistinguishable from the missing-arm `default: null` below and retries silently for ~16 h (`/speckit.analyze` M7) | **subject + member company + the new stage + link**. The `decision` discriminator selects the stage wording (`approved` → "Member approved — awaiting schedule"; `changes_requested` / `approval_withdrawn` → "Changes requested by member"; `withdrawn` → "Withdrawn"). **The member's reason is NOT in the email** (FR-021b) — it is on the detail page |
 | `eblast_schedule_confirmed_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId }` | what changed, who acted, the confirmed time in the tenant time zone **and the proposed time beside it with an explicit "this is not the time you proposed" line whenever they differ** (FR-018, FR-021b), and a link back |
 | `eblast_approval_lifecycle` | member **and** marketing | recipient | `{ tenantId, broadcastId, versionId, round, kind, audience }` | `kind ∈ reminder_day3 \| reminder_day7 \| expiry_warning_day23 \| expired_day30`; day-23 and day-30 go to **both** sides (FR-022a). The **staff** rendering of each kind obeys the four-field rule above; the member rendering restates the remaining timeline |
 
@@ -233,15 +264,28 @@ an alert nobody re-tuned.
 | `broadcasts_approval_expired_total` | counter | `tenant` |
 | `broadcasts_preview_rendered_total` | counter | `tenant, surface` (`inline`\|`dialog`\|`compare`) |
 | `broadcasts_no_marketing_recipient_total` | counter | `tenant` |
+| `broadcasts_version_saved_total` | counter | `tenant` |
 | `broadcasts_member_decide_ms` | histogram | `tenant` |
 | `broadcasts_preview_render_ms` | histogram | `tenant` |
+
+**Six counters and two histograms — and each registration lands in the PR that emits it.**
+`broadcasts_preview_rendered_total` and `broadcasts_preview_render_ms` are registered by **T122a in
+PR-1**, because `POST …/preview` (T032) ships there; the other four counters, `broadcasts_member_decide_ms`
+and the three remaining spans are registered by **T122 in PR-2**. An emit against an unregistered
+field does not typecheck, so a registration a PR behind its emitter is not a documentation defect but
+a broken build (`/speckit.analyze` round 3 C1). `broadcasts_version_saved_total` is emitted by
+`PATCH /api/admin/broadcasts/[id]/version` (a save is not a hand-off, so it is counted rather than
+audited) and was previously named only in `admin-eblast-formatting-api.md`, i.e. absent from this
+inventory, from `src/lib/metrics.ts` and from `docs/observability.md` § 28 — it would have shipped
+unregistered (`/speckit.analyze` M2). This table is the registration list; a metric not on it does
+not exist.
 
 ### 4.3 Alerts (`docs/observability.md` § 28 — the file ends at § 27, line 2205)
 
 | condition | severity | why |
 |---|---|---|
 | `broadcasts_awaiting_member_oldest_age_seconds > 7 d` | warning | the second reminder has been sent and nothing moved |
-| `broadcasts_awaiting_member_oldest_age_seconds > 14 d` | page | halfway to the 30-day expiry with no response |
+| `broadcasts_awaiting_member_oldest_age_seconds > 14 d` | page | well inside the 30-day expiry clock and **nine days ahead of the day-23 warning**, so a human sees it before either automatic step fires (the earlier note said "halfway to the 30-day expiry" — 14 is not half of 30, and the warning falls after it, not before) |
 | `broadcasts_no_marketing_recipient_total > 0` | page | a hand-off notified nobody |
 
 ### 4.4 Logs and traces
@@ -264,7 +308,12 @@ UTC = 11:30 Asia/Bangkok) gains a **second block** after the existing draft prun
 `approvalLifecycleOk` field in the response body, and a 500 only at the **end**, so a fault in one
 half never drops the other (the F114 gauges-tick precedent). The route keeps
 `export const GET = POST` — native Vercel Cron invokes GET — and keeps its name; renaming would
-touch `vercel.json`, the runbook and the alert rules for no observable gain.
+touch `vercel.json`, the runbook and the alert rules for no observable gain. **It also keeps the
+existing `CRON_SECRET` bearer check** that guards every handler under `src/app/api/cron/**`: the new
+block joins an already-authenticated route and MUST NOT introduce an unauthenticated entry to it —
+an unguarded lifecycle tick would let anyone expire another tenant's E-Blasts on demand
+(`/speckit.analyze` M8). Likewise `/api/internal/metrics/broadcasts-gauges` keeps the guard it has
+today; this feature adds four gauges to it and changes nothing about its access control.
 
 Order inside the block:
 

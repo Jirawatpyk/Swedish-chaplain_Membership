@@ -29,6 +29,13 @@ psql "$DATABASE_URL" -c "SELECT column_name FROM information_schema.columns WHER
 psql "$DATABASE_URL" -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('broadcast_versions','broadcast_member_decisions','broadcast_images');"   # expect t,t ×3
 psql "$DATABASE_URL" -c "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid WHERE t.typname='audit_event_type' AND e.enumlabel IN ('broadcast_test_copy_sent','broadcast_brand_settings_changed','broadcast_image_uploaded','broadcast_image_removed','broadcast_version_started','broadcast_version_sent_to_member','broadcast_member_approved','broadcast_member_changes_requested','broadcast_member_approval_withdrawn','broadcast_member_approval_voided','broadcast_schedule_confirmed','broadcast_approval_reminder_sent','broadcast_approval_expiry_warned','broadcast_approval_expired');"   # expect 14
 
+# the 0305 backfills ran: every row that was 'submitted' with a time carries a proposal, and no
+# waiting row was left with a fresh stage clock. If the file put CREATE OR REPLACE of the
+# immutability fn BEFORE the backfills, db:migrate aborted with broadcast_immutable_after_submit
+# (round 3 H5) — and if stage_entered_at is uniformly "now", backfill 2 is missing (round 3 M3).
+psql "$DATABASE_URL" -c "SELECT count(*) FROM broadcasts WHERE status='submitted' AND scheduled_for IS NOT NULL AND proposed_send_at IS NULL;"   # expect 0
+psql "$DATABASE_URL" -c "SELECT count(*) FROM broadcasts WHERE stage_entered_at > now() - interval '5 minutes' AND submitted_at < now() - interval '1 day';"   # expect 0
+
 # the FR-012a amendments actually replaced the function bodies — read the SOURCE, not a fixture
 psql "$DATABASE_URL" -c "SELECT prosrc FROM pg_proc WHERE proname='broadcasts_immutable_after_submit_fn';" | grep -c "member_approved"   # expect >= 2 (E1 and E2)
 psql "$DATABASE_URL" -c "SELECT prosrc FROM pg_proc WHERE proname='broadcasts_state_machine_fn';"          | grep -c "awaiting_member_approval"
@@ -250,7 +257,12 @@ See § 4 below.
 pnpm vitest run tests/unit/broadcasts/domain tests/unit/broadcasts/application tests/unit/broadcast
 pnpm vitest run tests/contract/broadcasts
 
-# integration — pass FILE PATHS, never "-- <pattern>" (that runs the whole ~40-min suite)
+# integration — ALL TWELVE suites this feature creates. Pass FILE PATHS, never "-- <pattern>"
+# (that runs the whole ~40-min suite). The last four were missing from this list until
+# /speckit.analyze M4, which meant the FR-012a / SC-002 happy path was never run by the gate.
+# PER PR (round 3 M1): in PR-1 only three of these files exist — eblast-approval-tenant-isolation,
+# eblast-content-parity and audit-event-type-parity. Run those three there; run all twelve in PR-2.
+# Naming a path the PR has not created makes the gate unsatisfiable, not merely noisy.
 pnpm test:integration tests/integration/broadcasts/eblast-approval-tenant-isolation.test.ts
 pnpm test:integration tests/integration/broadcasts/eblast-approval-cross-member-probe.test.ts
 pnpm test:integration tests/integration/broadcasts/eblast-immutability-trigger.test.ts
@@ -259,6 +271,10 @@ pnpm test:integration tests/integration/broadcasts/eblast-allowance-bucket.test.
 pnpm test:integration tests/integration/broadcasts/eblast-erasure-reach.test.ts
 pnpm test:integration tests/integration/broadcasts/eblast-content-parity.test.ts
 pnpm test:integration tests/integration/broadcasts/eblast-dashboard-pagination.test.ts
+pnpm test:integration tests/integration/broadcasts/eblast-approval-happy-path.test.ts
+pnpm test:integration tests/integration/broadcasts/eblast-approval-rounds.test.ts
+pnpm test:integration tests/integration/broadcasts/eblast-submit-notifies-marketing.test.ts
+pnpm test:integration tests/integration/broadcasts/audit-event-type-parity.test.ts
 
 # e2e — local only, workers=1 is mandatory, run in <= 10-minute FOREGROUND chunks
 pnpm test:e2e --grep "@eblast" --workers=1
@@ -303,7 +319,7 @@ production deploy on this repo (`vercel.json` has no `ignoreCommand`).
 |---|---|
 | The **byte-identical wrapper snapshot** — with no brand colour, no postal address, no logo on file and no design block in the body, `renderBroadcastHtml` output equals today's byte for byte | PR-1 changes the wrapper every live SweCham send uses. This is now a **spec requirement** (§ Feature flag: "that snapshot test is a merge blocker for the unflagged tool upgrade"), not only a plan amendment. Without it the tool upgrade is an unreviewable change to production email |
 | The **`docs/ux-standards.md` § 18.2 container exception** for the two-column compose width, written **in this same change** | FR-050 requires the departure from the form container tier to be recorded, not discovered later |
-| The **seven-screen FR-051 pass**: `docs/ux-standards.md` § 15 checklist + the `@a11y` axe suite, zero serious/critical, dead i18n keys removed, unshown components wired or deleted — on the screens **PR-1 builds**: portal compose, portal detail (body), portal benefits E-Blast tab, staff queue, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand settings | FR-051 names a finite list of nine and requires the pass **where each screen is built** (plan Amendment 4); a screen missed here is a screen SweCham tests. The remaining two — portal sign-off compare view and staff detail/format — do not exist yet and are gated in PR-2 (§ 3.2) |
+| The **PR-1 FR-051 pass**: `docs/ux-standards.md` § 15 checklist + the `@a11y` axe suite, zero serious/critical, dead i18n keys removed, unshown components wired or deleted — on the **seven whole screens PR-1 builds** (portal compose, portal benefits E-Blast tab, staff queue, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand settings) **plus the body view of `/portal/broadcasts/[id]`** | FR-051 names a finite list of nine and requires the pass **in every delivery that builds or changes a screen** (plan Amendment 4); a screen missed here is a screen SweCham tests. PR-2 gates `/admin/broadcasts/[id]`, which does not exist yet, the **sign-off view** of `/portal/broadcasts/[id]`, which PR-2 rebuilds, **and the staff queue again**, which T116–T120 rebuild now that US4 ships in PR-2 (§ 3.2 step 4a). Screens 2 and 4 are each scanned once in both PRs because both PRs change them — the earlier "seven / two" wording listed eight and summed to ten (`/speckit.analyze` M1) |
 | SC-011 element parity, with its positive control | The shared sanitiser policy replaces three hand-maintained configs; the parity test is what makes "nothing is stripped" a property rather than a promise |
 | `@tiptap/extension-image` re-pinned `^3.22.5` → `3.22.5` | A caret on an editor extension means a patch release can change the serialised HTML the sanitiser and the block parser both key on |
 | e2e `@eblast` + `@a11y` green on chromium **and** mobile-safari | The compose layout changes at two breakpoints |
@@ -313,23 +329,46 @@ After merge: the chamber logo appears in E-Blast headers automatically for SweCh
 already on file for invoices — FR-041a), and the footer keeps the current synthetic address line
 until step 3.3.
 
-### 3.2 PR-2 — the approval round (ships DARK)
+### 3.2 PR-2 — the approval round, the dashboard and the trial (ships DARK)
+
+**There is no PR-3.** The maintainer merged the former PR-3 (US4 dashboard + US7 trial) into PR-2 on
+2026-09-18 (`plan.md` Amendment 8), so the stages, their labels, their metrics, the dashboard that
+reports them, the runbook and the EN + TH UAT walkthrough all land in one PR — which is what makes
+step 5's flip safe to take immediately after this merge.
 
 1. Merge → prod auto-migrates **`0305`** on deploy (`vercel-build`); `0304` already applied with
    PR-1, so this deploy adds only the `0305` DDL. Run
    `pnpm db:verify:prod` and the `pg_proc` checks from § 0 against prod, read-only.
 2. **Do not set `FEATURE_EBLAST_MEMBER_APPROVAL` yet.** Setting the env var is the deploy and the
    flip in one action.
-3. Unflagged and live the moment PR-2 merges — none of the rollback layers in § 3.5 undoes these:
+3. Unflagged and live the moment PR-2 merges — none of the rollback layers in § 3.5 undoes these
+   by a flag flip; each is **code-revert-only**, the same class as 108's Rollback-matrix row C and
+   F114 § 3's "unflagged on merge" list:
    - the five `broadcast_status` values, the fourteen `audit_event_type` values (four landed with
      `0304` in PR-1, ten land here) and the five
-     `notification_type` values (`ADD VALUE` is irreversible);
+     `notification_type` values (`ADD VALUE` is irreversible — not even a revert undoes these);
    - the two amended trigger functions (a reversal is a new migration);
    - `proposed_send_at` now recorded at submit for **every** E-Blast, and the backfill of rows
      currently in `submitted`;
    - the widened allowance bucket and cancel cascade — they read the same set, which currently
      contains no rows in the new stages, so behaviour is unchanged until the flag is on;
-   - `stage_entered_at` stamped on every status change.
+   - `stage_entered_at` stamped on every status change;
+   - **T120's stage-vocabulary relabel**: `approved` reads **"Scheduled"** in **both** live
+     namespaces — `admin.broadcasts.queue.status` and `portal.broadcasts.list.status` — so every
+     staff and member reader sees the new word on merge, before any flag. Code-revert-only;
+   - **T117's seven new queue columns** (Stage, Whose turn, Time in stage, Round, Proposed,
+     Confirmed, Last activity) and the `ageBadge` re-based on `stage_entered_at` — the live queue
+     changes shape for every staff user on merge. Code-revert-only;
+   - **T141a's portal detail fields** (`stage`, `whoseTurn`, `round`, `proposedSendAt`,
+     `confirmedSendAt`, `expiresAt`, and the "latest **sent** version while awaiting" body rule) on
+     `GET /api/broadcasts/[id]` and `/portal/broadcasts/[id]` — members see the widened detail on
+     merge. Code-revert-only.
+
+   **Not on this list, deliberately: the staff "new submission" email.** `eblast_submitted_marketing`
+   is enqueued from the moment PR-2 merges, but the outbox drainer **skips the five new
+   notification types while the flag is off** (T152a, plan Amendment 7), so nothing is delivered
+   until step 5. The rows wait and drain on the first tick after the flip — which is what makes
+   FR-034's "behave as today" hold for an unflagged action.
 4. **Update the record of processing (RoPA)** before the flag goes on — `docs/compliance/processing-records.md`.
    Spec § Personal data names what it must say, so the entry is not free-form:
    - the new purpose — "review and member sign-off of E-Blast content; accountable version history";
@@ -345,13 +384,28 @@ until step 3.3.
      under the existing outbox retention.
 
    This is a **precondition** of step 5, not a follow-up.
-4a. **Pre-merge gate, PR-2**: the FR-051 pass on the **two approval screens** PR-2 builds — the
-   portal detail/sign-off compare view and the staff detail/format surface — `docs/ux-standards.md`
-   § 15 checklist **and** the `@a11y` axe scan at 320 px, zero serious or critical (task T086a).
-   It is the same gate PR-1 applied to its seven screens (plan Amendment 4); neither PR ships a
-   screen without its pass.
+4a. **Pre-merge gate, PR-2 (a)**: the FR-051 pass on the **three screens PR-2 builds or rebuilds** —
+   `/admin/broadcasts/[id]` (new here), the **sign-off view** of `/portal/broadcasts/[id]`
+   (rebuilt here), and the **staff queue** `/admin/broadcasts` with its filter bar, table,
+   table-client and card list, which **T116–T120 rebuild** now that US4 ships in this PR
+   (Amendment 8) — `docs/ux-standards.md` § 15 checklist **and** the `@a11y` axe scan at 320 px,
+   zero serious or critical (task T086a). "Two" here predated the fold-in and disagreed with T086a
+   and plan Amendment 4, which both name three (round 4 M3). Same gate PR-1 applied to its screens
+   (plan Amendment 4); a screen takes the pass in every PR that changes it, and PR-1's queue pass
+   was taken on the pre-rebuild shape.
+4b. **Pre-merge gate, PR-2 (b) — the one that makes this a dark ship**: `FEATURE_EBLAST_MEMBER_APPROVAL`
+   is read by the code before PR-2 merges. `tests/contract/broadcasts/eblast-flag-matrix.test.ts`
+   (T149/T150) must be green in **both** states, and with the variable **absent** from the
+   environment `POST /api/admin/broadcasts/[id]/version` must answer **404** (T152). The flag gate
+   was originally scheduled in PR-3, which would have put the approval round live in prod for every
+   `broadcasts.write` holder the moment PR-2 deployed — steps 2 and 5 below protect nothing if no
+   code reads the variable, and hiding the button is not a gate (`/speckit.analyze` C1, plan
+   Amendment 7). **Do not merge PR-2 without this.**
 5. Set `FEATURE_EBLAST_MEMBER_APPROVAL=true` in Vercel only when ready to redeploy immediately and
-   only after step 4. From that moment "Start formatted version" is offered on submitted E-Blasts —
+   only after step 4 — and note that the dashboard (T116–T122), the five stage labels (T120), the
+   runbook (T161) and the EN + TH UAT walkthrough (T153) are all in **this** PR, so the flip no
+   longer lands in a window where marketing can start a round it cannot see, read or trial
+   (round 3 M2). From that moment "Start formatted version" is offered on submitted E-Blasts —
    **including the ones already sitting in "Awaiting marketing review" when the flag went on**. They
    gain the new actions like any other row and nothing distinguishes them (spec § Feature flag);
    there is no migration, no backfill and no "legacy" marking.
@@ -381,12 +435,15 @@ every preview, so changing it never voids a pending or given approval (FR-041c).
 |---|---|---|---|
 | Every E-Blast route and page | 503 `feature_disabled` (proxy) | live | live |
 | Writing tool, preview, design blocks, images, brand page, screen fixes | off with F7 | **live** | live |
-| "Start formatted version" | off | **404 / hidden** | offered |
+| "Start formatted version" on a **newly submitted** E-Blast | off | **404 / hidden** — the one gated edge | offered |
+| "Start next version" on a row in **Changes requested / Member approved / Scheduled** (round ≥ 1) | off | **available** — the gate is edge-wide, not route-wide, so an in-flight E-Blast stays completable (FR-034, round 3 H1) | available |
 | Member approve / request changes / withdraw approval | off | **available for rows already in a new stage** (FR-034) | available |
 | Confirm schedule | off | available | available |
 | New stage chips on the queue | off | shown only if rows exist in them | shown |
 | Nav waiting count | off | hidden unless rows exist | shown |
 | Reminders / day-23 warning / day-30 expiry | off | run for rows already awaiting | run |
+| The **five hand-off emails** (`eblast_*`) | off | **enqueued, not delivered** — the drainer skips these five `notification_type` values, so nothing reaches marketing or the member; rows wait and drain on the first tick after the flip (T152a, round 4 H2) | delivered |
+| The **"new submission → marketing"** email specifically | off | **nobody is emailed on submit — exactly as today** (FR-034); the row is written from the moment PR-2 merges | marketing is emailed |
 | Today's approve / reject flow | off | **byte-identical to before** (SC-006) | unchanged |
 | Rows already in **Awaiting marketing review** when the flag is switched on | off | — | they **gain the new actions like any other row**; nothing distinguishes them (spec § Feature flag) |
 
@@ -394,7 +451,7 @@ every preview, so changing it never voids a pending or given approval (FR-041c).
 
 | Layer | Action | In-flight rows | Time |
 |---|---|---|---|
-| 1 — platform flag off | remove `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel + redeploy | kept; no **new** E-Blast can enter the round; rows already in a new stage stay completable and cancellable, and the reminder/expiry clock keeps running so nothing sits forever | one deploy |
+| 1 — platform flag off | remove `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel + redeploy | kept; no **new** E-Blast can enter the round; rows already in a new stage stay completable and cancellable, and the reminder/expiry clock keeps running so nothing sits forever. **Hand-off emails stop being delivered** — the drainer skips the five types again and the rows queue up, so a re-flip resumes them rather than losing them (round 4 H2) | one deploy |
 | 2 — code revert of PR-2 | revert the PR | rows in a new stage become unreachable by the application until the code returns — **cancel them first** (`/admin/broadcasts` → Cancel), because the enum values and the triggers stay | one deploy |
 | 3 — code revert of PR-1 | revert the PR | the wrapper returns to today's; brand columns and `broadcast_images` rows are orphaned but harmless | one deploy |
 
@@ -440,9 +497,18 @@ that the delivery report names only those addresses.
 
 ## 5. Watch after cutover
 
-- `broadcasts_awaiting_member_oldest_age_seconds` — warning at 7 days, page at 14 (both inside the
-  30-day expiry clock).
-- `broadcasts_no_marketing_recipient_total` — any non-zero value means a hand-off notified nobody.
+**Three configured alerts** (`docs/observability.md` § 28, task T160) — these page or warn on their
+own:
+
+- `broadcasts_awaiting_member_oldest_age_seconds` — **warning at 7 days**, **page at 14**. Both sit
+  inside the 30-day expiry clock and ahead of the day-23 warning to the member, so a stuck E-Blast
+  is noticed before either automatic step fires.
+- `broadcasts_no_marketing_recipient_total > 0` — **page**. Any non-zero value means a hand-off
+  notified nobody.
+
+**Three first-week observations** (watched by hand; not alerts — they have no threshold and page
+nobody):
+
 - `email_dispatch_failed` audit rows whose `notification_type` starts `eblast_` — in particular
   `no_template_handler`, which would mean a notification type shipped without its dispatcher arm and
   has been retrying silently for up to 16 hours.
