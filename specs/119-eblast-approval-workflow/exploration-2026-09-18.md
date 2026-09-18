@@ -44,10 +44,14 @@ changes yet). Verify before relying on a line number.
   `#f6f6f6`, card `#ffffff` 600px radius 8, system font stack 15px/1.6, footer 11px `#888`. No
   dark mode, no `<style>`. Tenant name from `env-tenant-display-name.ts`; the address line is an
   i18n string with `{tenantDisplayName}` — **no real postal address** (`:100-119`).
-- Tenant logo exists for F4: private blob `invoicing/<tenantId>/logos/<uuid>` read as bytes
-  (`load-tenant-logo.ts:11-12,118`); invoicing barrel exports only `uploadTenantLogo`
+- Tenant logo exists for F4: blob `invoicing/<tenantId>/logos/<uuid>`, consumed as bytes by the
+  PDF renderer (`load-tenant-logo.ts:11-12,118`); invoicing barrel exports only `uploadTenantLogo`
   (`src/modules/invoicing/index.ts:420`) — **no port for broadcasts to reach it**. A public logo
   blob adapter exists in insights (`modules/insights/infrastructure/logo/public-logo-blob-adapter.ts`).
+  **Correction (plan gate, 2026-09-18)**: the invoice logo blob is uploaded with `access: 'public'`
+  (`src/modules/invoicing/infrastructure/adapters/vercel-blob-adapter.ts:38,69`) — only F4's
+  *consumption* is byte-based. A read-only public-URL barrel export is enough; no copy needed
+  (`research.md` R12).
 
 ### Images end to end
 - `POST /api/broadcasts/inline-image-upload` (node, 60s), kill-switch `isF71aUs2Enabled()`.
