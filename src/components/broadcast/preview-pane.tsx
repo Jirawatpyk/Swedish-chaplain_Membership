@@ -1,120 +1,80 @@
 'use client';
 
 /**
- * T088 — Preview pane (sanitised body rendered as HTML).
+ * F119 T103 (US3-AS6, FR-043) — the inline preview pane.
  *
- * Defence-in-depth: the SERVER (`sanitize-html.ts` use-case) is the
- * authoritative sanitisation boundary — every persisted body is already
- * allowlist-filtered. The client re-runs DOMPurify on the locally-edited
- * body before injecting via `dangerouslySetInnerHTML` to keep WYSIWYG
- * preview in sync with the saved-state behaviour. **Do not remove the
- * server-side sanitisation thinking the client covers it** — the client
- * is paranoia for the unsaved-edit path only.
+ * It shows the REAL email: the pane posts the subject + body to the preview
+ * route and renders the document that comes back — the same wrapper the
+ * sender uses, so brand header, design blocks and the unsubscribe footer are
+ * all present and what the member approves is what is delivered.
  *
- * Two render states:
- *   - `loadError !== null`     → role=alert with refresh hint (UX I4)
- *   - default                  → dangerouslySetInnerHTML(sanitised)
+ * What it deliberately no longer does (T014): re-sanitise the body in the
+ * browser and inject it with `dangerouslySetInnerHTML`. That was the third
+ * divergent DOMPurify config in the codebase and it forbade `<img>`, so an
+ * uploaded image was invisible here and visible in the delivered mail (audit
+ * finding #2). Sanitisation belongs to the server, once
+ * (`dompurify-sanitizer.ts`); the browser's job is to display the answer.
  *
- * Re-renders are throttled by the parent's `useDeferredValue(bodyHtml)`.
+ * Request behaviour, the 30-renders/minute budget and every non-ready state
+ * live in `use-preview-html.tsx`, shared with the Preview dialog so the two
+ * can never drift and so opening the dialog costs no extra render.
  */
-import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import DOMPurify from 'isomorphic-dompurify';
+import { PreviewDialog } from './preview-dialog';
+import {
+  usePreviewHtml,
+  PreviewSurface,
+  type PreviewEndpoint,
+} from './use-preview-html';
 
-const PREVIEW_SANITIZER_CONFIG = Object.freeze({
-  ALLOWED_TAGS: [
-    'p',
-    'br',
-    'strong',
-    'em',
-    'u',
-    'a',
-    'ul',
-    'ol',
-    'li',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'blockquote',
-    'hr',
-  ],
-  ALLOWED_ATTR: ['href', 'target', 'rel'],
-  ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
-  FORBID_TAGS: [
-    'script',
-    'style',
-    'iframe',
-    'form',
-    'link',
-    'meta',
-    'base',
-    'object',
-    'embed',
-    'svg',
-    'img',
-  ],
-  FORBID_ATTR: ['style'],
-  KEEP_CONTENT: true,
-  RETURN_TRUSTED_TYPE: false,
-});
+/**
+ * Fixed, so the pane never grows or shrinks as the deferred body settles —
+ * the document scrolls inside the frame instead (layout shift is T156's
+ * live-look item).
+ */
+export const PREVIEW_PANE_FRAME_HEIGHT = 420;
 
 export interface PreviewPaneProps {
   readonly subject: string;
   readonly bodyHtml: string;
+  /** Member compose posts to the member route, staff proxy to the staff one. */
+  readonly endpoint: PreviewEndpoint;
+  readonly locale: string;
 }
 
 export function PreviewPane({
   subject,
   bodyHtml,
+  endpoint,
+  locale,
 }: PreviewPaneProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.fields');
-
-  const { sanitised, loadError } = useMemo<{
-    sanitised: string;
-    loadError: string | null;
-  }>(() => {
-    try {
-      const out = DOMPurify.sanitize(bodyHtml, PREVIEW_SANITIZER_CONFIG);
-      return {
-        sanitised: typeof out === 'string' ? out : '',
-        loadError: null,
-      };
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'unknown';
-      if (typeof window !== 'undefined') {
-        window.console.error('[broadcast.preview] sanitiser failed:', message);
-      }
-      return { sanitised: '', loadError: message };
-    }
-  }, [bodyHtml]);
+  const state = usePreviewHtml({ endpoint, subject, bodyHtml, locale });
 
   return (
     <section
       aria-label={t('previewLabel')}
       className="rounded-md border bg-muted/20 overflow-x-hidden min-w-0"
     >
-      <header className="border-b px-3 py-2">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          {t('previewLabel')}
-        </p>
-        <h3 className="text-sm font-semibold">
-          {subject.length > 0 ? subject : ' '}
-        </h3>
-      </header>
-      {loadError !== null ? (
-        <div role="alert" className="px-3 py-3 text-sm text-destructive">
-          <p className="font-medium">{t('previewUnavailable')}</p>
-          <p className="text-xs text-muted-foreground">
-            {t('previewUnavailableHint')}
+      <header className="flex items-start justify-between gap-2 border-b px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            {t('previewLabel')}
           </p>
+          <h3 className="truncate text-sm font-semibold">
+            {subject.length > 0 ? subject : ' '}
+          </h3>
         </div>
-      ) : (
-        <div
-          className="prose prose-sm dark:prose-invert max-w-none overflow-x-hidden px-3 py-2"
-          dangerouslySetInnerHTML={{ __html: sanitised }}
-        />
-      )}
+        {/* The dialog reads the state this pane already fetched — opening it
+            never spends a second token of the 30/min budget. */}
+        <PreviewDialog state={state} />
+      </header>
+      {/* One source of truth for the height: the box reserves exactly what a
+          ready frame occupies, so the empty / loading / refusal states do not
+          resize the form when the document arrives. */}
+      <div className="py-2" style={{ minHeight: PREVIEW_PANE_FRAME_HEIGHT }}>
+        <PreviewSurface state={state} height={PREVIEW_PANE_FRAME_HEIGHT} />
+      </div>
     </section>
   );
 }

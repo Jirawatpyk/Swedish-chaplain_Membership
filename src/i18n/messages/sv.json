@@ -5659,7 +5659,18 @@
           "scheme": "En länk måste börja med http://, https:// eller mailto:."
         }
       },
-      "pasteNotice": "Viss formatering stöds inte i e-post och togs bort."
+      "pasteNotice": "Viss formatering stöds inte i e-post och togs bort.",
+      "preview": {
+        "empty": "Din förhandsgranskning visas här.",
+        "paused": "Förhandsgranskningen är pausad i {seconds} sekunder – den uppdateras vid din nästa ändring.",
+        "frameTitle": "Förhandsgranskning av e-post",
+        "openLabel": "Förhandsgranska",
+        "dialogTitle": "Förhandsgranskning av e-post",
+        "dialogDescription": "Exakt vad en mottagare får: sidhuvud, meddelande och sidfot.",
+        "widthLabel": "Förhandsgranskningens bredd",
+        "widthDesktop": "Dator (600 px)",
+        "widthPhone": "Telefon (375 px)"
+      }
     }
   },
   "portal": {

@@ -20,7 +20,7 @@
  */
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   errorValues,
@@ -146,6 +146,8 @@ export function ComposeForm({
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
   const tErr = useTranslations('portal.broadcasts.compose.errors');
+  // The preview is rendered server-side in the member's own UI language.
+  const locale = useLocale();
 
   const [subject, setSubject] = useState<string>(initialSubject);
   const [bodyHtml, setBodyHtml] = useState<string>(initialBodyHtml);
@@ -596,7 +598,12 @@ export function ComposeForm({
             disabled={submitting}
           />
 
-          <PreviewPane subject={subject} bodyHtml={deferredBody} />
+          <PreviewPane
+            subject={subject}
+            bodyHtml={deferredBody}
+            endpoint="/api/broadcasts/preview"
+            locale={locale}
+          />
 
           {/* UX-4 — surface FR-004a cancellation cutoff so members know
               they can still pull back a submission until admin approves. */}

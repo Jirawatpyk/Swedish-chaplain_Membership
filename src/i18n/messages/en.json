@@ -5659,7 +5659,18 @@
           "scheme": "A link must start with http://, https:// or mailto:."
         }
       },
-      "pasteNotice": "Some formatting is not supported in email and was removed."
+      "pasteNotice": "Some formatting is not supported in email and was removed.",
+      "preview": {
+        "empty": "Your message preview appears here.",
+        "paused": "Preview paused for {seconds} seconds — it refreshes on your next edit.",
+        "frameTitle": "Email preview",
+        "openLabel": "Preview",
+        "dialogTitle": "Email preview",
+        "dialogDescription": "Exactly what a recipient receives: header, message and footer.",
+        "widthLabel": "Preview width",
+        "widthDesktop": "Desktop (600 px)",
+        "widthPhone": "Phone (375 px)"
+      }
     }
   },
   "portal": {

@@ -27,7 +27,7 @@
 
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   errorValues,
@@ -156,6 +156,8 @@ export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): Re
   // reuse the canonical members-picker loading copy ("Loading members…")
   // rather than hardcoding a new string.
   const tLink = useTranslations('admin.users.invite.linkMember');
+  // The preview is rendered server-side in the staff user's own UI language.
+  const locale = useLocale();
   const router = useRouter();
 
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -492,7 +494,12 @@ export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): Re
           disabled={submitting}
         />
 
-        <PreviewPane subject={subject} bodyHtml={deferredBody} />
+        <PreviewPane
+          subject={subject}
+          bodyHtml={deferredBody}
+          endpoint="/api/admin/broadcasts/preview"
+          locale={locale}
+        />
 
         <div className="flex justify-end border-t pt-4">
           <SubmitButton
