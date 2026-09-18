@@ -41,150 +41,35 @@
  *      not apply because `<style>` is forbidden.
  */
 import DOMPurify from 'isomorphic-dompurify';
+import { installBroadcastSanitizerHooks, makeBroadcastSanitizerConfig } from '@/lib/broadcast-content-policy';
 import type { HtmlSanitizerPort } from '../../application/ports/html-sanitizer-port';
 
-const ALLOWED_TAGS = [
-  'p',
-  'br',
-  'strong',
-  'em',
-  'u',
-  'a',
-  'ul',
-  'ol',
-  'li',
-  'h1',
-  'h2',
-  'h3',
-  'h4',
-  'blockquote',
-  'hr',
-  // F7.1a US2 (T078) — `<img>` reinstated; source-allowlist enforced
-  // at Application use-case layer (validateImageSourceAllowlist).
-  // Non-http(s) src is stripped by the img-src-scheme hook below.
-  'img',
-] as const;
+// F119 T013/T014 — the ONE policy (SC-011). The tag / attribute / scheme
+// lists that used to be declared here now live in
+// `src/lib/broadcast-content-policy.ts`, read by this adapter, the editor's
+// paste handler and the preview alike, so no stage can drift. `<img>` is
+// always allowed on the server (source-allowlist enforced at the Application
+// layer by validateImageSourceAllowlist; non-http(s) src stripped by the
+// img-src-scheme hook below); the member editor narrows to `images: false`
+// while the F7.1a US2 flag is off. `data-eb` (the design-block marker) is the
+// only data attribute that survives.
+//
+// KEEP_CONTENT: true — preserves text inside non-allowlisted-but-not-
+// forbidden tags (e.g., `<div>`, `<span>`). FORBIDDEN tags (script/style/
+// iframe/etc.) have their content stripped regardless of this flag — see
+// file docblock for the empirical verification.
+const PURIFY_CONFIG = makeBroadcastSanitizerConfig({ images: true });
 
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt'] as const;
-
-// Anchor scheme allowlist — `mailto:` is permitted alongside http(s).
-// `<img src>` scheme enforcement lives in the img-src-scheme hook
-// because DOMPurify's ALLOWED_URI_REGEXP applies to ALL URL-bearing
-// attributes; we need stricter rules for `<img src>` (http(s) only,
-// no mailto:) than for `<a href>`.
-const ALLOWED_URI_REGEXP = /^(?:https?:|mailto:)/i;
-
-const PURIFY_CONFIG = Object.freeze({
-  ALLOWED_TAGS: [...ALLOWED_TAGS],
-  ALLOWED_ATTR: [...ALLOWED_ATTR],
-  ALLOWED_URI_REGEXP,
-  FORBID_TAGS: [
-    'script',
-    'style',
-    'iframe',
-    'form',
-    'link',
-    'meta',
-    'base',
-    'object',
-    'embed',
-    'svg',
-  ],
-  FORBID_ATTR: ['style'],
-  // KEEP_CONTENT: true — preserves text inside non-allowlisted-but-
-  // not-forbidden tags (e.g., `<div>`, `<span>`). FORBIDDEN tags
-  // (script/style/iframe/etc.) have their content stripped regardless
-  // of this flag — see file docblock for the empirical verification.
-  KEEP_CONTENT: true,
-  RETURN_TRUSTED_TYPE: false,
-});
-
-let hookInstalled = false;
-
-/**
- * T078 (F7.1a US2) — `<img>` source-scheme guard.
- *
- * `<img src>` is allowed by the ALLOWED_TAGS allowlist but the scheme
- * MUST be http(s) per FR-014 (data:, javascript:, file:, vbscript:
- * stripped). Implemented as an attribute-level removal inside the
- * existing afterSanitizeAttributes hook so non-conforming `<img>`
- * elements drop their `src` and render as broken images (visible
- * signal to the author that the URL was rejected) instead of being
- * removed silently.
- *
- * Why not rely on ALLOWED_URI_REGEXP alone: that regex governs ALL
- * URL-bearing attributes (href, src, action…). We need `<a href>` to
- * keep allowing `mailto:` while `<img src>` rejects it — the regex is
- * too coarse. A per-attribute hook is the right surface.
- *
- * **FR-012 defence-in-depth note (verify-run C2 closure 2026-05-20)**:
- * The spec's "the cap MUST be re-enforced on the sanitiser pass at
- * submit time (defence in depth — catches paste-of-external-large-
- * data-URI bypass attempts)" requirement is satisfied STRUCTURALLY by
- * this hook rather than by a literal byte-size check. Reason: the
- * only realistic class of "paste-of-external-large-data-URI bypass"
- * is `<img src="data:image/png;base64,...">` where the base64 payload
- * inflates the body bytes past the 5 MB upload cap. The img-src-scheme
- * hook strips `src=data:...` entirely, so the inflated body never
- * survives sanitisation regardless of byte size. The existing 200 KB
- * post-sanitiser body cap (sanitize-html.ts) catches any pathological
- * non-img inflation vector. Together these provide the literal
- * defence the spec asks for.
- */
-function installLinkHardeningHook(): void {
-  if (hookInstalled) return;
-  // Force every surviving anchor to be safe regardless of input.
-  // Hook fires once per element after attribute sanitisation.
-  //
-  // NOTE: cannot use `node instanceof Element` here — on Node 22 server
-  // runtime the `Element` global is provided by isomorphic-dompurify's
-  // internal jsdom, but only on `globalThis`. Avoid the cross-realm
-  // ambiguity by checking `nodeType === 1` (ELEMENT_NODE) + the runtime
-  // shape of the methods we use.
-  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-    const el = node as {
-      nodeType?: number;
-      tagName?: string;
-      hasAttribute?: (name: string) => boolean;
-      setAttribute?: (name: string, value: string) => void;
-      getAttribute?: (name: string) => string | null;
-      removeAttribute?: (name: string) => void;
-    };
-    if (el.nodeType !== 1) return;
-
-    // Link-hardening — force every surviving anchor to carry safe
-    // rel + target. Unchanged from F7 MVP.
-    if (
-      el.tagName === 'A' &&
-      typeof el.hasAttribute === 'function' &&
-      typeof el.setAttribute === 'function' &&
-      el.hasAttribute('href')
-    ) {
-      el.setAttribute('rel', 'noopener noreferrer nofollow');
-      el.setAttribute('target', '_blank');
-      return;
-    }
-
-    // T078 (F7.1a US2) — `<img>` source-scheme guard. Strip src when
-    // scheme is not http(s); FR-014. Application-layer
-    // `validateImageSourceAllowlist` enforces the per-tenant hostname
-    // allowlist on the surviving src URL.
-    if (
-      el.tagName === 'IMG' &&
-      typeof el.getAttribute === 'function' &&
-      typeof el.removeAttribute === 'function'
-    ) {
-      const src = el.getAttribute('src') ?? null;
-      if (src === null || !/^https?:\/\//i.test(src)) {
-        el.removeAttribute('src');
-      }
-    }
-  });
-  hookInstalled = true;
-}
+// F119 T014 — the post-attribute hook (link hardening + the `<img src>`
+// scheme guard, FR-014) moved to `src/lib/broadcast-content-policy.ts` as
+// `installBroadcastSanitizerHooks`, and is installed on BOTH this adapter and
+// the editor's paste sanitiser: the pre-F119 editor had no hook, so a paste
+// kept what the server later changed (the SC-011 divergence). The empirical
+// notes that used to sit here (jsdom realm shape check, the data:-URI
+// inflation defence) are on that function.
 
 // R7 staff-review MED-S5 fix — Edge-runtime guard. The
-// `installLinkHardeningHook` hook + `hookInstalled` module flag rely
+// `installBroadcastSanitizerHooks` hook + its per-instance WeakSet rely
 // on a Node.js-runtime DOMPurify instance backed by isomorphic-
 // dompurify's internal jsdom. Vercel Edge runtime would expose a
 // browser-shape `globalThis.window` and a different DOMPurify
@@ -217,8 +102,8 @@ function assertNodeRuntime(): void {
 export const dompurifySanitizer: HtmlSanitizerPort = {
   sanitize(html: string): string {
     assertNodeRuntime();
-    installLinkHardeningHook();
-    const out = DOMPurify.sanitize(html, PURIFY_CONFIG) as unknown;
+    installBroadcastSanitizerHooks(DOMPurify);
+    const out = DOMPurify.sanitize(html, PURIFY_CONFIG as Parameters<typeof DOMPurify.sanitize>[1]) as unknown;
     if (typeof out !== 'string') {
       // Defensive: with `RETURN_TRUSTED_TYPE: false` DOMPurify returns
       // a string, but a future SDK upgrade could break that contract.

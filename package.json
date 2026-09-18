@@ -82,7 +82,7 @@
     "@tanstack/react-table": "^8",
     "@tanstack/react-virtual": "^3",
     "@tiptap/core": "3.22.5",
-    "@tiptap/extension-image": "^3.22.5",
+    "@tiptap/extension-image": "3.22.5",
     "@tiptap/pm": "3.22.5",
     "@tiptap/react": "3.22.5",
     "@tiptap/starter-kit": "3.22.5",

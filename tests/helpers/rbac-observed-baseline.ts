@@ -103,6 +103,8 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'DELETE /api/plans/[year]/[planId]', kind: 'api', key: 'plans.write' },
   { surface: 'GET /api/admin/audit/export.csv', kind: 'api', key: 'audit.read' },
   { surface: 'GET /api/admin/broadcasts', kind: 'api', key: 'broadcasts.read' },
+  // F119 — chamber brand settings (FR-041b): admin tier, never marketing.
+  { surface: 'GET /api/admin/broadcasts/brand', kind: 'api', key: 'settings.broadcasts' },
   // 108 PR-C T088 — admin proxy compose count (data-model § 4).
   { surface: 'GET /api/admin/broadcasts/recipient-count', kind: 'api', key: 'broadcasts.write' },
   { surface: 'GET /api/admin/broadcasts/sla-stats', kind: 'api', key: 'broadcasts.read' },
@@ -170,6 +172,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/plans/[year]/[planId]', kind: 'api', key: 'plans.read' },
   { surface: 'GET /api/plans/[year]/[planId]/affected-members', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/tenant-invoice-settings', kind: 'api', key: 'settings.invoicing' },
+  { surface: 'PATCH /api/admin/broadcasts/brand', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'PATCH /api/admin/broadcasts/templates/[id]', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/change-requests/[id]/decide', kind: 'api', key: 'members.write' },
   { surface: 'PATCH /api/admin/members/[id]/preferred-locale', kind: 'api', key: 'members.write' },
@@ -186,7 +189,11 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/admin/broadcasts/[id]/approve', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/[id]/cancel', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/reject', kind: 'api', key: 'broadcasts.write' },
+  // F119 — the staff preview renders the real email; a manager may look (read key).
+  { surface: 'POST /api/admin/broadcasts/preview', kind: 'api', key: 'broadcasts.read' },
   { surface: 'POST /api/admin/broadcasts/proxy-submit', kind: 'api', key: 'broadcasts.send' },
+  // F119 — the staff test copy goes to the staff session address only (write key: a manager may not).
+  { surface: 'POST /api/admin/broadcasts/test-copy', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/settings/allowlist', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'POST /api/admin/broadcasts/templates', kind: 'api', key: 'broadcasts.write' },
   // 108 PR-D — the staff marketing toggle (FR-030); marketing holds the key.

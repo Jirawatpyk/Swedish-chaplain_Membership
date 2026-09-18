@@ -24,8 +24,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   makePruneExpiredDraftsDeps,
+  makeReclaimOrphanedImagesDeps,
   pruneExpiredDrafts,
+  reclaimOrphanedImages,
 } from '@/modules/broadcasts';
+import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
@@ -72,10 +75,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  let result;
+  // --- Block 1: the F7 draft prune (unchanged) ------------------------------
+  // F119 T035 — each block owns its try/catch and its OK flag; a fault in
+  // one never drops the other, and the 500 is decided only at the end.
+  let pruneOk = false;
+  let prunedCount: number | null = null;
+  let cutoff: string | null = null;
   try {
     const deps = makePruneExpiredDraftsDeps(tenantCtx.slug);
-    result = await pruneExpiredDrafts(deps);
+    const result = await pruneExpiredDrafts(deps);
+    if (result.ok) {
+      pruneOk = true;
+      prunedCount = result.value.prunedCount;
+      cutoff = result.value.cutoff;
+    } else {
+      logger.error(
+        { tenantId: tenantCtx.slug, message: result.error.message },
+        'cron.broadcasts.prune_drafts.server_error',
+      );
+    }
   } catch (e) {
     logger.error(
       {
@@ -85,34 +103,47 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'cron.broadcasts.prune_drafts.uncaught_error',
     );
-    return NextResponse.json(
-      { error: { code: 'internal_error' } },
-      { status: 500 },
-    );
   }
 
-  if (!result.ok) {
+  // --- Block 2: the F119 image-blob sweep (T035) ----------------------------
+  // Independently transacted (one tx per row inside the use case), its own
+  // flag in the body. T130 (PR-2) adds the reminder / expiry steps here.
+  let imageSweep: { ok: boolean; scanned?: number; blobsDeleted?: number; rowsRemoved?: number } = { ok: false };
+  try {
+    const result = await reclaimOrphanedImages(makeReclaimOrphanedImagesDeps(tenantCtx.slug), {
+      tenantId: tenantCtx.slug as never,
+      now: new Date(),
+      requestId: `cron-image-sweep-${startedAt}`,
+    });
+    if (result.ok) {
+      imageSweep = { ok: true, ...result.value };
+    } else {
+      logger.error(
+        { tenantId: tenantCtx.slug, message: result.error.message, errorId: 'M119.cron.image_sweep' },
+        'cron.broadcasts.image_sweep.server_error',
+      );
+    }
+  } catch (e) {
     logger.error(
-      {
-        tenantId: tenantCtx.slug,
-        message: result.error.message,
-      },
-      'cron.broadcasts.prune_drafts.server_error',
-    );
-    return NextResponse.json(
-      { error: { code: 'internal_error', message: result.error.message } },
-      { status: 500 },
+      { err: errKind(e), tenantId: tenantCtx.slug, errorId: 'M119.cron.image_sweep.uncaught' },
+      'cron.broadcasts.image_sweep.uncaught_error',
     );
   }
 
   const durationMs = Date.now() - startedAt;
   const summary = {
     tenantId: tenantCtx.slug,
-    prunedCount: result.value.prunedCount,
-    cutoff: result.value.cutoff,
+    pruneOk,
+    prunedCount,
+    cutoff,
+    imageSweep,
     durationMs,
   };
 
+  if (!pruneOk || !imageSweep.ok) {
+    logger.error(summary, 'cron.broadcasts.prune_drafts.tick_partial_failure');
+    return NextResponse.json({ ...summary, error: { code: 'internal_error' } }, { status: 500 });
+  }
   logger.info(summary, 'cron.broadcasts.prune_drafts.tick_complete');
   return NextResponse.json(summary, { status: 200 });
 }

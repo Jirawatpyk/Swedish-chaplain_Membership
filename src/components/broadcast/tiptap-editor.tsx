@@ -29,65 +29,16 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Info } from 'lucide-react';
 import { TiptapToolbar, type AnnounceKey } from './tiptap-toolbar';
+import { installBroadcastSanitizerHooks, makeBroadcastSanitizerConfig } from '@/lib/broadcast-content-policy';
 import { broadcastImageExtension } from '@/modules/broadcasts/infrastructure/tiptap-image-extension-config';
 import { broadcastBracketPlaceholderExtension } from '@/modules/broadcasts/infrastructure/tiptap-bracket-placeholder-config';
 import { ComposeInlineImageUploader } from './compose-inline-image-uploader';
 import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
 
-const SANITIZER_BASE_TAGS = [
-  'p',
-  'br',
-  'strong',
-  'em',
-  'u',
-  'a',
-  'ul',
-  'ol',
-  'li',
-  'h1',
-  'h2',
-  'h3',
-  'h4',
-  'blockquote',
-  'hr',
-];
-
-const SANITIZER_FORBID_BASE = [
-  'script',
-  'style',
-  'iframe',
-  'form',
-  'link',
-  'meta',
-  'base',
-  'object',
-  'embed',
-  'svg',
-];
-
-/**
- * Two frozen paste-sanitiser configs — the editor picks one at mount
- * time based on `imagesEnabled`. The paste sanitiser MUST mirror the
- * server-side DOMPurify policy (`dompurify-sanitizer.ts`) so users
- * don't see content survive paste only to be stripped at submit.
- */
-function makeSanitizerConfig(imagesEnabled: boolean): Readonly<Record<string, unknown>> {
-  return Object.freeze({
-    ALLOWED_TAGS: imagesEnabled
-      ? [...SANITIZER_BASE_TAGS, 'img']
-      : [...SANITIZER_BASE_TAGS],
-    ALLOWED_ATTR: imagesEnabled
-      ? ['href', 'src', 'alt']
-      : ['href'],
-    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:)/i,
-    FORBID_TAGS: imagesEnabled
-      ? [...SANITIZER_FORBID_BASE]
-      : [...SANITIZER_FORBID_BASE, 'img'],
-    FORBID_ATTR: ['style'],
-    KEEP_CONTENT: true,
-    RETURN_TRUSTED_TYPE: false,
-  });
-}
+// F119 T013/T014 — the paste sanitiser reads the ONE shared policy
+// (`src/lib/broadcast-content-policy.ts`, SC-011) so a paste can never keep
+// content the server later strips, nor strip content the server keeps. The
+// editor narrows to `images: false` while the F7.1a US2 flag is off.
 
 export interface TiptapEditorProps {
   readonly initialHtml: string;
@@ -145,7 +96,7 @@ export default function TiptapEditor({
   const lastSanitiseWarnAt = useRef<number>(0);
 
   const sanitizerConfig = useMemo(
-    () => makeSanitizerConfig(imagesEnabled),
+    () => makeBroadcastSanitizerConfig({ images: imagesEnabled }),
     [imagesEnabled],
   );
   // T116 (F7.1a US7) — bracketPlaceholder loaded unconditionally
@@ -182,7 +133,11 @@ export default function TiptapEditor({
         ...(invalid && { 'aria-invalid': 'true' }),
       },
       transformPastedHTML(html: string): string {
-        const sanitised = DOMPurify.sanitize(html, sanitizerConfig) as string;
+        // F119 T014 — the same post-attribute hook the server runs (link
+        // hardening + img scheme guard), so a paste can never keep what
+        // the server later changes (SC-011).
+        installBroadcastSanitizerHooks(DOMPurify);
+        const sanitised = DOMPurify.sanitize(html, sanitizerConfig as Parameters<typeof DOMPurify.sanitize>[1]) as string;
         if (sanitised !== html) {
           const now = Date.now();
           if (now - lastSanitiseWarnAt.current > 1500) {

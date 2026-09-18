@@ -90,7 +90,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         tenantId: ctx.tenant.slug as never,
         actorUserId: ctx.current.user.id,
         actorEmail: ctx.current.user.email,
-        draftId,
+        // F119 T033 — the draft IS a `broadcasts` row; a portal user's upload
+        // to it is member activity (snake_case `member_id` in the audit).
+        owner: { kind: 'broadcast', id: draftId },
+        actor: { role: 'member', memberId: ctx.member.memberId as unknown as string },
         requestId: correlationId,
         fileBytes: bytes,
         filename: file.name,

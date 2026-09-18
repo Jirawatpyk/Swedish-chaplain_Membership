@@ -9,7 +9,11 @@
  *   5. ClamAV virus scan via `VirusScannerPort` — fail-closed on
  *      verdict !== 'clean'
  *   6. Vercel Blob persistence in tenant-scoped namespace
- *   7. Return { blobUrl, allowlistedHostname, contentHash }
+ *   7. F119 T033 — record ONE `broadcast_images` row (owner = the E-Blast or
+ *      the template) and audit `broadcast_image_uploaded` in the SAME
+ *      tenant tx — on the dedup path too (a second owner is a second
+ *      reference; the last-reference sweep needs it)
+ *   8. Return { blobUrl, allowlistedHostname, contentHash, imageId }
  *
  * Pipeline-order invariant (data-model § FR-013 + critique P/E
  * security clauses): bytes NEVER reach storage before verdict='clean'
@@ -33,6 +37,7 @@ import {
 } from '../ports/image-storage-port';
 import type { Hostname } from '../ports/image-allowlist-port';
 import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastImageOwnerKind, BroadcastImagesRepo } from '../ports/broadcast-images-repo';
 import type { TenantSlug } from '@/modules/tenants';
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -42,13 +47,28 @@ export interface UploadInlineImageDeps {
   readonly scanner: VirusScannerPort;
   readonly storage: ImageStoragePort;
   readonly audit: AuditPort;
+  /** F119 T033 — the image lifecycle record. */
+  readonly imagesRepo: BroadcastImagesRepo;
 }
+
+/**
+ * F119 T033 — who uploads decides the audit's member key (#336/#337): a
+ * portal user's upload to their own draft IS member activity, so it carries
+ * snake_case `member_id` (the 0009 `last_activity_at` trigger key); a staff
+ * upload carries `related_member_id` (the member it is FOR, or null for a
+ * template) so it never refreshes the member's recency.
+ */
+export type UploadInlineImageActor =
+  | { readonly role: 'member'; readonly memberId: string }
+  | { readonly role: string | null; readonly relatedMemberId: string | null };
 
 export interface UploadInlineImageInput {
   readonly tenantId: TenantSlug;
   readonly actorUserId: string;
   readonly actorEmail: string;
-  readonly draftId: string;
+  /** The E-Blast (a draft IS a `broadcasts` row) or the template that owns the image. */
+  readonly owner: { readonly kind: BroadcastImageOwnerKind; readonly id: string };
+  readonly actor: UploadInlineImageActor;
   readonly requestId: string;
   readonly fileBytes: Buffer | Uint8Array;
   readonly filename: string;
@@ -78,6 +98,8 @@ export interface UploadInlineImageOutput {
   // parseable URL; null only fires on the dedup-fallthrough log path.)
   readonly allowlistedHostname: Hostname | null;
   readonly contentHash: string;
+  /** F119 T033 — the `broadcast_images` row written for this upload. */
+  readonly imageId: string;
 }
 
 export async function uploadInlineImage(
@@ -96,7 +118,8 @@ export async function uploadInlineImage(
       tenantId: input.tenantId,
       summary: `Inline image rejected — invalid MIME ${input.mimeType}`,
       payload: {
-        draftId: input.draftId,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
         reason: 'invalid_mime',
         receivedMime: input.mimeType,
       },
@@ -121,7 +144,7 @@ export async function uploadInlineImage(
       actorUserId: input.actorUserId,
       tenantId: input.tenantId,
       summary: `Inline image rejected — size ${sizeBytes} > ${MAX_BYTES}`,
-      payload: { sizeBytes, draftId: input.draftId, mime },
+      payload: { sizeBytes, owner_kind: input.owner.kind, owner_id: input.owner.id, mime },
       requestId: input.requestId,
     });
     return err({ kind: 'broadcast_image_too_large', sizeBytes });
@@ -141,7 +164,7 @@ export async function uploadInlineImage(
     mime,
   );
   if (existing) {
-    const dedupHost = safeAsHostname(existing);
+    const dedupHost = safeAsHostname(existing.blobUrl);
     // PR-review fix 2026-05-20 SF-M3 — when the existing blob URL is
     // unparseable (corrupt cache / future URL-shape change), don't
     // return an unusable success. Log + fall through to fresh upload
@@ -156,10 +179,18 @@ export async function uploadInlineImage(
       // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
       // hostname is in the tenant allowlist BEFORE returning success.
       await ensureBlobHostAllowlisted(deps, input.tenantId, dedupHost);
+      const imageId = await recordImage(deps, input, {
+        contentHash,
+        blobUrl: existing.blobUrl,
+        blobKey: existing.blobKey,
+        mime,
+        sizeBytes,
+      });
       return ok({
-        blobUrl: existing,
+        blobUrl: existing.blobUrl,
         allowlistedHostname: dedupHost,
         contentHash,
+        imageId,
       });
     }
   }
@@ -181,7 +212,8 @@ export async function uploadInlineImage(
       tenantId: input.tenantId,
       summary: `Inline image rejected — virus-scan verdict=${verdict.verdict}`,
       payload: {
-        draftId: input.draftId,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
         verdict: verdict.verdict,
         signature: verdict.verdict === 'infected' ? verdict.signature : null,
         durationMs: verdict.durationMs,
@@ -196,6 +228,7 @@ export async function uploadInlineImage(
   // return 503 (not generic 500) on token-expired / suspended /
   // rate-limited outages. Other exceptions still propagate.
   let blobUrl: string;
+  let blobKey: string;
   try {
     const result = await deps.storage.put({
       tenantId: input.tenantId,
@@ -205,6 +238,7 @@ export async function uploadInlineImage(
       sanitisedFilename,
     });
     blobUrl = result.blobUrl;
+    blobKey = result.blobKey;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (
@@ -234,7 +268,68 @@ export async function uploadInlineImage(
     await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
   }
 
-  return ok({ blobUrl, allowlistedHostname: hostname, contentHash });
+  const imageId = await recordImage(deps, input, { contentHash, blobUrl, blobKey, mime, sizeBytes });
+  return ok({ blobUrl, allowlistedHostname: hostname, contentHash, imageId });
+}
+
+/**
+ * F119 T033 — the `broadcast_images` row + the `broadcast_image_uploaded`
+ * audit row, in ONE tenant tx (a row without its audit, or an audit without
+ * its row, is the forensic gap Principle I clause 3 forbids). The payload
+ * carries ids, keys, counts and the hash — never the blob URL. The audit
+ * emit is RAW (not `safeAuditEmit`): it is the load-bearing record of a
+ * write, so a failed emit rolls the row back and the route answers 500;
+ * the bytes stay in Blob and the next upload of the same file dedups.
+ */
+async function recordImage(
+  deps: UploadInlineImageDeps,
+  input: UploadInlineImageInput,
+  stored: {
+    readonly contentHash: string;
+    readonly blobUrl: string;
+    readonly blobKey: string;
+    readonly mime: ImageMimeType;
+    readonly sizeBytes: number;
+  },
+): Promise<string> {
+  return deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+    const row = await deps.imagesRepo.record(
+      input.tenantId,
+      {
+        ownerKind: input.owner.kind,
+        ownerId: input.owner.id,
+        contentHash: stored.contentHash,
+        blobUrl: stored.blobUrl,
+        blobKey: stored.blobKey,
+        mimeType: stored.mime,
+        byteSize: stored.sizeBytes,
+        uploadedByUserId: input.actorUserId,
+      },
+      tx,
+    );
+    const memberKey =
+      input.actor.role === 'member' && 'memberId' in input.actor
+        ? { member_id: input.actor.memberId }
+        : { related_member_id: 'relatedMemberId' in input.actor ? input.actor.relatedMemberId : null };
+    await deps.audit.emit(tx, {
+      eventType: 'broadcast_image_uploaded',
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      actorUserId: input.actorUserId,
+      summary: `E-Blast image uploaded (${input.owner.kind})`,
+      payload: {
+        ...memberKey,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
+        image_id: row.id,
+        byte_size: stored.sizeBytes,
+        mime_type: stored.mime,
+        content_hash: stored.contentHash,
+        actor_role: input.actor.role ?? null,
+      },
+    });
+    return row.id;
+  });
 }
 
 /**

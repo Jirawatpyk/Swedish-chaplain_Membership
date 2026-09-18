@@ -56,7 +56,7 @@ export interface ImageStoragePort {
     tenantId: TenantSlug,
     contentHash: string,
     mimeType: ImageMimeType,
-  ): Promise<string | null>;
+  ): Promise<StoredImageRef | null>;
 
   /**
    * Upload bytes into the tenant-scoped namespace. Returns a stable
@@ -69,5 +69,25 @@ export interface ImageStoragePort {
     readonly contentHash: string;
     readonly mimeType: ImageMimeType;
     readonly sanitisedFilename: string;
-  }): Promise<{ readonly blobUrl: string; readonly contentHash: string }>;
+  }): Promise<StoredImageRef & { readonly contentHash: string }>;
+
+  /**
+   * F119 T034 — delete the object at `blobKey`. Before F119 the port had no
+   * delete method at all, so inline-image blobs were never reclaimed. The
+   * ONLY caller is the daily sweep (`reclaimOrphanedImages`), which deletes
+   * a blob iff no live `broadcast_images` row of either owner_kind shares
+   * its content hash (the last-reference rule). Throws on a transient
+   * failure so the sweep keeps the row and retries next tick.
+   */
+  delete(blobKey: string): Promise<void>;
+}
+
+/**
+ * F119 — the stable public URL AND the storage key of one stored image.
+ * The key is what `broadcast_images.blob_key` records and what `delete`
+ * takes; the URL is what the HTML carries.
+ */
+export interface StoredImageRef {
+  readonly blobUrl: string;
+  readonly blobKey: string;
 }

@@ -89,6 +89,20 @@ export type F7RouteErrorCode =
   // 108 PR-C T088 — recipient-count endpoints (contract broadcast-audience § 5)
   | 'invalid_query'
   | 'count_unavailable'
+  // F119 — brand settings (FR-041b): white text on the colour is below WCAG
+  // AA 4.5:1 (422, details { ratio, required }); a malformed `#RRGGBB` or an
+  // address over 300 chars (422). Distinct from `invalid_body` (400 — the
+  // request SHAPE is wrong) because the client renders these as field errors.
+  | 'colour_contrast'
+  | 'validation_error'
+  // F119 — design-block content rules (FR-041), refused 422 at every save,
+  // at send-to-member and on the test copy, naming the block by index.
+  | 'cta_text_length'
+  | 'too_many_cta'
+  | 'cta_link_scheme'
+  | 'banner_alt_required'
+  // F119 — the synchronous test copy could not be handed to the mailer (503).
+  | 'test_copy_unavailable'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -274,6 +288,34 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'The recipient count is unavailable right now. You can still submit; the server recomputes the audience.',
     messageThai: 'ไม่สามารถนับจำนวนผู้รับได้ในขณะนี้ คุณยังส่งได้ตามปกติ ระบบจะคำนวณผู้รับใหม่ฝั่งเซิร์ฟเวอร์',
   },
+  colour_contrast: {
+    message: 'White text on this colour does not meet the WCAG AA contrast ratio of 4.5:1. The previous colour stays in force.',
+    messageThai: 'ตัวอักษรสีขาวบนสีนี้ไม่ผ่านอัตราส่วนความคมชัด WCAG AA 4.5:1 ระบบยังใช้สีเดิมต่อไป',
+  },
+  validation_error: {
+    message: 'One or more fields are invalid.',
+    messageThai: 'มีบางช่องข้อมูลไม่ถูกต้อง',
+  },
+  cta_text_length: {
+    message: 'Button text must be between 1 and 60 characters.',
+    messageThai: 'ข้อความบนปุ่มต้องมีความยาว 1–60 ตัวอักษร',
+  },
+  too_many_cta: {
+    message: 'A message can carry at most 3 call-to-action buttons.',
+    messageThai: 'ข้อความหนึ่งมีปุ่ม call-to-action ได้ไม่เกิน 3 ปุ่ม',
+  },
+  cta_link_scheme: {
+    message: 'A button link must start with http://, https:// or mailto:.',
+    messageThai: 'ลิงก์ของปุ่มต้องขึ้นต้นด้วย http://, https:// หรือ mailto:',
+  },
+  banner_alt_required: {
+    message: 'A banner image needs a description of 1 to 125 characters.',
+    messageThai: 'รูปแบนเนอร์ต้องมีคำอธิบายความยาว 1–125 ตัวอักษร',
+  },
+  test_copy_unavailable: {
+    message: 'The test copy could not be sent right now. Please try again in a moment.',
+    messageThai: 'ไม่สามารถส่งสำเนาทดสอบได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง',
+  },
   internal_error: {
     message: 'An unexpected error occurred. Please try again.',
     messageThai: 'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
@@ -441,6 +483,13 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   invalid_locale: 400,
   invalid_query: 400,
   count_unavailable: 503,
+  colour_contrast: 422,
+  validation_error: 422,
+  cta_text_length: 422,
+  too_many_cta: 422,
+  cta_link_scheme: 422,
+  banner_alt_required: 422,
+  test_copy_unavailable: 503,
   internal_error: 500,
 };
 

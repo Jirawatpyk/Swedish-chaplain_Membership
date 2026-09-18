@@ -13,11 +13,12 @@
  * deter casual scraping (collisions require a SHA-256 preimage of
  * arbitrary tenant content).
  */
-import { put, head } from '@vercel/blob';
+import { put, head, del } from '@vercel/blob';
 import { logger } from '@/lib/logger';
 import type {
   ImageMimeType,
   ImageStoragePort,
+  StoredImageRef,
 } from '../application/ports/image-storage-port';
 import type { TenantSlug } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -52,16 +53,17 @@ export const vercelBlobImageStorage: ImageStoragePort = {
     tenantId: TenantSlug,
     contentHash: string,
     mimeType: ImageMimeType,
-  ): Promise<string | null> {
+  ): Promise<StoredImageRef | null> {
     // PR-review fix 2026-05-20 CR-M3 — probe ONE key (caller knows
     // MIME) instead of the previous 4-MIME fan-out. The cross-MIME
     // dedup guarantee was meaningless because SHA-256 over format-
     // header-bearing bytes cannot collide across formats.
+    const key = buildKey(tenantId, contentHash, mimeType);
     try {
-      const meta = await head(buildKey(tenantId, contentHash, mimeType), {
+      const meta = await head(key, {
         token: env.blob.readWriteToken,
       });
-      return meta.url;
+      return { blobUrl: meta.url, blobKey: key };
     } catch (e) {
       // PR-review fix SF-H1 — narrow swallow to NOT-FOUND only.
       // Other error classes (BlobAccessError / BlobClientTokenExpired /
@@ -85,7 +87,7 @@ export const vercelBlobImageStorage: ImageStoragePort = {
     readonly contentHash: string;
     readonly mimeType: ImageMimeType;
     readonly sanitisedFilename: string;
-  }): Promise<{ readonly blobUrl: string; readonly contentHash: string }> {
+  }): Promise<StoredImageRef & { readonly contentHash: string }> {
     const key = buildKey(input.tenantId, input.contentHash, input.mimeType);
     const result = await put(key, Buffer.from(input.bytes), {
       access: 'public',
@@ -107,6 +109,13 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       addRandomSuffix: false,
       allowOverwrite: false,
     });
-    return { blobUrl: result.url, contentHash: input.contentHash };
+    return { blobUrl: result.url, blobKey: key, contentHash: input.contentHash };
+  },
+
+  // F119 T034 — the sweep's delete. `del` is idempotent on a missing key at
+  // the Blob API (no throw), so a blob already gone counts as deleted; any
+  // other failure propagates and the sweep retries the row next tick.
+  async delete(blobKey: string): Promise<void> {
+    await del(blobKey, { token: env.blob.readWriteToken });
   },
 };

@@ -147,6 +147,15 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'member_change_request_withdrawn',
     'member_change_request_rate_limited',
     'member_change_approval_setting_changed',
+    // F119 PR-1 (0304) — `setBrandSettings`, `uploadInlineImage`, the image
+    // sweep / withdrawal / rejection stamp and `sendTestCopy` INSERT these in
+    // the same tx as their state change; a non-persisting ADD VALUE would 500
+    // every brand save and every image upload in prod instead of failing the
+    // deploy here.
+    'broadcast_test_copy_sent',
+    'broadcast_brand_settings_changed',
+    'broadcast_image_uploaded',
+    'broadcast_image_removed',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [

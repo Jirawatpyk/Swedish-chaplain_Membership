@@ -20,11 +20,16 @@ import type {
 import type { VirusScannerPort } from '@/modules/broadcasts/application/ports/virus-scanner-port';
 import type { ImageStoragePort } from '@/modules/broadcasts/application/ports/image-storage-port';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
+import type { BroadcastImagesRepo } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
 
 const TENANT = 'tenant_swe' as never;
 const ACTOR = 'user_mem_42';
 const ACTOR_EMAIL = 'm@example.com';
 const DRAFT = '11111111-1111-1111-1111-111111111111';
+// F119 T033 — the use case now takes the OWNER (a draft is a `broadcasts`
+// row) and the ACTOR (a member upload carries `member_id` in the audit).
+const OWNER = { kind: 'broadcast', id: DRAFT } as const;
+const MEMBER_ACTOR = { role: 'member', memberId: '22222222-2222-2222-2222-222222222222' } as const;
 
 const PNG_4MB = Buffer.alloc(4 * 1024 * 1024, 0x42);
 const JPG_6MB = Buffer.alloc(6 * 1024 * 1024, 0x42);
@@ -42,6 +47,7 @@ const makeDeps = (
   scanner: VirusScannerPort;
   storage: ImageStoragePort;
   audit: AuditPort;
+  imagesRepo: BroadcastImagesRepo;
 } => {
   const allowlistPort: ImageAllowlistPort = {
     withTx: vi.fn(async <T>(_t: never, fn: (tx: unknown) => Promise<T>) =>
@@ -65,15 +71,28 @@ const makeDeps = (
   };
   const storage: ImageStoragePort = {
     existsByContentHash: vi.fn().mockResolvedValue(
-      o?.existingBlobUrl ?? null,
+      o?.existingBlobUrl
+        ? { blobUrl: o.existingBlobUrl, blobKey: 'broadcasts/images/tenant_swe/cached.png' }
+        : null,
     ),
     put: vi.fn().mockResolvedValue({
       blobUrl: 'https://assets.swecham.zyncdata.app/broadcasts/images/tenant_swe/abc.png',
+      blobKey: 'broadcasts/images/tenant_swe/abc.png',
       contentHash: 'abc',
     }),
+    delete: vi.fn(),
   };
   const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) };
-  return { allowlistPort, scanner, storage, audit };
+  const imagesRepo: BroadcastImagesRepo = {
+    withTx: vi.fn(async <T>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(null)),
+    record: vi.fn(async (_t: never, input: Record<string, unknown>) => ({ id: 'img-1', ...input })) as never,
+    listByOwner: vi.fn(),
+    markDeletedByOwner: vi.fn(),
+    listMarked: vi.fn(),
+    countLiveByContentHash: vi.fn(),
+    remove: vi.fn(),
+  };
+  return { allowlistPort, scanner, storage, audit, imagesRepo };
 };
 
 describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
@@ -83,7 +102,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-001',
       fileBytes: Buffer.concat([PNG_HEADER, Buffer.alloc(PNG_4MB.length - 8, 0)]),
       filename: 'banner.png',
@@ -104,7 +124,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-002',
       fileBytes: JPG_6MB,
       filename: 'huge.jpg',
@@ -126,7 +147,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-003',
       fileBytes: PNG_4MB,
       filename: 'evil.png',
@@ -150,7 +172,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-004',
       fileBytes: PNG_4MB,
       filename: 'x.png',
@@ -178,7 +201,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-005',
       fileBytes: PNG_4MB,
       filename: 'banner.png',
@@ -195,7 +219,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-006',
       fileBytes: Buffer.from('<script>alert(1)</script>'),
       filename: 'evil.html',
@@ -212,7 +237,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-007',
       fileBytes: PNG_4MB,
       filename: '<script>alert(1)</script>.png',
@@ -229,7 +255,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-008',
       fileBytes: PNG_4MB,
       filename: 'banner.png',
@@ -254,7 +281,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-009',
       fileBytes: JPG_6MB,
       filename: 'huge.jpg',
@@ -288,7 +316,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
         tenantId: TENANT,
         actorUserId: ACTOR,
         actorEmail: ACTOR_EMAIL,
-        draftId: DRAFT,
+        owner: OWNER,
+        actor: MEMBER_ACTOR,
         requestId: `req-blob-${errName}`,
         fileBytes: PNG_4MB,
         filename: 'ok.png',
@@ -309,7 +338,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
         tenantId: TENANT,
         actorUserId: ACTOR,
         actorEmail: ACTOR_EMAIL,
-        draftId: DRAFT,
+        owner: OWNER,
+        actor: MEMBER_ACTOR,
         requestId: 'req-unrelated',
         fileBytes: PNG_4MB,
         filename: 'ok.png',
@@ -324,7 +354,8 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
       tenantId: TENANT,
       actorUserId: ACTOR,
       actorEmail: ACTOR_EMAIL,
-      draftId: DRAFT,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
       requestId: 'req-010',
       fileBytes: PNG_4MB,
       filename: 'evil.png',

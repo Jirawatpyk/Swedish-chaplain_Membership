@@ -67,6 +67,14 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   invalid_locale: 400,
   invalid_query: 400,
   count_unavailable: 503,
+  // F119 — brand settings field errors (FR-041b).
+  colour_contrast: 422,
+  validation_error: 422,
+  cta_text_length: 422,
+  too_many_cta: 422,
+  cta_link_scheme: 422,
+  banner_alt_required: 422,
+  test_copy_unavailable: 503,
   internal_error: 500,
 };
 

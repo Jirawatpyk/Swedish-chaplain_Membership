@@ -1856,6 +1856,44 @@ export const broadcastsMetrics = {
     });
   },
 
+  // --- F119 E-Blast approval — the registration list ---------------------
+  // `specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md`
+  // § 4.2: a metric not on this list does not exist, and an emit against an
+  // unregistered field does not typecheck. PR-1 (T122a) registers the two
+  // preview instruments T032 emits; PR-2 (T122) adds the five workflow
+  // counters and `broadcasts_member_decide_ms`. Labels are bounded: tenant +
+  // a small discriminator — never an id, never a value.
+
+  /**
+   * `broadcasts_preview_rendered_total{tenant,surface}` — one per successful
+   * preview render (member compose / staff format / sign-off compare).
+   * Research R11: the preview is a server render of the real email; the
+   * 30/min per-actor bucket is the amplification guard, this is the meter.
+   */
+  previewRendered(tenantId: string | null, surface: 'member' | 'staff'): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_preview_rendered_total',
+        'E-Blast preview renders (F119) — paired with `surface` label',
+      ).add(1, { tenant: tenantId ?? 'unknown', surface });
+    });
+  },
+
+  /**
+   * `broadcasts_preview_render_ms{tenant}` — server duration of one preview
+   * render (sanitise + brand read + wrapper). Budget p95 < 400 ms
+   * (plan § Technical Context; recorded by T160a in observability § 28).
+   */
+  previewRenderMs(tenantId: string | null, ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_preview_render_ms',
+        'E-Blast preview render duration, p95 target 400 ms (F119)',
+        'ms',
+      ).record(ms, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
   /**
    * `broadcasts.dispatch_budget_exhausted{tenant, sub_kind}` — counter
    * incremented when the FR-021 / AS2 1-hour retry budget elapses with

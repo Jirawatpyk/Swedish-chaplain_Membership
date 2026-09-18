@@ -626,3 +626,104 @@ export { envTenantDisplayName } from './infrastructure/env-tenant-display-name';
 // `vi.resetModules()` which is the standard vitest seam — adding a
 // custom reset hook again would re-introduce the same dead-export
 // surface.
+
+// ---------------------------------------------------------------------------
+// F119 — E-Blast writing tool + member-approval round (PR-1 surface).
+//
+// Domain: brand value objects + WCAG contrast, design-block markers and the
+// post-sanitise renderer. Application: the brand use cases and the ports the
+// composition roots (`src/lib/broadcast-brand-deps.ts`) implement.
+// Infrastructure: the Drizzle brand repo consumed by that composition root.
+// ---------------------------------------------------------------------------
+export {
+  DEFAULT_BRAND_PRIMARY_COLOR,
+  BRAND_POSTAL_ADDRESS_MAX,
+  parseBrandPrimaryColor,
+  parseBrandPostalAddress,
+  type BrandSettings,
+} from './domain/brand/brand-settings';
+export {
+  AA_MIN_CONTRAST,
+  contrastRatio,
+  contrastRatioOnWhite,
+  meetsAaOnWhiteText,
+  relativeLuminance,
+} from './domain/brand/contrast';
+export {
+  CTA_MAX_PER_MESSAGE,
+  CTA_TEXT_MAX,
+  BANNER_ALT_MAX,
+  parseBlockMarkers,
+  validateBlocks,
+  type BlockViolation,
+  type DesignBlock,
+} from './domain/design-blocks/block-markers';
+export { applyDesignBlocks } from './domain/design-blocks/render-blocks';
+export type {
+  BrandSettingsRecord,
+  BrandSettingsRepo,
+  BrandSettingsTx,
+  BrandSettingsWrite,
+} from './application/ports/brand-settings-repo';
+export type { TenantLogoUrlPort } from './application/ports/tenant-logo-url-port';
+export type { BrandChromePort } from './application/ports/brand-chrome-port';
+// The port TYPE only — the `src/lib/broadcast-brand-deps.ts` composition root
+// binds `f7AuditAdapter` (already exported above) to it.
+export type { AuditPort as BroadcastsAuditPort } from './application/ports/audit-port';
+export {
+  setBrandSettings,
+  type SetBrandSettingsDeps,
+  type SetBrandSettingsError,
+  type SetBrandSettingsInput,
+} from './application/use-cases/set-brand-settings';
+export {
+  getBrandSettings,
+  INVOICE_SETTINGS_HREF,
+  type BrandSettingsView,
+  type GetBrandSettingsDeps,
+  type GetBrandSettingsInput,
+} from './application/use-cases/get-brand-settings';
+export { drizzleBrandSettingsRepo } from './infrastructure/db/drizzle-brand-settings-repo';
+export type {
+  BroadcastImageOwnerKind,
+  BroadcastImageRecord,
+  BroadcastImagesRepo,
+  BroadcastImagesTx,
+  NewBroadcastImage,
+} from './application/ports/broadcast-images-repo';
+export type { StoredImageRef } from './application/ports/image-storage-port';
+export type { UploadInlineImageActor } from './application/use-cases/upload-inline-image';
+export {
+  reclaimOrphanedImages,
+  IMAGE_SWEEP_BATCH,
+  type ReclaimOrphanedImagesDeps,
+  type ReclaimOrphanedImagesError,
+  type ReclaimOrphanedImagesInput,
+  type ReclaimOrphanedImagesOutput,
+} from './application/use-cases/reclaim-orphaned-images';
+export { makeReclaimOrphanedImagesDeps } from './infrastructure/broadcasts-deps';
+export { drizzleBroadcastImagesRepo } from './infrastructure/db/drizzle-broadcast-images-repo';
+export type { EmailRendererPort, RenderEmailInput, BroadcastRenderLocale } from './application/ports/email-renderer-port';
+export { emailTemplateRenderer } from './infrastructure/resend/email-template-renderer';
+export type { TestCopyMailerPort, TestCopyMailerError, TestCopyMessage } from './application/ports/test-copy-mailer-port';
+export {
+  sendTestCopy,
+  TEST_COPY_BODY_MAX_BYTES,
+  TEST_COPY_SUBJECT_MAX,
+  TEST_COPY_SUBJECT_PREFIX,
+  type SendTestCopyDeps,
+  type SendTestCopyError,
+  type SendTestCopyInput,
+  type SendTestCopyOutput,
+} from './application/use-cases/send-test-copy';
+export {
+  renderBroadcastPreview,
+  PREVIEW_BODY_MAX_BYTES,
+  PREVIEW_SUBJECT_MAX,
+  type PreviewSurface,
+  type RenderBroadcastPreviewDeps,
+  type RenderBroadcastPreviewError,
+  type RenderBroadcastPreviewInput,
+  type RenderBroadcastPreviewOutput,
+} from './application/use-cases/render-broadcast-preview';
+export { isEblastMemberApprovalEnabled } from './infrastructure/feature-flags';

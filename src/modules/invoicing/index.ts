@@ -567,6 +567,16 @@ export {
 } from './infrastructure/repos/drizzle-invoice-repo';
 export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle-zero-rate-cert-prune-repo';
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
+// F119 T027 (research R12, FR-041a/b) — READ-only public URL of the invoice
+// logo for the E-Blast email header. Bound here to the F4 settings repo +
+// blob adapter (no `sharp`, no `server-only` — the upload path stays in the
+// module-root sub-barrel `./upload-tenant-logo-deps`, see the note above).
+// Fail-soft `null` ⇒ the header renders the chamber name. There is
+// deliberately NO logo setter on this barrel: `settings.invoicing` (super-
+// admin only) stays the sole write path, and
+// `tests/contract/broadcasts/brand-cannot-write-invoice-logo.test.ts` pins
+// that the broadcasts side imports nothing else from here.
+export { getTenantLogoPublicUrl } from './tenant-logo-public-url';
 export { f4AuditAdapter } from './infrastructure/adapters/audit-adapter';
 export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 // 108 FR-001 — the money-email recipient rule, for the ONE caller outside this

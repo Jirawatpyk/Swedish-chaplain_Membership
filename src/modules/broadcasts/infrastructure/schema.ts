@@ -897,11 +897,31 @@ export const tenantBroadcastSettings = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+
+    // F119 (migration 0304, FR-041b/c) — chamber brand chrome: ONE primary
+    // colour (`#rrggbb`; NULL ⇒ the platform default) and the postal address
+    // printed in every footer (≤ 300 chars, line breaks allowed; NULL ⇒ the
+    // chamber name only). The LOGO is never stored here — it stays
+    // `tenant_invoice_settings.logo_blob_key` (super-admin only) and is READ
+    // through the invoicing barrel. Contrast (≥ 4.5:1 vs white) is a Domain
+    // rule, not a CHECK. Read live at render time, never frozen into a version.
+    brandPrimaryColor: text('brand_primary_color'),
+    brandPostalAddress: text('brand_postal_address'),
+    brandUpdatedAt: timestamp('brand_updated_at', { withTimezone: true }),
+    brandUpdatedByUserId: uuid('brand_updated_by_user_id'),
   },
   (table) => [
     check(
       'tenant_broadcast_settings_dispatch_concurrency_cap_check',
       sql`${table.dispatchConcurrencyCap} BETWEEN 1 AND 8`,
+    ),
+    check(
+      'tenant_broadcast_settings_brand_primary_color_check',
+      sql`${table.brandPrimaryColor} ~ '^#[0-9a-fA-F]{6}$'`,
+    ),
+    check(
+      'tenant_broadcast_settings_brand_postal_address_check',
+      sql`char_length(${table.brandPostalAddress}) BETWEEN 1 AND 300`,
     ),
   ],
 );
@@ -910,3 +930,77 @@ export type TenantBroadcastSettingsRow =
   typeof tenantBroadcastSettings.$inferSelect;
 export type NewTenantBroadcastSettingsRow =
   typeof tenantBroadcastSettings.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// F119 — broadcast_images (migration 0304, data-model § 4)
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per image upload, owned by the E-Blast (`owner_kind='broadcast'`,
+ * a draft IS a `broadcasts` row) or the template (`'template'`). The record
+ * that makes image ownership enforceable (route ownership check) and image
+ * erasure reachable: `deleted_at` is stamped by erasure, member withdrawal
+ * and staff rejection inside the same transaction as the state change; the
+ * bytes go on the daily sweep under the LAST-REFERENCE rule — a blob is
+ * deleted only when no live row of EITHER owner_kind shares its
+ * `content_hash` (a template image referenced by a draft is kept).
+ *
+ * No FK on `owner_id` (two possible parents). Not backfilled — images
+ * uploaded before 0304 have no row and are never swept. RLS ENABLE + FORCE +
+ * the 0064 policy live in the migration.
+ */
+export const broadcastImages = pgTable(
+  'broadcast_images',
+  {
+    tenantId: text('tenant_id').notNull(),
+    id: uuid('id').defaultRandom().notNull(),
+    ownerKind: text('owner_kind', { enum: ['broadcast', 'template'] }).notNull(),
+    ownerId: uuid('owner_id').notNull(),
+    /** SHA-256 hex, as computed by `upload-inline-image.ts` — the dedup + last-reference key. */
+    contentHash: text('content_hash').notNull(),
+    blobUrl: text('blob_url').notNull(),
+    blobKey: text('blob_key').notNull(),
+    mimeType: text('mime_type', {
+      enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    }).notNull(),
+    byteSize: integer('byte_size').notNull(),
+    uploadedByUserId: uuid('uploaded_by_user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({
+      name: 'broadcast_images_pkey',
+      columns: [table.tenantId, table.id],
+    }),
+    check(
+      'broadcast_images_owner_kind_check',
+      sql`${table.ownerKind} IN ('broadcast', 'template')`,
+    ),
+    check(
+      'broadcast_images_mime_type_check',
+      sql`${table.mimeType} IN ('image/png', 'image/jpeg', 'image/webp', 'image/gif')`,
+    ),
+    check(
+      'broadcast_images_byte_size_check',
+      sql`${table.byteSize} BETWEEN 1 AND 5 * 1024 * 1024`,
+    ),
+    index('broadcast_images_tenant_owner_idx').on(
+      table.tenantId,
+      table.ownerKind,
+      table.ownerId,
+    ),
+    index('broadcast_images_tenant_content_hash_idx').on(
+      table.tenantId,
+      table.contentHash,
+    ),
+    index('broadcast_images_tenant_deleted_idx')
+      .on(table.tenantId, table.deletedAt)
+      .where(sql`${table.deletedAt} IS NOT NULL`),
+  ],
+);
+
+export type BroadcastImageRow = typeof broadcastImages.$inferSelect;
+export type NewBroadcastImageRow = typeof broadcastImages.$inferInsert;

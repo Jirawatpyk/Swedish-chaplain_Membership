@@ -77,6 +77,8 @@ import { vercelBlobImageStorage } from './vercel-blob-image-storage';
 import { makeClamavVirusScanner } from './clamav-virus-scanner';
 import type { ManageImageAllowlistDeps } from '../application/use-cases/manage-image-allowlist';
 import type { UploadInlineImageDeps } from '../application/use-cases/upload-inline-image';
+import type { ReclaimOrphanedImagesDeps } from '../application/use-cases/reclaim-orphaned-images';
+import { drizzleBroadcastImagesRepo } from './db/drizzle-broadcast-images-repo';
 import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
 export const systemClock: ClockPort = {
@@ -775,6 +777,20 @@ export function makeUploadInlineImageDeps(
     // surfaced the import mismatch (contract tests use mocks so
     // didn't catch).
     scanner: makeClamavVirusScanner(),
+    storage: vercelBlobImageStorage,
+    audit: f7AuditAdapter,
+    // F119 T033 — the image lifecycle record (`broadcast_images`).
+    imagesRepo: drizzleBroadcastImagesRepo,
+  };
+}
+
+/**
+ * F119 T035 — composition root for the daily image-blob sweep, the second
+ * block of `/api/cron/broadcasts/prune-expired-drafts`.
+ */
+export function makeReclaimOrphanedImagesDeps(_tenantId: string): ReclaimOrphanedImagesDeps {
+  return {
+    imagesRepo: drizzleBroadcastImagesRepo,
     storage: vercelBlobImageStorage,
     audit: f7AuditAdapter,
   };

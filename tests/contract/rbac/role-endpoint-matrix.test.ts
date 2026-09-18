@@ -266,6 +266,13 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/admin/broadcasts/recipient-count',
     'GET /api/admin/broadcasts/sla-stats',
     'GET /api/admin/broadcasts/templates',
+    // F119 — the staff preview (`broadcasts.read`) and the staff test copy
+    // (`broadcasts.write`): marketing formats E-Blasts, so it previews and
+    // test-sends them; the copy goes to the marketing user's OWN address
+    // only (FR-037) and the brand route stays out of reach (settings tier).
+    // The frozen set grows 53 -> 55; this pin is what caught both surfaces.
+    'POST /api/admin/broadcasts/preview',
+    'POST /api/admin/broadcasts/test-copy',
     // F114 US2 — see the two pages above (`members.read`).
     'GET /api/admin/change-requests',
     'GET /api/admin/change-requests/[id]',
@@ -313,7 +320,8 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   // routes that no longer exist; only `api-route-exhaustiveness` caught them.
   // F114 US2 — 48 → 51: two `members.read` pages + the review payload route.
   // F114 US4 (PR-2) — 51 → 53: the queue + the per-member history routes.
-  it('reaches EXACTLY the frozen 53-surface set — nothing more, nothing less', () => {
+  // F119 PR-1 — 53 → 55: the staff preview + the staff test copy.
+  it('reaches EXACTLY the frozen 55-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

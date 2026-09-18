@@ -682,6 +682,20 @@ const schema = z.object({
   // add it only when ready to redeploy immediately (quickstart § 3).
   FEATURE_MEMBER_CHANGE_APPROVAL: booleanFromString.default(false),
 
+  // --- F119 E-Blast member-approval round ----------------------------------
+  // Platform kill-switch (spec § Feature flag, research R18). OFF (default —
+  // ships dark): the `submitted → in_design` edge is not offered (the entry
+  // into the approval round), and the outbox drainer skips the five
+  // `eblast_*` notification types so no hand-off email is delivered. It
+  // deliberately does NOT gate the exits: an E-Blast already in a new stage
+  // stays completable and cancellable (FR-034). Composed with the F7 master
+  // flag by `isEblastMemberApprovalEnabled()` in
+  // `src/modules/broadcasts/infrastructure/feature-flags.ts` — read only
+  // through that helper, never in Domain or Application.
+  // Setting this variable IS the flip on this repo (no `ignoreCommand`) —
+  // add it only after the RoPA update (quickstart § 3.2).
+  FEATURE_EBLAST_MEMBER_APPROVAL: booleanFromString.default(false),
+
   // --- ClamAV virus scanner (US2 dependency) -------------------------------
   // Network address of the clamd daemon. Empty string in dev = US2 disabled.
   // In prod, points at the Fly.io private 6PN address (e.g.
@@ -1105,6 +1119,9 @@ export const env = {
     // F114 — member change-request approval gate (platform half; the tenant
     // half is `tenant_member_settings.member_change_approval_enabled`).
     memberChangeApproval: raw.FEATURE_MEMBER_CHANGE_APPROVAL,
+    // F119 — E-Blast member-approval round: gates the submitted → in_design
+    // edge and the five hand-off emails at the drainer (never the exits).
+    eblastMemberApproval: raw.FEATURE_EBLAST_MEMBER_APPROVAL,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     // COMP-1 US2d — member-erasure reconciliation sweep kill-switch.

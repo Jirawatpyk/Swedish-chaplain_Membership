@@ -92,6 +92,27 @@ export function isF7ImportAudienceEnabled(): boolean {
 }
 
 /**
+ * F119 (T003, research R18) — `true` when the E-Blast member-approval round
+ * may be ENTERED: F7 master + `FEATURE_EBLAST_MEMBER_APPROVAL`.
+ *
+ * Read at exactly two kinds of site:
+ *   - the `submitted → in_design` edge in `startFormattedVersion` (and the
+ *     staff detail page's "Start formatted version" affordance) — the single
+ *     entry into the round;
+ *   - the outbox drainer's selection, which skips the five `eblast_*`
+ *     notification types while this is off (rows are still enqueued).
+ *
+ * It deliberately gates NO exit: a row already in a new stage stays
+ * completable and cancellable with the flag off (FR-034), so the re-entry
+ * from `changes_requested` / `member_approved` / `approved`, the member
+ * decision routes, the schedule confirm, the reminders and the expiry all
+ * keep running for it.
+ */
+export function isEblastMemberApprovalEnabled(): boolean {
+  return env.features.f7Broadcasts && env.features.eblastMemberApproval;
+}
+
+/**
  * Discriminated reason for the flag-disabled state — used by route
  * handlers + the cron handler to emit structured logs at the right
  * level (info for kill-switch, warn for unexpected combinations).
