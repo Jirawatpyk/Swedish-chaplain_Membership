@@ -10,12 +10,12 @@
  *   - Preview pane
  *   - Submit button row
  */
-import { FormContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ComposeLoading(): React.ReactElement {
   return (
-    <FormContainer>
+    <DetailContainer>
       <header className="space-y-2">
         <Skeleton className="h-7 w-48" />
         <Skeleton className="h-4 w-72" />
@@ -48,6 +48,6 @@ export default function ComposeLoading(): React.ReactElement {
           <Skeleton className="h-9 w-32" />
         </div>
       </div>
-    </FormContainer>
+    </DetailContainer>
   );
 }

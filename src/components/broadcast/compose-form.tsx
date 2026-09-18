@@ -20,7 +20,8 @@
  */
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLocale, useTranslations } from 'next-intl';
+import { useFormatter, useLocale, useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   errorValues,
@@ -45,15 +46,30 @@ import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { SubmitButton } from './submit-button';
 import { UnsafeImageSourcesList } from './unsafe-image-sources-list';
 import { RecipientCountLine, useRecipientCount } from './recipient-count';
+import { composeHasContent } from './compose/compose-content';
+import { SubjectCounter } from './compose/subject-counter';
+import {
+  ComposeTemplatePickerField,
+  type ComposeTemplateOption,
+} from './compose/template-picker-field';
+import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
   onChange: (html: string) => void;
   disabled?: boolean;
   labelledById?: string;
+  // F119 T144 (FR-048) — the error belongs on the `contenteditable`, not on a
+  // wrapper div the user never focuses.
+  describedById?: string;
+  invalid?: boolean;
   imagesEnabled?: boolean;
   draftId?: string | null;
 }>(() => import('./tiptap-editor'));
+
+/** What an untouched Tiptap document serialises to. */
+const EMPTY_BODY_HTML = '<p></p>';
+const BODY_ERROR_ID = 'broadcast-body-error';
 
 const SubmitSchema = z.object({
   subject: z.string().min(1).max(200),
@@ -132,20 +148,32 @@ export interface ComposeFormProps {
    */
   readonly audienceCeiling: number;
   readonly audienceMode: ComposeAudienceMode;
+  /**
+   * F119 T140 (FR-046) — the tenant's templates WITH their content, resolved
+   * server-side (chamber-name substitution already applied). The picker lives
+   * inside the form now so a choice re-seeds state in place instead of
+   * remounting the form through a URL push.
+   */
+  readonly templates?: readonly ComposeTemplateOption[];
+  /** The template the page pre-populated from (`?template=`), if any. */
+  readonly initialTemplateId?: string | null;
 }
 
 export function ComposeForm({
   initialDraftId = null,
   initialSubject = '',
-  initialBodyHtml = '<p></p>',
+  initialBodyHtml = EMPTY_BODY_HTML,
   initialQuota = null,
   imagesEnabled = false,
   audienceCeiling,
   audienceMode,
+  templates = [],
+  initialTemplateId = null,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
   const tErr = useTranslations('portal.broadcasts.compose.errors');
+  const format = useFormatter();
   // The preview is rendered server-side in the member's own UI language.
   const locale = useLocale();
 
@@ -166,7 +194,20 @@ export function ComposeForm({
   const [customList, setCustomList] = useState<string>('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  // F119 T143 — its own flag so the save control can show a busy state that a
+  // submit-in-flight would otherwise claim.
+  const [savingDraft, setSavingDraft] = useState<boolean>(false);
   const [quotaRefreshKey, setQuotaRefreshKey] = useState<number>(0);
+  // F119 T140 — which template is applied, and the html the editor is seeded
+  // with. Tiptap reads `initialHtml` once per mount, so applying a template
+  // bumps `nonce`, remounting the EDITOR alone — never the form.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    initialTemplateId,
+  );
+  const [editorSeed, setEditorSeed] = useState<{
+    readonly html: string;
+    readonly nonce: number;
+  }>({ html: initialBodyHtml, nonce: 0 });
   const [serverError, setServerError] = useState<{
     field: ServerErrorField;
     message: string;
@@ -196,27 +237,21 @@ export function ComposeForm({
     countRetry,
   );
 
-  // UX-3 — beforeunload guard so a member who composed substantial
-  // content + accidentally closes the tab gets a browser-native
-  // "Are you sure you want to leave?" prompt. Active only when the
-  // body OR subject has diverged from the initial draft AND we're
-  // not in the middle of submitting (post-submit redirect would
-  // false-trigger the prompt).
-  useEffect(() => {
-    const dirty =
-      !submitting &&
-      (subject !== initialSubject || bodyHtml !== initialBodyHtml);
-    if (!dirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      // Modern browsers ignore the message string and show their own
-      // copy; setting returnValue + preventDefault is the cross-
-      // browser invocation pattern.
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [submitting, subject, bodyHtml, initialSubject, initialBodyHtml]);
+  // UX-3 — beforeunload guard so a member who composed substantial content +
+  // accidentally closes the tab gets a browser-native "Are you sure you want
+  // to leave?" prompt.
+  //
+  // F119 T143 (FR-045): the comparison baseline is the last SAVED snapshot,
+  // not the immutable `initialSubject` / `initialBodyHtml` props. With the old
+  // baseline a member who saved a draft and changed nothing since was still
+  // warned — which teaches people to dismiss the warning that matters.
+  const dirtyGuard = useComposeDirtyGuard(
+    { subject, bodyHtml },
+    {
+      initial: { subject: initialSubject, bodyHtml: initialBodyHtml },
+      suspended: submitting,
+    },
+  );
 
   // UX-R2-1 — auto-focus the failing field when a server error arrives.
   useEffect(() => {
@@ -248,6 +283,25 @@ export function ComposeForm({
   // when the user has typed something AND it fails.
   const subjectInvalid = subject.length > 0 && subject.length > 200;
   const bodyInvalid = bodyHtml.length > 200 * 1024;
+  // F119 T144 (FR-048) — one derivation, handed to the editor as `invalid` +
+  // `describedById` so assistive tech announces the reason ON the control.
+  const bodyHasError = bodyInvalid || serverError?.field === 'body';
+
+  /**
+   * F119 T140 (FR-046) — re-seed in place. The subject and the body are
+   * replaced; the segment, the custom list, the schedule and any draft id
+   * already minted are deliberately left alone, because a template says
+   * nothing about who the message goes to or when.
+   */
+  function applyTemplate(option: ComposeTemplateOption | null): void {
+    const nextBody = option?.bodyHtml ?? EMPTY_BODY_HTML;
+    setSubject(option?.subject ?? '');
+    setBodyHtml(nextBody);
+    setEditorSeed((prev) => ({ html: nextBody, nonce: prev.nonce + 1 }));
+    setSelectedTemplateId(option?.id ?? null);
+    setServerError(null);
+    setUnsafeImageSources(null);
+  }
 
   async function onSubmit() {
     if (submitting) return;
@@ -366,8 +420,13 @@ export function ComposeForm({
   }
 
   async function onSaveDraft() {
-    if (submitting) return;
+    if (submitting || savingDraft) return;
+    setSavingDraft(true);
     setSubmitting(true);
+    // Captured BEFORE the round trip: this is what the server is being asked
+    // to store, so it — not whatever the member typed while it was in flight —
+    // is the snapshot the dirty guard must compare against afterwards.
+    const savedSnapshot = { subject, bodyHtml };
     try {
       const body: Record<string, unknown> = {
         subject,
@@ -401,8 +460,6 @@ export function ComposeForm({
         toast.error(msg);
         return;
       }
-      toast.success(t('toast.drafted'));
-
       // E2E + UX bug fix 2026-05-21: when the FIRST `Save as draft` POST
       // creates a new draft, the API returns `{ broadcastId }` but the
       // component previously dropped the id on the floor — `currentDraftId`
@@ -416,218 +473,241 @@ export function ComposeForm({
       // The compose page (server component) does not yet support
       // `?draftId=` resume — that is F7.1b scope — so we manage the
       // draft-id transition entirely in client state.
-      if (currentDraftId === null) {
-        try {
-          const respBody = (await res.json().catch(() => null)) as {
-            broadcastId?: string;
-          } | null;
-          if (respBody?.broadcastId) {
-            setCurrentDraftId(respBody.broadcastId);
-          }
-        } catch {
-          // best-effort — the toast already confirmed success
-        }
+      const respBody = (await res.json().catch(() => null)) as {
+        broadcastId?: string;
+      } | null;
+      if (currentDraftId === null && respBody?.broadcastId) {
+        setCurrentDraftId(respBody.broadcastId);
       }
+      toast.success(t('toast.drafted'));
+      // F119 T143 (FR-045) — the save cleared the unsaved-changes state.
+      dirtyGuard.markSaved(savedSnapshot);
     } finally {
       setSubmitting(false);
+      setSavingDraft(false);
     }
   }
 
   return (
     <div className="min-w-0 space-y-6">
       <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} />
-      <Card>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
-            <Input
-              ref={subjectRef}
-              id="broadcast-subject"
-              value={subject}
-              onChange={(e) => {
-                setSubject(e.target.value);
-                if (serverError?.field === 'subject') setServerError(null);
-              }}
-              placeholder={t('fields.subjectPlaceholder')}
-              maxLength={200}
+      {/* F119 T140 (FR-046) — inside the form, so a choice re-seeds state
+          instead of navigating and remounting it. */}
+      <ComposeTemplatePickerField
+        templates={templates}
+        selectedId={selectedTemplateId}
+        hasContent={composeHasContent(subject, bodyHtml)}
+        onApply={applyTemplate}
+        disabled={submitting}
+      />
+      {/* F119 T148 (FR-050) — the editor and the 600 px email preview sit side
+          by side from `lg` up and stack below it; the page supplies the 72 rem
+          container the pair needs (exception recorded in ux-standards § 18.2). */}
+      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
+        <Card>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
+              <Input
+                ref={subjectRef}
+                id="broadcast-subject"
+                value={subject}
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                  if (serverError?.field === 'subject') setServerError(null);
+                }}
+                placeholder={t('fields.subjectPlaceholder')}
+                maxLength={200}
+                disabled={submitting}
+                aria-describedby={
+                  serverError?.field === 'subject'
+                    ? 'broadcast-subject-error broadcast-subject-counter'
+                    : 'broadcast-subject-counter'
+                }
+                aria-invalid={
+                  subjectInvalid || serverError?.field === 'subject' || undefined
+                }
+              />
+              {serverError?.field === 'subject' ? (
+                <p
+                  id="broadcast-subject-error"
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {serverError.message}
+                </p>
+              ) : null}
+              <SubjectCounter id="broadcast-subject-counter" value={subject} />
+            </div>
+
+            <SegmentPicker
+              value={segment}
+              onChange={setSegment}
               disabled={submitting}
-              aria-describedby={
-                serverError?.field === 'subject'
-                  ? 'broadcast-subject-error broadcast-subject-counter'
-                  : 'broadcast-subject-counter'
-              }
-              aria-invalid={
-                subjectInvalid || serverError?.field === 'subject' || undefined
-              }
             />
-            {serverError?.field === 'subject' ? (
-              <p
-                id="broadcast-subject-error"
-                role="alert"
-                className="text-xs text-destructive"
-              >
-                {serverError.message}
+
+            {/* UX-1 — set expectations before the live count settles: the
+                estimate note describes the segment shape and the REAL
+                ceiling (`audienceCeiling`, not a hard-coded 5,000), and
+                `RecipientCountLine` below shows the resolver's own number
+                once it lands (108 PR-C T089 — the auth'd endpoint, the
+                debounced fetch and the cap pre-check this comment once said
+                were deliberately not built). */}
+            {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041).
+                /code-review finding #6: an unrecognised segment kind yields
+                null and this line is omitted — never a raw i18n key path,
+                which is what next-intl renders for an unknown key. */}
+            {estimateNote !== null ? (
+              <p className="text-xs text-muted-foreground">
+                {t(estimateNote, { ceiling: audienceCeiling })}
               </p>
             ) : null}
-            <p
-              id="broadcast-subject-counter"
-              className="text-xs text-muted-foreground"
-              aria-live="off"
+            {/* 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
+                the sending member, not only the primary address. Round 2 (UX
+                H-3): every segment kind says which way the rule goes — silence
+                on the custom list / attendees read as "same rule". */}
+            {selfExclusionHint !== null ? (
+              <p className="text-xs text-muted-foreground">{t(selfExclusionHint)}</p>
+            ) : null}
+            {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
+                decides the send, so the number shown is the number sent (SC-004). */}
+            <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />
+
+            {segment.kind === 'custom' ? (
+              <CustomListInput
+                value={customList}
+                onChange={setCustomList}
+                disabled={submitting}
+              />
+            ) : null}
+
+            {segment.kind === 'custom' && customLines.length > 0 ? (
+              <p
+                className="text-xs text-muted-foreground"
+                aria-live="polite"
+              >
+                {t('estimateNote.customCount', { count: customLines.length })}
+              </p>
+            ) : null}
+
+            {/* F119 T144 (FR-048): `aria-invalid` + `aria-describedby` used to
+                live on THIS wrapper. It is not the control anyone focuses — the
+                Tiptap `contenteditable` is — so the reason was announced on an
+                element the user never lands on. Both now travel into the editor
+                as props (`tiptap-editor.tsx:106,113`), the way
+                `admin/template-form.tsx:283-286` already did it. The div keeps
+                `tabIndex={-1}` only so a server error can move focus here. */}
+            <div
+              ref={bodyContainerRef}
+              tabIndex={-1}
+              className="space-y-2 outline-none"
             >
-              {t('fields.subjectCounter', {
-                count: subject.length,
-                max: 200,
-              })}
-            </p>
-          </div>
+              <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
+              <TiptapEditor
+                key={editorSeed.nonce}
+                initialHtml={editorSeed.html}
+                invalid={bodyHasError}
+                {...(bodyHasError ? { describedById: BODY_ERROR_ID } : {})}
+                onChange={(next) => {
+                  setBodyHtml(next);
+                  if (serverError?.field === 'body') setServerError(null);
+                  // PR-review fix 2026-05-20 UX-C1 — clear disallowed-
+                  // sources list when the user edits the body (they may
+                  // be acting on the listed offenders).
+                  if (unsafeImageSources !== null) setUnsafeImageSources(null);
+                }}
+                disabled={submitting}
+                labelledById="broadcast-body-label"
+                imagesEnabled={imagesEnabled}
+                draftId={currentDraftId}
+              />
+              {/* PR-review fix 2026-05-20 UX-C1 — accumulated disallowed
+                  image sources list. role=alert so SR users hear it
+                  immediately on submit. */}
+              {unsafeImageSources !== null && unsafeImageSources.length > 0 ? (
+                <UnsafeImageSourcesList urls={unsafeImageSources} />
+              ) : null}
+              {serverError?.field === 'body' ? (
+                <p
+                  id="broadcast-body-error"
+                  className="text-xs text-destructive"
+                  role="alert"
+                >
+                  {serverError.message}
+                </p>
+              ) : bodyInvalid ? (
+                <p
+                  id="broadcast-body-error"
+                  className="text-xs text-destructive"
+                  role="alert"
+                >
+                  {tErr('broadcast_body_too_large')}
+                </p>
+              ) : null}
+            </div>
 
-          <SegmentPicker
-            value={segment}
-            onChange={setSegment}
-            disabled={submitting}
-          />
+            <SchedulePicker
+              value={scheduledFor}
+              onChange={setScheduledFor}
+              disabled={submitting}
+            />
 
-          {/* UX-1 — set expectations before the live count settles: the
-              estimate note describes the segment shape and the REAL
-              ceiling (`audienceCeiling`, not a hard-coded 5,000), and
-              `RecipientCountLine` below shows the resolver's own number
-              once it lands (108 PR-C T089 — the auth'd endpoint, the
-              debounced fetch and the cap pre-check this comment once said
-              were deliberately not built). */}
-          {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041).
-              /code-review finding #6: an unrecognised segment kind yields
-              null and this line is omitted — never a raw i18n key path,
-              which is what next-intl renders for an unknown key. */}
-          {estimateNote !== null ? (
+            {/* UX-4 — surface FR-004a cancellation cutoff so members know
+                they can still pull back a submission until admin approves. */}
             <p className="text-xs text-muted-foreground">
-              {t(estimateNote, { ceiling: audienceCeiling })}
+              {t('submitNote.cancellable')}
             </p>
-          ) : null}
-          {/* 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
-              the sending member, not only the primary address. Round 2 (UX
-              H-3): every segment kind says which way the rule goes — silence
-              on the custom list / attendees read as "same rule". */}
-          {selfExclusionHint !== null ? (
-            <p className="text-xs text-muted-foreground">{t(selfExclusionHint)}</p>
-          ) : null}
-          {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
-              decides the send, so the number shown is the number sent (SC-004). */}
-          <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />
 
-          {segment.kind === 'custom' ? (
-            <CustomListInput
-              value={customList}
-              onChange={setCustomList}
-              disabled={submitting}
-            />
-          ) : null}
-
-          {segment.kind === 'custom' && customLines.length > 0 ? (
-            <p
-              className="text-xs text-muted-foreground"
-              aria-live="polite"
-            >
-              {t('estimateNote.customCount', { count: customLines.length })}
-            </p>
-          ) : null}
-
-          <div
-            ref={bodyContainerRef}
-            tabIndex={-1}
-            className="space-y-2 outline-none"
-            aria-invalid={bodyInvalid || serverError?.field === 'body' || undefined}
-            // QA T191 fix (2026-05-03) — WCAG 3.3.1: SR users hearing
-            // `aria-invalid` need the error reason programmatically
-            // associated. The error <p> below carries id="broadcast-
-            // body-error"; this `aria-describedby` wires the chain.
-            // Note: ideally the inner Tiptap `contenteditable` would
-            // also receive the describedby via `editorProps.attributes`
-            // but that requires a TiptapEditor prop addition; the
-            // wrapper-div-level association is what most SR pipelines
-            // resolve to anyway when `aria-invalid` is on the wrapper.
-            aria-describedby={
-              bodyInvalid || serverError?.field === 'body'
-                ? 'broadcast-body-error'
-                : undefined
-            }
-          >
-            <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
-            <TiptapEditor
-              initialHtml={initialBodyHtml}
-              onChange={(next) => {
-                setBodyHtml(next);
-                if (serverError?.field === 'body') setServerError(null);
-                // PR-review fix 2026-05-20 UX-C1 — clear disallowed-
-                // sources list when the user edits the body (they may
-                // be acting on the listed offenders).
-                if (unsafeImageSources !== null) setUnsafeImageSources(null);
-              }}
-              disabled={submitting}
-              labelledById="broadcast-body-label"
-              imagesEnabled={imagesEnabled}
-              draftId={currentDraftId}
-            />
-            {/* PR-review fix 2026-05-20 UX-C1 — accumulated disallowed
-                image sources list. role=alert so SR users hear it
-                immediately on submit. */}
-            {unsafeImageSources !== null && unsafeImageSources.length > 0 ? (
-              <UnsafeImageSourcesList urls={unsafeImageSources} />
-            ) : null}
-            {serverError?.field === 'body' ? (
-              <p
-                id="broadcast-body-error"
-                className="text-xs text-destructive"
-                role="alert"
+            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
+              {/* F119 T143 (FR-045) — the receipt for the save, in the member's
+                  own locale via next-intl's formatter (never hand-formatted). */}
+              {dirtyGuard.savedAt !== null ? (
+                <p
+                  data-testid="compose-saved-at"
+                  className="text-xs text-muted-foreground sm:mr-auto"
+                  aria-live="polite"
+                >
+                  {t('savedAt', {
+                    time: format.dateTime(dirtyGuard.savedAt, {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    }),
+                  })}
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onSaveDraft}
+                disabled={submitting}
+                aria-busy={savingDraft || undefined}
               >
-                {serverError.message}
-              </p>
-            ) : bodyInvalid ? (
-              <p
-                id="broadcast-body-error"
-                className="text-xs text-destructive"
-                role="alert"
-              >
-                {tErr('broadcast_body_too_large')}
-              </p>
-            ) : null}
-          </div>
+                {savingDraft ? (
+                  <Loader2Icon
+                    className="size-4 motion-safe:animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {t('button.saveDraft')}
+              </Button>
+              <SubmitButton
+                disabled={submitDisabled}
+                submitting={submitting}
+                onClick={onSubmit}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
-          <SchedulePicker
-            value={scheduledFor}
-            onChange={setScheduledFor}
-            disabled={submitting}
-          />
-
+        <div className="min-w-0 lg:sticky lg:top-4">
           <PreviewPane
             subject={subject}
             bodyHtml={deferredBody}
             endpoint="/api/broadcasts/preview"
             locale={locale}
           />
-
-          {/* UX-4 — surface FR-004a cancellation cutoff so members know
-              they can still pull back a submission until admin approves. */}
-          <p className="text-xs text-muted-foreground">
-            {t('submitNote.cancellable')}
-          </p>
-
-          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={onSaveDraft}
-              disabled={submitting}
-            >
-              {t('button.saveDraft')}
-            </Button>
-            <SubmitButton
-              disabled={submitDisabled}
-              submitting={submitting}
-              onClick={onSubmit}
-            />
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

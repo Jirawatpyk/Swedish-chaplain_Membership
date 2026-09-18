@@ -153,6 +153,11 @@ describe('findMissingEnumValues', () => {
           'member_change_request_withdrawn',
           'member_change_request_rate_limited',
           'member_change_approval_setting_changed',
+          // 0304 (F119 eblast-approval-workflow PR-1):
+          'broadcast_test_copy_sent',
+          'broadcast_brand_settings_changed',
+          'broadcast_image_uploaded',
+          'broadcast_image_removed',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -206,6 +211,11 @@ describe('findMissingEnumValues', () => {
           'member_change_request_withdrawn',
           'member_change_request_rate_limited',
           'member_change_approval_setting_changed',
+          // 0304 (F119 eblast-approval-workflow PR-1):
+          'broadcast_test_copy_sent',
+          'broadcast_brand_settings_changed',
+          'broadcast_image_uploaded',
+          'broadcast_image_removed',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -269,6 +279,11 @@ describe('findMissingEnumValues', () => {
           'member_change_request_withdrawn',
           'member_change_request_rate_limited',
           'member_change_approval_setting_changed',
+          // 0304 (F119 eblast-approval-workflow PR-1):
+          'broadcast_test_copy_sent',
+          'broadcast_brand_settings_changed',
+          'broadcast_image_uploaded',
+          'broadcast_image_removed',
         ],
       },
     ]);

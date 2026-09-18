@@ -230,14 +230,15 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
       .getByRole('option', { name: /^Monthly Newsletter\b/ })
       .click();
 
-    // E2E timing fix 2026-05-21: selectTemplate calls `router.push`
-    // with `?template=<id>` — wait for the URL to actually carry the
-    // param so the server re-render with the populated subject lands
-    // before the toBeEmpty assertion runs. Without this wait, Subject
-    // is still empty on the prior route render.
-    await page.waitForURL(/\?template=/, { timeout: 10_000 });
+    // F119 T140 (FR-046): selecting a template no longer pushes
+    // `?template=<id>` and no longer remounts the form — it re-seeds the
+    // subject and the body in place from content the page already sent, so
+    // there is no navigation to wait for. The form is empty here, so no
+    // confirmation is asked for either (that arm is covered by
+    // `tests/unit/broadcast/template-picker-confirm.test.tsx`). The
+    // `toHaveValue` poll below is the only synchronisation needed.
 
-    // After navigation, the compose form should be pre-populated.
+    // The compose form should now be pre-populated.
     // SweCham comes from NEXT_PUBLIC_TENANT_NAME fallback (or whatever
     // tenant.display_name resolves to in the staging env).
     //
@@ -310,10 +311,9 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     await expect(page.locator('[cmdk-item][data-selected="true"]')).toBeVisible();
     await page.keyboard.press('Enter');
 
-    // URL navigated to ?template= — the page server-renders with
-    // pre-populated subject. Don't assert specific option here (depends
-    // on seed ordering); just confirm the URL carries the param.
-    await page.waitForURL(/\?template=/);
+    // F119 T140 (FR-046): no URL change any more — the choice re-seeds the
+    // form in place. Don't assert a specific option here (depends on seed
+    // ordering); just confirm the subject stopped being empty.
     // E2E assertion fix 2026-05-21 (same root cause as test #3):
     // `<input>` value is on .value, not textContent — toBeEmpty always
     // passes/fails on textContent. Use toHaveValue with non-empty

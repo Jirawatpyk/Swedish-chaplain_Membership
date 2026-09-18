@@ -5946,8 +5946,17 @@
           "starterBadgeAria": "Förseedad av plattformen",
           "searchPlaceholder": "Sök mallar efter namn",
           "emptyMessage": "Inga mallar matchar din sökning",
-          "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar."
+          "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar.",
+          "confirm": {
+            "title": "Ersätta det du har skrivit?",
+            "description": "Att utgå från ”{template}” ersätter din ämnesrad och ditt meddelande. Allt annat du har ställt in är kvar.",
+            "descriptionBlank": "Att börja om rensar din ämnesrad och ditt meddelande. Allt annat du har ställt in är kvar.",
+            "confirmLabel": "Använd mallen",
+            "confirmLabelBlank": "Börja om",
+            "cancelLabel": "Behåll mitt meddelande"
+          }
         },
+        "savedAt": "Sparat {time}",
         "staleDraftBanner": {
           "title": "Mallen har uppdaterats",
           "body": "Mallen \"{templateName}\" har redigerats sedan du startade detta utkast. Klicka uppdatera för att ladda nuvarande version (dina ändringar i ämne och innehåll skrivs över).",

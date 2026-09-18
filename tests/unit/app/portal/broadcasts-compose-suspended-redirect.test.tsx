@@ -80,7 +80,9 @@ vi.mock('@/modules/broadcasts/infrastructure/feature-flags', () => ({
 }));
 
 vi.mock('@/components/layout', () => ({
-  FormContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  // F119 T148 — the compose page moved to the 72 rem DetailContainer so the
+  // editor and the 600 px preview fit side by side (ux-standards § 18.2).
+  DetailContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock('@/components/layout/page-header', () => ({
   PageHeader: () => <div data-testid="page-header" />,

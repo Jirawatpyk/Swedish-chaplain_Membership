@@ -1,13 +1,11 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { FormContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ComposeForm } from '@/components/broadcast/compose-form';
-import {
-  ComposeTemplatePicker,
-  type TemplatePickerRow,
-} from '@/components/broadcast/compose/template-picker';
+import type { ComposeTemplateOption } from '@/components/broadcast/compose/template-picker-field';
+import { loadComposeTemplateOptions } from '@/lib/broadcast-template-options';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runInTenant } from '@/lib/db';
@@ -19,9 +17,7 @@ import {
   envTenantDisplayName,
   f7AuditAdapter,
   isF71aUs7Enabled,
-  listBroadcastTemplates,
   makeComputeQuotaDeps,
-  makeListBroadcastTemplatesDeps,
   substituteChamberName,
   currentAudienceCeiling,
   currentAudienceMode,
@@ -186,7 +182,7 @@ export default async function ComposeBroadcastPage({
   // pre-populates initialSubject + initialBodyHtml from `?template={id}`
   // with `substituteChamberName` applied.
   const templatesEnabled = isF71aUs7Enabled();
-  let pickerRows: readonly TemplatePickerRow[] = [];
+  let pickerRows: readonly ComposeTemplateOption[] = [];
   let initialSubject: string | undefined;
   let initialBodyHtml: string | undefined;
   let selectedTemplateId: string | null = null;
@@ -194,35 +190,15 @@ export default async function ComposeBroadcastPage({
   if (templatesEnabled) {
     const currentLocale = ((await getLocale()) as 'en' | 'th' | 'sv') ?? 'en';
 
-    try {
-      const rows = await runInTenant(tenant, async () =>
-        listBroadcastTemplates(makeListBroadcastTemplatesDeps(tenant.slug), {
-          tenantId: tenant.slug as never,
-          currentUserLocale: currentLocale,
-        }),
-      );
-      pickerRows = rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        locale: r.locale,
-        isSeeded: r.isSeeded,
-      }));
-    } catch (err) {
-      // R3.2 H-7 — log picker list failures (DB outage / RLS misconfig)
-      // so observability picks up degradation. Picker still gracefully
-      // falls back to empty list — does not block the compose surface.
-      // R4.3 M-6 — see template_pre_populate_failed sibling log; same
-      // userId-in-context rationale applies to picker-list failures.
-      logger.warn(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          tenantId: tenant.slug,
-          userIdHash: hashId(session.user.id),
-        },
-        'broadcasts.compose.template_picker_list_failed',
-      );
-      pickerRows = [];
-    }
+    // F119 T140 — the rows carry their CONTENT now (chamber-name substitution
+    // applied), because picking one re-seeds the form in place instead of
+    // navigating back through the server. Failures still degrade to an empty
+    // list inside the helper — the picker disappears, compose stays up.
+    pickerRows = await loadComposeTemplateOptions(
+      tenant,
+      currentLocale,
+      session.user.id,
+    );
 
     // Pre-populate compose fields when `?template={id}` is present.
     if (typeof templateIdParam === 'string' && templateIdParam.length > 0) {
@@ -300,33 +276,32 @@ export default async function ComposeBroadcastPage({
   }
 
   return (
-    <FormContainer>
+    // F119 T148 (FR-050) — 72 rem, not the 42 rem form tier: the editor and the
+    // 600 px email preview sit side by side from `lg` up. Recorded as an
+    // exception in docs/ux-standards.md § 18.2.
+    <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      {templatesEnabled ? (
-        <ComposeTemplatePicker
-          templates={pickerRows}
-          selectedId={selectedTemplateId}
-        />
-      ) : null}
       {/*
-        E2E + UX bug fix 2026-05-21: pass `selectedTemplateId` (or
-        'blank') as React key so a `router.push(?template=<id>)`
-        client-side navigation REMOUNTS the form with fresh state.
-        Without the key, React preserves the prior `useState` values
-        for `subject` + `bodyHtml`, ignoring the new prop values from
-        the re-rendered server component. Symptom: member picks a
-        template, URL updates, but Subject stays empty (T172 SLO-F7-001
-        cold-render is correct; the bug is the client-side persist).
+        F119 T140 (FR-046, SC-012): the template picker moved INSIDE the form
+        and the `key={selectedTemplateId ?? 'blank'}` remount is gone. The key
+        existed because picking a template used to `router.push(?template=…)`
+        and the re-rendered server component's props were ignored by React's
+        preserved `useState`; the remount that fixed that also threw away
+        whatever the member had typed, with no confirmation and no undo. The
+        form now re-seeds its own state after a confirmation, so `?template=`
+        is only a deep link for a fresh page load — which is what the
+        pre-population above still serves.
       */}
       <ComposeForm
-        key={selectedTemplateId ?? 'blank'}
         initialQuota={initialQuota}
         imagesEnabled={imagesEnabled}
         audienceCeiling={audienceCeiling}
         audienceMode={audienceMode}
+        templates={templatesEnabled ? pickerRows : []}
+        initialTemplateId={selectedTemplateId}
         {...(initialSubject !== undefined ? { initialSubject } : {})}
         {...(initialBodyHtml !== undefined ? { initialBodyHtml } : {})}
       />
-    </FormContainer>
+    </DetailContainer>
   );
 }

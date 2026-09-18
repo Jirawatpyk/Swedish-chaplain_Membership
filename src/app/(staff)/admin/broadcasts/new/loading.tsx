@@ -9,13 +9,13 @@
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FormContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export default async function Loading(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
   return (
-    <FormContainer>
+    <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('pageSubtitle')} />
       <Card>
         <CardContent className="space-y-6">
@@ -40,6 +40,6 @@ export default async function Loading(): Promise<React.ReactElement> {
           </div>
         </CardContent>
       </Card>
-    </FormContainer>
+    </DetailContainer>
   );
 }

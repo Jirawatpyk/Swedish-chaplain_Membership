@@ -701,6 +701,8 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/portal/account`                                   | `FormContainer`   | 42rem |
 | `/portal/edit`                                      | `FormContainer`   | 42rem |
 | `/portal/contacts/invite`                           | `FormContainer`   | 42rem |
+| `/portal/broadcasts/new`                            | `DetailContainer`† | 72rem |
+| `/admin/broadcasts/new`                             | `DetailContainer`† | 72rem |
 
 \* **Documented exception** — `/admin/settings/invoicing` is a settings/edit
 form, which the §18.1 one-liner would default to `FormContainer` (42rem).
@@ -711,6 +713,20 @@ legible 2-column field grid. Any other future settings page that adopts the
 same sticky-nav shell (not just a single-column form) should follow this
 same exception, not the default rule. (`settings-ux-invoice-reminders`
 fix-wave, Task 7/8.)
+
+† **Documented exception** — the two E-Blast compose screens
+(`/portal/broadcasts/new`, `/admin/broadcasts/new`) are compose forms, which
+the § 18.1 one-liner would put in `FormContainer` (42rem). They use
+`DetailContainer` (72rem) instead because FR-050 requires the writing surface
+and the **600 px email preview** to sit side by side on large screens: an
+email is 600 px wide by definition, so 42rem (672 px) leaves the editor
+roughly 40 px once the preview and the gutter are placed. At 72rem the pair
+fits (`lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]`) and stacks below `lg`.
+This exception is specific to a form whose output has a **fixed-width live
+preview**; an ordinary form, including every other E-Blast screen, still
+follows the default rule. Each page's sibling `loading.tsx` moved to
+`DetailContainer` in the same change so the skeleton→content transition stays
+CLS-0 (§ 18.4). (F119 T148, spec `119-eblast-approval-workflow` FR-050.)
 
 ### 18.3 Code examples
 

@@ -5946,8 +5946,17 @@
           "starterBadgeAria": "Seeded by the platform",
           "searchPlaceholder": "Search templates by name",
           "emptyMessage": "No templates match your search",
-          "helpText": "Picking a template fills the subject + message. You can still edit before sending."
+          "helpText": "Picking a template fills the subject + message. You can still edit before sending.",
+          "confirm": {
+            "title": "Replace what you have written?",
+            "description": "Starting from “{template}” replaces your subject and message. Everything else you have set stays as it is.",
+            "descriptionBlank": "Starting from scratch clears your subject and message. Everything else you have set stays as it is.",
+            "confirmLabel": "Use the template",
+            "confirmLabelBlank": "Start from scratch",
+            "cancelLabel": "Keep my message"
+          }
         },
+        "savedAt": "Saved at {time}",
         "staleDraftBanner": {
           "title": "Template has been updated",
           "body": "The \"{templateName}\" template was edited since you started this draft. Refresh to load the current version (your edits to subject + body will be overwritten).",

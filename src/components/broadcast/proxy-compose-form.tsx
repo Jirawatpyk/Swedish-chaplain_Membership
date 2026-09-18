@@ -11,11 +11,22 @@
  *
  * Differences from the member `ComposeForm`:
  *   - Adds a `MemberPicker` for selecting the proxied member (DV-4 Task 4).
- *   - Drops quota display, save-draft, and template-picker (admin proxy
- *     flow has no draft lifecycle and the member's quota is enforced
- *     server-side, surfaced via the `broadcast_quota_blocked` error toast).
  *   - Self-exclusion notice (Q16) once a member is picked: the proxied
  *     member never receives their own e-blast.
+ *
+ * F119 T145 (US6-AS5, FR-039) — "the writing tool MUST be the same" for a
+ * member writing an original and for staff composing on their behalf. This
+ * form now shares the member form's template picker, subject counter,
+ * unsaved-changes guard, preview and editor-level error association, by
+ * REUSING those pieces (`compose/*`) rather than forking them.
+ *
+ * Still missing, and not buildable in PR-1: draft save/resume, inline images
+ * and the proxied member's allowance. Each needs a staff API route that does
+ * not exist — `/api/broadcasts/draft` and `/api/broadcasts/quota` are both
+ * `requireMemberContext`-gated, `POST /api/admin/broadcasts/[id]/images` needs
+ * a staff-owned `draft` broadcast id that nothing here can mint, and
+ * `contracts/admin-eblast-formatting-api.md` defines no staff equivalent of
+ * any of the three.
  *
  * Error mapping (`ERROR_HANDLING`) reacts to `json.error.code` from the
  * route's bilingual envelope (`broadcasts-route-helpers.ts`):
@@ -52,18 +63,30 @@ import { PreviewPane } from './preview-pane';
 import { SubmitButton } from './submit-button';
 import { buildSegmentPayload } from './compose-form';
 import { RecipientCountLine, useRecipientCount } from './recipient-count';
+import { composeHasContent } from './compose/compose-content';
+import { SubjectCounter } from './compose/subject-counter';
+import {
+  ComposeTemplatePickerField,
+  type ComposeTemplateOption,
+} from './compose/template-picker-field';
+import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
 
-// Proxy form drops inline images + draft lifecycle — the Tiptap editor is
-// loaded with the same loader the member compose form uses, minus the
-// `imagesEnabled` / `draftId` props.
+// Proxy form drops inline images + draft lifecycle (no staff route exists for
+// either — see the file header) — the Tiptap editor is loaded with the same
+// loader the member compose form uses, minus the `imagesEnabled` / `draftId`
+// props.
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
   onChange: (html: string) => void;
   disabled?: boolean;
   labelledById?: string;
+  // F119 T144 (FR-048) — the error belongs on the `contenteditable`.
+  describedById?: string;
+  invalid?: boolean;
 }>(() => import('./tiptap-editor'));
 
 const INITIAL_BODY_HTML = '<p></p>';
+const BODY_ERROR_ID = 'proxy-broadcast-body-error';
 
 const SubmitSchema = z.object({
   subject: z.string().min(1).max(200),
@@ -148,9 +171,17 @@ export interface ProxyComposeFormProps {
    * fallback for the too-large error copy when the 422 body carries no cap.
    */
   readonly audienceCeiling: number;
+  /**
+   * F119 T145 (FR-039) — the same template options the member compose form
+   * gets, resolved server-side with chamber-name substitution applied.
+   */
+  readonly templates?: readonly ComposeTemplateOption[];
 }
 
-export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): React.ReactElement {
+export function ProxyComposeForm({
+  audienceCeiling,
+  templates = [],
+}: ProxyComposeFormProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.proxySubmitDialog');
   // The proxySubmitDialog namespace has no member-search loading string;
   // reuse the canonical members-picker loading copy ("Loading members…")
@@ -179,6 +210,28 @@ export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): Re
     field: ServerErrorField;
     message: string;
   } | null>(null);
+  // F119 T145 — template state, mirroring the member form: Tiptap reads
+  // `initialHtml` once per mount, so applying a template bumps `nonce` and
+  // remounts the EDITOR alone, never the form.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    null,
+  );
+  const [editorSeed, setEditorSeed] = useState<{
+    readonly html: string;
+    readonly nonce: number;
+  }>({ html: INITIAL_BODY_HTML, nonce: 0 });
+
+  // F119 T145 (FR-039/FR-045) — the unsaved-changes guard the member form has.
+  // With no draft endpoint on this side, `markSaved` is never called, so it
+  // stays a plain "you have typed something" warning until a submit is in
+  // flight (`suspended`), which is exactly the parity item FR-039 asks for.
+  useComposeDirtyGuard(
+    { subject, bodyHtml },
+    {
+      initial: { subject: '', bodyHtml: INITIAL_BODY_HTML },
+      suspended: submitting,
+    },
+  );
 
   const deferredBody = useDeferredValue(bodyHtml);
   const customLines = parseLines(customList);
@@ -219,6 +272,21 @@ export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): Re
     !tierValid ||
     // Round 2 (UX H-4): a measured refusal from the live count blocks here too.
     submitBlockedByCount(recipientCount);
+
+  const bodyHasError = fieldError?.field === 'body';
+
+  /**
+   * F119 T140/T145 (FR-046) — re-seed in place; the picked member, the
+   * segment and the schedule are deliberately untouched.
+   */
+  function applyTemplate(option: ComposeTemplateOption | null): void {
+    const nextBody = option?.bodyHtml ?? INITIAL_BODY_HTML;
+    setSubject(option?.subject ?? '');
+    setBodyHtml(nextBody);
+    setEditorSeed((prev) => ({ html: nextBody, nonce: prev.nonce + 1 }));
+    setSelectedTemplateId(option?.id ?? null);
+    setFieldError(null);
+  }
 
   // Auto-focus the failing field when a field-level server error arrives.
   useEffect(() => {
@@ -339,178 +407,202 @@ export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): Re
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <MemberPicker
-            value={member}
-            onSelect={(m) => {
-              setMember(m);
-              setMemberError(null);
-            }}
-            label={t('memberLabel')}
-            placeholder={t('memberPlaceholder')}
-            searchFailedText={t('searchFailed')}
-            emptyText={t('noResults')}
-            loadingText={tLink('loading')}
-            disabled={submitting}
-            triggerRef={pickerRef}
-          />
-          {memberError !== null ? (
-            <p role="alert" className="text-xs text-destructive">
-              {memberError}
-            </p>
-          ) : null}
-          {memberMissingEmail ? (
-            // Inline warning: shown immediately on member selection when the
-            // picked member has no primary contact email. Prevents submission
-            // before the admin fills in the gap. `role="alert"` announces it
-            // to SR users without stealing focus (WCAG 4.1.3 Status Messages).
-            <p role="alert" className="text-xs text-destructive">
-              {t('missingContactEmailWarning')}
-            </p>
-          ) : null}
-        </div>
+    <div className="min-w-0 space-y-6">
+      {/* F119 T145 (FR-039) — the member form's template picker, with the same
+          "this would overwrite what you typed" confirmation (FR-046). */}
+      <ComposeTemplatePickerField
+        templates={templates}
+        selectedId={selectedTemplateId}
+        hasContent={composeHasContent(subject, bodyHtml)}
+        onApply={applyTemplate}
+        disabled={submitting}
+      />
+      {/* F119 T148 (FR-050) — editor beside the 600 px email preview from `lg`
+          up, stacked below; the page supplies the 72 rem container. */}
+      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
+        <Card>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <MemberPicker
+                value={member}
+                onSelect={(m) => {
+                  setMember(m);
+                  setMemberError(null);
+                }}
+                label={t('memberLabel')}
+                placeholder={t('memberPlaceholder')}
+                searchFailedText={t('searchFailed')}
+                emptyText={t('noResults')}
+                loadingText={tLink('loading')}
+                disabled={submitting}
+                triggerRef={pickerRef}
+              />
+              {memberError !== null ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {memberError}
+                </p>
+              ) : null}
+              {memberMissingEmail ? (
+                // Inline warning: shown immediately on member selection when
+                // the picked member has no primary contact email. Prevents
+                // submission before the admin fills in the gap. `role="alert"`
+                // announces it to SR users without stealing focus (WCAG 4.1.3
+                // Status Messages).
+                <p role="alert" className="text-xs text-destructive">
+                  {t('missingContactEmailWarning')}
+                </p>
+              ) : null}
+            </div>
 
-        {/* SegmentPicker / SchedulePicker / SubmitButton are the shared
-            member-facing compose sub-components and intentionally render
-            their own `portal.broadcasts.compose.*` copy. Reusing them
-            (rather than forking admin variants) is the accepted trade-off
-            of the proxy-compose reuse approach — the admin-specific copy
-            lives only in the fields this form owns directly. */}
-        <SegmentPicker
-          value={segment}
-          onChange={(next) => {
-            setSegment(next);
-            if (fieldError?.field === 'segment') setFieldError(null);
-          }}
-          disabled={submitting}
-        />
-        {member !== null && !memberMissingEmail && proxySelfExclusionNotice !== null ? (
-          // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages: `role="status"`
-          // (implicit aria-live="polite") so SR users hear it without focus
-          // moving. Round 2 (UX H-1 + i18n H3): it FOLLOWS the segment picker
-          // and follows the segment — it used to render on member selection
-          // regardless of segment, above the picker, promising an exclusion
-          // that the custom list and the attendee segment do not apply.
-          // /code-review (the pass after #6): a segment kind this build does
-          // not recognise yields null and the notice is omitted, rather than
-          // falling to "{company} WILL receive this broadcast".
-          <p role="status" className="text-sm text-muted-foreground">
-            {t(proxySelfExclusionNotice, { company: member.companyName })}
-          </p>
-        ) : null}
+            {/* SegmentPicker / SchedulePicker / SubmitButton are the shared
+                member-facing compose sub-components and intentionally render
+                their own `portal.broadcasts.compose.*` copy. Reusing them
+                (rather than forking admin variants) is the accepted trade-off
+                of the proxy-compose reuse approach — the admin-specific copy
+                lives only in the fields this form owns directly. */}
+            <SegmentPicker
+              value={segment}
+              onChange={(next) => {
+                setSegment(next);
+                if (fieldError?.field === 'segment') setFieldError(null);
+              }}
+              disabled={submitting}
+            />
+            {member !== null &&
+            !memberMissingEmail &&
+            proxySelfExclusionNotice !== null ? (
+              // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages:
+              // `role="status"` (implicit aria-live="polite") so SR users hear
+              // it without focus moving. Round 2 (UX H-1 + i18n H3): it FOLLOWS
+              // the segment picker and follows the segment — it used to render
+              // on member selection regardless of segment, above the picker,
+              // promising an exclusion that the custom list and the attendee
+              // segment do not apply. /code-review (the pass after #6): a
+              // segment kind this build does not recognise yields null and the
+              // notice is omitted, rather than falling to "{company} WILL
+              // receive this broadcast".
+              <p role="status" className="text-sm text-muted-foreground">
+                {t(proxySelfExclusionNotice, { company: member.companyName })}
+              </p>
+            ) : null}
 
-        {fieldError?.field === 'segment' ? (
-          <p role="alert" className="text-xs text-destructive">
-            {fieldError.message}
-          </p>
-        ) : null}
-        {/* 108 PR-C T089 (FR-040): live count for the proxied member. */}
-        <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />
+            {fieldError?.field === 'segment' ? (
+              <p role="alert" className="text-xs text-destructive">
+                {fieldError.message}
+              </p>
+            ) : null}
+            {/* 108 PR-C T089 (FR-040): live count for the proxied member. */}
+            <RecipientCountLine
+              state={recipientCount}
+              onRetry={() => setCountRetry((n) => n + 1)}
+            />
 
-        {segment.kind === 'custom' ? (
-          <CustomListInput
-            value={customList}
-            onChange={setCustomList}
-            disabled={submitting}
-          />
-        ) : null}
+            {segment.kind === 'custom' ? (
+              <CustomListInput
+                value={customList}
+                onChange={setCustomList}
+                disabled={submitting}
+              />
+            ) : null}
 
-        <div className="space-y-2">
-          <Label htmlFor="proxy-broadcast-subject">{t('subjectLabel')}</Label>
-          <Input
-            ref={subjectRef}
-            id="proxy-broadcast-subject"
-            value={subject}
-            onChange={(e) => {
-              setSubject(e.target.value);
-              if (fieldError?.field === 'subject') setFieldError(null);
-            }}
-            maxLength={200}
-            disabled={submitting}
-            aria-invalid={fieldError?.field === 'subject' || undefined}
-            aria-describedby={
-              fieldError?.field === 'subject'
-                ? 'proxy-broadcast-subject-error'
-                : undefined
-            }
-          />
-          {fieldError?.field === 'subject' ? (
-            <p
-              id="proxy-broadcast-subject-error"
-              role="alert"
-              className="text-xs text-destructive"
+            <div className="space-y-2">
+              <Label htmlFor="proxy-broadcast-subject">
+                {t('subjectLabel')}
+              </Label>
+              <Input
+                ref={subjectRef}
+                id="proxy-broadcast-subject"
+                value={subject}
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                  if (fieldError?.field === 'subject') setFieldError(null);
+                }}
+                maxLength={200}
+                disabled={submitting}
+                aria-invalid={fieldError?.field === 'subject' || undefined}
+                aria-describedby={
+                  fieldError?.field === 'subject'
+                    ? 'proxy-broadcast-subject-error proxy-broadcast-subject-counter'
+                    : 'proxy-broadcast-subject-counter'
+                }
+              />
+              {fieldError?.field === 'subject' ? (
+                <p
+                  id="proxy-broadcast-subject-error"
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {fieldError.message}
+                </p>
+              ) : null}
+              {/* F119 T145 (FR-039) — the member form's subject counter. */}
+              <SubjectCounter
+                id="proxy-broadcast-subject-counter"
+                value={subject}
+              />
+            </div>
+
+            {/* F119 T144 (FR-048): `aria-invalid` + `aria-describedby` used to
+                live on THIS wrapper, which is not the control anyone focuses.
+                Both now travel into the editor as props, the way
+                `admin/template-form.tsx:283-286` already did it. The div keeps
+                `tabIndex={-1}` only so a server error can move focus here. */}
+            <div
+              ref={bodyContainerRef}
+              tabIndex={-1}
+              className="space-y-2 outline-none"
             >
-              {fieldError.message}
-            </p>
-          ) : null}
-        </div>
+              <Label id="proxy-broadcast-body-label">{t('bodyLabel')}</Label>
+              <TiptapEditor
+                key={editorSeed.nonce}
+                initialHtml={editorSeed.html}
+                invalid={bodyHasError}
+                {...(bodyHasError ? { describedById: BODY_ERROR_ID } : {})}
+                onChange={(next) => {
+                  setBodyHtml(next);
+                  if (fieldError?.field === 'body') setFieldError(null);
+                }}
+                disabled={submitting}
+                labelledById="proxy-broadcast-body-label"
+              />
+              {fieldError?.field === 'body' ? (
+                <p
+                  id={BODY_ERROR_ID}
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {fieldError.message}
+                </p>
+              ) : null}
+            </div>
 
-        <div
-          ref={bodyContainerRef}
-          tabIndex={-1}
-          className="space-y-2 outline-none"
-          aria-invalid={fieldError?.field === 'body' || undefined}
-          // WCAG 3.3.1: SR users hearing `aria-invalid` need the error
-          // reason programmatically associated. The error <p> below carries
-          // id="proxy-broadcast-body-error"; this `aria-describedby` wires
-          // the chain. Note: ideally the inner Tiptap `contenteditable`
-          // would also receive the describedby via `editorProps.attributes`
-          // but that requires a TiptapEditor prop addition; the wrapper-
-          // div-level association is what most SR pipelines resolve to
-          // anyway when `aria-invalid` is on the wrapper. Mirrors the
-          // accepted member compose-form compromise (compose-form.tsx).
-          aria-describedby={
-            fieldError?.field === 'body'
-              ? 'proxy-broadcast-body-error'
-              : undefined
-          }
-        >
-          <Label id="proxy-broadcast-body-label">{t('bodyLabel')}</Label>
-          <TiptapEditor
-            initialHtml={INITIAL_BODY_HTML}
-            onChange={(next) => {
-              setBodyHtml(next);
-              if (fieldError?.field === 'body') setFieldError(null);
-            }}
-            disabled={submitting}
-            labelledById="proxy-broadcast-body-label"
-          />
-          {fieldError?.field === 'body' ? (
-            <p
-              id="proxy-broadcast-body-error"
-              role="alert"
-              className="text-xs text-destructive"
-            >
-              {fieldError.message}
-            </p>
-          ) : null}
-        </div>
+            <SchedulePicker
+              value={scheduledFor}
+              onChange={setScheduledFor}
+              disabled={submitting}
+            />
 
-        <SchedulePicker
-          value={scheduledFor}
-          onChange={setScheduledFor}
-          disabled={submitting}
-        />
+            <div className="flex justify-end border-t pt-4">
+              <SubmitButton
+                disabled={submitDisabled}
+                submitting={submitting}
+                onClick={() => {
+                  void handleSubmit();
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
-        <PreviewPane
-          subject={subject}
-          bodyHtml={deferredBody}
-          endpoint="/api/admin/broadcasts/preview"
-          locale={locale}
-        />
-
-        <div className="flex justify-end border-t pt-4">
-          <SubmitButton
-            disabled={submitDisabled}
-            submitting={submitting}
-            onClick={() => {
-              void handleSubmit();
-            }}
+        <div className="min-w-0 lg:sticky lg:top-4">
+          <PreviewPane
+            subject={subject}
+            bodyHtml={deferredBody}
+            endpoint="/api/admin/broadcasts/preview"
+            locale={locale}
           />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
