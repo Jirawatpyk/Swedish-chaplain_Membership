@@ -487,7 +487,8 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   image ≤ 5 MB *(checklist default)*.
 - **FR-005**: Marketing MUST NOT be able to change the E-Blast's audience; the audience remains
   the one the member chose.
-- **FR-006**: Marketing MUST be able to attach an optional note to the member with each version.
+- **FR-006**: Marketing MUST be able to attach an optional note to the member with each version
+  (≤ 1,000 characters).
 - **FR-007**: Marketing MUST still be able to approve an E-Blast as submitted (no formatting, no
   member sign-off round) and to reject it with a reason, as today. On that path the history
   records "approved as submitted" with the staff user and time; no version beyond the member's
@@ -517,7 +518,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   approval MUST void that approval. "Content" means the subject and the body (including design
   blocks and images); the marketing note, the schedule and the brand chrome (logo, colour,
   postal address — FR-041c) are not content and do not void an approval *(checklist default)*.
-- **FR-012a**: The version the member approved MUST become the content the delivery path sends;
+- **FR-012a** *(the storage/DB half of FR-012 — FR-012 states the guarantee, FR-012a states the
+  mechanism that makes it enforceable; amend them together)*: The version the member approved MUST
+  become the content the delivery path sends;
   the delivery path MUST NOT read content from any record that could differ from the approved
   version. The database rule that today freezes a submitted E-Blast's subject, body, audience,
   custom recipients and send time MUST be amended — in the same migration that introduces the
@@ -562,7 +565,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-019**: Each E-Blast MUST show exactly one stage at any time, from: Draft · Awaiting
   marketing review · In design · Awaiting member approval · Changes requested by member ·
   Member approved — awaiting schedule · Scheduled · Sending · Sent · and the closed outcomes
-  (Rejected, Withdrawn/Cancelled, Expired — no member response, Failed). The entry condition,
+  (Rejected, Withdrawn/Cancelled, Expired — no member response, Failed) — plus a non-offered
+  *historical* bucket that carries the two retired statuses (`partially_sent`,
+  `partial_delivery_accepted`), which no filter and no chip offers. The entry condition,
   exit conditions and acting party of every stage are tabulated in `data-model.md` § State
   machine, which is normative for this list.
 - **FR-020**: An E-Blast in any in-progress stage MUST hold its place in the member's annual
@@ -609,9 +614,12 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   width the row shows member, subject, stage, whose turn and time in stage; round, proposed and
   confirmed times move to the detail *(checklist default)*.
 - **FR-027**: The dashboard MUST flag E-Blasts stalled in any stage where it is marketing's turn
-  for longer than the review target, or on the member for longer than the reminder threshold.
-  The flag MUST be conveyed by an icon and a text label, never by colour alone, and MUST be
-  available to assistive technology *(checklist default)*.
+  for longer than the review target of **48 hours**, or on the member for longer than the first
+  reminder threshold of **3 days**. Those two numbers are the single stalled threshold; the
+  existing 24-hour amber level on the queue stays a pre-warning and MUST NOT be counted as
+  stalled, labelled "Stalled", or announced as one. The flag MUST be conveyed by an icon and a
+  text label, never by colour alone, and MUST be available to assistive technology
+  *(checklist default)*.
 - **FR-028**: The dashboard MUST list upcoming scheduled sends in send-time order.
 - **FR-029**: For sent E-Blasts, staff MUST be able to see recipients, delivered, bounced, and
   complained counts.
@@ -741,9 +749,14 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-051**: Every E-Blast screen MUST pass the platform's UX checklist (`docs/ux-standards.md`
   § 15) and the existing automated WCAG 2.1 AA scan (axe-core rules, the `@a11y` e2e suite) with
   zero serious or critical findings before the trial starts; "every E-Blast screen" is the finite
-  list: portal compose, portal E-Blast detail/sign-off, portal benefits E-Blast tab, staff queue,
-  staff detail/format, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand
-  settings. Translation keys that no screen uses MUST be removed and components that are never
+  list of nine: portal compose, portal E-Blast detail/sign-off, portal benefits E-Blast tab, staff
+  queue, staff detail/format, staff compose-on-behalf, template list/new/edit, E-Blast settings,
+  Brand settings. **The pass is taken where each screen is built**: seven of the nine exist in the
+  writing-tool/screen-standard delivery and are gated there; the **portal detail/sign-off compare
+  view** and the **staff detail/format surface** are built with the approval round and take the
+  same pass — the same checklist and the same scan, zero serious or critical — in that delivery
+  instead. No screen ships without its pass, and no pass is deferred past the delivery that builds
+  the screen. Translation keys that no screen uses MUST be removed and components that are never
   shown MUST be wired or deleted *(checklist default)*.
 
 ### Key Entities
@@ -781,7 +794,8 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   company's user. `manager` can read versions, decisions and history but cannot format, send a
   test copy, confirm a schedule or open Brand settings. New member writes (approve, request
   changes, withdraw) are rate-limited per user like the existing E-Blast actions (60 per minute);
-  test copies at 10 per hour *(checklist default)*.
+  test copies at 10 per hour; preview renders at 30 per minute per actor — an amplification guard
+  on a server-side render, not a workflow limit *(checklist default)*.
 - **Tenant scope**: versions, member decisions, feedback text, and notifications are all
   tenant-scoped. Nothing about one tenant's E-Blasts may be visible to another tenant; within a
   tenant, one member company must never see another's E-Blasts, versions, or feedback (both
@@ -818,9 +832,14 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   user-supplied address.
 - **Money & tax**: N/A — no invoice, payment, or tax document is created or changed. The annual
   E-Blast allowance is a benefit entitlement, not a monetary amount (rules in FR-020).
-- **Feature flag / kill-switch**: `FEATURE_EBLAST_MEMBER_APPROVAL`, default OFF, governs the
-  approval round, its notifications and the dashboard stages. With it off, no new approval action
-  is offered and today's approve/reject flow is unchanged. **Not behind the flag** (live for
+- **Feature flag / kill-switch**: `FEATURE_EBLAST_MEMBER_APPROVAL`, default OFF, gates **entry**
+  into the approval round — and only entry. With it off, the single action that starts a formatted
+  version is not offered, so no E-Blast can enter a new stage and today's approve/reject flow is
+  unchanged. It deliberately does **not** gate the exits: an E-Blast already in a new stage when
+  the flag goes off stays completable and cancellable (FR-034), which means its hand-off
+  notifications, its reminders, the day-23 warning and the day-30 expiry all keep running for that
+  row, and the dashboard keeps offering a stage's chip while rows exist in it. Gating those would
+  strand in-flight E-Blasts, which FR-034 forbids. **Not behind the flag** (live for
   everyone on merge, by design): the writing-tool upgrade (US3) and the screen fixes (US6) — they
   improve today's flow and carry no member-approval semantics; a broken design block would be
   rolled back by deploy, so each block ships only with its preview and email rendering tested

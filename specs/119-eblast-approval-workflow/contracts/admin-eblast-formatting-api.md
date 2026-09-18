@@ -395,6 +395,12 @@ forgotten.
   **and** again at `…/version/send` (FR-004).
 - **Re-send unchanged content**: sending a version byte-identical to the previous round succeeds and
   becomes round N+1 (FR-011).
+- **Audience is not marketing's to change (FR-005)**: a `PATCH …/version` and a `POST …/version/send`
+  carrying `segmentType` / `segmentParams` / `customRecipientEmails` leave
+  `broadcasts.segment_type`, `segment_params` and `custom_recipient_emails` **unchanged** — the
+  fields are not in the accepted body and the DB trigger refuses them on every post-`draft`
+  transition. Asserted directly, because "the schema has no field for it" is a property of today's
+  zod schema, not a guarantee.
 - **Approval is not voided by**: a brand `PATCH`, a schedule `PATCH` in any mode but `cancel`, or a
   `note_to_member`-only change — `approved_version_id` is unchanged in each (FR-012).
 - **Brand**: `#f5f5f5` → 422 `colour_contrast` with the computed ratio and the stored colour

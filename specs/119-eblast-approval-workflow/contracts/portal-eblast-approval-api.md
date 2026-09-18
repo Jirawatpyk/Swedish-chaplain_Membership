@@ -237,6 +237,16 @@ FR-049 — the **subject and body** of the E-Blast (the page renders no body tod
 `portal/broadcasts/[id]/page.tsx`). While the broadcast is awaiting the member, the body shown is
 the latest **sent** version; otherwise it is the record's own content.
 
+**This widening lands in two PRs** (plan Amendment 5), because only half of it can be built in PR-1:
+
+| field | PR | why |
+|---|---|---|
+| `subject`, `body` (from the broadcast record's own content) | **PR-1**, task T141 | FR-049 is a screen-standard fix; it needs no new column and no version row |
+| `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt`, and "the body is the latest **sent** version while awaiting the member" | **PR-2**, task T141a | every one of these reads a `0305` column (`proposed_send_at`, `current_round`, `stage_entered_at`), the `broadcast_versions` table, or the Domain `stageOf`/`turnOf` maps (T052) — none of which exists in PR-1 |
+
+A PR-1 implementation of the second row is not merely early, it does not compile: the columns and
+the table are created by migration `0305`, which ships with PR-2.
+
 ---
 
 ## Page contract — `/portal/broadcasts/[id]`

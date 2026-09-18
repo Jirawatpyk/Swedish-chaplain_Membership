@@ -36,9 +36,12 @@ time in stage** only; **round, proposed and confirmed send times move to the det
 No horizontal scroll and no hidden-column menu.
 
 **Stalled flag (FR-027)**: one comparison against `stage_entered_at` — marketing-held stages
-(`submitted`, `in_design`, `changes_requested`, `member_approved`) at the existing 24 h / **48 h**
-review target (`SLA_AMBER_HOURS` / `SLA_RED_HOURS`, `queue-table.tsx:97-98`); member-held
-(`awaiting_member_approval`) at the **3-day** reminder threshold. Same badge struct, so label and
+(`submitted`, `in_design`, `changes_requested`, `member_approved`) at the **48 h** review target
+(`SLA_RED_HOURS`, `queue-table.tsx:97-98`); member-held (`awaiting_member_approval`) at the
+**3-day** first-reminder threshold. **Those two numbers are the whole of "stalled".** The existing
+24 h `SLA_AMBER_HOURS` level keeps rendering as the pre-warning it already is, but it is **not**
+stalled: it is never counted as stalled, never labelled "Stalled", and never announced as one
+(FR-027). Same badge struct, so label and
 variant cannot drift apart. The flag is conveyed by an **icon *and* a text label** — never by colour
 alone — and is **available to assistive technology**: the icon is `aria-hidden` and the badge carries
 the visible text, so a screen reader reads "Stalled — 3 days" rather than nothing (FR-027). No
@@ -118,7 +121,11 @@ a refused permission reuses `permission_denied`.
 document is produced, so none is a 10-year event.
 
 **The five places** (CLAUDE.md § Gotchas, F7 flavour): `F7_AUDIT_EVENT_TYPES`
-(`audit-port.ts:50-178`, **55 → 69**, with the static assert at `:234` updated in the same edit) ·
+(`audit-port.ts:50-178`, **55 → 69**, with the static assert at `:234` **and** the assert's own
+docblock at `:180-192` — which today still reads "the tuple length is 60" and itself says to update
+"the tuple, this literal, and the header taxonomy" — **and** the file-header taxonomy comment, all
+updated in the same edit; a stale count comment beside a self-checking assert is how the next
+author gets the number wrong) ·
 `DB_ONLY_AUDIT_EVENT_TYPES` (`auth/infrastructure/db/schema.ts:522-678` — every `broadcast_*` value
 lives there, not in the pgEnum tuple) · the migration's one-per-line `ALTER TYPE … ADD VALUE
 IF NOT EXISTS` · `audit.eventType.<name>` labels in EN/TH/SV with Thai script · and
@@ -326,7 +333,11 @@ pruneOk: true, approvalLifecycleOk: true }`.
   `null` for `draft`, `approved`, `sending` and all five closed statuses (no "system" value is ever
   produced); `round` does not move on a withdrawn approval and does move on the next send; a
   marketing-held row older than 48 h and a member-held row older than 3 days are both flagged, with
-  the stalled badge carrying a text label the accessible name exposes; the upcoming preset orders by
+  the stalled badge carrying a text label the accessible name exposes, **while a marketing-held row
+  at 30 h (past 24 h amber, short of the 48 h target) is NOT flagged, NOT counted and NOT
+  announced as stalled**; a **proxy-submitted** E-Blast (staff submitted on the member's behalf)
+  appears in the list with the same columns as a member-submitted one, so the dashboard covers
+  every E-Blast that goes through the platform (FR-031); the upcoming preset orders by
   `scheduled_for`; a `manager` gets the full list and no action controls; at < md the card renders
   member/subject/stage/turn/time only.
 - The cron block: one reminder per threshold across a 40-day simulated clock (injected

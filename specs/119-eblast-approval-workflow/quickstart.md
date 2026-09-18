@@ -303,7 +303,7 @@ production deploy on this repo (`vercel.json` has no `ignoreCommand`).
 |---|---|
 | The **byte-identical wrapper snapshot** — with no brand colour, no postal address, no logo on file and no design block in the body, `renderBroadcastHtml` output equals today's byte for byte | PR-1 changes the wrapper every live SweCham send uses. This is now a **spec requirement** (§ Feature flag: "that snapshot test is a merge blocker for the unflagged tool upgrade"), not only a plan amendment. Without it the tool upgrade is an unreviewable change to production email |
 | The **`docs/ux-standards.md` § 18.2 container exception** for the two-column compose width, written **in this same change** | FR-050 requires the departure from the form container tier to be recorded, not discovered later |
-| The **nine-screen FR-051 pass**: `docs/ux-standards.md` § 15 checklist + the `@a11y` axe suite, zero serious/critical, dead i18n keys removed, unshown components wired or deleted | FR-051 names the finite list; a screen missed here is a screen SweCham tests |
+| The **seven-screen FR-051 pass**: `docs/ux-standards.md` § 15 checklist + the `@a11y` axe suite, zero serious/critical, dead i18n keys removed, unshown components wired or deleted — on the screens **PR-1 builds**: portal compose, portal detail (body), portal benefits E-Blast tab, staff queue, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand settings | FR-051 names a finite list of nine and requires the pass **where each screen is built** (plan Amendment 4); a screen missed here is a screen SweCham tests. The remaining two — portal sign-off compare view and staff detail/format — do not exist yet and are gated in PR-2 (§ 3.2) |
 | SC-011 element parity, with its positive control | The shared sanitiser policy replaces three hand-maintained configs; the parity test is what makes "nothing is stripped" a property rather than a promise |
 | `@tiptap/extension-image` re-pinned `^3.22.5` → `3.22.5` | A caret on an editor extension means a patch release can change the serialised HTML the sanitiser and the block parser both key on |
 | e2e `@eblast` + `@a11y` green on chromium **and** mobile-safari | The compose layout changes at two breakpoints |
@@ -315,7 +315,8 @@ until step 3.3.
 
 ### 3.2 PR-2 — the approval round (ships DARK)
 
-1. Merge → prod auto-migrates `0304` and `0305` on deploy (`vercel-build`). Run
+1. Merge → prod auto-migrates **`0305`** on deploy (`vercel-build`); `0304` already applied with
+   PR-1, so this deploy adds only the `0305` DDL. Run
    `pnpm db:verify:prod` and the `pg_proc` checks from § 0 against prod, read-only.
 2. **Do not set `FEATURE_EBLAST_MEMBER_APPROVAL` yet.** Setting the env var is the deploy and the
    flip in one action.
@@ -344,6 +345,11 @@ until step 3.3.
      under the existing outbox retention.
 
    This is a **precondition** of step 5, not a follow-up.
+4a. **Pre-merge gate, PR-2**: the FR-051 pass on the **two approval screens** PR-2 builds — the
+   portal detail/sign-off compare view and the staff detail/format surface — `docs/ux-standards.md`
+   § 15 checklist **and** the `@a11y` axe scan at 320 px, zero serious or critical (task T086a).
+   It is the same gate PR-1 applied to its seven screens (plan Amendment 4); neither PR ships a
+   screen without its pass.
 5. Set `FEATURE_EBLAST_MEMBER_APPROVAL=true` in Vercel only when ready to redeploy immediately and
    only after step 4. From that moment "Start formatted version" is offered on submitted E-Blasts —
    **including the ones already sitting in "Awaiting marketing review" when the flag went on**. They

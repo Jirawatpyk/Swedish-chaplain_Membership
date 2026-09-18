@@ -245,6 +245,13 @@ produced, so none of the fourteen is a 10-year event.
 `default:` arm returns `null` (`:543`), which retries for ~16 h before permanently failing, so an
 arm-less type is a silent outage. Also added to `enum-migration-guard.ts`.
 
+**Exactly five — there is no sixth.** The test copy (FR-037) is **not** an outbox type: research V4
+is resolved and it sends synchronously through the shared transactional sender
+(`src/modules/auth/infrastructure/email/resend-client.ts:148`) behind `TestCopyMailerPort`. That
+matters to the migration split: the test copy ships in **PR-1**, whose migration `0304` carries no
+`notification_type` change at all, so a test copy that needed an enum value would have had no
+migration to live in.
+
 ## 8. Stages, statuses and the state machine
 
 ### 8.1 Stage ↔ status (FR-019) — `stageOf(status)`, pure Domain
@@ -477,8 +484,8 @@ notifications_outbox ← queued per hand-off, ids only (research R14)
 |---|---|---|
 | subject | 200 chars | `broadcasts_subject_length` (`schema.ts:278-281`), mirrored on versions. Checked at **every save and again at send-to-member** (FR-004) |
 | body HTML | 200 KB (`octet_length`), **including design-block markup** | `broadcasts_body_html_size` (`:284-287`), mirrored on versions; same two checkpoints (FR-004) |
-| marketing's note to the member | 1,000 chars | new CHECK on `broadcast_versions.note_to_member` (FR-006 sets no bound) |
-| member's approval note | ≤ 500 chars, optional | FR-009; the `decision = 'approved'` arm of the decisions CHECK |
+| marketing's note to the member | 1,000 chars | FR-006; new CHECK on `broadcast_versions.note_to_member` |
+| member's approval note | **null, or 1–500 chars** (optional, but never an empty string) | FR-009; the `decision = 'approved'` arm of the decisions CHECK. The Domain `reasonBounds('approved')` must say *null or 1–500*, not *0–500* — a 0-length note would pass Domain and be refused by the CHECK |
 | member's changes-requested / withdrawal reason | 1–2,000 chars, **mandatory** | FR-010, FR-015a; the other arm of the same CHECK |
 | brand postal address | 300 chars, line breaks allowed | FR-041c; new CHECK |
 | brand primary colour | `#RRGGBB`, contrast ≥ 4.5:1 vs white; **email only** | CHECK (format) + Domain (contrast) |
@@ -488,7 +495,7 @@ notifications_outbox ← queued per hand-off, ids only (research R14)
 | banner image | the image rules + a required description; full 600 px width; placeable anywhere | FR-041 |
 | member writes (approve / request changes / withdraw) | 60 per minute per user | spec § Roles — the existing E-Blast action bucket |
 | test copies | **10 per user per hour** (members and staff alike) | FR-037, spec § Roles |
-| preview renders | 30 per minute per actor | R11 — a render amplifier guard, not a spec limit |
+| preview renders | 30 per minute per actor | R11 + spec § Roles — an amplification guard on a server-side render, not a workflow limit |
 | versions per broadcast | no cap (FR: "no hard cap"); the round number is visible so a long negotiation is noticed | spec § Edge Cases |
 | reminders | exactly one per threshold; day 3, day 7, day 23 warning, day 30 close | FR-022 / FR-022a, `member_reminder_stage` |
 | recipients per tick | 500 unless `FEATURE_F7_IMPORT_AUDIENCE` is ON | unchanged (`DELIVERABLE_RECIPIENTS_PER_TICK`) |

@@ -232,10 +232,13 @@ substitute) in § Complexity Tracking.*
       subject, body, note or reason; failures carry `err: errKind(e)`; every fault arm names itself
       `M119.<route>.<arm>`. Metrics: 4 gauges + 5 counters + 2 histograms (contracts § 3), the
       gauges emitted from the existing broadcasts half of
-      `/api/internal/metrics/broadcasts-gauges` (no new cron); 2 alerts bound to the
-      awaiting-member oldest age (7 d warning / 14 d page, both inside the 30-day expiry clock).
+      `/api/internal/metrics/broadcasts-gauges` (no new cron); **3** alerts — two bound to the
+      awaiting-member oldest age (7 d warning / 14 d page, both inside the 30-day expiry clock)
+      and one on `broadcasts_no_marketing_recipient_total > 0` (page), matching
+      `contracts/dashboard-and-notifications.md` § 4.3.
       OTel spans `broadcasts.version.send`, `broadcasts.member.decide`,
-      `broadcasts.schedule.confirm`, attributes limited to ids, stage and round.
+      `broadcasts.schedule.confirm`, `broadcasts.preview.render` (T122, contracts § 4.4),
+      attributes limited to ids, stage and round.
       `docs/observability.md` § 28 (the file ends at § 27, line 2205).
 - [x] **VIII. Reliability** — Error paths enumerated per route in `contracts/` (403 / 404 / 409 /
       413 / 415 / 422 / 429 / 503 arms). Transactions: each state change is ONE
@@ -285,6 +288,8 @@ specs/119-eblast-approval-workflow/
 │   ├── admin-eblast-formatting-api.md        # staff: start/save/send version, confirm schedule, images, brand
 │   └── dashboard-and-notifications.md        # queue filters/columns, gauges, notifications, audit, cron
 ├── quickstart.md                             # validation walkthroughs, migration steps, flag matrix, UAT
+├── uat-walkthrough-en.md                     # FR-035 — SweCham trial script, EN (written in PR-3, T153)
+├── uat-walkthrough-th.md                     # FR-035 — SweCham trial script, TH (written in PR-3, T153)
 └── tasks.md                                  # /speckit.tasks output — NOT created here
 ```
 
@@ -320,7 +325,8 @@ src/modules/broadcasts/
 │   │   ├── brand-settings-repo.ts               # new
 │   │   ├── marketing-directory-port.ts          # new — active users holding broadcasts.write, minus admin tiers
 │   │   ├── tenant-logo-url-port.ts              # new — READ-only public URL of the invoice logo
-│   │   ├── test-copy-mailer-port.ts             # new — synchronous, non-durable (V4)
+│   │   ├── test-copy-mailer-port.ts             # new — synchronous, non-durable. V4 RESOLVED: over the shared
+│   │   │                                           #   transactional sender (auth/…/email/resend-client.ts); NO 6th notification_type
 │   │   └── image-storage-port.ts                # + delete(key|url); + resolve for the last-reference rule
 │   └── use-cases/
 │       ├── approval/
@@ -408,7 +414,7 @@ src/components/broadcast/
 
 src/config/nav.ts                                # Settings → "E-Blast brand"; marketing count badge (FR-023)
 src/app/(staff)/admin/settings/page.tsx          # + CATEGORIES card for the Brand page
-src/i18n/messages/{en,th,sv}.json                # stage labels ×2 namespaces, 12 audit labels, 5 emails, UI
+src/i18n/messages/{en,th,sv}.json                # stage labels ×2 namespaces, 14 audit labels, 5 emails, UI
 drizzle/migrations/0304_eblast_images_and_brand.sql          + meta/_journal.json (idx 305)
 drizzle/migrations/0305_eblast_member_approval.sql           + meta/_journal.json (idx 306)
 scripts/check-multi-tenant-ready.ts              # SCOPED_TABLES += 4 (3 new + tenant_broadcast_settings)
@@ -452,9 +458,9 @@ The spec's § Assumptions proposes tool + fixes first, then the approval round, 
 
 | PR | Scope | Flag | Migration | Rationale |
 |---|---|---|---|---|
-| **PR-1** — Writing tool + screen standard | US3 + US6. Shared sanitiser policy; toolbar (headings, quote, divider, image, CTA, banner) with roving tabindex and no italic on Thai; required alt text; real preview (route + wrapper + inline empty state + dialog with desktop/phone widths); design blocks + the post-sanitise renderer; brand settings page, columns and the read-only logo URL; staff + template image routes, `broadcast_images` and its lifecycle; member-route draft-ownership check; proxy-form parity; template-picker confirmation; dirty-state fix; `error.tsx` ×5; dead i18n removal; compose layout | **none** (live on merge, spec § Feature flag) | `0304` | The approval round is pointless without the tool (spec § Clarifications 2026-09-18), and SweCham must not test the trial on the defects the audit found. It is also the largest independent value: every E-Blast improves immediately. |
-| **PR-2** — Approval round | US1 + US2 + US5. Status widening + the full shadow sweep; `broadcast_versions` + `broadcast_member_decisions`; the FR-012a migration (enum, immutability trigger, state machine, `proposed_send_at`, the reservation and cascade sets); staff format/send routes; member sign-off screen and routes; schedule confirm; 12 audit events; 5 notification types + dispatcher arms + the marketing roster; reminders / warning / expiry in the daily cron; erasure reach | `FEATURE_EBLAST_MEMBER_APPROVAL` **gates entry only** | `0305` | US1 is not shippable without US2 (spec's own reasoning), and US5's hand-off notifications are what make a two-sided flow not stall. |
-| **PR-3** — Dashboard + trial | US4 + US7. Stage chips with counts, whose-turn / time-in-stage / round columns, stalled flag, upcoming-sends preset, delivery results; the status→**stage** vocabulary relabel; nav count (FR-023); 4 gauges + 2 alerts; `docs/observability.md` § 28; the runbook; the EN + TH UAT walkthrough (FR-035) | dashboard stage chips follow the flag **or** the presence of rows | none | The dashboard reports on the stages PR-2 creates; it is P2 precisely because it is valuable but not on the critical path. |
+| **PR-1** — Writing tool + screen standard | US3 + US6. Shared sanitiser policy; toolbar (headings, quote, divider, image, CTA, banner) with roving tabindex and no italic on Thai; required alt text; real preview (route + wrapper + inline empty state + dialog with desktop/phone widths); design blocks + the post-sanitise renderer; brand settings page, columns and the read-only logo URL; staff + template image routes, `broadcast_images` and its lifecycle; member-route draft-ownership check; proxy-form parity; template-picker confirmation; dirty-state fix; `error.tsx` ×5; dead i18n removal; compose layout; the member detail **subject + body** (the FR-049 half that needs no `0305` column); the FR-051 pass on the **seven screens PR-1 builds** (Amendment 4) | **none** (live on merge, spec § Feature flag) | `0304` | The approval round is pointless without the tool (spec § Clarifications 2026-09-18), and SweCham must not test the trial on the defects the audit found. It is also the largest independent value: every E-Blast improves immediately. |
+| **PR-2** — Approval round | US1 + US2 + US5. Status widening + the full shadow sweep; `broadcast_versions` + `broadcast_member_decisions`; the FR-012a migration (enum, immutability trigger, state machine, `proposed_send_at`, the reservation and cascade sets); staff format/send routes; member sign-off screen and routes; schedule confirm; **10** audit events (the other 4 landed with `0304` in PR-1, so 14 in all); 5 notification types + dispatcher arms + the 5 email templates × 3 locales + the marketing roster; reminders / warning / expiry in the daily cron; erasure reach; the FR-051 pass on the **two approval screens** (portal sign-off, staff format) | `FEATURE_EBLAST_MEMBER_APPROVAL` **gates entry only** | `0305` | US1 is not shippable without US2 (spec's own reasoning), and US5's hand-off notifications are what make a two-sided flow not stall. |
+| **PR-3** — Dashboard + trial | US4 + US7. Stage chips with counts, whose-turn / time-in-stage / round columns, stalled flag, upcoming-sends preset, delivery results; the status→**stage** vocabulary relabel; nav count (FR-023); 4 gauges + **3** alerts; `docs/observability.md` § 28; the runbook; the EN + TH UAT walkthrough (FR-035) | dashboard stage chips follow the flag **or** the presence of rows | none | The dashboard reports on the stages PR-2 creates; it is P2 precisely because it is valuable but not on the critical path. |
 
 **Amendment 1 — the stage-vocabulary relabel moves to PR-3.** `approved` is today labelled
 "Approved" in both status namespaces; FR-019 names that stage **Scheduled**. Relabelling in PR-1
@@ -472,9 +478,27 @@ the delivery it lands.
 
 **Amendment 3 — PR-1 also lands two docs changes.** FR-050 requires the compose width's departure
 from the form container tier to be recorded as an exception in `docs/ux-standards.md` § 18.2 **in the
-same change**, and FR-051 requires the nine-screen UX/a11y pass (`docs/ux-standards.md` § 15 +
+same change**, and FR-051 requires the UX/a11y pass (`docs/ux-standards.md` § 15 +
 the `@a11y` axe suite, dead i18n keys removed, unshown components wired or deleted) before the trial.
 Both are PR-1 merge gates, listed in `quickstart.md` § 3.1.
+
+**Amendment 4 — the FR-051 pass is taken where each screen is built: seven screens in PR-1, two in
+PR-2.** FR-051 names nine screens, but two of them — the **portal E-Blast detail/sign-off compare
+view** (T086) and the **staff detail/format surface** (T063) — do not exist until PR-2. Gating PR-1
+on scanning screens PR-1 does not build is an unsatisfiable merge gate. PR-1's gate is therefore the
+**seven** screens it builds (portal compose, portal detail *body*, portal benefits E-Blast tab,
+staff queue, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand settings —
+counted as seven surfaces with the template screens as one), and PR-2 carries the identical pass —
+same § 15 checklist, same axe scan, zero serious or critical — on the two approval screens (T086a).
+No screen ships without its pass; spec § FR-051 now states this split, so it is owned by the spec.
+
+**Amendment 5 — FR-049 splits across PR-1 and PR-2.** The member detail page must show the E-Blast's
+subject and body (FR-049), which PR-1 can do from the record's own content. The rest of the widened
+`GET /api/broadcasts/[id]` — `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`,
+`expiresAt`, and "the body shown is the latest **sent** version while awaiting the member" — depends
+on `0305`'s columns, `broadcast_versions` and the Domain `stageOf`/`turnOf` maps, all of which are
+PR-2. T141 therefore carries only the subject/body half in PR-1 and **T141a** carries the workflow
+fields in PR-2, beside T087.
 
 ## Complexity Tracking
 

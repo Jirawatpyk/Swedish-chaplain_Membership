@@ -792,10 +792,17 @@ outbox would either put the full rendered body into `context_data` — content t
 cannot reach — or require a read-at-send path for a draft that may not exist by then. It also must
 not touch the Resend **Broadcasts** surface at all: that surface has its own suppression list and
 reputation pool, and a test send must never enter it.
-**V4**: confirm before tasks which existing transactional Resend client is reusable for a synchronous
-send (the dispatcher holds one at `outbox-dispatch/route.ts:1161-1178`); if none is cleanly
-reusable outside the dispatcher, fall back to a sixth `notification_type` with a dispatcher arm that
-re-renders from the version id, and accept the ≤1-minute delay.
+**V4 — RESOLVED (2026-09-18, maintainer)**: the shared transactional sender is
+`emailSender` (`EmailSender`), exported from
+`src/modules/auth/infrastructure/email/resend-client.ts:148` and already imported by the outbox
+dispatcher at `src/app/api/cron/outbox-dispatch/route.ts:54` — it is a module-level singleton, not
+dispatcher-internal, so it is reusable outside it. `TestCopyMailerPort` is implemented by a
+broadcasts Infrastructure adapter over that sender (the port keeps Application free of the Resend
+type), sends **synchronously** so the result is reported in-band, and is rate-limited 10 per user
+per hour. **The sixth `notification_type` fallback is withdrawn — it is not built**, so the test
+copy creates no outbox row, adds no enum value, and `notification_type` stays at +5 in `0305`.
+This also keeps the test copy out of `0304`'s scope entirely: PR-1 ships it with no enum change
+at all.
 
 ## R24 — Audit events: fourteen, in the DB-only list, with the `broadcast_` prefix
 
@@ -863,7 +870,9 @@ carry `related_member_id` so a staff or system action does not refresh the membe
   `broadcast_versions` / `broadcast_member_decisions` the way the two F114 arms do
   (`outbox-dispatch/route.ts:415-542` build a `TenantContext` from `row.tenantId` after a slug-shape
   guard and let each repo open its own `runInTenant`).
-- **V4** — R23: which transactional Resend client is reusable for the synchronous test copy.
+- **V4** — **RESOLVED, no task action needed**: the test copy goes through `emailSender`
+  (`src/modules/auth/infrastructure/email/resend-client.ts:148`, already used by
+  `outbox-dispatch/route.ts:54`) behind `TestCopyMailerPort`. No sixth `notification_type`. See R23.
 - **V5** — re-read `drizzle/migrations/meta/_journal.json` immediately before writing `0304`: today
   the tail is `idx: 304` / `when: 1798543600000` / `0303_member_change_requests_reason_partial_ck`,
   so `0304` is `idx: 305` / `1798543700000` and `0305` is `idx: 306` / `1798543800000` — but a
