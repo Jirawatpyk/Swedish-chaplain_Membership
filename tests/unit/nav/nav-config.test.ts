@@ -105,7 +105,7 @@ describe('staffNavConfig', () => {
     expect(erasureLog.guard?.key).toBe('members.erasure_log_read');
   });
 
-  it('section 6 is Settings with Invoice + RenewalSchedules + MemberChanges + BroadcastSettings + EventCreate', () => {
+  it('section 6 is Settings with Invoice + RenewalSchedules + MemberChanges + BroadcastSettings + BroadcastBrand + EventCreate', () => {
     // R7 consolidation removed the Fee Configuration page (VAT + currency
     // + registration fee live in Invoice Settings). F8 added Reminder
     // schedules; F6 added the EventCreate setup wizard; F7.1a US2 added
@@ -113,7 +113,9 @@ describe('staffNavConfig', () => {
     // broadcasts. The Settings header is unchanged by the 5-group regroup.
     const settingsSection = staffNavConfig.sections[6]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
-    expect(settingsSection.items).toHaveLength(5);
+    // F119 T029: +1 — the chamber brand page, directly under its allow-list
+    // sibling.
+    expect(settingsSection.items).toHaveLength(6);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
     const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
     expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
@@ -155,12 +157,25 @@ describe('staffNavConfig', () => {
         (item as NavItem).href === '/admin/settings/broadcasts',
     );
     expect(broadcastsByHref?.titleKey).toBe('nav.staff.settingsBroadcasts');
+    // …and EXACT, not the prefix form: `/admin/settings/broadcasts/brand` is a
+    // sibling entry, and `nav-item.tsx` evaluates each item independently, so a
+    // prefix pattern here would light both rows on the brand URL.
+    expect(broadcastsByHref?.activePattern).toBe('exact:/admin/settings/broadcasts');
+
+    // F119 T029 — the chamber brand page, same key + flag as its sibling.
+    expect(settingsSection.items[4]!.titleKey).toBe(
+      'nav.staff.settingsBroadcastsBrand',
+    );
+    const brandItem = settingsSection.items[4]! as NavItem;
+    expect(brandItem.href).toBe('/admin/settings/broadcasts/brand');
+    expect(brandItem.guard?.key).toBe('settings.broadcasts');
+    expect(brandItem.visibilityFlag).toBe('broadcastsEnabled');
 
     // F6 Phase 5 — integration setup wizard entry.
-    expect(settingsSection.items[4]!.titleKey).toBe(
+    expect(settingsSection.items[5]!.titleKey).toBe(
       'nav.staff.settingsIntegrationEventcreate',
     );
-    const integrationItem = settingsSection.items[4]! as NavItem;
+    const integrationItem = settingsSection.items[5]! as NavItem;
     expect(integrationItem.href).toBe(
       '/admin/settings/integrations/eventcreate',
     );

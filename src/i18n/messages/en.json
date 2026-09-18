@@ -2009,11 +2009,64 @@
       "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
     },
     "settings": {
+      "broadcasts": {
+        "brand": {
+          "pageTitle": "E-Blast brand",
+          "pageDescription": "The logo, colour and postal address applied to every e-blast.",
+          "colour": {
+            "heading": "Brand colour",
+            "description": "Used for buttons and headings in e-blasts. It is never applied to the admin portal or the member portal.",
+            "label": "Primary colour",
+            "pickerLabel": "Colour picker",
+            "hint": "Six hex digits, for example #10487a.",
+            "defaultHint": "Platform default: {color}",
+            "contrastPass": "Contrast with white text: {ratio}:1 — meets AA",
+            "contrastFail": "Contrast with white text: {ratio}:1 — below {required}:1",
+            "contrastFailHelp": "Saving is unavailable until the colour reaches {required}:1 with white text.",
+            "invalid": "Enter a colour as #RRGGBB."
+          },
+          "address": {
+            "heading": "Postal address",
+            "description": "Shown in the e-blast footer, where a physical address is required.",
+            "label": "Chamber postal address",
+            "placeholder": "Street, city, postal code",
+            "counter": "{count} of {max} characters",
+            "missing": "No postal address on file. E-blasts go out without a footer address until one is saved.",
+            "tooLong": "Use at most {max} characters."
+          },
+          "logo": {
+            "heading": "Logo",
+            "description": "Shown at the top of every e-blast.",
+            "source": "From invoice settings",
+            "manage": "Manage the logo",
+            "askAdministrator": "Ask an administrator to change it.",
+            "none": "No logo on file.",
+            "alt": "Chamber logo"
+          },
+          "actions": {
+            "save": "Save brand settings",
+            "saving": "Saving…"
+          },
+          "toast": {
+            "saved": "Brand settings saved."
+          },
+          "errors": {
+            "colourContrast": "White text on this colour reaches only {ratio}:1. WCAG AA needs {required}:1.",
+            "validation": "Check the highlighted fields and try again.",
+            "rateLimited": "Too many changes. Try again in {seconds} seconds.",
+            "generic": "The brand settings could not be saved. Try again."
+          }
+        }
+      },
       "index": {
         "title": "Settings",
         "subtitle": "Tenant-wide configuration for your chamber, grouped by feature.",
         "empty": "No settings are available to your role.",
         "categories": {
+          "eblastBrand": {
+            "title": "E-Blast brand",
+            "description": "Logo, colour and postal address applied to every e-blast."
+          },
           "invoicing": {
             "title": "Invoice settings",
             "description": "VAT, currency, registration fee, and document defaults for invoices, receipts, and credit notes."
@@ -5459,6 +5512,7 @@
       "settingsRenewalSchedules": "Reminder schedules",
       "settingsMemberChanges": "Member change approval",
       "settingsBroadcasts": "Broadcast settings",
+      "settingsBroadcastsBrand": "E-Blast brand",
       "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
         "main": "Main",
@@ -5498,6 +5552,7 @@
     }
   },
   "breadcrumb": {
+    "brand": "Brand",
     "admin": "Admin",
     "dashboard": "Dashboard",
     "users": "Users",

@@ -66,3 +66,9 @@ describe('meetsAaOnWhiteText (FR-041b — 4.5:1 against #ffffff)', () => {
     expect(ratio).toBe(Math.round(ratio * 100) / 100);
   });
 });
+
+describe('input tolerance', () => {
+  it('accepts the hex with or without the leading hash', () => {
+    expect(relativeLuminance('ffffff')).toBeCloseTo(relativeLuminance('#ffffff'), 10);
+  });
+});

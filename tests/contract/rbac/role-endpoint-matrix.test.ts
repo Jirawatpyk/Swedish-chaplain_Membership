@@ -29,8 +29,8 @@ import type { Role } from '@/modules/auth/domain/role';
 const allowed = (role: Role, s: ObservedSurface): boolean => hasPermission(role, s.key);
 
 describe('T015 baseline integrity', () => {
-  it('captured 50 guarded pages + 1 exemption = the pinned 51-page inventory (108: +/admin/marketing/audience; F114: +2 change-request pages + the member-changes settings card)', () => {
-    expect(OBSERVED_PAGES).toHaveLength(50);
+  it('captured 51 guarded pages + 1 exemption = the pinned 52-page inventory (108: +/admin/marketing/audience; F114: +2 change-request pages + the member-changes settings card; F119: +the E-Blast brand page)', () => {
+    expect(OBSERVED_PAGES).toHaveLength(51);
     expect(GUARD_EXEMPT_PAGES).toHaveLength(1);
   });
 

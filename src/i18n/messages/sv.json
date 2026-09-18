@@ -2009,11 +2009,64 @@
       "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
     },
     "settings": {
+      "broadcasts": {
+        "brand": {
+          "pageTitle": "Profil för utskick",
+          "pageDescription": "Logotyp, färg och postadress som används i varje utskick.",
+          "colour": {
+            "heading": "Profilfärg",
+            "description": "Används för knappar och rubriker i utskick. Aldrig i admin- eller medlemsportalen.",
+            "label": "Primärfärg",
+            "pickerLabel": "Färgväljare",
+            "hint": "Sex hexsiffror, till exempel #10487a.",
+            "defaultHint": "Plattformens standard: {color}",
+            "contrastPass": "Kontrast mot vit text: {ratio}:1 — uppfyller AA",
+            "contrastFail": "Kontrast mot vit text: {ratio}:1 — under {required}:1",
+            "contrastFailHelp": "Går inte att spara förrän färgen når {required}:1 mot vit text.",
+            "invalid": "Ange en färg som #RRGGBB."
+          },
+          "address": {
+            "heading": "Postadress",
+            "description": "Visas i utskickets sidfot, där en fysisk adress krävs.",
+            "label": "Kammarens postadress",
+            "placeholder": "Gata, ort, postnummer",
+            "counter": "{count} av {max} tecken",
+            "missing": "Ingen postadress är sparad. Utskick går ut utan adress i sidfoten tills en sparas.",
+            "tooLong": "Använd högst {max} tecken."
+          },
+          "logo": {
+            "heading": "Logotyp",
+            "description": "Visas överst i varje utskick.",
+            "source": "Från fakturainställningarna",
+            "manage": "Hantera logotypen",
+            "askAdministrator": "Be en administratör att ändra den.",
+            "none": "Ingen logotyp är sparad.",
+            "alt": "Kammarens logotyp"
+          },
+          "actions": {
+            "save": "Spara profilinställningar",
+            "saving": "Sparar…"
+          },
+          "toast": {
+            "saved": "Profilinställningarna har sparats."
+          },
+          "errors": {
+            "colourContrast": "Vit text på den här färgen når bara {ratio}:1. WCAG AA kräver {required}:1.",
+            "validation": "Kontrollera de markerade fälten och försök igen.",
+            "rateLimited": "För många ändringar. Försök igen om {seconds} sekunder.",
+            "generic": "Profilinställningarna kunde inte sparas. Försök igen."
+          }
+        }
+      },
       "index": {
         "title": "Inställningar",
         "subtitle": "Kammarövergripande inställningar, ordnade per funktion.",
         "empty": "Inga inställningar är tillgängliga för din roll.",
         "categories": {
+          "eblastBrand": {
+            "title": "Profil för utskick",
+            "description": "Logotyp, färg och postadress för varje utskick."
+          },
           "invoicing": {
             "title": "Fakturainställningar",
             "description": "Moms, valuta, registreringsavgift och standardvärden för fakturor, kvitton och kreditnotor."
@@ -5458,6 +5511,7 @@
       "settingsRenewalSchedules": "Påminnelseschema",
       "settingsMemberChanges": "Godkännande av medlemsändringar",
       "settingsBroadcasts": "Inställningar för utskick",
+      "settingsBroadcastsBrand": "Profil för utskick",
       "settingsIntegrationEventcreate": "EventCreate-integration",
       "events": "Evenemang",
       "sections": {
@@ -5498,6 +5552,7 @@
     }
   },
   "breadcrumb": {
+    "brand": "Profil",
     "admin": "Admin",
     "dashboard": "Instrumentpanel",
     "users": "Användare",

@@ -18,6 +18,7 @@ import {
   RefreshCwIcon,
   CalendarClockIcon,
   CalendarDaysIcon,
+  PaletteIcon,
   PlugZapIcon,
   Settings2Icon,
   ScrollTextIcon,
@@ -541,8 +542,13 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.settingsBroadcasts',
           icon: Settings2Icon,
           href: '/admin/settings/broadcasts',
+          // F119 T029: EXACT, not the prefix form. `/admin/settings/
+          // broadcasts/brand` is now a sibling entry of its own, and a prefix
+          // pattern here would light BOTH rows on that URL (`nav-item.tsx`
+          // evaluates each item independently — there is no deepest-wins
+          // arbitration in the sidebar).
+          activePattern: 'exact:/admin/settings/broadcasts',
           guard: defineGuard('settings.broadcasts'),
-          activePattern: '/admin/settings/broadcasts',
           visibilityFlag: 'broadcastsEnabled',
           // Access is the `settings.broadcasts` guard above (fail-closed
           // nav: no holder, no entry). 016 post-ship finding — the old
@@ -550,6 +556,21 @@ export const staffNavConfig: NavConfig = {
           // Schedules: false since D4 (settings.invoicing is superAdminOnly,
           // settings.renewal_schedules is admin-tier, manager holds no
           // settings.* key at all).
+        },
+        // F119 T028/T029 — the chamber brand page (logo / colour / postal
+        // address applied to every e-blast). Same `settings.broadcasts` key as
+        // the sibling above and as both verbs of `/api/admin/broadcasts/brand`,
+        // so `marketing` sees neither row; same F7 flag, because the page
+        // `notFound()`s on it and a hidden page with a live nav entry is a dead
+        // link. `PaletteIcon` distinguishes it from the allow-list row's
+        // `Settings2Icon` — the two are one URL segment apart.
+        {
+          titleKey: 'nav.staff.settingsBroadcastsBrand',
+          icon: PaletteIcon,
+          href: '/admin/settings/broadcasts/brand',
+          guard: defineGuard('settings.broadcasts'),
+          activePattern: '/admin/settings/broadcasts/brand',
+          visibilityFlag: 'broadcastsEnabled',
         },
         // F6 EventCreate integration. Spec round-2 R1 noted that the
         // entry "is a navigation-affordance decision" — initially we

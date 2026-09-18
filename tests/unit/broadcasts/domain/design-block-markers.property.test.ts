@@ -130,3 +130,22 @@ describe('parseBlockMarkers — property: any attribute order parses to the same
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 });
+
+describe('parseBlockMarkers — parser edges', () => {
+  it('reads single-quoted and bare attribute values, and a tag with no attributes at all', () => {
+    expect(parseBlockMarkers("<a data-eb='cta' href=https://x.example/>Go</a>")).toEqual([
+      { kind: 'cta', href: 'https://x.example/', text: 'Go' },
+    ]);
+    expect(parseBlockMarkers('<a>plain</a><img>')).toEqual([]);
+    // A valueless marker attribute is the empty marker — not a block.
+    expect(parseBlockMarkers('<a data-eb href="https://x.example/">t</a>')).toEqual([]);
+  });
+
+  it('an unterminated CTA anchor is not a block (nothing to render, nothing to validate)', () => {
+    expect(parseBlockMarkers('<a data-eb="cta" href="https://x.example/">no close tag')).toEqual([]);
+  });
+
+  it('a banner without src yields an empty src so validation, not the parser, decides', () => {
+    expect(parseBlockMarkers('<img data-eb="banner" alt="x">')).toEqual([{ kind: 'banner', src: '', alt: 'x' }]);
+  });
+});

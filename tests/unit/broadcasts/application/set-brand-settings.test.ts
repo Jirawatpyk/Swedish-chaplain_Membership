@@ -125,3 +125,12 @@ describe('setBrandSettings', () => {
     expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'boom' } });
   });
 });
+
+describe('setBrandSettings — non-Error throw', () => {
+  it('a thrown non-Error value is stringified into storage_error.detail', async () => {
+    const { repo, audit } = makeDeps();
+    (repo.withTx as ReturnType<typeof vi.fn>).mockRejectedValueOnce('pool exhausted');
+    const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#b04a00', postalAddress: undefined });
+    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'pool exhausted' } });
+  });
+});

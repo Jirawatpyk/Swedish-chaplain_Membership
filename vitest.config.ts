@@ -712,6 +712,48 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F119 PR-1 (T157) — the four Domain files PR-1 creates: the design-block
+        // parser/validator + renderer and the brand VOs + WCAG contrast. Pure
+        // arithmetic and string handling, 100% line per Constitution II;
+        // measured at 100% branch too, so pinned there (the dead
+        // `?? ''` / isFinite arms were REMOVED rather than excused). PR-2's
+        // seven Domain files are pinned by T157a when they exist — a pin on a
+        // path the PR does not create is silently satisfied and measures
+        // nothing.
+        'src/modules/broadcasts/domain/design-blocks/block-markers.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/design-blocks/render-blocks.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/brand/contrast.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/brand/brand-settings.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F119 PR-1 (T157) — the one security-critical use case PR-1 ships:
+        // it writes tenant configuration that every outgoing email renders
+        // and audits previous → next. 100% BRANCH (Constitution II). PR-2's
+        // four approval use cases are pinned by T158.
+        'src/modules/broadcasts/application/use-cases/set-brand-settings.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // The count endpoints' shared core. The `_exhaustive: never` arm is
         // unreachable by construction, so 100% line is not honest here; the
         // floor is what the unit + contract suites measured (parse, rate key,

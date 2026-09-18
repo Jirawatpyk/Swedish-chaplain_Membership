@@ -74,3 +74,13 @@ describe('validateBlocks', () => {
     ]);
   });
 });
+
+describe('decodeHtmlEntities (the parser\'s attribute + text decoder)', () => {
+  it('decodes named, decimal and hex entities; leaves an unknown name and an out-of-range code point as written', async () => {
+    const { decodeHtmlEntities } = await import('@/modules/broadcasts/domain/design-blocks/block-markers');
+    expect(decodeHtmlEntities('a &amp; b &lt;c&gt; &quot;d&quot; &apos;e&apos;&nbsp;f')).toBe('a & b <c> "d" \'e\' f');
+    expect(decodeHtmlEntities('&#65;&#x42;&#X43;')).toBe('ABC');
+    expect(decodeHtmlEntities('&#128512; &#x1F600;')).toBe('😀 😀');
+    expect(decodeHtmlEntities('&bogus; &#9999999999; &#xFFFFFFFF;')).toBe('&bogus; &#9999999999; &#xFFFFFFFF;');
+  });
+});

@@ -56,15 +56,16 @@ const NAMED_ENTITIES: Readonly<Record<string, string>> = {
   nbsp: ' ',
 };
 
+const MAX_CODE_POINT = 0x10ffff;
+
 export function decodeHtmlEntities(s: string): string {
-  return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, body: string) => {
-    if (body.startsWith('#x') || body.startsWith('#X')) {
-      const cp = parseInt(body.slice(2), 16);
-      return Number.isFinite(cp) ? String.fromCodePoint(cp) : whole;
-    }
+  return s.replace(/&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, body: string) => {
     if (body.startsWith('#')) {
-      const cp = parseInt(body.slice(1), 10);
-      return Number.isFinite(cp) ? String.fromCodePoint(cp) : whole;
+      const hex = body[1] === 'x' || body[1] === 'X';
+      const cp = parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+      // The regex guarantees digits, so the only way this is not a code
+      // point is being out of range — `String.fromCodePoint` would throw.
+      return cp <= MAX_CODE_POINT ? String.fromCodePoint(cp) : whole;
     }
     return NAMED_ENTITIES[body] ?? whole;
   });
@@ -74,11 +75,9 @@ function parseAttributes(raw: string): ReadonlyMap<string, string> {
   const out = new Map<string, string>();
   ATTR.lastIndex = 0;
   let m: RegExpExecArray | null;
+  // `ATTR` always consumes at least the name character, so the global exec
+  // loop cannot spin on a zero-length match.
   while ((m = ATTR.exec(raw)) !== null) {
-    if (m[0].length === 0) {
-      ATTR.lastIndex++;
-      continue;
-    }
     const name = m[1]!.toLowerCase();
     const value = m[2] ?? m[3] ?? m[4] ?? '';
     if (!out.has(name)) out.set(name, decodeHtmlEntities(value));
@@ -108,7 +107,8 @@ export function findBlockMarkers(sanitisedHtml: string): readonly MarkerSpan[] {
   let m: RegExpExecArray | null;
   while ((m = OPEN_TAG.exec(sanitisedHtml)) !== null) {
     const tag = m[1]!.toLowerCase();
-    const attrs = parseAttributes(m[2] ?? '');
+    // Group 2 always participates (`[^>]*` matches the empty string).
+    const attrs = parseAttributes(m[2]!);
     const marker = attrs.get('data-eb');
     if (marker === undefined) continue;
     if (tag === 'a' && marker === 'cta') {
