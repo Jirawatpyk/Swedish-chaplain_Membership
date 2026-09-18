@@ -28,6 +28,30 @@ function input(over: Partial<Parameters<typeof resendBroadcastsGateway.createBro
 describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // F119 T031 — the live send carries the tenant's brand chrome (FR-041a/c):
+  // the delivered email must equal the preview, which renders with it.
+  it('renders the brand passed in — logo header, postal footer, CTA colour — into the html handed to Resend', async () => {
+    await resendBroadcastsGateway.createBroadcast(
+      input({
+        htmlBody: '<p>hi</p><a data-eb="cta" href="https://x.example/">Go</a>',
+        brand: { primaryColor: '#b04a00', postalAddress: '1 Street', logoUrl: 'https://blob.example/l.png' },
+      }),
+    );
+    const html = fake.lastCreatedBroadcastHtml();
+    expect(html).not.toBeNull();
+    expect(html).toContain('src="https://blob.example/l.png"');
+    expect(html).toContain('<p style="margin:0">1 Street</p>');
+    expect(html).toContain('bgcolor="#b04a00"');
+    expect(html).not.toContain('data-eb="cta"');
+  });
+
+  it('with no brand (the pre-F119 caller shape) the html is the chamber-name header, as before', async () => {
+    await resendBroadcastsGateway.createBroadcast(input({}));
+    const html = fake.lastCreatedBroadcastHtml();
+    expect(html).toContain('<strong style="font-size:14px;color:#666">SweCham</strong>');
+    expect(html).toContain('Sent by SweCham.');
+  });
+
   it('accepts a <=70-code-point name', async () => {
     await expect(resendBroadcastsGateway.createBroadcast(input({}))).resolves.toMatchObject({ broadcastId: 'bcast_fake_1' });
   });

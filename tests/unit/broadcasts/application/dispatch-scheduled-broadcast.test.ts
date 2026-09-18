@@ -13,6 +13,7 @@
  *   - DB write failure AFTER Resend success โ’ kind='gateway_retryable'
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BrandSettings } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
@@ -351,7 +352,7 @@ function makeGateway(opts: GatewayOpts = {}): {
   port: BroadcastsGatewayPort;
   audienceCalls: Array<string>;
   contactsCalls: Array<{ audienceId: string; contacts: ReadonlyArray<AudienceContact> }>;
-  createCalls: Array<{ audienceId: string; subject: string; broadcastNameForResendDashboard: string }>;
+  createCalls: Array<{ audienceId: string; subject: string; broadcastNameForResendDashboard: string; brand?: BrandSettings | undefined }>;
   sendCalls: Array<{ broadcastId: string; idempotencyKey: string }>;
   /** Round 4 L2 — proves the CAS loser actually reclaims the audience it minted. */
   deleteAudienceCalls: Array<string>;
@@ -365,7 +366,7 @@ function makeGateway(opts: GatewayOpts = {}): {
     audienceId: string;
     contacts: ReadonlyArray<AudienceContact>;
   }> = [];
-  const createCalls: Array<{ audienceId: string; subject: string; broadcastNameForResendDashboard: string }> = [];
+  const createCalls: Array<{ audienceId: string; subject: string; broadcastNameForResendDashboard: string; brand?: BrandSettings | undefined }> = [];
   const sendCalls: Array<{ broadcastId: string; idempotencyKey: string }> = [];
   function maybeThrow(spec?: ThrowSpec): void {
     if (!spec) return;
@@ -399,7 +400,7 @@ function makeGateway(opts: GatewayOpts = {}): {
         throw new Error('not used');
       },
       async createBroadcast(input) {
-        createCalls.push({ audienceId: input.audienceId, subject: input.subject, broadcastNameForResendDashboard: input.broadcastNameForResendDashboard });
+        createCalls.push({ audienceId: input.audienceId, subject: input.subject, broadcastNameForResendDashboard: input.broadcastNameForResendDashboard, brand: input.brand });
         maybeThrow(opts.throwOnCreateBroadcast);
         return { broadcastId: 'bcast-fake-1' };
       },
@@ -620,6 +621,45 @@ afterEach(() => vi.useRealTimers());
 describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
   it('use-case module exists', async () => {
     await expect(access(useCasePath)).resolves.toBeUndefined();
+  });
+
+  // F119 T031 (FR-041c) — brand chrome is read LIVE at dispatch and handed to
+  // the gateway, so the delivered email equals the preview. Fail-soft: a
+  // brand read that throws sends without chrome rather than failing the send.
+  it('passes the live brand chrome to createBroadcast; a brand read fault degrades to no chrome', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+    const gw = makeGateway();
+    const brand = { primaryColor: '#b04a00', postalAddress: '1 Street', logoUrl: 'https://blob.example/l.png' };
+    const base = {
+      tenant,
+      broadcastsRepo: repo.port,
+      audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
+      broadcastsGateway: gw.port,
+      membersBridge: makeMembersBridge({ recipients: [recipient('m-r1', 'one@example.com')], primaryContact: 'sender@example.com' }),
+      marketingUnsubscribes: makeMarketingUnsubscribes(),
+      eventAttendees: makeEventAttendees(),
+      audit: audit.port,
+      clock,
+      fromEmail: 'noreply@test.invalid-but-test-only',
+      tenantDisplayName: 'Test Chamber',
+      locale: 'en' as const,
+      plansBridge: makePlansBridge(),
+      emailTransactional: makeEmailTransactional().port,
+    };
+    const r1 = await dispatchScheduledBroadcast({ ...base, brandChrome: { load: async () => brand } }, baseInput);
+    expect(r1.ok).toBe(true);
+    expect(gw.createCalls[0]?.brand).toEqual(brand);
+
+    const gw2 = makeGateway();
+    const repo2 = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+    const r2 = await dispatchScheduledBroadcast(
+      { ...base, broadcastsRepo: repo2.port, broadcastsGateway: gw2.port, brandChrome: { load: async () => { throw new Error('brand down'); } } },
+      baseInput,
+    );
+    expect(r2.ok).toBe(true);
+    expect(gw2.createCalls[0]?.brand).toEqual({ primaryColor: null, postalAddress: null, logoUrl: null });
   });
 
   it('happy: lock+resolve+createAudience+addContacts+createBroadcast+sendBroadcast โ’ applyTransition(sending) + audit broadcast_send_started', async () => {

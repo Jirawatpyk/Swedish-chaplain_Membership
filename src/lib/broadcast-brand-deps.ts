@@ -19,10 +19,6 @@
  * never reaches into `src/lib`.
  */
 import { getTenantLogoPublicUrl } from '@/modules/invoicing';
-// The shared TRANSACTIONAL sender (already the dispatcher's) — the test copy
-// is synchronous through it and never touches the Broadcasts surface (V4).
-// Reached through the auth composition root, not a deep import.
-import { emailSender } from '@/lib/auth-deps';
 import {
   dompurifySanitizer,
   drizzleBrandSettingsRepo,
@@ -32,9 +28,7 @@ import {
   type BrandChromePort,
   type BrandSettingsRepo,
   type RenderBroadcastPreviewDeps,
-  type SendTestCopyDeps,
   type TenantLogoUrlPort,
-  type TestCopyMailerPort,
 } from '@/modules/broadcasts';
 import type { TenantSlug } from '@/modules/tenants';
 import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
@@ -90,37 +84,5 @@ export async function makeRenderBroadcastPreviewDeps(
     brand: brandChromePort,
     renderer: emailTemplateRenderer,
     tenantDisplayName,
-  };
-}
-
-/** T105 — `TestCopyMailerPort` over the shared transactional sender. */
-export const testCopyMailer: TestCopyMailerPort = {
-  async send(message) {
-    const r = await emailSender.send({ to: message.to, subject: message.subject, html: message.html });
-    if (r.ok) return r;
-    // The auth sender's error union is wider (it also names template faults);
-    // the port only distinguishes "bad address" from "provider down".
-    return {
-      ok: false,
-      error: {
-        code: r.error.code === 'invalid-recipient' ? 'invalid-recipient' : 'upstream-unavailable',
-        message: r.error.message,
-      },
-    };
-  },
-};
-
-/** T105 — everything `sendTestCopy` needs, plus the tenant display name. */
-export async function makeSendTestCopyDeps(
-  tenantId: string,
-): Promise<SendTestCopyDeps & { readonly tenantDisplayName: string }> {
-  const preview = await makeRenderBroadcastPreviewDeps(tenantId);
-  return {
-    sanitizer: preview.sanitizer,
-    brand: preview.brand,
-    renderer: preview.renderer,
-    mailer: testCopyMailer,
-    audit: f7AuditAdapter,
-    tenantDisplayName: preview.tenantDisplayName,
   };
 }

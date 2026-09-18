@@ -142,7 +142,7 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@/lib/broadcast-brand-deps', () => ({
+vi.mock('@/lib/broadcast-test-copy-deps', () => ({
   makeSendTestCopyDeps: async () => ({ sanitizer: {}, brand: {}, renderer: {}, mailer: {}, audit: {}, tenantDisplayName: 'Test Chamber' }),
 }));
 vi.mock('@/modules/broadcasts', async () => {

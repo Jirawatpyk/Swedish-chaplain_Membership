@@ -52,6 +52,8 @@ export function createResendContractFake(opts: {
    * later deleted.
    */
   createdAudienceIdsInOrder: () => readonly string[];
+  /** F119 T031 — the `html` of the LAST `broadcasts.create` call (null before any). */
+  lastCreatedBroadcastHtml: () => string | null;
   /**
    * The set of contact emails (lower-cased) recorded against `audienceId` via
    * `contacts.create`. Returns an empty set for an unknown audience. The
@@ -68,6 +70,7 @@ export function createResendContractFake(opts: {
   // Append-only creation log (never mutated on remove) — distinct from the
   // `createdAudienceIds` liveness set above.
   const createdAudienceIdsInOrder: string[] = [];
+  let lastCreatedBroadcastHtml: string | null = null;
   // audienceId → set of lower-cased contact emails added to it.
   const audienceContacts = new Map<string, Set<string>>();
   // audienceId → display name (populated on create; NOT removed on remove so
@@ -108,6 +111,7 @@ export function createResendContractFake(opts: {
         if (displayName.includes('<') || displayName.includes('>')) {
           return { data: null, error: { statusCode: 422, message: `Invalid \`from\` field. Received \`${args.from}\`.`, name: 'validation_error' } };
         }
+        lastCreatedBroadcastHtml = args.html;
         return { data: { id: 'bcast_fake_1' }, error: null };
       },
       async send(id) { return { data: { id }, error: null }; },
@@ -191,6 +195,7 @@ export function createResendContractFake(opts: {
     client,
     createdAudienceCount: () => audienceCount,
     createdAudienceIdsInOrder: () => [...createdAudienceIdsInOrder],
+    lastCreatedBroadcastHtml: () => lastCreatedBroadcastHtml,
     getAudienceContacts: (audienceId: string) =>
       new Set(audienceContacts.get(audienceId) ?? new Set<string>()),
   };

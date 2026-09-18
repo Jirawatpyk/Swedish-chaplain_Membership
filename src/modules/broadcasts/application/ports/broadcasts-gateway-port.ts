@@ -26,6 +26,8 @@
  * Transport-class tag on `retryable` errors so OTel metrics can split
  * network outage from server-side bugs (review I6 — 2026-04-30).
  */
+import type { BrandSettings } from '../../domain/brand/brand-settings';
+
 export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api';
 
 export type BroadcastsGatewayError =
@@ -78,6 +80,13 @@ export interface CreateBroadcastInput {
   readonly locale: 'en' | 'th' | 'sv';
   /** Tenant display name for the chamber-branded header + footer. */
   readonly tenantDisplayName: string;
+  /**
+   * F119 T031 (FR-041a/c) — the tenant's LIVE brand chrome (logo URL,
+   * primary colour, postal address), read by the dispatch use case at send
+   * time and rendered by the adapter's wrapper. Omitted ⇒ the pre-F119
+   * email (chamber-name header, "Sent by" footer, platform CTA colour).
+   */
+  readonly brand?: BrandSettings;
 }
 
 export interface RetrievedBroadcastResource {

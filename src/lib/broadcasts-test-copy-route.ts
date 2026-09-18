@@ -15,7 +15,7 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { makeSendTestCopyDeps } from '@/lib/broadcast-brand-deps';
+import { makeSendTestCopyDeps } from '@/lib/broadcast-test-copy-deps';
 import { baseHeaders, errorResponse } from '@/lib/broadcasts-route-helpers';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';

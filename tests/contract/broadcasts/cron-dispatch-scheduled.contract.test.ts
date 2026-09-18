@@ -43,6 +43,11 @@ const envMock = {
 };
 
 vi.mock('@/lib/env', () => ({ env: envMock }));
+// F119 T031 — the brand seam is composed over the invoicing barrel; this wire
+// test is about the cron's routing, so the seam is a no-brand stub.
+vi.mock('@/lib/broadcast-brand-deps', () => ({
+  brandChromePort: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
