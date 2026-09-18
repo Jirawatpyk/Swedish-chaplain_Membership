@@ -78,6 +78,7 @@ import { makeClamavVirusScanner } from './clamav-virus-scanner';
 import type { ManageImageAllowlistDeps } from '../application/use-cases/manage-image-allowlist';
 import type { UploadInlineImageDeps } from '../application/use-cases/upload-inline-image';
 import type { ReclaimOrphanedImagesDeps } from '../application/use-cases/reclaim-orphaned-images';
+import type { AuthorizeImageOwnerDeps } from '../application/use-cases/authorize-image-owner';
 import { drizzleBroadcastImagesRepo } from './db/drizzle-broadcast-images-repo';
 import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
@@ -781,6 +782,19 @@ export function makeUploadInlineImageDeps(
     audit: f7AuditAdapter,
     // F119 T033 — the image lifecycle record (`broadcast_images`).
     imagesRepo: drizzleBroadcastImagesRepo,
+  };
+}
+
+/**
+ * F119 T106 / T107 / T146 — composition root for `authorizeImageOwner`, the
+ * ownership check every image upload route runs before the scan.
+ */
+export function makeAuthorizeImageOwnerDeps(tenantId: string): AuthorizeImageOwnerDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    templates: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
   };
 }
 

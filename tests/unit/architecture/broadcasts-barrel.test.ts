@@ -120,10 +120,9 @@ const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   "src/app/api/admin/broadcasts/settings/allowlist/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
   "src/app/api/admin/broadcasts/settings/allowlist/route.ts::@/modules/broadcasts/infrastructure/feature-flags",
   "src/app/api/admin/broadcasts/settings/allowlist/route.ts::@/modules/broadcasts/domain/value-objects/image-source-allowlist",
-  // /api/broadcasts/inline-image-upload/route.ts (3) — F7.1a US2 upload
-  "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/application/use-cases/upload-inline-image",
-  "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
-  "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/feature-flags",
+  // /api/broadcasts/inline-image-upload/route.ts — F119 T146 moved the route onto the
+  // barrel (`authorizeImageOwner`, `uploadInlineImage`, the flag helpers); its three
+  // deep imports are gone from the backlog.
   // /components/broadcast/* (5) — F7 MVP queue + status display + F7.1a US7 template form
   "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
   "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",

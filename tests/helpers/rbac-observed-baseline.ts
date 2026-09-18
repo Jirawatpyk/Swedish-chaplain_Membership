@@ -190,6 +190,8 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   // frozen marketing set in role-endpoint-matrix.test.ts moved 50 → 48 in the
   // SAME commit, because that test derives `actual` from this file and would
   // otherwise go red while comparing two lists that were stale together.
+  // F119 — staff image uploads (E-Blast + template): the same rules as a member's image.
+  { surface: 'POST /api/admin/broadcasts/[id]/images', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/approve', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/[id]/cancel', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/reject', kind: 'api', key: 'broadcasts.write' },
@@ -200,6 +202,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/admin/broadcasts/test-copy', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/settings/allowlist', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'POST /api/admin/broadcasts/templates', kind: 'api', key: 'broadcasts.write' },
+  { surface: 'POST /api/admin/broadcasts/templates/[id]/images', kind: 'api', key: 'broadcasts.write' },
   // 108 PR-D — the staff marketing toggle (FR-030); marketing holds the key.
   { surface: 'POST /api/admin/contacts/[contactId]/marketing', kind: 'api', key: 'contacts.marketing' },
   { surface: 'POST /api/admin/directory/exports', kind: 'api', key: 'directory.export' },

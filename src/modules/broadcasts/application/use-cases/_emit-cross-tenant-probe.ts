@@ -51,7 +51,10 @@ export type TemplateProbeOperation = 'delete' | 'update' | 'snapshot';
 export type BroadcastProbeUseCase =
   | 'retry-failed-batches'
   | 'accept-partial-delivery'
-  | 'cancel-broadcast';
+  | 'cancel-broadcast'
+  // F119 T106/T146 — the image ownership check (staff route miss, member
+  // route unknown/other-tenant id).
+  | 'upload-inline-image';
 
 export type CrossTenantProbeSurface =
   | {

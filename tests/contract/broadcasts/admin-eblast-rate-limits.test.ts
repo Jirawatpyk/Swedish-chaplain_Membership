@@ -1,3 +1,6 @@
+// @vitest-environment node
+// (multipart: `Request.formData()` hangs under jsdom — the File/FormData globals are
+//  jsdom's while the body parser is undici's; the routes run on Node anyway.)
 /**
  * F119 T026a (owner) · T062a (PR-2 extends) — the new write buckets on the
  * staff formatting routes and the member inline-image upload
@@ -124,5 +127,99 @@ describe('PATCH /api/admin/broadcasts/brand — staff write bucket', () => {
     const res = await GET(new NextRequest('http://localhost/api/admin/broadcasts/brand'));
     expect(res.status).toBe(200);
     expect(checkLimitMock).not.toHaveBeenCalled();
+  });
+});
+
+// --- T026a image arms — the three upload routes share `src/lib/broadcasts-image-upload-route.ts`.
+// Their gates / use cases are mocked on a second barrel shape below (this
+// file mocks `@/modules/broadcasts` once at the top; the upload routes read
+// different exports, provided here without redeclaring the mock).
+describe('image uploads — write buckets (T026a)', () => {
+  const requireMemberContextMock = vi.fn();
+  const authorizeMock = vi.fn();
+  const uploadMock = vi.fn();
+  const UUID = '11111111-1111-1111-1111-111111111111';
+  const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'a.png', { type: 'image/png' });
+
+  beforeEach(async () => {
+    vi.doMock('@/lib/member-context', () => ({
+      requireMemberContext: (...args: unknown[]) => requireMemberContextMock(...args),
+    }));
+    vi.doMock('@/lib/db', () => ({
+      runInTenant: async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) => fn('tx'),
+    }));
+    vi.doMock('@/modules/broadcasts', () => ({
+      authorizeImageOwner: (...args: unknown[]) => authorizeMock(...args),
+      uploadInlineImage: (...args: unknown[]) => uploadMock(...args),
+      makeAuthorizeImageOwnerDeps: () => ({}),
+      makeUploadInlineImageDeps: () => ({}),
+      broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => checkLimitMock(...args) },
+      isF71aUs2Enabled: () => true,
+      f71aUs2DisabledReason: () => null,
+      parseBroadcastId: (id: string) => ({ ok: id === UUID, value: id, error: { kind: 'invalid_uuid' } }),
+    }));
+    requireMemberContextMock.mockResolvedValue({
+      current: { user: { id: 'user-member-1', email: 'm@swecham.test', role: 'member', status: 'active', displayName: 'M' }, session: { id: 's' } },
+      tenant: { slug: 'test-tenant', __brand: true },
+      member: { memberId: 'm-1', planId: 'p' },
+      memberId: 'm-1',
+      ownContact: { contactId: 'c-1' },
+      ownContactId: 'c-1',
+      sourceIp: '203.0.113.10',
+      requestId: 'req',
+    });
+    authorizeMock.mockResolvedValue(ok({ relatedMemberId: 'm-1' }));
+    uploadMock.mockResolvedValue(ok({ blobUrl: 'u', allowlistedHostname: 'h', contentHash: 'c', imageId: 'i' }));
+  });
+
+  it('the 31st staff image upload in a minute → 429, and nothing is stored on the refused call (no ownership read, no scan)', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 9 }));
+    const { POST } = await import('@/app/api/admin/broadcasts/[id]/images/route');
+    const form = new FormData();
+    form.set('file', png());
+    const res = await POST(new NextRequest(`http://localhost/api/admin/broadcasts/${UUID}/images`, { method: 'POST', body: form }), { params: Promise.resolve({ id: UUID }) });
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('9');
+    expect(checkLimitMock).toHaveBeenCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    expect(authorizeMock).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it('the 31st template image upload in a minute → 429 on the same staff bucket', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 9 }));
+    const { POST } = await import('@/app/api/admin/broadcasts/templates/[id]/images/route');
+    const form = new FormData();
+    form.set('file', png());
+    const res = await POST(new NextRequest(`http://localhost/api/admin/broadcasts/templates/${UUID}/images`, { method: 'POST', body: form }), { params: Promise.resolve({ id: UUID }) });
+    expect(res.status).toBe(429);
+    expect(checkLimitMock).toHaveBeenCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it('the 61st POST /api/broadcasts/inline-image-upload in a minute → 429 broadcast_rate_limit_exceeded with Retry-After — no blob, no row, no scan', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 31 }));
+    const { POST } = await import('@/app/api/broadcasts/inline-image-upload/route');
+    const form = new FormData();
+    form.set('file', png());
+    form.set('draftId', UUID);
+    const res = await POST(new NextRequest('http://localhost/api/broadcasts/inline-image-upload', { method: 'POST', body: form }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('31');
+    expect((await res.json()).error.code).toBe('broadcast_rate_limit_exceeded');
+    expect(checkLimitMock).toHaveBeenCalledWith('broadcasts:member-write:test-tenant:user-member-1', 60, 60);
+    expect(authorizeMock).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it('under the bucket the member upload proceeds (bucket first, then ownership, then the upload)', async () => {
+    checkLimitMock.mockResolvedValue(ok(true));
+    const { POST } = await import('@/app/api/broadcasts/inline-image-upload/route');
+    const form = new FormData();
+    form.set('file', png());
+    form.set('draftId', UUID);
+    const res = await POST(new NextRequest('http://localhost/api/broadcasts/inline-image-upload', { method: 'POST', body: form }));
+    expect(res.status).toBe(201);
+    expect(checkLimitMock.mock.invocationCallOrder[0]!).toBeLessThan(authorizeMock.mock.invocationCallOrder[0]!);
+    expect(authorizeMock.mock.invocationCallOrder[0]!).toBeLessThan(uploadMock.mock.invocationCallOrder[0]!);
   });
 });

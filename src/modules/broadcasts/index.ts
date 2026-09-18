@@ -701,7 +701,25 @@ export {
   type ReclaimOrphanedImagesInput,
   type ReclaimOrphanedImagesOutput,
 } from './application/use-cases/reclaim-orphaned-images';
-export { makeReclaimOrphanedImagesDeps } from './infrastructure/broadcasts-deps';
+export { makeReclaimOrphanedImagesDeps, makeAuthorizeImageOwnerDeps, makeUploadInlineImageDeps } from './infrastructure/broadcasts-deps';
+export {
+  authorizeImageOwner,
+  IMAGE_UPLOAD_MEMBER_STAGES,
+  IMAGE_UPLOAD_STAFF_STAGES,
+  type AuthorizeImageOwnerDeps,
+  type AuthorizeImageOwnerError,
+  type AuthorizeImageOwnerInput,
+  type AuthorizeImageOwnerOutput,
+  type ImageUploadActor,
+} from './application/use-cases/authorize-image-owner';
+export {
+  uploadInlineImage,
+  type UploadInlineImageDeps,
+  type UploadInlineImageError,
+  type UploadInlineImageInput,
+  type UploadInlineImageOutput,
+} from './application/use-cases/upload-inline-image';
+export { isF71aUs2Enabled, f71aUs2DisabledReason } from './infrastructure/feature-flags';
 export { drizzleBroadcastImagesRepo } from './infrastructure/db/drizzle-broadcast-images-repo';
 export type { EmailRendererPort, RenderEmailInput, BroadcastRenderLocale } from './application/ports/email-renderer-port';
 export { emailTemplateRenderer } from './infrastructure/resend/email-template-renderer';

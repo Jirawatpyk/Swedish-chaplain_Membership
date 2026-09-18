@@ -1,45 +1,36 @@
 /**
- * T077 (F7.1a US2) — POST /api/broadcasts/inline-image-upload
+ * T077 (F7.1a US2) · F119 T033 / T146 — POST /api/broadcasts/inline-image-upload
  *
- * Member role + tenant ctx + draft ownership check. Multipart upload
- * pipeline (FR-012 + FR-013):
- *   - 5 MB hard cap (Application use-case enforces; route also rejects
- *     unbounded streams at form-data parse)
- *   - ClamAV virus-scan via `VirusScannerPort`
- *   - Content-hash dedup via `ImageStoragePort`
- *   - Tenant-scoped Vercel Blob path `broadcasts/images/{tenant}/...`
+ * Member role + tenant ctx + the REAL draft-ownership check (T146: `draftId`
+ * used to be an unvalidated form string although this header claimed a
+ * check). Multipart upload pipeline (FR-012 + FR-013 + FR-040):
+ *   - 60 / minute per (tenant, user) member write bucket, consumed ABOVE the
+ *     ownership read, the blob write and the ClamAV call (T026a / T146)
+ *   - ownership: the caller's own member AND a `draft` they own; another
+ *     member's row → 404 + `broadcast_cross_member_probe`; an unknown or
+ *     other-tenant id → 404 + `broadcast_cross_tenant_probe`; a closed
+ *     broadcast → 409 (never 403 — no existence leak)
+ *   - 5 MB hard cap, png/jpeg/webp/gif, SHA-256 dedup, fail-closed ClamAV,
+ *     tenant-scoped Vercel Blob path, and ONE `broadcast_images` row +
+ *     `broadcast_image_uploaded` audit carrying snake_case `member_id`
+ *     (the 0009 `last_activity_at` trigger key — a member illustrating
+ *     their own draft IS member activity)
+ * Shared handler: `src/lib/broadcasts-image-upload-route.ts`.
  *
- * Pinned to Node runtime — the ClamAV `clamscan` adapter and Vercel
- * Blob client require Node APIs (Edge runtime breaks both).
- *
- * Pipeline-order invariant (FR-013): bytes NEVER reach storage before
- * verdict=clean. Rejected uploads (oversize / infected / scanner-
- * error) are NEVER persisted.
+ * Pinned to Node runtime — the ClamAV adapter and the Blob client need
+ * Node APIs. Pipeline-order invariant (FR-013): bytes NEVER reach storage
+ * before verdict=clean; rejected uploads are NEVER persisted.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
-import { makeUploadInlineImageDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
-import {
-  isF71aUs2Enabled,
-  f71aUs2DisabledReason,
-} from '@/modules/broadcasts/infrastructure/feature-flags';
-import { runInTenant } from '@/lib/db';
-import {
-  baseHeaders,
-  errorResponse,
-} from '@/lib/broadcasts-route-helpers';
+import { handleImageUpload } from '@/lib/broadcasts-image-upload-route';
+import { baseHeaders, errorResponse } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
-import { logger } from '@/lib/logger';
-import { assertNever } from '@/lib/assert-never';
+import { f71aUs2DisabledReason, isF71aUs2Enabled, parseBroadcastId } from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
-// Increase route function timeout — ClamAV scan + Blob upload can take
-// 5-10s for files at the 5 MB cap. The Application use-case has its
-// own 5-min ClamAV scan timeout (FR-013 / T151 P10 pre-flight gap).
+// ClamAV scan + Blob upload can take 5-10 s at the 5 MB cap.
 export const maxDuration = 60;
-
-const MAX_FORM_BYTES = 5.5 * 1024 * 1024; // 10% headroom over use-case cap
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();
@@ -54,99 +45,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const ctx = await requireMemberContext(request);
   if ('response' in ctx && ctx.response) return ctx.response;
 
-  // Defense-in-depth form-size cap — declares max early so Next.js
-  // does not buffer multi-hundred-MB attacker payloads.
-  const contentLength = Number(request.headers.get('content-length') ?? 0);
-  if (contentLength > MAX_FORM_BYTES) {
-    return NextResponse.json(
-      { error: 'broadcast_image_too_large' },
-      { status: 413, headers: baseHeaders(correlationId) },
-    );
-  }
-
-  let form: FormData;
+  // The draft id rides the multipart body; read it from a clone so the shared
+  // handler can parse the same form once more for the file.
+  let draftId: unknown;
   try {
-    form = await request.formData();
+    draftId = (await request.clone().formData()).get('draftId');
   } catch {
     return errorResponse(400, 'invalid_body', correlationId);
   }
-
-  const file = form.get('file');
-  const draftId = form.get('draftId');
-  if (!(file instanceof File) || typeof draftId !== 'string') {
-    return errorResponse(400, 'invalid_body', correlationId, {
-      fieldErrors: {
-        file: file instanceof File ? [] : ['file is required'],
-        draftId: typeof draftId === 'string' ? [] : ['draftId is required'],
-      },
-    });
+  if (typeof draftId !== 'string' || !parseBroadcastId(draftId).ok) {
+    return errorResponse(400, 'invalid_body', correlationId, { fieldErrors: { draftId: ['draftId is required'] } });
   }
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-
-  try {
-    const result = await runInTenant(ctx.tenant, async () => {
-      return uploadInlineImage(makeUploadInlineImageDeps(ctx.tenant.slug), {
-        tenantId: ctx.tenant.slug as never,
-        actorUserId: ctx.current.user.id,
-        actorEmail: ctx.current.user.email,
-        // F119 T033 — the draft IS a `broadcasts` row; a portal user's upload
-        // to it is member activity (snake_case `member_id` in the audit).
-        owner: { kind: 'broadcast', id: draftId },
-        actor: { role: 'member', memberId: ctx.member.memberId as unknown as string },
-        requestId: correlationId,
-        fileBytes: bytes,
-        filename: file.name,
-        mimeType: file.type,
-      });
-    });
-
-    if (!result.ok) {
-      // PR-review fix 2026-05-20 SF-M4 — `storage_unavailable` maps
-      // to 503 so client distinguishes transient Blob outage from
-      // generic 500. PR-review fix TD-M4 — assertNever from shared
-      // helper replaces inline `const _exhaustive: never`.
-      let status: number;
-      switch (result.error.kind) {
-        case 'broadcast_image_too_large':
-          status = 413;
-          break;
-        case 'broadcast_image_invalid_mime':
-          status = 415;
-          break;
-        case 'broadcast_image_unsafe':
-          status = 422;
-          break;
-        case 'storage_unavailable':
-          status = 503;
-          break;
-        default:
-          assertNever(result.error);
-      }
-      return NextResponse.json(
-        { error: result.error.kind },
-        { status, headers: baseHeaders(correlationId) },
-      );
-    }
-
-    return NextResponse.json(
-      {
-        blobUrl: result.value.blobUrl,
-        allowlistedHostname: result.value.allowlistedHostname,
-        contentHash: result.value.contentHash,
+  return handleImageUpload(
+    request,
+    {
+      tenant: ctx.tenant,
+      owner: { kind: 'broadcast', id: draftId },
+      actor: {
+        kind: 'member',
+        memberId: ctx.member.memberId as unknown as string,
+        userId: ctx.current.user.id,
+        email: ctx.current.user.email,
+        role: ctx.current.user.role ?? null,
       },
-      { status: 200, headers: baseHeaders(correlationId) },
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        correlationId,
-        tenantId: ctx.tenant.slug,
-        draftId,
-      },
-      'broadcasts.inline-image-upload.unexpected_error',
-    );
-    return errorResponse(500, 'internal_error', correlationId);
-  }
+      surface: 'member',
+    },
+    correlationId,
+  );
 }
