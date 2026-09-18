@@ -7,8 +7,12 @@ the Domain types in § 9 are hand-declared.
 
 | migration | journal | carries |
 |---|---|---|
-| `0304_eblast_images_and_brand.sql` | `idx: 305`, `when: 1798543700000` | `broadcast_images` (+RLS/FORCE) · 4 brand columns on `tenant_broadcast_settings` · `audit_event_type` += `broadcast_test_copy_sent`, `broadcast_brand_settings_changed` |
+| `0304_eblast_images_and_brand.sql` | `idx: 305`, `when: 1798543700000` | `broadcast_images` (+RLS/FORCE) · 4 brand columns on `tenant_broadcast_settings` · `audit_event_type` += `broadcast_test_copy_sent`, `broadcast_brand_settings_changed`, `broadcast_image_uploaded`, `broadcast_image_removed` |
 | `0305_eblast_member_approval.sql` | `idx: 306`, `when: 1798543800000` | **the FR-012a bundle**: `broadcast_status` +5 · `broadcasts_immutable_after_submit_fn` amended · `broadcasts_state_machine_fn` amended · `broadcast_versions` + `broadcast_member_decisions` (+RLS/FORCE) · 6 columns on `broadcasts` incl. `proposed_send_at` · `audit_event_type` += 10 · `notification_type` += 5 · the `proposed_send_at` backfill |
+
+FR-019 names `data-model.md` § State machine **normative** for the stage list: § 8.1a below carries
+the entry condition, exit conditions and acting party of **every** stage including Draft, and § 8.1b
+the closed outcomes including Expired.
 
 Verify the journal tail before writing (research V5). Every `ALTER TYPE … ADD VALUE IF NOT EXISTS`
 is **one statement per line**: `scripts/run-migrations.ts` hoists them into an AUTOCOMMIT pass ahead
@@ -51,6 +55,19 @@ exempted by the same `app.allow_broadcast_redaction` GUC the parent table uses, 
 **only** `subject`, `body_html`, `body_source` and `note_to_member` may change (whitelist by
 omission, the 0299 shape).
 
+**No brand snapshot.** A version stores **no** copy of the logo URL, the brand colour or the postal
+address. Brand chrome is applied live by `renderBroadcastHtml` at send time and in every preview
+(FR-041c), so a brand change never alters a version and never voids an approval. Adding a
+`brand_*` column here would be the frozen-chrome design FR-041c forbids.
+
+**"Content" (FR-012) is `subject` + `body_html` + `body_source` — nothing else.** Those three columns
+(including the design-block markup and image references inside them) are what the member approves and
+what a later edit voids. `note_to_member` is **not** content: it is marketing's covering note and
+changing it does not void an approval. Neither is the schedule (`broadcasts.scheduled_for`) nor the
+brand chrome. Concretely, only the `member_approved|approved → in_design` transition — which is a
+content edit by definition (it opens a new working copy) — clears `approved_version_id`; a brand
+`PATCH` and a schedule `PATCH` do not touch it.
+
 **Erasure** (R17): those four columns → `'[redacted]'`; row kept.
 
 ## 2. `broadcast_member_decisions` (new, 0305)
@@ -65,7 +82,7 @@ Append-only. One row per member action on one version.
 | `version_id` | `uuid NOT NULL` | FK `(tenant_id, version_id)` → `broadcast_versions(tenant_id, id)` `ON DELETE CASCADE` — the decision is *about* a version (FR-011) |
 | `round` | `smallint NOT NULL CHECK (round >= 1)` | the version's `version_no` at decision time |
 | `decision` | `text NOT NULL CHECK (decision IN ('approved','changes_requested','approval_withdrawn'))` | |
-| `reason` | `text NULL CHECK (char_length BETWEEN 1 AND 2000)` | **required** for `changes_requested` and `approval_withdrawn` (FR-010, FR-015a), optional note for `approved`. Enforced by a CHECK: `(decision = 'approved') OR (reason IS NOT NULL)` |
+| `reason` | `text NULL` | **required, 1–2,000 chars** for `changes_requested` and `approval_withdrawn` (FR-010, FR-015a); for `approved` it is the **optional note, ≤ 500 chars** (FR-009). One CHECK carries both bounds: `(decision = 'approved' AND (reason IS NULL OR char_length(reason) BETWEEN 1 AND 500)) OR (decision <> 'approved' AND reason IS NOT NULL AND char_length(reason) BETWEEN 1 AND 2000)` |
 | `decided_by_user_id` | `uuid NOT NULL` | the portal user |
 | `decided_by_contact_id` | `uuid NOT NULL` | the contact record they were linked to |
 | `decided_at` | `timestamptz NOT NULL DEFAULT now()` | |
@@ -85,7 +102,7 @@ the parent row, which this trigger does not see).
 |---|---|---|
 | `proposed_send_at` | `timestamptz NULL` | the member's proposal, written at submit beside `scheduled_for`, **frozen** by the immutability trigger thereafter (FR-016, R8) |
 | `stage_entered_at` | `timestamptz NOT NULL DEFAULT now()` | stamped on every status change. Drives "time in stage" (FR-026), the stalled flag (FR-027) and the reminder/expiry clock (FR-022/FR-022a) |
-| `current_round` | `smallint NOT NULL DEFAULT 0` | incremented when a version is sent to the member (FR-026). 0 = never formatted |
+| `current_round` | `smallint NOT NULL DEFAULT 0` | **the count of versions sent to the member** (FR-026), incremented on `→ awaiting_member_approval` and **only** there. 0 = never formatted. A withdrawn approval does **not** start a round: it moves the row to `changes_requested` without touching this column, and the counter next moves when marketing actually sends the following version |
 | `approved_version_id` | `uuid NULL` | FK `(tenant_id, approved_version_id)` → `broadcast_versions(tenant_id, id)`. Set on member approval, cleared when the approval is voided or withdrawn. **The proof for SC-002** |
 | `member_reminder_stage` | `smallint NOT NULL DEFAULT 0 CHECK (BETWEEN 0 AND 3)` | 0 none · 1 day-3 sent · 2 day-7 sent · 3 day-23 warning sent. Reset to 0 on every entry into `awaiting_member_approval` |
 | `member_expiry_notified_at` | `timestamptz NULL` | stamped when the day-30 closure notice is enqueued (idempotency for the daily tick) |
@@ -130,6 +147,18 @@ The record that makes image ownership enforceable and image erasure reachable (R
 **last-reference rule** (`DELETE the blob only when no row with the same `content_hash` has
 `deleted_at IS NULL``); `(tenant_id, deleted_at) WHERE deleted_at IS NOT NULL` — the sweep.
 
+**Lifecycle wording the spec fixes (§ Personal data)**: "not reachable" means the **reference is
+removed from the content immediately** (the scrub/withdrawal/rejection transaction stamps
+`deleted_at` and the HTML no longer points at it), and the **file is deleted by the daily sweep
+within 24 hours** once **nothing** — neither an E-Blast nor a template, i.e. no live row of either
+`owner_kind` — shares its `content_hash`. An image still referenced elsewhere is kept, by design.
+
+**No per-block authorship column, by decision.** Blocks and links carried into a draft from a
+template are ordinary content the member may edit or delete, and authorship is **not tracked per
+block** (FR-046a) — there is no `source_template_id` on a block and no provenance field anywhere in
+the body. A template image simply gains a second `broadcast_images` row under
+`owner_kind='broadcast'`, sharing the content hash, which is what the last-reference rule needs.
+
 **Not backfilled.** Images uploaded before 0304 have no row, so they are never swept; they remain
 reachable exactly as today. Recorded rather than guessed — reconstructing owners from historical
 HTML would attribute bytes to the wrong member.
@@ -161,13 +190,16 @@ tenant-authored brand content into.
 | column | type | notes |
 |---|---|---|
 | `brand_primary_color` | `text NULL CHECK (brand_primary_color ~ '^#[0-9a-fA-F]{6}$')` | FR-041b/c. NULL ⇒ the platform default `#10487a` (`src/lib/email-brand.ts:20`) |
-| `brand_postal_address` | `text NULL CHECK (char_length(brand_postal_address) BETWEEN 1 AND 500)` | FR-041c. NULL ⇒ the footer shows the chamber name only and the Brand page flags it missing |
+| `brand_postal_address` | `text NULL CHECK (char_length(brand_postal_address) BETWEEN 1 AND 300)` | FR-041c — free text, **line breaks allowed** (the CHECK bounds length only; no format is imposed). NULL ⇒ the footer shows the chamber name only and the Brand page flags it missing |
 | `brand_updated_at` | `timestamptz NULL` | |
 | `brand_updated_by_user_id` | `uuid NULL` | |
 
 The contrast rule (white text ≥ 4.5:1) is **Application + Domain**, not a CHECK: it needs the WCAG
 luminance formula, it must produce a human-readable refusal with the computed ratio, and a CHECK
-could not be relaxed if the platform ever supports dark button text. The **logo** is never written
+could not be relaxed if the platform ever supports dark button text. The brand **colour is used in
+email only**, never in the portal or admin UI (FR-041c), and none of these four values is ever copied
+into a version — brand chrome is read live at render time, so a brand change never voids an approval
+(FR-012). The **logo** is never written
 here — it stays `tenant_invoice_settings.logo_blob_key`
 (`schema-tenant-invoice-settings.ts:79`), gated by `settings.invoicing` (super-admin only,
 `permission-catalogue.ts:98`), and is only READ (FR-041b, research R12).
@@ -183,20 +215,27 @@ tuple `BROADCAST_STATUSES` (`broadcast-status.ts:15-27`) go 10 → 15 in the sam
 `RETIRED_BROADCAST_STATUSES` is unchanged, so `OFFERED_BROADCAST_STATUSES` goes 8 → 13 and the
 queue's chip strip and its loading skeleton follow automatically.
 
-### 7.2 `audit_event_type` += 12
+### 7.2 `audit_event_type` += 14
 
-`broadcast_test_copy_sent`, `broadcast_brand_settings_changed` (0304);
+`broadcast_test_copy_sent`, `broadcast_brand_settings_changed`, **`broadcast_image_uploaded`**,
+**`broadcast_image_removed`** (0304);
 `broadcast_version_started`, `broadcast_version_sent_to_member`, `broadcast_member_approved`,
 `broadcast_member_changes_requested`, `broadcast_member_approval_withdrawn`,
 `broadcast_member_approval_voided`, `broadcast_schedule_confirmed`,
 `broadcast_approval_reminder_sent`, `broadcast_approval_expiry_warned`,
 `broadcast_approval_expired` (0305).
-Five places (research R24): `F7_AUDIT_EVENT_TYPES` **55 → 67** with the static assert at
+
+The two image values are **new**, not reused: spec § Audit trail requires "image uploaded / removed"
+to be auditable and the existing `broadcast_image_*` values are refusals and configuration only
+(`broadcast_image_too_large`, `broadcast_image_unsafe`, `broadcast_image_allowlist_updated` —
+`audit-port.ts:136-138`). They ship in 0304 with `broadcast_images` itself.
+
+Five places (research R24): `F7_AUDIT_EVENT_TYPES` **55 → 69** with the static assert at
 `audit-port.ts:234` updated in the same edit · `DB_ONLY_AUDIT_EVENT_TYPES`
 (`auth/infrastructure/db/schema.ts:522-678` — every `broadcast_*` value lives there) · the migration
 statements · `audit.eventType.*` labels EN/TH/SV · `scripts/lib/enum-migration-guard.ts`.
 Retention: `f7RetentionFor` returns 5 for every F7 event (`audit-port.ts:257`) — no tax document is
-produced, so none of the twelve is a 10-year event.
+produced, so none of the fourteen is a 10-year event.
 
 ### 7.3 `notification_type` += 5 (0305)
 
@@ -212,20 +251,52 @@ arm-less type is a silent outage. Also added to `enum-migration-guard.ts`.
 
 | FR-019 stage | `broadcast_status` | whose turn (FR-026) |
 |---|---|---|
-| Draft | `draft` | member (or the staff proxy owner) |
+| Draft | `draft` | — |
 | Awaiting marketing review | `submitted` | marketing |
 | In design | `in_design` | marketing |
 | Awaiting member approval | `awaiting_member_approval` | member |
 | Changes requested by member | `changes_requested` | marketing |
 | Member approved — awaiting schedule | `member_approved` | marketing |
-| Scheduled | `approved` | system |
-| Sending | `sending` | system |
+| Scheduled | `approved` | — |
+| Sending | `sending` | — |
 | Sent | `sent` | — |
 | Rejected | `rejected` | — |
 | Withdrawn / Cancelled | `cancelled` | — |
 | Expired — no member response | `expired_no_member_response` | — |
 | Failed | `failed_to_dispatch` | — |
 | *(historical only, never offered)* | `partially_sent`, `partial_delivery_accepted` | — |
+
+FR-026 fixes this mapping exactly: **Marketing** for Awaiting marketing review, In design, Changes
+requested and Member approved; **Member** for Awaiting member approval; and **"—" (nobody)** for
+Draft, Scheduled, Sending and every closed stage. `turnOf` therefore returns
+`'marketing' | 'member' | null` — there is **no** `'system'` turn (an earlier draft had one for
+Scheduled/Sending; a stage nobody is waiting on is "—", and the dashboard must not invite a staff
+user to act on a row the dispatcher owns).
+
+### 8.1a Entry, exit and acting party of every stage (FR-019 — normative)
+
+| stage (status) | entry condition | exit conditions | acting party |
+|---|---|---|---|
+| **Draft** (`draft`) | a member starts a compose, or staff start a proxy compose | submit → Awaiting marketing review; the 30-day draft prune → deleted | the author (member, or the staff proxy owner until submitted) — but **nobody is waiting**, so whose turn is "—" |
+| **Awaiting marketing review** (`submitted`) | the member (or the proxy) submits; `proposed_send_at` and `scheduled_for` are written here | approve as submitted → Scheduled · start formatted version (flag) → In design · reject → Rejected · withdraw → Withdrawn | marketing |
+| **In design** (`in_design`) | marketing starts or resumes a formatted version, from Awaiting marketing review, Changes requested, Member approved or Scheduled (round ≥ 1) | send version to member → Awaiting member approval · reject → Rejected · withdraw → Withdrawn | marketing |
+| **Awaiting member approval** (`awaiting_member_approval`) | marketing sends a version; `sent_to_member_at` stamped, `current_round` incremented, `member_reminder_stage` reset | member approves → Member approved · member requests changes → Changes requested · day 30 → Expired · marketing rejects → Rejected · member withdraws → Withdrawn | the member (a **lapsed** member may still act — see § 8.2) |
+| **Changes requested by member** (`changes_requested`) | the member requests changes, **or** the member withdraws an approval from Member approved / Scheduled | start formatted version → In design · reject → Rejected · withdraw → Withdrawn | marketing |
+| **Member approved — awaiting schedule** (`member_approved`) | the member approves; `approved_version_id` set | confirm schedule → Scheduled (**promotion**, FR-012a E1) · marketing edits → In design (approval voided) · member withdraws approval → Changes requested · reject → Rejected · withdraw → Withdrawn | marketing |
+| **Scheduled** (`approved`) | marketing confirms the time, **or** today's approve-as-submitted path | dispatcher picks it up → Sending · cancel the time → Changes requested · marketing edits (round ≥ 1) → In design · member withdraws approval → Changes requested · withdraw → Withdrawn | — (the dispatcher acts) |
+| **Sending** (`sending`) | the dispatcher hands the E-Blast to the delivery provider — **this is "sending begins"** (FR-015) | all batches accepted → Sent · dispatch failure → Failed | — |
+| **Sent** (`sent`) | delivery completed; `quota_year_consumed` set | terminal | — |
+
+### 8.1b Closed outcomes (terminal)
+
+| stage (status) | entered from | how | allowance |
+|---|---|---|---|
+| **Rejected** (`rejected`) | Awaiting marketing review · In design · Awaiting member approval · Changes requested · Member approved | marketing rejects with a reason, at any stage before Sending (FR-015) | freed |
+| **Withdrawn / Cancelled** (`cancelled`) | every in-progress stage incl. Scheduled | the member withdraws the E-Blast, or staff cancel, at any stage before Sending (FR-015) | freed |
+| **Expired — no member response** (`expired_no_member_response`) | **only** Awaiting member approval | the daily tick at day 30 (FR-022a) | freed |
+| **Failed** (`failed_to_dispatch`) | Scheduled · Sending | dispatch failure | freed |
+
+No closed stage can be reopened; the member submits a new E-Blast (FR-022a).
 
 `approved` is the **only** dispatchable status (`dispatch-scheduled/route.ts:168-183` scans
 `status = 'approved' AND scheduled_for <= now()`), which is why no waiting stage sits on it (R5).
@@ -274,6 +345,24 @@ a **member** session of the owning member company (FR-013); `member_approved →
 `broadcasts.send` and a confirmed time ≥ `now + 5 min` (`approve-broadcast.ts:110-116`);
 `submitted → in_design` requires the feature flag (R18 — the only flagged edge).
 
+**Expiry scope (FR-022a)**: `→ expired_no_member_response` exists on **one** `from` state,
+`awaiting_member_approval`, and the daily scan's predicate names that same status. Once the member
+has approved, or marketing has confirmed a schedule, **no expiry can occur** — there is no edge for
+it in either the Domain map or the DB trigger.
+
+**The Sending cut-off (FR-015)**: "sending begins" is the moment the platform hands the E-Blast to
+the delivery provider, i.e. entry into `sending`. Before that moment a member withdrawal and a
+marketing rejection are **always** available (every in-progress stage above has a `cancelled` /
+`rejected` exit); from `sending` onward **never** — the row is off the withdrawable set and the
+application answers 409 while the send completes. `cancel-cutoff-policy.ts:47,49` widens to
+`IN_PROGRESS_BROADCAST_STATUSES`; its existing `sending`-with-batches arm is the pre-existing
+operator path and is not extended to the member.
+
+**A lapsed member still decides (spec § Edge Cases)**: reading an E-Blast and deciding on a pending
+version are **not** benefit actions, so a lapsed or halted member may still open their own E-Blast
+and approve, request changes or withdraw. The existing membership refusals apply at **send** time
+only, and the 30-day expiry clock keeps running throughout.
+
 ### 8.3 What the immutability trigger exempts, and where
 
 | write | permitted on | mechanism |
@@ -284,6 +373,14 @@ a **member** session of the owning member company (FR-013); `member_approved →
 | `segment_type`, `segment_params`, `custom_recipient_emails` | **never** after `draft` | unchanged (FR-005) |
 | `proposed_send_at` | **never** after `draft` | added to the frozen set |
 | the six new columns | freely (they are workflow bookkeeping, not content) | not in the blocklist; **added to the GUC redaction arm's forbidden list** so the erasure scrub cannot move a row through the workflow |
+
+**What voids a member approval (FR-012)**: only a change to the **content** columns —
+`subject`, `body_html`, `body_source` — which in practice means the
+`member_approved|approved → in_design` transition, the single place a new working copy is opened.
+That transition clears `approved_version_id` and `scheduled_for` and emits
+`broadcast_member_approval_voided`. Writes that are **not** content and therefore void nothing:
+`note_to_member` on a version, `scheduled_for` alone (E2 — confirm, change, cancel), the four
+`tenant_broadcast_settings.brand_*` columns, and any of the six workflow-bookkeeping columns.
 
 The FR-012a test (`tests/integration/broadcasts/eblast-immutability-trigger.test.ts`) asserts a
 direct DB `UPDATE` of `subject`, `body_html` or `scheduled_for` still raises
@@ -318,10 +415,10 @@ type BroadcastStage =
   | 'draft' | 'awaiting_marketing_review' | 'in_design' | 'awaiting_member_approval'
   | 'changes_requested' | 'member_approved' | 'scheduled' | 'sending' | 'sent'
   | 'rejected' | 'cancelled' | 'expired' | 'failed' | 'historical';
-type WhoseTurn = 'marketing' | 'member' | 'system' | null;
+type WhoseTurn = 'marketing' | 'member' | null;            // FR-026: no 'system' turn
 
 stageOf(status: BroadcastStatus): BroadcastStage;          // total, no default arm
-turnOf(status: BroadcastStatus): WhoseTurn;                // total
+turnOf(status: BroadcastStatus): WhoseTurn;                // total; null for draft/scheduled/sending/closed
 const IN_PROGRESS_BROADCAST_STATUSES: readonly BroadcastStatus[];
 
 // approval/
@@ -341,13 +438,15 @@ type MemberDecision = {
 // pure policies
 isVersionEditable(v: BroadcastVersion): boolean;            // sentToMemberAt === null
 requiresReason(kind: MemberDecisionKind): boolean;          // true unless 'approved'
+reasonBounds(kind: MemberDecisionKind): { min: number; max: number };  // approved 0–500, else 1–2000
 nextReminder(stageEnteredAt, now, reminderStage): 'day3'|'day7'|'day23'|'expire'|null;  // FR-022/022a
 scheduleDiffers(proposed: Date | null, confirmed: Date): boolean;                        // FR-018
 
 // design-blocks/
-type DesignBlock = { kind: 'cta'; href: string; text: string }
-                 | { kind: 'banner'; src: string; alt: string };
+type DesignBlock = { kind: 'cta'; href: string; text: string }        // text 1–60, href on the scheme allow-list, ≤ 3 per message
+                 | { kind: 'banner'; src: string; alt: string };     // alt 1–125, full 600 px width, placeable anywhere
 parseBlockMarkers(sanitisedHtml: string): readonly DesignBlock[];     // tolerant of attribute order
+validateBlocks(blocks: readonly DesignBlock[]): BlockViolation[];     // cta_text_length | cta_link_scheme | too_many_cta | banner_alt_required
 applyDesignBlocks(sanitisedHtml: string, brand: BrandSettings): string;  // runs AFTER sanitisation
 
 // brand/
@@ -376,13 +475,20 @@ notifications_outbox ← queued per hand-off, ids only (research R14)
 
 | thing | limit | source |
 |---|---|---|
-| subject | 200 chars | `broadcasts_subject_length` (`schema.ts:278-281`), mirrored on versions |
-| body HTML | 200 KB (`octet_length`) | `broadcasts_body_html_size` (`:284-287`), mirrored on versions |
-| note to member | 1,000 chars | new CHECK |
-| decision reason | 1–2,000 chars | new CHECK; FR-010 makes it mandatory for two of the three kinds |
-| brand postal address | 500 chars | new CHECK |
-| brand primary colour | `#RRGGBB`, contrast ≥ 4.5:1 vs white | CHECK (format) + Domain (contrast) |
+| subject | 200 chars | `broadcasts_subject_length` (`schema.ts:278-281`), mirrored on versions. Checked at **every save and again at send-to-member** (FR-004) |
+| body HTML | 200 KB (`octet_length`), **including design-block markup** | `broadcasts_body_html_size` (`:284-287`), mirrored on versions; same two checkpoints (FR-004) |
+| marketing's note to the member | 1,000 chars | new CHECK on `broadcast_versions.note_to_member` (FR-006 sets no bound) |
+| member's approval note | ≤ 500 chars, optional | FR-009; the `decision = 'approved'` arm of the decisions CHECK |
+| member's changes-requested / withdrawal reason | 1–2,000 chars, **mandatory** | FR-010, FR-015a; the other arm of the same CHECK |
+| brand postal address | 300 chars, line breaks allowed | FR-041c; new CHECK |
+| brand primary colour | `#RRGGBB`, contrast ≥ 4.5:1 vs white; **email only** | CHECK (format) + Domain (contrast) |
 | image | 5 MB, png/jpeg/webp/gif, ClamAV-clean, allowlisted host | `upload-inline-image.ts:38`, `image-storage-port.ts:20-24` — unchanged for staff and template images (FR-040) |
+| image description (alt) | 1–125 chars, any language, required before insert | FR-040; Domain + editor dialog, carried into the sent email |
+| CTA button | text 1–60 chars; link on the scheme allow-list; **≤ 3 per message** | FR-041; Domain `validateBlocks` |
+| banner image | the image rules + a required description; full 600 px width; placeable anywhere | FR-041 |
+| member writes (approve / request changes / withdraw) | 60 per minute per user | spec § Roles — the existing E-Blast action bucket |
+| test copies | **10 per user per hour** (members and staff alike) | FR-037, spec § Roles |
+| preview renders | 30 per minute per actor | R11 — a render amplifier guard, not a spec limit |
 | versions per broadcast | no cap (FR: "no hard cap"); the round number is visible so a long negotiation is noticed | spec § Edge Cases |
 | reminders | exactly one per threshold; day 3, day 7, day 23 warning, day 30 close | FR-022 / FR-022a, `member_reminder_stage` |
 | recipients per tick | 500 unless `FEATURE_F7_IMPORT_AUDIENCE` is ON | unchanged (`DELIVERABLE_RECIPIENTS_PER_TICK`) |

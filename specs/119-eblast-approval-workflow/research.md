@@ -283,6 +283,28 @@ preview render and the send-time render, and asserts the element+attribute multi
 each stage. A positive control asserts the comparison fails when a tag is removed from one config —
 a check that cannot tell "nothing stripped" from "not looking" is not a check.
 
+### R9a — Toolbar surface, paste handling and the link dialog (FR-038, FR-044)
+
+**D**: the toolbar offers exactly the constructs the shared policy keeps: **headings H2 and H3 only**
+(the subject is the email's title, so H1 is never offered and is not in the allow-list), quote,
+divider, bulleted and numbered lists, bold, underline, link with editable link text, image, CTA
+button, banner. **Paste**: content outside the policy is dropped at paste time by the editor's own
+config (not silently at submit), and the user is told **once per editing session** in a non-blocking
+notice that unsupported formatting was removed — a toast, not a dialog, and not repeated per paste.
+**Link dialog**: a URL whose scheme is outside `http`, `https`, `mailto` is refused **in the dialog**
+with an inline message; it is never accepted and then stripped later.
+**R**: FR-038 requires that nothing a user can produce survives to be removed afterwards — "dropped
+at paste time and the user is told once" is the only shape that keeps the editor honest without a
+blocking interruption. Refusing the scheme in the dialog rather than at save is the same rule applied
+to links; `zod`'s `.url()` accepts `javascript:`, so the allow-list is asserted at the dialog and
+again at the sanitiser (the standing `safeExternalHref` rule).
+**D (italic, FR-044)**: when the interface locale is Thai the italic **control** is hidden; italic
+*content* arriving by paste or from a template is **kept as-is** and is not stripped, because the
+policy allows `<em>` for every locale and stripping it would silently damage a Thai member's text
+that an English colleague typed. Hiding the control is a locale-scoped UI rule, not a content rule.
+**A**: stripping italic from the body for Thai users — rejected: it would make the same document
+render differently per viewer locale and break SC-011's element parity.
+
 ## R10 — Design blocks: user data through the sanitiser, platform markup generated after it
 
 **D**: two Tiptap custom nodes built on `@tiptap/core` (already an exact-pinned dependency — no new
@@ -292,6 +314,21 @@ package):
 |---|---|---|---|
 | call-to-action button | `ctaButton` (attrs: `href`; text is the node's content) | `<a data-eb="cta" href="https://…">Read more</a>` | a plain link |
 | full-width banner | `bannerImage` (attrs: `src`, `alt`) | `<img data-eb="banner" src="…" alt="…">` | a plain image |
+
+**D (block limits, FR-041)** — enforced in Domain, checked at every save and again at send-to-member
+(FR-004), and surfaced as named 422 codes in `contracts/`:
+
+| rule | limit | refusal |
+|---|---|---|
+| CTA text | 1–60 characters | `cta_text_length` |
+| CTA link | scheme on the allow-list (`http`, `https`, `mailto`); host on the tenant allow-list when the scheme is http(s) | `cta_link_scheme` / the existing image/link source refusal |
+| CTA count | at most **3** per message | `too_many_cta` |
+| banner image | the FR-040 image rules (≤ 5 MB, png/jpeg/webp/gif, ClamAV-clean, allow-listed host) **plus** a required description of 1–125 characters | `banner_alt_required` / the existing image codes |
+| banner placement | anywhere in the body — it is an ordinary block, not a header slot — and rendered at the full **600 px** email width | — |
+| CTA appearance | brand colour, platform-owned padding and radius; **button text wraps at phone width and never overflows** | — |
+
+The user supplies only `href`, the button text, `src` and `alt`; nothing else is expressible,
+because those are the only attributes the shared config allows.
 
 The stored `body_html` therefore stays **ordinary, sanitisable HTML** and passes the same
 `dompurifySanitizer.sanitize` every body passes. The platform's appearance markup — the bgcolor
@@ -330,9 +367,11 @@ wrappers over one Application use case `renderBroadcastPreview`, which calls the
 `renderBroadcastHtml` the sender calls (`infrastructure/resend/email-template.ts:128`) with the
 tenant's brand settings and logo URL. The returned full HTML document is rendered into an
 `<iframe srcdoc>` — inline in the compose page (debounced ~400 ms on the deferred body, with a
-proper empty state when the message is empty) and full-size in a Preview dialog offering desktop
-(600 px) and phone (360 px) widths, returning focus to the trigger on close (FR-043). The same
-component is reused on the member's compare screen.
+proper empty state when the message is empty — a translated line such as "Your message preview
+appears here", never a blank box) and full-size in a Preview dialog offering **desktop 600 px** and
+**phone 375 px** widths, returning focus to the trigger on close and respecting
+`prefers-reduced-motion` on the dialog's open/close transition (FR-043). The same component is
+reused on the member's compare screen.
 **R**: FR-043 requires "the complete email as a recipient receives it — header, body, footer with
 unsubscribe", and the spec's edge case makes a preview/delivered difference a **defect**. The only
 way to make that structurally true is to render from the same function. The wrapper is a full
@@ -395,7 +434,8 @@ latency budget.
 (`src/modules/broadcasts/infrastructure/schema.ts:887-907`, PK `tenant_id`, created in migration
 0131, RLS + FORCE added by `0166_f71a_rls_policies.sql:71-76`):
 `brand_primary_color text NULL CHECK (~ '^#[0-9a-fA-F]{6}$')`, `brand_postal_address text NULL
-CHECK (char_length <= 500)`, `brand_updated_at`, `brand_updated_by_user_id`. Page
+CHECK (char_length <= 300)` (FR-041c — free text, **line breaks allowed**, so the CHECK bounds the
+length and nothing else), `brand_updated_at`, `brand_updated_by_user_id`. Page
 `/admin/settings/broadcasts/brand`, `requirePagePermission('settings.broadcasts')` (admin +
 super_admin — `permission-catalogue.ts:100`, `role-bundles.ts:66-72`); API
 `GET|PATCH /api/admin/broadcasts/brand` with `requireApiPermission('settings.broadcasts')`. Every
@@ -415,14 +455,26 @@ justification; the formulas are short, exact and testable, so the arithmetic is 
 has RLS + FORCE, and its own docblock anticipates "future enhancements would add columns here". It
 is **not** in `scripts/check-multi-tenant-ready.ts` `SCOPED_TABLES:77-80`; this feature adds it
 along with the three new tables, because it now carries tenant-authored content.
+**D (brand chrome is live, never frozen — FR-041c)**: no version, and no `broadcasts` row, ever
+stores a copy of the logo URL, the colour or the address. `renderBroadcastHtml` reads the brand
+settings at the moment it renders, so **every preview and the send itself use the current brand**,
+and a brand change while versions are pending or approved voids nothing (FR-012's "brand chrome is
+not content"). That is also why the Brand page needs no coordination with the approval flow. The
+brand **colour is used in email only** — never in the portal or admin UI, which keeps the platform
+theme tenant-independent and keeps a low-contrast-but-legal colour out of the application chrome.
+**D (page placement and visibility — FR-041b)**: the page lives under the staff **Settings** area
+beside the existing E-Blast settings page, not under `/admin/broadcasts`. A user without
+`settings.broadcasts` — including `marketing` — does not see the nav entry, the Settings-index card
+or the page (`requirePagePermission` 403/redirect), so the surface is invisible rather than disabled.
 **A**: (1) a new `tenant_brand_settings` table — rejected: two nullable columns do not justify a
 table. (2) putting the colour on `tenant_invoice_settings` next to the logo — rejected: that table
 is super-admin-only and money-sensitive; FR-041b's whole point is that colour and address are
-admin-writable while the logo is not.
+admin-writable while the logo is not. (3) freezing the brand into each version at send-to-member —
+rejected by FR-041c in as many words, and it would make a logo fix require a new approval round.
 **P**: the panel's "`marketing` cannot open a `settings.broadcasts` page" carry-forward is closed by
-copy, not by permission: the "no logo on file" hint on the compose/preview surfaces names the role
-that can fix it and links **only** for a user who holds `settings.broadcasts`. No new permission
-key (spec § Roles).
+copy, not by permission: the "no logo on file" hint on the compose/preview surfaces tells a user who
+cannot fix it to **ask an administrator**, and links to the Brand page **only** for a user who holds
+`settings.broadcasts`. No new permission key (spec § Roles).
 
 ## R14 — Notifications: five types, ids only, rendered at send time
 
@@ -490,6 +542,12 @@ shared try/catch. The route's own subject is already the *lifetime* of an E-Blas
 FR-022a's 30-day expiry was chosen (spec § Clarifications) to align with that same 30-day draft
 lifetime, so the two belong on the same clock. The route name is kept: renaming touches
 `vercel.json`, the runbook and the alert rules for no observable gain (Principle X).
+**D (scope — FR-022a)**: reminders, the day-23 warning and the day-30 expiry apply **only while the
+status is `awaiting_member_approval`**. Once the member has approved (`member_approved`) or marketing
+has confirmed a schedule (`approved`), **no expiry can occur** — the scan's `WHERE` clause and the
+partial index `broadcasts_awaiting_member_idx` both name that one status, and
+`awaiting_member_approval` is the only `from` state with an `expired_no_member_response` target in
+the DB state machine, so the rule is enforced twice.
 **D (clock and idempotency)**: the clock runs from `stage_entered_at` while the row is in
 `awaiting_member_approval` — which is by construction "the moment the latest version was sent to
 them" (FR-022a), because entering that stage *is* sending a version. `broadcasts.member_reminder_stage
@@ -514,6 +572,17 @@ best-effort immediately after the transaction commits and (b) durably by the dai
 under a **last-reference rule**: a blob is deleted only when no live `broadcast_images` row shares
 its `content_hash`, because the upload path dedupes by hash
 (`upload-inline-image.ts:138-165`) and two members can legitimately share one blob.
+**D (notifications are in the reach)**: spec § Personal data names "every notification about the
+E-Blast". Because every `eblast_*` outbox row carries **ids only** and the dispatcher renders at send
+time (R14), an unsent row is blanked by the very same scrub — it re-reads redacted rows. A **sent**
+row holds the recipient address and no content, and is removed by the existing 90-day `outbox-purge`;
+the erasure transaction additionally cancels the pending rows for the erased member's broadcasts so
+no post-erasure email is rendered from a `[redacted]` version. This is stated so the DSAR/erasure
+task list names the outbox, not only the two child tables.
+**D (the last-reference rule spans both owner kinds)**: a blob is deleted only when **no** live
+`broadcast_images` row of **either** `owner_kind` — no E-Blast and no template — shares its
+`content_hash`. The reference is removed from the content immediately; the bytes go on the next daily
+sweep, i.e. **within 24 hours** of becoming unreferenced (spec § Personal data).
 **R**: spec § Personal data requires erasure and export to reach "every stored version, every
 feedback/note text and every image uploaded for the E-Blast, not only the current content", and
 "images of a withdrawn, rejected or erased E-Blast must not remain reachable". The panel's
@@ -682,12 +751,25 @@ inline-image blobs today, so every abandoned upload leaks. A derived approach �
 version's and template's HTML for `<img src>` — was considered and rejected: it cannot see an image
 uploaded and never saved, and it cannot enforce ownership at upload time, which is before the HTML
 exists.
+**D (alt text, FR-040)**: the description is **1–125 characters, any language**, collected by the
+editor's insert dialog before the node can exist — so it is never an upload field. The field is
+labelled, and an empty description is an announced field error, not a silent disabled button. The
+description is carried into the sent email as the `alt` attribute the shared config allows.
+**D (upload refusals, FR-040)**: an upload is refused for a **closed** E-Blast (any terminal status),
+for **another member's** E-Blast, and — for a member — for a **draft they do not own**. The member
+route `POST /api/broadcasts/inline-image-upload` gains that ownership check, which it has never had
+(`route.ts:76` takes `draftId` as an unvalidated form string while `route.ts:5` claims otherwise);
+a same-tenant miss answers 404 and emits the existing `broadcast_cross_member_probe` (US6-AS7).
 **D (templates)**: a template's images are tied to the template; starting an E-Blast from a template
 carries them **by reference** (the existing snapshot copies the HTML, so the `src` URLs come along)
 and a later edit or delete of the template does not change E-Blasts already started from it —
 today's snapshot semantics, unchanged (`snapshot-template-to-draft.ts`). The last-reference rule
 (R17) is what makes deleting a template image safe while a member's draft still points at it: the
-draft's own `broadcast_images` row keeps the hash alive.
+draft's own `broadcast_images` row keeps the hash alive. Blocks and links that arrive from a template
+are **ordinary content in the member's draft**: the member may edit or delete them like anything
+else, and **authorship is not tracked per block** (FR-046a) — there is no per-block provenance field
+and no "from template" badge, because the draft's content is the member's from the moment it is
+snapshotted.
 **A**: a `broadcast_id` column on nothing at all, with ownership enforced only by the route's status
 check — rejected: it satisfies (a) and neither (b) nor (c).
 
@@ -695,10 +777,14 @@ check — rejected: it satisfies (a) and neither (b) nor (c).
 
 **D**: `POST /api/broadcasts/test-copy` (member) and `POST /api/admin/broadcasts/test-copy` (staff)
 render the same wrapper as the preview and send **one** email to the **session user's own address**,
-resolved server-side and never taken from the request body. Subject is prefixed with a localised
-`[TEST]` marker. It changes no stage, writes no version, consumes no allowance, and creates no
-outbox row: a `TestCopyMailerPort` sends it through the transactional Resend client synchronously so
-the result is reported to the user in-band. Rate limit 5 per hour per actor; audit
+resolved server-side and never taken from the request body. Both surfaces exist because both members
+and staff use the same tool (FR-037). The subject is prefixed with the localised **`[Test]`** marker,
+and the body goes through the **identical** content-safety and rendering pipeline as a real send —
+the same sanitiser policy, the same `applyDesignBlocks`, the same brand header and the same footer —
+so a test copy that differs from the delivered email is a defect, not a configuration. It changes no
+stage, writes no version, consumes no allowance, and creates no outbox row: a `TestCopyMailerPort`
+sends it through the transactional Resend client synchronously so the result is reported to the user
+in-band. Rate limit **10 per user per hour** (FR-037, spec § Roles); audit
 `broadcast_test_copy_sent { broadcast_id?, version_id?, recipient_hash }`.
 **R**: FR-037. The outbox exists to make *system-initiated* mail durable; a test copy has no
 durability requirement (the user will simply press the button again) and routing it through the
@@ -711,17 +797,28 @@ send (the dispatcher holds one at `outbox-dispatch/route.ts:1161-1178`); if none
 reusable outside the dispatcher, fall back to a sixth `notification_type` with a dispatcher arm that
 re-renders from the version id, and accept the ≤1-minute delay.
 
-## R24 — Audit events: twelve, in the DB-only list, with the `broadcast_` prefix
+## R24 — Audit events: fourteen, in the DB-only list, with the `broadcast_` prefix
 
-**D**: twelve new values — `broadcast_version_started`, `broadcast_version_sent_to_member`,
+**D**: fourteen new values — `broadcast_version_started`, `broadcast_version_sent_to_member`,
 `broadcast_member_approved`, `broadcast_member_changes_requested`,
 `broadcast_member_approval_withdrawn`, `broadcast_member_approval_voided`,
 `broadcast_schedule_confirmed`, `broadcast_approval_reminder_sent`,
 `broadcast_approval_expiry_warned`, `broadcast_approval_expired`, `broadcast_test_copy_sent`,
-`broadcast_brand_settings_changed`. Rejection and withdrawal from a new stage reuse the existing
-`broadcast_rejected` / `broadcast_cancelled`; image events reuse the existing `broadcast_image_*`.
+`broadcast_brand_settings_changed`, **`broadcast_image_uploaded`** and
+**`broadcast_image_removed`**. Rejection and withdrawal from a new stage reuse the existing
+`broadcast_rejected` / `broadcast_cancelled`.
+**R (why the two image values are new)**: spec § Audit trail names "image uploaded / removed" as
+auditable. The existing `broadcast_image_*` values are **refusals and configuration**
+(`broadcast_image_too_large`, `broadcast_image_unsafe`, `broadcast_image_allowlist_updated`,
+`audit-port.ts:136-138`) — there is no success or removal event today, so an uploaded image leaves no
+trace and an erased one leaves no record of its removal. Verified against the tuple this gate; an
+earlier draft of this research said "reuse the existing `broadcast_image_*`", which was wrong.
+`broadcast_image_uploaded` is emitted by all three upload routes (member, staff E-Blast, template)
+with `{ owner_kind, owner_id, image_id, byte_size, mime_type, content_hash }`;
+`broadcast_image_removed` is emitted when a row is stamped `deleted_at` (erasure, withdrawal,
+rejection) with `{ owner_kind, owner_id, image_id, blob_deleted: bool }` — never the blob URL.
 **D (the five places, F7 flavour)**: (1) `F7_AUDIT_EVENT_TYPES` in
-`src/modules/broadcasts/application/ports/audit-port.ts:50-178` — **55 → 67**, and the static
+`src/modules/broadcasts/application/ports/audit-port.ts:50-178` — **55 → 69**, and the static
 assert at `:234` (`extends 55`) updated in the same edit; (2) `DB_ONLY_AUDIT_EVENT_TYPES` in
 `src/modules/auth/infrastructure/db/schema.ts:522-678` — every `broadcast_*` value lives there, not
 in the `auditEventTypeEnum` tuple; (3) the migration's `ALTER TYPE "audit_event_type" ADD VALUE
@@ -735,11 +832,14 @@ instead of failing the deploy.
 `broadcast_` prefix, so keeping the prefix (including on the brand-settings event, which is a tenant
 setting rather than a broadcast) is what keeps the TS tuple ↔ `pg_enum` parity check meaningful.
 `tests/unit/broadcasts/application/audit-event-type-emission.test.ts:102` requires every tuple value
-to have a real emit site, so none of the twelve may be added ahead of its emitter.
+to have a real emit site, so none of the fourteen may be added ahead of its emitter.
 **D (payloads)**: ids, the round, the decision discriminator, `reason_length` and — for
 `broadcast_schedule_confirmed` — `proposed_send_at` / `confirmed_send_at` / `differs: bool`.
 **Never** the subject, body, note or reason text. `actorRole` is the session role, `?? null`, never
-a literal (`check:actor-role-truth`). The member-side events carry snake_case `member_id` so the
+a literal (`check:actor-role-truth`): that resolves to **`member`** for a portal user's decision,
+upload or test copy, to the staff session role for a marketing/admin action, and to **`system`** for
+the reminder, warning, expiry and image-sweep rows the cron writes. The member-side events carry
+snake_case `member_id` so the
 0009 `last_activity_at` trigger fires (it reads only that key); the staff-side and cron-side events
 carry `related_member_id` so a staff or system action does not refresh the member's recency.
 
@@ -751,10 +851,14 @@ carry `related_member_id` so a staff or system action does not refresh the membe
   added and exported from the invoicing barrel without dragging a Node-only dependency into a client
   bundle (the `sharp` / `server-only` note at `src/modules/invoicing/index.ts:531-538`). If it
   cannot, fall back to R12's rejected alternative (3) with an operator re-upload step.
-- **V2** — measure the 320 px toolbar with the new controls on the running dev server before fixing
-  its shape (wrap vs overflow menu), together with the first paint of the empty preview, the layout
-  shift as the deferred preview settles, NVDA on the changed toolbar, and SV string lengths on the
-  five new stage chips (exploration § C).
+- **V2** — the toolbar's shape is **decided, not open**: FR-048 requires it to **wrap onto further
+  rows at 320 px**, with **no overflow menu** (hiding a control behind a menu is what the requirement
+  forbids), arrow keys plus **Home/End** between controls, and a visible focus state. The live look on
+  the running dev server therefore confirms the **row count** and that nothing clips — it does not
+  choose between wrap and overflow. Measure it together with the first paint of the empty preview,
+  the layout shift as the deferred preview settles, NVDA on the changed toolbar, and SV string
+  lengths on the five new stage chips, which FR-025 requires to fit their chips in all three locales
+  (SV runs up to +28 %) (exploration § C).
 - **V3** — confirm the outbox dispatcher can take a tenant `tx` for the read-at-send of
   `broadcast_versions` / `broadcast_member_decisions` the way the two F114 arms do
   (`outbox-dispatch/route.ts:415-542` build a `TenantContext` from `row.tenantId` after a slug-shape

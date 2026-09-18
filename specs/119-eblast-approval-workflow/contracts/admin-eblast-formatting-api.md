@@ -17,6 +17,20 @@ kill-switch (`src/proxy.ts:43-68`) → 503 `feature_disabled`.
 
 `manager` holds `broadcasts.read` only, so every write route below answers **403 `permission_denied`**
 for a manager and the denial is audited (US4 AS6, read-only on the dashboard and detail).
+Concretely (spec § Roles): a `manager` **can** read the queue, a detail, every version, every member
+decision and the full history; a `manager` **cannot** format, save or send a version, **send a test
+copy**, confirm/change/cancel a schedule, upload an image, or open the Brand page — each of those is
+a `broadcasts.write` / `broadcasts.send` / `settings.broadcasts` route.
+
+**Member-side approval is decided by the session, not by the person** (spec § Roles). A human who
+holds both a staff account and a portal account of a member company gives the member-side approval
+**only** while signed in as that company's portal user: the member routes refuse a staff session
+(`requireMemberContext`) and these staff routes refuse a member session, so there is no request in
+which one identity can act as the other (FR-013).
+
+**Rate limits**: `POST …/test-copy` is **10 per user per hour** (FR-037, the same bucket as the
+member route); `POST …/preview` is 30 per minute per actor. The formatting and schedule routes keep
+the existing staff buckets.
 
 **Flag rule (research R18)**: `FEATURE_EBLAST_MEMBER_APPROVAL` gates exactly one route —
 `POST …/[id]/version` (start a formatted version), the single **entry** into the approval round →
@@ -76,11 +90,24 @@ Permission `broadcasts.write`. Stage must be `in_design`.
 
 - **Optimistic concurrency** (FR-033, the "two marketing users" edge case): `expectedUpdatedAt` must
   equal the row's `updated_at` → otherwise **409 `version_changed`** with `currentUpdatedAt` and the
-  current content, so the client can show "someone else changed this" rather than overwrite.
-- The body passes the **same** content-safety and size rules as a member's (FR-004): the shared
-  sanitiser policy, `subject ≤ 200`, `bodyHtml ≤ 200 KB`, the per-tenant image-source allowlist. A
-  violation is **422 `unsafe_content`** / `422 validation_error` with `issues`, and the version is
-  not saved.
+  current content, so the client can show "someone else changed this" rather than overwrite. There is
+  exactly **one** working copy per E-Blast at a time (the `broadcast_versions_one_unsent_idx` partial
+  unique index), so a second marketing user edits the same row and loses the race here (FR-001).
+- The body passes the **same** content-safety and size rules as a member's, **at every save and again
+  when the version is sent to the member** (FR-004): the shared sanitiser policy, `subject ≤ 200`
+  characters, `bodyHtml ≤ 200 KB` **including the design-block markup**, image ≤ 5 MB, the per-tenant
+  image-source allowlist. A violation is **422** and the version is **not saved**:
+
+| code | rule |
+|---|---|
+| `unsafe_content` | the sanitiser removed something — the body is refused, not silently cleaned |
+| `validation_error` | `subject > 200` or `bodyHtml > 200 KB` (with `issues`) |
+| `cta_text_length` | CTA button text outside 1–60 characters (FR-041) |
+| `too_many_cta` | more than 3 CTA buttons in the message (FR-041) |
+| `cta_link_scheme` | a link whose scheme is outside `http` / `https` / `mailto` (FR-038/FR-041) |
+| `banner_alt_required` | a banner or inline image without a 1–125-character description (FR-040) |
+| `image_source_not_allowlisted` | an image whose host is not on the tenant allow-list — the body names **which image** (spec § Edge Cases) |
+
 - No audit event (a save is not a hand-off); counted `broadcasts_version_saved_total`.
 
 ```jsonc
@@ -90,7 +117,20 @@ Permission `broadcasts.write`. Stage must be `in_design`.
 ## `POST /api/admin/broadcasts/[id]/version/send` — send the version to the member (FR-003)
 
 Permission `broadcasts.write`. Stage must be `in_design`; a working copy must exist and must pass the
-content rules **again** at this moment (FR-004 — "cannot be sent to the member until it passes").
+content rules **again** at this moment (FR-004 — "cannot be sent to the member until it passes"),
+including the allow-list re-check below.
+
+**Preconditions checked here, not assumed:**
+
+| precondition | refusal |
+|---|---|
+| the owning member company has **at least one active portal user** to notify | **409 `no_portal_user`** — a proxy-submitted E-Blast whose member has no portal account cannot be sent for approval. The staff detail page shows a standing warning, and the only paths left are "Approve as submitted" (FR-007) or inviting a portal user first (spec § Edge Cases) |
+| **every image in the body still resolves to an allow-listed host** — re-evaluated now, because a host may have been removed from the tenant allow-list since the version was saved | **422 `image_source_not_allowlisted`**, body carrying `{ images: [{ src, host, reason }] }` so marketing is told **which image and why**; the version stays editable and can be sent once the image is replaced (spec § Edge Cases) |
+
+**Re-sending the same content is allowed** (FR-011): when marketing disagrees with a change request
+it may send a version whose subject and body are byte-identical to the previous round, with a note
+explaining why. There is no "nothing changed" refusal — it is a new version, a new round, and the
+alternative FR-011 offers is rejecting the E-Blast with a reason (FR-015).
 
 One `runInTenant`: stamp `sent_to_member_at` (the version becomes read-only — DB trigger
 `broadcast_versions_immutable_after_send_fn`), `current_round = version_no`, transition to
@@ -107,8 +147,11 @@ language (FR-024).
 
 | code | when |
 |---|---|
-| 409 `stage_changed` · `no_working_copy` · `content_unsafe` | as above |
-| 422 `validation_error` | subject/body limits |
+| 409 `stage_changed` · `no_working_copy` · `content_unsafe` · **`no_portal_user`** | as above |
+| 422 `validation_error` · the block codes · **`image_source_not_allowlisted`** | subject/body limits, FR-041 block rules, a de-allow-listed image |
+
+`current_round` is incremented **here and only here** — a round is a version sent to the member
+(FR-026), so a withdrawn approval does not start one.
 
 After this, `PATCH …/version` answers **409 `stage_changed`** — marketing can no longer edit that
 version (US1 AS2).
@@ -117,8 +160,12 @@ version (US1 AS2).
 
 Permission `broadcasts.read` (so a manager can read it). Returns the member's original, every
 version with its author and send time, every member decision with its reason, the working copy if
-any, and `updatedAt` for the concurrency token. This is the staff side of FR-032; the member's
-feedback is attached to the version it concerns (FR-011).
+any, and `updatedAt` for the concurrency token. This is the staff side of FR-032 — a record of
+**versions and decisions**, distinct from the audit trail, which is never read to build it; the
+member's feedback is attached to the version it concerns (FR-011). On the approve-as-submitted path
+(FR-007) there are no version rows at all, and the response instead carries
+`approvedAsSubmitted: { at, byUserId, byUserName }` — the history then records "approved as
+submitted" with the staff user and the time, which is what FR-007 requires.
 
 ## `POST /api/admin/broadcasts/[id]/schedule` — confirm, change or cancel the send time (FR-017)
 
@@ -145,6 +192,15 @@ Rules:
   edge case: `keep_proposal` with a past proposal is refused with the same code and the client
   falls back to picking a time.
 - `keep_proposal` requires `proposed_send_at IS NOT NULL` → else **409 `no_proposal`**.
+- **Promotion re-checks the images**: before the approved version is copied into the sending record,
+  every image in it must still resolve to an allow-listed host. A host removed from the allow-list
+  since approval refuses the promotion with **422 `image_source_not_allowlisted`** naming the image;
+  the E-Blast stays at Member approved until marketing replaces it and the member approves the new
+  version (spec § Edge Cases — "cannot be sent to the member **or promoted** until the image is
+  replaced").
+- Confirming, changing or cancelling the send time is **not a content change** and therefore **never
+  voids the member's approval** (FR-012); `approved_version_id` is untouched by every mode but
+  `cancel`, which clears only `scheduled_for` and moves the row off the dispatchable status.
 - Audit `broadcast_schedule_confirmed { related_member_id, broadcast_id, version_id,
   proposed_send_at, confirmed_send_at, differs: bool, mode, actor_role }`.
 - Enqueue one `eblast_schedule_confirmed_member` outbox row; the rendered email calls out the
@@ -164,10 +220,13 @@ second source.
 ## `POST /api/admin/broadcasts/[id]/reject` and `…/cancel` (existing routes, widened)
 
 Unchanged contracts. The accepted stage set widens to `IN_PROGRESS_BROADCAST_STATUSES` (FR-015 —
-marketing may reject with a reason at any pre-send stage), and the member notification gains the
-stage it was rejected from. Reuses the existing `broadcast_rejected` / `broadcast_cancelled` audit
-events and the existing `broadcast_rejected_notification` / `broadcast_cancelled_notification`
-outbox types.
+marketing may reject with a reason at any stage before **sending begins**, i.e. before entry into
+`sending`; from `sending` onward the route answers **409 `sending_started`** and the send completes),
+and the member notification gains the stage it was rejected from. Reuses the existing
+`broadcast_rejected` / `broadcast_cancelled` audit events and the existing
+`broadcast_rejected_notification` / `broadcast_cancelled_notification` outbox types. Rejecting is
+also FR-011's alternative when marketing disagrees with a change request and will not send another
+version.
 
 ## `POST /api/admin/broadcasts/[id]/images` — staff image on the E-Blast being formatted (FR-040)
 
@@ -187,14 +246,21 @@ with `owner_kind='broadcast', owner_id=<id>`.
 
 | code | when |
 |---|---|
-| 409 `stage_changed` | not `in_design` |
+| 404 `not_found` | another tenant's broadcast (audited `broadcast_cross_tenant_probe`) |
+| 409 `stage_changed` | not `in_design` — which also covers a **closed** E-Blast (any terminal status): no upload against a finished E-Blast (FR-040) |
 | 413 `too_large` | > 5 MB (route pre-check at 5.5 MB) |
 | 415 `invalid_mime` | outside the MIME list |
 | 422 `unsafe` | ClamAV verdict not clean (infected, error **or** timeout — fail-closed) |
 | 503 `storage_unavailable` | blob error |
 
-**Alt text (FR-040)** is *not* part of the upload: the editor requires a description before the
-image node can be inserted, and the description is carried into the sent email as the `alt`
+Audits **`broadcast_image_uploaded`**
+`{ related_member_id, owner_kind: 'broadcast', owner_id, image_id, byte_size, mime_type, content_hash, actor_role }`
+on success (a new audit value — see `dashboard-and-notifications.md` § 2); a row stamped
+`deleted_at` by erasure, withdrawal or rejection audits **`broadcast_image_removed`**.
+
+**Alt text (FR-040)** is *not* part of the upload: the editor requires a **1–125-character**
+description before the image node can be inserted, its field is labelled, an empty value is an
+**announced** field error, and the description is carried into the sent email as the `alt`
 attribute the shared sanitiser policy allows. A rejected upload leaves the user's text untouched
 (spec § Edge Cases).
 
@@ -205,16 +271,20 @@ id>`. The template must exist in the tenant and not be soft-deleted. Starting an
 template carries the images **by reference** (the existing snapshot copies the HTML, so the `src`
 URLs come along) and a later template edit or delete does not change E-Blasts already started from
 it — today's snapshot semantics. The last-reference rule (data-model § 4) is what keeps a member's
-draft working after the template image is removed.
+draft working after the template image is removed. **Blocks and links that arrive from a template
+are the member's own content** from that moment: editable and deletable like anything else, with no
+per-block authorship recorded and no "from template" marking anywhere in the payload (FR-046a).
 
 ## `POST /api/admin/broadcasts/preview` and `POST /api/admin/broadcasts/test-copy`
 
-Permission `broadcasts.read` (preview) and `broadcasts.write` (test copy). Bodies, responses, limits
-and audit events are identical to the member routes in
+Permission `broadcasts.read` (preview) and `broadcasts.write` (test copy — so a `manager` gets 403).
+Bodies, responses, limits and audit events are identical to the member routes in
 [`portal-eblast-approval-api.md`](./portal-eblast-approval-api.md); the staff/member pair mirrors the
 existing `/api/broadcasts/recipient-count` ↔ `/api/admin/broadcasts/recipient-count` precedent. The
 test copy still goes **only** to the session user's own address — a staff user cannot send a test to
-the member (FR-037).
+the member — carries the `[Test]` subject prefix, runs the **identical** pipeline including design
+blocks, the brand header and the footer, and is capped at **10 per user per hour** (FR-037). The
+preview renders desktop **600 px** and phone **375 px** (FR-043).
 
 ## `GET | PATCH /api/admin/broadcasts/brand` — chamber brand settings (FR-041b/c)
 
@@ -241,7 +311,12 @@ Permission `settings.broadcasts` on **both** verbs.
 | 200 | saved; audit `broadcast_brand_settings_changed { previous: {…}, next: {…}, actor_role }` |
 | 403 | `permission_denied` — **including `marketing`**, which does not hold `settings.broadcasts` |
 | 422 `colour_contrast` | white text on the colour is below WCAG AA 4.5:1; the body carries `{ ratio: 3.1, required: 4.5 }` and **the previous colour stays in force** (spec § Edge Cases) |
-| 422 `validation_error` | not `#RRGGBB`; address > 500 chars |
+| 422 `validation_error` | not `#RRGGBB`; address > **300** chars (FR-041c — free text, line breaks allowed, length is the only bound) |
+
+**A brand change voids nothing.** Logo, colour and address are **not content** (FR-012): they are
+applied live at send time and in every preview (FR-041c), so a `PATCH` here leaves every pending and
+approved version — and `approved_version_id` — untouched, and never moves a stage. The colour is used
+**in email only**, never in the portal or admin UI.
 
 **The logo is read-only here.** `GET` returns its URL, resolved through the invoicing module's
 `getTenantLogoPublicUrl` (research R12), and a link to the page that owns it; `PATCH` accepts **no**
@@ -259,22 +334,31 @@ added.
 
 | element | requirement |
 |---|---|
-| Stage header | stage, whose turn, time in stage, round, proposed vs confirmed send time |
+| Stage header | stage, whose turn (Marketing / Member / "—"), time in stage, round, proposed vs confirmed send time |
 | Actions | "Approve as submitted" and "Reject" (today, unchanged — FR-007) plus "Start formatted version" (flag-gated), "Send to member", "Confirm schedule" |
-| Editor | the same writing tool the member uses (FR-039), with the member's original beside it, read-only |
-| Version thread | every round, author, note, decision and reason, in order (FR-032) |
-| Preview | inline (real email, empty state) + Preview dialog at desktop/phone, `finalFocus` |
+| Warnings | a standing notice when the member company has **no portal user** (only "Approve as submitted" or inviting a user is possible — 409 `no_portal_user`), and when an image's host has left the allow-list, naming the image |
+| Editor | the same writing tool the member uses (FR-039), with the member's original beside it, read-only. Toolbar: H2/H3 only, quote, divider, lists, bold, underline, link, image, CTA, banner; wraps at 320 px with **no overflow menu**; arrow keys + **Home/End**; a visible focus state (FR-038, FR-048) |
+| Compose width | the editor and the 600 px preview side by side ≥ lg, stacked below — a departure from the form container tier, recorded as an exception in `docs/ux-standards.md` § 18.2 **in the same change** (FR-050) |
+| Version thread | an **ordered list with a heading per round** — author, note, decision and reason, oldest first, navigable by keyboard and screen reader (FR-032). Its own record, not the audit trail |
+| Preview | inline (real email, translated empty-state line) + Preview dialog at **desktop 600 px / phone 375 px**, `finalFocus`, reduced-motion respected (FR-043) |
 | Sections | shadcn `Card`, replacing the bare `rounded-md border` blocks at `:114,158` |
-| Manager | read-only — every action control absent, not merely disabled (`manager-readonly-banner` already exists) |
+| Manager | read-only — every action control absent, not merely disabled (`manager-readonly-banner` already exists); no format, no test copy, no schedule, no Brand link |
 | Error/loading | `error.tsx` added; the skeleton matches the real page |
 
 ### `/admin/settings/broadcasts/brand` — the Brand page (FR-041b)
 
-`requirePagePermission('settings.broadcasts')`; in-page gate on `env.features.f7Broadcasts` (the
+The page lives **under the staff Settings area, beside the existing E-Blast settings page**
+(FR-041b) — not under `/admin/broadcasts`. `requirePagePermission('settings.broadcasts')`, so a user
+without that permission, **`marketing` included**, does not see the nav entry, the Settings-index
+card or the page: the surface is invisible, not disabled. Where a user who cannot fix it meets the
+"no logo on file" state — on compose, on the preview, in the header hint — the copy tells them to
+**ask an administrator**, and links to this page only for a `settings.broadcasts` holder.
+In-page gate on `env.features.f7Broadcasts` (the
 proxy kill-switch predicate covers `/admin/broadcasts`, **not** `/admin/settings/**` — research
 R18). Shows the logo as a read-only preview with its source and a link only a `settings.invoicing`
 holder sees; a colour field with a live contrast readout and a disabled Save while the ratio is
-below 4.5:1; an address field flagged when empty. Registered in **three** places — `src/config/nav.ts`
+below 4.5:1; a multi-line address field (≤ 300 characters, line breaks allowed) flagged when empty.
+Registered in **three** places — `src/config/nav.ts`
 Settings section, the `CATEGORIES` array in `src/app/(staff)/admin/settings/page.tsx`, and the i18n
 namespace `admin.settings.index.categories.eblastBrand.*` — because the nav guard key must equal the
 page's `requirePagePermission` key and both files' docblocks record past incidents of one being
@@ -282,9 +366,11 @@ forgotten.
 
 ## Contract tests (`tests/contract/broadcasts/admin-eblast-*.test.ts`)
 
-- **RBAC pins per route × role**: `manager` → 403 on every write route (audited `permission_denied`);
+- **RBAC pins per route × role**: `manager` → 403 on every write route **including test copy**
+  (audited `permission_denied`) and 200 on every read route including `GET …/version`;
   `marketing` → 200 on format/send/schedule/images, **403 on brand**; `member` session → 403
-  everywhere.
+  everywhere, including for a person who also holds a portal account of the owning member (the
+  session decides, spec § Roles).
 - **Flag matrix**: `POST …/[id]/version` → 404 with the flag off, 201 with it on; every other route
   behaves identically in both states, and a broadcast already in `in_design` can still be saved,
   sent, decided and scheduled with the flag off (FR-034).
@@ -296,7 +382,21 @@ forgotten.
 - **Promotion**: after `mode: send_now` from `member_approved`, `broadcasts.subject` and
   `body_html` equal the approved version byte-for-byte, and a subsequent direct `UPDATE` of them is
   still refused by the trigger.
-- **Images**: staff upload on a `submitted` broadcast → 409; on another tenant's → 404 + probe
-  audit; an infected file → 422 with nothing stored; a `broadcast_images` row is written on success.
+- **Images**: staff upload on a `submitted` broadcast → 409; on a **closed** broadcast → 409; on
+  another tenant's → 404 + probe audit; an infected file → 422 with nothing stored; a
+  `broadcast_images` row **and** a `broadcast_image_uploaded` audit row are written on success.
+- **Send preconditions**: a member company with no active portal user → 409 `no_portal_user` and no
+  stage change; an image whose host was removed from the allow-list after the save → 422
+  `image_source_not_allowlisted` naming that image, with the version still editable; the same check
+  refuses the **promotion** on `POST …/schedule` from `member_approved`.
+- **Block rules**: 61-character CTA text → 422 `cta_text_length`; a fourth CTA → 422 `too_many_cta`;
+  `javascript:` in a CTA link → 422 `cta_link_scheme`; a banner without a description → 422
+  `banner_alt_required`; a 126-character description → 422; all four are refused at `PATCH …/version`
+  **and** again at `…/version/send` (FR-004).
+- **Re-send unchanged content**: sending a version byte-identical to the previous round succeeds and
+  becomes round N+1 (FR-011).
+- **Approval is not voided by**: a brand `PATCH`, a schedule `PATCH` in any mode but `cancel`, or a
+  `note_to_member`-only change — `approved_version_id` is unchanged in each (FR-012).
 - **Brand**: `#f5f5f5` → 422 `colour_contrast` with the computed ratio and the stored colour
-  unchanged; the FR-041b logo-write assertion with its positive control.
+  unchanged; a 301-character address → 422; a 300-character address with line breaks → 200; the
+  FR-041b logo-write assertion with its positive control.

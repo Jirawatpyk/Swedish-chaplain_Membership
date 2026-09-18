@@ -133,6 +133,19 @@ it and does not create a parallel request system.
   template references, erasure missing new stages. Plan-time notes from these residuals are in
   `exploration-2026-09-18.md` § Panel carry-forwards.
 
+### Session 2026-09-18 (`/speckit.checklist` — 4 checklists, 111 items, 69 gaps closed)
+
+The reviewer-owned checklists `checklists/{flow,writing-tool,security,ux}.md` found 69
+requirements gaps (definitions missing, limits unstated, edge cases unaddressed). Each was closed
+below with a maintainer default rather than a question, because none changes the design decided
+earlier; every default is marked *(checklist default)* and can be overridden at `/speckit.tasks`.
+Highlights: "content" = subject + body only (notes and schedule are not content); "sending begins"
+= hand-over to the delivery provider (stage Sending); expiry applies only while awaiting the
+member; brand chrome (logo, colour, address) is applied live at send time and is not part of what
+the member approves; toolbar headings = H2/H3; CTA ≤ 60 characters, ≤ 3 per message; alt text
+1–125 characters; staff hand-off emails never quote member content; test copies go through the
+identical pipeline; the no-brand, no-block email must stay byte-identical (merge blocker).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Marketing formats a submitted E-Blast and the member signs it off (Priority: P1)
@@ -249,7 +262,7 @@ no element was stripped.
    banner, **Then** it uploads and appears in the version, subject to the same size, type, virus
    and source rules as a member's image.
 4. **Given** a user adds a call-to-action button, **When** they set its text and link, **Then**
-   the button renders in the chamber's brand colours in the preview and in the delivered email;
+   the button renders in the chamber's brand colour in the preview and in the delivered email;
    the user cannot choose colours or fonts.
 5. **Given** the chamber has a logo on file, **When** any E-Blast is previewed or sent, **Then**
    the logo appears in the email header; without a logo, the chamber name appears as today.
@@ -356,6 +369,9 @@ E-Blast screen; type into the compose form, pick a template and confirm nothing 
    allowance display, the subject counter, the preview and the unsaved-changes guard.
 6. **Given** any E-Blast screen, **When** it is scanned for accessibility, **Then** it passes with
    zero serious or critical issues, and the toolbar is operable with arrow keys.
+7. **Given** a member uploads an image against a draft that is not theirs, **When** the upload is
+   attempted, **Then** it is refused and audited as a cross-member probe (today the member upload
+   route performs no ownership check).
 
 ---
 
@@ -403,7 +419,17 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   version, or member withdraws while marketing sends a version): exactly one action wins; the
   other party gets a clear "this E-Blast has changed" message.
 - **Member's membership lapses or the member is put on a sending halt mid-flow**: the existing
-  rules that block sending still apply at send time; marketing sees why it is blocked.
+  rules that block sending still apply at send time; marketing sees why it is blocked. A lapsed
+  member can still open their own E-Blast and decide on a pending version (reading and deciding
+  are not benefit actions), and the expiry clock keeps running *(checklist default)*.
+- **Proxy-submitted E-Blast whose member company has no portal user**: a version cannot be sent
+  for approval; marketing sees a warning and may only approve as submitted or invite a portal
+  user first *(checklist default)*.
+- **An image's source host is removed from the allow-list while a version is pending**: the
+  version cannot be sent to the member or promoted until the image is replaced; marketing is told
+  which image and why *(checklist default)*.
+- **Brand colour or logo changes while versions are pending or approved**: nothing is voided —
+  brand chrome is live (FR-041c); the next preview and the send use the current brand.
 - **Member's allowance**: the E-Blast keeps its place in the member's annual allowance for the
   whole time it is in progress (any stage), so a member cannot start extra E-Blasts while one is
   in design; the allowance is only used up when the E-Blast is actually sent, and is freed by
@@ -448,30 +474,49 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 **Formatting & versions**
 
 - **FR-001**: Marketing staff MUST be able to create a formatted version (subject and body) of a
-  submitted E-Blast without altering the member's original submission.
+  submitted E-Blast without altering the member's original submission. Starting a formatted
+  version moves the E-Blast to "In design"; the member is not notified at that point (they were
+  told at submission that marketing may format it). One formatted draft exists per E-Blast at a
+  time; a second marketing user's conflicting save is refused per FR-033 *(checklist default)*.
 - **FR-002**: The system MUST keep the member's original submission and every version that was
   sent to the member, each with who sent it and when, for the life of the E-Blast record.
 - **FR-003**: A version MUST become read-only the moment it is sent to the member.
 - **FR-004**: Marketing's formatted content MUST pass the same content safety and size rules that
-  apply to member-written content before it can be sent to the member.
+  apply to member-written content — at every save and again when sent to the member. The
+  existing limits stay: subject ≤ 200 characters, body ≤ 200 KB including design-block markup,
+  image ≤ 5 MB *(checklist default)*.
 - **FR-005**: Marketing MUST NOT be able to change the E-Blast's audience; the audience remains
   the one the member chose.
 - **FR-006**: Marketing MUST be able to attach an optional note to the member with each version.
 - **FR-007**: Marketing MUST still be able to approve an E-Blast as submitted (no formatting, no
-  member sign-off round) and to reject it with a reason, as today.
+  member sign-off round) and to reject it with a reason, as today. On that path the history
+  records "approved as submitted" with the staff user and time; no version beyond the member's
+  original exists *(checklist default)*.
 
 **Member sign-off**
 
 - **FR-008**: The member MUST be able to see a faithful preview of the formatted version as
-  recipients would receive it, alongside their original submission and marketing's note.
-- **FR-009**: The member MUST be able to approve the version, optionally adding a short note.
-- **FR-010**: The member MUST be able to request changes, and MUST provide a reason when doing so.
+  recipients would receive it, alongside their original submission and marketing's note. On wide
+  screens the two are side by side; on phones the formatted version comes first and the original
+  is reachable below it without leaving the page *(checklist default)*.
+- **FR-009**: The member MUST be able to approve the version, optionally adding a short note
+  (≤ 500 characters). Approval MUST be confirmed in a dialog that states marketing will now
+  confirm the send time and that the content cannot change without a new approval; after any
+  decision the member sees the new stage and a way back to their E-Blast list *(checklist default)*.
+- **FR-010**: The member MUST be able to request changes, and MUST provide a reason when doing so
+  (1–2,000 characters, the same bounds as a rejection reason; an empty reason is refused with an
+  announced field error). Withdrawing an E-Blast or an approval MUST be confirmed in a dialog
+  with its reason *(checklist default)*.
 - **FR-011**: A request for changes MUST return the E-Blast to marketing with the feedback
   attached to the version it concerns; marketing MUST be able to send a further version, and the
-  cycle MUST be repeatable.
+  cycle MUST be repeatable. When marketing disagrees with the request, it MAY send the same
+  content again as a new version with a note explaining why, or reject the E-Blast with a reason
+  (FR-015) *(checklist default)*.
 - **FR-012**: The content that is sent MUST be exactly the version the member approved (or the
   member's own original on the approve-as-submitted path). Any content change after member
-  approval MUST void that approval.
+  approval MUST void that approval. "Content" means the subject and the body (including design
+  blocks and images); the marketing note, the schedule and the brand chrome (logo, colour,
+  postal address — FR-041c) are not content and do not void an approval *(checklist default)*.
 - **FR-012a**: The version the member approved MUST become the content the delivery path sends;
   the delivery path MUST NOT read content from any record that could differ from the approved
   version. The database rule that today freezes a submitted E-Blast's subject, body, audience,
@@ -489,6 +534,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-014**: The system MUST NOT approve on the member's behalf after any period of inactivity.
 - **FR-015**: The member MUST be able to withdraw the E-Blast, and marketing MUST be able to reject
   it with a reason, at any stage before sending begins; the other party MUST be notified.
+  "Sending begins" means the moment the platform hands the E-Blast to the delivery provider —
+  the E-Blast enters the Sending stage; before that moment withdrawal and rejection are always
+  possible, after it never *(checklist default)*.
 - **FR-015a**: A member MUST be able to withdraw an approval they gave, with a reason, at any time
   before sending begins (including after marketing confirmed the schedule). The E-Blast MUST return
   to "Changes requested by member", any confirmed schedule MUST be cancelled, the withdrawal MUST
@@ -499,7 +547,8 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-016**: The member's proposed send time MUST be preserved as proposed and remain visible to
   both sides throughout, separately from the confirmed send time.
 - **FR-017**: After member approval, marketing MUST confirm the final send time (keep the proposal,
-  choose another time, or send now), subject to the existing minimum lead time. Confirming,
+  choose another time, or send now), subject to the existing minimum lead time of 5 minutes
+  from the moment of confirmation. Confirming,
   changing or cancelling the confirmed send time MUST remain possible on every pre-send stage
   this feature introduces; whether cancellation clears the confirmed time or only moves the
   E-Blast off the dispatchable stage is a design decision, but an E-Blast whose approval was
@@ -513,7 +562,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-019**: Each E-Blast MUST show exactly one stage at any time, from: Draft · Awaiting
   marketing review · In design · Awaiting member approval · Changes requested by member ·
   Member approved — awaiting schedule · Scheduled · Sending · Sent · and the closed outcomes
-  (Rejected, Withdrawn/Cancelled, Expired — no member response, Failed).
+  (Rejected, Withdrawn/Cancelled, Expired — no member response, Failed). The entry condition,
+  exit conditions and acting party of every stage are tabulated in `data-model.md` § State
+  machine, which is normative for this list.
 - **FR-020**: An E-Blast in any in-progress stage MUST hold its place in the member's annual
   E-Blast allowance; the allowance MUST be consumed only when the E-Blast is sent and MUST be
   freed by rejection, withdrawal, expiry, or failure.
@@ -526,24 +577,41 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **FR-021a**: "Marketing" as a notification recipient means every active user holding the
   `marketing` role in the tenant; when no such user exists, the tenant's admins are notified
   instead. Other staff are never emailed for hand-offs but always see the in-app count (FR-023).
+- **FR-021b**: Staff hand-off emails MUST carry only the E-Blast's subject, member company name,
+  the new stage and a link — never the body, the member's feedback or notes. Member emails MUST
+  state what changed, who acted, the proposed and confirmed send times when they differ, and a
+  link back; the "version ready for your approval" email MUST also state the reminder and expiry
+  timeline (day 3, day 7, warning day 23, expiry day 30) *(checklist default)*.
 - **FR-022**: The system MUST send the member a reminder after 3 days and a final reminder after
   7 days of an E-Blast awaiting their approval, and no further reminders.
 - **FR-022a**: An E-Blast that has awaited the member's decision for 30 days (counted from the
   moment the version was sent to them) MUST be closed automatically as "Expired — no member
   response", freeing the member's allowance place; both sides MUST be warned on day 23 and told
   on closing. A closed E-Blast MUST NOT be reopened; the member submits a new one. The clock
-  always runs from the latest version sent to the member.
+  always runs from the latest version sent to the member. Expiry applies only while an E-Blast is
+  "Awaiting member approval"; once the member has approved (or after marketing confirmed a
+  schedule) no expiry can occur *(checklist default)*.
 - **FR-023**: Staff MUST see an in-app count of E-Blasts waiting on marketing.
 - **FR-024**: Member-facing notifications MUST be in the member's preferred language.
 
 **Dashboard**
 
 - **FR-025**: The dashboard MUST show a count of E-Blasts per stage, and selecting a stage MUST
-  filter the list.
+  filter the list. Count changes MUST be announced through the list's single existing live
+  region, never a second one; stage labels MUST fit their chips in all three locales (SV runs
+  up to +28 %) *(checklist default)*.
 - **FR-026**: Each listed E-Blast MUST show member, subject, stage, whose turn it is, time in
   current stage, round number, proposed send time, confirmed send time, and last activity.
+  "Whose turn" is Marketing for Awaiting marketing review / In design / Changes requested /
+  Member approved, Member for Awaiting member approval, and "—" (nobody) for Draft, Scheduled,
+  Sending and every closed stage. The round number is the count of versions sent to the member
+  so far; a withdrawn approval does not start a round until a new version is sent. At phone
+  width the row shows member, subject, stage, whose turn and time in stage; round, proposed and
+  confirmed times move to the detail *(checklist default)*.
 - **FR-027**: The dashboard MUST flag E-Blasts stalled in any stage where it is marketing's turn
   for longer than the review target, or on the member for longer than the reminder threshold.
+  The flag MUST be conveyed by an icon and a text label, never by colour alone, and MUST be
+  available to assistive technology *(checklist default)*.
 - **FR-028**: The dashboard MUST list upcoming scheduled sends in send-time order.
 - **FR-029**: For sent E-Blasts, staff MUST be able to see recipients, delivered, bounced, and
   complained counts.
@@ -559,7 +627,10 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 **History & safety**
 
 - **FR-032**: Both sides MUST be able to see the full history of an E-Blast: versions, feedback,
-  approvals, and schedule decisions, in order, with who and when.
+  approvals, and schedule decisions, in order, with who and when. The history is its own record
+  (versions and decisions), distinct from the audit trail; it is presented as an ordered list
+  with a heading per round so it can be navigated by keyboard and screen reader
+  *(checklist default)*.
 - **FR-033**: When two people act on the same E-Blast at once, exactly one action MUST succeed and
   the other MUST receive a clear message that the E-Blast changed.
 - **FR-034**: With the new flow switched off, the approve/reject flow MUST behave as today (the
@@ -573,24 +644,38 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 
 - **FR-037**: Any user of the writing tool — a member on their original, staff on a formatted
   version — MUST be able to send a test copy to their own address only; a test copy MUST be marked
-  as a test and MUST NOT change the E-Blast's stage, its version history, or any allowance.
+  as a test (subject prefixed "[Test]") and MUST NOT change the E-Blast's stage, its version
+  history, or any allowance. It MUST go through the identical content-safety and rendering
+  pipeline as a real send, including design blocks, the brand header and the footer, and is
+  limited to 10 per user per hour *(checklist default)*.
 - **FR-038**: The writing tool MUST offer a visible control for every kind of content the platform
-  keeps after sending — headings, quote, divider, bulleted and numbered lists, bold, underline,
-  links with editable link text, images — and MUST NOT let a user produce content (by shortcut or
-  paste) that the platform later removes.
+  keeps after sending — headings (H2 and H3 only; the subject is the email's title), quote,
+  divider, bulleted and numbered lists, bold, underline, links with editable link text, images —
+  and MUST NOT let a user produce content (by shortcut or paste) that the platform later removes.
+  Unsupported content arriving by paste is dropped at paste time and the user is told once, in a
+  non-blocking notice, that unsupported formatting was removed. A link whose scheme is outside
+  the allow-list (http, https, mailto) MUST be refused in the link dialog with a message
+  *(checklist default)*.
 - **FR-039**: The writing tool MUST be the same for members writing an original and for marketing
   formatting a version, on the member compose screen, the staff compose-on-behalf screen and the
   template screens; the staff compose-on-behalf screen MUST offer drafts, images, the template
   picker, the member's allowance display, the subject counter, the preview and the
   unsaved-changes guard like the member screen.
-- **FR-040**: Inserting an image MUST require a short text description; the description MUST be
-  carried into the sent email. Images added by staff to an E-Blast they are formatting MUST pass
-  the same size, type, virus-scan and source rules as a member's image and MUST be tied to that
-  E-Blast (or, on the template screens, to that template — FR-046a).
-- **FR-041**: The tool MUST offer system-controlled design blocks: a call-to-action button (text +
-  link) and a full-width banner image. Their appearance (colours, fonts, spacing) is defined by
-  the platform and the chamber's brand settings; a user MUST NOT be able to set colours, fonts,
-  sizes, raw HTML or styling.
+- **FR-040**: Inserting an image MUST require a short text description (1–125 characters, any
+  language); the description field MUST be labelled and an empty description MUST be announced
+  as an error; the description MUST be carried into the sent email. Images added by staff to an
+  E-Blast they are formatting MUST pass the same size, type, virus-scan and source rules as a
+  member's image and MUST be tied to that E-Blast (or, on the template screens, to that template
+  — FR-046a). An upload for a closed E-Blast, for another member's E-Blast, or — for a member —
+  for a draft they do not own MUST be refused; the existing member upload route MUST gain that
+  ownership check (today it has none) *(checklist default)*.
+- **FR-041**: The tool MUST offer system-controlled design blocks: a call-to-action button (text
+  1–60 characters + link on the allow-list; at most 3 per message) and a full-width banner image
+  (same image rules as FR-040, description required, placeable anywhere in the body, rendered at
+  the full 600 px email width). Their appearance (colours, fonts, spacing) is defined by the
+  platform and the chamber's brand settings; a user MUST NOT be able to set colours, fonts,
+  sizes, raw HTML or styling. Button text wraps at phone width; it never overflows
+  *(checklist default)*.
 - **FR-041a**: Every E-Blast's email header MUST show the chamber's logo when one is on file and
   the chamber's name otherwise, automatically — it is not something a user adds or removes.
 - **FR-041b**: The chamber's brand settings MUST be a single per-tenant settings page showing the
@@ -603,21 +688,31 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   existing E-Blast settings permission; the colour MUST be refused when white text on it would
   not meet WCAG AA contrast; every change MUST be audited with previous and next values. A
   contract test MUST assert that no route reachable with the E-Blast settings permission alone
-  can write the invoice logo.
+  can write the invoice logo. The Brand page lives under the staff Settings area beside the
+  existing E-Blast settings; users without that permission (including `marketing`) do not see it,
+  and the "no logo on file" hint tells them to ask an administrator *(checklist default)*.
 - **FR-041c**: The call-to-action button MUST use the primary colour from the brand settings; when
   none is set, a platform default colour applies. The email footer MUST show the chamber's postal
-  address from the brand settings; while it is not set, the footer MUST show the chamber name only
-  and the brand settings page MUST flag the address as missing.
+  address from the brand settings (free text, up to 300 characters, line breaks allowed); while it
+  is not set, the footer MUST show the chamber name only and the brand settings page MUST flag the
+  address as missing. Brand chrome — logo, colour, address — is applied live at send time and in
+  every preview; it is not frozen into a version and a brand change never voids an approval
+  (FR-012). The brand colour is used in email only, never in the portal UI *(checklist default)*.
 - **FR-042**: Every design block MUST render identically in the preview and in the delivered email
   and MUST degrade to readable plain content in email clients that cannot show it.
 - **FR-043**: The preview MUST show the complete email as a recipient receives it — header, body,
-  footer with unsubscribe — in the recipient's likely widths (desktop and phone); the inline preview
-  MUST show an empty state when the message is empty; a Preview control MUST open the full preview
-  in a dialog that returns focus to the control on close. The same preview MUST be used on the
-  member's compare screen (original vs formatted version).
-- **FR-044**: Italic MUST NOT be offered when the user's interface language is Thai.
+  footer with unsubscribe — in the recipient's likely widths (desktop 600 px and phone 375 px);
+  the inline preview MUST show an empty state (a translated line such as "Your message preview
+  appears here") when the message is empty; a Preview control MUST open the full preview in a
+  dialog that returns focus to the control on close and respects reduced-motion preferences.
+  The same preview MUST be used on the member's compare screen (original vs formatted version)
+  *(checklist default)*.
+- **FR-044**: Italic MUST NOT be offered when the user's interface language is Thai; italic
+  content that arrives by paste or from a template is kept as-is — only the control is hidden
+  *(checklist default)*.
 - **FR-045**: Saving a draft MUST clear the unsaved-changes state; a user who saved and changed
-  nothing since MUST NOT be warned on leaving.
+  nothing since MUST NOT be warned on leaving. The save control MUST show a busy state while
+  saving and a "Saved at HH:MM" indicator afterwards *(checklist default)*.
 - **FR-046**: Templates MUST remain available as a starting point; choosing one while the subject
   or message is non-empty MUST ask for confirmation first; template use MUST be counted so adoption
   can be measured.
@@ -625,7 +720,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   offers, including images. Images uploaded for a template MUST be tied to that template and pass
   the same size, type, virus-scan and source rules as E-Blast images. Starting an E-Blast from a
   template MUST carry its images into the draft by reference; a template later edited or deleted
-  MUST NOT change E-Blasts already started from it.
+  MUST NOT change E-Blasts already started from it. Blocks and links carried from a template are
+  editable by the member like any other content; authorship is not tracked per block
+  *(checklist default)*.
 
 **Screen quality**
 
@@ -633,14 +730,21 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   page's shape, and empty states from the platform's shared components.
 - **FR-048**: Validation errors on the message MUST be programmatically associated with the editor
   so assistive technology announces them; the toolbar MUST follow the standard toolbar keyboard
-  pattern (arrow keys between controls).
+  pattern (arrow keys between controls, Home/End, a visible focus state). At 320 px the toolbar
+  wraps onto further rows rather than hiding controls in an overflow menu; the plan's live look
+  confirms the row count *(checklist default)*.
 - **FR-049**: The member's E-Blast detail page MUST show the E-Blast's subject and content.
 - **FR-050**: The compose screens MUST use a page width that fits the editor and the 600 px email
-  preview side by side on large screens and stacked on small ones.
-- **FR-051**: Every E-Blast screen MUST pass the platform's UX checklist and an automated
-  WCAG 2.1 AA scan with zero serious or critical findings before the trial starts; translation
-  keys that no screen uses MUST be removed and components that are never shown MUST be wired or
-  deleted.
+  preview side by side on large screens and stacked on small ones; the departure from the form
+  container tier is recorded as an exception in `docs/ux-standards.md` § 18.2 in the same change
+  *(checklist default)*.
+- **FR-051**: Every E-Blast screen MUST pass the platform's UX checklist (`docs/ux-standards.md`
+  § 15) and the existing automated WCAG 2.1 AA scan (axe-core rules, the `@a11y` e2e suite) with
+  zero serious or critical findings before the trial starts; "every E-Blast screen" is the finite
+  list: portal compose, portal E-Blast detail/sign-off, portal benefits E-Blast tab, staff queue,
+  staff detail/format, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand
+  settings. Translation keys that no screen uses MUST be removed and components that are never
+  shown MUST be wired or deleted *(checklist default)*.
 
 ### Key Entities
 
@@ -672,29 +776,40 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   E-Blasts. No new permission keys — the existing E-Blast read / write / send permissions cover
   the new staff actions (write = format and send to member; send = confirm schedule); the Brand
   settings page uses the existing E-Blast settings permission (admin tier). Member-side approval
-  is never grantable to a staff role.
+  is never grantable to a staff role: it is decided by the session's role, so a person who also
+  holds a portal account for the member company may approve only when signed in there as that
+  company's user. `manager` can read versions, decisions and history but cannot format, send a
+  test copy, confirm a schedule or open Brand settings. New member writes (approve, request
+  changes, withdraw) are rate-limited per user like the existing E-Blast actions (60 per minute);
+  test copies at 10 per hour *(checklist default)*.
 - **Tenant scope**: versions, member decisions, feedback text, and notifications are all
   tenant-scoped. Nothing about one tenant's E-Blasts may be visible to another tenant; within a
   tenant, one member company must never see another's E-Blasts, versions, or feedback (both
-  directions need a probe test).
+  directions need a probe test); a same-tenant cross-member attempt is refused as not found and
+  emits the existing cross-member probe audit event *(checklist default)*.
 - **Locales**: all new staff and member screens, stage names, and notification emails in EN
   (canonical) + TH + SV. No tax document is produced. Send times are shown in the tenant's time
   zone; dates display in Buddhist Era for `th-TH` only and are stored as UTC.
 - **Personal data**: E-Blast content and free-text feedback/notes may contain personal data;
   author and decider identities are recorded. Lawful basis: performance of the membership contract
-  (delivery of the E-Blast benefit). Retention follows the parent E-Blast record. Erasure and
-  export must reach every stored version, every feedback/note text and every image uploaded for
-  the E-Blast, not only the current content; images of a withdrawn, rejected or erased E-Blast
-  must not remain reachable. The record of processing needs an update before the flow is
-  switched on for members.
+  (delivery of the E-Blast benefit). Retention follows the parent E-Blast record (the existing
+  E-Blast retention from F7; audit rows 5 years). Erasure and export must reach every stored
+  version, every feedback/note text, every notification about the E-Blast and every image
+  uploaded for it, not only the current content. "Not reachable" means the reference is removed
+  immediately and the stored file is deleted by the daily sweep within 24 hours once nothing —
+  no E-Blast and no template — references it; an image still referenced elsewhere is kept. The
+  record of processing must be updated before the flow is switched on for members, naming the
+  new fields (versions, notes, reasons, decisions), the staff recipients of hand-off emails and
+  the chamber postal address *(checklist default)*.
 - **Audit trail**: must be auditable — formatted version sent to member, member approved, member
   requested changes, approval voided by a later edit, schedule confirmed (with proposed vs
   confirmed time), approval withdrawn by the member (with the cancelled schedule, if any),
   rejected/withdrawn from a new stage, reminder sent, expiry warning sent, expired for no member
-  response, test copy sent, brand settings changed (previous → next). Each with actor, true actor
-  role, and time. Free-text reasons and content are not copied into the audit trail. A reviewer
-  must be able to prove, for any sent E-Blast, which version was sent and who on the member side
-  approved it.
+  response, test copy sent, image uploaded / removed, brand settings changed (previous → next).
+  Each with actor, true actor role (`member` for portal users, `system` for reminders, expiry
+  and sweeps), and time. Free-text reasons and content are not copied into the audit trail. A
+  reviewer must be able to prove, for any sent E-Blast, which version was sent and who on the
+  member side approved it.
 - **Content safety (writing tool)**: the existing rule stands — no user-supplied styling, scripts,
   frames, forms or tables reach an email. Design blocks are the platform's own fixed markup with
   user-supplied text, link and image only; links keep the existing scheme allow-list; images keep
@@ -711,7 +826,11 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   rolled back by deploy, so each block ships only with its preview and email rendering tested
   together. Also live regardless of the flag: the new stage values and storage for
   versions/decisions, the new audit and notification types, and the preserved proposed send time.
-  The existing E-Blast master switch continues to disable everything.
+  The existing E-Blast master switch continues to disable everything. Rows already "Awaiting
+  marketing review" when the flag turns on gain the new actions like any other — nothing
+  distinguishes them. The email produced with no brand data and no design block MUST be
+  byte-identical to today's output; that snapshot test is a merge blocker for the unflagged tool
+  upgrade *(checklist default)*.
 
 ## Success Criteria *(mandatory)*
 
@@ -724,7 +843,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   with zero exceptions.
 - **SC-003**: A member can review a formatted version and approve or request changes in under
   2 minutes, including on a phone.
-- **SC-004**: The next party is notified within 5 minutes of every hand-off.
+- **SC-004**: The next party is notified within 5 minutes of every hand-off — "notified" meaning
+  the notification email has been handed to the delivery service, measured from the hand-off
+  event.
 - **SC-005**: SweCham completes the full UAT walkthrough (submit → format → request changes →
   re-format → approve → confirm schedule → sent) with zero emails delivered outside the
   staff-only test list.

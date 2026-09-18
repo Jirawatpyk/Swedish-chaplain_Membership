@@ -27,11 +27,13 @@ Technical approach (research R1–R24): one owning bounded context (`src/modules
 **four** new tenant-scoped tables (`broadcast_versions`, `broadcast_member_decisions`,
 `broadcast_images`, plus brand columns on the existing `tenant_broadcast_settings`) each with
 `tenant_id` + RLS ENABLE/FORCE and the 0064 policy; **two** hand-written migrations — `0304`
-(PR-1: images, brand, 2 audit values) and `0305` (PR-2: the FR-012a bundle — `broadcast_status` +5,
+(PR-1: images, brand, 4 audit values) and `0305` (PR-2: the FR-012a bundle — `broadcast_status` +5,
 `broadcasts_immutable_after_submit_fn` with exactly two new exemptions,
-`broadcasts_state_machine_fn` CASE arms, the version/decision tables, `proposed_send_at`); 12 new
-audit events, 5 new `notification_type` values with dispatcher arms that render **at send time from
-ids**; marketing recipients derived from the permission evaluator, never a role literal; reminders,
+`broadcasts_state_machine_fn` CASE arms, the version/decision tables, `proposed_send_at`); **14** new
+audit events (the twelve workflow events plus `broadcast_image_uploaded` / `broadcast_image_removed`,
+which spec § Audit trail requires and which do **not** exist today — the live `broadcast_image_*`
+values are refusals and configuration only), 5 new `notification_type` values with dispatcher arms
+that render **at send time from ids**; marketing recipients derived from the permission evaluator, never a role literal; reminders,
 the day-23 warning, the day-30 expiry and the image-blob sweep folded into the existing
 `prune-expired-drafts` daily cron as a second, independently-transacted block — **no new cron job**
 (37 of the 40 Pro slots are used); four new gauges on the existing 5-minute broadcasts tick.
@@ -56,7 +58,7 @@ the journal tail at write time; the last entry today is `idx: 304` / `when: 1798
 `0303_member_change_requests_reason_partial_ck`. Tables **added**: `broadcast_versions`,
 `broadcast_member_decisions`, `broadcast_images`. Tables **changed**: `broadcasts` (+6 columns),
 `tenant_broadcast_settings` (+4 columns). Enums widened: `broadcast_status` +5,
-`audit_event_type` +12, `notification_type` +5. No column drops, no data backfill except
+`audit_event_type` +14, `notification_type` +5. No column drops, no data backfill except
 `proposed_send_at := scheduled_for` for rows still in `submitted` (data-model § 3)
 **Testing**: Vitest unit/contract · live-Neon integration on the dev branch (two-tenant probe on
 each new table, cross-member probe, the FR-012a "direct edit still refused at the database" trigger
@@ -92,7 +94,7 @@ and suppression list are untouched · no new permission key (spec § Roles) · t
 kill-switch (`FEATURE_F7_BROADCASTS` + `matchesF7KillSwitchPath`, `src/proxy.ts:43-68`) continues to
 disable everything
 **Scale/Scope**: 3 new tables + 10 changed/added columns · 2 migrations · 5 `broadcast_status`
-values · 12 audit events · 5 notification types · 22 use cases · 16 route handlers · 3 new pages
+values · 14 audit events · 5 notification types · 22 use cases · 16 route handlers · 3 new pages
 (member sign-off, brand settings, upcoming-sends preset) + 8 changed · 5 email templates × 3
 locales · ~185 i18n keys × 3 · 4 gauges + 3 alerts · 1 env flag · ~34 test files. SweCham today:
 ~150 members, Resend Free plan (1,000 contacts / 3 segments), ≤ 2 broadcasts in flight, 500
@@ -116,8 +118,10 @@ substitute) in § Complexity Tracking.*
       Minimisation — audit payloads carry `broadcast_id`, `version_id`, `round`, `decision` and
       `reason_length`, **never the reason or the content**; outbox `context_data` carries ids only
       and the dispatcher renders at send time (R14, the F114 precedent at
-      `outbox-dispatch/route.ts:415-542`). Erasure reaches every version, every decision reason and
-      every image (R17: the scrub port joins the existing atomic erasure tx alongside
+      `outbox-dispatch/route.ts:415-542`). Erasure reaches every version, every decision reason,
+      every image **and every notification about the E-Blast** — an unsent outbox row carries ids
+      only and therefore renders the redacted rows, and its pending rows are cancelled in the same
+      transaction (R17: the scrub port joins the existing atomic erasure tx alongside
       `scrubContentForMemberInTx`, `drizzle-broadcasts-repo.ts:1362-1412`, which has no status
       predicate and therefore already covers the new stages; images are marked and then deleted by
       a last-reference rule). DSAR export gains the versions/decisions section.
@@ -201,18 +205,22 @@ substitute) in § Complexity Tracking.*
 - [x] **V. Internationalization (EN/TH/SV)** — ~185 keys × 3 locales: 5 new stage labels in **both**
       `admin.broadcasts.queue.status` and `portal.broadcasts.list.status` (en.json:3214-3225 and
       6014-6025, mirrored at the same lines in th/sv); the new toolbar and block controls; the
-      preview dialog; the member sign-off screen; the brand settings page; 12
+      preview dialog; the member sign-off screen; the brand settings page; 14
       `audit.eventType.broadcast_*` labels (Thai script asserted by
       `audit-event-label-coverage.test.ts:107`); 5 email templates × 3. `check:i18n` gates; dead keys
       listed in exploration § B are deleted in PR-1 (FR-051). Send times render in the tenant time
       zone through the existing `bangkok-datetime.ts` helper; BE display-only for `th-TH`; italic is
       hidden when the interface locale is Thai (FR-044, and no italic on Thai anywhere).
 - [x] **VI. Inclusive UX (Mobile First + WCAG 2.1 AA)** — Designs start at 320 px: the widened
-      toolbar wraps (measured on a live server before the shape is fixed — exploration § C "needs a
-      live look"); the compose page becomes a two-column 72 rem layout ≥ lg and stacks below
-      (FR-050, with the `docs/ux-standards.md` § 18.2 container exception recorded); the preview
-      dialog offers desktop and phone widths and returns focus to its trigger (`finalFocus` on
-      every dialog); the toolbar adopts the APG roving-tabindex pattern (FR-048); the body error is
+      toolbar **wraps onto further rows, with no overflow menu** — FR-048 decides the shape, and the
+      live look on the dev server confirms the **row count** rather than choosing between wrap and
+      overflow (exploration § C); the compose page becomes a two-column 72 rem layout ≥ lg and stacks
+      below (FR-050, with the `docs/ux-standards.md` § 18.2 container exception recorded **in the
+      same change**); the preview dialog offers desktop **600 px** and phone **375 px** widths,
+      returns focus to its trigger (`finalFocus` on every dialog) and respects reduced-motion
+      (FR-043); the toolbar adopts the APG roving-tabindex pattern **with Home/End and a visible
+      focus state** (FR-048); the stalled flag carries an icon **and** a text label in its accessible
+      name, never colour alone (FR-027); the body error is
       announced through the `TiptapEditor` `invalid`/`describedById` props that already exist
       (`tiptap-editor.tsx:106,113`) instead of the wrapper div; alt text is required before an image
       can be inserted (FR-040); every E-Blast route gains `error.tsx` and a skeleton shaped like the
@@ -291,7 +299,7 @@ src/modules/broadcasts/
 │   ├── broadcast.ts                             # BroadcastPhase union + phaseOf switch +5 arms
 │   ├── stage/
 │   │   ├── broadcast-stage.ts                   # BroadcastStage tuple + stageOf(status) (FR-019)
-│   │   ├── whose-turn.ts                        # turnOf(status): 'marketing'|'member'|'system'|null (FR-026)
+│   │   ├── whose-turn.ts                        # turnOf(status): 'marketing'|'member'|null — no 'system' (FR-026)
 │   │   └── in-progress-statuses.ts              # IN_PROGRESS_BROADCAST_STATUSES — allowance bucket AND cancel cascade
 │   ├── approval/
 │   │   ├── broadcast-version.ts                 # version aggregate + invariants (read-only once sent)
@@ -305,7 +313,7 @@ src/modules/broadcasts/
 │       └── contrast.ts                          # WCAG 2.1 relative luminance + ratio (pure, no dep)
 ├── application/
 │   ├── ports/
-│   │   ├── audit-port.ts                        # F7_AUDIT_EVENT_TYPES 55 → 67 (static assert :234)
+│   │   ├── audit-port.ts                        # F7_AUDIT_EVENT_TYPES 55 → 69 (static assert :234)
 │   │   ├── broadcast-versions-repo.ts           # new
 │   │   ├── broadcast-decisions-repo.ts          # new
 │   │   ├── broadcast-images-repo.ts             # new
@@ -404,8 +412,10 @@ src/i18n/messages/{en,th,sv}.json                # stage labels ×2 namespaces, 
 drizzle/migrations/0304_eblast_images_and_brand.sql          + meta/_journal.json (idx 305)
 drizzle/migrations/0305_eblast_member_approval.sql           + meta/_journal.json (idx 306)
 scripts/check-multi-tenant-ready.ts              # SCOPED_TABLES += 4 (3 new + tenant_broadcast_settings)
-scripts/lib/enum-migration-guard.ts              # REQUIRED_ENUM_VALUES += broadcast_status ×5, audit ×12, notification ×5
+scripts/lib/enum-migration-guard.ts              # REQUIRED_ENUM_VALUES += broadcast_status ×5, audit ×14, notification ×5
 docs/observability.md                            # § 28
+docs/ux-standards.md                             # § 18.2 container-tier exception for the compose width (FR-050, PR-1)
+docs/compliance/processing-records.md            # RoPA: new fields, staff recipients, postal address (precondition of the flag flip)
 docs/runbooks/eblast-approval.md                 # stuck stage, expiry, flag rollback, image sweep
 
 tests/
@@ -455,7 +465,16 @@ that introduces the vocabulary.
 `renderBroadcastHtml`, which every live SweCham send uses. A snapshot test asserting that, with no
 brand colour, no postal address, no logo on file and no design block in the body, the rendered HTML
 is **byte-identical** to today's output is a merge blocker for PR-1. Without it the tool upgrade is
-an unreviewable change to production email.
+an unreviewable change to production email. **This is no longer only a plan amendment**: spec
+§ Feature flag now states it as a requirement ("that snapshot test is a merge blocker for the
+unflagged tool upgrade"), so the gate is owned by the spec and the amendment merely records where in
+the delivery it lands.
+
+**Amendment 3 — PR-1 also lands two docs changes.** FR-050 requires the compose width's departure
+from the form container tier to be recorded as an exception in `docs/ux-standards.md` § 18.2 **in the
+same change**, and FR-051 requires the nine-screen UX/a11y pass (`docs/ux-standards.md` § 15 +
+the `@a11y` axe suite, dead i18n keys removed, unshown components wired or deleted) before the trial.
+Both are PR-1 merge gates, listed in `quickstart.md` § 3.1.
 
 ## Complexity Tracking
 
@@ -493,7 +512,7 @@ library.
 | R-3 | **Resend Free plan: 1,000 contacts, 3 segments, ≤ 2 broadcasts in flight**; audience ceiling 500 recipients/tick unless `FEATURE_F7_IMPORT_AUDIENCE` is ON | The UAT walkthrough can exercise at most two E-Blasts concurrently | Stated as a UAT precondition in `quickstart.md`; the approval round adds no Resend Broadcasts calls before `member_approved → approved`, so a long design round consumes no Resend capacity |
 | R-4 | **PR-1 ships unflagged into live outgoing email** | A wrapper defect reaches real recipients on the next send | Amendment 2: the byte-identical no-brand snapshot test is a merge blocker; each design block ships only with its preview and its email rendering tested together (spec § Feature flag); rollback is a deploy |
 | R-5 | **The flag gates entry, not exit** (FR-034) — a departure from the 108/114 "404 everywhere while dark" pattern | With the flag off, the member sign-off routes must still answer for rows already in a new stage | `research.md` R18 defines the rule precisely and `contracts/` encode it per route; the contract suite pins both flag states |
-| R-6 | **Live-look items the audit could not settle by reading code** (exploration § C): the 320 px toolbar after adding buttons (wrap vs overflow menu), layout shift as the deferred preview settles, first paint of the empty preview, NVDA on the changed toolbar, SV string lengths on the new stage chips | UX defects SweCham would hit in the trial | Each is a task in PR-1 / PR-3 that must be checked on the running dev server (the maintainer runs `pnpm dev` on :3100) before the shape is fixed; they are not code-review findings |
+| R-6 | **Live-look items the audit could not settle by reading code** (exploration § C): the 320 px toolbar **row count** after adding buttons, layout shift as the deferred preview settles, first paint of the empty preview, NVDA on the changed toolbar, SV string lengths on the new stage chips | UX defects SweCham would hit in the trial | Each is a task in PR-1 / PR-3 that must be checked on the running dev server (the maintainer runs `pnpm dev` on :3100); they are not code-review findings. **The toolbar's shape is no longer open**: FR-048 requires it to wrap with no overflow menu, so the live look measures how many rows that costs and whether anything clips — it does not choose the pattern. FR-025 likewise makes the SV chip fit a requirement, not an observation |
 | R-7 | **Three pre-existing Domain ↔ DB state-machine divergences** (`draft→cancelled`, `approved→failed_to_dispatch`, `sending→cancelled` exist in the trigger but not in the Domain map) | Widening touches both layers; leaving the drift risks a future widening copying the wrong side | Recorded, **not fixed here** (fixing changes `canTransition`, which drives UI disabled-state, on paths this feature does not touch). The new arms are added to both layers identically and a test asserts parity **for the new edges only** |
 | R-8 | **Five F7 tables have RLS + FORCE but are absent from `SCOPED_TABLES`** (`broadcast_templates`, `broadcast_batch_manifests`, `tenant_image_source_allowlist`, `tenant_broadcast_settings`, `broadcast_batch_delivery_events`) | The gate is blind to a regression on them | This feature adds its three new tables **and** `tenant_broadcast_settings` (which it writes brand data into). The other four are recorded here as a separate cleanup, not taken on |
 | R-9 | **`ALTER TYPE … ADD VALUE` then using the value in the same migration** | A partial index or CASE arm referencing a brand-new enum label can fail inside a transaction | `scripts/run-migrations.ts` hoists every `ADD VALUE` into an AUTOCOMMIT pass before the transactional pass (the 0301 precedent). Verified in `quickstart.md` § 0 with an `information_schema` check, and the five `broadcast_status` values are added to `REQUIRED_ENUM_VALUES` so a silent no-op fails the deploy instead of every hand-off |

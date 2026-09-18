@@ -10,7 +10,7 @@ FR-030 says so in as many words. What changes:
 | control | today | after |
 |---|---|---|
 | Stage chips | derived from `OFFERED_BROADCAST_STATUSES` (`:40-75`), grouped by the hand-listed `IN_REVIEW_STATUSES` (`:64-69`) | the five new statuses join `IN_REVIEW_STATUSES`, so all 13 offered stages appear and the loading skeleton (which sizes from `OFFERED_BROADCAST_STATUSES.length`, `loading.tsx:65`) follows automatically |
-| Chip label | a **count** per stage (FR-025); selecting a chip filters the list | new |
+| Chip label | a **count** per stage (FR-025); selecting a chip filters the list. Count changes are announced through the list's **single existing `role="status"` region** (`queue-table-client.tsx:439-447`) — **never** a second live region. The stage label must fit its chip in EN, TH **and SV**, where strings run up to **+28 %**: the SV lengths of the five new labels are a live-look item (research V2) and the chip truncates with a `title`/tooltip rather than reflowing the strip | new |
 | Chip visibility when the flag is off | n/a | a new-stage chip is offered only when the tenant has ≥ 1 row in it (research R18 — never offer a filter that can only return zero rows) |
 | Member | existing `memberId` dropdown | unchanged (FR-030) |
 | Date range | existing `fromDate` / `toDate` | unchanged |
@@ -24,18 +24,25 @@ URL remains the source of truth (every view is a link); `status_all=1` sentinel 
 |---|---|---|
 | Member · Subject · Segment · Recipients | existing | — |
 | **Stage** | `stageOf(status)` — the status badge relabelled to the FR-019 vocabulary (`approved` → "Scheduled") | FR-019, FR-026 |
-| **Whose turn** | `turnOf(status)` → "Marketing" / "Member" / "Us" (system) / — | FR-026 |
+| **Whose turn** | `turnOf(status)` → **"Marketing"** (Awaiting marketing review, In design, Changes requested, Member approved) · **"Member"** (Awaiting member approval) · **"—"** (Draft, Scheduled, Sending and every closed stage). There is **no "system" turn** — a stage nobody is waiting on reads "—" | FR-026 |
 | **Time in stage** | the existing `ageBadge` struct (`queue-table.tsx:110-121`), re-based on `stage_entered_at` and applied to **every** waiting stage, not only `submitted` | FR-026, FR-027 |
-| **Round** | `broadcasts.current_round` (0 = never formatted) | FR-026 |
+| **Round** | `broadcasts.current_round` — the **count of versions sent to the member** (0 = never formatted). A withdrawn approval does **not** start a round: the number moves only when marketing sends the next version | FR-026 |
 | **Proposed** / **Confirmed** send time | `proposed_send_at` / `scheduled_for`, tenant time zone | FR-026 |
 | **Last activity** | `stage_entered_at` | FR-026 |
 | Delivery results | `recipients / delivered / bounced / complained` from the existing `broadcast_deliveries` aggregate, on `sent` rows | FR-029 |
 
-**Stalled flag (FR-027)**: amber/red from one comparison against `stage_entered_at` —
-marketing-held stages (`submitted`, `in_design`, `changes_requested`, `member_approved`) at the
-existing 24 h / **48 h** review target (`SLA_AMBER_HOURS` / `SLA_RED_HOURS`,
-`queue-table.tsx:97-98`); member-held (`awaiting_member_approval`) at the **3-day** reminder
-threshold. Same badge struct, so label and variant cannot drift apart.
+**At phone width** (`QueueCardList`, < md) the card shows **member, subject, stage, whose turn and
+time in stage** only; **round, proposed and confirmed send times move to the detail page** (FR-026).
+No horizontal scroll and no hidden-column menu.
+
+**Stalled flag (FR-027)**: one comparison against `stage_entered_at` — marketing-held stages
+(`submitted`, `in_design`, `changes_requested`, `member_approved`) at the existing 24 h / **48 h**
+review target (`SLA_AMBER_HOURS` / `SLA_RED_HOURS`, `queue-table.tsx:97-98`); member-held
+(`awaiting_member_approval`) at the **3-day** reminder threshold. Same badge struct, so label and
+variant cannot drift apart. The flag is conveyed by an **icon *and* a text label** — never by colour
+alone — and is **available to assistive technology**: the icon is `aria-hidden` and the badge carries
+the visible text, so a screen reader reads "Stalled — 3 days" rather than nothing (FR-027). No
+`aria-label` on a role-less span.
 
 **Preserved**: the shared TanStack instance behind `QueueTable` + `QueueCardList` (< md), the
 fixed-bottom bulk action bar, the single permanently-mounted `role="status"` announcer
@@ -65,10 +72,13 @@ exports `INTEGRATION_FOLDER_RUN=1` so the test reports rather than asserts there
 
 ---
 
-## 2. Audit events (12 new — five places each, research R24)
+## 2. Audit events (14 new — five places each, research R24)
 
 All emitted with `AuditPort.emit`/`emitTyped` on the **same transaction** as the state change.
-`actorRole` is the session role, `?? null`, never a literal (`check:actor-role-truth`). Payloads
+`actorRole` is the session role, `?? null`, never a literal (`check:actor-role-truth`) — which
+resolves to **`member`** for every portal-user action (decision, upload, test copy), to the staff
+session role for a marketing/admin action, and to **`system`** for the reminder, warning, expiry and
+image-sweep rows the cron writes (spec § Audit trail). Payloads
 carry ids, keys, counts and lengths — **never** the subject, body, note or reason text.
 
 Member-activity events carry snake_case **`member_id`** so migration 0009's `last_activity_at`
@@ -90,17 +100,25 @@ trigger fires (it reads only that key); staff- and system-driven events carry
 | `broadcast_approval_expired` | system | `related_member_id` | `broadcast_id, version_id, round, days_waiting, allowance_released: true` |
 | `broadcast_test_copy_sent` | member or staff | `related_member_id` | `broadcast_id \| null, version_id \| null, recipient_hash` |
 | `broadcast_brand_settings_changed` | staff | — | `previous: { primaryColor, postalAddress }, next: { … }` |
+| `broadcast_image_uploaded` | member or staff | `member_id` (member upload) / `related_member_id` (staff, template) | `owner_kind, owner_id, image_id, byte_size, mime_type, content_hash` |
+| `broadcast_image_removed` | staff or system | `related_member_id` | `owner_kind, owner_id, image_id, blob_deleted: bool, reason: 'erasure'\|'withdrawn'\|'rejected'\|'sweep'` |
+
+The two image values are **new**, not reused. Spec § Audit trail requires "image uploaded / removed"
+to be auditable, and the existing `broadcast_image_*` values are **refusals and configuration only**
+(`broadcast_image_too_large`, `broadcast_image_unsafe`, `broadcast_image_allowlist_updated` —
+`audit-port.ts:136-138`): today a successful upload and a removal leave no audit trace at all. They
+ship in migration `0304` with `broadcast_images`. Neither payload ever carries the blob URL.
 
 Rejection and withdrawal from a new stage reuse the existing `broadcast_rejected` /
-`broadcast_cancelled`; image events reuse the existing `broadcast_image_*`; cross-boundary misses
-reuse `broadcast_cross_tenant_probe` / `broadcast_cross_member_probe`; a refused permission reuses
-`permission_denied`.
+`broadcast_cancelled`; cross-boundary misses reuse `broadcast_cross_tenant_probe` /
+`broadcast_cross_member_probe` (including the member image route's new ownership check, US6-AS7);
+a refused permission reuses `permission_denied`.
 
-**Retention**: 5 years for all twelve (`f7RetentionFor` returns 5 — `audit-port.ts:257`); no tax
+**Retention**: 5 years for all fourteen (`f7RetentionFor` returns 5 — `audit-port.ts:257`); no tax
 document is produced, so none is a 10-year event.
 
 **The five places** (CLAUDE.md § Gotchas, F7 flavour): `F7_AUDIT_EVENT_TYPES`
-(`audit-port.ts:50-178`, **55 → 67**, with the static assert at `:234` updated in the same edit) ·
+(`audit-port.ts:50-178`, **55 → 69**, with the static assert at `:234` updated in the same edit) ·
 `DB_ONLY_AUDIT_EVENT_TYPES` (`auth/infrastructure/db/schema.ts:522-678` — every `broadcast_*` value
 lives there, not in the pgEnum tuple) · the migration's one-per-line `ALTER TYPE … ADD VALUE
 IF NOT EXISTS` · `audit.eventType.<name>` labels in EN/TH/SV with Thai script · and
@@ -129,13 +147,25 @@ outbox row (retained 90 days by `outbox-purge`) holds no content at all.
 `locale` on the row is the recipient's: the member contact's `preferred_language` for member rows
 (FR-024), the platform default for staff rows (`users` has no locale column — the F114 finding).
 
+**FR-021b fixes what each side may see, and it is narrower than it looks.**
+
+- **Staff hand-off emails carry four things and nothing else**: the E-Blast's **subject**, the
+  **member company name**, the **new stage**, and a **link**. Never the body, never the member's
+  feedback or reason, never marketing's note, never the send times. The detail page is where a staff
+  user reads the rest — behind the session, the permission check and the audit trail. (An earlier
+  draft of this contract had `eblast_member_decided_marketing` carry the member's reason verbatim and
+  `eblast_submitted_marketing` carry the proposed send time; both are now forbidden.)
+- **Member emails MUST state**: what changed, who acted (as "the chamber" — never a staff user's
+  name, the F114 `organisation` precedent), the **proposed and the confirmed send time when they
+  differ**, and a link back.
+
 | type | to | one row per | `context_data` | rendered content |
 |---|---|---|---|---|
-| `eblast_submitted_marketing` | marketing recipients (§ 3.1) | recipient | `{ tenantId, broadcastId, recipientUserId }` | member + subject + proposed send time + link to `/admin/broadcasts/<id>` (US5 AS1 — staff are **not** notified on submit today) |
-| `eblast_version_sent_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId, round }` | "Round N is ready for your approval", marketing's note, the proposed send time, the expiry date, link to `/portal/broadcasts/<id>` |
-| `eblast_member_decided_marketing` | marketing recipients | recipient | `{ tenantId, broadcastId, versionId, round, decision }` | `decision ∈ approved \| changes_requested \| approval_withdrawn \| withdrawn`; the member's reason **verbatim, escaped, plain text** (never markup or a link); link to the detail |
-| `eblast_schedule_confirmed_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId }` | the confirmed time in the tenant time zone and, when it differs from the proposal, an explicit "this is not the time you proposed" line (FR-018) |
-| `eblast_approval_lifecycle` | member **and** marketing | recipient | `{ tenantId, broadcastId, versionId, round, kind, audience }` | `kind ∈ reminder_day3 \| reminder_day7 \| expiry_warning_day23 \| expired_day30`; day-23 and day-30 go to **both** sides (FR-022a) |
+| `eblast_submitted_marketing` | marketing recipients (§ 3.1) | recipient | `{ tenantId, broadcastId, recipientUserId }` | **subject + member company + stage ("Awaiting marketing review") + link** to `/admin/broadcasts/<id>` — nothing more (FR-021b). US5 AS1: staff are **not** notified on submit today |
+| `eblast_version_sent_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId, round }` | what changed ("Round N is ready for your approval"), who acted ("the chamber"), marketing's note, the proposed send time, **and the full timeline: a reminder on day 3, a final reminder on day 7, a warning on day 23 and automatic closure on day 30** (FR-021b) — the member is told the clock at the moment it starts. Link to `/portal/broadcasts/<id>` |
+| `eblast_member_decided_marketing` | marketing recipients | recipient | `{ tenantId, broadcastId, versionId, round, decision }` | **subject + member company + the new stage + link**. The `decision` discriminator selects the stage wording (`approved` → "Member approved — awaiting schedule"; `changes_requested` / `approval_withdrawn` → "Changes requested by member"; `withdrawn` → "Withdrawn"). **The member's reason is NOT in the email** (FR-021b) — it is on the detail page |
+| `eblast_schedule_confirmed_member` | the member's contact | broadcast | `{ tenantId, broadcastId, versionId }` | what changed, who acted, the confirmed time in the tenant time zone **and the proposed time beside it with an explicit "this is not the time you proposed" line whenever they differ** (FR-018, FR-021b), and a link back |
+| `eblast_approval_lifecycle` | member **and** marketing | recipient | `{ tenantId, broadcastId, versionId, round, kind, audience }` | `kind ∈ reminder_day3 \| reminder_day7 \| expiry_warning_day23 \| expired_day30`; day-23 and day-30 go to **both** sides (FR-022a). The **staff** rendering of each kind obeys the four-field rule above; the member rendering restates the remaining timeline |
 
 Every one of the five **must** ship with its `case` arm in `buildPayload`
 (`outbox-dispatch/route.ts:194`) in the same PR: the `default:` arm returns `null` (`:543`), which
@@ -232,9 +262,13 @@ touch `vercel.json`, the runbook and the alert rules for no observable gain.
 Order inside the block:
 
 1. **Image sweep** — for every `broadcast_images` row with `deleted_at IS NOT NULL`, delete the blob
-   **iff** no live row shares its `content_hash` (the last-reference rule, data-model § 4), then
-   remove the row. This is the durable backstop; the normal path deletes best-effort right after the
-   erasure/withdrawal transaction commits.
+   **iff** no live row of **either** `owner_kind` — no E-Blast **and** no template — shares its
+   `content_hash` (the last-reference rule, data-model § 4), then remove the row and audit
+   `broadcast_image_removed { …, reason: 'sweep', actor_role: 'system' }`. The **reference** was
+   removed from the content at the moment of erasure/withdrawal/rejection; this daily tick is what
+   makes "the file is deleted **within 24 hours** once nothing references it" true (spec § Personal
+   data). The normal path also attempts the delete best-effort right after that transaction commits,
+   so the usual case is seconds and this is the durable backstop.
 2. **Reminders and the warning** — for rows in `awaiting_member_approval`, ordered by
    `stage_entered_at`, driven by the pure `nextReminder(stage_entered_at, now, member_reminder_stage)`
    policy: day 3 → `reminder_day3` to the member and `member_reminder_stage = 1`; day 7 →
@@ -250,9 +284,17 @@ Order inside the block:
    `quota_year_consumed` NULL. A closed E-Blast cannot be reopened — `expired_no_member_response` is
    terminal in both the Domain map and the DB trigger.
 
+**Expiry applies only while awaiting the member** (FR-022a): steps 2 and 3 select on
+`status = 'awaiting_member_approval'` and nothing else, and that is the only `from` state with an
+`expired_no_member_response` target in the DB state machine. Once the member has approved, or
+marketing has confirmed a schedule, **no expiry can occur** — a row can sit at `member_approved` or
+`approved` indefinitely without the tick touching it. A lapsed member changes nothing here: the clock
+keeps running (spec § Edge Cases).
+
 **Never auto-approved** (FR-014, US5 AS3): the block has no path to `member_approved` or `approved`.
 A contract test asserts that running it against a row that has been waiting 400 days produces
-exactly one expiry and no approval.
+exactly one expiry and no approval, and that a row parked at `member_approved` for 400 days is
+untouched.
 
 **Bounds**: ≤ 200 rows per kind per tick (the tenant has ~2 in flight; the bound exists so a
 backlog cannot make the tick unbounded), ordered oldest-first so nothing starves. Idempotent: a
@@ -271,12 +313,22 @@ pruneOk: true, approvalLifecycleOk: true }`.
 - Each arm renders from ids: the row's `context_data` is asserted to contain **no** subject, body,
   note or reason; a scrubbed version renders `[redacted]`; a deleted version yields
   `request_gone`, a removed contact `recipient_gone`.
+- **FR-021b containment**: every **staff**-audience rendering is asserted to contain the subject, the
+  member company, the stage and the link, and to contain **none** of the body, the member's reason,
+  marketing's note or the send times — with a positive control that fails when the reason is spliced
+  back in. The **member** `eblast_version_sent_member` rendering is asserted to state day 3, day 7,
+  day 23 and day 30; `eblast_schedule_confirmed_member` is asserted to carry both times and the
+  "not the time you proposed" line when they differ, and only the confirmed time when they do not.
 - `marketingRoles()` is derived, not literal: with `marketing` removed from `MARKETING_KEYS`'
   `broadcasts.write`, the roster changes without touching this code.
 - Empty roster → `staffNotified: false` + `broadcasts_no_marketing_recipient_total` incremented.
-- The queue: stage counts match seeded rows; `whoseTurn` is correct for every stage; a
-  marketing-held row older than 48 h and a member-held row older than 3 days are both flagged;
-  the upcoming preset orders by `scheduled_for`; a `manager` gets the full list and no action
-  controls.
+- The queue: stage counts match seeded rows; `whoseTurn` is correct for **every** status, including
+  `null` for `draft`, `approved`, `sending` and all five closed statuses (no "system" value is ever
+  produced); `round` does not move on a withdrawn approval and does move on the next send; a
+  marketing-held row older than 48 h and a member-held row older than 3 days are both flagged, with
+  the stalled badge carrying a text label the accessible name exposes; the upcoming preset orders by
+  `scheduled_for`; a `manager` gets the full list and no action controls; at < md the card renders
+  member/subject/stage/turn/time only.
 - The cron block: one reminder per threshold across a 40-day simulated clock (injected
-  `ClockPort`), zero approvals, exactly one expiry, and a second run in the same day is a no-op.
+  `ClockPort`), zero approvals, exactly one expiry, a row at `member_approved` or `approved`
+  untouched after 400 days, and a second run in the same day is a no-op.

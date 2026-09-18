@@ -27,6 +27,7 @@ psql "$DATABASE_URL" -c "SELECT unnest(enum_range(NULL::broadcast_status));"    
 psql "$DATABASE_URL" -c "SELECT to_regclass('public.broadcast_versions'), to_regclass('public.broadcast_member_decisions'), to_regclass('public.broadcast_images');"
 psql "$DATABASE_URL" -c "SELECT column_name FROM information_schema.columns WHERE table_name='broadcasts' AND column_name IN ('proposed_send_at','stage_entered_at','current_round','approved_version_id','member_reminder_stage','member_expiry_notified_at');"   # expect 6
 psql "$DATABASE_URL" -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('broadcast_versions','broadcast_member_decisions','broadcast_images');"   # expect t,t ×3
+psql "$DATABASE_URL" -c "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid WHERE t.typname='audit_event_type' AND e.enumlabel IN ('broadcast_test_copy_sent','broadcast_brand_settings_changed','broadcast_image_uploaded','broadcast_image_removed','broadcast_version_started','broadcast_version_sent_to_member','broadcast_member_approved','broadcast_member_changes_requested','broadcast_member_approval_withdrawn','broadcast_member_approval_voided','broadcast_schedule_confirmed','broadcast_approval_reminder_sent','broadcast_approval_expiry_warned','broadcast_approval_expired');"   # expect 14
 
 # the FR-012a amendments actually replaced the function bodies — read the SOURCE, not a fixture
 psql "$DATABASE_URL" -c "SELECT prosrc FROM pg_proc WHERE proname='broadcasts_immutable_after_submit_fn';" | grep -c "member_approved"   # expect >= 2 (E1 and E2)
@@ -65,9 +66,14 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    now read-only (try `PATCH …/version` → 409 `stage_changed`), and one email to the member's
    contact in **their** language.
 6. As the member, `/portal/broadcasts/<id>`: the formatted version rendered through the same
-   wrapper, the original beside it, marketing's note, the proposed send time, the expiry date.
-   **Approve.** Expect stage **Member approved — awaiting schedule** and the marketing inbox
-   notified.
+   wrapper, the original beside it, marketing's note, the proposed send time, the expiry date. On a
+   **phone** the formatted version comes **first** and the original is reachable **below it on the
+   same page** (FR-008). The member's email states the day 3 / 7 / 23 / 30 timeline (FR-021b).
+   **Approve** — the confirmation dialog says marketing will now confirm the send time and that the
+   content cannot change without a new approval; the optional note is capped at 500 characters
+   (FR-009). Expect stage **Member approved — awaiting schedule**, a page that shows the new stage
+   and a way back to the E-Blast list, and the marketing inbox notified — with an email carrying
+   **only** the subject, the member company, the new stage and a link (FR-021b).
 7. As `marketing`, **Confirm schedule**: the member's proposed time is shown and pre-selected.
    Keep it. Expect stage **Scheduled**, and — the FR-012a promotion —
    `SELECT subject, body_html FROM broadcasts WHERE broadcast_id = …` now **equals the approved
@@ -75,7 +81,19 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
 8. Let the dispatcher run (or set `scheduled_for` to the past on the dev branch) → **Sending** →
    **Sent**. Verify the delivered email equals the version the member approved (US1 AS6).
 9. **Negative (FR-007)**: submit a second E-Blast and choose **Approve as submitted**. Expect no
-   member sign-off round, no version rows, today's behaviour exactly.
+   member sign-off round, no version rows, today's behaviour exactly — and the history on both sides
+   showing a single **"approved as submitted"** entry with the staff user and the time.
+10. **No portal user (spec § Edge Cases)**: proxy-submit an E-Blast for a member company that has no
+    active portal user, start a formatted version and try **Send to member** → refused
+    409 `no_portal_user`, with a warning on the detail page saying the only options are approving as
+    submitted or inviting a portal user first.
+11. **De-allow-listed image**: save a version with an image, remove that host from the tenant
+    allow-list, then **Send to member** → refused 422 naming **which image and why**; the version
+    stays editable. Do the same after approval and try **Confirm schedule** → the promotion is
+    refused with the same code.
+12. **Brand change mid-flow**: with a version awaiting the member, change the brand colour on
+    `/admin/settings/broadcasts/brand` → nothing is voided, `approved_version_id` is unchanged, and
+    the next preview and the send use the **new** colour (FR-041c).
 
 ### US2 — the member asks for changes, and later withdraws an approval
 
@@ -90,40 +108,75 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    `scheduled_for` **cleared**, `approved_version_id` **cleared**, marketing notified, and the
    history showing the withdrawal and its reason (FR-015a).
 5. **Negative**: with the broadcast in `sending`, withdraw → 409 `sending_started`; the send
-   completes (spec § Edge Cases).
+   completes (spec § Edge Cases). "Sending begins" is entry into the **Sending** stage, i.e. the
+   hand-over to the delivery provider — one stage earlier (`approved`/Scheduled) both a member
+   withdrawal and a marketing rejection still succeed (FR-015).
 6. **Allowance**: through every one of those stages, the member's quota display shows the place held;
    after a reject or a withdrawal it is released, and `quota_year_consumed` is still NULL (SC-007).
+7. **Lapsed member**: lapse the test member's plan, then open the E-Blast as that member and approve
+   → it **succeeds** (reading and deciding are not benefit actions); the existing refusal appears at
+   send time instead, and the expiry clock is unaffected (spec § Edge Cases).
+8. **Marketing may re-send unchanged content** (FR-011): after a change request, send a version whose
+   subject and body are byte-identical with a note explaining why → accepted as the next round.
 
 ### US3 — the writing tool
 
-1. Toolbar: heading, quote, divider, bulleted and numbered lists, bold, underline, link with its own
-   text, image, CTA button, banner — every one of them has a visible control, and nothing typeable by
-   shortcut (`# `, `> `, `---`, ` ``` `, `~~strike~~`) produces something the platform later strips.
-2. Insert an image without a description → the block cannot be inserted and the prompt says why
-   (FR-040).
-3. Add a CTA button → it renders in the chamber's brand colour in the preview **and** in a test copy;
-   there is no colour or font control anywhere.
-4. **Send test copy** → arrives at your own address, marked `[TEST]`; the stage, the version history
-   and the allowance are unchanged. Compare the test copy with the preview and with a delivered
-   email — element for element, nothing stripped (SC-011).
-5. Empty message → the inline preview shows an empty state, not a blank box.
-6. Switch the interface to Thai → italic is not offered (FR-044).
-7. Save a draft, change nothing, navigate away → **no** "unsaved changes" warning (FR-045).
-8. As `marketing`, the compose-on-behalf form offers drafts, images, the template picker, the
-   member's allowance, the subject counter, the preview and the unsaved-changes guard (FR-039).
+1. Toolbar: headings (**H2 and H3 only** — no H1, the subject is the title), quote, divider,
+   bulleted and numbered lists, bold, underline, link with its own text, image, CTA button, banner —
+   every one of them has a visible control, and nothing typeable by shortcut (`# `, `> `, `---`,
+   ` ``` `, `~~strike~~`) produces something the platform later strips (FR-038).
+2. **Paste** a Word/Google-Docs fragment with colours, a table and a font change → the unsupported
+   parts are dropped **at paste time** and a **single** non-blocking notice says so; paste again in
+   the same session → no second notice (FR-038).
+3. Link dialog: enter `javascript:alert(1)` or `ftp://…` → refused **in the dialog** with a message;
+   `http`, `https` and `mailto` are accepted (FR-038).
+4. Insert an image without a description → the block cannot be inserted and the prompt says why; the
+   description field is labelled, accepts **1–125 characters**, and an empty value is announced as a
+   field error (FR-040).
+5. Add a CTA button → it renders in the chamber's brand colour in the preview **and** in a test copy;
+   there is no colour or font control anywhere. Text of 61 characters → refused; a **fourth** CTA in
+   one message → refused; at phone width the button **text wraps** and never overflows (FR-041).
+6. Add a banner → full 600 px width, placeable anywhere in the body, description required (FR-041).
+7. **Send test copy** → arrives at your own address, subject prefixed **`[Test]`**; the stage, the
+   version history and the allowance are unchanged. It runs the identical pipeline — blocks, brand
+   header, footer. Compare the test copy with the preview and with a delivered email — element for
+   element, nothing stripped (SC-011). The **11th** test copy in an hour is refused (10/hour, FR-037).
+8. Empty message → the inline preview shows the translated empty-state line, not a blank box; open
+   the Preview dialog → **desktop 600 px** and **phone 375 px**, focus returns to the trigger on
+   close, and the open/close transition respects `prefers-reduced-motion` (FR-043).
+9. Switch the interface to Thai → the italic **control** is not offered; paste italic text or start
+   from a template that contains italic → the italic content is **kept**, not stripped (FR-044).
+10. Save a draft → the save control shows a **busy state** while saving and a **"Saved at HH:MM"**
+    indicator afterwards; change nothing, navigate away → **no** "unsaved changes" warning (FR-045).
+11. Toolbar at **320 px**: it **wraps onto further rows** — there is no overflow menu and no control
+    is hidden; arrow keys move between controls, **Home/End** jump to the first and last, and focus
+    is visible throughout (FR-048).
+12. As `marketing`, the compose-on-behalf form offers drafts, images, the template picker, the
+    member's allowance, the subject counter, the preview and the unsaved-changes guard (FR-039).
+13. Start an E-Blast from a template that carries a banner and a CTA → the member can **edit and
+    delete** both like any other content, and nothing marks them as template-derived (FR-046a).
 
 ### US4 — the dashboard
 
 1. Seed E-Blasts across every stage. `/admin/broadcasts` → a count per stage chip; selecting one
-   filters the list.
+   filters the list. A changed count is announced through the list's **one existing** `role="status"`
+   region — confirm with a screen reader that there is no second announcer (FR-025).
 2. Each row shows member, subject, stage, whose turn, time in stage, round, proposed and confirmed
-   send times, last activity.
-3. A marketing-held row older than 48 h and a member-held row older than 3 days are both flagged
-   stalled.
-4. The **Upcoming sends** preset lists scheduled E-Blasts in send-time order.
-5. A sent row shows recipients / delivered / bounced / complained.
-6. As `manager`: everything is visible, no action control exists (not merely disabled), and
-   `POST …/version` → 403 + `permission_denied` in the audit.
+   send times, last activity. **Whose turn** reads Marketing / Member / **"—"**; "—" for Draft,
+   Scheduled, Sending and every closed stage, and there is no "system"/"Us" value anywhere (FR-026).
+   Withdraw an approval → the round number does **not** change; send the next version → it does.
+3. Narrow to **phone width**: the card shows member, subject, stage, whose turn and time in stage
+   only; round and both send times are on the detail page, with no horizontal scroll (FR-026).
+4. A marketing-held row older than 48 h and a member-held row older than 3 days are both flagged
+   stalled — with an **icon *and* a text label**, never colour alone, and the label is in the
+   accessible name (FR-027).
+5. Switch the interface to **SV** and to **TH**: every stage chip label fits its chip (SV runs up to
+   +28 %) and the strip does not reflow (FR-025, research V2).
+6. The **Upcoming sends** preset lists scheduled E-Blasts in send-time order.
+7. A sent row shows recipients / delivered / bounced / complained.
+8. As `manager`: everything is visible, no action control exists (not merely disabled), `GET
+   …/version` returns the full thread, and `POST …/version`, `…/test-copy`, `…/schedule` and the
+   Brand page all → 403 + `permission_denied` in the audit (spec § Roles).
 
 ### US5 — reminders and expiry (with an injected clock)
 
@@ -139,7 +192,15 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    freed. Running it twice on the same day changes nothing. **Nothing is ever auto-approved.**
 3. Send a new version mid-wait → `member_reminder_stage` resets to 0 and the clock restarts from the
    new version (FR-022a).
-4. The nav badge counts the E-Blasts waiting on marketing, from anywhere in the staff portal.
+4. **Expiry is scoped**: park a row at **Member approved** and another at **Scheduled**, backdate
+   both 400 days and run the tick → neither is touched. Expiry exists only while **Awaiting member
+   approval** (FR-022a).
+5. **SC-004 measurement**: "notified within 5 minutes" means the notification email has been
+   **handed to the delivery service**, measured from the hand-off event — not delivered, not opened.
+   Measure `enqueued_at` on the outbox row against the `sent_at` the dispatcher stamps when Resend
+   accepts it; the 1-minute outbox tick plus the provider call is the whole budget. A provider
+   failure is an `email_dispatch_failed` row, not an SC-004 breach.
+6. The nav badge counts the E-Blasts waiting on marketing, from anywhere in the staff portal.
 
 ### US6 — the screens
 
@@ -152,9 +213,29 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    with a retry appears on every one.
 4. With a screen reader, trigger a validation error on the message → the error is announced on the
    editor itself.
-5. Toolbar: one tab stop, arrow keys between controls (FR-048).
-6. `pnpm test:e2e --grep "@a11y" --workers=1` → zero serious or critical findings on every E-Blast
-   screen (SC-013).
+5. Toolbar: one tab stop, arrow keys between controls, **Home/End** to the ends, a visible focus
+   state, and at 320 px it **wraps** with no overflow menu (FR-048).
+6. **FR-051 is a finite list.** "Every E-Blast screen" means exactly these **nine**, and each one
+   must pass the platform UX checklist at **`docs/ux-standards.md` § 15** and the automated WCAG
+   2.1 AA scan (axe-core rules, run through the **`@a11y` e2e suite**) with **zero serious or
+   critical findings** before the trial starts:
+
+   | # | screen |
+   |---|---|
+   | 1 | portal compose — `/portal/broadcasts/new` |
+   | 2 | portal E-Blast detail / sign-off — `/portal/broadcasts/[id]` |
+   | 3 | portal benefits E-Blast tab |
+   | 4 | staff queue — `/admin/broadcasts` |
+   | 5 | staff detail / format — `/admin/broadcasts/[id]` |
+   | 6 | staff compose-on-behalf — `/admin/broadcasts/new` |
+   | 7 | template list / new / edit — `/admin/broadcasts/templates/**` |
+   | 8 | E-Blast settings — `/admin/settings/broadcasts` |
+   | 9 | Brand settings — `/admin/settings/broadcasts/brand` |
+
+   In the same pass: **translation keys no screen uses are removed**, and components that are never
+   shown are **wired or deleted** (FR-051). `pnpm check:i18n` after the deletions.
+7. `pnpm test:e2e --grep "@a11y" --workers=1` → zero serious or critical findings on all nine
+   (SC-013).
 
 ### US7 — the safe trial
 
@@ -220,7 +301,9 @@ production deploy on this repo (`vercel.json` has no `ignoreCommand`).
 
 | Pre-merge gate | Why it blocks |
 |---|---|
-| The **byte-identical wrapper snapshot** — with no brand colour, no postal address, no logo on file and no design block in the body, `renderBroadcastHtml` output equals today's byte for byte | PR-1 changes the wrapper every live SweCham send uses. Without this, the tool upgrade is an unreviewable change to production email |
+| The **byte-identical wrapper snapshot** — with no brand colour, no postal address, no logo on file and no design block in the body, `renderBroadcastHtml` output equals today's byte for byte | PR-1 changes the wrapper every live SweCham send uses. This is now a **spec requirement** (§ Feature flag: "that snapshot test is a merge blocker for the unflagged tool upgrade"), not only a plan amendment. Without it the tool upgrade is an unreviewable change to production email |
+| The **`docs/ux-standards.md` § 18.2 container exception** for the two-column compose width, written **in this same change** | FR-050 requires the departure from the form container tier to be recorded, not discovered later |
+| The **nine-screen FR-051 pass**: `docs/ux-standards.md` § 15 checklist + the `@a11y` axe suite, zero serious/critical, dead i18n keys removed, unshown components wired or deleted | FR-051 names the finite list; a screen missed here is a screen SweCham tests |
 | SC-011 element parity, with its positive control | The shared sanitiser policy replaces three hand-maintained configs; the parity test is what makes "nothing is stripped" a property rather than a promise |
 | `@tiptap/extension-image` re-pinned `^3.22.5` → `3.22.5` | A caret on an editor extension means a patch release can change the serialised HTML the sanitiser and the block parser both key on |
 | e2e `@eblast` + `@a11y` green on chromium **and** mobile-safari | The compose layout changes at two breakpoints |
@@ -237,7 +320,8 @@ until step 3.3.
 2. **Do not set `FEATURE_EBLAST_MEMBER_APPROVAL` yet.** Setting the env var is the deploy and the
    flip in one action.
 3. Unflagged and live the moment PR-2 merges — none of the rollback layers in § 3.5 undoes these:
-   - the five `broadcast_status` values, the twelve `audit_event_type` values and the five
+   - the five `broadcast_status` values, the fourteen `audit_event_type` values (four landed with
+     `0304` in PR-1, ten land here) and the five
      `notification_type` values (`ADD VALUE` is irreversible);
    - the two amended trigger functions (a reversal is a new migration);
    - `proposed_send_at` now recorded at submit for **every** E-Blast, and the backfill of rows
@@ -245,15 +329,26 @@ until step 3.3.
    - the widened allowance bucket and cancel cascade — they read the same set, which currently
      contains no rows in the new stages, so behaviour is unchanged until the flag is on;
    - `stage_entered_at` stamped on every status change.
-4. **Update the record of processing (RoPA)** before the flag goes on: the new purpose ("review and
-   member sign-off of E-Blast content; accountable version history"), the new personal data
-   (versions, notes, decision reasons, staff-uploaded images), the new disclosure (hand-off
-   notification emails to staff and to the member's contact), the new export category
-   (`broadcast-versions.json`) and the retention note that a **sent** outbox row keeps the
-   recipient's address frozen at enqueue under the existing outbox retention. This is a
-   **precondition** of step 5, not a follow-up.
+4. **Update the record of processing (RoPA)** before the flag goes on — `docs/compliance/processing-records.md`.
+   Spec § Personal data names what it must say, so the entry is not free-form:
+   - the new purpose — "review and member sign-off of E-Blast content; accountable version history";
+   - **the new fields, by name**: E-Blast **versions**, marketing **notes**, decision **reasons**,
+     **decisions** (who decided, when), and staff/template **uploaded images**;
+   - **the staff recipients** of hand-off emails — the tenant's `marketing`-role users, with the
+     admins as the fallback when there is none (FR-021a);
+   - the **chamber postal address** now stored in brand settings and printed in every E-Blast footer;
+   - the new export category (`broadcast-versions.json`);
+   - the erasure reach — versions, notes, reasons, decisions, images **and the notifications about
+     the E-Blast** — with images unreferenced by any E-Blast or template deleted within 24 hours;
+   - the retention note that a **sent** outbox row keeps the recipient's address frozen at enqueue
+     under the existing outbox retention.
+
+   This is a **precondition** of step 5, not a follow-up.
 5. Set `FEATURE_EBLAST_MEMBER_APPROVAL=true` in Vercel only when ready to redeploy immediately and
-   only after step 4. From that moment "Start formatted version" is offered on submitted E-Blasts.
+   only after step 4. From that moment "Start formatted version" is offered on submitted E-Blasts —
+   **including the ones already sitting in "Awaiting marketing review" when the flag went on**. They
+   gain the new actions like any other row and nothing distinguishes them (spec § Feature flag);
+   there is no migration, no backfill and no "legacy" marking.
 6. **First-round observation**: run one real E-Blast through format → send → approve → confirm →
    sent. Confirm the marketing email arrived, the member email arrived in their language, the stage
    chips and the nav badge read correctly, and
@@ -262,11 +357,17 @@ until step 3.3.
 
 ### 3.3 Brand settings (operator, any time after PR-1)
 
-On `/admin/settings/broadcasts/brand` (admin or super-admin — **not** marketing): set the chamber's
-primary colour (refused if white text on it is below WCAG AA 4.5:1) and the postal address. Until
-the address is set, the footer shows the chamber name only and the page flags it missing. The logo
-is read-only here; changing it stays on `/admin/settings/invoicing`, super-admin only, because it
-prints on issued tax documents.
+The page sits under the staff **Settings** area beside the existing E-Blast settings page, and is
+**invisible** — nav entry, Settings-index card and page alike — to anyone without
+`settings.broadcasts`, `marketing` included (FR-041b). On `/admin/settings/broadcasts/brand` (admin
+or super-admin): set the chamber's primary colour (refused if white text on it is below WCAG AA
+4.5:1; used in **email only**, never in the portal UI) and the postal address (**free text, up to
+300 characters, line breaks allowed**). Until the address is set, the footer shows the chamber name
+only and the page flags it missing. The logo is read-only here; changing it stays on
+`/admin/settings/invoicing`, super-admin only, because it prints on issued tax documents — and where
+a `marketing` user meets the "no logo on file" hint, the copy tells them to **ask an administrator**
+rather than linking to a page they cannot open. Brand chrome is applied **live** at send time and in
+every preview, so changing it never voids a pending or given approval (FR-041c).
 
 ### 3.4 Flag matrix
 
@@ -281,6 +382,7 @@ prints on issued tax documents.
 | Nav waiting count | off | hidden unless rows exist | shown |
 | Reminders / day-23 warning / day-30 expiry | off | run for rows already awaiting | run |
 | Today's approve / reject flow | off | **byte-identical to before** (SC-006) | unchanged |
+| Rows already in **Awaiting marketing review** when the flag is switched on | off | — | they **gain the new actions like any other row**; nothing distinguishes them (spec § Feature flag) |
 
 ### 3.5 Rollback matrix (FR-034)
 
