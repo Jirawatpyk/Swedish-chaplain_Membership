@@ -3480,7 +3480,8 @@
           "subjectHelp": "Up to 200 characters. May include '{{chamber_name}}' placeholder.",
           "bodyHtml": "Body (HTML)",
           "bodyHtmlHelp": "Up to 200 KB. Use [bracketed text] for member-editable placeholders; '{{chamber_name}}' is substituted at draft-start.",
-          "localeLabel": "Locale"
+          "localeLabel": "Locale",
+          "imagesAfterSaveHint": "Images can be added once the template is saved."
         },
         "saveButton": "Save template",
         "cancelButton": "Cancel",
@@ -5961,18 +5962,10 @@
           }
         },
         "savedAt": "Saved at {time}",
-        "staleDraftBanner": {
-          "title": "Template has been updated",
-          "body": "The \"{templateName}\" template was edited since you started this draft. Refresh to load the current version (your edits to subject + body will be overwritten).",
-          "refreshButton": "Refresh from current",
-          "refreshingButton": "Refreshing…",
-          "dismissAria": "Dismiss stale-draft notice for {templateName}"
-        },
         "fields": {
           "subject": "Subject",
           "subjectPlaceholder": "Subject line (max 200 characters)",
           "bodyLabel": "Message",
-          "bodyPlaceholder": "Write your message — formatting is preserved.",
           "segmentLabel": "Recipients",
           "customListLabel": "Custom email list",
           "customListHelp": "One email per line, up to 100 entries. Each must already be in your tenant directory.",
@@ -5983,9 +5976,6 @@
           "previewUnavailable": "Preview is temporarily unavailable",
           "previewUnavailableHint": "Refresh the page to retry — your draft is safe.",
           "subjectCounter": "{count} / {max} characters",
-          "linkUrlLabel": "Link URL",
-          "linkConfirm": "Set link",
-          "linkCancel": "Cancel",
           "tierCodesPlaceholder": "premium, large",
           "tierCodesHelp": "Comma-separated tier codes",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
@@ -5998,17 +5988,6 @@
         },
         "tierLabel": "Tier code",
         "editor": {
-          "bracketHint": "Click any [bracketed text] to replace with your content.",
-          "aria": {
-            "toolbar": "Formatting toolbar",
-            "bold": "Bold (Ctrl+B)",
-            "italic": "Italic (Ctrl+I)",
-            "underline": "Underline (Ctrl+U)",
-            "bulletList": "Bullet list",
-            "orderedList": "Numbered list",
-            "link": "Insert link",
-            "clearLink": "Remove link"
-          },
           "announcements": {
             "boldOn": "Bold on",
             "boldOff": "Bold off",
@@ -6029,14 +6008,12 @@
           "submitted": "Submitted for admin review.",
           "submittedSlaHint": "Admin review target: 48 hours.",
           "preferenceExcluded": "{count, plural, one {# address was} other {# addresses were}} excluded by recipient preference.",
-          "sanitiserStripped": "Some unsupported formatting was removed automatically.",
           "submitting": "Submitting…",
           "takingLonger": "Taking longer than expected — please wait."
         },
         "button": {
           "saveDraft": "Save as draft",
-          "submit": "Submit for review",
-          "deleteDraft": "Discard draft"
+          "submit": "Submit for review"
         },
         "submitNote": {
           "cancellable": "You can cancel this broadcast at any time until an admin approves it."
@@ -6082,17 +6059,10 @@
           "broadcast_not_found": "We could not find that broadcast.",
           "internal_error": "An unexpected error occurred. Please try again."
         },
-        "delete": {
-          "title": "Discard this draft?",
-          "body": "This will permanently remove your draft. This action cannot be undone.",
-          "confirm": "Discard",
-          "cancel": "Keep editing"
-        },
         "imageUpload": {
           "pickerLabel": "Choose an image to upload",
           "uploadButton": "Upload image",
           "uploadingLabel": "Uploading…",
-          "progressAria": "Image upload progress",
           "uploadingAria": "Uploading image — please wait",
           "uploadedToast": "Image uploaded.",
           "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
@@ -6192,7 +6162,8 @@
           "submittedAt": "Submitted",
           "sentAt": "Sent",
           "status": "Status",
-          "recipients": "Recipients"
+          "recipients": "Recipients",
+          "content": "Content"
         },
         "delivery": {
           "title": "Delivery breakdown",

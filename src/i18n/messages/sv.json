@@ -3480,7 +3480,8 @@
           "subjectHelp": "Upp till 200 tecken. Kan innehålla '{{chamber_name}}'-platshållare.",
           "bodyHtml": "Innehåll (HTML)",
           "bodyHtmlHelp": "Upp till 200 KB. Använd [text inom hakparenteser] som platshållare som medlemmen kan redigera; '{{chamber_name}}' ersätts vid utkaststart.",
-          "localeLabel": "Språk"
+          "localeLabel": "Språk",
+          "imagesAfterSaveHint": "Bilder kan läggas till när mallen har sparats."
         },
         "saveButton": "Spara mall",
         "cancelButton": "Avbryt",
@@ -5961,18 +5962,10 @@
           }
         },
         "savedAt": "Sparat {time}",
-        "staleDraftBanner": {
-          "title": "Mallen har uppdaterats",
-          "body": "Mallen \"{templateName}\" har redigerats sedan du startade detta utkast. Klicka uppdatera för att ladda nuvarande version (dina ändringar i ämne och innehåll skrivs över).",
-          "refreshButton": "Uppdatera från nuvarande",
-          "refreshingButton": "Uppdaterar…",
-          "dismissAria": "Stäng meddelandet om föråldrat utkast för {templateName}"
-        },
         "fields": {
           "subject": "Ämne",
           "subjectPlaceholder": "Ämnesrad (max 200 tecken)",
           "bodyLabel": "Meddelande",
-          "bodyPlaceholder": "Skriv ditt meddelande — formatering bevaras.",
           "segmentLabel": "Mottagare",
           "customListLabel": "Anpassad e-postlista",
           "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din kammares katalog.",
@@ -5983,9 +5976,6 @@
           "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
           "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
           "subjectCounter": "{count} / {max} tecken",
-          "linkUrlLabel": "Länk-URL",
-          "linkConfirm": "Använd länk",
-          "linkCancel": "Avbryt",
           "tierCodesPlaceholder": "premium, large",
           "tierCodesHelp": "Kommaseparerade nivåkoder",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
@@ -5998,17 +5988,6 @@
         },
         "tierLabel": "Nivåkod",
         "editor": {
-          "bracketHint": "Klicka på [text inom hakparenteser] för att ersätta med ditt innehåll.",
-          "aria": {
-            "toolbar": "Formateringsverktygsfält",
-            "bold": "Fet (Ctrl+B)",
-            "italic": "Kursiv (Ctrl+I)",
-            "underline": "Understruken (Ctrl+U)",
-            "bulletList": "Punktlista",
-            "orderedList": "Numrerad lista",
-            "link": "Infoga länk",
-            "clearLink": "Ta bort länk"
-          },
           "announcements": {
             "boldOn": "Fet på",
             "boldOff": "Fet av",
@@ -6029,14 +6008,12 @@
           "submitted": "Inskickad för administratörsgranskning.",
           "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
           "preferenceExcluded": "{count, plural, one {# e-postadress uteslöts} other {# e-postadresser uteslöts}} enligt mottagarnas önskemål.",
-          "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
           "submitting": "Skickar in…",
           "takingLonger": "Det tar längre tid än väntat — vänligen vänta."
         },
         "button": {
           "saveDraft": "Spara som utkast",
-          "submit": "Skicka för granskning",
-          "deleteDraft": "Ta bort utkast"
+          "submit": "Skicka för granskning"
         },
         "submitNote": {
           "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
@@ -6082,17 +6059,10 @@
           "broadcast_not_found": "Vi kunde inte hitta det utskicket.",
           "internal_error": "Ett oväntat fel inträffade. Försök igen."
         },
-        "delete": {
-          "title": "Ta bort detta utkast?",
-          "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
-          "confirm": "Ta bort",
-          "cancel": "Fortsätt redigera"
-        },
         "imageUpload": {
           "pickerLabel": "Välj en bild att ladda upp",
           "uploadButton": "Ladda upp bild",
           "uploadingLabel": "Laddar upp…",
-          "progressAria": "Förlopp för bilduppladdning",
           "uploadingAria": "Laddar upp bild — vänta",
           "uploadedToast": "Bilden har laddats upp.",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
@@ -6192,7 +6162,8 @@
           "submittedAt": "Inskickad",
           "sentAt": "Skickad",
           "status": "Status",
-          "recipients": "Mottagare"
+          "recipients": "Mottagare",
+          "content": "Innehåll"
         },
         "delivery": {
           "title": "Leveranssammanfattning",

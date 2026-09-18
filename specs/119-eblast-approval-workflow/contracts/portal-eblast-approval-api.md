@@ -263,15 +263,20 @@ field error (FR-040).
 ## `GET /api/broadcasts/[id]` — member detail (existing route, widened)
 
 Gains `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt` and — closing
-FR-049 — the **subject and body** of the E-Blast (the page renders no body today,
-`portal/broadcasts/[id]/page.tsx`). While the broadcast is awaiting the member, the body shown is
-the latest **sent** version; otherwise it is the record's own content.
+FR-049 — the **subject and body** of the E-Blast on the SCREEN. **Implementation note (T141,
+2026-09-18)**: the route has returned `subject` and `bodyHtml` since the F7 MVP (`858fc15c1`); the
+gap was the page, which rendered no body (`portal/broadcasts/[id]/page.tsx`). PR-1 therefore adds
+no field here — it renders the stored body through the same server-side renderer the preview uses,
+inside the sandboxed preview surface, and pins the two fields with
+`tests/contract/broadcasts/get-broadcast-detail.contract.test.ts` so PR-2's T141a cannot drop them.
+While the broadcast is awaiting the member, the body shown is the latest **sent** version;
+otherwise it is the record's own content.
 
 **This widening lands in two PRs** (plan Amendment 5), because only half of it can be built in PR-1:
 
 | field | PR | why |
 |---|---|---|
-| `subject`, `body` (from the broadcast record's own content) | **PR-1**, task T141 | FR-049 is a screen-standard fix; it needs no new column and no version row |
+| `subject`, `bodyHtml` (from the broadcast record's own content — already on the wire; PR-1 pins them and builds the screen) | **PR-1**, task T141 | FR-049 is a screen-standard fix; it needs no new column and no version row |
 | `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt`, and "the body is the latest **sent** version while awaiting the member" | **PR-2**, task T141a | every one of these reads a `0305` column (`proposed_send_at`, `current_round`, `stage_entered_at`), the `broadcast_versions` table, or the Domain `stageOf`/`turnOf` maps (T052) — none of which exists in PR-1 |
 
 A PR-1 implementation of the second row is not merely early, it does not compile: the columns and

@@ -14,7 +14,7 @@
  * pages resolve the tenant's templates server-side, chamber-name substitution
  * already applied, so applying one costs no round trip and cannot half-apply.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import {
@@ -50,8 +50,38 @@ export function ComposeTemplatePickerField({
   const [pending, setPending] = useState<{
     readonly option: ComposeTemplateOption | null;
   } | null>(null);
+  /**
+   * F119 T108 (FR-046) — template starts already counted on this screen. The
+   * count is per (compose session, template): re-picking the SAME template
+   * after an undo-by-re-pick is one start, not two, and the blank option is
+   * not a start at all.
+   */
+  const countedRef = useRef<Set<string>>(new Set());
 
   if (templates.length === 0) return null;
+
+  /**
+   * Fire-and-forget: adoption telemetry must never block, fail or warn the
+   * member's compose flow. The server refuses an unknown, other-tenant or
+   * deleted template and rate-limits the bucket; a rejected count is simply a
+   * count that did not happen.
+   */
+  function countStart(templateId: string): void {
+    if (countedRef.current.has(templateId)) return;
+    countedRef.current.add(templateId);
+    void fetch(`/api/broadcasts/templates/${templateId}/started`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+    }).catch(() => {
+      /* telemetry only — never surfaced */
+    });
+  }
+
+  function applyOption(option: ComposeTemplateOption | null): void {
+    if (option !== null) countStart(option.id);
+    onApply(option);
+  }
 
   function handleSelect(id: string | null): void {
     const option =
@@ -60,7 +90,7 @@ export function ComposeTemplatePickerField({
     // nothing rather than silently blanking the form.
     if (id !== null && option === null) return;
     if (!hasContent) {
-      onApply(option);
+      applyOption(option);
       return;
     }
     setPending({ option });
@@ -92,7 +122,7 @@ export function ComposeTemplatePickerField({
         }
         cancelLabel={t('confirm.cancelLabel')}
         onConfirm={() => {
-          if (pending !== null) onApply(pending.option);
+          if (pending !== null) applyOption(pending.option);
         }}
       />
     </>

@@ -89,6 +89,11 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
   const tLang = useTranslations('common');
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  /**
+   * F119 T108 — the saved template's id, which is also the owner id the image
+   * upload route ties an upload to. `undefined` on a template being created.
+   */
+  const templateId = initial.templateId;
 
   const [name, setName] = useState(initial.name);
   const [subject, setSubject] = useState(initial.subject);
@@ -284,11 +289,27 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
             isBodyInvalid ? 'tpl-body-help tpl-body-error' : 'tpl-body-help'
           }
           invalid={isBodyInvalid}
-          imagesEnabled={false}
+          {...(templateId !== undefined
+            ? {
+                imagesEnabled: true,
+                draftId: templateId,
+                imageUploadUrl: `/api/admin/broadcasts/templates/${templateId}/images`,
+              }
+            : { imagesEnabled: false })}
         />
         <p id="tpl-body-help" className="text-caption">
           {t('fields.bodyHtmlHelp')}
         </p>
+        {/* F119 T108 (FR-046a) — a template may carry every block the tool
+            offers, images included. The upload route ties an image to the
+            TEMPLATE row (`owner_kind='template'`, T107), so it needs an id: a
+            template being created for the first time has none yet, and says so
+            rather than showing a control that cannot work. */}
+        {templateId === undefined ? (
+          <p className="text-caption text-muted-foreground">
+            {t('fields.imagesAfterSaveHint')}
+          </p>
+        ) : null}
         {isBodyInvalid ? (
           <p
             id="tpl-body-error"

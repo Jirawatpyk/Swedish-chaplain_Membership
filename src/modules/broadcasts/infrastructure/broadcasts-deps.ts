@@ -838,6 +838,7 @@ import type { CreateBroadcastTemplateDeps } from '../application/use-cases/creat
 import type { UpdateBroadcastTemplateDeps } from '../application/use-cases/update-broadcast-template';
 import type { DeleteBroadcastTemplateDeps } from '../application/use-cases/delete-broadcast-template';
 import type { SnapshotTemplateToDraftDeps } from '../application/use-cases/snapshot-template-to-draft';
+import type { CountTemplateStartDeps } from '../application/use-cases/count-template-start';
 import type { ListBroadcastTemplatesDeps } from '../application/use-cases/list-broadcast-templates';
 
 /**
@@ -911,6 +912,20 @@ export function makeListBroadcastTemplatesDeps(
 ): ListBroadcastTemplatesDeps {
   return {
     port: makeDrizzleBroadcastTemplatesRepo(),
+  };
+}
+
+/**
+ * F119 T108 — composition root for `countTemplateStart`. The counter needs
+ * only the templates port (read + increment inside ONE tx) and the audit port
+ * for the cross-tenant refusal; it never touches a broadcast row.
+ */
+export function makeCountTemplateStartDeps(
+  _tenantId: string,
+): CountTemplateStartDeps {
+  return {
+    templatesPort: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
   };
 }
 

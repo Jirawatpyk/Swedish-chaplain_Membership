@@ -3480,7 +3480,8 @@
           "subjectHelp": "ไม่เกิน 200 ตัวอักษร สามารถใช้ตัวแปร '{{chamber_name}}' ได้",
           "bodyHtml": "เนื้อหา (HTML)",
           "bodyHtmlHelp": "ไม่เกิน 200 KB ใช้ [ข้อความในวงเล็บเหลี่ยม] เป็น placeholder ที่สมาชิกแก้ไขได้ ส่วน '{{chamber_name}}' จะถูกแทนที่ตอนเริ่มฉบับร่าง",
-          "localeLabel": "ภาษา"
+          "localeLabel": "ภาษา",
+          "imagesAfterSaveHint": "เพิ่มรูปภาพได้หลังบันทึกเทมเพลตแล้ว"
         },
         "saveButton": "บันทึกเทมเพลต",
         "cancelButton": "ยกเลิก",
@@ -5961,18 +5962,10 @@
           }
         },
         "savedAt": "บันทึกเมื่อ {time}",
-        "staleDraftBanner": {
-          "title": "เทมเพลตได้รับการอัปเดตแล้ว",
-          "body": "เทมเพลต \"{templateName}\" ถูกแก้ไขหลังจากที่คุณเริ่มฉบับร่างนี้ คลิกรีเฟรชเพื่อโหลดเวอร์ชันปัจจุบัน (การแก้ไขหัวข้อและเนื้อหาของคุณจะถูกเขียนทับ)",
-          "refreshButton": "รีเฟรชจากปัจจุบัน",
-          "refreshingButton": "กำลังรีเฟรช…",
-          "dismissAria": "ปิดการแจ้งเตือนฉบับร่างเก่าสำหรับ {templateName}"
-        },
         "fields": {
           "subject": "หัวข้อ",
           "subjectPlaceholder": "ระบุหัวข้อ (ไม่เกิน 200 ตัวอักษร)",
           "bodyLabel": "ข้อความ",
-          "bodyPlaceholder": "พิมพ์ข้อความของคุณ — รูปแบบจะถูกเก็บไว้",
           "segmentLabel": "ผู้รับ",
           "customListLabel": "รายชื่ออีเมลกำหนดเอง",
           "customListHelp": "ใส่อีเมลหนึ่งรายการต่อหนึ่งบรรทัด สูงสุด 100 รายการ ทุกอีเมลต้องอยู่ในไดเรกทอรีของคุณ",
@@ -5983,9 +5976,6 @@
           "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
           "previewUnavailableHint": "รีเฟรชหน้าเพื่อลองใหม่ — แบบร่างของคุณยังอยู่ครบ",
           "subjectCounter": "{count} / {max} ตัวอักษร",
-          "linkUrlLabel": "URL ของลิงก์",
-          "linkConfirm": "ตั้งค่าลิงก์",
-          "linkCancel": "ยกเลิก",
           "tierCodesPlaceholder": "premium, large",
           "tierCodesHelp": "รหัสระดับ คั่นด้วยเครื่องหมายจุลภาค",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
@@ -5998,17 +5988,6 @@
         },
         "tierLabel": "รหัสระดับ",
         "editor": {
-          "bracketHint": "คลิกที่ [ข้อความในวงเล็บ] เพื่อแทนที่ด้วยเนื้อหาของคุณ",
-          "aria": {
-            "toolbar": "แถบเครื่องมือจัดรูปแบบ",
-            "bold": "ตัวหนา (Ctrl+B)",
-            "italic": "ตัวเอียง (Ctrl+I)",
-            "underline": "ขีดเส้นใต้ (Ctrl+U)",
-            "bulletList": "รายการแบบจุด",
-            "orderedList": "รายการแบบลำดับ",
-            "link": "แทรกลิงก์",
-            "clearLink": "ลบลิงก์"
-          },
           "announcements": {
             "boldOn": "เปิดตัวหนา",
             "boldOff": "ปิดตัวหนา",
@@ -6029,14 +6008,12 @@
           "submitted": "ส่งให้ผู้ดูแลตรวจสอบแล้ว",
           "submittedSlaHint": "เป้าหมายตรวจสอบโดยผู้ดูแล: 48 ชั่วโมง",
           "preferenceExcluded": "ไม่ส่งถึง {count, number} อีเมล ตามความประสงค์ของผู้รับ",
-          "sanitiserStripped": "รูปแบบที่ไม่รองรับถูกลบออกอัตโนมัติ",
           "submitting": "กำลังส่ง…",
           "takingLonger": "ใช้เวลานานกว่าที่คาด กรุณารอสักครู่"
         },
         "button": {
           "saveDraft": "บันทึกฉบับร่าง",
-          "submit": "ส่งเพื่อตรวจสอบ",
-          "deleteDraft": "ลบฉบับร่าง"
+          "submit": "ส่งเพื่อตรวจสอบ"
         },
         "submitNote": {
           "cancellable": "คุณสามารถยกเลิกการส่งนี้ได้จนกว่าผู้ดูแลจะอนุมัติ"
@@ -6082,17 +6059,10 @@
           "broadcast_not_found": "ไม่พบ E-Blast",
           "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่"
         },
-        "delete": {
-          "title": "ลบฉบับร่างนี้?",
-          "body": "ฉบับร่างจะถูกลบถาวรและไม่สามารถกู้คืนได้",
-          "confirm": "ลบ",
-          "cancel": "แก้ไขต่อ"
-        },
         "imageUpload": {
           "pickerLabel": "เลือกรูปภาพที่ต้องการอัปโหลด",
           "uploadButton": "อัปโหลดรูปภาพ",
           "uploadingLabel": "กำลังอัปโหลด…",
-          "progressAria": "ความคืบหน้าการอัปโหลดรูปภาพ",
           "uploadingAria": "กำลังอัปโหลดรูปภาพ กรุณารอสักครู่",
           "uploadedToast": "อัปโหลดรูปภาพเรียบร้อย",
           "helpText": "รองรับไฟล์ PNG, JPG, WebP หรือ GIF ขนาดไม่เกิน 5 MB ระบบจะสแกนไวรัสก่อนอัปโหลด",
@@ -6192,7 +6162,8 @@
           "submittedAt": "ส่งเมื่อ",
           "sentAt": "ส่งสำเร็จเมื่อ",
           "status": "สถานะ",
-          "recipients": "ผู้รับ"
+          "recipients": "ผู้รับ",
+          "content": "เนื้อหา"
         },
         "delivery": {
           "title": "สรุปผลการจัดส่ง",

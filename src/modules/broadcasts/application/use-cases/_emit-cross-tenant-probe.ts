@@ -41,7 +41,13 @@ import type { TenantSlug } from '@/modules/tenants';
  * landing in the audit-log payload. Add a new operation = extend this
  * union + every consumer recompiles.
  */
-export type TemplateProbeOperation = 'delete' | 'update' | 'snapshot';
+export type TemplateProbeOperation =
+  | 'delete'
+  | 'update'
+  | 'snapshot'
+  // F119 T108 — the compose picker's start counter
+  // (`POST /api/broadcasts/templates/[id]/started`).
+  | 'start';
 
 /**
  * Broadcast-surface use-case identifiers. M7 Round 2 closure 2026-05-21.

@@ -606,6 +606,14 @@ export {
   type ListBroadcastTemplatesInput,
   type ListBroadcastTemplatesOutput,
 } from './application/use-cases/list-broadcast-templates';
+// F119 T108 (FR-046) — the compose picker's template-start counter.
+export {
+  countTemplateStart,
+  type CountTemplateStartDeps,
+  type CountTemplateStartError,
+  type CountTemplateStartInput,
+  type CountTemplateStartOutput,
+} from './application/use-cases/count-template-start';
 
 // US7 Composition root factories (Phase 5E)
 export {
@@ -614,6 +622,7 @@ export {
   makeDeleteBroadcastTemplateDeps,
   makeSnapshotTemplateToDraftDeps,
   makeListBroadcastTemplatesDeps,
+  makeCountTemplateStartDeps,
 } from './infrastructure/broadcasts-deps';
 export { envTenantDisplayName } from './infrastructure/env-tenant-display-name';
 
