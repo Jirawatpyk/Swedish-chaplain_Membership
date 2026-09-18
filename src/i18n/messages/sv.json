@@ -5596,6 +5596,72 @@
     "loadingTable": "Laddar tabelldata",
     "loadingForm": "Laddar formulär"
   },
+  "broadcast": {
+    "editor": {
+      "toolbar": {
+        "label": "Formateringsverktygsfält",
+        "heading2": "Rubrik",
+        "heading3": "Underrubrik",
+        "quote": "Citat",
+        "divider": "Avdelare",
+        "bulletList": "Punktlista",
+        "orderedList": "Numrerad lista",
+        "bold": "Fet",
+        "italic": "Kursiv",
+        "underline": "Understruken",
+        "link": "Länk",
+        "image": "Bild",
+        "cta": "Knapp",
+        "banner": "Bannerbild",
+        "imageNeedsDraft": "Spara utkastet först för att kunna lägga till en bild."
+      },
+      "altDialog": {
+        "title": "Beskriv bilden",
+        "bannerTitle": "Beskriv bannern",
+        "description": "En kort beskrivning läses upp för den som inte kan se bilden och visas i e-postappar som blockerar bilder.",
+        "fieldLabel": "Bildbeskrivning",
+        "counter": "{count} av {max} tecken",
+        "insert": "Infoga bild",
+        "bannerInsert": "Infoga banner",
+        "cancel": "Avbryt",
+        "errors": {
+          "required": "Ange en beskrivning av bilden, {min} till {max} tecken.",
+          "tooLong": "Korta ner beskrivningen till högst {max} tecken."
+        }
+      },
+      "linkDialog": {
+        "title": "Lägg till länk",
+        "description": "Länkar öppnas i en ny flik.",
+        "urlLabel": "Länkadress",
+        "urlPlaceholder": "https://example.com",
+        "textLabel": "Länktext",
+        "confirm": "Spara länk",
+        "cancel": "Avbryt",
+        "remove": "Ta bort länk",
+        "errors": {
+          "required": "Ange en länkadress.",
+          "scheme": "En länk måste börja med http://, https:// eller mailto:."
+        }
+      },
+      "ctaDialog": {
+        "title": "Lägg till knapp",
+        "description": "Kammarens färg och avstånd tillämpas automatiskt.",
+        "textLabel": "Knapptext",
+        "urlLabel": "Knapplänk",
+        "urlPlaceholder": "https://example.com",
+        "counter": "{count} av {max} tecken",
+        "confirm": "Infoga knapp",
+        "cancel": "Avbryt",
+        "errors": {
+          "textRequired": "Ange knapptexten, {min} till {max} tecken.",
+          "textTooLong": "Korta ner knapptexten till högst {max} tecken.",
+          "required": "Ange en länk för knappen.",
+          "scheme": "En länk måste börja med http://, https:// eller mailto:."
+        }
+      },
+      "pasteNotice": "Viss formatering stöds inte i e-post och togs bort."
+    }
+  },
   "portal": {
     "dashboard": {
       "welcome": "Hej {name}",

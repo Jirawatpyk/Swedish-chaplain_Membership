@@ -126,8 +126,11 @@ const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   // /components/broadcast/* (5) — F7 MVP queue + status display + F7.1a US7 template form
   "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
   "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",
-  "src/components/broadcast/tiptap-editor.tsx::@/modules/broadcasts/infrastructure/tiptap-image-extension-config",
-  "src/components/broadcast/tiptap-editor.tsx::@/modules/broadcasts/infrastructure/tiptap-bracket-placeholder-config",
+  // F119 T098/T102 — the two `tiptap-editor.tsx` entries that used to sit here
+  // are GONE, not deferred: the editor now builds its extension list from
+  // `broadcast-editor-extensions.ts`, which reaches the four Tiptap configs
+  // through `src/lib/broadcast-editor-extensions.ts` — the composition layer
+  // this guard exempts. Two backlog rows closed, none added.
   // R5 Final 2 hotfix — template-form.tsx (client) deep-imports the
   // pure-constants `_template-field-limits.ts` to break the barrel
   // import chain that pulled in `@/modules/payments` infrastructure

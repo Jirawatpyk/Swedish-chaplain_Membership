@@ -7,38 +7,51 @@
  * `@/components/ui/tiptap-loader` so SSR is disabled.
  *
  * Configuration:
- *   - `StarterKit` is loaded as-is (Image extension is NOT registered
- *     by default in StarterKit ≥ 3.x, so no explicit disable required —
- *     verified against package.json @tiptap/starter-kit@3.22.5).
+ *   - Extensions come from the ONE shared factory
+ *     (`broadcast-editor-extensions.ts`, F119 T088/T098/T102): H2/H3 only, no
+ *     code / codeBlock / strike, plus the CTA and banner design-block nodes.
+ *     Nothing typeable can produce a node the sanitiser later removes.
  *   - F7.1a US2 (T078): when `imagesEnabled` is true, the
- *     `broadcastImageExtension` (T073) is registered and the paste
- *     sanitiser permits `<img src,alt>` for http(s) only — mirroring
+ *     `broadcastImageExtension` (T073) and the banner node are registered and
+ *     the paste sanitiser permits `<img src,alt>` for http(s) only — mirroring
  *     the server DOMPurify policy. The inline-image uploader +
- *     ClamAV-unreachable banner render inside the editor wrapper
- *     when enabled.
- *   - Paste handler runs `isomorphic-dompurify` on pasted HTML and emits
- *     a `sanitiser-strip-warn` toast when the sanitiser strips content
- *     (R2-NEW-2; signals user that some formatting was removed)
+ *     ClamAV-unreachable banner render inside the editor wrapper when enabled.
+ *   - F119 T099 (FR-040): an image — inline or banner — is inserted only once
+ *     a 1–125-character description has been collected by `ImageAltDialog`.
+ *   - F119 T101 (FR-038): the paste handler drops unsupported content and
+ *     tells the author ONCE per mounted editor, in a non-blocking toast.
  *   - ARIA-live region announces editor state changes (CHK029)
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import DOMPurify from 'isomorphic-dompurify';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Info } from 'lucide-react';
 import { TiptapToolbar, type AnnounceKey } from './tiptap-toolbar';
-import { installBroadcastSanitizerHooks, makeBroadcastSanitizerConfig } from '@/lib/broadcast-content-policy';
-import { broadcastImageExtension } from '@/modules/broadcasts/infrastructure/tiptap-image-extension-config';
-import { broadcastBracketPlaceholderExtension } from '@/modules/broadcasts/infrastructure/tiptap-bracket-placeholder-config';
-import { ComposeInlineImageUploader } from './compose-inline-image-uploader';
+import { makeBroadcastEditorExtensions } from './broadcast-editor-extensions';
+import { makeBroadcastPasteTransform } from './broadcast-paste-transform';
+import { ImageAltDialog, type ImageAltVariant } from './image-alt-dialog';
+import {
+  ComposeInlineImageUploader,
+  type ComposeInlineImageUploaderHandle,
+} from './compose-inline-image-uploader';
 import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
 
 // F119 T013/T014 — the paste sanitiser reads the ONE shared policy
 // (`src/lib/broadcast-content-policy.ts`, SC-011) so a paste can never keep
 // content the server later strips, nor strip content the server keeps. The
 // editor narrows to `images: false` while the F7.1a US2 flag is off.
+
+/**
+ * An image in flight. It carries whichever half arrived first — the
+ * description (toolbar path) or the uploaded URL (uploader-button path) — and
+ * the node is inserted only once both are present (FR-040).
+ */
+interface PendingImage {
+  readonly kind: ImageAltVariant;
+  readonly alt?: string;
+  readonly src?: string;
+}
 
 export interface TiptapEditorProps {
   readonly initialHtml: string;
@@ -90,26 +103,35 @@ export default function TiptapEditor({
   draftId = null,
 }: TiptapEditorProps): React.ReactElement {
   const tEditor = useTranslations('portal.broadcasts.compose.editor');
-  const tToast = useTranslations('portal.broadcasts.compose.toast');
+  const tChrome = useTranslations('broadcast.editor');
   const tImage = useTranslations('portal.broadcasts.compose.imageUpload');
   const [announcement, setAnnouncement] = useState<string>('');
-  const lastSanitiseWarnAt = useRef<number>(0);
+  const [altOpen, setAltOpen] = useState<boolean>(false);
+  const [altVariant, setAltVariant] = useState<ImageAltVariant>('inline');
+  // A ref, not state: the confirm hands over to the file picker and the upload
+  // resolves later, so the half already collected has to survive the dialog's
+  // own close render without a re-render racing it.
+  const pendingImageRef = useRef<PendingImage | null>(null);
+  const uploaderRef = useRef<ComposeInlineImageUploaderHandle | null>(null);
+  const altTriggerRef = useRef<HTMLElement | null>(null);
 
-  const sanitizerConfig = useMemo(
-    () => makeBroadcastSanitizerConfig({ images: imagesEnabled }),
+  // F119 T088/T098/T102 — the ONE extension set (H2/H3 only, no code, no
+  // codeBlock, no strike, plus the two design-block nodes).
+  const extensions = useMemo(
+    () => makeBroadcastEditorExtensions({ images: imagesEnabled }),
     [imagesEnabled],
   );
-  // T116 (F7.1a US7) — bracketPlaceholder loaded unconditionally
-  // because [bracketed text] semantics are universal across the
-  // broadcast body editor (admin authors them in templates; members
-  // see + replace them in compose). Decoration is style-only — no
-  // schema mutation, so safe to always-on.
-  const extensions = useMemo(
+
+  // F119 T101 — one transform instance per mounted editor, so the
+  // "unsupported formatting was removed" notice fires ONCE per editing
+  // session instead of once per 1.5 s as it used to.
+  const pasteTransform = useMemo(
     () =>
-      imagesEnabled
-        ? [StarterKit, broadcastImageExtension, broadcastBracketPlaceholderExtension]
-        : [StarterKit, broadcastBracketPlaceholderExtension],
-    [imagesEnabled],
+      makeBroadcastPasteTransform({
+        images: imagesEnabled,
+        notify: () => toast.warning(tChrome('pasteNotice')),
+      }),
+    [imagesEnabled, tChrome],
   );
 
   const editor = useEditor({
@@ -133,19 +155,11 @@ export default function TiptapEditor({
         ...(invalid && { 'aria-invalid': 'true' }),
       },
       transformPastedHTML(html: string): string {
-        // F119 T014 — the same post-attribute hook the server runs (link
-        // hardening + img scheme guard), so a paste can never keep what
-        // the server later changes (SC-011).
-        installBroadcastSanitizerHooks(DOMPurify);
-        const sanitised = DOMPurify.sanitize(html, sanitizerConfig as Parameters<typeof DOMPurify.sanitize>[1]) as string;
-        if (sanitised !== html) {
-          const now = Date.now();
-          if (now - lastSanitiseWarnAt.current > 1500) {
-            lastSanitiseWarnAt.current = now;
-            toast.warning(tToast('sanitiserStripped'));
-          }
-        }
-        return sanitised;
+        // F119 T013/T014/T101 — the same config and the same post-attribute
+        // hook the server runs, so a paste can never keep what the server
+        // later strips (SC-011), and the notice is announced ONCE per
+        // editing session rather than once per 1.5 s.
+        return pasteTransform(html);
       },
     },
     onUpdate({ editor: ed }) {
@@ -161,18 +175,91 @@ export default function TiptapEditor({
     [tEditor],
   );
 
-  const handleUploaded = useCallback(
-    (blobUrl: string): void => {
+  /**
+   * Insert the node, now that BOTH halves exist. `setImage` / `setBannerImage`
+   * put it at the cursor; the server sanitiser keeps it (an http(s) Blob URL)
+   * and `validateImageSourceAllowlist` enforces the tenant's hostname
+   * allow-list at submit time — the Vercel Blob default-seed hostname is
+   * already in it (T072 seedDefaults).
+   */
+  const insertImage = useCallback(
+    (kind: ImageAltVariant, src: string, alt: string): void => {
       if (!editor) return;
-      // Tiptap's image extension `setImage` chain command inserts an
-      // <img src=blobUrl> at the current cursor position. The server-
-      // side sanitiser will preserve it (http(s) blob URL); the
-      // `validateImageSourceAllowlist` use-case enforces tenant
-      // hostname allowlist at submit time. The Vercel Blob default-
-      // seed hostname is already in the allowlist (T072 seedDefaults).
-      editor.chain().focus().setImage({ src: blobUrl }).run();
+      if (kind === 'banner') {
+        editor.chain().focus().setBannerImage({ src, alt }).run();
+      } else {
+        editor.chain().focus().setImage({ src, alt }).run();
+      }
     },
     [editor],
+  );
+
+  /**
+   * F119 T099 (FR-040) — the description is collected BEFORE the node can
+   * exist, from whichever end the author started:
+   *
+   *   toolbar Image/Banner → describe → pick a file → upload → insert
+   *   uploader button      → upload → describe → insert
+   *
+   * Either way the node is only created once an `alt` is in hand, so there is
+   * no path that produces an undescribed image.
+   */
+  const rememberTrigger = (): void => {
+    altTriggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  };
+
+  const openAltDialog = useCallback((kind: ImageAltVariant): void => {
+    rememberTrigger();
+    pendingImageRef.current = { kind };
+    setAltVariant(kind);
+    setAltOpen(true);
+  }, []);
+
+  const handleAltConfirm = useCallback(
+    (alt: string): void => {
+      const pending = pendingImageRef.current;
+      if (pending === null) return;
+      if (pending.src !== undefined) {
+        insertImage(pending.kind, pending.src, alt);
+        pendingImageRef.current = null;
+        return;
+      }
+      pendingImageRef.current = { ...pending, alt };
+      uploaderRef.current?.openPicker();
+    },
+    [insertImage],
+  );
+
+  /**
+   * Closing WITHOUT confirming abandons the insert — otherwise a cancelled
+   * description would stay armed and silently attach itself to whatever the
+   * author uploaded next. A pending entry that already carries an `alt` is
+   * mid-flight (the picker is open), so it survives the close.
+   */
+  const handleAltOpenChange = useCallback((next: boolean): void => {
+    setAltOpen(next);
+    if (!next && pendingImageRef.current?.alt === undefined) {
+      pendingImageRef.current = null;
+    }
+  }, []);
+
+  const handleUploaded = useCallback(
+    (blobUrl: string): void => {
+      const pending = pendingImageRef.current;
+      if (pending?.alt !== undefined) {
+        insertImage(pending.kind, blobUrl, pending.alt);
+        pendingImageRef.current = null;
+        return;
+      }
+      // Started from the uploader's own button — collect the description now,
+      // before anything is inserted.
+      rememberTrigger();
+      pendingImageRef.current = { kind: 'inline', src: blobUrl };
+      setAltVariant('inline');
+      setAltOpen(true);
+    },
+    [insertImage],
   );
 
   if (!editor) {
@@ -190,7 +277,14 @@ export default function TiptapEditor({
         }
         data-testid="tiptap-editor"
       >
-        <TiptapToolbar editor={editor} onAnnounce={announceState} />
+        <TiptapToolbar
+          editor={editor}
+          onAnnounce={announceState}
+          imagesEnabled={imagesEnabled}
+          imageInsertEnabled={draftId !== null}
+          onInsertImage={() => openAltDialog('inline')}
+          onInsertBanner={() => openAltDialog('banner')}
+        />
         <EditorContent editor={editor} />
         <span
           role="status"
@@ -202,9 +296,19 @@ export default function TiptapEditor({
         </span>
       </div>
       {imagesEnabled && (
+        <ImageAltDialog
+          open={altOpen}
+          onOpenChange={handleAltOpenChange}
+          variant={altVariant}
+          onConfirm={handleAltConfirm}
+          finalFocus={() => altTriggerRef.current}
+        />
+      )}
+      {imagesEnabled && (
         <div className="flex flex-col gap-1">
           {draftId !== null ? (
             <ComposeInlineImageUploader
+              ref={uploaderRef}
               draftId={draftId}
               onUploaded={handleUploaded}
             />

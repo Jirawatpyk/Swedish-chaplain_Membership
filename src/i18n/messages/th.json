@@ -5596,6 +5596,72 @@
     "loadingTable": "กำลังโหลดตารางข้อมูล",
     "loadingForm": "กำลังโหลดแบบฟอร์ม"
   },
+  "broadcast": {
+    "editor": {
+      "toolbar": {
+        "label": "แถบเครื่องมือจัดรูปแบบ",
+        "heading2": "หัวข้อ",
+        "heading3": "หัวข้อย่อย",
+        "quote": "ข้อความอ้างอิง",
+        "divider": "เส้นคั่น",
+        "bulletList": "รายการแบบจุด",
+        "orderedList": "รายการแบบตัวเลข",
+        "bold": "ตัวหนา",
+        "italic": "ตัวเอียง",
+        "underline": "ขีดเส้นใต้",
+        "link": "ลิงก์",
+        "image": "รูปภาพ",
+        "cta": "ปุ่ม",
+        "banner": "ภาพแบนเนอร์",
+        "imageNeedsDraft": "บันทึกฉบับร่างนี้ก่อน จึงจะเพิ่มรูปภาพได้"
+      },
+      "altDialog": {
+        "title": "อธิบายรูปภาพนี้",
+        "bannerTitle": "อธิบายภาพแบนเนอร์นี้",
+        "description": "คำอธิบายสั้น ๆ จะถูกอ่านให้ผู้ที่มองไม่เห็นรูปภาพฟัง และแสดงแทนรูปในแอปอีเมลที่บล็อกรูปภาพ",
+        "fieldLabel": "คำอธิบายรูปภาพ",
+        "counter": "{count} จาก {max} ตัวอักษร",
+        "insert": "แทรกรูปภาพ",
+        "bannerInsert": "แทรกภาพแบนเนอร์",
+        "cancel": "ยกเลิก",
+        "errors": {
+          "required": "กรุณากรอกคำอธิบายรูปภาพ ความยาว {min} ถึง {max} ตัวอักษร",
+          "tooLong": "กรุณาย่อคำอธิบายให้ไม่เกิน {max} ตัวอักษร"
+        }
+      },
+      "linkDialog": {
+        "title": "เพิ่มลิงก์",
+        "description": "ลิงก์จะเปิดในแท็บใหม่",
+        "urlLabel": "ที่อยู่ลิงก์",
+        "urlPlaceholder": "https://example.com",
+        "textLabel": "ข้อความลิงก์",
+        "confirm": "บันทึกลิงก์",
+        "cancel": "ยกเลิก",
+        "remove": "ลบลิงก์",
+        "errors": {
+          "required": "กรุณากรอกที่อยู่ลิงก์",
+          "scheme": "ลิงก์ต้องขึ้นต้นด้วย http:// https:// หรือ mailto:"
+        }
+      },
+      "ctaDialog": {
+        "title": "เพิ่มปุ่ม",
+        "description": "สีและระยะห่างของปุ่มใช้ค่าจากแบรนด์ของหอการค้าโดยอัตโนมัติ",
+        "textLabel": "ข้อความบนปุ่ม",
+        "urlLabel": "ลิงก์ของปุ่ม",
+        "urlPlaceholder": "https://example.com",
+        "counter": "{count} จาก {max} ตัวอักษร",
+        "confirm": "แทรกปุ่ม",
+        "cancel": "ยกเลิก",
+        "errors": {
+          "textRequired": "กรุณากรอกข้อความบนปุ่ม ความยาว {min} ถึง {max} ตัวอักษร",
+          "textTooLong": "กรุณาย่อข้อความบนปุ่มให้ไม่เกิน {max} ตัวอักษร",
+          "required": "กรุณากรอกลิงก์ของปุ่ม",
+          "scheme": "ลิงก์ต้องขึ้นต้นด้วย http:// https:// หรือ mailto:"
+        }
+      },
+      "pasteNotice": "รูปแบบบางอย่างไม่รองรับในอีเมล และถูกนำออกแล้ว"
+    }
+  },
   "portal": {
     "dashboard": {
       "welcome": "สวัสดี {name}",

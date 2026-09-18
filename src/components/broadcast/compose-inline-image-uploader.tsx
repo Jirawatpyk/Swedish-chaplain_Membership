@@ -13,25 +13,39 @@
  *   - <progress aria-label> for upload-in-flight feedback
  *   - role="alert" on inline error so it's announced immediately
  */
-import { useRef, useState } from 'react';
+import { useImperativeHandle, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
+/**
+ * F119 T099 — the editor's toolbar Image / Banner controls collect the
+ * description FIRST (FR-040) and then need the file picker. They open it
+ * through this handle rather than rendering a second uploader, so both entry
+ * points share one upload path, one size pre-check and one error surface.
+ */
+export interface ComposeInlineImageUploaderHandle {
+  openPicker(): void;
+}
+
 interface Props {
   readonly draftId: string;
   readonly onUploaded: (blobUrl: string) => void;
+  readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
 }
 
 export function ComposeInlineImageUploader({
   draftId,
   onUploaded,
+  ref,
 }: Props): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.imageUpload');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({ openPicker: () => fileRef.current?.click() }), []);
 
   const handlePick = (): void => {
     fileRef.current?.click();

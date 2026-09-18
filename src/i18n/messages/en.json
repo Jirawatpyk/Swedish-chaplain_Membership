@@ -5596,6 +5596,72 @@
     "loadingTable": "Loading table data",
     "loadingForm": "Loading form"
   },
+  "broadcast": {
+    "editor": {
+      "toolbar": {
+        "label": "Formatting toolbar",
+        "heading2": "Heading",
+        "heading3": "Subheading",
+        "quote": "Quote",
+        "divider": "Divider",
+        "bulletList": "Bulleted list",
+        "orderedList": "Numbered list",
+        "bold": "Bold",
+        "italic": "Italic",
+        "underline": "Underline",
+        "link": "Link",
+        "image": "Image",
+        "cta": "Button",
+        "banner": "Banner image",
+        "imageNeedsDraft": "Save this draft first to add an image."
+      },
+      "altDialog": {
+        "title": "Describe this image",
+        "bannerTitle": "Describe this banner",
+        "description": "A short description is read aloud to people who cannot see the image, and shows in email apps that block images.",
+        "fieldLabel": "Image description",
+        "counter": "{count} of {max} characters",
+        "insert": "Insert image",
+        "bannerInsert": "Insert banner",
+        "cancel": "Cancel",
+        "errors": {
+          "required": "Enter a description of the image, from {min} to {max} characters.",
+          "tooLong": "Shorten the description to {max} characters or fewer."
+        }
+      },
+      "linkDialog": {
+        "title": "Add a link",
+        "description": "Links open in a new tab.",
+        "urlLabel": "Link address",
+        "urlPlaceholder": "https://example.com",
+        "textLabel": "Link text",
+        "confirm": "Save link",
+        "cancel": "Cancel",
+        "remove": "Remove link",
+        "errors": {
+          "required": "Enter a link address.",
+          "scheme": "A link must start with http://, https:// or mailto:."
+        }
+      },
+      "ctaDialog": {
+        "title": "Add a button",
+        "description": "The chamber brand colour and spacing are applied automatically.",
+        "textLabel": "Button text",
+        "urlLabel": "Button link",
+        "urlPlaceholder": "https://example.com",
+        "counter": "{count} of {max} characters",
+        "confirm": "Insert button",
+        "cancel": "Cancel",
+        "errors": {
+          "textRequired": "Enter the button text, from {min} to {max} characters.",
+          "textTooLong": "Shorten the button text to {max} characters or fewer.",
+          "required": "Enter a link for the button.",
+          "scheme": "A link must start with http://, https:// or mailto:."
+        }
+      },
+      "pasteNotice": "Some formatting is not supported in email and was removed."
+    }
+  },
   "portal": {
     "dashboard": {
       "welcome": "Hi {name}",
