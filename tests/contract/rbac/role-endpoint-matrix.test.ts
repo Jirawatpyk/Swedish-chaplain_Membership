@@ -264,6 +264,12 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     // address (FR-053a) — pinned by the route's own contract test, not here.
     // The frozen set grows 49 -> 50; this pin is what caught the new surface.
     'GET /api/admin/broadcasts/recipient-count',
+    // F119 T145 (FR-039) — the proxied member's allowance, read by the staff
+    // compose-on-behalf form (`broadcasts.read`). Reachability only: the body
+    // is the member's four quota numbers plus the plan label — never an
+    // address, never money. The frozen set grows 57 -> 60 with the two draft
+    // verbs below.
+    'GET /api/admin/broadcasts/quota',
     'GET /api/admin/broadcasts/sla-stats',
     'GET /api/admin/broadcasts/templates',
     // F119 — the staff preview (`broadcasts.read`) and the staff test copy
@@ -275,6 +281,12 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/admin/broadcasts/preview',
     'POST /api/admin/broadcasts/test-copy',
     'POST /api/admin/broadcasts/templates/[id]/images',
+    // F119 T145 (FR-039) — the staff compose-on-behalf draft, both verbs.
+    // `broadcasts.write`, which marketing already holds for `proxy-submit`:
+    // a marketing user who may SUBMIT on a member's behalf may also save the
+    // half-written version first.
+    'POST /api/admin/broadcasts/draft',
+    'PUT /api/admin/broadcasts/draft',
     // F114 US2 — see the two pages above (`members.read`).
     'GET /api/admin/change-requests',
     'GET /api/admin/change-requests/[id]',
@@ -323,7 +335,9 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   // F114 US2 — 48 → 51: two `members.read` pages + the review payload route.
   // F114 US4 (PR-2) — 51 → 53: the queue + the per-member history routes.
   // F119 PR-1 — 53 → 57: the staff preview, the staff test copy, the two staff image uploads.
-  it('reaches EXACTLY the frozen 57-surface set — nothing more, nothing less', () => {
+  // F119 T145 — 57 → 60: the staff compose-on-behalf draft (POST + PUT) and the
+  // proxied member's quota read, the three routes FR-039's parity items need.
+  it('reaches EXACTLY the frozen 60-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

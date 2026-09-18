@@ -11,17 +11,16 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import {
-  saveDraft,
-  makeSaveDraftDeps,
-  type SaveDraftError,
-} from '@/modules/broadcasts';
+import { saveDraft, makeSaveDraftDeps } from '@/modules/broadcasts';
 import {
   errorResponse,
-  httpStatusForBroadcastError,
   resolveTenantDisplayName,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import {
+  draftResponseBody,
+  mapSaveDraftError,
+} from '@/lib/broadcasts-draft-response';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 
@@ -108,27 +107,16 @@ async function handle(
     });
 
     if (!result.ok) {
-      return mapDraftError(result.error, correlationId);
+      return mapSaveDraftError(result.error, correlationId);
     }
 
-    return NextResponse.json(
-      {
-        broadcastId: result.value.broadcast.broadcastId,
-        status: result.value.broadcast.status,
-        createdAt: result.value.broadcast.createdAt.toISOString(),
-        updatedAt: result.value.broadcast.updatedAt.toISOString(),
-        subject: result.value.broadcast.subject,
-        segmentType: result.value.broadcast.segmentType,
-        segmentParams: result.value.broadcast.segmentParams,
-        customRecipientEmails: result.value.broadcast.customRecipientEmails,
-        scheduledFor:
-          result.value.broadcast.scheduledFor?.toISOString() ?? null,
-      },
-      {
-        status: result.value.created ? 201 : 200,
-        headers: baseHeaders(correlationId),
-      },
-    );
+    // F119 T145 — shared with the staff `/api/admin/broadcasts/draft`, which
+    // runs the SAME `saveDraft` for a member named in the body. Both forms
+    // save through one client helper, so both routes answer in one shape.
+    return NextResponse.json(draftResponseBody(result.value.broadcast), {
+      status: result.value.created ? 201 : 200,
+      headers: baseHeaders(correlationId),
+    });
   } catch (e) {
     logger.error(
       {
@@ -141,40 +129,6 @@ async function handle(
     );
     return errorResponse(500, 'internal_error', correlationId);
   }
-}
-
-function mapDraftError(
-  error: SaveDraftError,
-  correlationId: string,
-): NextResponse {
-  if (
-    error.kind === 'sanitizer_unavailable' ||
-    error.kind === 'save_draft.server_error'
-  ) {
-    return errorResponse(500, 'internal_error', correlationId);
-  }
-  const { status, code } = httpStatusForBroadcastError(error.kind);
-  const details: Record<string, unknown> = {};
-  if (error.kind === 'broadcast_subject_too_long' && 'length' in error) {
-    details['submittedLength'] = error.length;
-  } else if (error.kind === 'broadcast_body_too_large' && 'bytes' in error) {
-    details['submittedSize'] = error.bytes;
-  } else if (error.kind === 'broadcast_body_unsafe_html' && 'reason' in error) {
-    details['reason'] = error.reason;
-  } else if (
-    error.kind === 'broadcast_member_missing_primary_contact_email' &&
-    'memberId' in error
-  ) {
-    details['memberId'] = error.memberId;
-  } else if (error.kind === 'broadcast_immutable_after_submit') {
-    details['broadcastId'] = error.broadcastId;
-    details['currentStatus'] = error.currentStatus;
-  } else if (error.kind === 'broadcast_not_found') {
-    details['broadcastId'] = error.broadcastId;
-  }
-  return errorResponse(status, code, correlationId, {
-    ...(Object.keys(details).length > 0 && { details }),
-  });
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

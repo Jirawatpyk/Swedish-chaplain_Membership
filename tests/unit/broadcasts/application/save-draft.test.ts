@@ -566,4 +566,40 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
     expect(broadcastsRepo.updates).toHaveLength(0);
     expect(audit.emits).toHaveLength(0);
   });
+
+  // ---- F119 T145: the staff compose-on-behalf draft -------------------
+  //
+  // `actorRole: 'admin_proxy'` has been in this use case's input union since
+  // T068, but nothing could reach it: the only caller was the member's own
+  // `requireMemberContext`-gated route. `POST /api/admin/broadcasts/draft`
+  // (T145) reaches it now, so the audit's actor fields are pinned here — the
+  // route's contract test mocks `saveDraft` and cannot see inside the emit.
+
+  it('admin_proxy create: the broadcast_drafted audit records the PROXY actor and the member it is for', async () => {
+    const { audit, broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+    });
+
+    const result = await saveDraft(deps, {
+      ...baseInput,
+      actorRole: 'admin_proxy',
+      submittedByUserId: 'user-staff-1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.inserted[0]).toMatchObject({
+      actorRole: 'admin_proxy',
+      requestedByMemberId: 'm-1',
+      submittedByUserId: 'user-staff-1',
+    });
+
+    const drafted = audit.emits.find((e) => e.eventType === 'broadcast_drafted');
+    expect(drafted).toBeDefined();
+    // Who acted: the staff user. Who it is for: the member.
+    expect(drafted?.actorUserId).toBe('user-staff-1');
+    expect(drafted?.payload).toMatchObject({
+      actorRole: 'admin_proxy',
+      memberId: 'm-1',
+    });
+  });
 });

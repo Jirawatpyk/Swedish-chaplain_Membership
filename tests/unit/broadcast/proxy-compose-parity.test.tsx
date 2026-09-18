@@ -6,17 +6,17 @@
  * to offer what the member screen offers. Today `proxy-compose-form.tsx` has
  * none of it except the preview.
  *
- * Three of the seven parity items — draft save/resume, inline images and the
- * proxied member's allowance — cannot be built in PR-1: each needs a staff API
- * route that neither the code nor `contracts/admin-eblast-formatting-api.md`
- * defines (see the `it.todo`s at the bottom, which name the exact missing
- * endpoint). They are TODO here rather than asserted-absent, because absent is
- * the defect, not the contract.
+ * The last three parity items — draft save/resume, inline images and the
+ * proxied member's allowance — were `it.todo` until T145 added the two thin
+ * staff routes they each need (`POST | PUT /api/admin/broadcasts/draft` and
+ * `GET /api/admin/broadcasts/quota?memberId=`, contract § the two new
+ * sections). They are asserted here now; absent was the defect, not the
+ * contract.
  *
  * Rendered under `NextIntlClientProvider` with the REAL `en.json`.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -36,8 +36,30 @@ vi.mock('@/components/broadcast/recipient-count', () => ({
   RecipientCountLine: () => null,
 }));
 
+const MEMBER_ID = '22222222-2222-2222-2222-222222222222';
+const DRAFT_ID = '99999999-9999-9999-9999-999999999999';
+
 vi.mock('@/components/broadcast/member-picker', () => ({
-  MemberPicker: () => <button type="button">pick-member</button>,
+  MemberPicker: (props: {
+    onSelect: (m: {
+      memberId: string;
+      companyName: string;
+      hasPrimaryContactEmail: boolean;
+    }) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() =>
+        props.onSelect({
+          memberId: MEMBER_ID,
+          companyName: 'Acme Co',
+          hasPrimaryContactEmail: true,
+        })
+      }
+    >
+      pick-member
+    </button>
+  ),
 }));
 
 vi.mock('@/components/ui/tiptap-loader', () => ({
@@ -45,10 +67,16 @@ vi.mock('@/components/ui/tiptap-loader', () => ({
     function TiptapStub(props: {
       initialHtml: string;
       onChange: (html: string) => void;
+      imagesEnabled?: boolean;
+      draftId?: string | null;
+      imageUploadUrl?: string;
     }): React.ReactElement {
       return (
         <textarea
           aria-label="Message body"
+          data-images-enabled={String(props.imagesEnabled ?? false)}
+          data-draft-id={props.draftId ?? ''}
+          data-image-upload-url={props.imageUploadUrl ?? ''}
           defaultValue={props.initialHtml}
           onChange={(e) => props.onChange(e.target.value)}
         />
@@ -71,12 +99,32 @@ function beforeUnloadWouldPrompt(): boolean {
   return event.defaultPrevented;
 }
 
-function renderForm(): void {
+function renderForm(props?: { imagesEnabled?: boolean }): void {
   render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <ProxyComposeForm audienceCeiling={5000} templates={[TEMPLATE]} />
+      <ProxyComposeForm
+        audienceCeiling={5000}
+        templates={[TEMPLATE]}
+        {...(props?.imagesEnabled !== undefined
+          ? { imagesEnabled: props.imagesEnabled }
+          : {})}
+      />
     </NextIntlClientProvider>,
   );
+}
+
+/** URLs the component fetched, in call order. */
+function fetchedUrls(): string[] {
+  return (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
+    (c) => String(c[0]),
+  );
+}
+
+function fetchCallFor(url: string): { url: string; init: RequestInit } | null {
+  const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock
+    .calls;
+  const hit = calls.find((c) => String(c[0]).startsWith(url));
+  return hit ? { url: String(hit[0]), init: (hit[1] ?? {}) as RequestInit } : null;
 }
 
 beforeAll(() => {
@@ -96,7 +144,11 @@ beforeEach(() => {
   vi.useRealTimers();
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }),
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ broadcastId: DRAFT_ID }),
+    }),
   );
 });
 
@@ -133,19 +185,90 @@ describe('T137 — the staff compose-on-behalf form offers what the member form 
     expect(beforeUnloadWouldPrompt()).toBe(true);
   });
 
-  it.todo(
-    'offers draft save/resume — BLOCKED: no staff draft endpoint exists ' +
-      '(`/api/broadcasts/draft` is `requireMemberContext`-gated and ' +
-      '`contracts/admin-eblast-formatting-api.md` defines no staff equivalent)',
-  );
+  it('offers draft save/resume — saves the named member against the STAFF draft route and clears the guard', async () => {
+    const user = userEvent.setup();
+    renderForm();
 
-  it.todo(
-    'offers inline images — BLOCKED: `POST /api/admin/broadcasts/[id]/images` ' +
-      'needs a staff-owned `draft` broadcast id, which nothing in PR-1 can create',
-  );
+    await user.click(screen.getByRole('button', { name: 'pick-member' }));
+    await user.type(screen.getByLabelText('Subject'), 'Spring mixer');
+    expect(beforeUnloadWouldPrompt()).toBe(true);
 
-  it.todo(
-    "offers the proxied member's allowance — BLOCKED: `/api/broadcasts/quota` " +
-      'is member-session-scoped and no admin `…/quota?memberId=` route exists',
-  );
+    await user.click(screen.getByRole('button', { name: 'Save as draft' }));
+
+    const call = fetchCallFor('/api/admin/broadcasts/draft');
+    expect(call).not.toBeNull();
+    expect(call!.init.method).toBe('POST');
+    expect(JSON.parse(String(call!.init.body))).toMatchObject({
+      memberId: MEMBER_ID,
+      subject: 'Spring mixer',
+    });
+
+    // The receipt the member form shows, and the guard it clears (FR-045).
+    await waitFor(() =>
+      expect(screen.getByTestId('compose-saved-at')).toBeInTheDocument(),
+    );
+    expect(beforeUnloadWouldPrompt()).toBe(false);
+
+    // A second save updates rather than creating a second row.
+    await user.click(screen.getByRole('button', { name: 'Save as draft' }));
+    await waitFor(() => {
+      const puts = (
+        globalThis.fetch as unknown as { mock: { calls: unknown[][] } }
+      ).mock.calls.filter(
+        (c) =>
+          String(c[0]) === '/api/admin/broadcasts/draft' &&
+          (c[1] as RequestInit | undefined)?.method === 'PUT',
+      );
+      expect(puts).toHaveLength(1);
+      expect(JSON.parse(String((puts[0]![1] as RequestInit).body))).toMatchObject({
+        draftId: DRAFT_ID,
+      });
+    });
+  });
+
+  it('offers inline images — the editor gets imagesEnabled, the saved draft id and the STAFF upload endpoint', async () => {
+    const user = userEvent.setup();
+    renderForm({ imagesEnabled: true });
+
+    const editor = screen.getByLabelText('Message body');
+    expect(editor).toHaveAttribute('data-images-enabled', 'true');
+    // No draft yet → no id to own an image.
+    expect(editor).toHaveAttribute('data-draft-id', '');
+
+    await user.click(screen.getByRole('button', { name: 'pick-member' }));
+    await user.type(screen.getByLabelText('Subject'), 'Spring mixer');
+    await user.click(screen.getByRole('button', { name: 'Save as draft' }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Message body')).toHaveAttribute(
+        'data-draft-id',
+        DRAFT_ID,
+      ),
+    );
+    expect(screen.getByLabelText('Message body')).toHaveAttribute(
+      'data-image-upload-url',
+      `/api/admin/broadcasts/${DRAFT_ID}/images`,
+    );
+  });
+
+  it("offers the proxied member's allowance — nothing before a member is picked, then the STAFF quota route for that member", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(screen.queryByTestId('quota-display')).not.toBeInTheDocument();
+    expect(fetchedUrls().some((u) => u.includes('/quota'))).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'pick-member' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('quota-display')).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        fetchedUrls().some(
+          (u) => u === `/api/admin/broadcasts/quota?memberId=${MEMBER_ID}`,
+        ),
+      ).toBe(true),
+    );
+  });
 });

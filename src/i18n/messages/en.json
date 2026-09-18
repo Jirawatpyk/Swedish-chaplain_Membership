@@ -3396,7 +3396,11 @@
         "searchFailed": "Member search failed. Try again.",
         "noResults": "No members found.",
         "missingContactEmailWarning": "This member has no primary contact email. A broadcast can't be sent on their behalf until a primary contact with an email address is added.",
-        "missingContactEmailError": "This member has no primary contact email. Add a primary contact first, then retry."
+        "missingContactEmailError": "This member has no primary contact email. Add a primary contact first, then retry.",
+        "saveDraftButton": "Save as draft",
+        "draftSavedToast": "Draft saved.",
+        "draftSaveErrorToast": "Couldn't save the draft. Please try again.",
+        "savedAt": "Saved at {time}"
       },
       "proxySubmitButton": "Submit on behalf of member",
       "haltBanner": {

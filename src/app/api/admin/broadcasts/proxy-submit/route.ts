@@ -46,6 +46,8 @@ const SegmentSchema = z.discriminatedUnion('kind', [
 
 const ProxySubmitBodySchema = z.object({
   requestedByMemberId: z.string().uuid(),
+  // F119 T145 — the staff draft (POST /api/admin/broadcasts/draft) submitted in place.
+  draftId: z.string().uuid().optional(),
   subject: z.string().min(1).max(200),
   bodyHtml: z
     .string()
@@ -129,6 +131,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: parsed.data.requestedByMemberId,
+      ...(parsed.data.draftId !== undefined && { draftId: parsed.data.draftId }),
       adminUserId: ctx.current.user.id,
       tenantDisplayName,
       memberLookup,

@@ -14,6 +14,7 @@ import {
   errorResponse,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import { quotaResponseBody } from '@/lib/broadcasts-draft-response';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 
@@ -63,39 +64,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    const { counter, quotaYear, planCode, planId, nextResetAt, tenantTimezone } =
-      result.value;
-
-    // Smart-4: humanize planCode to a display name (e.g.,
-    // "premium_corporate" → "Premium Corporate"). Avoids extending the
-    // F2 bridge contract just for a UI label.
-    const planName =
-      planCode.length > 0
-        ? planCode
-            .split(/[_-]/)
-            .map((p) => (p.length === 0 ? p : p[0]!.toUpperCase() + p.slice(1)))
-            .join(' ')
-        : null;
-
-    return NextResponse.json(
-      {
-        planId,
-        planCode,
-        planName,
-        eblastPerYear: counter.cap,
-        quotaYear,
-        used: counter.used,
-        reserved: counter.reserved,
-        remaining: counter.remaining,
-        cap: counter.cap,
-        nextResetAt,
-        tenantTimezone,
-      },
-      {
-        status: 200,
-        headers: baseHeaders(correlationId),
-      },
-    );
+    // F119 T145 — the envelope is shared with the staff
+    // `/api/admin/broadcasts/quota`, which reads the SAME counter for a member
+    // named in the query. `QuotaDisplay` takes only an endpoint, so the two
+    // must not drift a field at a time.
+    return NextResponse.json(quotaResponseBody(result.value), {
+      status: 200,
+      headers: baseHeaders(correlationId),
+    });
   } catch (e) {
     logger.error(
       {

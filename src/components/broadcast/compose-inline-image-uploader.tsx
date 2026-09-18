@@ -29,15 +29,27 @@ export interface ComposeInlineImageUploaderHandle {
   openPicker(): void;
 }
 
+/** The member's own draft upload — the default, so the member form is untouched. */
+export const MEMBER_INLINE_IMAGE_UPLOAD_URL = '/api/broadcasts/inline-image-upload';
+
 interface Props {
   readonly draftId: string;
   readonly onUploaded: (blobUrl: string) => void;
+  /**
+   * F119 T145 (FR-039) — where the file goes. The staff compose-on-behalf form
+   * uploads to `POST /api/admin/broadcasts/[id]/images`, which carries the
+   * draft in the PATH and runs the identical 5 MB / MIME / ClamAV / allow-list
+   * rules (`broadcasts-image-upload-route.ts`). One uploader, one size
+   * pre-check, one error surface — never a second component.
+   */
+  readonly uploadUrl?: string;
   readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
 }
 
 export function ComposeInlineImageUploader({
   draftId,
   onUploaded,
+  uploadUrl = MEMBER_INLINE_IMAGE_UPLOAD_URL,
   ref,
 }: Props): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.imageUpload');
@@ -78,15 +90,23 @@ export function ComposeInlineImageUploader({
     fd.append('draftId', draftId);
 
     try {
-      const res = await fetch('/api/broadcasts/inline-image-upload', {
+      const res = await fetch(uploadUrl, {
         method: 'POST',
         body: fd,
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
+          error?: string | { code?: string };
         };
-        const code = body.error ?? 'unknown';
+        // Two envelopes reach here: the upload use-case refusals are
+        // `{ error: '<kind>' }` on every surface, while the staff route's gate
+        // and ownership refusals ride the bilingual `{ error: { code } }`
+        // (`errorResponse`). Reading only the first would render every staff
+        // 404 / 409 / 429 as "unknown".
+        const code =
+          typeof body.error === 'string'
+            ? body.error
+            : (body.error?.code ?? 'unknown');
         // UX M-3 fix 2026-05-21 (review finding enterprise-ux-designer
         // M-3): wrap dynamic-key lookup in try/catch with fallback to
         // `errors.unknown`. next-intl throws on missing keys by

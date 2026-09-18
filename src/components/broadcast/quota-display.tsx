@@ -44,6 +44,15 @@ export interface QuotaDisplayProps {
   readonly nextResetCopy?: string | null;
   /** AS2: localised "Plan changed on <date>" explainer when applicable. */
   readonly planChangedExplainer?: string | null;
+  /**
+   * F119 T145 (FR-039) — where the counter comes from. The member's own
+   * allowance is the default; the staff compose-on-behalf form passes
+   * `/api/admin/broadcasts/quota?memberId=<picked member>`, which returns the
+   * IDENTICAL envelope (`src/lib/broadcasts-draft-response.ts`). Changing it
+   * re-fetches, so picking a different member shows that member's allowance
+   * rather than a stale one.
+   */
+  readonly endpoint?: string;
 }
 
 export function QuotaDisplay({
@@ -52,6 +61,7 @@ export function QuotaDisplay({
   showComposeCta = false,
   nextResetCopy = null,
   planChangedExplainer = null,
+  endpoint = '/api/broadcasts/quota',
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
@@ -66,7 +76,7 @@ export function QuotaDisplay({
       setLoading(true);
       setError(false);
       try {
-        const res = await fetch('/api/broadcasts/quota', {
+        const res = await fetch(endpoint, {
           credentials: 'same-origin',
         });
         if (!res.ok) {
@@ -104,7 +114,7 @@ export function QuotaDisplay({
     return () => {
       cancelled = true;
     };
-  }, [refreshKey, retryNonce]);
+  }, [endpoint, refreshKey, retryNonce]);
 
   // Clamp percentage at 100 to avoid race conditions where used+reserved
   // briefly exceeds cap (P6 finding).

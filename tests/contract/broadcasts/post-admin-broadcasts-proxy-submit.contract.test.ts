@@ -151,6 +151,20 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     expect(callArgs.adminUserId).toBe('user-admin-1');
   });
 
+  it('F119 T145: an optional draftId (the staff draft) reaches the use-case; absent → not sent; malformed → 400', async () => {
+    const DRAFT_ID = '33333333-3333-4333-8333-333333333333';
+    requireApiPermissionMock.mockResolvedValue(adminCtx);
+    proxySubmitMock.mockResolvedValue(ok(submitOutput));
+    const { POST } = await importRoute();
+    await POST(makeRequest({ ...VALID_BODY, draftId: DRAFT_ID }));
+    expect(proxySubmitMock.mock.calls[0]?.[1]).toMatchObject({ draftId: DRAFT_ID });
+    await POST(makeRequest(VALID_BODY));
+    expect(proxySubmitMock.mock.calls[1]?.[1]).not.toHaveProperty('draftId');
+    const res = await POST(makeRequest({ ...VALID_BODY, draftId: 'nope' }));
+    expect(res.status).toBe(400);
+    expect(proxySubmitMock).toHaveBeenCalledTimes(2);
+  });
+
   it('DV-17 + #18: route resolves proxied member companyName → memberLookup.found', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Fogmaker International AB' }));

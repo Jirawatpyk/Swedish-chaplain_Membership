@@ -3396,7 +3396,11 @@
         "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
         "noResults": "Inga medlemmar hittades.",
         "missingContactEmailWarning": "Den här medlemmen saknar e-postadress för primär kontakt. Det går inte att skicka utskick å deras vägnar förrän en primär kontakt med e-postadress har lagts till.",
-        "missingContactEmailError": "Den här medlemmen saknar e-postadress för primär kontakt. Lägg till en primär kontakt först och försök sedan igen."
+        "missingContactEmailError": "Den här medlemmen saknar e-postadress för primär kontakt. Lägg till en primär kontakt först och försök sedan igen.",
+        "saveDraftButton": "Spara som utkast",
+        "draftSavedToast": "Utkast sparat.",
+        "draftSaveErrorToast": "Utkastet kunde inte sparas. Försök igen.",
+        "savedAt": "Sparat {time}"
       },
       "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {

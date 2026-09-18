@@ -20,13 +20,19 @@
  * unsaved-changes guard, preview and editor-level error association, by
  * REUSING those pieces (`compose/*`) rather than forking them.
  *
- * Still missing, and not buildable in PR-1: draft save/resume, inline images
- * and the proxied member's allowance. Each needs a staff API route that does
- * not exist — `/api/broadcasts/draft` and `/api/broadcasts/quota` are both
- * `requireMemberContext`-gated, `POST /api/admin/broadcasts/[id]/images` needs
- * a staff-owned `draft` broadcast id that nothing here can mint, and
- * `contracts/admin-eblast-formatting-api.md` defines no staff equivalent of
- * any of the three.
+ * The last three parity items landed with the two thin staff routes T145 added
+ * (contract § `POST | PUT /api/admin/broadcasts/draft` and
+ * § `GET /api/admin/broadcasts/quota`), both of which reuse the use cases the
+ * member routes already call:
+ *   - draft save/resume against `/api/admin/broadcasts/draft` through the
+ *     SHARED `saveComposeDraft` helper, clearing the unsaved-changes guard and
+ *     showing the same "Saved at" receipt (FR-045);
+ *   - inline images: the saved draft id + `imagesEnabled` go into the SAME
+ *     Tiptap editor and the SAME uploader, pointed at
+ *     `POST /api/admin/broadcasts/[id]/images` (FR-040);
+ *   - the proxied member's allowance via the SAME `QuotaDisplay`, pointed at
+ *     the staff quota route for the picked member — nothing is rendered before
+ *     a member is picked, because there is no allowance to show yet.
  *
  * Error mapping (`ERROR_HANDLING`) reacts to `json.error.code` from the
  * route's bilingual envelope (`broadcasts-route-helpers.ts`):
@@ -38,7 +44,8 @@
 
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLocale, useTranslations } from 'next-intl';
+import { useFormatter, useLocale, useTranslations } from 'next-intl';
+import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   errorValues,
@@ -48,6 +55,7 @@ import {
   submitBlockedByCount,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -60,6 +68,7 @@ import {
 import { CustomListInput, parseLines } from './custom-list-input';
 import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
+import { QuotaDisplay } from './quota-display';
 import { SubmitButton } from './submit-button';
 import { buildSegmentPayload } from './compose-form';
 import { RecipientCountLine, useRecipientCount } from './recipient-count';
@@ -70,11 +79,12 @@ import {
   type ComposeTemplateOption,
 } from './compose/template-picker-field';
 import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
+import { saveComposeDraft } from './compose/save-compose-draft';
 
-// Proxy form drops inline images + draft lifecycle (no staff route exists for
-// either — see the file header) — the Tiptap editor is loaded with the same
-// loader the member compose form uses, minus the `imagesEnabled` / `draftId`
-// props.
+// F119 T145 — the SAME loader and the SAME editor the member compose form
+// uses, now with the same `imagesEnabled` / `draftId` props too: the staff
+// draft route mints the id, and `imageUploadUrl` points the one shared
+// uploader at the staff endpoint (FR-039/FR-040).
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
   onChange: (html: string) => void;
@@ -83,7 +93,12 @@ const TiptapEditor = loadTiptapEditor<{
   // F119 T144 (FR-048) — the error belongs on the `contenteditable`.
   describedById?: string;
   invalid?: boolean;
+  imagesEnabled?: boolean;
+  draftId?: string | null;
+  imageUploadUrl?: string;
 }>(() => import('./tiptap-editor'));
+
+const ADMIN_DRAFT_ENDPOINT = '/api/admin/broadcasts/draft';
 
 const INITIAL_BODY_HTML = '<p></p>';
 const BODY_ERROR_ID = 'proxy-broadcast-body-error';
@@ -176,11 +191,19 @@ export interface ProxyComposeFormProps {
    * gets, resolved server-side with chamber-name substitution applied.
    */
   readonly templates?: readonly ComposeTemplateOption[];
+  /**
+   * F119 T145 (FR-039/FR-040) — the F7.1a US2 image kill-switch, resolved
+   * server-side exactly as the member compose page resolves it. Images still
+   * need a saved draft to own them, so the editor shows the member form's
+   * "save the draft first" hint until one exists.
+   */
+  readonly imagesEnabled?: boolean;
 }
 
 export function ProxyComposeForm({
   audienceCeiling,
   templates = [],
+  imagesEnabled = false,
 }: ProxyComposeFormProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.proxySubmitDialog');
   // The proxySubmitDialog namespace has no member-search loading string;
@@ -189,6 +212,9 @@ export function ProxyComposeForm({
   const tLink = useTranslations('admin.users.invite.linkMember');
   // The preview is rendered server-side in the staff user's own UI language.
   const locale = useLocale();
+  // F119 T145 (FR-045) — the "Saved at" receipt, formatted by next-intl in the
+  // staff user's locale, never by hand.
+  const format = useFormatter();
   const router = useRouter();
 
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -206,6 +232,13 @@ export function ProxyComposeForm({
   const [customList, setCustomList] = useState('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // F119 T145 — the staff-owned draft. `null` until the first save; captured
+  // from the 201 so the inline-image uploader stops being hidden (the same
+  // trap the member form fell into on 2026-05-21). Picking a DIFFERENT member
+  // drops it: the draft belongs to the member it was created for, and a PUT
+  // naming another member is refused by `saveDraft`'s ownership guard.
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [fieldError, setFieldError] = useState<{
     field: ServerErrorField;
     message: string;
@@ -221,11 +254,11 @@ export function ProxyComposeForm({
     readonly nonce: number;
   }>({ html: INITIAL_BODY_HTML, nonce: 0 });
 
-  // F119 T145 (FR-039/FR-045) — the unsaved-changes guard the member form has.
-  // With no draft endpoint on this side, `markSaved` is never called, so it
-  // stays a plain "you have typed something" warning until a submit is in
-  // flight (`suspended`), which is exactly the parity item FR-039 asks for.
-  useComposeDirtyGuard(
+  // F119 T145 (FR-039/FR-045) — the unsaved-changes guard the member form has,
+  // now against the LAST SAVED snapshot on this side too: a staff draft save
+  // calls `markSaved`, so saving and leaving is silent while typing and
+  // leaving still warns.
+  const dirtyGuard = useComposeDirtyGuard(
     { subject, bodyHtml },
     {
       initial: { subject: '', bodyHtml: INITIAL_BODY_HTML },
@@ -352,6 +385,7 @@ export function ProxyComposeForm({
         credentials: 'same-origin',
         body: JSON.stringify({
           requestedByMemberId: member.memberId,
+          ...(currentDraftId !== null && { draftId: currentDraftId }),
           subject,
           bodyHtml,
           bodySource: bodyHtml,
@@ -406,8 +440,71 @@ export function ProxyComposeForm({
     }
   }
 
+  /**
+   * F119 T145 (FR-039/FR-045) — the member form's "Save as draft", against the
+   * staff draft route. The round trip itself is the shared helper; only the
+   * endpoint, the named member and the copy differ.
+   */
+  async function handleSaveDraft(): Promise<void> {
+    if (submitting || savingDraft || member === null) return;
+    setSavingDraft(true);
+    setSubmitting(true);
+    // Captured BEFORE the round trip: what the server is being asked to store
+    // is what the dirty guard must compare against afterwards, not whatever
+    // was typed while it was in flight.
+    const savedSnapshot = { subject, bodyHtml };
+    try {
+      const saved = await saveComposeDraft({
+        endpoint: ADMIN_DRAFT_ENDPOINT,
+        draftId: currentDraftId,
+        payload: {
+          memberId: member.memberId,
+          subject,
+          bodyHtml,
+          bodySource: bodyHtml,
+          segmentType: segment.kind,
+          segmentParams:
+            segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : null,
+          customRecipientEmails: segment.kind === 'custom' ? customLines : null,
+          scheduledFor,
+        },
+      });
+      if (!saved.ok) {
+        // A field refusal (subject too long, body too large / unsafe) belongs
+        // on the field, exactly as on submit. Everything else is a SAVE
+        // failure and must not borrow the submit copy — "Couldn't submit the
+        // broadcast" after pressing Save as draft reads as a lost draft.
+        if (ERROR_HANDLING[saved.code] !== undefined) {
+          handleErrorCode(saved.code, member.companyName);
+        } else {
+          toast.error(t('draftSaveErrorToast'));
+        }
+        return;
+      }
+      if (currentDraftId === null && saved.broadcastId !== null) {
+        setCurrentDraftId(saved.broadcastId);
+      }
+      toast.success(t('draftSavedToast'));
+      dirtyGuard.markSaved(savedSnapshot);
+    } finally {
+      setSubmitting(false);
+      setSavingDraft(false);
+    }
+  }
+
   return (
     <div className="min-w-0 space-y-6">
+      {/* F119 T145 (FR-039) — the PROXIED member's allowance, from the staff
+          quota route. Keyed on the member so picking another one re-fetches
+          rather than showing the previous member's numbers; nothing at all is
+          rendered before a member is picked, because there is no allowance to
+          show yet. */}
+      {member !== null ? (
+        <QuotaDisplay
+          key={member.memberId}
+          endpoint={`/api/admin/broadcasts/quota?memberId=${encodeURIComponent(member.memberId)}`}
+        />
+      ) : null}
       {/* F119 T145 (FR-039) — the member form's template picker, with the same
           "this would overwrite what you typed" confirmation (FR-046). */}
       <ComposeTemplatePickerField
@@ -426,6 +523,10 @@ export function ProxyComposeForm({
               <MemberPicker
                 value={member}
                 onSelect={(m) => {
+                  // A different member means a different draft and a different
+                  // allowance — never carry the previous member's draft id
+                  // across, or the next PUT names a row that is not theirs.
+                  if (m?.memberId !== member?.memberId) setCurrentDraftId(null);
                   setMember(m);
                   setMemberError(null);
                 }}
@@ -557,6 +658,13 @@ export function ProxyComposeForm({
                 key={editorSeed.nonce}
                 initialHtml={editorSeed.html}
                 invalid={bodyHasError}
+                imagesEnabled={imagesEnabled}
+                draftId={currentDraftId}
+                {...(currentDraftId !== null
+                  ? {
+                      imageUploadUrl: `/api/admin/broadcasts/${currentDraftId}/images`,
+                    }
+                  : {})}
                 {...(bodyHasError ? { describedById: BODY_ERROR_ID } : {})}
                 onChange={(next) => {
                   setBodyHtml(next);
@@ -582,7 +690,43 @@ export function ProxyComposeForm({
               disabled={submitting}
             />
 
-            <div className="flex justify-end border-t pt-4">
+            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
+              {/* F119 T145 (FR-045) — the member form's save receipt, same
+                  test id, same `aria-live`, same next-intl formatter. */}
+              {dirtyGuard.savedAt !== null ? (
+                <p
+                  data-testid="compose-saved-at"
+                  className="text-xs text-muted-foreground sm:mr-auto"
+                  aria-live="polite"
+                >
+                  {t('savedAt', {
+                    time: format.dateTime(dirtyGuard.savedAt, {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    }),
+                  })}
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  void handleSaveDraft();
+                }}
+                // A draft is stored against a member, so there is nothing to
+                // save until one is picked — the route would 400 on the
+                // missing `memberId`.
+                disabled={submitting || member === null}
+                aria-busy={savingDraft || undefined}
+              >
+                {savingDraft ? (
+                  <Loader2Icon
+                    className="size-4 motion-safe:animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {t('saveDraftButton')}
+              </Button>
               <SubmitButton
                 disabled={submitDisabled}
                 submitting={submitting}

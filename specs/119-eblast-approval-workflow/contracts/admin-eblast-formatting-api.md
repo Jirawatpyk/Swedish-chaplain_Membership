@@ -11,6 +11,8 @@ kill-switch (`src/proxy.ts:43-68`) → 503 `feature_disabled`.
 |---|---|---|
 | read the queue, a detail, versions, preview | `broadcasts.read` | super_admin, admin, manager, **marketing** |
 | start / save / send a formatted version, upload an image, reject, **cancel** | `broadcasts.write` | super_admin, admin, marketing |
+| **save the compose-on-behalf draft** (`POST \| PUT …/draft`, T145) | `broadcasts.write` | super_admin, admin, marketing |
+| **read the proxied member's allowance** (`GET …/quota?memberId=`, T145) | `broadcasts.read` | super_admin, admin, manager, **marketing** |
 | confirm, change or cancel the send time | `broadcasts.send` | super_admin, admin, marketing |
 | read / write brand settings | `settings.broadcasts` | super_admin, admin (**not** marketing — `role-bundles.ts:49-64`) |
 | **upload / replace / clear the chamber logo** | `settings.invoicing` | **super_admin only** (`permission-catalogue.ts:98`) — no route here touches it |
@@ -31,7 +33,8 @@ which one identity can act as the other (FR-013).
 **Rate limits**: `POST …/test-copy` is **10 per user per hour** (FR-037, the same bucket as the
 member route); `POST …/preview` is 30 per minute per actor. The formatting and schedule routes
 (`…/version` POST and PATCH, `…/version/send`, `…/schedule`, `…/images`, `templates/[id]/images`,
-`…/brand` PATCH) take a **new** per-(tenant, actor) bucket of **30 requests / 60 seconds**, refused
+`…/brand` PATCH, and — added by T145 — `…/draft` **POST and PUT**) take a **new** per-(tenant, actor)
+bucket of **30 requests / 60 seconds**, refused
 as `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, over the existing
 `broadcastsRateLimiter` (`src/modules/broadcasts/infrastructure/rate-limiter.ts:14`) and the
 `RECIPIENT_COUNT_RATE_MAX` / `_WINDOW_SECONDS` shape (`src/lib/broadcasts-recipient-count.ts:30-31`),
@@ -335,6 +338,94 @@ it — today's snapshot semantics. The last-reference rule (data-model § 4) is 
 draft working after the template image is removed. **Blocks and links that arrive from a template
 are the member's own content** from that moment: editable and deletable like anything else, with no
 per-block authorship recorded and no "from template" marking anywhere in the payload (FR-046a).
+
+## `POST | PUT /api/admin/broadcasts/draft` — the staff compose-on-behalf draft (FR-039)
+
+Permission **`broadcasts.write`** on both verbs — **not** `proxy-submit`'s `broadcasts.send`: saving a
+draft is not sending, so the key that gates sending must not gate it, and a `manager` is refused on
+both. Added by **T145** (plan Amendment 7): the staff image route above is specified against "the
+staff **compose-on-behalf** draft", and FR-039 asks for draft save/resume on that screen, but nothing
+in PR-1 could mint a staff-owned `draft` — `proxy-submit` creates a **`submitted`** row and
+`/api/broadcasts/draft` is `requireMemberContext`-gated. This route is the missing half; it is thin
+by construction, wrapping the **existing** `saveDraft` use case, which already takes a `memberId` and
+`actorRole: 'admin_proxy'`.
+
+```jsonc
+// request — the member route's body plus the member being acted for
+{ "memberId": "uuid",            // REQUIRED; the draft belongs to this member
+  "draftId": "uuid",             // omit on POST; REQUIRED on PUT
+  "subject": "…", "bodyHtml": "…", "bodySource": "…",
+  "segmentType": "all_members" | "tier" | "event_attendees_last_90d" | "custom",
+  "segmentParams": {…} | null, "customRecipientEmails": ["…"] | null,
+  "scheduledFor": "2026-10-01T03:00:00.000Z" | null }
+```
+
+The response envelope is the member route's, field for field
+(`src/lib/broadcasts-draft-response.ts` — shared, so the two cannot drift):
+`{ broadcastId, status, createdAt, updatedAt, subject, segmentType, segmentParams,
+customRecipientEmails, scheduledFor }`.
+
+| code | when |
+|---|---|
+| 201 | POST created the draft |
+| 200 | PUT updated it |
+| 400 `invalid_body` | malformed body, a non-uuid `memberId`, or a PUT with no `draftId` |
+| 403 | `permission_denied` (manager, member session) — audited |
+| 404 `broadcast_member_not_found` | no such member in the caller's tenant — the id is echoed, never which ids exist |
+| 409 `broadcast_member_erased` | the member is GDPR-Art.17 / PDPA-§33 erased: a staff draft must not stamp a scrubbed company name on a fresh row the erase cascade already ran past (the `proxy-submit` rule, same read) |
+| 409 `broadcast_immutable_after_submit` | the named draft is past `draft` — exactly the member route's refusal |
+| 422 | the member route's content rules — subject > 200, body > 200 KB, unsafe HTML, member without a primary contact email |
+| 429 `broadcast_rate_limit_exceeded` | the staff write bucket, with `retryAfterSeconds` |
+
+**Rate bucket**: the **same** staff 30 requests / 60 seconds per (tenant, actor) as the formatting and
+image routes (`staffWriteRateKey`), consumed with an atomic check **above** the member read and the
+save — a refused call reads nothing and stores nothing.
+
+**Ownership on PUT**: scoped by `saveDraft`'s own guards to a `draft` row **of the named member**, so
+a staff user may resume a draft another staff user started for that member (staff act for the
+chamber) while a row past `draft` answers 409. Whose staff hand typed it is not a thing the route
+decides.
+
+**Submit in place**: `POST /api/admin/broadcasts/proxy-submit` accepts an optional `draftId` (uuid)
+naming this staff draft; `proxySubmitBroadcast` threads it into the same delegate the member's
+`POST /api/broadcasts/submit` uses, so the row is **updated + transitioned** rather than duplicated.
+The delegate's per-member ownership check applies: a `draftId` of another member → 404
+`broadcast_not_found`; a row past `draft` → the delegate's status refusal. Omitted → a fresh row,
+exactly as before F119.
+
+**Audit**: the **existing** `broadcast_drafted` event `saveDraft` already emits on create, carrying
+`actorRole: 'admin_proxy'` and the staff user as `actorUserId`. **No new audit event type** — an edit
+of an existing draft emits nothing, as on the member side (FR-004). Note the payload's member key is
+camelCase `memberId`, which the 0009 `last_activity_at` trigger does **not** read: a staff draft
+therefore does not move the member's recency, the same posture as the staff image upload above.
+
+Read-only mode and the F7 master kill-switch behave as on every sibling admin broadcast route
+(enforced upstream in `src/proxy.ts`).
+
+## `GET /api/admin/broadcasts/quota?memberId=<uuid>` — the proxied member's allowance (FR-039)
+
+Permission **`broadcasts.read`**, so a `manager` may read it: an allowance is a read, and the
+read-only role reads. Added by **T145** alongside the draft route. `GET /api/broadcasts/quota`
+resolves the member from the **session**, which no staff user can satisfy for someone else; this
+route reuses the same `computeQuotaCounter` with the member taken from the query.
+
+The response is the member route's envelope, field for field (shared through
+`quotaResponseBody`), so the `QuotaDisplay` component renders it with only an endpoint changed:
+
+```jsonc
+200 { "planId": "uuid", "planCode": "premium_corporate", "planName": "Premium Corporate",
+      "eblastPerYear": 6, "quotaYear": 2026, "used": 2, "reserved": 1, "remaining": 3, "cap": 6,
+      "nextResetAt": "2026-12-31T17:00:00.000Z", "tenantTimezone": "Asia/Bangkok" }
+```
+
+| code | when |
+|---|---|
+| 400 `invalid_query` | `memberId` missing or not a uuid — refused before the use case runs |
+| 403 | `permission_denied` (member session) — audited |
+| 404 `broadcast_member_not_found` | no such member in the caller's tenant (the member route's code, so on-call is not sent looking for a missing broadcast) |
+
+No write, therefore **no write bucket** and **no audit event** — reading an allowance is not a state
+change.
 
 ## `POST /api/admin/broadcasts/preview` and `POST /api/admin/broadcasts/test-copy`
 

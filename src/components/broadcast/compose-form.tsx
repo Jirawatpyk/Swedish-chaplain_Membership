@@ -53,6 +53,7 @@ import {
   type ComposeTemplateOption,
 } from './compose/template-picker-field';
 import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
+import { saveComposeDraft } from './compose/save-compose-draft';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
@@ -437,23 +438,17 @@ export function ComposeForm({
         customRecipientEmails: segment.kind === 'custom' ? customLines : null,
         scheduledFor,
       };
-      const method = currentDraftId !== null ? 'PUT' : 'POST';
-      if (currentDraftId !== null) body['draftId'] = currentDraftId;
-
-      const res = await fetch('/api/broadcasts/draft', {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify(body),
+      // F119 T145 — the round trip is shared with the staff
+      // compose-on-behalf form; only the endpoint and the copy differ.
+      const saved = await saveComposeDraft({
+        endpoint: '/api/broadcasts/draft',
+        draftId: currentDraftId,
+        payload: body,
       });
-      if (!res.ok) {
-        const respBody = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
-        };
-        const code = respBody.error?.code ?? 'internal_error';
+      if (!saved.ok) {
         let msg: string;
         try {
-          msg = tErr(code);
+          msg = tErr(saved.code);
         } catch {
           msg = tErr('internal_error');
         }
@@ -473,11 +468,8 @@ export function ComposeForm({
       // The compose page (server component) does not yet support
       // `?draftId=` resume — that is F7.1b scope — so we manage the
       // draft-id transition entirely in client state.
-      const respBody = (await res.json().catch(() => null)) as {
-        broadcastId?: string;
-      } | null;
-      if (currentDraftId === null && respBody?.broadcastId) {
-        setCurrentDraftId(respBody.broadcastId);
+      if (currentDraftId === null && saved.broadcastId !== null) {
+        setCurrentDraftId(saved.broadcastId);
       }
       toast.success(t('toast.drafted'));
       // F119 T143 (FR-045) — the save cleared the unsaved-changes state.

@@ -17,7 +17,11 @@ import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
 import { loadComposeTemplateOptions } from '@/lib/broadcast-template-options';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { currentAudienceCeiling, isF71aUs7Enabled } from '@/modules/broadcasts';
+import {
+  currentAudienceCeiling,
+  isF71aUs2Enabled,
+  isF71aUs7Enabled,
+} from '@/modules/broadcasts';
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
   return { title: t('title') };
@@ -44,9 +48,13 @@ export default async function AdminProxyComposePage(): Promise<React.ReactElemen
       <PageHeader title={t('title')} subtitle={t('pageSubtitle')} />
       {/* Round 2 (i18n H4): the same ceiling the member page resolves — the
           fallback for the too-large copy when a 422 body carries no cap. */}
+      {/* F119 T145 (FR-039/FR-040) — the same image kill-switch the member
+          compose page reads. Images still need a saved draft to own them, and
+          the staff draft route now mints one. */}
       <ProxyComposeForm
         audienceCeiling={currentAudienceCeiling()}
         templates={templates}
+        imagesEnabled={isF71aUs2Enabled()}
       />
     </DetailContainer>
   );

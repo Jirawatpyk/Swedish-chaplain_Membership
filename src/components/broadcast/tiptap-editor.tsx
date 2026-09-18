@@ -90,6 +90,13 @@ export interface TiptapEditorProps {
    * first" hint so the member knows what to do.
    */
   readonly draftId?: string | null;
+  /**
+   * F119 T145 (FR-039) — the upload endpoint for `draftId`'s images. Omitted
+   * on the member form (the uploader's own member default applies); the staff
+   * compose-on-behalf form passes its `/api/admin/broadcasts/[id]/images` URL
+   * so both forms drive ONE uploader.
+   */
+  readonly imageUploadUrl?: string;
 }
 
 export default function TiptapEditor({
@@ -101,6 +108,7 @@ export default function TiptapEditor({
   invalid = false,
   imagesEnabled = false,
   draftId = null,
+  imageUploadUrl,
 }: TiptapEditorProps): React.ReactElement {
   const tEditor = useTranslations('portal.broadcasts.compose.editor');
   const tChrome = useTranslations('broadcast.editor');
@@ -310,6 +318,7 @@ export default function TiptapEditor({
             <ComposeInlineImageUploader
               ref={uploaderRef}
               draftId={draftId}
+              {...(imageUploadUrl !== undefined ? { uploadUrl: imageUploadUrl } : {})}
               onUploaded={handleUploaded}
             />
           ) : (

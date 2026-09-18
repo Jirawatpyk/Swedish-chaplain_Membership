@@ -527,7 +527,7 @@ The spec's § Assumptions proposes tool + fixes first, then the approval round, 
 
 | PR | Scope | Flag | Migration | Rationale |
 |---|---|---|---|---|
-| **PR-1** — Writing tool + screen standard | US3 + US6. Shared sanitiser policy; toolbar (headings, quote, divider, image, CTA, banner) with roving tabindex and no italic on Thai; required alt text; real preview (route + wrapper + inline empty state + dialog with desktop/phone widths); design blocks + the post-sanitise renderer; brand settings page, columns and the read-only logo URL; staff + template image routes, `broadcast_images` and its lifecycle; member-route draft-ownership check; proxy-form parity; template-picker confirmation; dirty-state fix; `error.tsx` ×5; dead i18n removal; compose layout; the member detail **subject + body** (the FR-049 half that needs no `0305` column); the FR-051 pass on the **seven screens PR-1 builds** (Amendment 4) | **none** (live on merge, spec § Feature flag) | `0304` | The approval round is pointless without the tool (spec § Clarifications 2026-09-18), and SweCham must not test the trial on the defects the audit found. It is also the largest independent value: every E-Blast improves immediately. |
+| **PR-1** — Writing tool + screen standard | US3 + US6. Shared sanitiser policy; toolbar (headings, quote, divider, image, CTA, banner) with roving tabindex and no italic on Thai; required alt text; real preview (route + wrapper + inline empty state + dialog with desktop/phone widths); design blocks + the post-sanitise renderer; brand settings page, columns and the read-only logo URL; staff + template image routes, `broadcast_images` and its lifecycle; member-route draft-ownership check; **the staff compose-on-behalf draft route (`POST \| PUT /api/admin/broadcasts/draft`) and the proxied-member allowance read (`GET /api/admin/broadcasts/quota?memberId=`)** (T145, Amendment 9); proxy-form parity; template-picker confirmation; dirty-state fix; `error.tsx` ×5; dead i18n removal; compose layout; the member detail **subject + body** (the FR-049 half that needs no `0305` column); the FR-051 pass on the **seven screens PR-1 builds** (Amendment 4) | **none** (live on merge, spec § Feature flag) | `0304` | The approval round is pointless without the tool (spec § Clarifications 2026-09-18), and SweCham must not test the trial on the defects the audit found. It is also the largest independent value: every E-Blast improves immediately. |
 | **PR-2** — Approval round + dashboard + trial | US1 + US2 + US5 + **US4 + US7** (Amendment 8 — the former PR-3 is folded in here). Status widening + the full shadow sweep; `broadcast_versions` + `broadcast_member_decisions`; the FR-012a migration (enum, immutability trigger, state machine, `proposed_send_at` **backfilled before the function is replaced**, `stage_entered_at` backfilled from `submitted_at`, the reservation and cascade sets); staff format/send routes; member sign-off screen and routes; schedule confirm; the `in_design` widening of the staff image route (T106a); **the flag gate on the `submitted → in_design` EDGE and its two-state contract suite (T152 + T149/T150 — Amendment 7)**; **10** audit events (the other 4 landed with `0304` in PR-1, so 14 in all); 5 notification types + dispatcher arms + the 5 email templates × 3 locales + the marketing roster; reminders / warning / expiry in the daily cron; erasure reach; the approval i18n namespaces (T006a); the PR-2 write rate buckets (T062a); **the dashboard**: stage chips with counts, whose-turn / time-in-stage / round columns, stalled flag, upcoming-sends preset, delivery results, the status→**stage** vocabulary relabel **and the five new stage labels** (T120), the nav count (FR-023), 4 gauges + 5 of the 6 counters + 1 of the 2 histograms + **3** alerts, `docs/observability.md` § 28 and the one-off budget measurement recorded into it (T160a), the runbook; **the trial**: the EN + TH UAT walkthrough (FR-035) and the rollback-matrix walk; the FR-051 pass on `/admin/broadcasts/[id]`, the sign-off view of `/portal/broadcasts/[id]` **and the rebuilt staff queue** (T086a) | `FEATURE_EBLAST_MEMBER_APPROVAL` **gates the entry edge — and the five hand-off emails at the drainer (T152a, round 4 H2) — and the gate ships in this PR**; chip and nav-badge visibility follow the flag **or** the presence of rows (T151/T116) | `0305` | US1 is not shippable without US2 (spec's own reasoning), and US5's hand-off notifications are what make a two-sided flow not stall. US4 and US7 join them because a dark approval round whose dashboard, stage labels, metric registrations, runbook and UAT script arrive a PR later cannot be observed, cannot be trialled, and puts five defects across the boundary (Amendment 8). |
 
 **Amendment 1 — the stage-vocabulary relabel stays out of PR-1.** `approved` is today labelled
@@ -642,6 +642,44 @@ cost is a larger PR-2; the review substitute (Complexity Tracking #1) absorbs it
 run per surface, not per PR. The one registration that still had to move the other way is the preview
 counter and histogram, which T032 emits in **PR-1**: they are registered there by **T122a**, and
 T122 registers the remaining five in PR-2.
+
+**Amendment 9 (implementation, 2026-09-18) — FR-039's last three parity items needed two staff
+routes the contract assumed but never defined.** `contracts/admin-eblast-formatting-api.md`
+specifies `POST /api/admin/broadcasts/[id]/images` against "the staff **compose-on-behalf** draft",
+and FR-039 asks the staff writing tool to offer "drafts, images … the member's allowance display".
+Neither was reachable: **no route creates a staff-owned `draft`** — `proxy-submit` creates a
+`submitted` row — and `GET /api/broadcasts/quota` resolves the member from the **session**, so a
+staff user can never read the allowance of the member they are composing for. T137's three `it.todo`
+named exactly these blockers. The contract was **incomplete, not wrong**: the Application layer
+already supports both sides — `saveDraft` takes a `memberId` and `actorRole: 'admin_proxy'`, and
+`computeQuotaCounter` takes a `memberId`. Closed in **T145** with two **thin** routes that reuse
+those use cases unchanged, added to PR-1's route list and to the contract as their own sections:
+
+- **`POST | PUT /api/admin/broadcasts/draft`** — `broadcasts.write` (NOT `proxy-submit`'s
+  `broadcasts.send`: saving a draft is not sending), member named in the body and resolved through
+  `proxy-submit`'s own member read (404 unknown / 409 erased), the staff 30 / 60 s write bucket above
+  any read or write, and the **existing** `broadcast_drafted` audit carrying `actorRole:
+  'admin_proxy'` — no new audit event type, no use-case change.
+- **`GET /api/admin/broadcasts/quota?memberId=`** — `broadcasts.read`, the member from the query, the
+  member route's envelope byte for byte so `QuotaDisplay` takes only an endpoint.
+
+Both envelopes and the draft error mapping live in one shared module
+(`src/lib/broadcasts-draft-response.ts`) which **both** the member and staff routes now use, and both
+compose forms save through one shared client helper
+(`src/components/broadcast/compose/save-compose-draft.ts`): FR-039 is a promise that the two tools
+behave the same, so "the same" is enforced by shared code rather than by two copies agreeing today.
+The frozen marketing-reachability pin in `tests/contract/rbac/role-endpoint-matrix.test.ts` moves
+**57 → 60**.
+
+**Submit in place**: `proxySubmitBroadcast` gains an optional `draftId`
+(`src/modules/broadcasts/application/use-cases/proxy-submit-broadcast.ts`), threaded into the
+delegate exactly as the member's `POST /api/broadcasts/submit` threads its own, so a staff draft that
+is saved and then submitted is **updated + transitioned**, never left behind as a stranded `draft`
+row beside a second `submitted` one. The delegate's per-member ownership check applies unchanged: a
+`draftId` belonging to another member → `broadcast_not_found` (404, anti-enumeration).
+`POST /api/admin/broadcasts/proxy-submit` accepts the optional uuid and the proxy form sends the
+id it holds. Pinned by `tests/unit/broadcasts/application/proxy-submit-broadcast.test.ts` (two
+cases) and `tests/contract/broadcasts/post-admin-broadcasts-proxy-submit.contract.test.ts`.
 
 ## Complexity Tracking
 

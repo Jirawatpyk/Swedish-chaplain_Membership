@@ -109,6 +109,10 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/admin/broadcasts', kind: 'api', key: 'broadcasts.read' },
   // F119 — chamber brand settings (FR-041b): admin tier, never marketing.
   { surface: 'GET /api/admin/broadcasts/brand', kind: 'api', key: 'settings.broadcasts' },
+  // F119 T145 (FR-039) — the PROXIED member's E-Blast allowance, read by the
+  // staff compose-on-behalf form. `broadcasts.read`, so a read-only manager
+  // sees it; the member comes from the query, never the session.
+  { surface: 'GET /api/admin/broadcasts/quota', kind: 'api', key: 'broadcasts.read' },
   // 108 PR-C T088 — admin proxy compose count (data-model § 4).
   { surface: 'GET /api/admin/broadcasts/recipient-count', kind: 'api', key: 'broadcasts.write' },
   { surface: 'GET /api/admin/broadcasts/sla-stats', kind: 'api', key: 'broadcasts.read' },
@@ -195,6 +199,9 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/admin/broadcasts/[id]/approve', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/[id]/cancel', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/reject', kind: 'api', key: 'broadcasts.write' },
+  // F119 T145 (FR-039) — the staff compose-on-behalf DRAFT. `broadcasts.write`,
+  // NOT `proxy-submit`'s `broadcasts.send`: saving a draft is not sending.
+  { surface: 'POST /api/admin/broadcasts/draft', kind: 'api', key: 'broadcasts.write' },
   // F119 — the staff preview renders the real email; a manager may look (read key).
   { surface: 'POST /api/admin/broadcasts/preview', kind: 'api', key: 'broadcasts.read' },
   { surface: 'POST /api/admin/broadcasts/proxy-submit', kind: 'api', key: 'broadcasts.send' },
@@ -274,6 +281,10 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/refunds/initiate', kind: 'api', key: 'refunds.write' },
   { surface: 'POST /api/refunds/resolve-auto-refund-failure', kind: 'api', key: 'refunds.write' },
   { surface: 'POST /api/tenant-invoice-settings/logo', kind: 'api', key: 'settings.invoicing' },
+  // F119 T145 — the update verb of the staff draft route; same key as its POST
+  // sibling. Registered per-METHOD because `check:api-route-guard` matches
+  // per-METHOD, not per-file.
+  { surface: 'PUT /api/admin/broadcasts/draft', kind: 'api', key: 'broadcasts.write' },
   { surface: 'PUT /api/admin/renewals/settings/schedules/[tierBucket]', kind: 'api', key: 'settings.renewal_schedules' },
 ];
 
