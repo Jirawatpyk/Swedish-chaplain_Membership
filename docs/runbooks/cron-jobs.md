@@ -492,23 +492,44 @@ under the LAST-REFERENCE rule — no live row of either owner_kind shares the
 `content_hash` AND no live `body_html` still embeds the URL.
 
 **Advisory lock.** Each per-row transaction takes `pg_advisory_xact_lock` on
-`hashtext('broadcasts-image:' || tenant || ':' || content_hash)` BEFORE it
-counts live rows; the upload path takes the same lock around its insert.
-This is a FOURTH, deliberately disjoint sub-namespace: `invoicing:` is
+`hashtextextended('broadcasts-image:' || tenant || ':' || content_hash, 0)`
+BEFORE it counts live rows; the upload path takes the same lock around its
+insert. This is a FOURTH, deliberately disjoint sub-namespace: `invoicing:` is
 §87 gap-free numbering, `payments:` is a per-invoice TOCTOU guard,
 `broadcasts:` is per-broadcast, and `broadcasts-image:` is per
 (tenant, content_hash) and guards blob reclamation ONLY. Never reuse it.
 Without it, a dedup upload landing between the sweep's count and its delete
 left a live row pointing at a 404 blob.
 
+The lock alone does NOT close that window, and this runbook used to say it
+did (ROUND-2 R-H2). The upload's dedup probe asks BLOB STORAGE, not the
+database, and both that probe and the PUT happen ABOVE the lock — a complete
+sweep pass for the same hash fits between them. So `recordImage` re-asks
+`existsByContentHash` while holding the lock and re-PUTs the bytes when they
+are gone; the blob key is content-addressed, so the PUT is idempotent. If you
+see `broadcasts.uploadInlineImage.blob_reclaimed_under_lock_reput` in the
+logs, that is this guard firing — the upload succeeded and the bytes are
+back, but it means an upload and the sweep raced for the same hash.
+
 **Reading the outcome.** The tick body carries
-`imageSweep: { ok, scanned, blobsDeleted, rowsRemoved }`. `rowsRemoved`
-exceeding `blobsDeleted` is NORMAL: it means blobs were kept because another
-reference survives. The audit `reason` says which case — `sweep` (marked
-row, bytes gone), `sweep_orphaned` (owner vanished), `sweep_referenced`
-(bytes kept, live content still embeds the URL). A rising
-`sweep_referenced` rate on erasure work is worth a look: it usually means
-pre-0304 images, which have no row at all.
+`imageSweep: { ok, scanned, blobsDeleted, rowsRemoved, retained }`.
+`rowsRemoved` exceeding `blobsDeleted` is NORMAL: it means blobs were kept
+because another reference survives. The audit `reason` says which case —
+`sweep` (marked row, bytes gone) or `sweep_orphaned` (owner vanished).
+
+`retained` (ROUND-2 S-3) is the case where live content still embeds the blob
+URL. Those rows keep their bytes AND their row: the row is un-stamped back
+into the live set rather than removed, because a removed row is reachable by
+nothing afterwards — not the marked arm (nothing to stamp), not the orphan arm
+(nothing to anti-join), not the Art. 17 / §33 erasure cascade (which stamps
+rows), while the blob goes on being served. A retained row emits NO audit
+(nothing was removed); the durable signals are the counter
+`broadcasts_image_sweep_retained_total{tenant}` and the log line
+`broadcasts.image_sweep.retained_still_referenced`. A retained ORPHAN row is
+re-examined on every tick by design, so a `retained` count that keeps climbing
+means those rows are eating into the bounded 200-per-arm batch and can starve
+genuine orphans — find out why the referencing content is not going away. A
+small steady rate usually means pre-0304 images, which have no row at all.
 
 Members are NOT notified of impending draft expiry in MVP — a "your
 draft will expire in N days" toast remains in scope for a future

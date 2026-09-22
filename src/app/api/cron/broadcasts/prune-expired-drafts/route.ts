@@ -2,10 +2,12 @@
  * F7 US6 / Phase 8 — T171a daily draft-expiry cleanup cron.
  * POST `/api/cron/broadcasts/prune-expired-drafts`.
  *
- * Triggered DAILY by cron-job.org (per docs/runbooks/cron-jobs.md
- * § F7 prune-expired-drafts) — separate cadence from the 5-min
- * dispatch-scheduled cron because pruning is a low-frequency
- * housekeeping task with no time-sensitive business impact.
+ * Triggered DAILY by native Vercel Cron (`vercel.json`, UTC-only, invoked
+ * with GET — `export const GET = POST` below; cron-job.org is a paused
+ * standby). See docs/runbooks/cron-jobs.md § F7 prune-expired-drafts —
+ * separate cadence from the 5-min dispatch-scheduled cron because pruning
+ * is a low-frequency housekeeping task with no time-sensitive business
+ * impact.
  *
  * FR-001a: deletes broadcasts with `status='draft' AND updated_at <
  * now() - interval '30 days'`. NO audit event (drafts are user-
@@ -114,7 +116,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // --- Block 2: the F119 image-blob sweep (T035) ----------------------------
   // Independently transacted (one tx per row inside the use case), its own
   // flag in the body. T130 (PR-2) adds the reminder / expiry steps here.
-  let imageSweep: { ok: boolean; scanned?: number; blobsDeleted?: number; rowsRemoved?: number } = { ok: false };
+  // ROUND-2 S-3 — `retained` is the fourth count: rows the sweep KEPT (and put
+  // back in the live set) because live content still embeds their blob URL.
+  let imageSweep: {
+    ok: boolean;
+    scanned?: number;
+    blobsDeleted?: number;
+    rowsRemoved?: number;
+    retained?: number;
+  } = { ok: false };
   try {
     const result = await reclaimOrphanedImages(makeReclaimOrphanedImagesDeps(tenantCtx.slug), {
       tenantId: tenantCtx.slug as never,

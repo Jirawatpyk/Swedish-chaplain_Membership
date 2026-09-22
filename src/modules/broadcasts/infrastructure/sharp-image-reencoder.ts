@@ -22,15 +22,68 @@
  *
  * `limitInputPixels` caps decode memory (decompression-bomb guard). The
  * caller has already had ClamAV pass the bytes before we decode them.
+ *
+ * `failOn: 'error'` is kept, and it covers HARD errors only — libvips still
+ * accepts input it can decode with warnings. It is a decode bound, not a
+ * validity oracle; the MIME/format cross-check below is what refuses a file
+ * whose declared type is a lie.
  */
 import 'server-only';
 import sharp from 'sharp';
-import { err, ok } from '@/lib/result';
+import { err, ok, type Result } from '@/lib/result';
 import type { ImageMimeType } from '../application/ports/image-storage-port';
-import type { ImageReencoderPort } from '../application/ports/image-reencoder-port';
+import type {
+  ImageReencodeError,
+  ImageReencoderPort,
+  ReencodedImage,
+} from '../application/ports/image-reencoder-port';
 
-/** Decompression-bomb ceiling — generous for artwork, bounded for memory. */
-const LIMIT_INPUT_PIXELS = 8192 * 8192;
+/**
+ * Decompression-bomb ceiling.
+ *
+ * ROUND-2 R-M4 / S-5 — 4096×4096 (16.7 Mpx), matching
+ * `insights/infrastructure/logo/sharp-logo-adapter.ts`. The previous
+ * 8192×8192 was 67 Mpx: at 4 bytes per pixel that is ~268 MB of decoded
+ * surface for ONE upload, inside a serverless function that also holds the
+ * original bytes and the output buffer. 16.7 Mpx still clears any camera a
+ * member is likely to use.
+ */
+const LIMIT_INPUT_PIXELS = 4096 * 4096;
+
+/**
+ * ROUND-2 R-M4 — wall-clock bound on one re-encode. A decode with no bound can
+ * pin the function for its whole `maxDuration` and take the member's request
+ * with it; a bounded one fails as an outage the member can retry.
+ */
+const REENCODE_TIMEOUT_MS = 15_000;
+
+/** Distinguishes "we gave up waiting" from anything libvips said. */
+class ReencodeTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`reencode timeout after ${ms}ms`);
+    this.name = 'ReencodeTimeoutError';
+  }
+}
+
+/**
+ * ROUND-2 R-M3 — the messages libvips uses for input it cannot decode. A throw
+ * matching this is ABOUT THE BYTES (415 + an unsafe audit row); anything else
+ * is about US (503, no audit).
+ *
+ * `exceeds pixel limit` is in here deliberately: a decompression bomb is a
+ * refusal of the input, and classing it as an outage would tell the caller to
+ * retry an attack.
+ */
+const MALFORMED_INPUT =
+  /unsupported image format|Input buffer contains unsupported image format|VipsJpeg|premature end|corrupt|Input file is missing|exceeds pixel limit/i;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new ReencodeTimeoutError(ms)), ms);
+  });
+  return Promise.race([p, bound]).finally(() => clearTimeout(timer));
+}
 
 /** What `sharp.metadata().format` reports, per accepted MIME. */
 const EXPECTED_FORMAT: Record<ImageMimeType, string> = {
@@ -45,53 +98,74 @@ function sanitiseReason(raw: unknown): string {
   return s.length > 200 ? s.slice(0, 200) + '…' : s;
 }
 
+async function doReencode(
+  bytes: Uint8Array,
+  mime: ImageMimeType,
+): Promise<Result<ReencodedImage, ImageReencodeError>> {
+  // `animated` is harmless for the still formats and is what keeps a GIF
+  // a GIF; WebP can be animated too, so it gets the same treatment.
+  const animated = mime === 'image/gif' || mime === 'image/webp';
+  const pipeline = sharp(Buffer.from(bytes), {
+    limitInputPixels: LIMIT_INPUT_PIXELS,
+    failOn: 'error',
+    animated,
+  });
+
+  const meta = await pipeline.metadata();
+  // Fail-closed on a MIME/content mismatch: the declared type is what the
+  // allowlist, the blob key extension and the recipient's mail client all
+  // act on, so a JPEG declared as image/png must not be stored as .png.
+  if (meta.format !== EXPECTED_FORMAT[mime]) {
+    return err({
+      kind: 'decode_failed',
+      reason: `declared ${mime} but decoded as ${String(meta.format ?? 'unknown')}`,
+    });
+  }
+
+  // No resize, no `keepMetadata()` / `withMetadata()` → EXIF (incl. GPS),
+  // XMP, IPTC and ICC are all dropped. `.rotate()` bakes the orientation
+  // in first so dropping the tag cannot turn the picture on its side.
+  //
+  // ROUND-2 S-5 — but NOT when the decode is animated. With `{ animated: true }`
+  // libvips presents the frames as one tall strip, and `.rotate()` turns the
+  // STRIP: an orientation tag on an animated WebP would produce a sideways,
+  // smeared banner instead of a rotated animation. An animated image has no
+  // meaningful orientation tag to honour, so skipping it loses nothing.
+  const oriented = animated ? pipeline : pipeline.rotate();
+
+  let outBuf: Buffer;
+  switch (mime) {
+    case 'image/png':
+      outBuf = await oriented.png({ compressionLevel: 9 }).toBuffer();
+      break;
+    case 'image/jpeg':
+      outBuf = await oriented.jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+      break;
+    case 'image/webp':
+      outBuf = await oriented.webp({ quality: 90 }).toBuffer();
+      break;
+    case 'image/gif':
+      outBuf = await oriented.gif().toBuffer();
+      break;
+  }
+
+  return ok({ bytes: new Uint8Array(outBuf), mime });
+}
+
 export const sharpImageReencoder: ImageReencoderPort = {
   async reencode(bytes, mime) {
     try {
-      // `animated` is harmless for the still formats and is what keeps a GIF
-      // a GIF; WebP can be animated too, so it gets the same treatment.
-      const animated = mime === 'image/gif' || mime === 'image/webp';
-      const pipeline = sharp(Buffer.from(bytes), {
-        limitInputPixels: LIMIT_INPUT_PIXELS,
-        failOn: 'error',
-        animated,
-      });
-
-      const meta = await pipeline.metadata();
-      // Fail-closed on a MIME/content mismatch: the declared type is what the
-      // allowlist, the blob key extension and the recipient's mail client all
-      // act on, so a JPEG declared as image/png must not be stored as .png.
-      if (meta.format !== EXPECTED_FORMAT[mime]) {
-        return err({
-          kind: 'decode_failed',
-          reason: `declared ${mime} but decoded as ${String(meta.format ?? 'unknown')}`,
-        });
-      }
-
-      // No resize, no `keepMetadata()` / `withMetadata()` → EXIF (incl. GPS),
-      // XMP, IPTC and ICC are all dropped. `.rotate()` bakes the orientation
-      // in first so dropping the tag cannot turn the picture on its side.
-      const oriented = pipeline.rotate();
-
-      let outBuf: Buffer;
-      switch (mime) {
-        case 'image/png':
-          outBuf = await oriented.png({ compressionLevel: 9 }).toBuffer();
-          break;
-        case 'image/jpeg':
-          outBuf = await oriented.jpeg({ quality: 90, mozjpeg: true }).toBuffer();
-          break;
-        case 'image/webp':
-          outBuf = await oriented.webp({ quality: 90 }).toBuffer();
-          break;
-        case 'image/gif':
-          outBuf = await oriented.gif().toBuffer();
-          break;
-      }
-
-      return ok({ bytes: new Uint8Array(outBuf), mime });
+      return await withTimeout(doReencode(bytes, mime), REENCODE_TIMEOUT_MS);
     } catch (e) {
-      return err({ kind: 'decode_failed', reason: sanitiseReason(e) });
+      // ROUND-2 R-M3 — classify. Only a message libvips uses for input it
+      // cannot decode is the member's fault; everything else (OOM, a missing
+      // native binding, our own timeout) is ours, and recording it as
+      // `broadcast_image_unsafe` would put a false statement in the audit log.
+      const reason = sanitiseReason(e);
+      if (e instanceof ReencodeTimeoutError || !MALFORMED_INPUT.test(reason)) {
+        return err({ kind: 'reencoder_unavailable', reason });
+      }
+      return err({ kind: 'decode_failed', reason });
     }
   },
 };

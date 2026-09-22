@@ -62,6 +62,26 @@ export interface BroadcastImagesRepo {
     tx: BroadcastImagesTx,
   ): Promise<readonly BroadcastImageRecord[]>;
   /**
+   * ROUND-2 R-M1 — the same stamp for MANY owners of one kind, in ONE
+   * statement.
+   *
+   * The daily prune used to call `markDeletedByOwner` once per pruned draft,
+   * all inside the DELETE's single transaction: N round-trips and N row-lock
+   * sets held open for as long as the slowest one. With a bounded DELETE batch
+   * the stamp has to be bounded the same way — one `WHERE owner_id = ANY(…)`
+   * per batch.
+   *
+   * An empty `ownerIds` is a no-op returning `[]` (never a statement that
+   * matches everything).
+   */
+  markDeletedByOwners(
+    tenantId: TenantSlug,
+    ownerKind: BroadcastImageOwnerKind,
+    ownerIds: readonly string[],
+    at: Date,
+    tx: BroadcastImagesTx,
+  ): Promise<readonly BroadcastImageRecord[]>;
+  /**
    * F119 review finding F2-2 — stamp `deleted_at` on every live image of every
    * broadcast the member ORIGINATED, in ONE update, for the Art. 17 / PDPA §33
    * erasure cascade. Returns the rows stamped so the caller audits each.
@@ -121,6 +141,14 @@ export interface BroadcastImagesRepo {
    * short-circuited on blob EXISTENCE (the dedup probe asks storage, not the
    * database) and inserted a live row. Result: a live row pointing at a 404.
    *
+   * ROUND-2 R-H2 — the lock alone does NOT close that window, and an earlier
+   * version of this docblock claimed it did. The upload's dedup probe and its
+   * PUT both happen ABOVE this lock, so a complete sweep pass for the same
+   * hash still fits between them. `recordImage` therefore re-asks
+   * `existsByContentHash` while holding this lock and re-PUTs the bytes when
+   * they are gone (content-addressed key → idempotent). The lock is what makes
+   * that re-check meaningful; it is not a substitute for it.
+   *
    * `broadcasts-image:` is a NEW sub-namespace. The three existing advisory
    * namespaces mean different things and are deliberately disjoint —
    * `invoicing:` is §87 gap-free numbering, `payments:` is a per-invoice
@@ -142,6 +170,22 @@ export interface BroadcastImagesRepo {
    * removed (its own reference is gone) but the BYTES stay.
    */
   isBlobReferencedByContent(tenantId: TenantSlug, blobUrl: string, tx: BroadcastImagesTx): Promise<boolean>;
+  /**
+   * ROUND-2 S-3 — clear `deleted_at` on one row, putting it back in the LIVE
+   * set.
+   *
+   * The sweep's `sweep_referenced` arm used to keep the bytes and remove the
+   * row anyway. A removed row is reachable by nothing afterwards: not the
+   * marked arm (nothing to stamp), not the orphan arm (nothing to anti-join),
+   * not the Art. 17 / §33 erasure cascade (which stamps rows). The blob went
+   * on being served with no handle left on it.
+   *
+   * Un-stamping keeps the handle. The row is a truthful record either way —
+   * live content still embeds this blob, so the reference genuinely is not
+   * gone. When that content goes, the next tick's orphan arm (or a fresh
+   * stamp) reaches it again.
+   */
+  restoreLive(tenantId: TenantSlug, imageId: string, tx: BroadcastImagesTx): Promise<void>;
   /** Hard-delete one row (after its blob is gone or kept by reference). */
   remove(tenantId: TenantSlug, imageId: string, tx: BroadcastImagesTx): Promise<void>;
 }

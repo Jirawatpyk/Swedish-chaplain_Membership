@@ -2041,6 +2041,50 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_image_reencode_failed_total{tenant,kind}` — ROUND-2 R-M3. One
+   * per inline-image upload the EXIF-strip re-encoder refused or could not
+   * run.
+   *
+   * `kind` is the only thing that separates two very different events that
+   * used to look identical: `decode_failed` is the member's bytes (415, and a
+   * `broadcast_image_unsafe` audit row), `reencoder_unavailable` is ours
+   * (503, no audit — nothing is known about the bytes). Any sustained
+   * `reencoder_unavailable` rate is an outage signal, not a security one.
+   */
+  imageReencodeFailed(tenantId: string, kind: 'decode_failed' | 'reencoder_unavailable'): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_image_reencode_failed_total',
+        'Inline-image EXIF-strip re-encode failures, split by whose fault it is',
+      ).add(1, { tenant: tenantId, kind });
+    });
+  },
+
+  /**
+   * `broadcasts_image_sweep_retained_total{tenant}` — ROUND-2 S-3. One per
+   * image row the daily blob sweep RETAINED: its own reference is gone, but
+   * live content (a `body_html` / `body_source` / template body) still embeds
+   * the blob URL, so the bytes stay and the row is put back in the live set
+   * rather than removed. A row removed here would be reachable by nothing
+   * afterwards — not the marked arm, not the orphan arm, not the erasure
+   * cascade.
+   *
+   * Reading it: a small steady rate is normal for pre-0304 images (never
+   * backfilled, so they are referenced by HTML with no row of their own). A
+   * rate that keeps CLIMBING means retained rows are accumulating in the
+   * orphan arm's bounded batch and can starve genuine orphans — look at why
+   * the referencing content is not going away.
+   */
+  imageSweepRetained(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_image_sweep_retained_total',
+        'Image rows the blob sweep retained because live content still embeds the URL',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts.cron.dispatched.count{tenant}` — scheduled-send cron
    * throughput.
    */

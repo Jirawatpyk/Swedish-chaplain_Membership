@@ -192,7 +192,10 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
         { tenantId: tenant.ctx.slug as never, now: new Date(), requestId: sweepRequestId },
       );
       expect(swept.ok).toBe(true);
-      expect(storage.deleted).toEqual([uploaded.value.blobUrl.split(`${HOST}/`)[1]]);
+      // ROUND-2 (LOW) — `toContain`, not `toEqual`: the sweep is tenant-wide
+      // and `storage` is shared across the cases in this file, so an exact
+      // array here asserts test ORDERING rather than this blob's fate.
+      expect(storage.deleted).toContain(uploaded.value.blobUrl.split(`${HOST}/`)[1]);
       expect(await countImages(tenant, broadcastId)).toBe(0);
       const sweepAudits = await imageAudits(tenant, sweepRequestId);
       expect(sweepAudits.some((p) => p['reason'] === 'sweep' && p['blob_deleted'] === true)).toBe(true);
@@ -201,7 +204,7 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
   );
 
   it(
-    'F2-10(b): a blob still embedded in live body_html keeps its BYTES; only the row goes',
+    'S-3: a blob still embedded in live body_html keeps its BYTES *and* its row, un-stamped and still reachable',
     async () => {
       const storage = makeStorage();
       const ownerId = randomUUID();
@@ -244,15 +247,27 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
       );
 
       const sweepRequestId = `ref-sweep-${randomUUID().slice(0, 8)}`;
-      await reclaimOrphanedImages(
+      const swept = await reclaimOrphanedImages(
         { imagesRepo: drizzleBroadcastImagesRepo, storage, audit: f7AuditAdapter },
         { tenantId: tenant.ctx.slug as never, now: new Date(), requestId: sweepRequestId },
       );
 
-      expect(storage.deleted).toEqual([]);
-      expect(await countImages(tenant, ownerId)).toBe(0);
+      expect(storage.deleted).not.toContain(uploaded.value.blobUrl.split(`${HOST}/`)[1]);
+      // ROUND-2 S-3 — the row SURVIVES. Removing it made this image reachable
+      // by nothing afterwards (no row to stamp, nothing to anti-join, nothing
+      // for the erasure cascade), while the blob went on being served.
+      expect(await countImages(tenant, ownerId)).toBe(1);
+      if (swept.ok) expect(swept.value.retained).toBeGreaterThanOrEqual(1);
+      // And it is LIVE again, so the orphan arm and a future erasure can still
+      // reach it once the referencing draft is gone.
+      const live = (await db.execute(sql`
+        SELECT (deleted_at IS NULL) AS live FROM broadcast_images
+         WHERE tenant_id = ${tenant.ctx.slug} AND owner_id = ${ownerId}::uuid
+      `)) as unknown as Array<{ live: boolean }>;
+      expect(live.map((r) => r.live)).toEqual([true]);
+      // Nothing was removed, so no row claims it was.
       const audits = await imageAudits(tenant, sweepRequestId);
-      expect(audits.some((p) => p['reason'] === 'sweep_referenced' && p['blob_deleted'] === false)).toBe(true);
+      expect(audits.some((p) => p['image_id'] === uploaded.value.imageId)).toBe(false);
     },
     180_000,
   );

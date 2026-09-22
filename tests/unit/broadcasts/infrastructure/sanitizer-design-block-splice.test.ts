@@ -106,6 +106,35 @@ describe('design-block splice — a marker attribute can never break out of its 
     expect(doc.querySelector('a')?.textContent).toBe('Join <img src=q onerror=alert(1)>');
   });
 
+  /**
+   * ROUND-2 T-1 (security sign-off). The CTA arm of `findBlockMarkers` spans
+   * from the opening `<a …>` to the matching `</a>`, so the question is not
+   * only whether an attribute can carry a raw `>` — it is whether a NESTED
+   * element's attribute can close the anchor EARLY. An `alt` on an `<img>`
+   * inside the CTA is the reachable place for that: it is user text, it is in
+   * DOMPurify's URI-safe set, and it lives inside the span the splice rewrites.
+   *
+   * Mutation-sighted: temporarily removing the `<`/`>` strip from
+   * `installBroadcastSanitizerHooks` makes this case fail. Pasted RED below.
+   */
+  it('a CTA whose nested img alt carries </a> cannot close the anchor early', () => {
+    const raw =
+      '<a data-eb="cta" href="https://x.example/">hi' +
+      '<img alt="&lt;/a&gt;&lt;img src=q onerror=alert(1)&gt;" src="https://blob.example.com/a.png">' +
+      '</a>';
+
+    const out = pipeline(raw);
+    const doc = parsed(out);
+
+    expect(handlerAttributes(doc)).toEqual([]);
+    // The CTA arm drops nested markup and renders its TEXT, so the inner image
+    // does not survive at all — and neither does the injected one.
+    expect(doc.querySelectorAll('img')).toHaveLength(0);
+    // Nothing anywhere in the delivered markup carries an unescaped angle
+    // bracket inside an attribute value.
+    expect(out).not.toMatch(/(?:alt|href)="[^"]*[<>]/);
+  });
+
   it('a plain (non-block) image with a hostile alt is left alone and still carries no raw tag', () => {
     const raw =
       '<img alt="x&gt;&lt;img src=q onerror=alert(1)&gt;" src="https://blob.example.com/a.png">';

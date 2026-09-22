@@ -29,9 +29,9 @@ import type { BroadcastsContentScrubPort } from '../../application/ports/broadca
  */
 export const noopBroadcastsContentScrubAdapter: BroadcastsContentScrubPort = {
   async scrubContentForMember() {
-    // The `'ok'` variant of the discriminated union REQUIRES both counts;
-    // a no-op scrubbed/tombstoned nothing.
-    return { outcome: 'ok', scrubbedCount: 0, tombstonedCount: 0 };
+    // The `'ok'` variant of the discriminated union REQUIRES every count;
+    // a no-op scrubbed, tombstoned and stamped nothing.
+    return { outcome: 'ok', scrubbedCount: 0, tombstonedCount: 0, imagesMarked: 0 };
   },
 };
 
@@ -81,6 +81,8 @@ export const f7BroadcastsContentScrubAdapter: BroadcastsContentScrubPort = {
         outcome: 'ok',
         scrubbedCount: result.value.scrubbedCount,
         tombstonedCount: result.value.tombstonedCount,
+        // ROUND-2 P-M2 — the image axis, carried through to the erasure proof.
+        imagesMarked: result.value.imagesMarked,
       };
     } catch (e) {
       // Defensive: the use-case is never-throws, but a throw at the

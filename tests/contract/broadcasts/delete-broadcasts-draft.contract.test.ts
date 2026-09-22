@@ -17,7 +17,9 @@ import { NextRequest } from 'next/server';
 const requireMemberContextMock = vi.fn();
 const findByIdMock = vi.fn();
 const markOwnerImagesRemovedMock = vi.fn(async () => 2);
-const executeMock = vi.fn(async () => undefined);
+// The DELETE now says `RETURNING broadcast_id`; one row back = the draft was
+// really deleted by THIS statement.
+const executeMock = vi.fn(async (): Promise<unknown> => [{ broadcast_id: DRAFT }]);
 
 vi.mock('@/lib/member-context', () => ({
   requireMemberContext: (...args: unknown[]) => requireMemberContextMock(...args),
@@ -34,8 +36,14 @@ vi.mock('@/modules/broadcasts', () => ({
     /^[0-9a-f-]{36}$/i.test(id) ? { ok: true, value: id } : { ok: false, error: 'bad' },
   makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
   markOwnerImagesRemoved: (...args: unknown[]) => markOwnerImagesRemovedMock(...(args as [])),
-  drizzleBroadcastImagesRepo: { __repo: true },
-  f7AuditAdapter: { __audit: true },
+  // ROUND-2 (LOW) — the route composes through the module factory now, not by
+  // importing `drizzleBroadcastImagesRepo` + `f7AuditAdapter` itself
+  // (Presentation → Infrastructure, Principle III).
+  makeMarkOwnerImagesRemovedDeps: (tenantId: string) => ({
+    __tenantId: tenantId,
+    imagesRepo: { __repo: true },
+    audit: { __audit: true },
+  }),
 }));
 
 const DRAFT = '11111111-1111-1111-1111-111111111111';
@@ -114,6 +122,22 @@ describe('DELETE /api/broadcasts/draft/[id] — F2-1 image stamping', () => {
     expect((await DELETE(req(), params())).status).toBe(409);
     expect(markOwnerImagesRemovedMock).not.toHaveBeenCalled();
     expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  // ROUND-2 R-H1 (data loss). `findById` reads the status OUTSIDE the tx. A
+  // concurrent submit lands between that read and the DELETE, so the
+  // `AND status = 'draft'` predicate matches 0 rows — and the old code went on
+  // to stamp EVERY image of the now-SUBMITTED broadcast anyway. The sweep then
+  // deleted their blobs and an approved E-Blast shipped with 404 images.
+  it('the DELETE matching 0 rows (concurrent submit) → 409 and NOTHING is stamped', async () => {
+    executeMock.mockResolvedValueOnce([]);
+    const { DELETE } = await importRoute();
+    const res = await DELETE(req(), params());
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'broadcast_immutable_after_submit' },
+    });
+    expect(markOwnerImagesRemovedMock).not.toHaveBeenCalled();
   });
 
   it('a stamp failure fails the whole request — no 204 over a half-done discard', async () => {

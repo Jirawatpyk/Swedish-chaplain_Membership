@@ -41,14 +41,19 @@
 -- sweep alone reaped orphans, which it did not: it read ONLY rows with
 -- deleted_at IS NOT NULL):
 --   (1) every path that removes an owner stamps deleted_at in the owner's own
---       transaction — draft discard, the daily draft prune, member
---       withdrawal, staff rejection, member erasure;
+--       transaction — draft discard, the daily draft prune and member erasure
+--       ship in PR-1; member withdrawal and staff rejection are PR-2, T081
+--       (NOT yet shipped — this comment described the end state, not the
+--       state at the migration);
 --   (2) the sweep ALSO carries an orphan arm (live rows anti-joined against
 --       broadcasts / broadcast_templates), so a future hard-delete path that
 --       forgets (1) cannot strand a member's bytes at a public blob URL.
 -- A blob is then deleted under the last-reference rule: only when no live row
 -- of either owner_kind shares its content_hash AND no live body_html still
--- embeds the URL.
+-- embeds the URL. When that reference check says the URL IS still embedded,
+-- the row is KEPT and un-stamped rather than removed (ROUND-2 S-3): a removed
+-- row would be reachable by neither sweep arm nor the erasure cascade, while
+-- the blob went on being served.
 -- NOT backfilled — images uploaded before 0304 have no row. They are never
 -- swept, and that body_html reference check is what stops a later dedup row
 -- from deleting them out from under a live E-Blast (recorded, not guessed).

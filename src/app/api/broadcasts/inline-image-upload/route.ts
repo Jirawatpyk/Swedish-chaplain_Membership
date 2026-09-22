@@ -29,7 +29,10 @@ import { requireMemberContext } from '@/lib/member-context';
 import { f71aUs2DisabledReason, isF71aUs2Enabled, parseBroadcastId } from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
-// ClamAV scan + Blob upload can take 5-10 s at the 5 MB cap.
+// ClamAV scan + EXIF-strip re-encode + Blob upload. At the 5 MB cap the scan
+// and the upload run 5-10 s between them, and the re-encode has its own 15 s
+// wall-clock bound (ROUND-2 R-M4 — an unbounded libvips decode could otherwise
+// consume this whole budget and take the member's request with it).
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

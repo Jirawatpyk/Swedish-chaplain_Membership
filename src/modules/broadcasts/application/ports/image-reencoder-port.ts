@@ -41,17 +41,43 @@ export interface ReencodedImage {
   readonly mime: ImageMimeType;
 }
 
-export type ImageReencodeError = {
-  /**
-   * The bytes could not be decoded as an image at all (a renamed executable, a
-   * truncated upload, a format `sharp` was not built with). Fail-closed: the
-   * caller refuses the upload rather than storing bytes whose metadata it
-   * could not inspect.
-   */
-  readonly kind: 'decode_failed';
-  /** Bounded, already-truncated reason for the log — never raw user content. */
-  readonly reason: string;
-};
+/**
+ * ROUND-2 R-M3 — TWO kinds, because they are two different events and they
+ * were being recorded as one.
+ *
+ * Everything the adapter threw used to come back as `decode_failed`, and the
+ * caller answers that with a 415 plus a `broadcast_image_unsafe
+ * { reason: 'reencode_failed' }` audit row. A libvips OOM, a missing native
+ * binding or a hung decode is a SERVER fault, and writing it down as "the
+ * member uploaded something unsafe" is the audit-truth class this repo guards
+ * elsewhere: a row must not state something its subject did not do. It also
+ * gave the member a permanent 415 for a transient outage.
+ */
+export type ImageReencodeError =
+  | {
+      /**
+       * The bytes could not be decoded as an image at all (a renamed
+       * executable, a truncated upload, a decompression bomb over the pixel
+       * ceiling, a format `sharp` was not built with). Fail-closed: the caller
+       * refuses the upload rather than storing bytes whose metadata it could
+       * not inspect. This IS about the input, so it is the member's answer:
+       * 415, and a security-relevant audit row.
+       */
+      readonly kind: 'decode_failed';
+      /** Bounded, already-truncated reason for the log — never raw user content. */
+      readonly reason: string;
+    }
+  | {
+      /**
+       * The re-encoder could not run: out of memory, native binding missing,
+       * or the decode exceeded its wall-clock bound. Nothing is known about the
+       * bytes. The caller answers 503 (`storage_unavailable`-class) and emits
+       * NO unsafe audit — there is no evidence of anything unsafe.
+       */
+      readonly kind: 'reencoder_unavailable';
+      /** Bounded, already-truncated reason for the log — never raw user content. */
+      readonly reason: string;
+    };
 
 export interface ImageReencoderPort {
   reencode(

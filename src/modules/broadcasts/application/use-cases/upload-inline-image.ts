@@ -42,7 +42,9 @@
  */
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { asHostname } from '../../domain/value-objects/image-source-allowlist';
 import { safeAuditEmit } from './_safe-audit-emit';
 import type {
@@ -224,6 +226,30 @@ export async function uploadInlineImage(
   // describe the bytes that are actually stored).
   const reencoded = await deps.reencoder.reencode(input.fileBytes as Uint8Array, mime);
   if (!reencoded.ok) {
+    broadcastsMetrics.imageReencodeFailed(
+      input.tenantId as unknown as string,
+      reencoded.error.kind,
+    );
+    // ROUND-2 R-M3 — an OUTAGE is not a verdict about the member's file.
+    // Every throw out of the adapter used to arrive here as `decode_failed`,
+    // so a libvips OOM or a hung decode gave the member a permanent 415 AND
+    // wrote `broadcast_image_unsafe` into the audit log — a statement about
+    // something they did not do. Nothing is known about these bytes, so
+    // nothing is recorded about them; the member gets the 503 class and can
+    // retry.
+    if (reencoded.error.kind === 'reencoder_unavailable') {
+      logger.error(
+        {
+          err: reencoded.error.kind,
+          tenantId: input.tenantId,
+          ownerKind: input.owner.kind,
+          mime,
+          requestId: input.requestId,
+        },
+        'broadcasts.uploadInlineImage.reencoder_unavailable',
+      );
+      return err({ kind: 'storage_unavailable', reason: reencoded.error.reason });
+    }
     // Fail-closed: bytes we cannot decode are bytes whose metadata we cannot
     // strip. Mapped onto the existing `invalid_mime` class — from the
     // member's side "this is not an image we can accept" is the same answer.
@@ -310,6 +336,8 @@ export async function uploadInlineImage(
         blobKey: existing.blobKey,
         mime,
         sizeBytes: storedSizeBytes,
+        bytes: storedBytes,
+        sanitisedFilename,
       });
       return ok({
         blobUrl: existing.blobUrl,
@@ -346,7 +374,7 @@ export async function uploadInlineImage(
     ) {
       logger.error(
         {
-          err: msg,
+          err: errKind(e),
           tenantId: input.tenantId,
           contentHash,
           mime,
@@ -372,6 +400,8 @@ export async function uploadInlineImage(
     blobKey,
     mime,
     sizeBytes: storedSizeBytes,
+    bytes: storedBytes,
+    sanitisedFilename,
   });
   return ok({ blobUrl, allowlistedHostname: hostname, contentHash, imageId });
 }
@@ -394,6 +424,9 @@ async function recordImage(
     readonly blobKey: string;
     readonly mime: ImageMimeType;
     readonly sizeBytes: number;
+    /** ROUND-2 R-H2 — the stored bytes, for the re-PUT under the lock. */
+    readonly bytes: Uint8Array;
+    readonly sanitisedFilename: string;
   },
 ): Promise<string> {
   return deps.imagesRepo.withTx(input.tenantId, async (tx) => {
@@ -403,6 +436,41 @@ async function recordImage(
     // the window between the sweep counting 0 live rows and deleting the
     // blob: a live row pointing at a 404. Held to the end of this tx.
     await deps.imagesRepo.lockContentHash(input.tenantId, stored.contentHash, tx);
+
+    // ROUND-2 R-H2 — the lock closes the window from HERE onwards, but the
+    // dedup probe and the PUT both happened ABOVE it. A whole sweep pass for
+    // this same hash (lock → count 0 → delete the blob → remove the row →
+    // commit) fits in that gap, and the row we are about to insert would then
+    // point at bytes that no longer exist. So, holding the lock the sweep also
+    // needs, ask storage again and put the bytes back if they are gone. The
+    // blob key is content-addressed, so the PUT is idempotent — and
+    // `existsByContentHash` is documented as allowed to answer a false `null`
+    // (cache-cold), which makes a spurious re-PUT the only way this can be
+    // wrong. That is the safe direction.
+    const stillStored = await deps.storage.existsByContentHash(
+      input.tenantId,
+      stored.contentHash,
+      stored.mime,
+    );
+    if (stillStored === null) {
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          contentHash: stored.contentHash,
+          mime: stored.mime,
+          requestId: input.requestId,
+        },
+        'broadcasts.uploadInlineImage.blob_reclaimed_under_lock_reput',
+      );
+      await deps.storage.put({
+        tenantId: input.tenantId,
+        bytes: stored.bytes,
+        contentHash: stored.contentHash,
+        mimeType: stored.mime,
+        sanitisedFilename: stored.sanitisedFilename,
+      });
+    }
+
     const row = await deps.imagesRepo.record(
       input.tenantId,
       {
@@ -462,7 +530,7 @@ async function ensureBlobHostAllowlisted(
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId,
         hostname,
       },

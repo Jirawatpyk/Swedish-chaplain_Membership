@@ -472,10 +472,19 @@ export interface BroadcastsRepo {
    * including by the erasure cascade. Omitting `tx` keeps the old behaviour of
    * opening one.
    */
+  /**
+   * ROUND-2 R-M1 — `limit` bounds ONE statement. The DELETE was unqualified,
+   * so a tenant with a backlog held row locks on every expired draft for the
+   * length of one transaction (and the caller then issued one image-stamp
+   * UPDATE per draft inside it). The adapter selects the oldest `limit` drafts
+   * and the caller loops until a short batch or its time budget. Omitting it
+   * falls back to the adapter's own bound — never to "all of them".
+   */
   pruneExpiredDrafts(
     tenantId: TenantSlug,
     olderThan: Date,
     tx?: unknown | null,
+    limit?: number,
   ): Promise<{
     readonly prunedCount: number;
     readonly prunedDrafts: readonly {

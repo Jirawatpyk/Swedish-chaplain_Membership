@@ -88,24 +88,41 @@ export async function auditImagesRemoved(
   images: readonly { readonly id: string; readonly ownerKind: string; readonly ownerId: string; readonly contentHash: string }[],
   tx: BroadcastImagesTx,
 ): Promise<void> {
-  for (const image of images) {
-    await audit.emit(tx, {
-      eventType: 'broadcast_image_removed',
-      tenantId: input.tenantId,
-      requestId: input.requestId,
-      actorUserId: input.actorUserId,
-      summary: `E-Blast image marked for deletion (${input.reason})`,
-      payload: {
-        related_member_id: input.relatedMemberId,
-        owner_kind: image.ownerKind,
-        owner_id: image.ownerId,
-        image_id: image.id,
-        content_hash: image.contentHash,
-        // The row is marked here; the bytes go on the next daily sweep.
-        blob_deleted: false,
-        reason: input.reason,
-        actor_role: input.actorRole,
-      },
-    });
+  if (images.length === 0) return;
+
+  const events = images.map((image) => ({
+    eventType: 'broadcast_image_removed' as const,
+    tenantId: input.tenantId,
+    requestId: input.requestId,
+    actorUserId: input.actorUserId,
+    summary: `E-Blast image marked for deletion (${input.reason})`,
+    payload: {
+      related_member_id: input.relatedMemberId,
+      owner_kind: image.ownerKind,
+      owner_id: image.ownerId,
+      image_id: image.id,
+      content_hash: image.contentHash,
+      // The row is marked here; the bytes go on the next daily sweep.
+      blob_deleted: false,
+      reason: input.reason,
+      actor_role: input.actorRole,
+    },
+  }));
+
+  // ROUND-2 R-M6 — one statement when the port offers one. A long-standing
+  // member's erasure stamps dozens of images, and each emit was a separate
+  // round-trip issued INSIDE the erasure transaction, which is already holding
+  // the member row and every other cascade write open for its whole length.
+  //
+  // `emitMany` is OPTIONAL on the port (it is annotated at ~196 sites, mostly
+  // doubles), so the per-row loop stays as the fallback. Both arms write the
+  // same rows in the same order on the same `tx`.
+  const emitMany = audit.emitMany;
+  if (emitMany !== undefined) {
+    await emitMany.call(audit, tx, events);
+    return;
+  }
+  for (const event of events) {
+    await audit.emit(tx, event);
   }
 }

@@ -307,6 +307,7 @@ export {
   makeDispatchScheduledBroadcastDeps,
   makeBuildAudienceTickDeps,
   makePruneExpiredDraftsDeps,
+  makeMarkOwnerImagesRemovedDeps,
   makeCancelInFlightBroadcastsForMemberDeps,
   makeScrubBroadcastContentForMemberDeps,
 } from './infrastructure/broadcasts-deps';

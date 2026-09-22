@@ -360,11 +360,17 @@ export interface F7AuditPayloadShapes {
     readonly probedMemberId: string;
     readonly probedBroadcastId: string;
     /**
-     * F119 F2-5 — which surface refused the probe (`image_upload`,
-     * `snapshot_template`, …). Optional: the pre-F119 emit sites omit it.
-     * Bounded-cardinality literal, never free text.
+     * F119 F2-5 — which surface refused the probe. Optional: the pre-F119 emit
+     * sites omit it.
+     *
+     * ROUND-2 (LOW) — the LITERAL UNION, not `string`. The docblock already
+     * said "bounded-cardinality literal, never free text"; the type said
+     * otherwise, so nothing stopped a future emit site from putting a value
+     * (or an id) in here and blowing up the label cardinality of anything that
+     * groups on it. The comment is now the type. A new surface adds its member
+     * here.
      */
-    readonly operation?: string;
+    readonly operation?: 'image_upload' | 'snapshot_template';
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;
@@ -427,6 +433,18 @@ export interface F7AuditPayloadShapes {
      * themselves survive, email-keyed). A third axis of erasure work.
      */
     readonly suppression_refs_severed: number;
+    /**
+     * ROUND-2 P-M2 — inline images of the member's E-Blasts whose `deleted_at`
+     * was stamped by this cascade (their BYTES go on the next daily sweep,
+     * under the last-reference rule).
+     *
+     * A fourth axis, and the one most easily missed: redacting `body_html`
+     * removes the POINTER to the member's uploaded photograph, not the file,
+     * which is why F2-2 added the stamp at all. The attestation is the single
+     * row an auditor reads to see what the cascade reached, so leaving this
+     * count out of it made that axis invisible in the evidence.
+     */
+    readonly images_marked: number;
     readonly reason:
       | 'originator_member_deleted'
       | 'gdpr_erasure_request'
@@ -552,6 +570,25 @@ export interface AuditPort {
     tx: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void>;
+  /**
+   * ROUND-2 R-M6 — N audit rows in ONE statement, on the caller's `tx`.
+   *
+   * The erasure cascade stamps every inline image the erased member ever
+   * uploaded and audits each one. A long-standing member can have dozens, and
+   * each `emit` was a separate round-trip issued INSIDE the erasure
+   * transaction — which is already holding the member row and every other
+   * cascade write open for its whole length. One multi-row INSERT is the same
+   * evidence at one round-trip.
+   *
+   * OPTIONAL, deliberately. `AuditPort` is annotated at ~196 sites, mostly
+   * test doubles; making this required would fail `tsc` in every one of them
+   * for a purely performance-shaped addition. Callers that want it use
+   * `audit.emitMany?.(…)` and fall back to a per-row loop — see
+   * `auditImagesRemoved`. Semantics are identical to N `emit` calls: all-or-
+   * nothing with the caller's transaction, same rows, same order. An empty
+   * array is a no-op.
+   */
+  emitMany?(tx: unknown, events: readonly AuditEmitInput[]): Promise<void>;
 }
 
 /**

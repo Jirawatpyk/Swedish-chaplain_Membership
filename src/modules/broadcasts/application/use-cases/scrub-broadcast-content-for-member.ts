@@ -259,6 +259,10 @@ export async function scrubBroadcastContentForMember(
           // 108 PR-C T104 — suppression rows whose back-references were
           // nulled (rows retained). A count, never an address.
           suppression_refs_severed: sever.affected,
+          // ROUND-2 P-M2 — the image axis, in the same attestation row. The
+          // bytes go on the next daily sweep; this count is the evidence that
+          // the references are gone.
+          images_marked: stampedImages.length,
           reason,
           // Forensic join key: same `cascade` tag the completion/
           // failure logs carry, so the audit row correlates with the

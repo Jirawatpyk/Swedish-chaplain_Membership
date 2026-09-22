@@ -110,6 +110,36 @@ describe('parseBlockMarkers — property: any attribute order parses to the same
     );
   });
 
+  /**
+   * ROUND-2 T-5 (security sign-off). The banner arm got the angle-bracket
+   * property after F1-1; the CTA arm did not, and it is the arm with a CLOSING
+   * tag — so a value that cuts `OPEN_TAG` short there ends the span inside the
+   * element just the same, and `applyDesignBlocks` re-emits the tail as raw
+   * markup in the delivered email. Same invariant, same generator.
+   */
+  it('a CTA whose href seeds angle brackets is refused outright, never parsed short', () => {
+    const PREFIX = '<h2>t</h2>';
+    fc.assert(
+      fc.property(rawAttr, fc.nat(), (href, seed) => {
+        const element = ctaHtml(href, 'Go', seed);
+        const spans = findBlockMarkers(`${PREFIX}${element}<p>x</p>`);
+        expect(spans.length).toBeLessThanOrEqual(1);
+        if (spans.length === 1) {
+          // The span covers the WHOLE anchor, opening tag through `</a>`.
+          expect(spans[0]!.start).toBe(PREFIX.length);
+          expect(spans[0]!.end).toBe(PREFIX.length + element.length);
+          expect(spans[0]!.block).toEqual({ kind: 'cta', href, text: 'Go' });
+        }
+        // Free of angle brackets — what the sanitiser hook guarantees in
+        // production — it IS a block.
+        if (!/[<>]/.test(href)) {
+          expect(spans).toHaveLength(1);
+        }
+      }),
+      { numRuns: 300 },
+    );
+  });
+
   it('blocks are returned in document order, with plain links and images ignored', () => {
     const html =
       '<p><a href="https://plain.example/">plain</a></p>' +

@@ -57,6 +57,7 @@ import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-su
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
 import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
 import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expired-drafts';
+import type { MarkOwnerImagesRemovedDeps } from '../application/use-cases/_mark-owner-images-removed';
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
@@ -487,6 +488,28 @@ export function makePruneExpiredDraftsDeps(
     audit: f7AuditAdapter,
     requestId,
     // Defaults to 30 days inside the use-case per FR-001a.
+  };
+}
+
+/**
+ * ROUND-2 (LOW) — composition for the `markOwnerImagesRemoved` helper.
+ *
+ * `DELETE /api/broadcasts/draft/[id]` used to import `drizzleBroadcastImagesRepo`
+ * and `f7AuditAdapter` itself and hand-build this object, which is Presentation
+ * reaching straight into Infrastructure (Principle III). The prune cron already
+ * composes the same two through `makePruneExpiredDraftsDeps`; this is the same
+ * wiring for the one caller that had no factory.
+ *
+ * `tenantId` is accepted (and unused by these two stateless singletons) so the
+ * signature does not have to change if either adapter ever becomes per-tenant.
+ */
+export function makeMarkOwnerImagesRemovedDeps(
+  tenantId: string,
+): MarkOwnerImagesRemovedDeps {
+  void tenantId;
+  return {
+    imagesRepo: drizzleBroadcastImagesRepo,
+    audit: f7AuditAdapter,
   };
 }
 

@@ -26,6 +26,18 @@
  * row to prove it). The row is then removed and `broadcast_image_removed` is
  * audited in the same tx.
  *
+ * RETAINED (ROUND-2 S-3). When live content DOES still embed the URL, the row
+ * is NOT removed — it is un-stamped back into the live set. Removing it made
+ * the image reachable by nothing afterwards: the marked arm has nothing to
+ * stamp, the orphan arm has nothing to anti-join, and the Art. 17 / §33
+ * erasure cascade stamps rows, so the blob kept being served with no handle
+ * left on it. A retained row emits NO audit (nothing was removed — an audit
+ * row saying otherwise is the audit-truth class this repo guards elsewhere);
+ * the durable signal is `broadcasts_image_sweep_retained_total{tenant}` plus
+ * `broadcasts.image_sweep.retained_still_referenced`. Retained ORPHAN rows are
+ * re-examined every tick, which is the point — they stay reachable — but a
+ * climbing `retained` count means they are eating into the bounded batch.
+ *
  * THE LOCK (F2-10(a)). Each per-row transaction takes
  * `pg_advisory_xact_lock` on (tenant, content_hash) BEFORE it counts. The
  * upload path takes the same lock around its insert. Without it the sweep
@@ -42,6 +54,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantSlug } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastImageRecord, BroadcastImagesRepo } from '../ports/broadcast-images-repo';
@@ -65,6 +78,12 @@ export interface ReclaimOrphanedImagesOutput {
   readonly scanned: number;
   readonly blobsDeleted: number;
   readonly rowsRemoved: number;
+  /**
+   * ROUND-2 S-3 — rows the sweep KEPT (and un-stamped) because live content
+   * still embeds their blob URL. `scanned = rowsRemoved + retained + rows that
+   * threw`; a row is never both.
+   */
+  readonly retained: number;
 }
 
 export type ReclaimOrphanedImagesError = {
@@ -72,8 +91,19 @@ export type ReclaimOrphanedImagesError = {
   readonly message: string;
 };
 
-/** Why this row was reaped — the audit's `reason`, one per arm/outcome. */
-type SweepReason = 'sweep' | 'sweep_orphaned' | 'sweep_referenced';
+/**
+ * Why this row was reaped — the audit's `reason`, one per arm.
+ *
+ * ROUND-2 S-3 removed `'sweep_referenced'`: that case no longer reaps
+ * anything, so it emits no audit row at all (see `RowOutcome`).
+ */
+type SweepReason = 'sweep' | 'sweep_orphaned';
+
+/**
+ * What one per-row transaction did. `'retained'` is ROUND-2 S-3: the bytes
+ * AND the row stayed, and the row went back in the live set.
+ */
+type RowOutcome = 'removed_blob_deleted' | 'removed_blob_kept' | 'retained';
 
 export async function reclaimOrphanedImages(
   deps: ReclaimOrphanedImagesDeps,
@@ -102,10 +132,11 @@ export async function reclaimOrphanedImages(
   const deletedBlobKeys = new Set<string>();
   let blobsDeleted = 0;
   let rowsRemoved = 0;
+  let retained = 0;
 
   for (const { image, orphan } of batch) {
     try {
-      const outcome = await deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+      const outcome = await deps.imagesRepo.withTx(input.tenantId, async (tx): Promise<RowOutcome> => {
         // F2-10(a) — BEFORE the count, so an upload of the same file cannot
         // land between the count and the delete.
         await deps.imagesRepo.lockContentHash(input.tenantId, image.contentHash, tx);
@@ -119,20 +150,36 @@ export async function reclaimOrphanedImages(
         );
 
         let blobDeleted = false;
-        let reason: SweepReason = orphan ? 'sweep_orphaned' : 'sweep';
+        const reason: SweepReason = orphan ? 'sweep_orphaned' : 'sweep';
         if (live === 0) {
           // F2-10(b) — pre-0304 blobs have no row but ARE referenced by live
-          // `body_html`. Remove the row, keep the bytes, and say so.
+          // `body_html`.
           const stillReferenced = await deps.imagesRepo.isBlobReferencedByContent(
             input.tenantId,
             image.blobUrl,
             tx,
           );
           if (stillReferenced) {
-            reason = 'sweep_referenced';
+            // ROUND-2 S-3 (PDPA reach) — keep the bytes AND the row. Removing
+            // the row here made the image reachable by nothing afterwards: the
+            // marked arm has nothing to stamp, the orphan arm has nothing to
+            // anti-join, and the Art. 17 / §33 erasure cascade stamps rows. The
+            // blob went on being served with no handle left on it.
+            //
+            // So the row goes back in the LIVE set instead. That is the honest
+            // state: live content still embeds this URL, so its reference is
+            // not gone. When that content goes, the next tick's orphan arm (or
+            // a fresh erasure stamp) reaches it again.
+            //
+            // No `broadcast_image_removed` audit — nothing was removed, and an
+            // audit row claiming otherwise is exactly the audit-truth class
+            // this repo already guards elsewhere. The durable signal is the
+            // metric plus this log line.
+            await deps.imagesRepo.restoreLive(input.tenantId, image.id, tx);
+            return 'retained';
           } else if (deletedBlobKeys.has(image.blobKey)) {
             // An earlier row of THIS batch already reclaimed these bytes.
-            reason = orphan ? 'sweep_orphaned' : 'sweep';
+            // Nothing to do: `blobDeleted` stays false so the count is honest.
           } else {
             // A throw here propagates: the row stays for the next tick.
             await deps.storage.delete(image.blobKey);
@@ -158,10 +205,25 @@ export async function reclaimOrphanedImages(
             actor_role: 'system',
           },
         });
-        return blobDeleted;
+        return blobDeleted ? 'removed_blob_deleted' : 'removed_blob_kept';
       });
+      if (outcome === 'retained') {
+        retained += 1;
+        broadcastsMetrics.imageSweepRetained(input.tenantId as unknown as string);
+        logger.info(
+          {
+            tenantId: input.tenantId,
+            imageId: image.id,
+            contentHash: image.contentHash,
+            orphan,
+            requestId: input.requestId,
+          },
+          'broadcasts.image_sweep.retained_still_referenced',
+        );
+        continue;
+      }
       rowsRemoved += 1;
-      if (outcome) {
+      if (outcome === 'removed_blob_deleted') {
         deletedBlobKeys.add(image.blobKey);
         blobsDeleted += 1;
       }
@@ -172,5 +234,5 @@ export async function reclaimOrphanedImages(
       );
     }
   }
-  return ok({ scanned: batch.length, blobsDeleted, rowsRemoved });
+  return ok({ scanned: batch.length, blobsDeleted, rowsRemoved, retained });
 }

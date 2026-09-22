@@ -40,6 +40,28 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    {`verified_account_login`, `in_person`, `email_confirmation_loop`,
    `official_document`}. Do not proceed on an unverified request.
 
+2a. **PRE-CASCADE — enumerate pre-0304 inline E-Blast image blobs.** Run this
+   **before** step 3, because it reads `body_html` the cascade is about to
+   redact. `broadcast_images` was NOT backfilled by migration 0304, so an image
+   uploaded before 2026-09 has no row and the cascade's image step cannot see
+   it; once the HTML is redacted the blob URL is gone from the database and the
+   file is unreachable by any query. Record the keys on the DSR ticket now,
+   delete them from Vercel Blob by hand after the cascade completes (step 4),
+   and note it as residual (e) in step 7:
+
+   ```sql
+   SELECT broadcast_id, body_html, body_source
+     FROM broadcasts
+    WHERE requested_by_member_id = '<member>'
+      AND (body_html   LIKE '%/broadcasts/images/%'
+        OR body_source LIKE '%/broadcasts/images/%');
+   ```
+
+   Zero rows is the normal result for a member who joined after 2026-09. Any
+   row: extract every `/broadcasts/images/<tenant>/<hash>.<ext>` path from the
+   HTML, put the list on the ticket, and delete those objects from the Blob
+   store after step 4 confirms the cascade completed.
+
 3. **Execute via the admin UI (US3-A).** As an **admin** (the page is admin-only
    — manager/member get 404), open the member at `/admin/members/[memberId]`,
    click **Erase member**, and complete the gated dialog: type-to-confirm the
@@ -72,13 +94,20 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    fired `failed`/`partial` for this member, run the **manual remediation
    procedure** (§ Sub-processor erasure propagation) within the H-1 window.
 
-7. **Acknowledge the out-of-reach copies.** THREE copies cannot be erased by the
+7. **Acknowledge the out-of-reach copies.** FIVE copies cannot be erased by the
    controller and are accepted residuals (§ Documented residuals + the RoPA):
    **(a)** a GDPR-export ZIP the subject **already downloaded** to their own
    device; **(b)** pre-erasure data in **backup / PITR snapshots** (re-erased
-   only on a restore); **(c)** ⚠️ **the Resend "Global Contact" record.**
-   If the DSR specifically asks about these, explain the limitation honestly;
-   they do not block closure of the controller-copy erasure.
+   only on a restore); **(c)** ⚠️ **the Resend "Global Contact" record;**
+   **(d)** an **inline E-Blast image already fetched or cached by a recipient's
+   mail client, mail gateway or image proxy** — the image is served from a
+   public URL and a mail client fetches it on open, so a copy can persist in a
+   recipient's cache or their provider's proxy after the blob is deleted;
+   **(e)** **pre-0304 image blobs** that step 2a found and you deleted by hand —
+   deleted from the Blob store, but never represented by a row, so there is no
+   in-product evidence of the deletion beyond your DSR ticket. If the DSR
+   specifically asks about these, explain the limitation honestly; they do not
+   block closure of the controller-copy erasure.
 
    **(c) is new to this list and it is the one a DSR answer is most likely to get
    wrong** (round 2 R2-2). The cascade calls
@@ -138,19 +167,38 @@ uses must not be deleted out from under it.
    AND one `broadcast_image_removed { reason: 'member_erased' }` per image. Zero
    removal rows with a non-zero `imagesMarked` in the log line is a contradiction
    — escalate.
-2. `SELECT count(*) FROM broadcast_images bi JOIN broadcasts b ON b.broadcast_id = bi.owner_id
-   WHERE b.requested_by_member_id = '<member>' AND bi.deleted_at IS NULL;` must be 0.
+2. The join MUST carry `tenant_id` on both sides — `broadcast_images.owner_id`
+   has no FK and `broadcast_id` is only unique WITHIN a tenant, so a join on
+   the id alone can pair rows across tenants and quietly report the wrong
+   count:
+
+   ```sql
+   SELECT count(*)
+     FROM broadcast_images bi
+     JOIN broadcasts b
+       ON b.broadcast_id = bi.owner_id
+      AND b.tenant_id    = bi.tenant_id
+    WHERE bi.tenant_id = '<tenant>'
+      AND b.requested_by_member_id = '<member>'
+      AND bi.deleted_at IS NULL;
+   ```
+
+   It must be 0.
 3. After the next daily tick, expect a matching `broadcast_image_removed
-   { reason: 'sweep', blob_deleted: true }`. If instead you see
-   `reason: 'sweep_referenced'`, the blob is still embedded in OTHER live content
-   — that is correct behaviour and not an erasure failure, but record it: the
-   bytes survive because another data subject's E-Blast uses the identical file.
+   { reason: 'sweep', blob_deleted: true }`. If instead you see NO sweep row for
+   that image and a non-zero `retained` in the tick summary, the blob is still
+   embedded in OTHER live content — that is correct behaviour and not an erasure
+   failure, but record it: the bytes survive because another data subject's
+   E-Blast uses the identical file. (ROUND-2 S-3: a retained image keeps its
+   row, un-stamped, so it stays reachable by a future sweep — it emits no audit
+   row, because nothing was removed.)
 
 **Known limitation, recorded not guessed.** `broadcast_images` was NOT
 backfilled by migration 0304. An image uploaded BEFORE 0304 has no row, so this
-step cannot find it; it is reachable only by editing the `body_html` that
-references it. If an erasure concerns a member active before 2026-09, check
-their broadcasts' `body_html` for blob URLs by hand.
+step cannot find it; it is reachable only by reading the `body_html` that
+references it — which is why the enumeration is **step 2a, before the cascade
+redacts that HTML**, and why the blobs are residual (e) in step 7.
+
 ---
 
 ## Sub-processor erasure propagation (COMP-1 US3-C)

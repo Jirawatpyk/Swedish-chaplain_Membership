@@ -87,6 +87,26 @@ export function makeFakeBroadcastImagesRepo(seed: readonly BroadcastImageRecord[
       });
       return stamped;
     }),
+    // ROUND-2 R-M1 — the bounded prune batch's single stamp statement.
+    markDeletedByOwners: vi.fn(
+      async (tenantId: never, ownerKind: 'broadcast' | 'template', ownerIds: readonly string[], at: Date, _tx: unknown) => {
+        const stamped: BroadcastImageRecord[] = [];
+        if (ownerIds.length === 0) return stamped;
+        rows.forEach((r, i) => {
+          if (
+            r.tenantId === (tenantId as unknown as string) &&
+            r.ownerKind === ownerKind &&
+            ownerIds.includes(r.ownerId) &&
+            r.deletedAt === null
+          ) {
+            const next = { ...r, deletedAt: at };
+            rows[i] = next;
+            stamped.push(next);
+          }
+        });
+        return stamped;
+      },
+    ),
     listMarked: vi.fn(async (tenantId: never, limit: number) =>
       rows.filter((r) => r.tenantId === (tenantId as unknown as string) && r.deletedAt !== null).slice(0, limit),
     ),
@@ -111,6 +131,12 @@ export function makeFakeBroadcastImagesRepo(seed: readonly BroadcastImageRecord[
     // F2-10(b) — the fake holds no content, so "nothing references it" is the
     // default; a test that wants the referenced branch overrides it.
     isBlobReferencedByContent: vi.fn(async (_tenantId: never, _blobUrl: string, _tx: unknown) => false),
+    // ROUND-2 S-3 — the sweep's `sweep_referenced` arm un-stamps instead of
+    // removing, so the row stays reachable by the erasure + orphan arms.
+    restoreLive: vi.fn(async (tenantId: never, imageId: string, _tx: unknown) => {
+      const i = rows.findIndex((r) => r.tenantId === (tenantId as unknown as string) && r.id === imageId);
+      if (i >= 0) rows[i] = { ...rows[i]!, deletedAt: null };
+    }),
     remove: vi.fn(async (tenantId: never, imageId: string) => {
       const i = rows.findIndex((r) => r.tenantId === (tenantId as unknown as string) && r.id === imageId);
       if (i >= 0) rows.splice(i, 1);

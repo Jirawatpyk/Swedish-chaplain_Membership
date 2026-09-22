@@ -5,7 +5,7 @@
  * never the pool-global `db`, which would bypass RLS + FORCE silently (the
  * F7.1a US2 rule). Drizzle-inferred row types stay inside this file.
  */
-import { and, count, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import type {
@@ -87,6 +87,29 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
           eq(broadcastImages.tenantId, tenantId as string),
           eq(broadcastImages.ownerKind, owner.kind),
           eq(broadcastImages.ownerId, owner.id),
+          isNull(broadcastImages.deletedAt),
+        ),
+      )
+      .returning();
+    return rows.map(toRecord);
+  },
+
+  /**
+   * ROUND-2 R-M1 — one bounded `WHERE owner_id = ANY(…)` per prune batch,
+   * replacing one UPDATE per pruned draft inside a single long transaction.
+   * An empty id list short-circuits: `inArray` with `[]` renders a constant
+   * false, but returning early keeps the intent obvious and saves a round-trip.
+   */
+  async markDeletedByOwners(tenantId, ownerKind, ownerIds, at, tx) {
+    if (ownerIds.length === 0) return [];
+    const rows = await (tx as TenantTx)
+      .update(broadcastImages)
+      .set({ deletedAt: at })
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.ownerKind, ownerKind),
+          inArray(broadcastImages.ownerId, [...ownerIds]),
           isNull(broadcastImages.deletedAt),
         ),
       )
@@ -211,13 +234,20 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
   },
 
   /**
-   * F2-10(a) — `pg_advisory_xact_lock`, released when `tx` ends. `hashtext`
-   * gives the bigint the lock API wants; a collision costs a little
-   * serialisation between two unrelated hashes, never a correctness loss.
+   * F2-10(a) — `pg_advisory_xact_lock`, released when `tx` ends.
+   * `hashtextextended(…, 0)` gives the bigint the lock API wants (the repo-wide
+   * convention — `hashtext` returns int4 and widens, halving the key space); a
+   * collision costs a little serialisation between two unrelated hashes, never
+   * a correctness loss.
+   *
+   * ROUND-2 R-H2 — this lock does NOT on its own close the upload's
+   * probe→insert window: the dedup probe and the PUT run above it. The upload
+   * re-probes storage while holding this lock and re-PUTs when the bytes are
+   * gone. See `BroadcastImagesRepo.lockContentHash`.
    */
   async lockContentHash(tenantId, contentHash, tx) {
     await (tx as TenantTx).execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext(${`broadcasts-image:${tenantId as string}:${contentHash}`}))`,
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`broadcasts-image:${tenantId as string}:${contentHash}`}, 0))`,
     );
   },
 
@@ -227,6 +257,24 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
    * but `body_html` is what is SENT, so it is the authority; both are checked
    * because a draft whose HTML has not been re-rendered yet still references
    * the image from its source.
+   *
+   * ROUND-2 R-M2 + S-4 + L-2 — `position(url in body)` replaced three
+   * leading-wildcard `LIKE '%' || url || '%'` predicates.
+   *
+   *   - S-4 (correctness): `%` and `_` are LIKE metacharacters and the URL was
+   *     interpolated unescaped, so a blob key containing `_` matched any
+   *     character in that position. The sweep could answer "still referenced"
+   *     about a DIFFERENT image and keep bytes it should have reclaimed.
+   *     `position` has no pattern semantics, so there is nothing to escape.
+   *   - R-M2 / L-2 (cost): still a sequential scan of `broadcasts` and
+   *     `broadcast_templates` per call, and the sweep calls it once per swept
+   *     row. It is not batched across rows because each swept row runs in its
+   *     OWN transaction holding its OWN per-content-hash advisory lock — the
+   *     isolation that makes one bad blob not block the batch. The scale
+   *     follow-up is a pg_trgm GIN index on `broadcasts.body_html` (and the
+   *     template body), which `position` can use the same way `LIKE` could;
+   *     at SweCham's row counts with a 200-row batch bound it is not yet
+   *     worth the write amplification.
    */
   async isBlobReferencedByContent(tenantId, blobUrl, tx) {
     const rows = (await (tx as TenantTx).execute(sql`
@@ -234,15 +282,33 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
        WHERE EXISTS (
                SELECT 1 FROM broadcasts b
                 WHERE b.tenant_id = ${tenantId as string}
-                  AND (b.body_html LIKE ${`%${blobUrl}%`} OR b.body_source LIKE ${`%${blobUrl}%`})
+                  AND (position(${blobUrl} in b.body_html) > 0
+                       OR position(${blobUrl} in b.body_source) > 0)
              )
           OR EXISTS (
                SELECT 1 FROM broadcast_templates t
                 WHERE t.tenant_id = ${tenantId as string}
-                  AND t.body_html LIKE ${`%${blobUrl}%`}
+                  AND position(${blobUrl} in t.body_html) > 0
              )
     `)) as unknown as Array<{ hit: number }>;
     return rows.length > 0;
+  },
+
+  /**
+   * ROUND-2 S-3 — put a swept-but-still-referenced row back in the live set.
+   * Idempotent: an already-live row is a 0-row update.
+   */
+  async restoreLive(tenantId, imageId, tx) {
+    await (tx as TenantTx)
+      .update(broadcastImages)
+      .set({ deletedAt: null })
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.id, imageId),
+          isNotNull(broadcastImages.deletedAt),
+        ),
+      );
   },
 
   async remove(tenantId, imageId, tx) {

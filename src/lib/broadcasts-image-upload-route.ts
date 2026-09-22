@@ -18,6 +18,14 @@
  * E-Blast is closed to this actor) → `uploadInlineImage` (413 / 415 / 422 /
  * 503) → 201 `{ blobUrl, allowlistedHostname, contentHash, imageId }`.
  *
+ * Time budget. All three routes pin `maxDuration = 60`, and the work inside
+ * `uploadInlineImage` that can actually consume it is the ClamAV scan, the
+ * EXIF-strip RE-ENCODE and the Blob PUT — the scan and the PUT run 5-10 s
+ * between them at the 5 MB cap. ROUND-2 R-M4 gave the re-encode its own 15 s
+ * wall-clock bound, because an unbounded libvips decode could otherwise spend
+ * the whole 60 s and the member would get a platform timeout rather than a
+ * 503 they can retry.
+ *
  * Security review F1-3 (2026-09-22) — two resource bugs closed here:
  *
  *   - This module opened NO transaction of its own. It used to wrap the whole

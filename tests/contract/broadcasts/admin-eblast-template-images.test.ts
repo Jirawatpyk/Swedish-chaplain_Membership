@@ -138,7 +138,7 @@ describe('template images travel by reference (FR-046a) — real use cases over 
     // The template is deleted: its image rows are marked; the draft's row is live.
     await imagesRepo.markDeletedByOwner('test-tenant' as never, { kind: 'template', id: TID }, new Date(), FAKE_TX);
     const sweep = await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: 'test-tenant' as never, now: new Date(), requestId: 'c' });
-    expect(sweep).toEqual({ ok: true, value: { scanned: 1, blobsDeleted: 0, rowsRemoved: 1 } });
+    expect(sweep).toEqual({ ok: true, value: { scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0 } });
     expect(storage.deleted).toEqual([]);
     expect(imagesRepo.rows.map((r) => r.ownerKind)).toEqual(['broadcast']);
   });

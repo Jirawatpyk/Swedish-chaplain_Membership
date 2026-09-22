@@ -27,7 +27,8 @@ const PRUNE_TX = Symbol('prune-tx');
  */
 function imageDeps(): Pick<PruneExpiredDraftsDeps, 'imagesRepo' | 'audit' | 'requestId'> {
   return {
-    imagesRepo: { markDeletedByOwner: vi.fn(async () => []) },
+    // ROUND-2 R-M1 — the prune stamps a whole batch in ONE statement now.
+    imagesRepo: { markDeletedByOwners: vi.fn(async () => []) },
     audit: { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) } as never,
     requestId: 'cron-prune-test',
   };

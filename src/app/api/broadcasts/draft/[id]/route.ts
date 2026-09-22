@@ -25,9 +25,8 @@ import { sql } from 'drizzle-orm';
 import {
   parseBroadcastId,
   makeGetBroadcastDeps,
+  makeMarkOwnerImagesRemovedDeps,
   markOwnerImagesRemoved,
-  drizzleBroadcastImagesRepo,
-  f7AuditAdapter,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import {
@@ -36,6 +35,20 @@ import {
 } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
+
+/**
+ * ROUND-2 R-H1 — the DELETE matched no row, so the draft this request read a
+ * moment ago is no longer a draft (a concurrent submit). Thrown INSIDE the
+ * transaction so it rolls back and nothing downstream stamps anything;
+ * caught below and mapped to the same 409 the pre-flight status guard returns.
+ */
+class DraftNoLongerDeletableError extends Error {
+  constructor() {
+    super('draft_no_longer_deletable');
+    this.name = 'DraftNoLongerDeletableError';
+  }
+}
 
 export async function DELETE(
   request: NextRequest,
@@ -92,12 +105,23 @@ export async function DELETE(
     }
 
     await runInTenant(ctx.tenant, async (tx) => {
-      await tx.execute(sql`
+      // ROUND-2 R-H1 (data loss) — `RETURNING`, because the status guard above
+      // read `findById` OUTSIDE this transaction. A submit that lands in that
+      // window makes `AND status = 'draft'` match 0 rows, and the old code went
+      // on to stamp every image of the now-SUBMITTED broadcast anyway: the
+      // sweep then deleted their blobs and an approved E-Blast shipped with 404
+      // images. Nothing is stamped unless a row came back. Same shape
+      // `pruneExpiredDrafts` already uses.
+      const deleted = (await tx.execute(sql`
         DELETE FROM broadcasts
          WHERE tenant_id = ${ctx.tenant.slug}
            AND broadcast_id = ${broadcastId as string}
            AND status = 'draft'
-      `);
+        RETURNING broadcast_id
+      `)) as unknown as ReadonlyArray<{ broadcast_id: string }>;
+      if (deleted.length === 0) {
+        throw new DraftNoLongerDeletableError();
+      }
       // F119 review finding F2-1 (PDPA) — the draft's images go WITH it, in
       // this transaction. `broadcast_images.owner_id` carries no FK (two
       // possible parents), so this hard DELETE left the image rows live and
@@ -108,7 +132,7 @@ export async function DELETE(
       // Stamping here marks the reference gone; the bytes go on the next
       // sweep under the last-reference rule.
       await markOwnerImagesRemoved(
-        { imagesRepo: drizzleBroadcastImagesRepo, audit: f7AuditAdapter },
+        makeMarkOwnerImagesRemovedDeps(ctx.tenant.slug),
         {
           tenantId: ctx.tenant.slug as never,
           owner: { kind: 'broadcast', id: broadcastId as string },
@@ -130,9 +154,25 @@ export async function DELETE(
       headers: baseHeaders(correlationId),
     });
   } catch (e) {
+    if (e instanceof DraftNoLongerDeletableError) {
+      // The transaction rolled back: the row is untouched and NO image of it
+      // was stamped. Same answer the pre-flight guard gives, one race later.
+      logger.warn(
+        {
+          correlationId,
+          tenantId: ctx.tenant.slug,
+          memberId: ctx.member.memberId,
+          broadcastId: id,
+        },
+        'broadcasts.draft.delete.status_changed_mid_flight',
+      );
+      return errorResponse(409, 'broadcast_immutable_after_submit', correlationId, {
+        details: { broadcastId: broadcastId as string },
+      });
+    }
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,

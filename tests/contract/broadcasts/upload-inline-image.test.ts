@@ -93,6 +93,10 @@ const makeDeps = (
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(),
     markDeletedForMember: vi.fn(async () => []),
+    // ROUND-2 R-M1 / S-3 — the batched prune stamp and the sweep's
+    // keep-the-row arm. Unstubbed, either is an unexercised branch.
+    markDeletedByOwners: vi.fn(async () => []),
+    restoreLive: vi.fn(async () => undefined),
     listOrphaned: vi.fn(async () => []),
     lockContentHash: vi.fn(async () => undefined),
     isBlobReferencedByContent: vi.fn(async () => false),
@@ -391,6 +395,42 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     expect(deps.imagesRepo.record).not.toHaveBeenCalled();
   });
 
+  /**
+   * ROUND-2 T-4 — the OTHER end of the same DB CHECK
+   * (`byte_size BETWEEN 1 AND 5 MB`). The input-size guard sits above the
+   * scanner, but the re-encoder is what decides the bytes that are actually
+   * stored, and it can in principle hand back nothing. Without this arm an
+   * empty re-encode would be PUT and then violate the CHECK inside
+   * `recordImage`'s transaction: a 500 for the member plus an orphan blob with
+   * no row, which the sweep — keyed on marked ROWS — can never see.
+   */
+  it('T-4: a re-encode that returns ZERO bytes is refused, and nothing is stored or recorded', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.reencoder.reencode).mockResolvedValue({
+      ok: true,
+      value: { bytes: new Uint8Array(0), mime: 'image/png' },
+    });
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
+      requestId: 'req-reencoded-empty',
+      fileBytes: Buffer.concat([PNG_HEADER, Buffer.alloc(500, 0x05)]),
+      filename: 'vanished.png',
+      mimeType: 'image/png',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('broadcast_image_empty');
+    // The scan DID run (the input was non-empty); storage and the row did not.
+    expect(deps.scanner.scan).toHaveBeenCalledTimes(1);
+    expect(deps.storage.put).not.toHaveBeenCalled();
+    expect(deps.storage.existsByContentHash).not.toHaveBeenCalled();
+    expect(deps.imagesRepo.record).not.toHaveBeenCalled();
+  });
+
   // -------------------------------------------------------------------------
   // F2-3 — member-uploaded bytes go to a PUBLIC blob URL. A phone photo carries
   // EXIF/GPS, so the co-ordinates of the member's office would be served to
@@ -429,7 +469,13 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     });
 
     expect(r.ok).toBe(true);
-    expect(order).toEqual(['scan', 'reencode', 'hash']);
+    // ROUND-2 R-H2 — `existsByContentHash` is now asked TWICE: once as the
+    // dedup short-circuit, and once again inside `recordImage`'s transaction
+    // while the content-hash advisory lock is held, because a whole sweep pass
+    // fits between the two and would otherwise delete the bytes out from under
+    // the row about to be inserted. The pipeline ORDER this test pins is
+    // unchanged: scan → re-encode → hash.
+    expect(order).toEqual(['scan', 'reencode', 'hash', 'hash']);
     // The bytes that reach storage are the re-encoded ones…
     const put = vi.mocked(deps.storage.put).mock.calls[0]![0];
     expect(Buffer.from(put.bytes)).toEqual(clean);
@@ -463,6 +509,49 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     if (!r.ok) expect(r.error.kind).toBe('broadcast_image_invalid_mime');
     expect(deps.storage.put).not.toHaveBeenCalled();
     expect(deps.imagesRepo.record).not.toHaveBeenCalled();
+    // The member really did send bytes we cannot decode, so the security
+    // signal is truthful and stays.
+    const kinds = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.map((c) => (c[1] as { eventType: string }).eventType);
+    expect(kinds).toContain('broadcast_image_unsafe');
+  });
+
+  /**
+   * ROUND-2 R-M3 (audit truth). Every throw out of sharp used to be
+   * `decode_failed`, so a libvips OOM, a missing native binding or a hung
+   * decode — all SERVER faults — reached the member as a permanent 415 and
+   * were written into the audit log as `broadcast_image_unsafe`, a statement
+   * about something the member did not do.
+   */
+  it('R-M3: a re-encoder OUTAGE is a 503-class refusal with NO unsafe audit row', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.reencoder.reencode).mockResolvedValue({
+      ok: false,
+      error: { kind: 'reencoder_unavailable', reason: 'reencode timeout after 15000ms' },
+    });
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
+      requestId: 'req-reencoder-down',
+      fileBytes: Buffer.concat([PNG_HEADER, Buffer.alloc(500, 0x01)]),
+      filename: 'fine.png',
+      mimeType: 'image/png',
+    });
+
+    expect(r.ok).toBe(false);
+    // `storage_unavailable` is the route's existing 503 class.
+    if (!r.ok) expect(r.error.kind).toBe('storage_unavailable');
+    expect(deps.storage.put).not.toHaveBeenCalled();
+    expect(deps.imagesRepo.record).not.toHaveBeenCalled();
+    // Nothing is known about the bytes, so nothing claims they were unsafe.
+    const kinds = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.map((c) => (c[1] as { eventType: string }).eventType);
+    expect(kinds).not.toContain('broadcast_image_unsafe');
   });
 
   it('a re-encode that grows past the 5 MB cap is refused on the OUTPUT size', async () => {

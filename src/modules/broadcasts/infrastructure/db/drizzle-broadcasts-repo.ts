@@ -61,6 +61,13 @@ type DeliveryAggregate = {
   sent: number;
 };
 
+/**
+ * ROUND-2 R-M1 — the default bound on one `pruneExpiredDrafts` DELETE when the
+ * caller names none. The use case passes its own and loops; this is the floor
+ * that keeps a direct caller from re-creating the unbounded statement.
+ */
+const DEFAULT_PRUNE_BATCH_SIZE = 500;
+
 const DELIVERY_STATUS_TO_KEY: Record<string, keyof DeliveryAggregate> = {
   delivered: 'delivered',
   bounced: 'bounced',
@@ -1285,7 +1292,7 @@ export function makeDrizzleBroadcastsRepo(
      * assertions; the cron route logs this as `prunedCount` in the
      * tick-complete summary.
      */
-    async pruneExpiredDrafts(tenantIdArg, olderThan, txMaybe) {
+    async pruneExpiredDrafts(tenantIdArg, olderThan, txMaybe, limit) {
       // F2-1 — run on the CALLER's tx when it has one, so the image stamps it
       // issues next co-commit with this DELETE.
       return withTenantTxOrOpen(ctx.slug as never, (txMaybe ?? null) as never, async (tx: TenantTx) => {
@@ -1295,11 +1302,24 @@ export function makeDrizzleBroadcastsRepo(
         // sql template params (throws "The 'string' argument must be of
         // type string"). All other Date binds in this repo already
         // pre-format via `toISOString()`.
+        // ROUND-2 R-M1 — BOUNDED. The unqualified DELETE held row locks on
+        // every expired draft of the tenant for the length of one transaction,
+        // on a pooled Neon connection where `statement_timeout` is dropped. The
+        // sub-select is `ORDER BY updated_at LIMIT n` so each batch takes the
+        // oldest drafts first and the tick makes monotonic progress; the caller
+        // loops until a short batch or its time budget.
         const deleted = (await tx.execute(sql`
           DELETE FROM broadcasts
           WHERE tenant_id = ${tenantIdArg}
-            AND status = 'draft'
-            AND updated_at < ${olderThan.toISOString()}::timestamptz
+            AND broadcast_id IN (
+              SELECT b.broadcast_id
+                FROM broadcasts b
+               WHERE b.tenant_id = ${tenantIdArg}
+                 AND b.status = 'draft'
+                 AND b.updated_at < ${olderThan.toISOString()}::timestamptz
+               ORDER BY b.updated_at
+               LIMIT ${limit ?? DEFAULT_PRUNE_BATCH_SIZE}
+            )
           RETURNING broadcast_id, requested_by_member_id
         `)) as unknown as Array<{ broadcast_id: string; requested_by_member_id: string | null }>;
         return {
