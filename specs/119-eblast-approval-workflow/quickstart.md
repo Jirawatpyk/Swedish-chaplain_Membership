@@ -319,7 +319,7 @@ production deploy on this repo (`vercel.json` has no `ignoreCommand`).
 |---|---|
 | The **byte-identical wrapper snapshot** — with no brand colour, no postal address, no logo on file and no design block in the body, `renderBroadcastHtml` output equals today's byte for byte | PR-1 changes the wrapper every live SweCham send uses. This is now a **spec requirement** (§ Feature flag: "that snapshot test is a merge blocker for the unflagged tool upgrade"), not only a plan amendment. Without it the tool upgrade is an unreviewable change to production email |
 | The **`docs/ux-standards.md` § 18.2 container exception** for the two-column compose width, written **in this same change** | FR-050 requires the departure from the form container tier to be recorded, not discovered later |
-| The **PR-1 FR-051 pass**: `docs/ux-standards.md` § 15 checklist + the `@a11y` axe suite, zero serious/critical, dead i18n keys removed, unshown components wired or deleted — on the **seven whole screens PR-1 builds** (portal compose, portal benefits E-Blast tab, staff queue, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand settings) **plus the body view of `/portal/broadcasts/[id]`** | FR-051 names a finite list of nine and requires the pass **in every delivery that builds or changes a screen** (plan Amendment 4); a screen missed here is a screen SweCham tests. PR-2 gates `/admin/broadcasts/[id]`, which does not exist yet, the **sign-off view** of `/portal/broadcasts/[id]`, which PR-2 rebuilds, **and the staff queue again**, which T116–T120 rebuild now that US4 ships in PR-2 (§ 3.2 step 4a). Screens 2 and 4 are each scanned once in both PRs because both PRs change them — the earlier "seven / two" wording listed eight and summed to ten (`/speckit.analyze` M1) |
+| The **PR-1 FR-051 pass**: `docs/ux-standards.md` § 15 checklist + the `@a11y` axe suite, zero serious/critical, dead i18n keys removed, unshown components wired or deleted — on the **seven whole screens PR-1 builds** (portal compose, portal benefits E-Blast tab, staff queue, staff compose-on-behalf, template list/new/edit, E-Blast settings, Brand settings) **plus the body view of `/portal/broadcasts/[id]`** | FR-051 names a finite list of nine and requires the pass **in every delivery that builds or changes a screen** (plan Amendment 4); a screen missed here is a screen SweCham tests. PR-2 gates the **stage fields** of `/admin/broadcasts/[id]` — the page itself EXISTS and is live in PR-1 as the approve/reject surface, and ROUND-3 #2 changed its body to the delivered document, so it is in PR-1's pass too; this row used to say it "does not exist yet" — the **sign-off view** of `/portal/broadcasts/[id]`, which PR-2 rebuilds, **and the staff queue again**, which T116–T120 rebuild now that US4 ships in PR-2 (§ 3.2 step 4a). Screens 2 and 4 are each scanned once in both PRs because both PRs change them — the earlier "seven / two" wording listed eight and summed to ten (`/speckit.analyze` M1) |
 | SC-011 element parity, with its positive control | The shared sanitiser policy replaces three hand-maintained configs; the parity test is what makes "nothing is stripped" a property rather than a promise |
 | `@tiptap/extension-image` re-pinned `^3.22.5` → `3.22.5` | A caret on an editor extension means a patch release can change the serialised HTML the sanitiser and the block parser both key on |
 | e2e `@eblast` + `@a11y` green on chromium **and** mobile-safari | The compose layout changes at two breakpoints |
@@ -328,6 +328,45 @@ production deploy on this repo (`vercel.json` has no `ignoreCommand`).
 After merge: the chamber logo appears in E-Blast headers automatically for SweCham (the logo is
 already on file for invoices — FR-041a), and the footer keeps the current synthetic address line
 until step 3.3.
+
+**Unflagged and live the moment PR-1 merges** (ROUND-3 #7). § 3.2 step 3 carries this inventory for
+PR-2 and § 3.1 carried none, which made PR-1 look flag-protected when it is the opposite: there is
+no `FEATURE_EBLAST_*` flag over any of it. Each line is **code-revert-only** — § 3.5 layer 3 — and
+`ALTER TYPE … ADD VALUE` is not reversible even by that.
+
+- **Migration `0304`** plus the **four `audit_event_type` values** it adds
+  (`broadcast_test_copy_sent`, `broadcast_brand_settings_changed`, `broadcast_image_uploaded`,
+  `broadcast_image_removed`) and the `tenant_broadcast_settings.brand_*` columns.
+- **Member inline-image upload now re-encodes through `sharp`** (F2-3): EXIF / GPS / XMP / IPTC /
+  ICC are stripped, the SHA-256 and the stored `byte_size` describe the RE-ENCODED bytes, a
+  decode / MIME mismatch answers **415**, a decode that exceeds 15 s answers **503**, and the
+  input is capped at **4096²** pixels. An image a member could upload yesterday can be refused
+  today — that is the point, but it is a behaviour change with no flag over it.
+- **`validateBlocks` runs at five call sites**: the three save paths (`save-draft`,
+  `create-broadcast-template`, `update-broadcast-template`), `submit-broadcast` and
+  `send-test-copy`. It inspects only `data-eb` markers, so a legacy body that has never been
+  through the new editor is unaffected; a body that carries a malformed marker is now refused
+  where it used to save.
+- **The cron `prune-expired-drafts` gained block 2** (the image sweep) and `maxDuration = 300`.
+  The route answers **500 when the sweep fails**, even though the draft prune succeeded — a
+  partial tick is a failed tick. Its daily 04:30 UTC schedule is unchanged.
+- **Discard and prune now write `broadcast_image_removed` audit rows** (one per stamped image, in
+  the same transaction as the delete). The draft's own lifecycle stays unaudited.
+- **The erasure cascade takes a REQUIRED `imagesRepo` port** and the completion attestation gains
+  an `images_marked` field. An erasure certified before this merge did not reach the member's
+  uploaded photograph; one certified after does.
+- **`broadcast_cross_member_probe` audit payloads carry `operation`** (a bounded literal union —
+  `image_upload` is the value the new upload surfaces emit), so a probe row now says which
+  surface refused it. Optional, because the pre-F119 emit sites omit it.
+- **`proxy-submit` accepts `draftId`**, and three routes are new:
+  `POST /api/broadcasts/templates/[id]/started`, `POST | PUT /api/admin/broadcasts/draft` and
+  `GET /api/admin/broadcasts/quota`.
+- **Brand chrome is read LIVE on every dispatch** (fail-soft, counted by
+  `broadcasts_brand_chrome_unavailable_total`), so the footer and header of every send depend on
+  the settings row from merge onward — before any operator visits the Brand page.
+- **The staff detail page `/admin/broadcasts/[id]` renders the DELIVERED document** (ROUND-3 #2) —
+  design blocks and brand, in a sandboxed `<iframe srcdoc>`, instead of the raw sanitised body.
+  An approver who has been reading this page will see it change shape on merge.
 
 #### T155 / T156 record — 2026-09-22
 
@@ -698,7 +737,9 @@ step 5's flip safe to take immediately after this merge.
    - the **chamber postal address** now stored in brand settings and printed in every E-Blast footer;
    - the new export category (`broadcast-versions.json`);
    - the erasure reach — versions, notes, reasons, decisions, images **and the notifications about
-     the E-Blast** — with images unreferenced by any E-Blast or template deleted within 24 hours;
+     the E-Blast** — with images unreferenced by any E-Blast or template deleted **on the next
+     daily sweep tick, 200 rows per arm per tenant** (ROUND-3 #15 — "within 24 hours" is a ceiling
+     nothing enforces, and the RoPA entry already states the batch bound);
    - the retention note that a **sent** outbox row keeps the recipient's address frozen at enqueue
      under the existing outbox retention.
 
@@ -772,7 +813,7 @@ every preview, so changing it never voids a pending or given approval (FR-041c).
 |---|---|---|---|
 | 1 — platform flag off | remove `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel + redeploy | kept; no **new** E-Blast can enter the round; rows already in a new stage stay completable and cancellable, and the reminder/expiry clock keeps running so nothing sits forever. **Hand-off emails stop being delivered** — the drainer skips the five types again and the rows queue up, so a re-flip resumes them rather than losing them (round 4 H2) | one deploy |
 | 2 — code revert of PR-2 | revert the PR | rows in a new stage become unreachable by the application until the code returns — **cancel them first** (`/admin/broadcasts` → Cancel), because the enum values and the triggers stay | one deploy |
-| 3 — code revert of PR-1 | revert the PR | the wrapper returns to today's; brand columns and `broadcast_images` rows are orphaned but harmless | one deploy |
+| 3 — code revert of PR-1 | revert the PR | the wrapper returns to today's and the staff detail page returns to the raw-body view; brand columns and `broadcast_images` rows are orphaned but harmless. **What does NOT come back**: the pre-`sharp` upload path (already-uploaded images stay re-encoded — the originals were never stored), the image sweep (stamped rows stop being reclaimed and their bytes stay in Blob until the code returns), the erasure cascade's image reach (an erasure run after the revert will NOT stamp images again) and the four enum values. The full inventory is § 3.1's "Unflagged and live" list; every line of it is undone by this layer and by nothing else | one deploy |
 
 Migrations `0304` and `0305` are **not** undone by any layer; reversing them is a new migration, and
 `ALTER TYPE … ADD VALUE` cannot be reversed at all.

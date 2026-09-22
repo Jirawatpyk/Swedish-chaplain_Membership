@@ -43,7 +43,12 @@ function makeDeps(o?: { existing?: boolean; verdict?: 'clean' | 'infected' }) {
     ),
   };
   const storage: ImageStoragePort = {
-    existsByContentHash: vi.fn().mockResolvedValue(o?.existing ? { blobUrl: BLOB_URL, blobKey: BLOB_KEY } : null),
+    // ROUND-3 #1 — tri-state probe: `present` (with the ref) or a real 404.
+    existsByContentHash: vi
+      .fn()
+      .mockResolvedValue(
+        o?.existing ? { status: 'present', blobUrl: BLOB_URL, blobKey: BLOB_KEY } : { status: 'absent' },
+      ),
     put: vi.fn().mockResolvedValue({ blobUrl: BLOB_URL, blobKey: BLOB_KEY, contentHash: 'abc' }),
     delete: vi.fn(),
   };
@@ -65,6 +70,8 @@ function makeDeps(o?: { existing?: boolean; verdict?: 'clean' | 'infected' }) {
     isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(),
     remove: vi.fn(),
+    // ROUND-3 #4 — the sweep's per-row `SET LOCAL statement_timeout`.
+    setStatementTimeout: vi.fn(async () => undefined),
   };
   return { allowlistPort, scanner, storage, audit, imagesRepo, record, reencoder: makeFakeImageReencoder() };
 }

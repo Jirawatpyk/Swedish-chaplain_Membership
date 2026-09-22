@@ -26,7 +26,16 @@ import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 export const PREVIEW_SUBJECT_MAX = 200;
 export const PREVIEW_BODY_MAX_BYTES = 200 * 1024;
 
-export type PreviewSurface = 'member' | 'staff';
+/**
+ * Which screen asked for this render.
+ *
+ * ROUND-3 #11 adds `'detail'`: the member's and the staff's E-Blast DETAIL
+ * pages both read a stored broadcast back through this use case, and folding
+ * them into `member` / `staff` mixed a compose-time signal (one render per
+ * keystroke pause, bounded by the 30/min bucket) with a read-back that fires
+ * once per page view. Callers pass it; it never arrives from a request.
+ */
+export type PreviewSurface = 'member' | 'staff' | 'detail';
 
 export interface RenderBroadcastPreviewDeps {
   readonly sanitizer: HtmlSanitizerPort;
@@ -85,6 +94,6 @@ export async function renderBroadcastPreview(
   });
 
   broadcastsMetrics.previewRendered(input.tenantId as unknown as string, input.surface);
-  broadcastsMetrics.previewRenderMs(input.tenantId as unknown as string, Date.now() - started);
+  broadcastsMetrics.previewRenderMs(input.tenantId as unknown as string, Date.now() - started, input.surface);
   return ok({ html });
 }

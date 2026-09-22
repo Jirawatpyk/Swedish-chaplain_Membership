@@ -5,12 +5,27 @@
  * kill-switch, then the shared handler: 30 / 60 s staff write bucket, the
  * template must exist in the tenant (a miss → 404 + the template probe),
  * the identical image rules, and ONE `broadcast_images` row with
- * `owner_kind='template'` (`related_member_id: null`). Starting an E-Blast
- * from a template carries its images BY REFERENCE (today's snapshot
- * semantics): the draft gets its own `broadcast_images` row sharing the
- * content hash, which is exactly what the last-reference sweep needs so a
- * later template edit or delete never breaks a draft already started from
- * it. No per-block authorship, no "from template" marking anywhere.
+ * `owner_kind='template'` (`related_member_id: null`).
+ *
+ * ROUND-3 #6 — what happens when a draft is STARTED from a template. This
+ * docblock used to say the draft "gets its own `broadcast_images` row sharing
+ * the content hash". It does not. `snapshotTemplateToDraft` copies the body
+ * and records nothing, and T140 re-seeds the editor client-side; no upload
+ * happens, so no row is written under `owner_kind='broadcast'`.
+ *
+ * The bytes survive anyway, by two other mechanisms: the TEMPLATE's own row
+ * stays live (a template is soft-deleted, so deleting one does not orphan its
+ * images), and the sweep's `isBlobReferencedByContent` backstop refuses to
+ * delete a blob any live `body_html` / `body_source` still embeds — which is
+ * exactly the draft's case.
+ *
+ * Follow-up, not closed here: record a draft-side row at first save when the
+ * saved body embeds a blob URL whose only live row belongs to a template.
+ * Until then the draft's claim on those bytes is a content scan rather than a
+ * row, which is weaker (it is a sequential `position()` scan, and it cannot
+ * be stamped by an erasure).
+ *
+ * No per-block authorship, no "from template" marking anywhere.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';

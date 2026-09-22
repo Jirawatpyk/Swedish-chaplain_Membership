@@ -17,6 +17,7 @@ import { put, head, del } from '@vercel/blob';
 import { logger } from '@/lib/logger';
 import type {
   ImageMimeType,
+  ImageProbeResult,
   ImageStoragePort,
   StoredImageRef,
 } from '../application/ports/image-storage-port';
@@ -53,7 +54,7 @@ export const vercelBlobImageStorage: ImageStoragePort = {
     tenantId: TenantSlug,
     contentHash: string,
     mimeType: ImageMimeType,
-  ): Promise<StoredImageRef | null> {
+  ): Promise<ImageProbeResult> {
     // PR-review fix 2026-05-20 CR-M3 — probe ONE key (caller knows
     // MIME) instead of the previous 4-MIME fan-out. The cross-MIME
     // dedup guarantee was meaningless because SHA-256 over format-
@@ -63,21 +64,25 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       const meta = await head(key, {
         token: env.blob.readWriteToken,
       });
-      return { blobUrl: meta.url, blobKey: key };
+      return { status: 'present', blobUrl: meta.url, blobKey: key };
     } catch (e) {
       // PR-review fix SF-H1 — narrow swallow to NOT-FOUND only.
       // Other error classes (BlobAccessError / BlobClientTokenExpired /
       // BlobStoreSuspended / BlobServiceRateLimited) silently looked
-      // like cache-miss + masked ops incidents. Now they log at warn
-      // level + return null (caller proceeds to fresh `put` which
-      // will surface the same error class explicitly via PUT path).
+      // like cache-miss + masked ops incidents.
+      //
+      // ROUND-3 #1 — they now also answer differently. SF-H1 logged them but
+      // still returned the same `null` a 404 returns, and the caller cannot
+      // tell those apart from the value: under the upload's content-hash lock
+      // a rate-limited `head` looked exactly like "the sweep took the bytes".
+      // A failed probe is `unknown`; only a genuine 404 is `absent`.
       const msg = e instanceof Error ? e.message : String(e);
-      if (BLOB_NOT_FOUND_PATTERN.test(msg)) return null;
+      if (BLOB_NOT_FOUND_PATTERN.test(msg)) return { status: 'absent' };
       logger.warn(
         { err: msg, tenantId, contentHash, mime: mimeType },
         'broadcasts.blob_head_error',
       );
-      return null;
+      return { status: 'unknown', reason: msg };
     }
   },
 
@@ -93,9 +98,18 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       access: 'public',
       contentType: input.mimeType,
       token: env.blob.readWriteToken,
-      // Content-hash key + addRandomSuffix:false means re-uploading the
-      // SAME content (matching sha256) → idempotent (Blob returns the
-      // existing URL). LOW review note 2026-05-21 (code-reviewer-full
+      // Content-hash key + addRandomSuffix:false means the key names the
+      // bytes: whatever sits at it is the content we would be writing.
+      //
+      // ROUND-3 #1 — the note that used to stand here said re-uploading the
+      // SAME content was "idempotent (Blob returns the existing URL)". It is
+      // not: with `allowOverwrite: false` @vercel/blob THROWS when the
+      // pathname is taken, whatever the bytes are. That is still the right
+      // setting (see L-3 below), but it makes a PUT over existing content an
+      // ERROR the caller has to absorb, not a no-op — `uploadInlineImage`'s
+      // re-PUT under the content-hash lock treats that refusal as "stored".
+      //
+      // LOW review note 2026-05-21 (code-reviewer-full
       // L-3): allowOverwrite=false additionally rejects any attempt to
       // overwrite a different-content entry at the same key — defence
       // in depth against sha256-preimage collisions (infeasible) AND

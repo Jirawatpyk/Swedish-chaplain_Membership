@@ -27,12 +27,8 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
-import {
-  PreviewSurface,
-  type PreviewState,
-} from '@/components/broadcast/use-preview-html';
-import { makeRenderBroadcastPreviewDeps } from '@/lib/broadcast-brand-deps';
-import { isLocale } from '@/i18n/config';
+import { PreviewSurface } from '@/components/broadcast/use-preview-html';
+import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
@@ -41,7 +37,6 @@ import {
   getMemberBroadcast,
   makeGetMemberBroadcastDeps,
   parseBroadcastId,
-  renderBroadcastPreview,
 } from '@/modules/broadcasts';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
@@ -68,63 +63,16 @@ export const dynamic = 'force-dynamic';
 
 /**
  * F119 T141 (US6-AS2, FR-049) — the body the member reads back is the REAL
- * email: the same server-side renderer the preview route drives
- * (`src/lib/broadcasts-preview-route.ts`), handed to the shared
- * `PreviewSurface`, which puts it in a sandboxed `<iframe srcdoc>` — never a
- * `dangerouslySetInnerHTML` of the stored body into this page's own DOM.
- *
- * Every failure degrades to the surface's translated error state: a brand-read
- * or sanitiser outage must not 404/500 a page whose subject, status and
- * delivery numbers are all still readable.
+ * email, produced by `renderBroadcastDetailBody` and shown in the shared
+ * sandboxed `PreviewSurface`. ROUND-3 #2 moved that helper to
+ * `src/lib/broadcast-detail-body.ts` so the STAFF detail page reads the same
+ * document: it was rendering the raw sanitised body instead, which is not
+ * what ships.
  *
  * PR-1 renders the broadcast RECORD's own content. "the latest **sent**
  * version while awaiting the member" reads `broadcast_versions` (migration
  * `0305`) and lands with T141a in PR-2 (plan Amendment 5).
  */
-async function renderStoredBody(args: {
-  readonly tenantSlug: string;
-  readonly broadcastId: string;
-  readonly subject: string;
-  readonly bodyHtml: string;
-  readonly locale: string;
-}): Promise<PreviewState> {
-  try {
-    const { tenantDisplayName, ...deps } = await makeRenderBroadcastPreviewDeps(
-      args.tenantSlug as never,
-    );
-    const result = await renderBroadcastPreview(deps, {
-      tenantId: args.tenantSlug as never,
-      tenantDisplayName,
-      subject: args.subject,
-      bodyHtml: args.bodyHtml,
-      locale: isLocale(args.locale) ? args.locale : 'en',
-      surface: 'member',
-    });
-    if (!result.ok) {
-      logger.warn(
-        {
-          tenantId: args.tenantSlug,
-          broadcastId: args.broadcastId,
-          reason: result.error.kind,
-        },
-        'broadcasts.detail_page.body_render_failed',
-      );
-      return { status: 'error' };
-    }
-    return { status: 'ready', html: result.value.html };
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: args.tenantSlug,
-        broadcastId: args.broadcastId,
-      },
-      'broadcasts.detail_page.body_render_unexpected_error',
-    );
-    return { status: 'error' };
-  }
-}
-
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.broadcasts.detail');
   return { title: t('title') };
@@ -198,7 +146,7 @@ export default async function BroadcastDetailPage(props: {
     timeZone: env.tenant.timezone,
   });
 
-  const previewState = await renderStoredBody({
+  const previewState = await renderBroadcastDetailBody({
     tenantSlug: tenant.slug,
     broadcastId: broadcast.broadcastId as string,
     subject: broadcast.subject,

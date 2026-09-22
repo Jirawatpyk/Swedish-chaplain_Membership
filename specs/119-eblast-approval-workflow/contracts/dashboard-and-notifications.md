@@ -322,9 +322,10 @@ Order inside the block:
    `content_hash` (the last-reference rule, data-model § 4), then remove the row and audit
    `broadcast_image_removed { …, reason: 'sweep', actor_role: 'system' }`. The **reference** was
    removed from the content at the moment of erasure/withdrawal/rejection; this daily tick is what
-   makes "the file is deleted **within 24 hours** once nothing references it" true (spec § Personal
-   data). The normal path also attempts the delete best-effort right after that transaction commits,
-   so the usual case is seconds and this is the durable backstop.
+   makes "the file is deleted once nothing references it" true (spec § Personal data), **on the next
+   daily tick, 200 rows per arm per tenant** — not within a flat 24 h, which nothing enforces when a
+   bulk erasure leaves more than that behind. The sweep is the SOLE deleter: there is no
+   best-effort delete after the stamping transaction commits, and this paragraph used to claim one.
 2. **Reminders and the warning** — for rows in `awaiting_member_approval`, ordered by
    `stage_entered_at`, driven by the pure `nextReminder(stage_entered_at, now, member_reminder_stage)`
    policy: day 3 → `reminder_day3` to the member and `member_reminder_stage = 1`; day 7 →

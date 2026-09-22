@@ -3,8 +3,14 @@
  *
  * Daily cron worker that deletes draft broadcasts whose `updated_at`
  * is older than `retentionDays` (default 30) per FR-001a. Drafts are
- * user-controlled scratch space; pruning emits NO audit event and
+ * user-controlled scratch space; pruning emits no LIFECYCLE audit event and
  * never touches non-draft rows.
+ *
+ * ROUND-3 #9 — "no audit event" full stop is what this line used to say, and
+ * it stopped being true at F2-1: every image row the prune stamps emits
+ * `broadcast_image_removed { reason: 'draft_pruned' }` in the DELETE's own
+ * transaction. The draft's lifecycle is unrecorded; the member's bytes
+ * leaving is not.
  *
  * Tenant-scoped: invoked once per tenant (single-tenant SweCham MVP;
  * future SaaS multi-tenant iterates the tenant catalogue at the route

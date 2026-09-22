@@ -106,8 +106,9 @@ import type { HeartbeatDeps } from '@/modules/auth/application/heartbeat';
 // is the Chamber-OS composition adapter layer (eslint allow-listed).
 export { rateLimiter };
 // F119 T105 — the shared TRANSACTIONAL sender, re-exported from this
-// composition root so the broadcasts test copy (`broadcast-brand-deps.ts`)
-// needs no new deep import into auth infrastructure (auth-barrel baseline).
+// composition root so the broadcasts test copy
+// (`broadcast-test-copy-deps.ts`) needs no new deep import into auth
+// infrastructure (auth-barrel baseline).
 export { emailSender };
 
 // F8 Phase 8 T222 — userRepo re-export for the staff-active list helper

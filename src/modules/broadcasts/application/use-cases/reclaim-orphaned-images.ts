@@ -1,7 +1,12 @@
 /**
  * F119 T035 — `reclaimOrphanedImages`: the daily image-blob sweep
- * (data-model § 4; spec § Personal data — "the stored file is deleted by
- * the daily sweep within 24 hours once nothing references it").
+ * (data-model § 4; spec § Personal data).
+ *
+ * ROUND-3 #15 — the guarantee is "on the NEXT DAILY TICK, 200 rows per arm
+ * per tenant", not "within 24 hours". The two differ whenever a tenant has
+ * more than 400 reclaimable rows in a day — a bulk erasure, a prune of a
+ * backlog of drafts — and they differ again for a row that throws, which is
+ * left for the tick after. Saying 24 hours states a ceiling nothing enforces.
  *
  * TWO ARMS.
  *
@@ -61,6 +66,28 @@ import type { BroadcastImageRecord, BroadcastImagesRepo } from '../ports/broadca
 import type { ImageStoragePort } from '../ports/image-storage-port';
 
 export const IMAGE_SWEEP_BATCH = 200;
+
+/**
+ * ROUND-3 #4 — the per-row transaction's `SET LOCAL statement_timeout`, which
+ * T035 requires ("its own `SET LOCAL statement_timeout`") and which nothing
+ * set until now.
+ *
+ * Neither of the two waits inside that transaction ends on its own. The
+ * advisory lock blocks until its holder commits, and
+ * `isBlobReferencedByContent` is a sequential `position()` scan of
+ * `broadcasts` + `broadcast_templates` executed once per swept row — up to 400
+ * a tick. `src/lib/db.ts` asks the connection for 5 s, but the pooled Neon
+ * endpoint drops it and reports 0, so the real ceiling today is the route's
+ * `maxDuration = 300`: the tick is killed part way through, with the blob
+ * store and `broadcast_images` disagreeing until tomorrow.
+ *
+ * 5 s because neither T035 nor the cron's docblock names a value. The sibling
+ * metric routes use 10 s, but they bound a whole gauge sweep; this bounds ONE
+ * row's three small statements, so the tighter number is the honest one. A row
+ * that hits it throws, is logged, and is retried on the next tick — the same
+ * path any other per-row fault takes.
+ */
+export const IMAGE_SWEEP_ROW_TIMEOUT_MS = 5_000;
 
 export interface ReclaimOrphanedImagesDeps {
   readonly imagesRepo: BroadcastImagesRepo;
@@ -137,6 +164,11 @@ export async function reclaimOrphanedImages(
   for (const { image, orphan } of batch) {
     try {
       const outcome = await deps.imagesRepo.withTx(input.tenantId, async (tx): Promise<RowOutcome> => {
+        // ROUND-3 #4 — FIRST, before anything that can block. The lock waits
+        // on whoever holds it and the content scan is sequential; a bound set
+        // after the statement it is meant to bound is not a bound.
+        await deps.imagesRepo.setStatementTimeout(IMAGE_SWEEP_ROW_TIMEOUT_MS, tx);
+
         // F2-10(a) — BEFORE the count, so an upload of the same file cannot
         // land between the count and the delete.
         await deps.imagesRepo.lockContentHash(input.tenantId, image.contentHash, tx);

@@ -8,9 +8,12 @@
  * tests inject in-memory fakes.
  *
  * Content-addressed dedup: callers MAY call `existsByContentHash` to
- * short-circuit re-uploads of identical bytes. The adapter is free to
- * return `null` even when a row exists (cache-cold), so the use case
- * MUST NOT depend on it for correctness — only performance.
+ * short-circuit re-uploads of identical bytes. Its answer is TRI-STATE
+ * (ROUND-3 #1) — `present` / `absent` / `unknown` — because "I looked and
+ * there is nothing there" and "I could not look" lead to opposite actions,
+ * and collapsing them onto one `null` made the upload act on a probe that
+ * knew nothing. Only `present` is a guarantee; `absent` is still allowed to
+ * be cache-cold, so the use case MUST NOT depend on it for correctness.
  *
  * Pure interface — no framework imports (Constitution Principle III
  * NON-NEGOTIABLE).
@@ -42,11 +45,15 @@ export function isImageMimeType(s: string): s is ImageMimeType {
 
 export interface ImageStoragePort {
   /**
-   * Return the existing blob URL for `contentHash` in the tenant's
-   * scope, or `null` when not present (or cache-cold). Adapter is
-   * free to perform a `HEAD`-style probe; absence is not a strict
-   * guarantee that the bytes are gone, but presence is a strict
-   * guarantee that they are still reachable.
+   * Probe the tenant-scoped, content-addressed key for `contentHash`.
+   *
+   * `present` is a strict guarantee that the bytes are reachable and carries
+   * the URL + key. `absent` means the probe RAN and the object is not there —
+   * still not a strict guarantee (a cold cache may answer 404 for an object
+   * that exists), so a caller acting on it must tolerate the object being
+   * back by the time it writes. `unknown` means the probe FAILED (rate-limit,
+   * expired token, service outage): nothing at all is known, and a caller
+   * MUST NOT treat it as either of the other two.
    *
    * PR-review fix 2026-05-20 CR-M3 — caller passes `mimeType` so the
    * adapter probes ONE key (vs all 4 MIME extensions, 160-320ms p95
@@ -56,7 +63,7 @@ export interface ImageStoragePort {
     tenantId: TenantSlug,
     contentHash: string,
     mimeType: ImageMimeType,
-  ): Promise<StoredImageRef | null>;
+  ): Promise<ImageProbeResult>;
 
   /**
    * Upload bytes into the tenant-scoped namespace. Returns a stable
@@ -91,3 +98,19 @@ export interface StoredImageRef {
   readonly blobUrl: string;
   readonly blobKey: string;
 }
+
+/**
+ * ROUND-3 #1 — the answer to "are these bytes stored?", with "I could not
+ * find out" kept DISTINCT from "no".
+ *
+ * The adapter used to return `null` for a 404 and for every other `head`
+ * failure alike. Under the upload's content-hash lock that `null` was read as
+ * "the sweep reclaimed the blob", so a transient Blob rate-limit made the
+ * upload re-PUT bytes that were still there — into a store whose
+ * `allowOverwrite: false` makes that PUT throw, rolling back the row the
+ * member had just earned and stranding the blob with nothing pointing at it.
+ */
+export type ImageProbeResult =
+  | ({ readonly status: 'present' } & StoredImageRef)
+  | { readonly status: 'absent' }
+  | { readonly status: 'unknown'; readonly reason: string };

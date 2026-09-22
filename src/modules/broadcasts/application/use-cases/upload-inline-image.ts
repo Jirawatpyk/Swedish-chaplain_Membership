@@ -309,12 +309,19 @@ export async function uploadInlineImage(
   // Dedup short-circuit (best-effort; correctness handled by put's
   // tenant-scoped + content-addressed key). CR-M3 — passes mime so
   // adapter probes ONE key not 4.
+  // ROUND-3 #1 — only `present` short-circuits. `absent` and `unknown` both
+  // fall through to the PUT: on `absent` because the bytes really are not
+  // there, and on `unknown` because a probe that failed is not permission to
+  // skip storing the member's file. The PUT is content-addressed, so if the
+  // `unknown` was hiding a hit, `allowOverwrite: false` refuses it and the
+  // catch below turns that into a retryable 503 rather than a 500 — a retry
+  // then dedups cleanly once `head` recovers.
   const existing = await deps.storage.existsByContentHash(
     input.tenantId,
     contentHash,
     mime,
   );
-  if (existing) {
+  if (existing.status === 'present') {
     const dedupHost = safeAsHostname(existing.blobUrl);
     // PR-review fix 2026-05-20 SF-M3 — when the existing blob URL is
     // unparseable (corrupt cache / future URL-shape change), don't
@@ -367,6 +374,19 @@ export async function uploadInlineImage(
     blobKey = result.blobKey;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    // ROUND-3 #1 — the bytes ARE at the content-addressed key (that is what
+    // the refusal means), but this leg never learned the URL because the
+    // probe above came back `unknown`. 503 rather than 500: the member
+    // retries, the probe answers `present`, and the retry dedups. Deliberately
+    // NOT a silent success — inventing a URL from the key would put a guess
+    // into `broadcast_images.blob_url`.
+    if (isBlobAlreadyExists(msg)) {
+      logger.warn(
+        { tenantId: input.tenantId, contentHash, mime, requestId: input.requestId },
+        'broadcasts.uploadInlineImage.put_rejected_existing_after_unknown_probe',
+      );
+      return err({ kind: 'storage_unavailable', reason: msg });
+    }
     if (
       /BlobAccessError|BlobStoreSuspendedError|BlobClientTokenExpiredError|BlobServiceRateLimited|BlobServiceNotAvailable/i.test(
         msg,
@@ -442,17 +462,29 @@ async function recordImage(
     // this same hash (lock → count 0 → delete the blob → remove the row →
     // commit) fits in that gap, and the row we are about to insert would then
     // point at bytes that no longer exist. So, holding the lock the sweep also
-    // needs, ask storage again and put the bytes back if they are gone. The
-    // blob key is content-addressed, so the PUT is idempotent — and
-    // `existsByContentHash` is documented as allowed to answer a false `null`
-    // (cache-cold), which makes a spurious re-PUT the only way this can be
-    // wrong. That is the safe direction.
+    // needs, ask storage again and put the bytes back if they are gone.
+    //
+    // ROUND-3 #1 — the re-PUT fires on `absent` ONLY.
+    //
+    // An earlier version of this comment claimed "a spurious re-PUT is the
+    // only way this can be wrong". It was not: the adapter answered `null` for
+    // every non-404 `head` failure too, and `put` is `allowOverwrite: false`,
+    // so a Blob rate-limit made the re-PUT THROW — inside this transaction,
+    // rolling the row back for a 500, while on the fresh-upload leg the first
+    // PUT had already written the bytes. The result was a blob with no row:
+    // invisible to the sweep (which reads MARKED rows), to the orphan arm and
+    // to the erasure cascade. Precisely the class F2-1 exists to close.
+    //
+    // So `unknown` proceeds straight to the INSERT. On either reading of an
+    // `unknown` the bytes are there: the fresh leg PUT them itself a moment
+    // ago, and the dedup leg got a `present` from the pre-lock probe. The lock
+    // is held, so the sweep cannot take them between here and COMMIT.
     const stillStored = await deps.storage.existsByContentHash(
       input.tenantId,
       stored.contentHash,
       stored.mime,
     );
-    if (stillStored === null) {
+    if (stillStored.status === 'absent') {
       logger.warn(
         {
           tenantId: input.tenantId,
@@ -462,13 +494,31 @@ async function recordImage(
         },
         'broadcasts.uploadInlineImage.blob_reclaimed_under_lock_reput',
       );
-      await deps.storage.put({
-        tenantId: input.tenantId,
-        bytes: stored.bytes,
-        contentHash: stored.contentHash,
-        mimeType: stored.mime,
-        sanitisedFilename: stored.sanitisedFilename,
-      });
+      try {
+        await deps.storage.put({
+          tenantId: input.tenantId,
+          bytes: stored.bytes,
+          contentHash: stored.contentHash,
+          mimeType: stored.mime,
+          sanitisedFilename: stored.sanitisedFilename,
+        });
+      } catch (e) {
+        // `allowOverwrite: false` refuses a PUT over a taken pathname. At a
+        // CONTENT-ADDRESSED key that refusal is the outcome the re-PUT wanted
+        // — the bytes are there (another upload of the same file won the race
+        // between the probe and here). Anything else is a real storage fault
+        // and still aborts the transaction, so the row never outlives its blob.
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!isBlobAlreadyExists(msg)) throw e;
+        logger.info(
+          {
+            tenantId: input.tenantId,
+            contentHash: stored.contentHash,
+            requestId: input.requestId,
+          },
+          'broadcasts.uploadInlineImage.reput_already_stored',
+        );
+      }
     }
 
     const row = await deps.imagesRepo.record(
@@ -537,6 +587,23 @@ async function ensureBlobHostAllowlisted(
       'broadcasts.uploadInlineImage.allowlist_seed_failed',
     );
   }
+}
+
+/**
+ * ROUND-3 #1 — does this storage error mean "the pathname is already taken"?
+ *
+ * `@vercel/blob` exports no typed error classes, so this mirrors the
+ * message-regex convention the adapter already uses for NOT-FOUND
+ * (`vercel-blob-image-storage.ts` `BLOB_NOT_FOUND_PATTERN`, itself copied
+ * from F4's `get-credit-note-pdf-signed-url.ts`). Both halves of the real
+ * message are matched — the sentence and the flag it names — so a wording
+ * change on one side still classifies.
+ *
+ * At a CONTENT-ADDRESSED key this is not a failure: whatever is at the key is
+ * the bytes we were writing.
+ */
+function isBlobAlreadyExists(message: string): boolean {
+  return /already exists|allowOverwrite/i.test(message);
 }
 
 function sanitiseFilename(raw: string): string {

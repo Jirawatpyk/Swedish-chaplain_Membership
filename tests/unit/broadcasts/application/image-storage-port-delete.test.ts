@@ -56,6 +56,9 @@ function makeDeps(rows: BroadcastImageRecord[], liveCounts: Record<string, numbe
     isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(async (_t: never, hash: string) => liveCounts[hash] ?? 0),
     remove: vi.fn(async () => undefined),
+    // ROUND-3 #4 — the per-row `SET LOCAL statement_timeout`. Unstubbed it is
+    // an unexercised branch, and the sweep would throw before its first lock.
+    setStatementTimeout: vi.fn(async () => undefined),
   };
   const storage: ImageStoragePort = {
     existsByContentHash: vi.fn(),

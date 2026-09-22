@@ -73,10 +73,17 @@ const makeDeps = (
     ),
   };
   const storage: ImageStoragePort = {
+    // ROUND-3 #1 — the probe is tri-state: `present` carries the ref, `absent`
+    // is a real 404. (`unknown` — a `head` that FAILED — is exercised in
+    // `tests/unit/broadcasts/application/eblast-image-lifecycle.test.ts`.)
     existsByContentHash: vi.fn().mockResolvedValue(
       o?.existingBlobUrl
-        ? { blobUrl: o.existingBlobUrl, blobKey: 'broadcasts/images/tenant_swe/cached.png' }
-        : null,
+        ? {
+            status: 'present',
+            blobUrl: o.existingBlobUrl,
+            blobKey: 'broadcasts/images/tenant_swe/cached.png',
+          }
+        : { status: 'absent' },
     ),
     put: vi.fn().mockResolvedValue({
       blobUrl: 'https://assets.swecham.zyncdata.app/broadcasts/images/tenant_swe/abc.png',
@@ -102,6 +109,8 @@ const makeDeps = (
     isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(),
     remove: vi.fn(),
+    // ROUND-3 #4 — the sweep's per-row `SET LOCAL statement_timeout`.
+    setStatementTimeout: vi.fn(async () => undefined),
   };
   // F2-3 — pass-through by default: the PIPELINE ORDER and the
   // hash-on-re-encoded-bytes rule are what these cases pin; the real
@@ -452,7 +461,7 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     });
     vi.mocked(deps.storage.existsByContentHash).mockImplementation(async () => {
       order.push('hash');
-      return null;
+      return { status: 'absent' };
     });
 
     const r = await uploadInlineImage(deps, {

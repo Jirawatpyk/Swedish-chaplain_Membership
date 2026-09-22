@@ -156,7 +156,9 @@ describe('F119 T134 — portal E-Blast detail body (US6-AS2, FR-049)', () => {
     ];
     expect(input.subject).toBe(SUBJECT);
     expect(input.bodyHtml).toBe(BODY_HTML);
-    expect(input.surface).toBe('member');
+    // ROUND-3 #11 — a read-back is a DETAIL render, not the member's compose
+    // preview; the two share the renderer but not the traffic shape.
+    expect(input.surface).toBe('detail');
     // Never injected into the page's own DOM.
     expect(html).not.toContain('dangerouslySetInnerHTML');
   });

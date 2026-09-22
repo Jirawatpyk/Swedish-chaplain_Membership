@@ -242,8 +242,9 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
    *
    * ROUND-2 R-H2 — this lock does NOT on its own close the upload's
    * probe→insert window: the dedup probe and the PUT run above it. The upload
-   * re-probes storage while holding this lock and re-PUTs when the bytes are
-   * gone. See `BroadcastImagesRepo.lockContentHash`.
+   * re-probes storage while holding this lock and re-PUTs only when that probe
+   * positively reports the bytes GONE (ROUND-3 #1 — a probe that failed is not
+   * a report). See `BroadcastImagesRepo.lockContentHash`.
    */
   async lockContentHash(tenantId, contentHash, tx) {
     await (tx as TenantTx).execute(
@@ -315,5 +316,19 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
     await (tx as TenantTx)
       .delete(broadcastImages)
       .where(and(eq(broadcastImages.tenantId, tenantId as string), eq(broadcastImages.id, imageId)));
+  },
+
+  /**
+   * ROUND-3 #4 — `SET LOCAL statement_timeout`, released when `tx` ends.
+   *
+   * `SET` takes no bind parameters, so the value is interpolated — which is
+   * why it is clamped to a sane integer range first. `ms` reaches this method
+   * only from the sweep's own constant, but a raw interpolation that relies on
+   * its caller for safety is the kind of thing that stops being true later.
+   * A bare integer is milliseconds to Postgres.
+   */
+  async setStatementTimeout(ms, tx) {
+    const bounded = Math.min(60_000, Math.max(1, Math.trunc(ms)));
+    await (tx as TenantTx).execute(sql.raw(`SET LOCAL statement_timeout = ${bounded}`));
   },
 };

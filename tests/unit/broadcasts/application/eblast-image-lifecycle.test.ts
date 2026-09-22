@@ -77,7 +77,7 @@ describe('uploadInlineImage — R-H2: the dedup short-circuit re-checks the blob
     Buffer.alloc(512, 7),
   ]);
 
-  function makeUploadDeps() {
+  function makeUploadDeps(storageOpts: { readonly rejectDuplicatePut?: boolean } = {}) {
     const allowlistPort: ImageAllowlistPort = {
       withTx: vi.fn(async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(null)),
       findByTenantId: vi
@@ -93,7 +93,7 @@ describe('uploadInlineImage — R-H2: the dedup short-circuit re-checks the blob
     return {
       allowlistPort,
       scanner,
-      storage: makeFakeImageStorage(),
+      storage: makeFakeImageStorage(storageOpts),
       audit: makeAudit(),
       imagesRepo: makeFakeBroadcastImagesRepo(),
       reencoder: makeFakeImageReencoder(),
@@ -178,6 +178,97 @@ describe('uploadInlineImage — R-H2: the dedup short-circuit re-checks the blob
     expect(r.ok).toBe(true);
     expect(vi.mocked(deps.storage.put)).not.toHaveBeenCalled();
     expect(deps.imagesRepo.rows).toHaveLength(1);
+  });
+
+  /**
+   * ROUND-3 #1 — the re-PUT was reached on a probe that knew NOTHING.
+   *
+   * The adapter answers `null` for every non-404 `head` failure: a Blob
+   * rate-limit, an expired token, a service blip. Under the lock that `null`
+   * was read as "the sweep took the bytes", so the upload re-PUT them — into a
+   * store where `allowOverwrite: false` makes a PUT over an existing pathname
+   * THROW. The throw was raised inside `imagesRepo.withTx`, so the row rolled
+   * back and the member got a 500 — and on the fresh-upload leg the bytes had
+   * already been written by the first PUT, leaving a blob with no row: exactly
+   * the unreachable-bytes class F2-1 exists to close.
+   *
+   * A probe that failed is `'unknown'`, not `'absent'`. On `'unknown'` the
+   * upload proceeds to the INSERT: either the first PUT succeeded (fresh leg)
+   * or the dedup hit above was genuine (dedup leg), so the bytes are there in
+   * both readings, and the sweep's lock is still held to keep them there.
+   */
+  it('a probe that FAILED under the lock (not a 404) does not re-PUT and still records the row', async () => {
+    const deps = makeUploadDeps();
+    const contentHash = createHash('sha256').update(PNG).digest('hex');
+    await deps.storage.put({
+      tenantId: TENANT,
+      bytes: new Uint8Array(PNG),
+      contentHash,
+      mimeType: 'image/png',
+      sanitisedFilename: 'seed.png',
+    });
+    vi.mocked(deps.storage.put).mockClear();
+    // The SECOND probe — the one under the lock — is a `head` that errored.
+    deps.storage.probeOverrides.set(2, 'unknown');
+
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: 'u-1',
+      actorEmail: 'u@example.com',
+      requestId: 'req-probe-unknown',
+      fileBytes: PNG,
+      filename: 'pic.png',
+      mimeType: 'image/png',
+      owner: { kind: 'broadcast', id: DRAFT },
+      actor: { role: 'member', memberId: MEMBER },
+    });
+
+    expect(r.ok).toBe(true);
+    expect(deps.imagesRepo.rows).toHaveLength(1);
+    expect(deps.imagesRepo.rows[0]!.deletedAt).toBeNull();
+    // Nothing was re-uploaded on a "don't know", and the bytes are still there.
+    expect(vi.mocked(deps.storage.put)).not.toHaveBeenCalled();
+    expect(deps.storage.keys.size).toBe(1);
+  });
+
+  /**
+   * ROUND-3 #1 — and when the probe genuinely says 404 but the bytes are back
+   * by the time the re-PUT lands (another upload of the same file won the
+   * race), `allowOverwrite: false` refuses it. The refusal means the object IS
+   * at that content-addressed key, which is what the re-PUT wanted: it is a
+   * success, not a 500 that discards the member's row.
+   */
+  it('a re-PUT refused as already-existing counts as stored, not as a failure', async () => {
+    const deps = makeUploadDeps({ rejectDuplicatePut: true });
+    const contentHash = createHash('sha256').update(PNG).digest('hex');
+    await deps.storage.put({
+      tenantId: TENANT,
+      bytes: new Uint8Array(PNG),
+      contentHash,
+      mimeType: 'image/png',
+      sanitisedFilename: 'seed.png',
+    });
+    vi.mocked(deps.storage.put).mockClear();
+    // Probe 2 reports a real 404 while the bytes are, in fact, present.
+    deps.storage.probeOverrides.set(2, 'absent');
+
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: 'u-1',
+      actorEmail: 'u@example.com',
+      requestId: 'req-reput-exists',
+      fileBytes: PNG,
+      filename: 'pic.png',
+      mimeType: 'image/png',
+      owner: { kind: 'broadcast', id: DRAFT },
+      actor: { role: 'member', memberId: MEMBER },
+    });
+
+    expect(r.ok).toBe(true);
+    expect(deps.imagesRepo.rows).toHaveLength(1);
+    // The re-PUT was attempted once and its refusal was absorbed.
+    expect(vi.mocked(deps.storage.put)).toHaveBeenCalledTimes(1);
+    expect(deps.storage.keys.size).toBe(1);
   });
 });
 
@@ -425,6 +516,65 @@ describe('reclaimOrphanedImages — F2-1 orphan arm + F2-10 races', () => {
       reason: 'sweep_orphaned',
       actor_role: 'system',
     });
+  });
+
+  /**
+   * ROUND-3 #4 — T035 requires the image-sweep block to run under "its own
+   * `SET LOCAL statement_timeout`" and nothing ever set one.
+   *
+   * Both of the sweep's per-row waits are unbounded without it. The advisory
+   * lock blocks until whoever holds it commits, and
+   * `isBlobReferencedByContent` is a sequential `position()` scan of
+   * `broadcasts` + `broadcast_templates` run once PER SWEPT ROW — up to 400 a
+   * tick. On a pooled Neon connection the app's own 5 s `statement_timeout` is
+   * dropped (the pooler reports 0), so neither resolves on its own: the tick
+   * runs until Vercel kills it at `maxDuration`, mid-sweep, with the blob
+   * store and `broadcast_images` left disagreeing.
+   *
+   * It has to be the FIRST statement of the transaction — a bound set after
+   * the statement it is meant to bound is not a bound.
+   */
+  it('ROUND-3 #4: every per-row tx bounds itself BEFORE it locks, counts or scans content', async () => {
+    const a = imageRow({ id: 'img-1', deletedAt: NOW });
+    const b = imageRow({ id: 'img-2', ownerId: 'draft-2', contentHash: 'hash-b', deletedAt: NOW });
+    const imagesRepo = makeFakeBroadcastImagesRepo([a, b]);
+    const order: string[] = [];
+    vi.mocked(imagesRepo.setStatementTimeout).mockImplementation(async () => {
+      order.push('timeout');
+    });
+    vi.mocked(imagesRepo.lockContentHash).mockImplementation(async () => {
+      order.push('lock');
+    });
+    vi.mocked(imagesRepo.countLiveByContentHash).mockImplementation(async () => {
+      order.push('count');
+      return 0;
+    });
+    vi.mocked(imagesRepo.isBlobReferencedByContent).mockImplementation(async () => {
+      order.push('content-scan');
+      return false;
+    });
+
+    await reclaimOrphanedImages(
+      { imagesRepo, storage: makeFakeImageStorage(), audit },
+      { tenantId: TENANT, now: NOW, requestId: 's' },
+    );
+
+    // Once per row, first each time.
+    expect(order).toEqual([
+      'timeout',
+      'lock',
+      'count',
+      'content-scan',
+      'timeout',
+      'lock',
+      'count',
+      'content-scan',
+    ]);
+    // A positive, finite bound in milliseconds, and the tx it belongs to.
+    const [ms, tx] = vi.mocked(imagesRepo.setStatementTimeout).mock.calls[0]!;
+    expect(ms).toBeGreaterThan(0);
+    expect(Number.isFinite(ms)).toBe(true);
+    expect(tx).toBe(FAKE_TX);
   });
 
   it('F2-10(a): the per-row tx takes the content-hash advisory lock BEFORE counting live rows', async () => {

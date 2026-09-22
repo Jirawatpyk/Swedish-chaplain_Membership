@@ -77,6 +77,22 @@ class ReencodeTimeoutError extends Error {
 const MALFORMED_INPUT =
   /unsupported image format|Input buffer contains unsupported image format|VipsJpeg|premature end|corrupt|Input file is missing|exceeds pixel limit/i;
 
+/**
+ * ROUND-3 #16 — a DEADLINE, not a cancellation.
+ *
+ * `Promise.race` settles the caller's promise; it cannot reach into libvips
+ * and stop the decode. The worker thread keeps going until it finishes on its
+ * own, still holding its memory, and the route has already answered 503. So
+ * this bounds how long the MEMBER waits, not how much work the process does —
+ * which matters because the retry they are invited to make starts a second
+ * decode beside the first.
+ *
+ * What actually bounds the work is `limitInputPixels` (`LIMIT_INPUT_PIXELS`,
+ * the 4096² cap) plus the 5 MB upload cap above it: they keep any single
+ * decode small enough that the orphaned one drains quickly. Raising either
+ * without revisiting this is how a decompression bomb turns into a memory
+ * incident that the timeout hides rather than prevents.
+ */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const bound = new Promise<never>((_resolve, reject) => {

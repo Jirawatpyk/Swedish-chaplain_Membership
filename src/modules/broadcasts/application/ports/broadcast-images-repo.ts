@@ -146,8 +146,14 @@ export interface BroadcastImagesRepo {
    * PUT both happen ABOVE this lock, so a complete sweep pass for the same
    * hash still fits between them. `recordImage` therefore re-asks
    * `existsByContentHash` while holding this lock and re-PUTs the bytes when
-   * they are gone (content-addressed key → idempotent). The lock is what makes
-   * that re-check meaningful; it is not a substitute for it.
+   * the probe says they are GONE. The lock is what makes that re-check
+   * meaningful; it is not a substitute for it.
+   *
+   * ROUND-3 #1 — "when they are gone" means `status: 'absent'`, not "the probe
+   * did not answer `present`": a `head` that FAILED knows nothing, and a
+   * re-PUT is not free (`allowOverwrite: false` makes it throw over existing
+   * content, which rolled back the row and stranded the blob). See
+   * `ImageProbeResult`.
    *
    * `broadcasts-image:` is a NEW sub-namespace. The three existing advisory
    * namespaces mean different things and are deliberately disjoint —
@@ -188,4 +194,21 @@ export interface BroadcastImagesRepo {
   restoreLive(tenantId: TenantSlug, imageId: string, tx: BroadcastImagesTx): Promise<void>;
   /** Hard-delete one row (after its blob is gone or kept by reference). */
   remove(tenantId: TenantSlug, imageId: string, tx: BroadcastImagesTx): Promise<void>;
+  /**
+   * ROUND-3 #4 — `SET LOCAL statement_timeout` on the caller's transaction,
+   * in MILLISECONDS. Takes no tenant: it configures the connection for the
+   * duration of `tx`, it does not read or write a tenant's rows.
+   *
+   * The sweep's per-row transaction needs it because both of its waits are
+   * otherwise unbounded: `lockContentHash` blocks until the holder commits,
+   * and `isBlobReferencedByContent` is a sequential `position()` scan over
+   * `broadcasts` + `broadcast_templates` run once per swept row (up to 400 a
+   * tick). `src/lib/db.ts` asks for 5 s at connect, but the pooled Neon
+   * endpoint DROPS it and reports 0 — so without this the tick has no
+   * database-side bound at all and is killed by `maxDuration` instead, part
+   * way through, leaving the blob store and this table disagreeing. It lives
+   * on the port (not as raw SQL in the use case) because Application may not
+   * import Drizzle — Principle III.
+   */
+  setStatementTimeout(ms: number, tx: BroadcastImagesTx): Promise<void>;
 }

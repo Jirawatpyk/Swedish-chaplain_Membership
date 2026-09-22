@@ -438,6 +438,15 @@ the member — carries the `[Test]` subject prefix, runs the **identical** pipel
 blocks, the brand header and the footer, and is capped at **10 per user per hour** (FR-037). The
 preview renders desktop **600 px** and phone **375 px** (FR-043).
 
+**The brand read is deliberately asymmetric** (ROUND-3 #10). A dispatch and the audience tick go
+through `_load-brand-chrome.ts`, which degrades to **no chrome** and increments
+`broadcasts_brand_chrome_unavailable_total{tenant,surface}` — a queued send must not be lost over a
+logo.
+The preview and the test copy call the port **directly**, so a brand-read fault **fails the request**
+and the operator sees an error instead of an unbranded email. That is the intent, not an oversight:
+these two surfaces exist to SHOW what will be sent, and a test copy that quietly arrives unbranded
+teaches the operator the brand is fine at the one moment they could have caught that it is not.
+
 ## `GET | PATCH /api/admin/broadcasts/brand` — chamber brand settings (FR-041b/c)
 
 Permission `settings.broadcasts` on **both** verbs.

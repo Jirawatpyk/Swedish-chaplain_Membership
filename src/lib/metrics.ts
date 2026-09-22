@@ -1751,6 +1751,18 @@ export const paymentsMetrics = {
 //   - NO recipient-email or member-id labels (FR-042 forbidden in logs/metrics)
 
 /**
+ * The bounded `surface` label on the two F119 preview instruments.
+ *
+ * Declared here rather than imported from
+ * `@/modules/broadcasts/application/use-cases/render-broadcast-preview`
+ * because `src/lib/metrics.ts` is reached from every layer and must not pull a
+ * module barrel in (Principle III). It mirrors that use case's
+ * `PreviewSurface` exactly — widening one without the other stops typechecking
+ * at the call site, which is the coupling we want.
+ */
+type PreviewMetricSurface = 'member' | 'staff' | 'detail';
+
+/**
  * Swallow OTel emission failures. The `@opentelemetry/api` calls usually
  * no-op when no SDK is registered, but `@vercel/otel` exporter init can
  * throw on first record under transient pipeline misconfiguration. The
@@ -1866,11 +1878,18 @@ export const broadcastsMetrics = {
 
   /**
    * `broadcasts_preview_rendered_total{tenant,surface}` — one per successful
-   * preview render (member compose / staff format / sign-off compare).
-   * Research R11: the preview is a server render of the real email; the
-   * 30/min per-actor bucket is the amplification guard, this is the meter.
+   * preview render: member compose, staff format / sign-off compare, and
+   * (ROUND-3 #11) `detail`, the two E-Blast DETAIL pages reading a stored
+   * broadcast back through the same renderer.
+   *
+   * `detail` is separate because it is a different shape of traffic: compose
+   * renders once per keystroke pause under the 30/min per-actor bucket, while
+   * a read-back fires once per page view and has no bucket at all. Folded
+   * together, neither rate means anything. Research R11: the preview IS a
+   * server render of the real email; the bucket is the amplification guard,
+   * this is the meter.
    */
-  previewRendered(tenantId: string | null, surface: 'member' | 'staff'): void {
+  previewRendered(tenantId: string | null, surface: PreviewMetricSurface): void {
     safeMetric(() => {
       counter(
         'broadcasts_preview_rendered_total',
@@ -1880,17 +1899,22 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts_preview_render_ms{tenant}` — server duration of one preview
-   * render (sanitise + brand read + wrapper). Budget p95 < 400 ms
+   * `broadcasts_preview_render_ms{tenant,surface}` — server duration of one
+   * preview render (sanitise + brand read + wrapper). Budget p95 < 400 ms
    * (plan § Technical Context; recorded by T160a in observability § 28).
+   *
+   * ROUND-3 #11 — `surface` joins the counter's label here too. The budget is
+   * a COMPOSE budget (it is what a member waits for between keystrokes); a
+   * detail read-back sharing the histogram would move the p95 without anyone
+   * being able to say which surface moved.
    */
-  previewRenderMs(tenantId: string | null, ms: number): void {
+  previewRenderMs(tenantId: string | null, ms: number, surface: PreviewMetricSurface): void {
     safeMetric(() => {
       histogram(
         'broadcasts_preview_render_ms',
         'E-Blast preview render duration, p95 target 400 ms (F119)',
         'ms',
-      ).record(ms, { tenant: tenantId ?? 'unknown' });
+      ).record(ms, { tenant: tenantId ?? 'unknown', surface });
     });
   },
 

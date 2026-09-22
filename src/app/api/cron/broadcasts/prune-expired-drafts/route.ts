@@ -10,10 +10,17 @@
  * impact.
  *
  * FR-001a: deletes broadcasts with `status='draft' AND updated_at <
- * now() - interval '30 days'`. NO audit event (drafts are user-
+ * now() - interval '30 days'`. No LIFECYCLE audit event (drafts are user-
  * controlled scratch space — preserves the FR-001 "drafts do NOT
  * consume or reserve quota" invariant). Members are not notified of
  * impending draft expiry in MVP.
+ *
+ * ROUND-3 #9 — it is NOT audit-silent, though, and this header used to say
+ * "NO audit event". F119 F2-1 made the prune stamp `deleted_at` on every
+ * image of every pruned draft, and each stamp emits `broadcast_image_removed
+ * { reason: 'draft_pruned', actor_role: 'system' }` in the same transaction
+ * as the DELETE. That is deliberate: the bytes are a member's personal data
+ * and their removal is the reachable record of it.
  *
  * Auth: Bearer token via `CRON_SECRET` (shared with F4 outbox-dispatch
  * + F5 stale-pending-count + F7 dispatch-scheduled + F7

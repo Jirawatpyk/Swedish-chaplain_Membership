@@ -38,9 +38,12 @@ function makeStorage(): ImageStoragePort & { readonly deleted: string[] } {
   const deleted: string[] = [];
   return {
     deleted,
-    existsByContentHash: vi.fn(async (tenantId: never, hash: string) =>
-      stored.get(`${tenantId as unknown as string}:${hash}`) ?? null,
-    ),
+    // ROUND-3 #1 — the probe is tri-state; this fake only ever KNOWS, so it
+    // answers `present` or `absent` and never `unknown`.
+    existsByContentHash: vi.fn(async (tenantId: never, hash: string) => {
+      const ref = stored.get(`${tenantId as unknown as string}:${hash}`);
+      return ref === undefined ? { status: 'absent' as const } : { status: 'present' as const, ...ref };
+    }),
     put: vi.fn(async (input: Parameters<ImageStoragePort['put']>[0]) => {
       const blobKey = `broadcasts/images/${input.tenantId as unknown as string}/${input.contentHash}.png`;
       const ref = { blobUrl: `https://${HOST}/${blobKey}`, blobKey };

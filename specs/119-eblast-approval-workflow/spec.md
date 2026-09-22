@@ -830,8 +830,10 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   E-Blast retention from F7; audit rows 5 years). Erasure and export must reach every stored
   version, every feedback/note text, every notification about the E-Blast and every image
   uploaded for it, not only the current content. "Not reachable" means the reference is removed
-  immediately and the stored file is deleted by the daily sweep within 24 hours once nothing —
-  no E-Blast and no template — references it; an image still referenced elsewhere is kept. The
+  immediately and the stored file is deleted by the daily sweep — on the next tick, 200 rows per
+  arm per tenant — once nothing — no E-Blast and no template — references it; an image still
+  referenced elsewhere is kept. (The bound is the batch, not a 24-hour clock, which is what this
+  line used to claim: a bulk erasure leaves more rows than one tick clears.) The
   record of processing must be updated before the flow is switched on for members, naming the
   new fields (versions, notes, reasons, decisions), the staff recipients of hand-off emails and
   the chamber postal address *(checklist default)*.

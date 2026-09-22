@@ -184,14 +184,32 @@ uses must not be deleted out from under it.
    ```
 
    It must be 0.
-3. After the next daily tick, expect a matching `broadcast_image_removed
-   { reason: 'sweep', blob_deleted: true }`. If instead you see NO sweep row for
-   that image and a non-zero `retained` in the tick summary, the blob is still
-   embedded in OTHER live content — that is correct behaviour and not an erasure
-   failure, but record it: the bytes survive because another data subject's
-   E-Blast uses the identical file. (ROUND-2 S-3: a retained image keeps its
-   row, un-stamped, so it stays reachable by a future sweep — it emits no audit
-   row, because nothing was removed.)
+3. After the next daily tick, expect one of **three** outcomes for that image.
+   They are different states and the runbook used to describe only two of them,
+   which made the middle one look like the third.
+
+   **(a) Reclaimed — the ordinary case.** `broadcast_image_removed
+   { reason: 'sweep', blob_deleted: true }`. The row is gone and so are the
+   bytes. Nothing further to record.
+
+   **(b) Row removed, bytes KEPT — a live row shares the hash.** Another
+   `broadcast_images` row, of either `owner_kind`, still points at the same
+   `content_hash`: another member uploaded the identical file, or it is a
+   chamber template's image. You get `broadcast_image_removed
+   { reason: 'sweep', blob_deleted: false }` — the erased member's REFERENCE is
+   gone, which is what Art. 17 requires of us here, while the file stays for
+   the other holder. Record which holder, so the next erasure of THAT subject
+   is understood to be the one that frees the bytes.
+
+   **(c) Retained — no live row, but live CONTENT still embeds the URL.** NO
+   audit row at all for that image and a non-zero `retained` in the tick
+   summary. This is the pre-0304 backfill gap (or a draft started from a
+   template, data-model § 4): some live `body_html` / `body_source` still
+   carries the blob URL although no row proves it. ROUND-2 S-3 keeps the row
+   AND un-stamps it, so the image stays reachable by a later sweep or a later
+   erasure — nothing was removed, so nothing claims it was. Correct behaviour,
+   not an erasure failure, but record it and name the content that holds the
+   URL: until that content goes, the file is still served.
 
 **Known limitation, recorded not guessed.** `broadcast_images` was NOT
 backfilled by migration 0304. An image uploaded BEFORE 0304 has no row, so this

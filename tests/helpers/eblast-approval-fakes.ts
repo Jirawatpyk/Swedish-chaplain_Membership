@@ -141,6 +141,10 @@ export function makeFakeBroadcastImagesRepo(seed: readonly BroadcastImageRecord[
       const i = rows.findIndex((r) => r.tenantId === (tenantId as unknown as string) && r.id === imageId);
       if (i >= 0) rows.splice(i, 1);
     }),
+    // ROUND-3 #4 — a no-op here; the real bound is `SET LOCAL`. Spying on it
+    // is how the sweep test proves the tx is bounded before it blocks on
+    // anything.
+    setStatementTimeout: vi.fn(async (_ms: number, _tx: unknown) => undefined),
   } satisfies BroadcastImagesRepo & { rows: BroadcastImageRecord[] };
   return repo;
 }
@@ -224,6 +228,15 @@ export interface FakeImageStorage extends ImageStoragePort {
   /** Keys currently stored. */
   readonly keys: Set<string>;
   readonly deleted: string[];
+  /**
+   * ROUND-3 #1 — force the Nth (1-based) `existsByContentHash` call to answer
+   * something other than the truth, so a test can model what the real adapter
+   * does: `'absent'` is a genuine 404, `'unknown'` is a `head` that FAILED
+   * (rate-limit / token / outage) and therefore knows nothing. The upload asks
+   * twice — once as the dedup short-circuit and once again under the
+   * content-hash lock — and the two answers must be steerable independently.
+   */
+  readonly probeOverrides: Map<number, 'absent' | 'unknown'>;
 }
 
 function keyFor(tenantId: string, contentHash: string, mime: ImageMimeType): string {
@@ -231,19 +244,46 @@ function keyFor(tenantId: string, contentHash: string, mime: ImageMimeType): str
   return `broadcasts/images/${tenantId}/${contentHash}.${ext}`;
 }
 
-export function makeFakeImageStorage(host = 'assets.swecham.zyncdata.app'): FakeImageStorage {
+export function makeFakeImageStorage(
+  opts: {
+    readonly host?: string;
+    /**
+     * ROUND-3 #1 — model `allowOverwrite: false`. `@vercel/blob` THROWS when
+     * the pathname already holds an object, so a PUT of bytes that are already
+     * there is not the silent no-op the adapter's comment used to claim.
+     */
+    readonly rejectDuplicatePut?: boolean;
+  } = {},
+): FakeImageStorage {
+  const host = opts.host ?? 'assets.swecham.zyncdata.app';
   const keys = new Set<string>();
   const deleted: string[] = [];
+  const probeOverrides = new Map<number, 'absent' | 'unknown'>();
+  let probeCalls = 0;
   const refFor = (key: string): StoredImageRef => ({ blobUrl: `https://${host}/${key}`, blobKey: key });
   return {
     keys,
     deleted,
+    probeOverrides,
     existsByContentHash: vi.fn(async (tenantId: never, contentHash: string, mime: ImageMimeType) => {
+      probeCalls += 1;
+      const override = probeOverrides.get(probeCalls);
+      if (override === 'absent') return { status: 'absent' as const };
+      if (override === 'unknown') {
+        return { status: 'unknown' as const, reason: 'fake: head failed' };
+      }
       const key = keyFor(tenantId as unknown as string, contentHash, mime);
-      return keys.has(key) ? refFor(key) : null;
+      return keys.has(key)
+        ? { status: 'present' as const, ...refFor(key) }
+        : { status: 'absent' as const };
     }),
     put: vi.fn(async (input: Parameters<ImageStoragePort['put']>[0]) => {
       const key = keyFor(input.tenantId as unknown as string, input.contentHash, input.mimeType);
+      if (opts.rejectDuplicatePut === true && keys.has(key)) {
+        throw new Error(
+          'Vercel Blob: This blob already exists, use `allowOverwrite: true` to overwrite it',
+        );
+      }
       keys.add(key);
       return { ...refFor(key), contentHash: input.contentHash };
     }),
@@ -251,7 +291,11 @@ export function makeFakeImageStorage(host = 'assets.swecham.zyncdata.app'): Fake
       keys.delete(blobKey);
       deleted.push(blobKey);
     }),
-  } satisfies ImageStoragePort & { keys: Set<string>; deleted: string[] };
+  } satisfies ImageStoragePort & {
+    keys: Set<string>;
+    deleted: string[];
+    probeOverrides: Map<number, 'absent' | 'unknown'>;
+  };
 }
 
 /**

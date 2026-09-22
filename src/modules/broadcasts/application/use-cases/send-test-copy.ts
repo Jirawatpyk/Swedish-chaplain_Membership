@@ -10,6 +10,16 @@
  * the SAME wrapper (`EmailRendererPort`). It changes nothing: no stage, no
  * version, no allowance — this use case has no port that could.
  *
+ * ROUND-3 #10 — "IDENTICAL pipeline" is true of the STAGES and deliberately
+ * NOT of the brand read's failure mode. Dispatch and the audience tick go
+ * through `_load-brand-chrome.ts`, which degrades to no chrome and counts
+ * `brandChromeUnavailable` — a send must not be lost over a logo. Here and in
+ * `renderBroadcastPreview` the read is called directly, so a fault propagates
+ * and the operator gets an error instead of an email. That asymmetry is the
+ * point: the test copy exists to SHOW what will be sent, and a test copy that
+ * quietly arrives unbranded teaches the operator the brand is broken at the
+ * one moment they would otherwise have caught it.
+ *
  * Synchronous through `TestCopyMailerPort` (the transactional sender):
  * the outcome is reported in-band, no outbox row exists. Audit
  * `broadcast_test_copy_sent { related_member_id, broadcast_id | null,

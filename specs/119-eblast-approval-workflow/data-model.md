@@ -169,7 +169,7 @@ The record that makes image ownership enforceable and image erasure reachable (R
 | `byte_size` | `integer NOT NULL CHECK (byte_size BETWEEN 1 AND 5*1024*1024)` | mirrors `MAX_BYTES` (`upload-inline-image.ts:38`) |
 | `uploaded_by_user_id` | `uuid NOT NULL` | member or staff |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | |
-| `deleted_at` | `timestamptz NULL` | marked in the SAME transaction as whatever removed the reference, auditing `broadcast_image_removed` with the matching `reason`; the bytes go on the next sweep. **Live reason vocabulary**: `draft_discarded` (the member's Discard draft, `DELETE /api/broadcasts/draft/[id]`) · `draft_pruned` (the 30-day prune cron) · `member_erased` (the F3 erasure cascade, via `markDeletedForMember` inside the content-redaction tx) · `withdrawn` / `rejected` (T081, PR-2) · and the sweep's own three outcomes `sweep` / `sweep_orphaned` / `sweep_referenced` (T035). The first three were added by review finding F2-1: the two hard-delete paths stamped NOTHING, so their images were unreachable by the sweep and by erasure, permanently. (This row previously said “all four declared reasons have an emit site” — true of the four then declared, and it is why the two that were never declared went unnoticed.) |
+| `deleted_at` | `timestamptz NULL` | marked in the SAME transaction as whatever removed the reference, auditing `broadcast_image_removed` with the matching `reason`; the bytes go on the next sweep. **Live reason vocabulary**: `draft_discarded` (`DELETE /api/broadcasts/draft/[id]` — **API-only today**: there is no Discard button in the portal, and the delete-dialog i18n keys that once implied one were dead and have been deleted, so this reason is reachable only by a direct call, ROUND-3 #13) · `draft_pruned` (the 30-day prune cron) · `member_erased` (the F3 erasure cascade, via `markDeletedForMember` inside the content-redaction tx) · `withdrawn` / `rejected` (T081, PR-2) · and the sweep's own TWO outcomes `sweep` / `sweep_orphaned` (T035). There is no `sweep_referenced` reason: ROUND-2 S-3 turned that case into a RETAINED arm which removes nothing — the row is un-stamped back into the live set (a removed row is reachable by no arm and by no erasure, while its bytes keep being served) and therefore emits no audit row at all, only `broadcasts_image_sweep_retained_total{tenant}`. The first three were added by review finding F2-1: the two hard-delete paths stamped NOTHING, so their images were unreachable by the sweep and by erasure, permanently. (This row previously said “all four declared reasons have an emit site” — true of the four then declared, and it is why the two that were never declared went unnoticed.) |
 
 **Indexes**: `(tenant_id, owner_kind, owner_id)`; `(tenant_id, content_hash)` — the
 **last-reference rule** (`DELETE the blob only when no row with the same `content_hash` has
@@ -177,15 +177,27 @@ The record that makes image ownership enforceable and image erasure reachable (R
 
 **Lifecycle wording the spec fixes (§ Personal data)**: "not reachable" means the **reference is
 removed from the content immediately** (the scrub/withdrawal/rejection transaction stamps
-`deleted_at` and the HTML no longer points at it), and the **file is deleted by the daily sweep
-within 24 hours** once **nothing** — neither an E-Blast nor a template, i.e. no live row of either
-`owner_kind` — shares its `content_hash`. An image still referenced elsewhere is kept, by design.
+`deleted_at` and the HTML no longer points at it), and the **file is deleted by the daily sweep, on
+the next tick, 200 rows per arm per tenant**, once **nothing** — neither an E-Blast nor a template,
+i.e. no live row of either `owner_kind` — shares its `content_hash`. An image still referenced
+elsewhere is kept, by design. (This paragraph used to say "within 24 hours". The bound is the
+BATCH, not the clock: a bulk erasure or a prune of a backlog leaves more than 400 rows and clears
+over successive ticks, and a row whose blob delete throws waits for the tick after.)
 
 **No per-block authorship column, by decision.** Blocks and links carried into a draft from a
 template are ordinary content the member may edit or delete, and authorship is **not tracked per
 block** (FR-046a) — there is no `source_template_id` on a block and no provenance field anywhere in
-the body. A template image simply gains a second `broadcast_images` row under
-`owner_kind='broadcast'`, sharing the content hash, which is what the last-reference rule needs.
+the body.
+
+**A draft started from a template gets NO image row of its own** (ROUND-3 #6; this paragraph used
+to say it "simply gains a second `broadcast_images` row under `owner_kind='broadcast'`"). Nothing
+writes one: `snapshotTemplateToDraft` copies the body and records nothing, and T140 re-seeds the
+editor client-side — a row is only ever written by an upload. The bytes survive on two other
+mechanisms instead: the TEMPLATE's row stays live (templates are soft-deleted, so removing one does
+not orphan its images) and the sweep's `isBlobReferencedByContent` backstop keeps any blob a live
+`body_html` / `body_source` still embeds. **Follow-up**: record a draft-side row at first save when
+the saved body embeds a blob URL whose only live row is a template's — a content scan is a weaker
+claim than a row, and it cannot be stamped by an erasure.
 
 **Not backfilled.** Images uploaded before 0304 have no row, so they are never swept; they remain
 reachable exactly as today. Recorded rather than guessed — reconstructing owners from historical

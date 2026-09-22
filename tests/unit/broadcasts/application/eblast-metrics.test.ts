@@ -71,16 +71,23 @@ describe('T122a — preview metrics registration (PR-1)', () => {
   it('previewRendered emits `broadcasts_preview_rendered_total{tenant,surface}`', () => {
     broadcastsMetrics.previewRendered(TENANT, 'member');
     broadcastsMetrics.previewRendered(TENANT, 'staff');
+    // ROUND-3 #11 — the two DETAIL read-backs get their own label; folded into
+    // `member` / `staff` a per-page-view render was indistinguishable from a
+    // per-keystroke compose render.
+    broadcastsMetrics.previewRendered(TENANT, 'detail');
     expect(counterAdds.get('broadcasts_preview_rendered_total')).toEqual([
       { value: 1, attrs: { tenant: TENANT, surface: 'member' } },
       { value: 1, attrs: { tenant: TENANT, surface: 'staff' } },
+      { value: 1, attrs: { tenant: TENANT, surface: 'detail' } },
     ]);
   });
 
-  it('previewRenderMs records `broadcasts_preview_render_ms{tenant}` in ms', () => {
-    broadcastsMetrics.previewRenderMs(TENANT, 42);
+  it('previewRenderMs records `broadcasts_preview_render_ms{tenant,surface}` in ms', () => {
+    broadcastsMetrics.previewRenderMs(TENANT, 42, 'member');
+    broadcastsMetrics.previewRenderMs(TENANT, 7, 'detail');
     expect(histogramRecords.get('broadcasts_preview_render_ms')).toEqual([
-      { value: 42, attrs: { tenant: TENANT } },
+      { value: 42, attrs: { tenant: TENANT, surface: 'member' } },
+      { value: 7, attrs: { tenant: TENANT, surface: 'detail' } },
     ]);
   });
 
@@ -106,7 +113,7 @@ describe('T122a — preview metrics registration (PR-1)', () => {
     ]);
     const recs = histogramRecords.get('broadcasts_preview_render_ms');
     expect(recs).toHaveLength(1);
-    expect(recs![0]!.attrs).toEqual({ tenant: TENANT });
+    expect(recs![0]!.attrs).toEqual({ tenant: TENANT, surface: 'member' });
     expect(recs![0]!.value).toBeGreaterThanOrEqual(0);
   });
 
