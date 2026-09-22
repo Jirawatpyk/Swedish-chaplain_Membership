@@ -13,7 +13,7 @@
  * deter casual scraping (collisions require a SHA-256 preimage of
  * arbitrary tenant content).
  */
-import { put, head, del } from '@vercel/blob';
+import { BlobNotFoundError, put, head, del } from '@vercel/blob';
 import { logger } from '@/lib/logger';
 import type {
   ImageMimeType,
@@ -25,13 +25,15 @@ import type { TenantSlug } from '@/modules/tenants';
 import { env } from '@/lib/env';
 
 /**
- * @vercel/blob does not export typed error classes — F4 detects
- * NOT-FOUND via message regex (see get-credit-note-pdf-signed-url.ts:103).
- * Mirror that pattern here so dedup probes only swallow genuine
- * not-founds; auth / suspend / rate-limit errors surface to logger
- * for ops visibility (PR-review fix 2026-05-20 SF-H1 closure).
+ * NOT-FOUND is classified by the SDK's own class. `@vercel/blob@2.3.3`
+ * exports `BlobNotFoundError` and its message is "Vercel Blob: The requested
+ * blob does not exist" — the earlier regex (`not found|404`) never matched
+ * it, so every genuine miss read as `unknown` and the `absent` arm below was
+ * dead in production (round-3 reliability re-check, 2026-09-22). Pinned by
+ * `tests/unit/broadcasts/infrastructure/vercel-blob-image-storage-probe.test.ts`
+ * against the real class, never a hand-written string. Auth / suspend /
+ * rate-limit errors still surface to the logger (SF-H1).
  */
-const BLOB_NOT_FOUND_PATTERN = /not found|404|BlobNotFoundError/i;
 
 const MIME_EXT: Record<ImageMimeType, string> = {
   'image/png': 'png',
@@ -77,7 +79,7 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       // a rate-limited `head` looked exactly like "the sweep took the bytes".
       // A failed probe is `unknown`; only a genuine 404 is `absent`.
       const msg = e instanceof Error ? e.message : String(e);
-      if (BLOB_NOT_FOUND_PATTERN.test(msg)) return { status: 'absent' };
+      if (e instanceof BlobNotFoundError) return { status: 'absent' };
       logger.warn(
         { err: msg, tenantId, contentHash, mime: mimeType },
         'broadcasts.blob_head_error',

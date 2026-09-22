@@ -23,6 +23,7 @@
  */
 import type { PreviewState } from '@/components/broadcast/use-preview-html';
 import { isLocale } from '@/i18n/config';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { makeRenderBroadcastPreviewDeps } from '@/lib/broadcast-brand-deps';
 import { renderBroadcastPreview } from '@/modules/broadcasts';
@@ -69,7 +70,7 @@ export async function renderBroadcastDetailBody(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId: args.tenantSlug,
         broadcastId: args.broadcastId,
       },

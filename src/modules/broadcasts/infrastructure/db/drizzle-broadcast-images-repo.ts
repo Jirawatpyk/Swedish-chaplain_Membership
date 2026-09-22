@@ -328,7 +328,8 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
    * A bare integer is milliseconds to Postgres.
    */
   async setStatementTimeout(ms, tx) {
-    const bounded = Math.min(60_000, Math.max(1, Math.trunc(ms)));
+    // NaN survives min/max; a non-finite input falls back to the 5 s default.
+    const bounded = Number.isFinite(ms) ? Math.min(60_000, Math.max(1, Math.trunc(ms))) : 5_000;
     await (tx as TenantTx).execute(sql.raw(`SET LOCAL statement_timeout = ${bounded}`));
   },
 };
