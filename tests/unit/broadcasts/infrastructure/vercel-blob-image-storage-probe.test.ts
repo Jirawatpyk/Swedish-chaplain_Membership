@@ -63,6 +63,15 @@ describe('vercelBlobImageStorage.existsByContentHash — tri-state probe vs the 
     }
   });
 
+  it('the SDK\'s NOT-FOUND message is the one we measured (a regex on "not found"/404 never matched it)', async () => {
+    const { BlobNotFoundError } = await import('@vercel/blob');
+    // MEASURED against the live dev store on 2026-09-22. Pinned so an SDK
+    // upgrade that reworded it fails HERE rather than silently reviving the
+    // dead-`absent`-arm bug this suite exists for.
+    expect(new BlobNotFoundError().message).toBe('Vercel Blob: The requested blob does not exist');
+    expect(/not found|404/i.test(new BlobNotFoundError().message)).toBe(false);
+  });
+
   it('a hit → present with the SDK\'s url and the content-addressed key', async () => {
     headMock.mockResolvedValueOnce({ url: 'https://blob.example/x.png' });
     const { vercelBlobImageStorage } = await import(

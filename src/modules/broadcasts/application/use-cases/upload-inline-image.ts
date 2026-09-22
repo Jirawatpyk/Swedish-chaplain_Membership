@@ -592,12 +592,21 @@ async function ensureBlobHostAllowlisted(
 /**
  * ROUND-3 #1 — does this storage error mean "the pathname is already taken"?
  *
- * `@vercel/blob` exports no typed error classes, so this mirrors the
- * message-regex convention the adapter already uses for NOT-FOUND
- * (`vercel-blob-image-storage.ts` `BLOB_NOT_FOUND_PATTERN`, itself copied
- * from F4's `get-credit-note-pdf-signed-url.ts`). Both halves of the real
- * message are matched — the sentence and the flag it names — so a wording
- * change on one side still classifies.
+ * MEASURED against the live dev store on 2026-09-22 (a deliberate duplicate
+ * PUT with `allowOverwrite` defaulted): `@vercel/blob@2.3.3` throws a plain
+ * **`BlobError`** — there is NO `BlobAlreadyExists` subclass to test with
+ * `instanceof`, unlike NOT-FOUND (`BlobNotFoundError`, which the adapter now
+ * classifies by class). The verbatim message is:
+ *
+ *   Vercel Blob: This blob already exists, use `allowOverwrite: true` if you
+ *   want to overwrite it. Or `addRandomSuffix: true` to generate a unique
+ *   filename. Read more about this error in our documentation:
+ *   https://vercel.link/blob-allow-overwrite
+ *
+ * So a message regex is the only instrument available here, and both halves
+ * are matched — the sentence and the flag it names — so a wording change on
+ * one side still classifies. `tests/helpers/eblast-approval-fakes.ts` throws
+ * that exact string, so the fake cannot drift from the API it models.
  *
  * At a CONTENT-ADDRESSED key this is not a failure: whatever is at the key is
  * the bytes we were writing.

@@ -251,6 +251,11 @@ export function makeFakeImageStorage(
      * ROUND-3 #1 — model `allowOverwrite: false`. `@vercel/blob` THROWS when
      * the pathname already holds an object, so a PUT of bytes that are already
      * there is not the silent no-op the adapter's comment used to claim.
+     *
+     * The thrown message below is VERBATIM from the live dev store
+     * (measured 2026-09-22 with a deliberate duplicate PUT) — a plain
+     * `BlobError`, since the SDK has no already-exists subclass. Keep it
+     * byte-identical: it is what `isBlobAlreadyExists` is pinned against.
      */
     readonly rejectDuplicatePut?: boolean;
   } = {},
@@ -281,7 +286,9 @@ export function makeFakeImageStorage(
       const key = keyFor(input.tenantId as unknown as string, input.contentHash, input.mimeType);
       if (opts.rejectDuplicatePut === true && keys.has(key)) {
         throw new Error(
-          'Vercel Blob: This blob already exists, use `allowOverwrite: true` to overwrite it',
+          'Vercel Blob: This blob already exists, use `allowOverwrite: true` if you want to overwrite it. ' +
+            'Or `addRandomSuffix: true` to generate a unique filename. ' +
+            'Read more about this error in our documentation: https://vercel.link/blob-allow-overwrite',
         );
       }
       keys.add(key);
