@@ -27,9 +27,24 @@
  * member portal chrome. Nothing here writes a CSS variable or a theme token;
  * the one place it is rendered is the swatch beside the field, which is a
  * preview of the e-mail button, not app chrome.
+ *
+ * T155 § 15 findings closed here:
+ *   - **U19** the screen is a real `<form>`, so Enter in the colour field
+ *     saves. (The address textarea keeps Enter for a newline — FR-041c makes
+ *     the address multi-line, and that is a textarea's native behaviour
+ *     inside a form.) The two compose surfaces stay `<div>` roots on purpose:
+ *     a rich-text body owns Enter.
+ *   - **U17** a disabled Save names its reason through `aria-describedby`; a
+ *     keyboard user used to hear "Save, dimmed" and nothing else (WCAG 3.3.2).
+ *   - **U18** an unsaved colour or address arms the browser's leave prompt,
+ *     as both compose surfaces already did.
+ *   - **U16** the logo swatch is a themed surface with a transparency
+ *     checker, not `bg-white`. See its comment for why the e-mail PREVIEW
+ *     iframe keeps white and this does not.
  */
 import Link from 'next/link';
 import { useId, useMemo, useState, useTransition } from 'react';
+import { useBeforeUnloadGuard } from '@/hooks/use-beforeunload-guard';
 import { useTranslations } from 'next-intl';
 import { InfoIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -78,6 +93,10 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
   const addressFieldId = useId();
   const colourHintId = useId();
   const addressHintId = useId();
+  // U17 — the two reasons Save can be disabled, each on the element that
+  // already states it visibly.
+  const colourReasonId = useId();
+  const addressTooLongId = useId();
 
   const [view, setView] = useState<BrandSettingsView>(initial);
   const [colour, setColour] = useState(initial.primaryColor ?? '');
@@ -101,6 +120,22 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
   const addressMissing = normalisedAddress.length === 0;
 
   const canSave = meetsAa && !addressTooLong && !isPending;
+
+  // U17 — every reason the Save is dimmed, in DOM order, so a screen reader
+  // hears them all. Empty when Save is enabled: an `aria-describedby` that
+  // always points somewhere would describe a control that has nothing wrong.
+  const saveBlockedReasonIds = [
+    ...(meetsAa ? [] : [colourReasonId]),
+    ...(addressTooLong ? [addressTooLongId] : []),
+  ].join(' ');
+
+  // U18 — the last SAVED view is `view`; `save()` replaces it on 200, so a
+  // successful save disarms this without a second snapshot to keep in step.
+  useBeforeUnloadGuard(
+    !isPending &&
+      (colour !== (view.primaryColor ?? '') ||
+        address !== (view.postalAddress ?? '')),
+  );
 
   function save(): void {
     startTransition(async () => {
@@ -157,7 +192,13 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
   }
 
   return (
-    <div className="space-y-6">
+    <form
+      className="space-y-6"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (canSave) save();
+      }}
+    >
       <Card>
         <CardHeader>
           <CardTitle>{t('colour.heading')}</CardTitle>
@@ -201,10 +242,15 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
             ) : null}
           </div>
 
+          {/* U17 — exactly ONE of these two renders, so they share the id the
+              Save button points at when the colour is what blocks it. */}
           {normalisedColour === null ? (
-            <p className="text-sm text-destructive">{t('colour.invalid')}</p>
+            <p id={colourReasonId} className="text-sm text-destructive">
+              {t('colour.invalid')}
+            </p>
           ) : (
             <p
+              id={colourReasonId}
               data-testid="brand-contrast-readout"
               className={meetsAa ? 'text-sm text-success' : 'text-sm text-destructive'}
             >
@@ -258,7 +304,7 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
             })}
           </p>
           {addressTooLong ? (
-            <p className="text-sm text-destructive">
+            <p id={addressTooLongId} className="text-sm text-destructive">
               {t('address.tooLong', { max: BRAND_POSTAL_ADDRESS_MAX })}
             </p>
           ) : null}
@@ -285,13 +331,32 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
             /* The logo is a tenant-uploaded blob on an external host, and
                `next/image` would need every tenant's CDN in
                `images.remotePatterns` — same call as
-               `directory-logo-control.tsx`. */
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={view.logo.url}
-              alt={t('logo.alt')}
-              className="max-h-16 w-auto rounded-md border bg-white p-2"
-            />
+               `directory-logo-control.tsx`.
+
+               T155 finding U16 — the backing was `bg-white`: measured in dark
+               mode as a 91 × 64 px `rgb(255,255,255)` patch on a `lab(7.8 …)`
+               card. The email PREVIEW iframe keeps white and is right to (see
+               `use-preview-html.tsx` — it is a whole document every mail
+               client composites on white); this is a chrome-scale swatch, and
+               chrome follows the theme. The checker is the affordance that
+               white was standing in for: it says "this part of the PNG is
+               transparent" in either theme, without a glare patch. */
+            <div
+              data-testid="brand-logo-preview"
+              className="inline-block rounded-md border bg-card p-2"
+              style={{
+                backgroundImage:
+                  'repeating-conic-gradient(var(--color-muted) 0% 25%, transparent 0% 50%)',
+                backgroundSize: '12px 12px',
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={view.logo.url}
+                alt={t('logo.alt')}
+                className="max-h-16 w-auto"
+              />
+            </div>
           )}
           <p className="text-sm text-muted-foreground">{t('logo.source')}</p>
           {view.logo.manageHref === null ? (
@@ -308,10 +373,16 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
       </Card>
 
       <div className="flex justify-end">
-        <Button type="button" onClick={save} disabled={!canSave}>
+        <Button
+          type="submit"
+          disabled={!canSave}
+          {...(saveBlockedReasonIds !== ''
+            ? { 'aria-describedby': saveBlockedReasonIds }
+            : {})}
+        >
           {isPending ? t('actions.saving') : t('actions.save')}
         </Button>
       </div>
-    </div>
+    </form>
   );
 }

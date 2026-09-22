@@ -15,12 +15,17 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { NextIntlClientProvider } from 'next-intl';
 import { Editor } from '@tiptap/core';
 import enMessages from '@/i18n/messages/en.json';
-import { TiptapToolbar } from '@/components/broadcast/tiptap-toolbar';
+import {
+  IMAGE_DISABLED_HINT_ID,
+  TiptapToolbar,
+} from '@/components/broadcast/tiptap-toolbar';
 import { makeBroadcastEditorExtensions } from '@/components/broadcast/broadcast-editor-extensions';
 
 let editor: Editor | null = null;
 
-function renderToolbar(): { toolbar: HTMLElement; buttons: HTMLElement[] } {
+function renderToolbar(
+  overrides: Partial<React.ComponentProps<typeof TiptapToolbar>> = {},
+): { toolbar: HTMLElement; buttons: HTMLElement[] } {
   editor = new Editor({
     extensions: makeBroadcastEditorExtensions({ images: true }),
     content: '<p>hello</p>',
@@ -34,6 +39,7 @@ function renderToolbar(): { toolbar: HTMLElement; buttons: HTMLElement[] } {
         imageInsertEnabled
         onInsertImage={() => {}}
         onInsertBanner={() => {}}
+        {...overrides}
       />
     </NextIntlClientProvider>,
   );
@@ -126,5 +132,40 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
     const { toolbar } = renderToolbar();
     expect(toolbar).toHaveAttribute('aria-label');
     expect(toolbar.getAttribute('aria-label')).not.toBe('');
+  });
+});
+
+/**
+ * T155 finding U6 — the disabled Image and Banner controls explained
+ * themselves ONLY through `title`: hover-only (no touch, no keyboard) and not
+ * a reliable description once an `aria-label` is present. The visible sentence
+ * "Save this draft first to enable image uploads." was already on the page,
+ * unassociated. WCAG 3.3.2 (Labels or Instructions) / 1.3.1.
+ */
+describe('U6 — the unavailable image controls point at the visible reason', () => {
+  const unavailable = (buttons: HTMLElement[]): HTMLElement[] =>
+    buttons.filter((b) => b.getAttribute('aria-disabled') === 'true');
+
+  it('with no saved draft, image + banner are aria-disabled and describedby the hint', () => {
+    const { buttons } = renderToolbar({ imageInsertEnabled: false });
+    const blocked = unavailable(buttons);
+    // The two FR-038 controls that need a draft before an upload can exist.
+    expect(blocked).toHaveLength(2);
+    for (const b of blocked) {
+      expect(
+        b.getAttribute('aria-describedby'),
+        'a keyboard or touch user must reach the reason without hovering',
+      ).toBe(IMAGE_DISABLED_HINT_ID);
+      // …and they stay focusable, so the description is reachable at all.
+      expect(b.getAttribute('tabindex')).not.toBeNull();
+    }
+  });
+
+  it('once the draft is saved, nothing is described by the hint (its element is gone)', () => {
+    const { buttons } = renderToolbar({ imageInsertEnabled: true });
+    expect(unavailable(buttons)).toHaveLength(0);
+    for (const b of buttons) {
+      expect(b.getAttribute('aria-describedby')).toBeNull();
+    }
   });
 });

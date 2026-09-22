@@ -107,19 +107,16 @@ export function ComposeInlineImageUploader({
           typeof body.error === 'string'
             ? body.error
             : (body.error?.code ?? 'unknown');
-        // UX M-3 fix 2026-05-21 (review finding enterprise-ux-designer
-        // M-3): wrap dynamic-key lookup in try/catch with fallback to
-        // `errors.unknown`. next-intl throws on missing keys by
-        // default — a future API expansion adding a new error code
-        // (e.g. `rate_limited`, `tenant_not_found`) would crash the
-        // upload UI before this guard landed. Pattern mirrors F6.1
-        // Phase 5 US5 fix.
-        let msg: string;
-        try {
-          msg = t(`errors.${code}`);
-        } catch {
-          msg = t('errors.unknown');
-        }
+        // UX M-3 fix 2026-05-21 — a future API expansion adding a new error
+        // code (`rate_limited`, `tenant_not_found`, …) must not reach the
+        // member as a raw key.
+        //
+        // T155 finding U8 — the original guard was a `try/catch`, on the
+        // premise that "next-intl throws on missing keys by default". It does
+        // NOT: it returns the key PATH, so the catch was dead and the raw path
+        // was shown. `t.has()` is the guard that actually runs.
+        const key = `errors.${code}` as Parameters<typeof t>[0];
+        const msg = t.has(key) ? t(key) : t('errors.unknown');
         setError(msg);
         toast.error(msg);
         return;

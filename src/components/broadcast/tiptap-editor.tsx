@@ -27,7 +27,11 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Info } from 'lucide-react';
-import { TiptapToolbar, type AnnounceKey } from './tiptap-toolbar';
+import {
+  IMAGE_DISABLED_HINT_ID,
+  TiptapToolbar,
+  type AnnounceKey,
+} from './tiptap-toolbar';
 import { makeBroadcastEditorExtensions } from './broadcast-editor-extensions';
 import { makeBroadcastPasteTransform } from './broadcast-paste-transform';
 import { ImageAltDialog, type ImageAltVariant } from './image-alt-dialog';
@@ -325,9 +329,13 @@ export default function TiptapEditor({
             // PR-review fix 2026-05-20 UX-M3 — pair the hint with an
             // Info icon + alert styling (was plain <p>, blended into
             // surrounding body text). Matches F7 quota-warning pattern.
+            // T155 finding U6 — the id is what the aria-disabled Image and
+            // Banner controls point their `aria-describedby` at. This branch
+            // renders on the SAME condition that disables them (`draftId ===
+            // null`), so the target exists whenever it is referenced.
             <div className="flex items-start gap-2 text-muted-foreground text-sm">
               <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
-              <p>{tImage('draftRequiredHint')}</p>
+              <p id={IMAGE_DISABLED_HINT_ID}>{tImage('draftRequiredHint')}</p>
             </div>
           )}
         </div>

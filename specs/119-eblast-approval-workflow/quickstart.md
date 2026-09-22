@@ -597,6 +597,33 @@ polish. Paths are repo-relative.
 - **U26 — raw JS error text toasted untranslated** (`compose-form.tsx:415-417`): a network failure
   surfaces "Failed to fetch" in EN on a TH or SV interface.
 
+##### Status after F3 — 2026-09-22
+
+**CLOSED** (fix + test in the same change, each test RED before the fix): **U1** (the skeleton
+renders the third card and reserves `DETAIL_PREVIEW_FRAME_HEIGHT`, now a shared constant in
+`src/components/broadcast/preview-frame-heights.ts`) · **U2** (the queue header goes through
+`PageHeader`'s `actions` slot; the e2e case is WRITTEN but **NOT RUN** — no dev server was
+available and this session does not start one, so the 320 px measurement is still OWED) · **U3**
+· **U4** (both via the new `useSurvivingTargetFinalFocus`; the survivors are the banner heading and
+the allowlist table) · **U5** (+ a source scan with a positive control, `no-italic-thai.test.ts`)
+· **U6** · **U7** · **U8** (all four sites, `t.has()`) · **U10** · **U11** · **U16** · **U17** ·
+**U18** · **U19** (Brand only — the two compose surfaces keep their `<div>` roots).
+
+Also closed here, from the security round rather than § 15: `createBroadcastTemplate` and
+`updateBroadcastTemplate` now run `validateBlocks(parseBlockMarkers(sanitised))` above the first
+write and both template routes answer through `designBlockErrorResponse`, so
+`broadcasts-route-helpers.ts:99`'s "refused 422 at every save" is literally true. Four
+design-block keys added to `admin.broadcasts.templates.errors` in EN + TH + SV.
+
+**STILL OPEN**, unchanged and deliberately not touched: **U9** (queue pagination) · **U12**
+(skeleton drift on the six files outside this record's PR-1 screens) · **U13** (no template
+delete UI) · **U14** (chip focus ring) · **U15** (toolbar Arrow Up/Down + `aria-orientation`) ·
+**U20**–**U26**.
+
+Two measurement debts remain from the record above and are NOT discharged by this round: the three
+member-portal surfaces were walked from code only (the `E2E_MEMBER_EMAIL_EMPTY` persona does not
+sign in on the `dev` branch), and no screen reader was run.
+
 ### 3.2 PR-2 — the approval round, the dashboard and the trial (ships DARK)
 
 **There is no PR-3.** The maintainer merged the former PR-3 (US4 dashboard + US7 trial) into PR-2 on

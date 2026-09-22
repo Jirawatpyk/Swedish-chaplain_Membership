@@ -54,6 +54,18 @@ import { cn } from '@/lib/utils';
 import { LinkDialog } from './link-dialog';
 import { CtaButtonDialog } from './cta-button-dialog';
 
+/**
+ * T155 finding U6 — id of the VISIBLE sentence that explains why the Image and
+ * Banner controls are unavailable ("Save this draft first to enable image
+ * uploads."). `tiptap-editor.tsx` renders it on exactly the same condition
+ * that makes those controls `aria-disabled`, so the `aria-describedby` target
+ * exists whenever it is referenced and never dangles.
+ *
+ * `title` alone was the whole explanation before this: hover-only (no touch,
+ * no keyboard) and not a reliable description once an `aria-label` is present.
+ */
+export const IMAGE_DISABLED_HINT_ID = 'broadcast-image-draft-required-hint';
+
 export type AnnounceKey =
   | 'boldOn'
   | 'boldOff'
@@ -348,7 +360,13 @@ export function TiptapToolbar({
             aria-label={control.label}
             {...(control.pressed !== undefined && { 'aria-pressed': control.pressed })}
             {...(control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
-            {...(control.unavailable === true && { 'aria-disabled': true })}
+            {...(control.unavailable === true && {
+              'aria-disabled': true,
+              // U6 — the reason, reachable without a pointer. `unavailable` is
+              // set only by the two image controls, and only while no draft is
+              // saved, which is exactly when the hint is on the page.
+              'aria-describedby': IMAGE_DISABLED_HINT_ID,
+            })}
             {...(control.title !== undefined && { title: control.title })}
             tabIndex={index === tabStop ? 0 : -1}
             onFocus={() => setActiveIndex(index)}

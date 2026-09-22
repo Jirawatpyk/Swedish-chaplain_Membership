@@ -23,7 +23,11 @@ import {
   TEMPLATE_MAX_SUBJECT_LENGTH,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
+import {
+  baseHeaders,
+  designBlockErrorResponse,
+  jsonError,
+} from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -124,6 +128,10 @@ export async function PATCH(
           return jsonError(422, 'template_body_unsafe', correlationId, {
             unsafeImageSources: result.error.unsafeImageSources,
           });
+        // FR-041 design-block rules — the same shared mapping the create
+        // route and the four compose surfaces answer with.
+        case 'content_rules':
+          return designBlockErrorResponse(result.error.violations, correlationId);
         case 'duplicate_name':
           return jsonError(409, 'template_name_duplicate', correlationId, {
             locale: result.error.locale,

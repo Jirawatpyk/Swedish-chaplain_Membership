@@ -8,8 +8,15 @@
  *
  * Calls `POST /api/admin/members/[id]/broadcasts-halt-clear` on confirm.
  * On 200, refresh page (server-rendered queue re-loads halted set).
+ *
+ * T155 finding U3 — on that 200 the member leaves the halted set, so
+ * `halt-state-banner.tsx` stops rendering THIS row and the trigger goes with
+ * it. Base UI reads `finalFocus` while the trigger is still mounted, so its
+ * default restore dropped focus to `<body>`. The success close lands on the
+ * banner's own heading instead; Cancel / ESC keep the default, because there
+ * the trigger survives. WCAG 2.1 AA SC 2.4.3.
  */
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -27,6 +34,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useSurvivingTargetFinalFocus } from '@/components/broadcast/unmounting-trigger-final-focus';
+
+/**
+ * The halt banner's `<h2>` — the element that outlives the cleared row.
+ * Declared here (a client module) so the server-rendered banner can import it
+ * without this dialog importing the banner.
+ */
+export const HALT_BANNER_HEADING_ID = 'broadcast-halt-banner-heading';
 
 export interface ClearHaltDialogProps {
   readonly memberId: string;
@@ -44,6 +59,13 @@ export function ClearHaltDialog({
   const [open, setOpen] = useState<boolean>(false);
   const [phrase, setPhrase] = useState<string>('');
   const [pending, startTransition] = useTransition();
+  // Raised on the one close path that unmounts the trigger. No reset needed:
+  // that path removes this component with the row.
+  const closedViaSuccessRef = useRef<boolean>(false);
+  const finalFocus = useSurvivingTargetFinalFocus(
+    HALT_BANNER_HEADING_ID,
+    closedViaSuccessRef,
+  );
 
   // Review UX-C3 + UX-R2-2 (round-3): typed-phrase confirmation
   // matches when the human-visible content matches — case + leading/
@@ -76,6 +98,7 @@ export function ClearHaltDialog({
           },
         );
         if (res.ok) {
+          closedViaSuccessRef.current = true;
           toast.success(tToast('clearHalted'));
           setOpen(false);
           setPhrase('');
@@ -94,7 +117,7 @@ export function ClearHaltDialog({
       <AlertDialogTrigger render={<Button variant="outline" size="sm" />}>
         {tBanner('clearAction')}
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('body')}</AlertDialogDescription>

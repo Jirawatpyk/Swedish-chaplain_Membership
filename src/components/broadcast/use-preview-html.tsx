@@ -244,6 +244,19 @@ export function PreviewSurface({
           // `srcdoc` only: no `src`, so the frame makes no request of its own.
           // `sandbox=""` is the empty allow-list — no scripts, no forms, no
           // same-origin access back into the app.
+          //
+          // `bg-white` is a DELIBERATE, documented exception to
+          // ux-standards § theming's "semantic tokens only" (T155 § 15 walk,
+          // 2026-09-22). This frame is CONTENT, not chrome: it shows the
+          // delivered email, and every mail client composites that document on
+          // a white canvas. Theming it to `bg-card` would make the operator
+          // approve something nobody receives, and the rule does not reach
+          // inside a `sandbox=""` document preview. Keep it.
+          //
+          // The same argument does NOT carry to the brand LOGO swatch, which
+          // is a small chrome-scale patch beside a field — that one is themed
+          // with a transparency checker (T155 U16,
+          // `brand/brand-settings-form.tsx`).
           srcDoc={state.html}
           sandbox=""
           referrerPolicy="no-referrer"

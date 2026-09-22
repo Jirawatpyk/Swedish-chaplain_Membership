@@ -26,13 +26,16 @@ import {
   PreviewSurface,
   type PreviewEndpoint,
 } from './use-preview-html';
+import { PREVIEW_PANE_FRAME_HEIGHT } from './preview-frame-heights';
 
 /**
  * Fixed, so the pane never grows or shrinks as the deferred body settles —
- * the document scrolls inside the frame instead (layout shift is T156's
- * live-look item).
+ * the document scrolls inside the frame instead (layout shift was T156's
+ * live-look item 2). Re-exported from the framework-free
+ * `preview-frame-heights` module so a Server Component `loading.tsx` can
+ * reserve the same number without pulling this client module in.
  */
-export const PREVIEW_PANE_FRAME_HEIGHT = 420;
+export { PREVIEW_PANE_FRAME_HEIGHT };
 
 export interface PreviewPaneProps {
   readonly subject: string;
@@ -71,9 +74,21 @@ export function PreviewPane({
       </header>
       {/* One source of truth for the height: the box reserves exactly what a
           ready frame occupies, so the empty / loading / refusal states do not
-          resize the form when the document arrives. */}
-      <div className="py-2" style={{ minHeight: PREVIEW_PANE_FRAME_HEIGHT }}>
-        <PreviewSurface state={state} height={PREVIEW_PANE_FRAME_HEIGHT} />
+          resize the form when the document arrives.
+
+          T155 finding U7 — the padding is on the OUTER box. It used to sit on
+          the same border-box as `minHeight`, so the 420 px reservation
+          INCLUDED the 16 px while the ready state was a 420 px iframe PLUS
+          them: measured, the pane was 436 px ready against 420 px reserved,
+          every time. Contained then only by DOM ordering; anything rendered
+          after the pane would have made it visible movement. */}
+      <div className="py-2">
+        <div
+          data-testid="preview-pane-frame-reservation"
+          style={{ minHeight: PREVIEW_PANE_FRAME_HEIGHT }}
+        >
+          <PreviewSurface state={state} height={PREVIEW_PANE_FRAME_HEIGHT} />
+        </div>
       </div>
     </section>
   );

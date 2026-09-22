@@ -15,7 +15,7 @@ import { ShieldAlert } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
-import { ClearHaltDialog } from './clear-halt-dialog';
+import { ClearHaltDialog, HALT_BANNER_HEADING_ID } from './clear-halt-dialog';
 
 export interface HaltedMember {
   readonly memberId: string;
@@ -57,8 +57,15 @@ export async function HaltStateBanner({
         />
         <div className="flex-1 space-y-3">
           <div>
-            {/* h2: PageHeader is the page h1; halt banner shares h2 with SLA banner */}
-            <h2 className="text-sm font-semibold text-destructive">
+            {/* h2: PageHeader is the page h1; halt banner shares h2 with SLA banner.
+                T155 U3 — `tabIndex={-1}` makes it focusable (not tabbable, so
+                it adds no tab stop): it is where `ClearHaltDialog` lands focus
+                after the cleared row's trigger unmounts. */}
+            <h2
+              id={HALT_BANNER_HEADING_ID}
+              tabIndex={-1}
+              className="text-sm font-semibold text-destructive focus-visible:outline-none"
+            >
               {t('title', { count: halted.length })}
             </h2>
             <p className="text-sm text-muted-foreground">{t('body')}</p>
@@ -93,7 +100,13 @@ export async function HaltStateBanner({
                   // manager nothing about WHY they can't act. Render an
                   // inline note instead so the role limitation is
                   // self-explanatory.
-                  <span className="text-xs italic text-muted-foreground">
+                  //
+                  // T155 finding U5 — NO `italic`. Thai has no italic form;
+                  // the browser synthesises a slant that hurts legibility,
+                  // which is the very reason FR-044 drops the italic CONTROL
+                  // under `th`. Weight carries the aside instead
+                  // (ux-standards § typography).
+                  <span className="text-xs font-medium text-muted-foreground">
                     {t('readOnlyNote')}
                   </span>
                 )}

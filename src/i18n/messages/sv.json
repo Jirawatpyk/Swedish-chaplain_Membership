@@ -3494,6 +3494,10 @@
           "template_name_duplicate": "En mall med detta namn + språk finns redan.",
           "template_not_found": "Mallen hittades inte.",
           "template_soft_deleted": "Denna mall har raderats. Välj en annan eller starta tom.",
+          "cta_text_length": "Knapptexten måste vara mellan 1 och 60 tecken.",
+          "too_many_cta": "En mall kan innehålla högst 3 uppmaningsknappar.",
+          "cta_link_scheme": "En knapplänk måste börja med http://, https:// eller mailto:.",
+          "banner_alt_required": "En bannerbild behöver en beskrivning på 1 till 125 tecken.",
           "storage_error": "Ett lagringsfel inträffade. Försök igen.",
           "unknown": "Ett oväntat fel inträffade."
         }

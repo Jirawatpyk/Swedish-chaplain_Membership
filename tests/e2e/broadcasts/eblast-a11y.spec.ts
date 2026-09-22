@@ -273,6 +273,45 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
         p.getByRole('heading', { level: 1 }),
       );
     });
+
+    /**
+     * T155 finding U2 — § 15 item 1, and the thing the scan above CANNOT see:
+     * **axe has no horizontal-scroll rule**, so screen 3 passed the WCAG pass
+     * while overflowing 320 px in all three locales (measured 2026-09-22:
+     * `scrollWidth` 565 vs `clientWidth` 305 in SV, 477 in EN, 337 in TH).
+     * The queue header hand-rolled its action row instead of using
+     * `PageHeader`'s `actions` prop, and `buttonVariants` bakes in
+     * `whitespace-nowrap`, so two links sat on one unwrappable line.
+     */
+    test('T155 U2 — the staff queue has no horizontal scroll at 320 px', async ({
+      page,
+    }) => {
+      await signInAsAdmin(page);
+      await page.setViewportSize(REFLOW_VIEWPORT);
+      await page.goto('/admin/broadcasts');
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible({
+        timeout: 120_000,
+      });
+
+      const scrollWidth = await page.evaluate(
+        () => document.documentElement.scrollWidth,
+      );
+      expect(
+        scrollWidth,
+        'no horizontal page scroll on the review queue at 320 px (WCAG 1.4.10)',
+      ).toBeLessThanOrEqual(REFLOW_VIEWPORT.width);
+
+      // …and the two header actions are on separate rows rather than one
+      // overflowing line: the wrap is the mechanism, not a side effect.
+      const actions = page.locator('[data-slot="page-header-actions"]');
+      await expect(actions).toBeVisible();
+      const actionBox = await actions.boundingBox();
+      expect(actionBox).not.toBeNull();
+      expect(
+        actionBox!.width,
+        'the action row fits inside the 320 px viewport',
+      ).toBeLessThanOrEqual(REFLOW_VIEWPORT.width);
+    });
   });
 
   test.describe('keyboard + reflow behaviours FR-050/FR-051 name by hand', () => {

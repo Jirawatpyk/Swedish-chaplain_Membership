@@ -16,7 +16,8 @@
  * still warns — the FR-039 parity item, now closed on both sides. (This
  * paragraph used to say "no staff draft endpoint exists"; it does.)
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useBeforeUnloadGuard } from '@/hooks/use-beforeunload-guard';
 
 export interface ComposeSnapshot {
   readonly subject: string;
@@ -54,17 +55,9 @@ export function useComposeDirtyGuard(
     current.bodyHtml !== saved.snapshot.bodyHtml;
   const armed = dirty && options.suspended !== true;
 
-  useEffect(() => {
-    if (!armed) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      // Modern browsers ignore the message string and show their own copy;
-      // preventDefault + returnValue is the cross-browser invocation pattern.
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [armed]);
+  // The listener itself is shared with Brand settings (T155 U18); what is NOT
+  // shared is the comparison above, which is this surface's own rule.
+  useBeforeUnloadGuard(armed);
 
   const markSaved = useCallback(
     (snapshot: ComposeSnapshot, at: Date = new Date()): void => {

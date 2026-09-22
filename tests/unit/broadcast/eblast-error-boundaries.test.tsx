@@ -39,6 +39,14 @@ const BOUNDARIES: ReadonlyArray<readonly [label: string, load: () => Promise<{ d
     '/portal/broadcasts/[id]',
     () => import('@/app/(member)/portal/broadcasts/[id]/error'),
   ],
+  // T155 finding U10 — `/admin/broadcasts/new` had none and inherited the
+  // QUEUE's, which renders `TableContainer` and the title "E-Blast review
+  // queue" for a compose failure: wrong container tier, and a title naming
+  // another page.
+  [
+    '/admin/broadcasts/new',
+    () => import('@/app/(staff)/admin/broadcasts/new/error'),
+  ],
   [
     '/admin/broadcasts',
     () => import('@/app/(staff)/admin/broadcasts/error'),

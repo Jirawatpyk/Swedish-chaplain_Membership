@@ -12,7 +12,7 @@
  * (next-intl does not throw on a missing key).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -213,5 +213,144 @@ describe('BrandSettingsForm — saving', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(toast.success).not.toHaveBeenCalled();
     expect(screen.queryByTestId('brand-contrast-server-error')).toBeNull();
+  });
+});
+
+// ── T155 § 15 findings on this screen ──────────────────────────────────────
+
+/**
+ * U19 — § 15 item 11. The screen was a `<div>` with a `type="button"` Save, so
+ * Enter in the colour field did nothing. That is defensible on the two compose
+ * surfaces (a rich-text body owns Enter); it is not defensible on two plain
+ * fields and a Save.
+ *
+ * The address TEXTAREA deliberately keeps Enter for a newline — FR-041c makes
+ * the postal address multi-line — which is the native behaviour of a textarea
+ * inside a form and needs no exception.
+ */
+describe('BrandSettingsForm — U19: it is a real form', () => {
+  it('the fields sit in a <form> whose Save is the submit button', () => {
+    const { container } = renderForm();
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    expect(saveButton().type).toBe('submit');
+    expect(form!.contains(saveButton())).toBe(true);
+    expect(form!.contains(screen.getByLabelText(/primary colour/i))).toBe(true);
+    expect(form!.contains(screen.getByLabelText(/postal address/i))).toBe(true);
+  });
+
+  it('submitting the form PATCHes — the implicit-submission path Enter uses', async () => {
+    const fetchMock = stubFetch({ status: 200, body: BASE });
+    const { container } = renderForm();
+
+    fireEvent.submit(container.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect((fetchMock.mock.calls[0] as [string, RequestInit])[1].method).toBe('PATCH');
+  });
+});
+
+/**
+ * U17 — Save disables below AA with the reason ~200 px away in another card
+ * and nothing linking the two. A keyboard user hears "Save, dimmed" and
+ * nothing else (WCAG 3.3.2).
+ */
+describe('BrandSettingsForm — U17: a disabled Save says why', () => {
+  it('below AA, Save is described by the visible contrast readout', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    await user.clear(field);
+    await user.type(field, '#f5f5f5');
+
+    const save = saveButton();
+    expect(save).toBeDisabled();
+    const describedBy = save.getAttribute('aria-describedby');
+    expect(describedBy, 'the dimmed Save must name its reason').toBeTruthy();
+    const reason = document.getElementById(describedBy!.split(/\s+/)[0]!);
+    expect(reason).not.toBeNull();
+    expect(reason).toBe(screen.getByTestId('brand-contrast-readout'));
+  });
+
+  it('an over-long address adds ITS reason to the same list', () => {
+    renderForm({ postalAddress: 'x'.repeat(301) });
+    const save = saveButton();
+    expect(save).toBeDisabled();
+    const ids = (save.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids.length).toBeGreaterThan(0);
+    const texts = ids.map((id) => document.getElementById(id)?.textContent ?? '');
+    expect(texts.join(' ')).toMatch(/300/);
+  });
+
+  it('when Save is enabled it is described by nothing — no phantom reason', () => {
+    renderForm();
+    expect(saveButton()).not.toBeDisabled();
+    expect(saveButton().getAttribute('aria-describedby')).toBeNull();
+  });
+});
+
+/**
+ * U18 — both compose surfaces ship `useComposeDirtyGuard`; Brand shipped no
+ * guard at all, so a colour edited and abandoned was lost silently. Verified
+ * live 2026-09-22: leaving compose fires `beforeunload`, leaving Brand did not.
+ */
+describe('BrandSettingsForm — U18: unsaved changes are guarded', () => {
+  const fireBeforeUnload = (): boolean => {
+    const evt = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(evt);
+    return evt.defaultPrevented;
+  };
+
+  it('an untouched form does not warn', () => {
+    renderForm();
+    expect(fireBeforeUnload()).toBe(false);
+  });
+
+  it('editing the colour arms the warning', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    await user.clear(field);
+    await user.type(field, '#0b5f3a');
+    expect(fireBeforeUnload()).toBe(true);
+  });
+
+  it('after a successful Save the warning is disarmed', async () => {
+    const user = userEvent.setup();
+    stubFetch({ status: 200, body: { ...BASE, primaryColor: '#0b5f3a' } });
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    await user.clear(field);
+    await user.type(field, '#0b5f3a');
+    expect(fireBeforeUnload()).toBe(true);
+
+    await user.click(saveButton());
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(fireBeforeUnload()).toBe(false);
+  });
+});
+
+/**
+ * U16 — the logo swatch was `bg-white`: measured in dark mode as a 91 × 64 px
+ * `rgb(255,255,255)` patch on a `lab(7.8 …)` card. The intent (a transparent
+ * PNG needs a backing to be judged) is legitimate, but unlike the email
+ * PREVIEW — a whole document every mail client composites on white — this is a
+ * chrome-scale swatch, and chrome follows the theme.
+ */
+describe('BrandSettingsForm — U16: the logo swatch is themed, not white', () => {
+  it('the logo preview backing carries no bg-white', () => {
+    renderForm();
+    const img = screen.getByAltText(/logo/i);
+    const backing = img.closest('[data-testid="brand-logo-preview"]') ?? img;
+    expect(`${backing.className} ${img.className}`).not.toMatch(/\bbg-white\b/);
+  });
+
+  it('it uses a themed surface with a transparency checker instead', () => {
+    renderForm();
+    const backing = screen.getByTestId('brand-logo-preview');
+    expect(backing.className).toMatch(/\bbg-card\b/);
+    // The checker is what replaces the white backing as the "this part is
+    // transparent" affordance.
+    expect(backing.style.backgroundImage).toMatch(/gradient/);
   });
 });

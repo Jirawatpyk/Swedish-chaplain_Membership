@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
+import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import {
   PreviewSurface,
   type PreviewState,
@@ -56,12 +57,14 @@ import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-a
 export const dynamic = 'force-dynamic';
 
 /**
- * F119 T141 — the read-back frame is taller than the compose pane's 420 px
- * (`preview-pane.tsx`): this screen has the full 72 rem column to itself and
- * the member is reading, not typing beside it. Fixed, so the frame scrolls
- * internally instead of growing the page.
+ * F119 T141 — the read-back frame is taller than the compose pane's 420 px:
+ * this screen has the full 72 rem column to itself and the member is reading,
+ * not typing beside it. Fixed, so the frame scrolls internally instead of
+ * growing the page.
+ *
+ * T155 finding U1 — the number lives in `preview-frame-heights.ts` so
+ * `loading.tsx` reserves exactly this, not a copy of it.
  */
-const DETAIL_PREVIEW_FRAME_HEIGHT = 560;
 
 /**
  * F119 T141 (US6-AS2, FR-049) — the body the member reads back is the REAL

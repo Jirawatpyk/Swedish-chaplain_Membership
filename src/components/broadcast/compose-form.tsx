@@ -446,13 +446,12 @@ export function ComposeForm({
         payload: body,
       });
       if (!saved.ok) {
-        let msg: string;
-        try {
-          msg = tErr(saved.code);
-        } catch {
-          msg = tErr('internal_error');
-        }
-        toast.error(msg);
+        // T155 finding U8 — the `try/catch` that stood here was unreachable:
+        // next-intl returns the key path rather than throwing, so a draft-save
+        // code with no key toasted the raw path. This file already SAID so
+        // 50 lines up; `t.has()` is what acts on it.
+        const key = saved.code as Parameters<typeof tErr>[0];
+        toast.error(tErr.has(key) ? tErr(key) : tErr('internal_error'));
         return;
       }
       // E2E + UX bug fix 2026-05-21: when the FIRST `Save as draft` POST

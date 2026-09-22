@@ -28,6 +28,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { PreviewPane } from '@/components/broadcast/preview-pane';
+import { PREVIEW_PANE_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 
 /** A full document as the route returns it: brand header, body, footer. */
 const DOCUMENT_HTML =
@@ -256,5 +257,45 @@ describe('T103 — refusal states are calm and inline', () => {
     renderPane();
     await settle();
     expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+});
+
+/**
+ * T156 measurement 2 / T155 finding U7 — the reservation was 16 px SHORT of
+ * the ready height, every time. `py-2` sat on the same border-box that carried
+ * `minHeight: PREVIEW_PANE_FRAME_HEIGHT`, so the reservation INCLUDED the
+ * padding while the ready state was a full-height iframe PLUS it. Today the
+ * shift is contained only by DOM ordering; the moment anything renders after
+ * the pane it becomes visible movement.
+ *
+ * jsdom lays nothing out, so the pin is structural: the box that reserves must
+ * carry no vertical padding of its own, and the frame handed to the ready
+ * state must be the same number it reserves.
+ */
+describe('U7 — the reservation equals the ready height', () => {
+  const reservedBox = (): HTMLElement =>
+    screen.getByTestId('preview-pane-frame-reservation');
+
+  it('the reserving box carries the frame height and NO vertical padding', async () => {
+    stubFetch();
+    renderPane({ bodyHtml: '' });
+
+    const box = reservedBox();
+    expect(box.style.minHeight).toBe(`${PREVIEW_PANE_FRAME_HEIGHT}px`);
+    // Padding on the reserving border-box is exactly the U7 bug.
+    expect(box.className).not.toMatch(/\b(py|pt|pb)-/);
+  });
+
+  it('the ready iframe is the height that was reserved — same box, same number', async () => {
+    stubFetch();
+    renderPane();
+    const emptyMinHeight = reservedBox().style.minHeight;
+
+    await settle();
+
+    expect(frame()!.style.height).toBe(`${PREVIEW_PANE_FRAME_HEIGHT}px`);
+    // The container the member sees did not change its reservation between
+    // the two states.
+    expect(reservedBox().style.minHeight).toBe(emptyMinHeight);
   });
 });
