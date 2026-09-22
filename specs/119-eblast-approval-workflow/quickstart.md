@@ -329,6 +329,274 @@ After merge: the chamber logo appears in E-Blast headers automatically for SweCh
 already on file for invoices — FR-041a), and the footer keeps the current synthetic address line
 until step 3.3.
 
+#### T155 / T156 record — 2026-09-22
+
+The two gate rows above ("the PR-1 FR-051 pass" and "the live-look items") are the ones this block
+answers. Walked on `450bbd459` against the maintainer's dev server on :3100 — code read **plus**
+the running page, at 320 / 375 / 768 / 1440 px in EN, SV and TH, signed in as `e2e-admin`.
+**Nothing here was fixed; every finding is OPEN.** The two approval screens take the same walk in
+PR-2 under T086a.
+
+**What could NOT be verified, and why.** The `E2E_MEMBER_EMAIL_EMPTY` persona is rejected at
+`/portal/sign-in` with "Email or password is incorrect" against the `dev` Neon branch — the account
+is not signable-in there today, so the three member-portal surfaces (`/portal/broadcasts/new`,
+`/portal/benefits?tab=broadcasts`, the body view of `/portal/broadcasts/[id]`) were walked **from
+code only**. Their live half is still OWED and must be run before the flag-flip; re-seed via
+`scripts/seed-e2e-portal-invoices.ts` first. The three toolbar/preview measurements below were taken
+on `/admin/broadcasts/new`, which mounts the **same** `TiptapToolbar` and `PreviewPane`, so the
+numbers carry over; the portal shell's own page padding does not, and is unmeasured.
+
+##### § 15 walk — PASS / FAIL / N/A per screen
+
+Screens: **PC** portal compose · **PB** portal benefits E-Blast tab · **PD** portal detail body view ·
+**SQ** staff queue · **SC** staff compose-on-behalf · **TPL** template list/new/edit ·
+**SET** E-Blast settings · **BR** Brand settings. `L` = live-verified, `c` = code-only.
+
+| § 15 item | PC | PB | PD | SQ | SC | TPL | SET | BR |
+|---|---|---|---|---|---|---|---|---|
+| 320 × 568, no horizontal scroll | c PASS | c PASS | c PASS | **L FAIL** | L PASS | L PASS | L PASS | L PASS |
+| 1920 × 1080, no ugly stretch | c PASS | c PASS | c PASS | L PASS | L PASS | L PASS | L PASS | L PASS |
+| axe WCAG 2.1 AA | T139 | T139 | T139 | T139 | T139 | T139 | T139 | T139 |
+| EN + TH + SV on every string | PASS | PASS | PASS | PASS | PASS | PASS | PASS¹ | PASS |
+| Shimmer skeleton on first load | **FAIL** | **FAIL** | **FAIL** | **FAIL** | **FAIL** | **FAIL** | PASS | **FAIL** |
+| Empty state designed | N/A | PASS | PASS | PASS² | N/A | PASS | N/A | PASS |
+| Error states (field / form / page) | PART | PART | PART | PASS | PASS³ | PASS | PASS | PASS |
+| Toast on success | PASS | N/A | PASS | PASS | PASS | PASS | PASS | PASS |
+| Confirmation dialog on destructive | PASS | N/A | PASS | PASS | PASS | N/A⁴ | PASS | N/A |
+| Auto-focus on the primary input | **FAIL** | N/A | N/A | N/A | **FAIL** | **FAIL** | FAIL | FAIL |
+| Enter submits the form | **FAIL** | N/A | N/A | N/A | **FAIL** | PASS | PASS | **FAIL** |
+| Escape closes modal / popover | L PASS | PASS | PASS | L PASS | L PASS | PASS | PASS | N/A |
+| Focus-visible ring on every control | PASS | PASS | PASS | **PART** | PASS | PASS | PASS | PASS |
+| Dark mode renders correctly | PART⁵ | PASS | PASS | PASS | PART⁵ | PASS | PASS | **L PART** |
+| SR: landmarks, errors, navigable | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PART |
+| `prefers-reduced-motion` honoured | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| Session user menu on the shell | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| Idle-warning modal | N/A | N/A | N/A | PASS | PASS | PASS | PASS | PASS |
+
+¹ parity is green (`check:i18n`: 5618 keys × 3) but an unmapped server error code prints a raw key
+path — see U8. ² works, but hand-rolled rather than the shared `EmptyState` (U12). ³ inherits the
+**queue's** error boundary, wrong tier and wrong title (U10). ⁴ no delete UI exists at all (U13).
+⁵ one `bg-white`, on the preview `<iframe>` — judged below.
+
+**`prefers-reduced-motion` is the one item that is clean everywhere**: no raw `animate-pulse` /
+`animate-spin` anywhere in `src/components/broadcast/**` or either route tree, every spinner is
+`motion-safe:`, and `globals.css` neutralises the rest as a second layer. Do not regress it.
+
+**`finalFocus` roll-call** (the repo rule, `resolve-dialog-final-focus.ts`). Ten of twelve pass:
+`approve-dialog`, `reject-dialog`, `bulk-approve-confirm-dialog` (all via `useDialogFinalFocus`),
+`preview-dialog`, `link-dialog`, `cta-button-dialog`, `image-alt-dialog`, `cancel-broadcast-dialog`.
+Two do **not**, and both are the exact failure the helper was written for — the trigger unmounts on
+success: **`clear-halt-dialog.tsx:97`** and **`admin-image-allowlist-editor.tsx:208`** (U3, U4).
+`compose/template-picker-field.tsx:107` omits it legitimately: its `<Select>` trigger survives.
+
+**The preview iframe's `bg-white` inside a dark shell is the RIGHT call, and should stay.** The
+frame shows the delivered email, and every mail client composites that document on a white canvas;
+theming it to `bg-card` would make the operator approve something nobody receives. It is content,
+not chrome, and § theming's "semantic tokens only" does not reach inside a `sandbox=""` document
+preview. Two conditions: it must be **written down** as an exception (today it is an undocumented
+literal at `use-preview-html.tsx:251`), and the same reasoning does **not** automatically cover the
+brand logo swatch — see U16.
+
+##### T156 — the five live-look items, measured
+
+**1. Toolbar rows at 320 px.** Measured on `/admin/broadcasts/new`, `data-toolbar-control` grouped
+by `getBoundingClientRect().top`. Buttons are 44 × 44 px.
+
+| viewport | EN | SV | TH |
+|---|---|---|---|
+| **320 px** (editor column **207 px**) | 13 controls, **4 rows** — 4 / 4 / 4 / **1** | identical to EN | 12 controls, **3 rows** — 4 / 4 / 4 |
+| **375 px** (262 px) | 13, 3 rows — 5 / 5 / 3 | identical | 12, 3 rows — 5 / 5 / 2 |
+| **768 px** (607 px) | 13, **2 rows** — 12 / **1** | identical | 12, **1 row** |
+
+**Nothing clips at any width in any locale** — `scrollWidth === clientWidth` on the toolbar and no
+page-level horizontal scroll on this surface. The strip is icon-only, so **SV and EN are
+byte-identical**; only TH differs, and only because FR-044 drops the italic control, which is also
+why TH is the one locale that never orphans a row. The wrap decision (no overflow menu) holds.
+
+Two things the numbers say that the code does not. First, at a 320 px viewport the editor column is
+only **207 px** — the page container and the card each take 24 px a side, so 96 px of the 305 px
+usable width is padding before the toolbar starts. That is what forces a 4th row. Second, EN and SV
+leave **exactly one orphan control** on the last row at both 320 and 768 px (`banner`), which reads
+as a mis-wrap rather than a deliberate grouping. Neither is a defect; both are the measured cost the
+gate row asked for, and the honest fix is a tighter gap or a 40 px control at `<sm`, not a menu.
+
+**2. Layout shift as the preview settles.** MutationObserver on the pane's frame box,
+`/admin/broadcasts/new` at 1440 px, empty → typed → settled:
+
+| state | frame box | section | document height |
+|---|---|---|---|
+| empty | 420 px | 467 px | 1347 px |
+| loading (skeleton) | 420 px | 467 px | 1347 px |
+| ready (iframe) | **436 px** | **483 px** | 1347 px |
+
+**empty → loading shifts nothing** — the reservation works, which is the thing the fixed frame was
+built for. But **ready is 16 px taller than the reservation**, every time. `preview-pane.tsx:75`
+puts `py-2` on the same box that carries `minHeight: PREVIEW_PANE_FRAME_HEIGHT`; with border-box
+sizing the 420 px reservation *includes* those 16 px, while the ready state is a 420 px iframe
+*plus* them. CLS measured **0.000** and document height never moves, because at ≥ lg the taller
+left column drives the grid row and at < lg the pane is last in DOM order — so today the shift is
+contained by luck of ordering, not by the construction. Recorded as U7: the moment anything renders
+after the pane, the 16 px becomes visible movement. `/portal/broadcasts/[id]` does **not** inherit
+it — that page passes `DETAIL_PREVIEW_FRAME_HEIGHT` straight to `PreviewSurface` with no padded
+wrapper — but it has a far larger skeleton problem instead (U1).
+
+**3. Preview empty-state first paint.** On a cold load, before a keystroke, the pane paints
+**"Your message preview appears here."** — the translated `broadcast.editor.preview.empty` line,
+inside a box already reserving its full 420 px. **Never a blank box. PASS**, US3-AS6 satisfied.
+
+**4. NVDA.** *No screen reader was run — this pass is OWED to the maintainer and is not discharged
+by what follows.* The accessibility-tree substitute, read live in TH:
+
+- container: `role="toolbar"`, `aria-label="แถบเครื่องมือจัดรูปแบบ"` (translated, not a raw key) — **PASS**
+- exactly **one** tab stop: `tabindex=0` on the active control, `-1` on the other eleven — **PASS**
+- every control is a real `<button>` with a translated `aria-label`; no icon-only unlabelled control — **PASS**
+- the eight toggles carry `aria-pressed`; the one-shot insert (`divider`) and the four dialog
+  openers correctly omit it rather than reporting a false `false` — **PASS**
+- `aria-haspopup="dialog"` on `link` / `image` / `cta` / `banner` — **PASS**
+- `image` and `banner` when no draft is saved: `aria-disabled="true"`, still focusable — **PASS** —
+  but the *reason* reaches AT only through a `title` attribute (U6)
+- unhandled: `ArrowUp` / `ArrowDown` and `aria-orientation`, on a strip that is demonstrably 3–4
+  rows tall at phone width (U15)
+
+**5. SV lengths of the stage chips.** **T120's five stage chips do not exist yet — they are PR-2.**
+What `queue-filters.tsx` renders today is the eight `OFFERED_BROADCAST_STATUSES`, derived, matching
+the skeleton's reservation. Measured in SV at 1440 px (44 px tall, `min-h-[44px]`):
+
+| chip | SV | px | chars |
+|---|---|---|---|
+| submitted | Inväntar granskning | **157** | 19 |
+| approved | Godkänd | 97 | 7 |
+| sending | Skickar | 89 | 7 |
+| draft | Utkast | 84 | 6 |
+| sent | Skickad | 92 | 7 |
+| rejected | Avvisad | 91 | 7 |
+| cancelled | Avbruten | 98 | 8 |
+| failed_to_dispatch | Misslyckades | 122 | 12 |
+
+Strip total **830 px**; widest chip **157 px**, which at a 305 px usable 320 px viewport is 51 % of
+the row and wraps the strip to **5 rows**. The headroom for PR-2 is therefore thin: five more chips
+at the SV average of ~104 px add ~520 px, taking the strip past 1350 px and past 8 rows at 320 px.
+**This item re-runs in PR-2 under T086a**, against T120's labels, and T086a should treat 157 px as
+the budget a new SV stage label must not exceed.
+
+##### Defects found — all OPEN, nothing was fixed
+
+Severity is against the FR-051 gate: **HIGH** blocks the flip, **MEDIUM** is a follow-up, **LOW** is
+polish. Paths are repo-relative.
+
+**HIGH**
+
+- **U1 — `/portal/broadcasts/[id]` skeleton is missing an entire card; ~640 px of CLS on every
+  load.** `src/app/(member)/portal/broadcasts/[id]/loading.tsx:36-64` draws two cards (fields,
+  delivery). `page.tsx:293-308` renders **three** — T141's content card, with a 560 px preview
+  frame, is inserted **between** them. The delivery card jumps ~640 px down on settle. The skeleton
+  was not updated when T141 landed. This is the single largest layout shift in the feature.
+- **U2 — the staff queue has horizontal scroll at 320 px, in all three locales.** Measured:
+  `scrollWidth` 565 vs `clientWidth` 305 in **SV (+260 px)**, 477 in **EN (+172 px)**, 337 in
+  **TH (+32 px)**. Culprit `src/app/(staff)/admin/broadcasts/page.tsx:331` — a hand-rolled
+  `<div className="flex items-center gap-2">` holding two `buttonVariants()` links, and
+  `buttonVariants` bakes in `whitespace-nowrap`; no `flex-wrap`, no `flex-col`. `PageHeader` already
+  solves this with its `actions` prop and `templates/page.tsx:78-86` uses it correctly — this
+  surface bypasses it. **This is § 15 item 1, the first line of the checklist, and the axe suite
+  T139 cannot see it: axe has no horizontal-scroll rule.** It is the clearest argument for why T155
+  exists beside T139.
+- **U3 — `ClearHaltDialog` drops focus to `<body>`.** `src/components/broadcast/admin/clear-halt-dialog.tsx:97`
+  has no `finalFocus`; on success `router.refresh()` un-halts the member and
+  `halt-state-banner.tsx:86-90` unmounts the trigger.
+- **U4 — allowlist Remove confirm drops focus to `<body>`.**
+  `src/components/broadcast/admin-image-allowlist-editor.tsx:208` — same class; the row unmounts at
+  `:76`. Removing several hostnames means re-Tabbing from the top each time.
+- **U5 — italic on Thai, in this feature's own admin chrome.**
+  `src/components/broadcast/admin/halt-state-banner.tsx:96` — `className="text-xs italic …"` over a
+  TH string. Thai has no italic form and the browser synthesises a slant. FR-044 makes this feature
+  drop the italic *control* under `th`; the same feature then slants Thai itself two files away.
+- **U6 — the disabled image/banner controls explain themselves only through `title`.**
+  `src/components/broadcast/tiptap-toolbar.tsx:352` — `title` is hover-only (no touch, no keyboard)
+  and is not a reliable description when an `aria-label` is already present. The visible sentence
+  "Save this draft first to enable image uploads." is on the page but is not associated; it wants
+  `aria-describedby`. Same class as F7.1a's unimplemented touch tooltip — second recurrence.
+- **U19 — no `<form>` on three compose/settings surfaces, so Enter never submits.**
+  `compose-form.tsx:484`, `proxy-compose-form.tsx:495` and `brand/brand-settings-form.tsx:159` are
+  all `<div>` roots with `type="button"` save buttons. Defensible on a rich-text surface; **not**
+  defensible on Brand settings, which is two plain fields and a Save. § 15 item 11.
+
+**MEDIUM**
+
+- **U7 — the preview frame's 420 px reservation is 16 px short of its ready height.**
+  `src/components/broadcast/preview-pane.tsx:75` — `py-2` and `minHeight` on the same border-box.
+  Contained today only by DOM ordering; see item 2 above.
+- **U8 — three dead `try/catch` around `t()` can print a raw key path to the user.**
+  `src/components/broadcast/admin/template-form.tsx:155-169`,
+  `src/components/broadcast/compose-form.tsx:449-455`,
+  `src/components/broadcast/compose-inline-image-uploader.tsx:118-122`, plus a no-fallback variant
+  at `admin-image-allowlist-editor.tsx:71-72`. next-intl **does not throw** on a missing key — it
+  returns the key path — so the `catch` is unreachable and an unmapped server code renders
+  `admin.broadcasts.templates.errors.<code>` verbatim into a `role="alert"` and a toast. The repo
+  already knows this: `compose-form.tsx:399-401` says so in a comment. The correct form is `t.has()`,
+  as `benefits/_components/broadcasts-panel.tsx:332` uses.
+- **U9 — the queue is capped at 50 rows with no reachable pagination.**
+  `src/app/(staff)/admin/broadcasts/page.tsx:156` `pageSize: 50`, `:161` reads a `cursor` param —
+  and **no component ever emits one**; the only reference is `queue-filters.tsx:168`, which deletes
+  it. Rows 51+ are reachable only by hand-editing the URL. Worse, the truncation note (`:371`) is
+  gated on `isDefaultView` (`:316`), so a *filtered* view that truncates says nothing at all.
+- **U10 — `/admin/broadcasts/new` has no `error.tsx`** and inherits the queue's
+  (`src/app/(staff)/admin/broadcasts/error.tsx:30`), which renders `TableContainer` and the title
+  "E-Blast review queue" for a compose failure — wrong container tier and a title naming another page.
+- **U11 — `/portal/broadcasts/new/error.tsx:24` uses `FormContainer` (42 rem)** while `page.tsx:282`
+  and `loading.tsx:26` use `DetailContainer` (72 rem) — a guaranteed width jump on error, and
+  `loading.tsx:17` carries a comment asserting the three match.
+- **U12 — skeleton drift, six files.** Beyond U1: `/portal/broadcasts/new/loading.tsx` under-reserves
+  the quota card by ~110 px (`:34-40` vs the real 4-counter grid) and the toolbar by ~50–110 px
+  (`:75` `h-9` vs an 11–13 control wrap); `/admin/broadcasts/loading.tsx` reserves a **desktop
+  table** with no `hidden md:block` while the real surface below `md` is `QueueCardList`, and
+  reserves nothing for the four banners that can render; `/admin/broadcasts/new/loading.tsx:20-42`
+  reserves one full-width card against a real two-column grid; `templates/loading.tsx:26` draws a
+  button row the page does not have and omits the filter pills; `settings/broadcasts/brand/loading.tsx`
+  omits the two lines that render precisely in the *first-visit* state (`colour.defaultHint`,
+  `address.missing`). Several of these files carry docblocks claiming the layout matches.
+- **U13 — templates ship no delete/archive UI at all** (`templates/page.tsx:5-7`); the route exists.
+  § 15 item 9 is N/A only because the action is absent.
+- **U14 — status filter chips have no pill-level focus ring.**
+  `src/components/broadcast/admin/queue-filters.tsx:272,294` — the 44 px `<label>` carries
+  `has-[:checked]:` styling but no `has-[:focus-visible]:`; the ring lands on the 16 px checkbox,
+  one-seventh the target.
+- **U16 — `bg-white` on the brand logo preview, undocumented, and a glare patch in dark mode.**
+  `src/components/broadcast/brand/brand-settings-form.tsx:293`. Measured in dark mode: a 91 × 64 px
+  `rgb(255,255,255)` box on a `lab(7.8 …)` card. The intent (a transparent PNG needs a white backing
+  to be judged as the recipient sees it) is legitimate and is the **same** argument that justifies
+  the preview iframe — but unlike the iframe it is a small chrome-scale patch, and neither is
+  written down. Give both one shared `--email-canvas` token and a comment, or accept both explicitly
+  in `docs/ux-standards.md`.
+- **U17 — Brand Save disables below AA with nothing linking the reason to the button.**
+  `brand-settings-form.tsx:103` → `:311`; the contrast readout is ~200 px away in another card with
+  no `aria-describedby`. A keyboard user hears "Save, dimmed" and nothing else (WCAG 3.3.2).
+- **U18 — Brand has no unsaved-changes guard** while both compose surfaces ship
+  `useComposeDirtyGuard` — verified live: leaving compose fires `beforeunload`, leaving Brand does not.
+
+**LOW**
+
+- **U15 — the toolbar handles no `ArrowUp`/`ArrowDown` and sets no `aria-orientation`**
+  (`tiptap-toolbar.tsx:303-326`, `:336`) on a strip measured at 3–4 rows below `sm`.
+- **U20 — `QuotaDisplay` is inserted above the whole proxy form on member selection**
+  (`proxy-compose-form.tsx:502-507`), pushing ~180 px of form down out from under the cursor.
+- **U21 — the two destructive confirms disagree on styling**: `clear-halt-dialog.tsx:132` uses the
+  default `AlertDialogAction` variant, `admin-image-allowlist-editor.tsx:224` passes
+  `variant="destructive"`. (Clear-halt has the stronger *gate* — a normalised typed-match.)
+- **U22 — queue empty state and the allowlist table each bypass a shared primitive**
+  (`queue-table.tsx:76-87` vs `shell/empty-state.tsx`; `admin-image-allowlist-editor.tsx:142` vs
+  `ui/table.tsx`) — design-system drift the templates surface was migrated away from in T147.
+- **U23 — `/portal/broadcasts/[id]/not-found.tsx:44` and `:47` print the same string twice**,
+  heading and body, against § 3.1 empty-state anatomy and § 14.
+- **U24 — preview `error` is a dead end** (`use-preview-html.tsx:231-239`): no retry, and the hook
+  only refetches when the body changes, so a transient 500 leaves the pane broken until the member
+  types. The 429 `paused` state self-heals; `error` does not. `recipient-count.tsx:232` and
+  `quota-display.tsx:144` both offer Retry.
+- **U25 — a client quota refetch can erase correct server-rendered numbers**
+  (`quota-display.tsx:73-117` fetches on mount and `setSnap(null)` on any non-2xx, discarding the
+  `initial` prop `broadcasts-panel.tsx:285` passed it).
+- **U26 — raw JS error text toasted untranslated** (`compose-form.tsx:415-417`): a network failure
+  surfaces "Failed to fetch" in EN on a TH or SV interface.
+
 ### 3.2 PR-2 — the approval round, the dashboard and the trial (ships DARK)
 
 **There is no PR-3.** The maintainer merged the former PR-3 (US4 dashboard + US7 trial) into PR-2 on
