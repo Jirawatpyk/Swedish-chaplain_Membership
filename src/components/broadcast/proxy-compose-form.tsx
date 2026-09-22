@@ -613,6 +613,7 @@ export function ProxyComposeForm({
               <Input
                 ref={subjectRef}
                 id="proxy-broadcast-subject"
+                data-compose-feature="subject"
                 value={subject}
                 onChange={(e) => {
                   setSubject(e.target.value);
@@ -651,6 +652,7 @@ export function ProxyComposeForm({
             <div
               ref={bodyContainerRef}
               tabIndex={-1}
+              data-compose-feature="body-editor"
               className="space-y-2 outline-none"
             >
               <Label id="proxy-broadcast-body-label">{t('bodyLabel')}</Label>
@@ -696,6 +698,7 @@ export function ProxyComposeForm({
               {dirtyGuard.savedAt !== null ? (
                 <p
                   data-testid="compose-saved-at"
+                  data-compose-feature="saved-at"
                   className="text-xs text-muted-foreground sm:mr-auto"
                   aria-live="polite"
                 >
@@ -710,6 +713,7 @@ export function ProxyComposeForm({
               <Button
                 type="button"
                 variant="ghost"
+                data-compose-feature="save-draft"
                 onClick={() => {
                   void handleSaveDraft();
                 }}

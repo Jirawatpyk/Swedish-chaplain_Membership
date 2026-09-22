@@ -20,9 +20,15 @@
  * remove the user's `<a>` / `<img>`, FR-042).
  *
  * The positive control proves the comparison bites: dropping `blockquote`
- * from one config must fail it. No database — this file lives with the
- * live-Neon suites because the preview use case is the real one the route
- * calls, not a fixture.
+ * from one config must fail it.
+ *
+ * Senior-tester review M5 — this file used to sit in `tests/integration/`
+ * although it opens no connection and imports no schema: it cost a slot in the
+ * ~40-minute live-Neon run and, worse, it only ran when someone remembered to
+ * run that suite. Every collaborator here is the REAL one the route calls (the
+ * shared policy, `dompurifySanitizer`, `renderBroadcastPreview`,
+ * `renderBroadcastHtml`) — none of them is a fixture, and none of them needs a
+ * database.
  */
 import DOMPurify from 'isomorphic-dompurify';
 import { describe, expect, it } from 'vitest';
@@ -154,6 +160,70 @@ describe('SC-011 — element+attribute multiset is identical at every stage', ()
       expect(idx, `${key(user)} survived the render`).toBeGreaterThanOrEqual(0);
       remaining.splice(idx, 1);
     }
+  });
+
+  /**
+   * Senior-tester review M4 — every parity case above ran with an ALL-NULL
+   * brand, which is the one shape `renderBroadcastHtml` is documented to keep
+   * byte-identical to the pre-F119 email. The brand chrome (FR-041a/c) is
+   * therefore the half the parity claim never covered: a preview that dropped
+   * the logo, the postal line or the CTA colour would have passed every
+   * assertion here while showing the member something the recipient does not
+   * get. The brand is read LIVE at render time by BOTH paths, so this asserts
+   * the preview carries it AND that it is the same bytes as the send.
+   */
+  it('a non-null brand reaches the PREVIEW too — logo, postal line and CTA colour, byte-identical to the send', async () => {
+    const brand = {
+      primaryColor: '#b04a00',
+      postalAddress: '12 Sukhumvit <Rd>\nBangkok & 10110',
+      logoUrl: 'https://blob.example/logos/abc.png?x=1&y=2',
+    };
+    // A CTA marker, so the brand COLOUR has somewhere to land.
+    const body =
+      '<p>Body</p><a data-eb="cta" href="https://example.org/go">Register</a>';
+
+    const sent = renderBroadcastHtml({
+      ...TENANT,
+      bodyHtml: dompurifySanitizer.sanitize(body),
+      brand,
+    });
+    const preview = await renderBroadcastPreview(
+      {
+        sanitizer: dompurifySanitizer,
+        brand: { load: async () => brand },
+        renderer: emailTemplateRenderer,
+      },
+      { ...TENANT, bodyHtml: body, tenantId: 'parity' as never, surface: 'member' },
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const html = preview.value.html;
+    // The brand colour on the CTA cell (FR-041c) …
+    expect(html).toContain('bgcolor="#b04a00"');
+    expect(html).not.toContain('data-eb="cta"');
+    // … the logo in the header, named for the chamber (FR-041a) …
+    expect(html).toMatch(
+      /<img [^>]*src="https:\/\/blob\.example\/logos\/abc\.png\?x=1&amp;y=2"/,
+    );
+    expect(html).toMatch(/<img [^>]*alt="Parity Chamber"/);
+    // … and the postal address in the footer, escaped, line breaks kept.
+    expect(html).toContain(
+      '<p style="margin:0">12 Sukhumvit &lt;Rd&gt;<br>Bangkok &amp; 10110</p>',
+    );
+    expect(html).not.toContain('Sent by Parity Chamber');
+
+    // The whole point: what the member approves is what the recipient gets.
+    expect(html).toBe(sent);
+    // …and it is genuinely different from the no-brand render, so the
+    // assertions above cannot be passing on the platform default.
+    expect(html).not.toBe(
+      renderBroadcastHtml({
+        ...TENANT,
+        bodyHtml: dompurifySanitizer.sanitize(body),
+        brand: { primaryColor: null, postalAddress: null, logoUrl: null },
+      }),
+    );
   });
 
   it('positive control: dropping `blockquote` from one config fails the comparison', () => {

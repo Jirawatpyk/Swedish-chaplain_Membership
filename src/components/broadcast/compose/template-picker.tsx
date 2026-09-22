@@ -85,7 +85,7 @@ export function ComposeTemplatePicker({
     // F119 T140 — no `mb-6` any more: the picker is a child of the compose
     // form's own `space-y-6` stack now, so its old page-level bottom margin
     // would double the gap above the editor.
-    <div className="space-y-2">
+    <div className="space-y-2" data-compose-feature="template-picker">
       <Label id="compose-template-picker-label">{t('triggerLabel')}</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger

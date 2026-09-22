@@ -10,8 +10,12 @@
  * (`tiptap-editor.tsx:106,113`); `admin/template-form.tsx:283-286` is the
  * call site that already does it right.
  *
- * The editor is doubled so the props the forms pass are directly observable —
- * `tiptap-editor.tsx` itself is covered by its own suites.
+ * The editor is doubled so the props the forms pass are directly observable.
+ * What the editor DOES with them — and its alt-text gate — is pinned against
+ * the real component in `tiptap-editor-alt-gate.test.tsx` and
+ * `tiptap-toolbar-a11y.test.tsx`. (Until the senior-tester round that added
+ * the first of those, this line claimed a coverage that did not exist: every
+ * compose suite stubbed the editor and NOTHING mounted it.)
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';

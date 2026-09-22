@@ -25,7 +25,12 @@ export function SubjectCounter({
   return (
     // aria-live off: the count changes on every keystroke; announcing it would
     // drown out everything else the user is doing.
-    <p id={id} className="text-xs text-muted-foreground" aria-live="off">
+    <p
+      id={id}
+      data-compose-feature="subject-counter"
+      className="text-xs text-muted-foreground"
+      aria-live="off"
+    >
       {t('subjectCounter', { count: value.length, max: SUBJECT_MAX_LENGTH })}
     </p>
   );

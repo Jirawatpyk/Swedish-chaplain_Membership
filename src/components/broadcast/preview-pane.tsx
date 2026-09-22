@@ -56,6 +56,7 @@ export function PreviewPane({
 
   return (
     <section
+      data-compose-feature="preview-pane"
       aria-label={t('previewLabel')}
       className="rounded-md border bg-muted/20 overflow-x-hidden min-w-0"
     >

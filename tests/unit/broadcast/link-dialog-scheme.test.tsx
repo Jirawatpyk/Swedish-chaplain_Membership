@@ -11,7 +11,7 @@
  * a second copy would drift.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -44,6 +44,19 @@ const urlField = (): HTMLInputElement =>
 const saveButton = (): HTMLButtonElement =>
   screen.getByRole('button', { name: /save link/i }) as HTMLButtonElement;
 
+/**
+ * Round L3 — URLs go in as ONE change event, not 30 keystrokes.
+ *
+ * `user.type` replays every character through the full pointer/keyboard
+ * pipeline; at ~30 characters × 12 cases this suite spent 5 s proving nothing
+ * about typing — the rule under test is what `submit` does with the finished
+ * value. The per-keystroke path still has a case of its own ("the refusal
+ * clears once an allowed scheme is typed"), which is where it belongs.
+ */
+function enterUrl(value: string): void {
+  fireEvent.change(urlField(), { target: { value } });
+}
+
 beforeEach(() => {
   vi.useRealTimers();
 });
@@ -63,7 +76,7 @@ describe('T100 — `javascript:alert(1)` and `ftp://…` are refused in the dial
     const user = userEvent.setup();
     const { onConfirm, onOpenChange } = renderDialog();
 
-    await user.type(urlField(), raw);
+    enterUrl(raw);
     await user.click(saveButton());
 
     expect(onConfirm).not.toHaveBeenCalled();
@@ -94,7 +107,7 @@ describe('T100 — the three allowed schemes go through', () => {
     const user = userEvent.setup();
     const { onConfirm, onOpenChange } = renderDialog();
 
-    await user.type(urlField(), `  ${raw}  `);
+    enterUrl(`  ${raw}  `);
     await user.click(saveButton());
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -109,8 +122,10 @@ describe('T100 — the three allowed schemes go through', () => {
     const user = userEvent.setup();
     const { onConfirm } = renderDialog({ initialText: '' });
 
-    await user.type(urlField(), 'https://swecham.example');
-    await user.type(screen.getByLabelText(/link text/i), 'Our 2026 report');
+    enterUrl('https://swecham.example');
+    fireEvent.change(screen.getByLabelText(/link text/i), {
+      target: { value: 'Our 2026 report' },
+    });
     await user.click(saveButton());
 
     expect(onConfirm).toHaveBeenCalledWith({

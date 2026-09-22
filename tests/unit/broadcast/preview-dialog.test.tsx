@@ -26,13 +26,26 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { PreviewDialog } from '@/components/broadcast/preview-dialog';
 import type { PreviewState } from '@/components/broadcast/use-preview-html';
+import { renderBroadcastHtml } from '@/modules/broadcasts/infrastructure/resend/email-template';
 
-const DOCUMENT_HTML =
-  '<!DOCTYPE html><html lang="en"><body>' +
-  '<header>Thai-Swedish Chamber of Commerce</header>' +
-  '<h1>Spring update</h1><p>Hello members</p>' +
-  '<footer>You can <a href="https://example.test/u">unsubscribe</a> at any time.</footer>' +
-  '</body></html>';
+/**
+ * Senior-tester review M3 — this document used to be five hand-written lines
+ * of `<header>/<h1>/<footer>`. Nothing in the delivered email looks like that
+ * (it is a 600 px nested `<table>`), so "the dialog shows the complete email"
+ * was asserted against a shape the product never produces: a dialog that
+ * mangled the real markup — dropped the footer table row, swallowed the
+ * unsubscribe cell — would have passed. It is now the REAL send-time render,
+ * the same function `renderBroadcastHtml` the Resend gateway and the test copy
+ * call, so the fixture cannot drift away from the email.
+ */
+const TENANT_NAME = 'Thai-Swedish Chamber of Commerce';
+const DOCUMENT_HTML = renderBroadcastHtml({
+  subject: 'Spring update',
+  bodyHtml: '<h2>Spring update</h2><p>Hello members</p>',
+  tenantDisplayName: TENANT_NAME,
+  locale: 'en',
+  brand: { primaryColor: null, postalAddress: null, logoUrl: null },
+});
 
 const READY: PreviewState = { status: 'ready', html: DOCUMENT_HTML };
 
@@ -73,9 +86,12 @@ describe('T093 — the dialog shows the complete email at both recipient widths'
     expect(within(dialog).getByRole('heading')).toBeInTheDocument();
     const srcdoc = frame().getAttribute('srcdoc') ?? '';
     expect(srcdoc).toBe(DOCUMENT_HTML);
-    expect(srcdoc).toContain('Thai-Swedish Chamber of Commerce');
-    expect(srcdoc).toContain('Hello members');
-    expect(srcdoc).toContain('unsubscribe');
+    // The three parts FR-043 calls "the complete email as a recipient receives
+    // it", read out of the REAL render: the brand header cell, the member's
+    // own body, and the unsubscribe line in the footer row.
+    expect(srcdoc).toContain(`<strong style="font-size:14px;color:#666">${TENANT_NAME}</strong>`);
+    expect(srcdoc).toContain('<h2>Spring update</h2><p>Hello members</p>');
+    expect(srcdoc).toMatch(/<a href="[^"]*unsubscribe[^"]*"[^>]*>Unsubscribe<\/a>/i);
     // Sandboxed, no network from inside, and never injected into this page.
     //
     // DO NOT RELAX THIS. Security review F1-1 (2026-09-22): the design-block

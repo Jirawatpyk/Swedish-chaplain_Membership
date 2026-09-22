@@ -53,6 +53,7 @@ export function SubmitButton({
   return (
     <Button
       type="button"
+      data-compose-feature="submit"
       onClick={onClick}
       disabled={disabled || submitting}
       aria-busy={submitting}

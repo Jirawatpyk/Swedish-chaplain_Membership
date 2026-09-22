@@ -624,6 +624,30 @@ Two measurement debts remain from the record above and are NOT discharged by thi
 member-portal surfaces were walked from code only (the `E2E_MEMBER_EMAIL_EMPTY` persona does not
 sign in on the `dev` branch), and no screen reader was run.
 
+##### a11y e2e — the command, the result, and what a green run does NOT prove
+
+```bash
+pnpm test:e2e tests/e2e/broadcasts/eblast-a11y.spec.ts --workers=1
+```
+
+`--workers=1` is mandatory (the default of 3 hangs the maintainer's workstation).
+
+| date | result |
+| --- | --- |
+| 2026-09-18 | **29 passed / 1 documented skip** |
+| 2026-09-22 | the **U2** case (queue header at 320 px) — the measurement OWED above — **passed** |
+
+**Read a green run with this caveat.** Several cases in this spec SELF-SKIP when an environment
+variable is absent, and Playwright reports a skip as a non-failure:
+
+- `E2E_MEMBER_EMAIL_EMPTY` — the member-portal persona (`e2e-member` is LAPSED by the F8 fixture,
+  so the empty persona is the one these specs use). Unset ⇒ every member-portal case skips.
+- `E2E_ADMIN_EMAIL` — the staff persona. Unset ⇒ every `/admin/broadcasts/**` case skips.
+
+So "29 passed" is only 29 surfaces actually scanned **if both variables were set for that run**.
+Before quoting a run as coverage, confirm the variables were present and read the skip count —
+a missing variable is not a pass, it is a scan that never happened (`feedback: skip is not pass`).
+
 ### 3.2 PR-2 — the approval round, the dashboard and the trial (ships DARK)
 
 **There is no PR-3.** The maintainer merged the former PR-3 (US4 dashboard + US7 trial) into PR-2 on

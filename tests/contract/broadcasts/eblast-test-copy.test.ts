@@ -28,12 +28,15 @@ import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-por
 
 const TENANT = 'tenant-swe' as never;
 
-function makeDeps(o?: { mailerFails?: boolean }) {
+function makeDeps(o?: { mailerFails?: boolean; sanitize?: (html: string) => string }) {
   const send = vi.fn(async () => (o?.mailerFails ? err({ code: 'upstream-unavailable' as const, message: 'x' }) : ok({ messageId: 'msg-1' })));
   const audit: AuditPort = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };
+  // A spy, so the size guards can be pinned as running BEFORE or AFTER it.
+  const sanitize = vi.fn(o?.sanitize ?? ((html: string) => html.replace(/<script>.*?<\/script>/g, '')));
   return {
+    sanitize,
     deps: {
-      sanitizer: { sanitize: (html: string) => html.replace(/<script>.*?<\/script>/g, '') },
+      sanitizer: { sanitize },
       brand: { load: async () => ({ primaryColor: '#b04a00', postalAddress: '1 Street', logoUrl: null }) },
       renderer: {
         render: (i: { subject: string; bodyHtml: string; brand: { primaryColor: string | null } }) =>
@@ -121,6 +124,85 @@ describe('sendTestCopy — use case', () => {
     const r = await sendTestCopy(deps, base);
     expect(r).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable' } });
     expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  // --- Senior-tester review H2 ------------------------------------------------
+  // The four arms below were the uncovered branches that held this use case at
+  // 76.47 % branch, under the Application floor of 80/80. Each is a refusal that
+  // has to stop the pipeline at a DIFFERENT point, and "stops" is the assertion:
+  // a refusal that still reached the mailer or still wrote an audit row would be
+  // a test copy the operator was told had failed.
+
+  it('a sanitiser that throws → sanitizer_unavailable; the mailer is never reached and nothing is audited', async () => {
+    const { deps, send, audit } = makeDeps({
+      sanitize: () => {
+        throw new Error('DOMPurify jsdom window unavailable');
+      },
+    });
+    const r = await sendTestCopy(deps, base);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.kind).toBe('sanitizer_unavailable');
+    if (r.error.kind === 'sanitizer_unavailable') {
+      expect(r.error.reason).toContain('DOMPurify');
+    }
+    expect(send).not.toHaveBeenCalled();
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('a non-Error sanitiser throw still carries a reason (String(e), not "[object Object]")', async () => {
+    const { deps } = makeDeps({
+      sanitize: () => {
+        // A bare string, deliberately: the `String(e)` arm is a different
+        // branch from the `instanceof Error` one.
+        throw 'sanitizer pool exhausted';
+      },
+    });
+    const r = await sendTestCopy(deps, base);
+    expect(r).toMatchObject({
+      ok: false,
+      error: { kind: 'sanitizer_unavailable', reason: 'sanitizer pool exhausted' },
+    });
+  });
+
+  it('a 201 KB body → invalid_body/body_too_large BEFORE the sanitiser is asked to parse it', async () => {
+    const { deps, send, sanitize } = makeDeps();
+    const oversize = `<p>${'x'.repeat(201 * 1024)}</p>`;
+    const r = await sendTestCopy(deps, { ...base, bodyHtml: oversize });
+    expect(r).toMatchObject({
+      ok: false,
+      error: { kind: 'invalid_body', reason: 'body_too_large' },
+    });
+    // The point of the pre-check: 201 KB never reaches DOMPurify.
+    expect(sanitize).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('a sanitiser that GROWS the body past 200 KB → body_too_large on the POST-sanitise check', async () => {
+    // Entity-escaping is the real growth path: `&` → `&amp;` is 5 bytes for 1.
+    const { deps, send, audit, sanitize } = makeDeps({
+      sanitize: (html) => `${html}${'y'.repeat(200 * 1024)}`,
+    });
+    const r = await sendTestCopy(deps, { ...base, bodyHtml: '<p>small</p>' });
+    expect(r).toMatchObject({
+      ok: false,
+      error: { kind: 'invalid_body', reason: 'body_too_large' },
+    });
+    // …and this one DID run the sanitiser — that is what distinguishes it from
+    // the pre-check above.
+    expect(sanitize).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('a session carrying no role records actor_role: null — never a fabricated literal', async () => {
+    const { deps, audit } = makeDeps();
+    const r = await sendTestCopy(deps, { ...base, actorRole: null });
+    expect(r.ok).toBe(true);
+    const [, event] = (audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const payload = (event as { payload: Record<string, unknown> }).payload;
+    // The audit-truth invariant: no row states a role its actor did not hold.
+    expect(payload.actor_role).toBeNull();
   });
 });
 

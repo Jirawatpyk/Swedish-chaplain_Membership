@@ -1,5 +1,5 @@
 /**
- * F119 T095 (US6-AS9, FR-045, SC-012 — the draft-saving arm).
+ * F119 T095 (US3-AS9, FR-045, SC-012 — the draft-saving arm).
  *
  * The unsaved-changes guard must compare against what was last SAVED, not
  * against the props the page mounted with. Today `compose-form.tsx:203-217`

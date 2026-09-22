@@ -213,7 +213,10 @@ export function RecipientCountLine({
     // Always rendered, `min-h` for two lines of TH / SV, so the count
     // settling never shifts the form (UX M-4) and the live region exists
     // before its content changes (L-1 — an inserted region is not announced).
-    <div className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}>
+    <div
+      data-compose-feature="recipient-count"
+      className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}
+    >
       {/*
         /code-review 2026-09-07 (finding #8) — the retry BUTTON used to live
         inside this region. A live region announces its whole text content on

@@ -502,6 +502,7 @@ export function ComposeForm({
               <Input
                 ref={subjectRef}
                 id="broadcast-subject"
+                data-compose-feature="subject"
                 value={subject}
                 onChange={(e) => {
                   setSubject(e.target.value);
@@ -591,6 +592,7 @@ export function ComposeForm({
             <div
               ref={bodyContainerRef}
               tabIndex={-1}
+              data-compose-feature="body-editor"
               className="space-y-2 outline-none"
             >
               <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
@@ -655,6 +657,7 @@ export function ComposeForm({
               {dirtyGuard.savedAt !== null ? (
                 <p
                   data-testid="compose-saved-at"
+                  data-compose-feature="saved-at"
                   className="text-xs text-muted-foreground sm:mr-auto"
                   aria-live="polite"
                 >
@@ -669,6 +672,7 @@ export function ComposeForm({
               <Button
                 type="button"
                 variant="ghost"
+                data-compose-feature="save-draft"
                 onClick={onSaveDraft}
                 disabled={submitting}
                 aria-busy={savingDraft || undefined}
