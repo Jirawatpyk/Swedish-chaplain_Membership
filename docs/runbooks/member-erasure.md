@@ -211,6 +211,46 @@ uses must not be deleted out from under it.
    not an erasure failure, but record it and name the content that holds the
    URL: until that content goes, the file is still served.
 
+4. **Enumerate what SURVIVED, for the DSR answer.** Outcome (c) leaves the row
+   live again with its `owner_id` still pointing at the erased member's (now
+   redacted) broadcast, and it writes **no audit row** — by design, because
+   nothing was removed. So the audit trail alone cannot answer "what is still
+   served?"; read the state instead. Run this **after** the first daily tick
+   that follows the cascade:
+
+   ```sql
+   -- Images of the erased member that are LIVE again (outcome c) — i.e. the
+   -- bytes are still served because live content elsewhere embeds the URL.
+   SELECT bi.id, bi.content_hash, bi.blob_url, bi.created_at
+     FROM broadcast_images bi
+     JOIN broadcasts b
+       ON b.tenant_id = bi.tenant_id      -- broadcast_id is unique per tenant only
+      AND b.broadcast_id = bi.owner_id
+    WHERE bi.tenant_id = '<tenant>'
+      AND bi.owner_kind = 'broadcast'
+      AND b.requested_by_member_id = '<member>'
+      AND bi.deleted_at IS NULL;          -- stamped by the cascade, then un-stamped
+   ```
+
+   Zero rows ⇒ every image of theirs was reclaimed or its reference removed
+   (outcomes a/b) and the DSR answer needs no image caveat. One or more rows ⇒
+   **the answer must say so**: name how many files persist and why (live
+   content of another data subject, or a chamber template, still embeds them),
+   and that they are reclaimed on the first tick after that content goes. To
+   find the holder for each, reuse the `position()` shape the sweep itself
+   uses:
+
+   ```sql
+   SELECT broadcast_id, requested_by_member_id
+     FROM broadcasts
+    WHERE tenant_id = '<tenant>'
+      AND (position('<blob_url>' in body_html) > 0
+        OR position('<blob_url>' in body_source) > 0);
+   ```
+
+   Record the count on the DSR ticket either way — "0 retained" is evidence,
+   not silence.
+
 **Known limitation, recorded not guessed.** `broadcast_images` was NOT
 backfilled by migration 0304. An image uploaded BEFORE 0304 has no row, so this
 step cannot find it; it is reachable only by reading the `body_html` that

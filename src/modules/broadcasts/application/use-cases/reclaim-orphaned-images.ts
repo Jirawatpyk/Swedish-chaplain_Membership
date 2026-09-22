@@ -129,6 +129,18 @@ type SweepReason = 'sweep' | 'sweep_orphaned';
 /**
  * What one per-row transaction did. `'retained'` is ROUND-2 S-3: the bytes
  * AND the row stayed, and the row went back in the live set.
+ *
+ * Accountability note (DPO decision, 2026-09-22 — option A, the last-reference
+ * rule): when the retained row was stamped by an ERASURE, the audit trail ends
+ * at `broadcast_image_removed { reason: 'member_erased' }` with no
+ * counter-event, while the row is live again and the bytes are still served.
+ * That silence is deliberate — nothing was removed, and a row saying otherwise
+ * would be the audit-truth class this repo guards. The evidence for a DSR
+ * answer is therefore the STATE, not the trail:
+ * `docs/runbooks/member-erasure.md` § Verifying step 4 enumerates exactly which
+ * of the subject's images survived and which live content holds each, and the
+ * RoPA (§ F119 Erasure row) requires that count — including zero — on the
+ * ticket. Change this arm and those two documents change with it.
  */
 type RowOutcome = 'removed_blob_deleted' | 'removed_blob_kept' | 'retained';
 
