@@ -18,6 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { err, ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 
 const requireApiPermissionMock = vi.fn();
@@ -203,5 +204,22 @@ describe('PATCH /api/admin/broadcasts/brand', () => {
     const res = await PATCH(patchRequest({ primaryColor: '#b04a00' }));
     expect(res.status).toBe(500);
     expect(JSON.stringify(await res.json())).not.toContain('boom');
+  });
+
+  // F2-9 — `detail` is the RAW Postgres error text, which can embed SQL param
+  // VALUES (the tenant's postal address). The log carries the typed KIND only.
+  it('the storage_error log line carries the typed kind, never the raw error text', async () => {
+    requireApiPermissionMock.mockResolvedValue(ctxFor('admin'));
+    setBrandSettingsMock.mockResolvedValueOnce(
+      err({ kind: 'storage_error', detail: 'duplicate key value violates … postal_address=(12 Sukhumvit Rd)' }),
+    );
+    const { PATCH } = await importRoute();
+    await PATCH(patchRequest({ primaryColor: '#b04a00' }));
+    const call = vi.mocked(logger.error).mock.calls.find(
+      (c) => c[1] === 'broadcasts.brand.patch_failed',
+    );
+    expect(call, 'expected a broadcasts.brand.patch_failed log line').toBeDefined();
+    expect((call![0] as { err: unknown }).err).toBe('storage_error');
+    expect(JSON.stringify(call![0])).not.toContain('Sukhumvit');
   });
 });

@@ -22,6 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { err, ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { sendTestCopy } from '@/modules/broadcasts/application/use-cases/send-test-copy';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 
@@ -237,6 +238,33 @@ describe('POST /api/broadcasts/test-copy (member)', () => {
     expect((await POST(req('/api/broadcasts/test-copy', { ...VALID, subject: 'x'.repeat(201) }))).status).toBe(400);
     sendTestCopyMock.mockResolvedValueOnce(err({ kind: 'mailer_unavailable', reason: 'x' }));
     expect((await POST(req('/api/broadcasts/test-copy', VALID))).status).toBe(503);
+  });
+
+  // F2-9 — `reason` is Resend's VERBATIM message and can echo the recipient
+  // address ("Invalid `to` field: …@…"). The log carries the typed KIND only.
+  it('the mailer/sanitizer failure log lines carry the typed kind, never the provider message', async () => {
+    const { POST } = await importMember();
+    sendTestCopyMock.mockResolvedValueOnce(
+      err({ kind: 'mailer_unavailable', reason: 'Invalid `to` field: member.secret@swecham.test is suppressed' }),
+    );
+    await POST(req('/api/broadcasts/test-copy', VALID));
+    const warned = vi.mocked(logger.warn).mock.calls.find(
+      (c) => c[1] === 'broadcasts.test_copy.mailer_unavailable',
+    );
+    expect(warned, 'expected a broadcasts.test_copy.mailer_unavailable log line').toBeDefined();
+    expect((warned![0] as { err: unknown }).err).toBe('mailer_unavailable');
+    expect(JSON.stringify(warned![0])).not.toContain('member.secret@swecham.test');
+
+    sendTestCopyMock.mockResolvedValueOnce(
+      err({ kind: 'sanitizer_unavailable', reason: 'DOMPurify threw on <img src=member.secret@swecham.test>' }),
+    );
+    await POST(req('/api/broadcasts/test-copy', VALID));
+    const errored = vi.mocked(logger.error).mock.calls.find(
+      (c) => c[1] === 'broadcasts.test_copy.sanitizer_unavailable',
+    );
+    expect(errored, 'expected a broadcasts.test_copy.sanitizer_unavailable log line').toBeDefined();
+    expect((errored![0] as { err: unknown }).err).toBe('sanitizer_unavailable');
+    expect(JSON.stringify(errored![0])).not.toContain('member.secret@swecham.test');
   });
 });
 

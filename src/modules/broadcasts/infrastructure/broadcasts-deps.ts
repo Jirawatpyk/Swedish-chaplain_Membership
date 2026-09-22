@@ -80,6 +80,7 @@ import type { UploadInlineImageDeps } from '../application/use-cases/upload-inli
 import type { ReclaimOrphanedImagesDeps } from '../application/use-cases/reclaim-orphaned-images';
 import type { AuthorizeImageOwnerDeps } from '../application/use-cases/authorize-image-owner';
 import { drizzleBroadcastImagesRepo } from './db/drizzle-broadcast-images-repo';
+import { sharpImageReencoder } from './sharp-image-reencoder';
 import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
 export const systemClock: ClockPort = {
@@ -472,12 +473,19 @@ export async function makeDispatchScheduledBroadcastDeps(
  */
 export function makePruneExpiredDraftsDeps(
   tenantId: string,
+  requestId: string,
 ): PruneExpiredDraftsDeps {
   const tenant = asTenantContext(tenantId);
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     clock: systemClock,
+    // F119 review finding F2-1 — a pruned draft's `broadcast_images` rows are
+    // stamped in the DELETE's own transaction; without it the bytes stayed at
+    // a public blob URL that neither the sweep nor erasure could reach.
+    imagesRepo: drizzleBroadcastImagesRepo,
+    audit: f7AuditAdapter,
+    requestId,
     // Defaults to 30 days inside the use-case per FR-001a.
   };
 }
@@ -531,6 +539,9 @@ export function makeScrubBroadcastContentForMemberDeps(tenantId: string) {
     // 108 PR-C T104 — severs the erased member's suppression back-references
     // inside the same content-scrub tx.
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    // F119 review finding F2-2 — the erasure cascade's reach into the member's
+    // UPLOADED IMAGES. Redacting body_html removes the pointer, not the file.
+    imagesRepo: drizzleBroadcastImagesRepo,
   };
 }
 
@@ -782,6 +793,9 @@ export function makeUploadInlineImageDeps(
     audit: f7AuditAdapter,
     // F119 T033 — the image lifecycle record (`broadcast_images`).
     imagesRepo: drizzleBroadcastImagesRepo,
+    // F119 review finding F2-3 — strips EXIF/GPS before the bytes reach the
+    // PUBLIC blob URL every recipient of the E-Blast fetches.
+    reencoder: sharpImageReencoder,
   };
 }
 

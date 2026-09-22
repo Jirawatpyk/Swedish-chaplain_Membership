@@ -105,15 +105,19 @@ export async function handleTestCopy(
           // and `submitBroadcast`; it lives in `broadcasts-route-helpers.ts`
           // so the five surfaces cannot drift.
           return designBlockErrorResponse(result.error.violations, correlationId);
+        // F2-9 — log the typed KIND, never `result.error.reason`: that is the
+        // provider's verbatim message and Resend echoes the recipient address
+        // back in it ("Invalid `to` field: …@…"), which is forbidden in logs.
+        // Same house rule as `broadcasts-content-scrub-adapter.ts`.
         case 'mailer_unavailable':
           logger.warn(
-            { err: result.error.reason, correlationId, errorId: `M119.${actor.surface}.test_copy.mailer` },
+            { err: result.error.kind, correlationId, errorId: `M119.${actor.surface}.test_copy.mailer` },
             'broadcasts.test_copy.mailer_unavailable',
           );
           return errorResponse(503, 'test_copy_unavailable', correlationId);
         case 'sanitizer_unavailable':
           logger.error(
-            { err: result.error.reason, correlationId, errorId: `M119.${actor.surface}.test_copy.sanitizer` },
+            { err: result.error.kind, correlationId, errorId: `M119.${actor.surface}.test_copy.sanitizer` },
             'broadcasts.test_copy.sanitizer_unavailable',
           );
           return errorResponse(500, 'internal_error', correlationId);

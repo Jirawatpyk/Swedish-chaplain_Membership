@@ -181,7 +181,7 @@ function makeStubRepo(opts: {
         complained: 0,
         sent: 0,
       }),
-    pruneExpiredDrafts: () => Promise.resolve({ prunedCount: 0 }),
+    pruneExpiredDrafts: () => Promise.resolve({ prunedCount: 0, prunedDrafts: [] }),
     async listInFlightOwnedByMember(): Promise<ReadonlyArray<Broadcast>> {
       return opts.inFlight;
     },

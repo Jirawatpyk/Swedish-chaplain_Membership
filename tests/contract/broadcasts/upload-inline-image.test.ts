@@ -11,6 +11,7 @@
  *
  * RED-first per Constitution Principle II.
  */
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
 import type {
@@ -18,9 +19,10 @@ import type {
   Hostname,
 } from '@/modules/broadcasts/application/ports/image-allowlist-port';
 import type { VirusScannerPort } from '@/modules/broadcasts/application/ports/virus-scanner-port';
-import type { ImageStoragePort } from '@/modules/broadcasts/application/ports/image-storage-port';
+import type { ImageMimeType, ImageStoragePort } from '@/modules/broadcasts/application/ports/image-storage-port';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { BroadcastImagesRepo } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
+import type { ImageReencoderPort } from '@/modules/broadcasts/application/ports/image-reencoder-port';
 
 const TENANT = 'tenant_swe' as never;
 const ACTOR = 'user_mem_42';
@@ -48,6 +50,7 @@ const makeDeps = (
   storage: ImageStoragePort;
   audit: AuditPort;
   imagesRepo: BroadcastImagesRepo;
+  reencoder: ImageReencoderPort;
 } => {
   const allowlistPort: ImageAllowlistPort = {
     withTx: vi.fn(async <T>(_t: never, fn: (tx: unknown) => Promise<T>) =>
@@ -89,10 +92,23 @@ const makeDeps = (
     listByOwner: vi.fn(),
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(),
+    markDeletedForMember: vi.fn(async () => []),
+    listOrphaned: vi.fn(async () => []),
+    lockContentHash: vi.fn(async () => undefined),
+    isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(),
     remove: vi.fn(),
   };
-  return { allowlistPort, scanner, storage, audit, imagesRepo };
+  // F2-3 — pass-through by default: the PIPELINE ORDER and the
+  // hash-on-re-encoded-bytes rule are what these cases pin; the real
+  // metadata strip is the sharp adapter's own unit test.
+  const reencoder: ImageReencoderPort = {
+    reencode: vi.fn(async (bytes: Uint8Array, mime: ImageMimeType) => ({
+      ok: true as const,
+      value: { bytes, mime },
+    })),
+  } as never;
+  return { allowlistPort, scanner, storage, audit, imagesRepo, reencoder };
 };
 
 describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
@@ -346,6 +362,129 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
         mimeType: 'image/png',
       }),
     ).rejects.toThrow('UnrelatedError');
+  });
+
+  // -------------------------------------------------------------------------
+  // F2-6 — a 0-byte File passes MIME + the `> MAX_BYTES` cap, gets scanned and
+  // PUT, and only then violates the DB CHECK `byte_size BETWEEN 1 AND 5 MB` →
+  // 500 plus an orphan blob with no row, which the sweep (keyed on marked ROWS)
+  // can never see. The refusal has to sit ABOVE the scanner.
+  // -------------------------------------------------------------------------
+  it('a 0-byte file is refused before the scanner and before storage.put', async () => {
+    const deps = makeDeps();
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
+      requestId: 'req-empty',
+      fileBytes: Buffer.alloc(0),
+      filename: 'empty.png',
+      mimeType: 'image/png',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('broadcast_image_empty');
+    expect(deps.scanner.scan).not.toHaveBeenCalled();
+    expect(deps.storage.put).not.toHaveBeenCalled();
+    expect(deps.storage.existsByContentHash).not.toHaveBeenCalled();
+    expect(deps.imagesRepo.record).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // F2-3 — member-uploaded bytes go to a PUBLIC blob URL. A phone photo carries
+  // EXIF/GPS, so the co-ordinates of the member's office would be served to
+  // every recipient. Re-encode strips it — AFTER the ClamAV verdict (never
+  // decode unscanned bytes) and BEFORE hashing (so dedup keys the bytes that
+  // are actually stored).
+  // -------------------------------------------------------------------------
+  it('re-encodes after the scan and before hashing; the hash + size are of the RE-ENCODED bytes', async () => {
+    const deps = makeDeps();
+    const clean = Buffer.concat([PNG_HEADER, Buffer.alloc(1016, 0x11)]);
+    const order: string[] = [];
+    vi.mocked(deps.scanner.scan).mockImplementation(async () => {
+      order.push('scan');
+      return { verdict: 'clean', durationMs: 5 };
+    });
+    vi.mocked(deps.reencoder.reencode).mockImplementation(async () => {
+      order.push('reencode');
+      return { ok: true, value: { bytes: new Uint8Array(clean), mime: 'image/png' } };
+    });
+    vi.mocked(deps.storage.existsByContentHash).mockImplementation(async () => {
+      order.push('hash');
+      return null;
+    });
+
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
+      // WITH exif — different bytes, therefore a different sha256.
+      fileBytes: Buffer.concat([PNG_HEADER, Buffer.alloc(3000, 0x99)]),
+      requestId: 'req-exif',
+      filename: 'phone-photo.png',
+      mimeType: 'image/png',
+    });
+
+    expect(r.ok).toBe(true);
+    expect(order).toEqual(['scan', 'reencode', 'hash']);
+    // The bytes that reach storage are the re-encoded ones…
+    const put = vi.mocked(deps.storage.put).mock.calls[0]![0];
+    expect(Buffer.from(put.bytes)).toEqual(clean);
+    // …and both the hash and the recorded byte size describe THOSE bytes.
+    const expectedHash = createHash('sha256').update(clean).digest('hex');
+    if (r.ok) expect(r.value.contentHash).toBe(expectedHash);
+    expect(put.contentHash).toBe(expectedHash);
+    const recorded = vi.mocked(deps.imagesRepo.record).mock.calls[0]![1];
+    expect(recorded.byteSize).toBe(clean.length);
+    expect(recorded.contentHash).toBe(expectedHash);
+  });
+
+  it('a re-encode that cannot decode the bytes is refused, and nothing is stored', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.reencoder.reencode).mockResolvedValue({
+      ok: false,
+      error: { kind: 'decode_failed', reason: 'unsupported image format' },
+    });
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
+      requestId: 'req-undecodable',
+      fileBytes: Buffer.concat([PNG_HEADER, Buffer.alloc(500, 0x01)]),
+      filename: 'not-really.png',
+      mimeType: 'image/png',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('broadcast_image_invalid_mime');
+    expect(deps.storage.put).not.toHaveBeenCalled();
+    expect(deps.imagesRepo.record).not.toHaveBeenCalled();
+  });
+
+  it('a re-encode that grows past the 5 MB cap is refused on the OUTPUT size', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.reencoder.reencode).mockResolvedValue({
+      ok: true,
+      value: { bytes: new Uint8Array(6 * 1024 * 1024), mime: 'image/png' },
+    });
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
+      requestId: 'req-grew',
+      fileBytes: Buffer.concat([PNG_HEADER, Buffer.alloc(4 * 1024 * 1024, 0x22)]),
+      filename: 'grew.png',
+      mimeType: 'image/png',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('broadcast_image_too_large');
+    expect(deps.storage.put).not.toHaveBeenCalled();
   });
 
   it('does NOT auto-allowlist when upload is rejected (scanner verdict=infected)', async () => {

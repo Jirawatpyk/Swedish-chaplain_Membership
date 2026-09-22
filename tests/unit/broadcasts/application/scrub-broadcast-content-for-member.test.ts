@@ -56,6 +56,8 @@ interface MakeDepsOverrides {
   auditEmitImpl?: () => Promise<void>;
   /** 108 PR-C T104 — rows whose member/contact back-references were nulled. */
   severImpl?: () => Promise<{ affected: number }>;
+  /** F2-2 — the erased member's inline images, stamped in this same tx. */
+  imageRows?: ReadonlyArray<Record<string, unknown>>;
 }
 
 function makeDeps(overrides: MakeDepsOverrides = {}) {
@@ -92,8 +94,75 @@ function makeDeps(overrides: MakeDepsOverrides = {}) {
       async () => (await overrides.severImpl?.()) ?? { affected: 0 },
     ),
   };
-  return { broadcastsRepo, audit, marketingUnsubscribes, fakeTx };
+  // F119 review finding F2-2 — erasure redacted subject/body but never
+  // reached the member's UPLOADED IMAGES, which sit at public blob URLs.
+  const imagesRepo = {
+    markDeletedForMember: vi.fn(
+      async (_t: unknown, _m: unknown, _at: unknown, _tx: unknown) => overrides.imageRows ?? [],
+    ),
+  };
+  return { broadcastsRepo, audit, marketingUnsubscribes, imagesRepo, fakeTx };
 }
+
+describe('scrubBroadcastContentForMember — F2-2: erasure reaches the images', () => {
+  it('stamps every inline image of the erased member IN THE SCRUB TX and audits each', async () => {
+    const deps = makeDeps({
+      imageRows: [
+        { id: 'img-1', ownerKind: 'broadcast', ownerId: 'b-1', contentHash: 'h1' },
+        { id: 'img-2', ownerKind: 'broadcast', ownerId: 'b-2', contentHash: 'h2' },
+      ],
+    });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      reason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-1',
+      requestId: 'req-erase',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.imagesMarked).toBe(2);
+    // Same transaction as the content redaction — a stamp that commits without
+    // the redaction, or vice versa, is the forensic gap Principle I forbids.
+    expect(deps.imagesRepo.markDeletedForMember).toHaveBeenCalledTimes(1);
+    expect(deps.imagesRepo.markDeletedForMember.mock.calls[0]![3]).toBe(deps.fakeTx);
+
+    const removals = deps.audit.emit.mock.calls.filter(
+      (c) => (c[1] as { eventType: string }).eventType === 'broadcast_image_removed',
+    );
+    expect(removals).toHaveLength(2);
+    expect(removals.every((c) => c[0] === deps.fakeTx)).toBe(true);
+    expect((removals[0]![1] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      image_id: 'img-1',
+      reason: 'member_erased',
+      blob_deleted: false,
+      actor_role: 'system',
+    });
+    // A deletion is not member activity: never the snake_case trigger key.
+    expect(
+      Object.keys((removals[0]![1] as { payload: Record<string, unknown> }).payload),
+    ).not.toContain('member_id');
+  });
+
+  it('a member with no images is a clean no-op on the image axis', async () => {
+    const deps = makeDeps();
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      initiatedByUserId: null,
+      requestId: 'r',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.imagesMarked).toBe(0);
+    expect(
+      deps.audit.emit.mock.calls.filter(
+        (c) => (c[1] as { eventType: string }).eventType === 'broadcast_image_removed',
+      ),
+    ).toHaveLength(0);
+  });
+});
 
 describe('scrubBroadcastContentForMember (COMP-1 US2b)', () => {
   beforeEach(() => {

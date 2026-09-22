@@ -6066,11 +6066,13 @@
           "uploadingAria": "Uploading image — please wait",
           "uploadedToast": "Image uploaded.",
           "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
+          "publicLinkNotice": "Your image is stored at a public web address that needs no sign-in — anyone with the link can open it, so don't upload anything private.",
           "draftRequiredHint": "Save this draft first to enable image uploads.",
           "disallowedSourcesHeading": "These image sources aren't allowed:",
           "disallowedSourceItem": "{host} — replace with an image from your chamber's allowlist.",
           "errors": {
             "broadcast_image_too_large": "Image is larger than 5 MB.",
+            "broadcast_image_empty": "That file is empty. Please choose an image file with content.",
             "broadcast_image_unsafe": "Image was flagged by the virus scanner. The upload was rejected.",
             "broadcast_image_invalid_mime": "Only PNG, JPG, WebP or GIF images are allowed.",
             "storage_unavailable": "Image storage is temporarily unavailable. Please try again in a moment.",

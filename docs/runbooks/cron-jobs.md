@@ -469,8 +469,46 @@ choose POST per HTTP semantics.
 Daily housekeeping cron deleting `broadcasts WHERE status='draft' AND
 updated_at < NOW() - INTERVAL '30 days'` per FR-001a (US1 AS3 draft
 restoration window). Drafts are user-controlled scratch space; pruning
-emits NO audit event (preserves the FR-001 "drafts do NOT consume or
-reserve quota" invariant).
+emits no LIFECYCLE audit event (preserves the FR-001 "drafts do NOT consume
+or reserve quota" invariant).
+
+It does emit one `broadcast_image_removed { reason: 'draft_pruned' }` per
+inline image a pruned draft owned — PDPA evidence, not a lifecycle event
+(F119 review finding F2-1). `broadcast_images.owner_id` has no FK, so this
+DELETE used to leave the image rows live and un-stamped; the image sweep in
+block 2 reads `deleted_at IS NOT NULL`, so those rows were invisible to it
+forever and the member's uploaded photograph stayed at a public,
+unauthenticated blob URL that nothing — including the GDPR Art. 17 / PDPA
+§33 erasure cascade — could reach. The stamp and the DELETE now share one
+transaction.
+
+### Block 2: the inline-image blob sweep (F119 T035)
+
+The same tick runs `reclaimOrphanedImages`, independently transacted (one
+transaction per row, so one bad blob never blocks the batch). It reaps two
+sets: rows already MARKED (`deleted_at IS NOT NULL`) and, as defence in
+depth, ORPHANED rows whose owner no longer exists. A blob is deleted only
+under the LAST-REFERENCE rule — no live row of either owner_kind shares the
+`content_hash` AND no live `body_html` still embeds the URL.
+
+**Advisory lock.** Each per-row transaction takes `pg_advisory_xact_lock` on
+`hashtext('broadcasts-image:' || tenant || ':' || content_hash)` BEFORE it
+counts live rows; the upload path takes the same lock around its insert.
+This is a FOURTH, deliberately disjoint sub-namespace: `invoicing:` is
+§87 gap-free numbering, `payments:` is a per-invoice TOCTOU guard,
+`broadcasts:` is per-broadcast, and `broadcasts-image:` is per
+(tenant, content_hash) and guards blob reclamation ONLY. Never reuse it.
+Without it, a dedup upload landing between the sweep's count and its delete
+left a live row pointing at a 404 blob.
+
+**Reading the outcome.** The tick body carries
+`imageSweep: { ok, scanned, blobsDeleted, rowsRemoved }`. `rowsRemoved`
+exceeding `blobsDeleted` is NORMAL: it means blobs were kept because another
+reference survives. The audit `reason` says which case — `sweep` (marked
+row, bytes gone), `sweep_orphaned` (owner vanished), `sweep_referenced`
+(bytes kept, live content still embeds the URL). A rising
+`sweep_referenced` rate on erasure work is worth a look: it usually means
+pre-0304 images, which have no row at all.
 
 Members are NOT notified of impending draft expiry in MVP — a "your
 draft will expire in N days" toast remains in scope for a future

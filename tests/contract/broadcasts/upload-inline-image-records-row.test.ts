@@ -20,6 +20,7 @@ import type { VirusScannerPort } from '@/modules/broadcasts/application/ports/vi
 import type { ImageStoragePort } from '@/modules/broadcasts/application/ports/image-storage-port';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { BroadcastImagesRepo } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
+import { makeFakeImageReencoder } from '../../helpers/eblast-approval-fakes';
 
 const TENANT = 'tenant-swe' as never;
 const OWNER = '11111111-1111-1111-1111-111111111111';
@@ -54,10 +55,14 @@ function makeDeps(o?: { existing?: boolean; verdict?: 'clean' | 'infected' }) {
     listByOwner: vi.fn(),
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(),
+    markDeletedForMember: vi.fn(async () => []),
+    listOrphaned: vi.fn(async () => []),
+    lockContentHash: vi.fn(async () => undefined),
+    isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(),
     remove: vi.fn(),
   };
-  return { allowlistPort, scanner, storage, audit, imagesRepo, record };
+  return { allowlistPort, scanner, storage, audit, imagesRepo, record, reencoder: makeFakeImageReencoder() };
 }
 
 const base = {

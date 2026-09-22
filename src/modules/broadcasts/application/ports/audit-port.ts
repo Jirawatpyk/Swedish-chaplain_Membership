@@ -353,8 +353,18 @@ export interface F7AuditPayloadShapes {
     readonly resourceKind?: 'broadcast' | 'template';
   };
   readonly broadcast_cross_member_probe: {
+    // camelCase is DELIBERATE and load-bearing: `member_id` (snake_case) is the
+    // ONLY key the 0009 `last_activity_at` SECURITY DEFINER trigger reads
+    // (#336/#337), so a REFUSED probe must never spell it that way — otherwise
+    // an attacker guessing ids would refresh the probed member's recency.
     readonly probedMemberId: string;
     readonly probedBroadcastId: string;
+    /**
+     * F119 F2-5 — which surface refused the probe (`image_upload`,
+     * `snapshot_template`, …). Optional: the pre-F119 emit sites omit it.
+     * Bounded-cardinality literal, never free text.
+     */
+    readonly operation?: string;
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;

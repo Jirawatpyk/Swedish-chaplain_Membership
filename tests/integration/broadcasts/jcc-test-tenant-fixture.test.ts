@@ -105,7 +105,7 @@ function makeStubRepo(tenantSlug: string): {
         complained: 0,
         sent: 0,
       }),
-    pruneExpiredDrafts: () => Promise.resolve({ prunedCount: 0 }),
+    pruneExpiredDrafts: () => Promise.resolve({ prunedCount: 0, prunedDrafts: [] }),
     async listInFlightOwnedByMember(
       tenantId: string,
       memberId: unknown,

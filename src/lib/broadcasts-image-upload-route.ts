@@ -192,6 +192,13 @@ export async function handleImageUpload(
     if (!result.ok) {
       let status: number;
       switch (result.error.kind) {
+        // F2-6 — a 0-byte file is a 400 with the bilingual envelope (the
+        // member can act on it), not a 413 and not the raw-kind shape the
+        // pipeline rejects below use. The uploader reads both envelopes.
+        case 'broadcast_image_empty':
+          return errorResponse(400, 'broadcast_image_empty', correlationId, {
+            fieldErrors: { file: ['broadcast_image_empty'] },
+          });
         case 'broadcast_image_too_large':
           status = 413;
           break;

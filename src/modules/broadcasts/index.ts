@@ -730,6 +730,16 @@ export {
 } from './application/use-cases/upload-inline-image';
 export { isF71aUs2Enabled, f71aUs2DisabledReason } from './infrastructure/feature-flags';
 export { drizzleBroadcastImagesRepo } from './infrastructure/db/drizzle-broadcast-images-repo';
+// F119 review finding F2-1 — the shared stamp+audit step both hard-delete
+// paths run inside their own transaction (draft discard, draft prune).
+export {
+  markOwnerImagesRemoved,
+  type ImageRemovalReason,
+  type MarkOwnerImagesRemovedDeps,
+  type MarkOwnerImagesRemovedInput,
+} from './application/use-cases/_mark-owner-images-removed';
+export { sharpImageReencoder } from './infrastructure/sharp-image-reencoder';
+export type { ImageReencoderPort, ImageReencodeError, ReencodedImage } from './application/ports/image-reencoder-port';
 export type { EmailRendererPort, RenderEmailInput, BroadcastRenderLocale } from './application/ports/email-renderer-port';
 export { emailTemplateRenderer } from './infrastructure/resend/email-template-renderer';
 export type { TestCopyMailerPort, TestCopyMailerError, TestCopyMessage } from './application/ports/test-copy-mailer-port';

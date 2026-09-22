@@ -161,7 +161,7 @@ The record that makes image ownership enforceable and image erasure reachable (R
 | `tenant_id` | `text NOT NULL` | RLS FORCE |
 | `id` | `uuid NOT NULL DEFAULT gen_random_uuid()` | PK `(tenant_id, id)` |
 | `owner_kind` | `text NOT NULL CHECK (owner_kind IN ('broadcast','template'))` | a draft IS a `broadcasts` row with `status='draft'`, so there is no third kind |
-| `owner_id` | `uuid NOT NULL` | the `broadcast_id` or the `broadcast_templates.id`. No FK (two possible parents); orphan rows are reaped by the daily sweep |
+| `owner_id` | `uuid NOT NULL` | the `broadcast_id` or the `broadcast_templates.id`. No FK (two possible parents). **TWO mechanisms, both needed (review finding F2-1)**: (1) every path that removes the owner stamps `deleted_at` in the owner's OWN transaction — draft discard, the daily draft prune, member withdrawal, staff rejection, member erasure; (2) the sweep additionally reads an ORPHAN arm (`listOrphaned`: live rows anti-joined against `broadcasts` / `broadcast_templates`) so a future hard-delete path that forgets (1) cannot strand the bytes silently. Before F2-1 only the sweep's MARKED arm existed, so a discarded or pruned draft's image was unreachable by the sweep AND by erasure, forever |
 | `content_hash` | `text NOT NULL` | SHA-256, as computed by `upload-inline-image.ts:131-133` |
 | `blob_url` | `text NOT NULL` | the public Vercel Blob URL |
 | `blob_key` | `text NOT NULL` | `broadcasts/images/{tenant}/{sha256}.{ext}` (`vercel-blob-image-storage.ts:41-48`) |
@@ -169,7 +169,7 @@ The record that makes image ownership enforceable and image erasure reachable (R
 | `byte_size` | `integer NOT NULL CHECK (byte_size BETWEEN 1 AND 5*1024*1024)` | mirrors `MAX_BYTES` (`upload-inline-image.ts:38`) |
 | `uploaded_by_user_id` | `uuid NOT NULL` | member or staff |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | |
-| `deleted_at` | `timestamptz NULL` | marked by **erasure** (T082), **member withdrawal** and **staff rejection** (both T081) — each stamping in the same transaction as the state change and auditing `broadcast_image_removed` with the matching `reason`; the bytes go on the next sweep (T035, `reason: 'sweep'`). All four declared reasons therefore have an emit site (`/speckit.analyze` round 3 M4) |
+| `deleted_at` | `timestamptz NULL` | marked in the SAME transaction as whatever removed the reference, auditing `broadcast_image_removed` with the matching `reason`; the bytes go on the next sweep. **Live reason vocabulary**: `draft_discarded` (the member's Discard draft, `DELETE /api/broadcasts/draft/[id]`) · `draft_pruned` (the 30-day prune cron) · `member_erased` (the F3 erasure cascade, via `markDeletedForMember` inside the content-redaction tx) · `withdrawn` / `rejected` (T081, PR-2) · and the sweep's own three outcomes `sweep` / `sweep_orphaned` / `sweep_referenced` (T035). The first three were added by review finding F2-1: the two hard-delete paths stamped NOTHING, so their images were unreachable by the sweep and by erasure, permanently. (This row previously said “all four declared reasons have an emit site” — true of the four then declared, and it is why the two that were never declared went unnoticed.) |
 
 **Indexes**: `(tenant_id, owner_kind, owner_id)`; `(tenant_id, content_hash)` — the
 **last-reference rule** (`DELETE the blob only when no row with the same `content_hash` has

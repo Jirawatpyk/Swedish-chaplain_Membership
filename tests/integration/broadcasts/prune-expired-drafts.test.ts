@@ -125,7 +125,7 @@ describe('Phase 8 / T171a — prune-expired-drafts integration (live Neon)', () 
 
     expect(await countRows(tenantA)).toBe(5);
 
-    const deps = makePruneExpiredDraftsDeps(tenantA.ctx.slug);
+    const deps = makePruneExpiredDraftsDeps(tenantA.ctx.slug, 'integration-prune');
     const result = await pruneExpiredDrafts({
       ...deps,
       clock: { now: () => FROZEN_NOW },
@@ -160,7 +160,7 @@ describe('Phase 8 / T171a — prune-expired-drafts integration (live Neon)', () 
     // Snapshot tenant B count BEFORE the prune
     const tenantBCountBefore = await countRows(tenantB, 'draft');
 
-    const deps = makePruneExpiredDraftsDeps(tenantA.ctx.slug);
+    const deps = makePruneExpiredDraftsDeps(tenantA.ctx.slug, 'integration-prune');
     const result = await pruneExpiredDrafts({
       ...deps,
       clock: { now: () => FROZEN_NOW },
@@ -180,7 +180,7 @@ describe('Phase 8 / T171a — prune-expired-drafts integration (live Neon)', () 
     // tenant A, plus tenant B's old draft (NOT pruned by tenant A's
     // earlier call). Re-running prune on tenant A with FROZEN_NOW + 5 min
     // (still under 30 days from the recent draft) should prune 0.
-    const deps = makePruneExpiredDraftsDeps(tenantA.ctx.slug);
+    const deps = makePruneExpiredDraftsDeps(tenantA.ctx.slug, 'integration-prune');
     const result = await pruneExpiredDrafts({
       ...deps,
       clock: { now: () => FROZEN_NOW },

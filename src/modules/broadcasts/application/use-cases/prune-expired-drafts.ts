@@ -14,8 +14,11 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
+import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
+import { markOwnerImagesRemoved } from './_mark-owner-images-removed';
 
 export type PruneExpiredDraftsError = {
   readonly kind: 'prune.server_error';
@@ -26,6 +29,16 @@ export interface PruneExpiredDraftsDeps {
   readonly tenant: TenantContext;
   readonly broadcastsRepo: BroadcastsRepo;
   readonly clock: ClockPort;
+  /**
+   * F119 review finding F2-1 — a pruned draft's images. `owner_id` has no FK,
+   * so the DELETE left the image rows live and un-stamped, which made them
+   * invisible to the sweep (it reads `deleted_at IS NOT NULL`) and to erasure:
+   * the member's bytes stayed at a public blob URL forever.
+   */
+  readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
+  readonly audit: AuditPort;
+  /** Correlates the audit rows with this cron tick. */
+  readonly requestId: string;
   /**
    * Retention window in days. Defaults to 30 (FR-001a). Tests + future
    * tenant overrides may pass a custom value; production cron always
@@ -51,10 +64,33 @@ export async function pruneExpiredDrafts(
   const cutoff = new Date(now.getTime() - days * MS_PER_DAY);
 
   try {
-    const result = await deps.broadcastsRepo.pruneExpiredDrafts(
-      deps.tenant.slug,
-      cutoff,
-    );
+    // F2-1 — the DELETE and every image stamp co-commit. The use case owns the
+    // transaction so the repo's `RETURNING broadcast_id` ids are still inside
+    // it when the images are marked: a prune that committed without the stamp
+    // is precisely the bug (unreachable bytes), and a stamp that committed
+    // without the prune would mark images of a draft that still exists.
+    const result = await deps.broadcastsRepo.withTx(async (tx) => {
+      const pruned = await deps.broadcastsRepo.pruneExpiredDrafts(deps.tenant.slug, cutoff, tx);
+      for (const draft of pruned.prunedDrafts) {
+        await markOwnerImagesRemoved(
+          { imagesRepo: deps.imagesRepo, audit: deps.audit },
+          {
+            tenantId: deps.tenant.slug,
+            owner: { kind: 'broadcast', id: draft.broadcastId },
+            reason: 'draft_pruned',
+            at: now,
+            requestId: deps.requestId,
+            // The cron holds no session. `'system'` is the truth, and
+            // `check:actor-role-truth` forbids inventing a role here.
+            actorUserId: 'system',
+            actorRole: 'system',
+            relatedMemberId: draft.requestedByMemberId,
+          },
+          tx,
+        );
+      }
+      return pruned;
+    });
     return ok({
       prunedCount: result.prunedCount,
       cutoff: cutoff.toISOString(),

@@ -903,7 +903,7 @@ export async function dispatchScheduledBroadcast(
         broadcastNameForResendDashboard: resendDashboardName(broadcast.fromName, broadcast.subject),
         tenantDisplayName: deps.tenantDisplayName,
         locale: deps.locale,
-        brand: await loadBrandChrome(deps.brandChrome, deps.tenant),
+        brand: await loadBrandChrome(deps.brandChrome, deps.tenant, 'dispatch'),
       });
       resendBroadcastId = createResult.broadcastId;
       // Persist BEFORE the send, in its own tx. The window this closes is the

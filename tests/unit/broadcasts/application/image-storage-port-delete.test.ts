@@ -46,6 +46,10 @@ function makeDeps(rows: BroadcastImageRecord[], liveCounts: Record<string, numbe
     listByOwner: vi.fn(),
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(async () => rows),
+    markDeletedForMember: vi.fn(async () => []),
+    listOrphaned: vi.fn(async () => []),
+    lockContentHash: vi.fn(async () => undefined),
+    isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(async (_t: never, hash: string) => liveCounts[hash] ?? 0),
     remove: vi.fn(async () => undefined),
   };
@@ -118,6 +122,11 @@ describe('reclaimOrphanedImages', () => {
   it('the last-reference check counts LIVE rows of either owner_kind in the same tx as the removal', async () => {
     const deps = makeDeps([marked('img-d', 'hash-d', 'template')], { 'hash-d': 0 });
     await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-4' });
-    expect(deps.imagesRepo.countLiveByContentHash).toHaveBeenCalledWith(TENANT, 'hash-d', 'tx-1');
+    // F2-1 added a 4th `excludeImageId` argument. It is `undefined` on the
+    // MARKED arm and set only on the ORPHAN arm, where the row being reaped is
+    // itself live and would otherwise count itself and never release its blob.
+    expect(deps.imagesRepo.countLiveByContentHash).toHaveBeenCalledWith(TENANT, 'hash-d', 'tx-1', undefined);
+    // F2-10(a): the advisory lock is taken on the same tx, before the count.
+    expect(deps.imagesRepo.lockContentHash).toHaveBeenCalledWith(TENANT, 'hash-d', 'tx-1');
   });
 });

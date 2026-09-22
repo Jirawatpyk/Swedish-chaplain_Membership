@@ -104,6 +104,12 @@ export type F7RouteErrorCode =
   | 'banner_alt_required'
   // F119 — the synchronous test copy could not be handed to the mailer (503).
   | 'test_copy_unavailable'
+  // F119 review finding F2-6 — a 0-byte file (400). The DB CHECK on
+  // `broadcast_images.byte_size` is `BETWEEN 1 AND 5 MB`; before this code
+  // existed an empty upload passed MIME + the size cap, was scanned, was PUT,
+  // and only then violated the CHECK — a 500 for the member plus an orphan
+  // blob with no row that the sweep could never reach.
+  | 'broadcast_image_empty'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -317,6 +323,10 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'The test copy could not be sent right now. Please try again in a moment.',
     messageThai: 'ไม่สามารถส่งสำเนาทดสอบได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง',
   },
+  broadcast_image_empty: {
+    message: 'That file is empty. Please choose an image file with content.',
+    messageThai: 'ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล',
+  },
   internal_error: {
     message: 'An unexpected error occurred. Please try again.',
     messageThai: 'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
@@ -517,6 +527,8 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   cta_link_scheme: 422,
   banner_alt_required: 422,
   test_copy_unavailable: 503,
+  // F2-6 — the member can fix this one; 400, not a 413 and not a 500.
+  broadcast_image_empty: 400,
   internal_error: 500,
 };
 

@@ -36,6 +36,7 @@ import type {
 } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
 import type { EmailRendererPort, RenderEmailInput } from '@/modules/broadcasts/application/ports/email-renderer-port';
 import type { ImageMimeType, ImageStoragePort, StoredImageRef } from '@/modules/broadcasts/application/ports/image-storage-port';
+import type { ImageReencoderPort } from '@/modules/broadcasts/application/ports/image-reencoder-port';
 import type { TenantLogoUrlPort } from '@/modules/broadcasts/application/ports/tenant-logo-url-port';
 import type { TestCopyMailerPort, TestCopyMessage } from '@/modules/broadcasts/application/ports/test-copy-mailer-port';
 
@@ -89,9 +90,27 @@ export function makeFakeBroadcastImagesRepo(seed: readonly BroadcastImageRecord[
     listMarked: vi.fn(async (tenantId: never, limit: number) =>
       rows.filter((r) => r.tenantId === (tenantId as unknown as string) && r.deletedAt !== null).slice(0, limit),
     ),
-    countLiveByContentHash: vi.fn(async (tenantId: never, contentHash: string) =>
-      rows.filter((r) => r.tenantId === (tenantId as unknown as string) && r.contentHash === contentHash && r.deletedAt === null).length,
+    // F2-1 — the defence-in-depth arm. The fake has no owner tables, so it
+    // reports nothing by default; a test that wants an orphan overrides it.
+    // F2-2 — the erasure cascade's by-member stamp. The fake holds no
+    // broadcasts, so a test that needs it overrides the return.
+    markDeletedForMember: vi.fn(async (_tenantId: never, _memberId: string, _at: Date, _tx: unknown) => [] as BroadcastImageRecord[]),
+    listOrphaned: vi.fn(async (_tenantId: never, _limit: number) => [] as BroadcastImageRecord[]),
+    countLiveByContentHash: vi.fn(async (tenantId: never, contentHash: string, _tx: unknown, excludeImageId?: string) =>
+      rows.filter(
+        (r) =>
+          r.tenantId === (tenantId as unknown as string) &&
+          r.contentHash === contentHash &&
+          r.deletedAt === null &&
+          r.id !== excludeImageId,
+      ).length,
     ),
+    // F2-10(a) — a no-op here; the real lock is SQL. Spying on it is how the
+    // sweep test proves the lock is taken BEFORE the count.
+    lockContentHash: vi.fn(async (_tenantId: never, _contentHash: string, _tx: unknown) => undefined),
+    // F2-10(b) — the fake holds no content, so "nothing references it" is the
+    // default; a test that wants the referenced branch overrides it.
+    isBlobReferencedByContent: vi.fn(async (_tenantId: never, _blobUrl: string, _tx: unknown) => false),
     remove: vi.fn(async (tenantId: never, imageId: string) => {
       const i = rows.findIndex((r) => r.tenantId === (tenantId as unknown as string) && r.id === imageId);
       if (i >= 0) rows.splice(i, 1);
@@ -207,4 +226,33 @@ export function makeFakeImageStorage(host = 'assets.swecham.zyncdata.app'): Fake
       deleted.push(blobKey);
     }),
   } satisfies ImageStoragePort & { keys: Set<string>; deleted: string[] };
+}
+
+/**
+ * F119 review finding F2-3 — pass-through `ImageReencoderPort`.
+ *
+ * The real strip is proven against libvips in
+ * `tests/unit/broadcasts/infrastructure/sharp-image-reencoder.test.ts`. What
+ * the suites using THIS fake need is a port that behaves (returns bytes, in
+ * order) without pulling `sharp` — and, because it records its calls, one that
+ * can still prove the use case routed the bytes THROUGH it before storing them.
+ */
+export interface FakeImageReencoder extends ImageReencoderPort {
+  readonly calls: Array<{ readonly bytes: Uint8Array; readonly mime: ImageMimeType }>;
+}
+
+export function makeFakeImageReencoder(
+  opts: { readonly failWith?: string; readonly output?: Uint8Array } = {},
+): FakeImageReencoder {
+  const calls: Array<{ bytes: Uint8Array; mime: ImageMimeType }> = [];
+  return {
+    calls,
+    reencode: vi.fn(async (bytes: Uint8Array, mime: ImageMimeType) => {
+      calls.push({ bytes, mime });
+      if (opts.failWith !== undefined) {
+        return { ok: false as const, error: { kind: 'decode_failed' as const, reason: opts.failWith } };
+      }
+      return { ok: true as const, value: { bytes: opts.output ?? bytes, mime } };
+    }),
+  };
 }

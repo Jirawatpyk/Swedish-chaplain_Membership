@@ -19,6 +19,7 @@ import {
   makeFakeBrandSettingsRepo,
   makeFakeBroadcastImagesRepo,
   makeFakeEmailRenderer,
+  makeFakeImageReencoder,
   makeFakeImageStorage,
   makeFakeTenantLogoUrlPort,
   makeFakeTestCopyMailer,
@@ -64,8 +65,8 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
       mimeType: 'image/png',
     };
     // Two owners share one blob (a template image carried into a draft).
-    const a = await uploadInlineImage({ allowlistPort, scanner, storage, audit, imagesRepo }, { ...base, owner: { kind: 'template', id: '11111111-1111-1111-1111-111111111111' }, actor: { role: 'admin', relatedMemberId: null } });
-    const b = await uploadInlineImage({ allowlistPort, scanner, storage, audit, imagesRepo }, { ...base, owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' }, actor: { role: 'member', memberId: 'm-1' } });
+    const a = await uploadInlineImage({ allowlistPort, scanner, storage, audit, imagesRepo, reencoder: makeFakeImageReencoder() }, { ...base, owner: { kind: 'template', id: '11111111-1111-1111-1111-111111111111' }, actor: { role: 'admin', relatedMemberId: null } });
+    const b = await uploadInlineImage({ allowlistPort, scanner, storage, audit, imagesRepo, reencoder: makeFakeImageReencoder() }, { ...base, owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' }, actor: { role: 'member', memberId: 'm-1' } });
     expect(a.ok && b.ok).toBe(true);
     expect(imagesRepo.rows).toHaveLength(2);
     expect(storage.keys.size).toBe(1);

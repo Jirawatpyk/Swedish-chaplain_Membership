@@ -2713,6 +2713,30 @@ export const broadcastsMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * `broadcasts_brand_chrome_unavailable_total{tenant, surface}` — F119 T031
+   * fail-soft degrade (review finding F2-8). `loadBrandChrome` swallows a
+   * brand-read fault and sends with NO chrome so a brand outage never fails a
+   * send — but FR-041c says the footer MUST carry the chamber's postal
+   * address, so every degraded send ships a non-compliant footer. The warn log
+   * alone was greppable, not alertable; this counter is the durable signal.
+   *
+   * `surface` names the CALLING use case (`dispatch` | `audience_tick`) — it
+   * is a required argument so the helper can never stamp one caller's identity
+   * onto all of them (the F8 errorId defect class).
+   *
+   * Alert: any non-zero over 15 min → investigate the brand-settings read
+   * (docs/observability.md § F7/F119).
+   */
+  brandChromeUnavailable(tenantId: string, surface: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_brand_chrome_unavailable_total',
+        'F119 brand chrome read failed at send time — the E-Blast shipped without the mandatory postal-address footer (fail-soft degrade)',
+      ).add(1, { tenant: tenantId, surface });
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------

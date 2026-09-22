@@ -939,15 +939,23 @@ export type NewTenantBroadcastSettingsRow =
  * One row per image upload, owned by the E-Blast (`owner_kind='broadcast'`,
  * a draft IS a `broadcasts` row) or the template (`'template'`). The record
  * that makes image ownership enforceable (route ownership check) and image
- * erasure reachable: `deleted_at` is stamped by erasure, member withdrawal
- * and staff rejection inside the same transaction as the state change; the
- * bytes go on the daily sweep under the LAST-REFERENCE rule — a blob is
- * deleted only when no live row of EITHER owner_kind shares its
- * `content_hash` (a template image referenced by a draft is kept).
+ * erasure reachable: `deleted_at` is stamped by erasure, member withdrawal,
+ * staff rejection, a draft DISCARD and the daily draft PRUNE, each inside the
+ * same transaction as the state change. The bytes then go on the daily sweep
+ * under the LAST-REFERENCE rule — a blob is deleted only when no live row of
+ * EITHER owner_kind shares its `content_hash` (a template image referenced by
+ * a draft is kept) AND no live `body_html` still embeds the URL.
  *
- * No FK on `owner_id` (two possible parents). Not backfilled — images
- * uploaded before 0304 have no row and are never swept. RLS ENABLE + FORCE +
- * the 0064 policy live in the migration.
+ * No FK on `owner_id` (two possible parents), so reachability is enforced in
+ * the application — by the stamps above AND, since review finding F2-1, by
+ * the sweep's ORPHAN arm (live rows anti-joined against `broadcasts` /
+ * `broadcast_templates`), which exists so a future hard-delete path that
+ * forgets to stamp cannot strand a member's bytes at a public URL.
+ *
+ * Not backfilled — images uploaded before 0304 have no row and are never
+ * swept; the `body_html` reference check is what keeps a later dedup row from
+ * deleting those older blobs. RLS ENABLE + FORCE + the 0064 policy live in
+ * the migration.
  */
 export const broadcastImages = pgTable(
   'broadcast_images',

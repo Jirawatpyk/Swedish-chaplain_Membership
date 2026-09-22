@@ -29,7 +29,7 @@ import type { BroadcastImageOwnerKind } from '../ports/broadcast-images-repo';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { BroadcastTemplatesPort } from '../ports/broadcast-templates-port';
 import { emitCrossTenantProbe, emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
-import { safeAuditEmit } from './_safe-audit-emit';
+import { safeAuditEmitTyped } from './_safe-audit-emit';
 
 /**
  * PR-1 stage set for a STAFF image upload to an E-Blast: the
@@ -98,14 +98,19 @@ export async function authorizeImageOwner(
     const found = await deps.broadcastsRepo.findOwnedByMember(input.tenantId, input.actor.memberId as never, broadcastId);
     if (found.broadcast === null) {
       if (found.probeKind === 'cross_member') {
-        await safeAuditEmit(deps.audit, null, {
+        // F2-5: emit through the COMPILE-CHECKED shape with the camelCase keys
+        // the sibling emitter (`snapshot-template-to-draft`) uses. The spelling
+        // is deliberate: `member_id` is the one key the 0009 `last_activity_at`
+        // trigger reads, so a REFUSED probe must not carry it — otherwise an
+        // attacker guessing broadcast ids refreshes the probed member's recency.
+        await safeAuditEmitTyped(deps.audit, null, {
           eventType: 'broadcast_cross_member_probe',
           actorUserId: input.actorUserId,
           tenantId: input.tenantId,
           summary: `Member ${input.actor.memberId} tried to attach an image to broadcast ${broadcastId} owned by another member`,
           payload: {
-            member_id: input.actor.memberId,
-            broadcast_id: broadcastId,
+            probedMemberId: input.actor.memberId,
+            probedBroadcastId: broadcastId,
             operation: 'image_upload',
           },
           requestId: input.requestId,

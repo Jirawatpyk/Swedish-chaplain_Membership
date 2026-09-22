@@ -18,6 +18,7 @@ import { makeClamavVirusScanner } from '@/modules/broadcasts/infrastructure/clam
 import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo';
 import { vercelBlobImageStorage } from '@/modules/broadcasts/infrastructure/vercel-blob-image-storage';
 import { drizzleBroadcastImagesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-images-repo';
+import { sharpImageReencoder } from '@/modules/broadcasts/infrastructure/sharp-image-reencoder';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -72,6 +73,7 @@ describe.skipIf(!hasClamAV)(
             scanner: makeClamavVirusScanner(),
             storage: vercelBlobImageStorage,
             imagesRepo: drizzleBroadcastImagesRepo,
+            reencoder: sharpImageReencoder,
             audit: {
               async emit(_tx, e) {
                 auditEvents.push({ eventType: e.eventType });
@@ -109,6 +111,7 @@ describe.skipIf(!hasClamAV)(
             scanner: makeClamavVirusScanner(),
             storage: vercelBlobImageStorage,
             imagesRepo: drizzleBroadcastImagesRepo,
+            reencoder: sharpImageReencoder,
             audit: { async emit() {}, async emitTyped() {} },
           },
           {

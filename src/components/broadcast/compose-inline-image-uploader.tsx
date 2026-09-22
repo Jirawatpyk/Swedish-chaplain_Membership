@@ -155,6 +155,12 @@ export function ComposeInlineImageUploader({
         type="file"
         accept="image/png,image/jpeg,image/webp,image/gif"
         className="sr-only"
+        // `sr-only` CLIPS, it does not hide, so this input is still a tab stop
+        // — and the visible Button is a second one. Both carry the description
+        // (the `custom-list-input.tsx` pattern), because a member who tabs to
+        // the Button would otherwise never hear the public-link notice, and
+        // that notice is the entire PDPA transparency control.
+        aria-describedby="broadcast-image-help broadcast-image-public-notice"
         onChange={handleChange}
       />
       <Button
@@ -162,6 +168,7 @@ export function ComposeInlineImageUploader({
         variant="outline"
         onClick={handlePick}
         disabled={uploading}
+        aria-describedby="broadcast-image-help broadcast-image-public-notice"
         // PR-review fix 2026-05-20 UX-H3 — mobile tap target ≥44px
         // per iOS HIG (default Button height is 36px, fails on file-
         // picker triggers on mobile Safari).
@@ -186,7 +193,21 @@ export function ComposeInlineImageUploader({
           {error}
         </div>
       )}
-      <p className="text-caption text-muted-foreground">{t('helpText')}</p>
+      <p id="broadcast-image-help" className="text-caption text-muted-foreground">
+        {t('helpText')}
+      </p>
+      {/*
+        F119 review finding F2-11 (PDPA M-4) — transparency BEFORE the choice.
+        An inline image is written to a public, unauthenticated blob URL and
+        then fetched by every recipient's mail client (a mail client cannot
+        carry a session, so the tier has to be public). A member picking a
+        photo off their phone has no way to know that from the button, so the
+        sentence sits next to the picker, above it in reading order, not in a
+        toast after the upload.
+      */}
+      <p id="broadcast-image-public-notice" className="text-caption text-muted-foreground">
+        {t('publicLinkNotice')}
+      </p>
     </div>
   );
 }

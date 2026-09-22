@@ -1,23 +1,42 @@
 /**
  * T071 (F7.1a US2) — `uploadInlineImage` Application use-case.
  *
- * Pipeline (FR-012 / FR-013 + critique E6):
+ * Pipeline (FR-012 / FR-013 + critique E6 + review findings F2-3 / F2-6):
  *   1. MIME-type allowlist (image/png|jpeg|webp|gif) — fast-fail
- *   2. Size cap (≤5 MB) — fast-fail emits `broadcast_image_too_large`
+ *   2. Size band — fast-fail. `> 5 MB` emits `broadcast_image_too_large`;
+ *      `< 1 byte` emits `broadcast_image_empty` (F2-6)
  *   3. Filename sanitisation (strip <>&"'\\/ + max 255 chars)
- *   4. SHA-256 content-hash — dedup short-circuit if already stored
- *   5. ClamAV virus scan via `VirusScannerPort` — fail-closed on
+ *   4. ClamAV virus scan via `VirusScannerPort` — fail-closed on
  *      verdict !== 'clean'
- *   6. Vercel Blob persistence in tenant-scoped namespace
- *   7. F119 T033 — record ONE `broadcast_images` row (owner = the E-Blast or
+ *   5. F2-3 — re-encode through `ImageReencoderPort` to strip EXIF/GPS/XMP
+ *   6. SHA-256 content-hash + byte size OF THE RE-ENCODED BYTES — dedup
+ *      short-circuit if already stored
+ *   7. Vercel Blob persistence in tenant-scoped namespace
+ *   8. F119 T033 — record ONE `broadcast_images` row (owner = the E-Blast or
  *      the template) and audit `broadcast_image_uploaded` in the SAME
  *      tenant tx — on the dedup path too (a second owner is a second
  *      reference; the last-reference sweep needs it)
- *   8. Return { blobUrl, allowlistedHostname, contentHash, imageId }
+ *   9. Return { blobUrl, allowlistedHostname, contentHash, imageId }
  *
  * Pipeline-order invariant (data-model § FR-013 + critique P/E
  * security clauses): bytes NEVER reach storage before verdict='clean'
  * is recorded. Rejected uploads are NEVER persisted.
+ *
+ * F2-3 moved steps 4–6 into this order deliberately. The re-encoder is an
+ * image DECODER, so it must sit BELOW the ClamAV verdict — never point a
+ * decoder at unscanned bytes. And the hash must be taken ABOVE it, on the
+ * OUTPUT: the hash is both the dedup key and the blob key, so hashing the
+ * INPUT would key the store on bytes that were never stored and the next
+ * upload of the same photo would miss the dedup and orphan a blob. The cost
+ * is that a deduplicated upload is now scanned before the short-circuit; that
+ * is the correct trade (an identical file from a second member is still
+ * verified) and it is what makes the dedup key honest.
+ *
+ * F2-6: the empty-file refusal sits ABOVE the scanner because the DB CHECK is
+ * `byte_size BETWEEN 1 AND 5 MB`. Without it a 0-byte `File` passed MIME +
+ * size, was scanned, was PUT, and only then violated the CHECK — a 500 for
+ * the member plus an orphan blob with NO row, which the sweep (keyed on
+ * MARKED ROWS) can never see.
  *
  * Pure Application logic — no framework imports.
  */
@@ -38,6 +57,7 @@ import {
 import type { Hostname } from '../ports/image-allowlist-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastImageOwnerKind, BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import type { ImageReencoderPort } from '../ports/image-reencoder-port';
 import type { TenantSlug } from '@/modules/tenants';
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -49,6 +69,13 @@ export interface UploadInlineImageDeps {
   readonly audit: AuditPort;
   /** F119 T033 — the image lifecycle record. */
   readonly imagesRepo: BroadcastImagesRepo;
+  /**
+   * F2-3 — strips EXIF/GPS before the bytes reach a PUBLIC blob URL.
+   * REQUIRED, never optional: a composition that forgot to wire it would
+   * publish the member's GPS co-ordinates silently, and silence is exactly
+   * what this control exists to prevent.
+   */
+  readonly reencoder: ImageReencoderPort;
 }
 
 /**
@@ -77,6 +104,10 @@ export interface UploadInlineImageInput {
 
 export type UploadInlineImageError =
   | { readonly kind: 'broadcast_image_too_large'; readonly sizeBytes: number }
+  // F2-6 — a 0-byte upload. Refused ABOVE the scanner; the DB CHECK on
+  // `broadcast_images.byte_size` is `BETWEEN 1 AND 5 MB`, so letting it
+  // through cost a 500 and an unsweepable orphan blob.
+  | { readonly kind: 'broadcast_image_empty' }
   | {
       readonly kind: 'broadcast_image_invalid_mime';
       readonly receivedMime: string;
@@ -149,11 +180,105 @@ export async function uploadInlineImage(
     });
     return err({ kind: 'broadcast_image_too_large', sizeBytes });
   }
+  // F2-6 — the OTHER end of the DB CHECK `byte_size BETWEEN 1 AND 5 MB`.
+  // Above the scanner and above storage: an empty file is not something to
+  // scan, store, and then discover is unrepresentable. No audit row — unlike
+  // the too-large / unsafe rejections this is not a security signal, it is a
+  // mis-click or a browser that handed us an empty `File`.
+  if (sizeBytes < 1) {
+    return err({ kind: 'broadcast_image_empty' });
+  }
 
   const sanitisedFilename = sanitiseFilename(input.filename);
-  const contentHash = createHash('sha256')
-    .update(input.fileBytes as Uint8Array)
-    .digest('hex');
+
+  const verdict = await deps.scanner.scan(Buffer.from(input.fileBytes));
+  if (verdict.verdict !== 'clean') {
+    const reason =
+      verdict.verdict === 'infected'
+        ? verdict.signature
+        : verdict.verdict === 'error'
+          ? `scanner_error:${verdict.reason}`
+          : 'scanner_timeout';
+    // PR-review fix 2026-05-20 SF-H2: safeAuditEmit preserves the
+    // 422-reject + bytes-NEVER-persisted invariant even when audit
+    // storage hiccups (pipeline-order invariant from FR-013).
+    await safeAuditEmit(deps.audit, null, {
+      eventType: 'broadcast_image_unsafe',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Inline image rejected — virus-scan verdict=${verdict.verdict}`,
+      payload: {
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
+        verdict: verdict.verdict,
+        signature: verdict.verdict === 'infected' ? verdict.signature : null,
+        durationMs: verdict.durationMs,
+      },
+      requestId: input.requestId,
+    });
+    return err({ kind: 'broadcast_image_unsafe', reason });
+  }
+
+  // F2-3 — strip EXIF/GPS/XMP. Below the verdict (never decode unscanned
+  // bytes), above the hash (the hash is the dedup + blob key and must
+  // describe the bytes that are actually stored).
+  const reencoded = await deps.reencoder.reencode(input.fileBytes as Uint8Array, mime);
+  if (!reencoded.ok) {
+    // Fail-closed: bytes we cannot decode are bytes whose metadata we cannot
+    // strip. Mapped onto the existing `invalid_mime` class — from the
+    // member's side "this is not an image we can accept" is the same answer.
+    logger.warn(
+      {
+        err: reencoded.error.kind,
+        tenantId: input.tenantId,
+        ownerKind: input.owner.kind,
+        mime,
+        requestId: input.requestId,
+      },
+      'broadcasts.uploadInlineImage.reencode_failed',
+    );
+    await safeAuditEmit(deps.audit, null, {
+      eventType: 'broadcast_image_unsafe',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Inline image rejected — undecodable as ${mime}`,
+      payload: {
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
+        reason: 'reencode_failed',
+        receivedMime: input.mimeType,
+      },
+      requestId: input.requestId,
+    });
+    return err({ kind: 'broadcast_image_invalid_mime', receivedMime: input.mimeType });
+  }
+  const storedBytes = reencoded.value.bytes;
+  const storedSizeBytes = storedBytes.byteLength;
+  // Re-check the cap on the OUTPUT: a re-encode can grow a file (a heavily
+  // optimised PNG round-tripped at compressionLevel 9 still can), and the DB
+  // CHECK and the storage quota both apply to what we write, not what we read.
+  if (storedSizeBytes > MAX_BYTES) {
+    await safeAuditEmit(deps.audit, null, {
+      eventType: 'broadcast_image_too_large',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Inline image rejected — re-encoded size ${storedSizeBytes} > ${MAX_BYTES}`,
+      payload: {
+        sizeBytes: storedSizeBytes,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
+        mime,
+        stage: 'reencoded',
+      },
+      requestId: input.requestId,
+    });
+    return err({ kind: 'broadcast_image_too_large', sizeBytes: storedSizeBytes });
+  }
+  if (storedSizeBytes < 1) {
+    return err({ kind: 'broadcast_image_empty' });
+  }
+
+  const contentHash = createHash('sha256').update(storedBytes).digest('hex');
 
   // Dedup short-circuit (best-effort; correctness handled by put's
   // tenant-scoped + content-addressed key). CR-M3 — passes mime so
@@ -184,7 +309,7 @@ export async function uploadInlineImage(
         blobUrl: existing.blobUrl,
         blobKey: existing.blobKey,
         mime,
-        sizeBytes,
+        sizeBytes: storedSizeBytes,
       });
       return ok({
         blobUrl: existing.blobUrl,
@@ -193,34 +318,6 @@ export async function uploadInlineImage(
         imageId,
       });
     }
-  }
-
-  const verdict = await deps.scanner.scan(Buffer.from(input.fileBytes));
-  if (verdict.verdict !== 'clean') {
-    const reason =
-      verdict.verdict === 'infected'
-        ? verdict.signature
-        : verdict.verdict === 'error'
-          ? `scanner_error:${verdict.reason}`
-          : 'scanner_timeout';
-    // PR-review fix 2026-05-20 SF-H2: safeAuditEmit preserves the
-    // 422-reject + bytes-NEVER-persisted invariant even when audit
-    // storage hiccups (pipeline-order invariant from FR-013).
-    await safeAuditEmit(deps.audit, null, {
-      eventType: 'broadcast_image_unsafe',
-      actorUserId: input.actorUserId,
-      tenantId: input.tenantId,
-      summary: `Inline image rejected — virus-scan verdict=${verdict.verdict}`,
-      payload: {
-        owner_kind: input.owner.kind,
-        owner_id: input.owner.id,
-        verdict: verdict.verdict,
-        signature: verdict.verdict === 'infected' ? verdict.signature : null,
-        durationMs: verdict.durationMs,
-      },
-      requestId: input.requestId,
-    });
-    return err({ kind: 'broadcast_image_unsafe', reason });
   }
 
   // PR-review fix 2026-05-20 SF-M4 — wrap storage.put + map Blob error
@@ -232,7 +329,8 @@ export async function uploadInlineImage(
   try {
     const result = await deps.storage.put({
       tenantId: input.tenantId,
-      bytes: input.fileBytes as Uint8Array,
+      // F2-3 — the METADATA-STRIPPED bytes, never `input.fileBytes`.
+      bytes: storedBytes,
       contentHash,
       mimeType: mime,
       sanitisedFilename,
@@ -268,7 +366,13 @@ export async function uploadInlineImage(
     await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
   }
 
-  const imageId = await recordImage(deps, input, { contentHash, blobUrl, blobKey, mime, sizeBytes });
+  const imageId = await recordImage(deps, input, {
+    contentHash,
+    blobUrl,
+    blobKey,
+    mime,
+    sizeBytes: storedSizeBytes,
+  });
   return ok({ blobUrl, allowlistedHostname: hostname, contentHash, imageId });
 }
 
@@ -293,6 +397,12 @@ async function recordImage(
   },
 ): Promise<string> {
   return deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+    // F119 review finding F2-10(a) — the OTHER half of the sweep's lock. The
+    // dedup probe above asks BLOB STORAGE whether the bytes exist, not the
+    // database, so without this lock a fresh reference could be inserted in
+    // the window between the sweep counting 0 live rows and deleting the
+    // blob: a live row pointing at a 404. Held to the end of this tx.
+    await deps.imagesRepo.lockContentHash(input.tenantId, stored.contentHash, tx);
     const row = await deps.imagesRepo.record(
       input.tenantId,
       {

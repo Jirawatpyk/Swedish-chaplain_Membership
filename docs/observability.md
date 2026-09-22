@@ -1488,6 +1488,20 @@ Extends § 22.3 with **4 new alerts**:
 
 The 4 F7.1a alerts route per § 22.8 (alarm → `#oncall-platform`; page → PagerDuty). Two F7.1a-specific runbooks land under `docs/runbooks/` for the ClamAV alerts; the partial-send alert shares the broadcasts-perf-regression triage tree plus a dedicated `broadcast-partial-send-recovery.md` decision tree.
 
+### 22.11 F119 E-Blast approval workflow (PR-1) — brand chrome
+
+Extends § 22.1 with **1 metric**. Brand chrome (chamber name header, the postal-address footer, the CTA colour) is read LIVE at send time (FR-041c) and the read is **fail-soft** — a brand outage must never fail a send. But FR-041 says the footer MUST carry the chamber's postal address, so every degraded send ships a footer that does not meet that requirement. Before this metric the degrade was a `logger.warn` only: greppable, never alertable, and invisible on a dashboard.
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts_brand_chrome_unavailable_total` | counter | `tenant`, `surface` ∈ {dispatch, audience_tick} | F119 T031 — `loadBrandChrome` caught a fault from `BrandChromePort.load` and degraded to NO chrome. Each increment is one send (or one audience tick) whose footer went out WITHOUT the postal address. `surface` is a REQUIRED argument of the helper, so the two dispatch call sites can never be confused for one another (the F8 `errorId` defect class — a shared helper stamping one caller's identity onto all of them). An ABSENT port is *not* counted: that is "this tenant has no brand configured", not an outage. |
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts_brand_chrome_unavailable_total` rate > 0 sustained 15 min | **alarm** | the brand-settings read is failing and E-Blasts are shipping without the mandatory postal-address footer. Read `surface` first: both labels point at the same `tenant_broadcast_settings` read, so a fault on BOTH is Neon / the settings row, while one alone is that use case's composition (a pre-F119 `makeDeps` that never wired `brandChrome` degrades SILENTLY and is not counted — check the composition before blaming the database). Not a page: nothing is lost and no state is wrong, but every message sent while it is up is non-compliant, so it is fixed same-day. | `docs/runbooks/broadcast-audience-build.md` § C |
+
+Routes per § 22.8 (alarm → `#oncall-platform`).
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability

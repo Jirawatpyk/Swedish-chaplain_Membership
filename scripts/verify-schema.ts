@@ -145,6 +145,17 @@ async function main(): Promise<void> {
         name: 'tenant_member_settings.member_change_approval_enabled column (mig 0300)',
         query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_name = 'tenant_member_settings' AND column_name = 'member_change_approval_enabled'`,
       },
+      {
+        // F119 PR-1 (mig 0304). Same class as the 0301 canary: the four
+        // `ALTER TYPE ... ADD VALUE` lines are hoisted to the AUTOCOMMIT
+        // pre-pass, so a journal that skips 0304 leaves the enum short with
+        // nothing else to notice. All three halves of 0304 are asserted —
+        // the table, the four brand columns, and the four enum labels —
+        // because a partially-applied 0304 is exactly what this list exists
+        // to catch.
+        name: "broadcast_images table + tenant_broadcast_settings.brand_* columns + audit_event_type 'broadcast_test_copy_sent' / 'broadcast_brand_settings_changed' / 'broadcast_image_uploaded' / 'broadcast_image_removed' (mig 0304)",
+        query: `SELECT 1 AS hit WHERE to_regclass('public.broadcast_images') IS NOT NULL AND (SELECT count(*) FROM information_schema.columns WHERE table_name = 'tenant_broadcast_settings' AND column_name IN ('brand_primary_color','brand_postal_address','brand_updated_at','brand_updated_by_user_id')) = 4 AND (SELECT count(*) FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel IN ('broadcast_test_copy_sent','broadcast_brand_settings_changed','broadcast_image_uploaded','broadcast_image_removed')) = 4`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

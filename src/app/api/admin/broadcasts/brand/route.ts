@@ -131,8 +131,10 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
           details: { max: result.error.max },
         });
       case 'storage_error':
+        // F2-9 — the typed KIND only: `detail` is raw Postgres error text and
+        // can embed SQL param VALUES (the tenant's postal address).
         logger.error(
-          { err: result.error.detail, correlationId, errorId: 'M119.admin.brand.patch.storage' },
+          { err: result.error.kind, correlationId, errorId: 'M119.admin.brand.patch.storage' },
           'broadcasts.brand.patch_failed',
         );
         return errorResponse(500, 'internal_error', correlationId);

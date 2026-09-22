@@ -1081,7 +1081,7 @@ async function confirmImport(
 
   // F119 T031 — read outside the gateway retry wrapper: a brand read is not a
   // provider call and must not be classified as one.
-  const brand = await loadBrandChrome(deps.brandChrome, deps.tenant);
+  const brand = await loadBrandChrome(deps.brandChrome, deps.tenant, 'audience_tick');
   const createdRb = await viaGateway(() =>
     deps.broadcastsGateway.createBroadcast({
       audienceId,

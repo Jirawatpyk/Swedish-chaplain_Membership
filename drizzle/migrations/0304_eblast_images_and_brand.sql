@@ -36,10 +36,22 @@
 -- scripts/check-multi-tenant-ready.ts SCOPED_TABLES alongside the new table.
 --
 -- No FK from broadcast_images.owner_id: it points at a broadcast OR a
--- template; orphans are reaped by the daily sweep under the last-reference
--- rule (a blob is deleted only when no live row of either owner_kind shares
--- its content_hash). NOT backfilled — images uploaded before 0304 have no
--- row and are never swept (recorded, not guessed).
+-- template. Reachability is therefore APPLICATION-enforced, by TWO mechanisms
+-- (corrected by review finding F2-1 — this header previously claimed the
+-- sweep alone reaped orphans, which it did not: it read ONLY rows with
+-- deleted_at IS NOT NULL):
+--   (1) every path that removes an owner stamps deleted_at in the owner's own
+--       transaction — draft discard, the daily draft prune, member
+--       withdrawal, staff rejection, member erasure;
+--   (2) the sweep ALSO carries an orphan arm (live rows anti-joined against
+--       broadcasts / broadcast_templates), so a future hard-delete path that
+--       forgets (1) cannot strand a member's bytes at a public blob URL.
+-- A blob is then deleted under the last-reference rule: only when no live row
+-- of either owner_kind shares its content_hash AND no live body_html still
+-- embeds the URL.
+-- NOT backfilled — images uploaded before 0304 have no row. They are never
+-- swept, and that body_html reference check is what stops a later dedup row
+-- from deleting them out from under a live E-Blast (recorded, not guessed).
 --
 -- Rollback (quickstart § 3.5): DROP TABLE broadcast_images; ALTER TABLE
 -- tenant_broadcast_settings DROP COLUMN brand_primary_color,

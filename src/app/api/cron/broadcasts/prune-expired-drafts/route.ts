@@ -88,7 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let prunedCount: number | null = null;
   let cutoff: string | null = null;
   try {
-    const deps = makePruneExpiredDraftsDeps(tenantCtx.slug);
+    const deps = makePruneExpiredDraftsDeps(tenantCtx.slug, `cron-prune-drafts-${startedAt}`);
     const result = await pruneExpiredDrafts(deps);
     if (result.ok) {
       pruneOk = true;

@@ -78,7 +78,24 @@ describe('authorizeImageOwner — member', () => {
     const r = await authorizeImageOwner(deps, { ...base, owner: { kind: 'broadcast', id: BID }, actor: { kind: 'member', memberId: MEMBER } });
     expect(r).toEqual({ ok: false, error: { kind: 'not_found' } });
     expect(audit.events.map((e) => e.eventType)).toEqual(['broadcast_cross_member_probe']);
-    expect(audit.events[0]!.payload).toMatchObject({ member_id: MEMBER, broadcast_id: BID, operation: 'image_upload' });
+    // F2-5: the TYPED shape (audit-port `F7AuditPayloadShapes`) and the sibling
+    // emitter (`snapshot-template-to-draft`) both use camelCase here, and they do
+    // so DELIBERATELY: `member_id` is the one key the 0009 `last_activity_at`
+    // SECURITY DEFINER trigger reads, so a snake_case key on a REFUSED probe
+    // would refresh the probed member's recency off an attacker's request.
+    expect(audit.events[0]!.payload).toMatchObject({
+      probedMemberId: MEMBER,
+      probedBroadcastId: BID,
+      operation: 'image_upload',
+    });
+  });
+
+  it('the cross-member probe payload carries NO snake_case member_id (the last_activity_at trigger key)', async () => {
+    const { deps, audit } = makeDeps({ owned: 'cross_member' });
+    await authorizeImageOwner(deps, { ...base, owner: { kind: 'broadcast', id: BID }, actor: { kind: 'member', memberId: MEMBER } });
+    const payload = audit.events[0]!.payload;
+    expect(Object.keys(payload)).not.toContain('member_id');
+    expect(Object.keys(payload)).not.toContain('broadcast_id');
   });
 
   it('an unknown id → not_found + broadcast_cross_tenant_probe (RLS hides the other tenant\'s row)', async () => {

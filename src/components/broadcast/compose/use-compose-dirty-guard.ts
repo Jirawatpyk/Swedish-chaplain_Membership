@@ -10,10 +10,11 @@
  * nothing since was still warned on the way out, which teaches people to
  * dismiss the warning that matters.
  *
- * The staff compose-on-behalf form has no draft lifecycle yet (no staff draft
- * endpoint exists), so it simply never calls `markSaved` — the guard then
- * behaves as a plain "you typed something" warning, which is the parity item
- * FR-039 asks for.
+ * The staff compose-on-behalf form uses the SAME rule since T145 shipped
+ * `POST | PUT /api/admin/broadcasts/draft`: a successful staff draft save
+ * calls `markSaved`, so saving and leaving is silent while typing and leaving
+ * still warns — the FR-039 parity item, now closed on both sides. (This
+ * paragraph used to say "no staff draft endpoint exists"; it does.)
  */
 import { useCallback, useEffect, useState } from 'react';
 

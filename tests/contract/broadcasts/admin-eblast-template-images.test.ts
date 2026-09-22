@@ -103,7 +103,7 @@ describe('POST /api/admin/broadcasts/templates/[id]/images — wire', () => {
 
 describe('template images travel by reference (FR-046a) — real use cases over the fakes', () => {
   it('deleting the template (marking its rows) leaves a draft started from it working: the blob survives the sweep', async () => {
-    const { makeFakeBroadcastImagesRepo, makeFakeImageStorage, FAKE_TX } = await import('../../helpers/eblast-approval-fakes');
+    const { makeFakeBroadcastImagesRepo, makeFakeImageStorage, makeFakeImageReencoder, FAKE_TX } = await import('../../helpers/eblast-approval-fakes');
     const { __actualUpload } = (await import('@/modules/broadcasts')) as unknown as {
       __actualUpload: typeof import('@/modules/broadcasts/application/use-cases/upload-inline-image').uploadInlineImage;
     };
@@ -123,6 +123,7 @@ describe('template images travel by reference (FR-046a) — real use cases over 
       storage,
       audit,
       imagesRepo,
+      reencoder: makeFakeImageReencoder(),
     };
     const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(32, 7)]);
     const base = { tenantId: 'test-tenant' as never, actorUserId: 'u', actorEmail: 'u@x', requestId: 'r', fileBytes: bytes, filename: 'b.png', mimeType: 'image/png' };

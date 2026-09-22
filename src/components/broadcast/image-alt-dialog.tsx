@@ -56,6 +56,14 @@ export function ImageAltDialog({
   finalFocus,
 }: ImageAltDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.altDialog');
+  // F119 review finding F2-11 — the SAME public-link sentence the uploader
+  // block shows. It has to be repeated here because this dialog is MODAL: on
+  // the toolbar Image / Banner path, confirming opens the OS file picker
+  // directly (`tiptap-editor.tsx` handleAltConfirm -> openPicker), and while
+  // the dialog is up the uploader's copy is behind the backdrop and inert —
+  // unreachable to a screen reader and unread by everyone else. One key, two
+  // renders; never a second wording.
+  const tUpload = useTranslations('portal.broadcasts.compose.imageUpload');
   const [value, setValue] = useState<string>('');
   const [error, setError] = useState<AltError>(null);
   const fieldId = useId();
@@ -103,6 +111,8 @@ export function ImageAltDialog({
           <DialogTitle>{variant === 'banner' ? t('bannerTitle') : t('title')}</DialogTitle>
           <DialogDescription>{t('description')}</DialogDescription>
         </DialogHeader>
+
+        <p className="text-caption text-muted-foreground">{tUpload('publicLinkNotice')}</p>
 
         <div className="flex flex-col gap-2">
           <Label htmlFor={fieldId}>{t('fieldLabel')}</Label>

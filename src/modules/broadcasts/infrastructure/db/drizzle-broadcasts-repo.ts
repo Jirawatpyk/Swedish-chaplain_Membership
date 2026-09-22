@@ -16,7 +16,7 @@
  * incoming `resend_broadcast_id`.
  */
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { db, runInTenant, type TenantTx } from '@/lib/db';
+import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import {
@@ -1285,8 +1285,10 @@ export function makeDrizzleBroadcastsRepo(
      * assertions; the cron route logs this as `prunedCount` in the
      * tick-complete summary.
      */
-    async pruneExpiredDrafts(tenantIdArg, olderThan) {
-      return runInTenant(ctx, async (tx) => {
+    async pruneExpiredDrafts(tenantIdArg, olderThan, txMaybe) {
+      // F2-1 — run on the CALLER's tx when it has one, so the image stamps it
+      // issues next co-commit with this DELETE.
+      return withTenantTxOrOpen(ctx.slug as never, (txMaybe ?? null) as never, async (tx: TenantTx) => {
         await assertTenantBoundTx(tx, ctx.slug, 'pruneExpiredDrafts');
         // Bind cutoff as ISO string + cast to TIMESTAMPTZ — the Neon
         // serverless driver does not auto-serialize JS Date objects in
@@ -1298,9 +1300,15 @@ export function makeDrizzleBroadcastsRepo(
           WHERE tenant_id = ${tenantIdArg}
             AND status = 'draft'
             AND updated_at < ${olderThan.toISOString()}::timestamptz
-          RETURNING broadcast_id
-        `)) as unknown as Array<{ broadcast_id: string }>;
-        return { prunedCount: deleted.length };
+          RETURNING broadcast_id, requested_by_member_id
+        `)) as unknown as Array<{ broadcast_id: string; requested_by_member_id: string | null }>;
+        return {
+          prunedCount: deleted.length,
+          prunedDrafts: deleted.map((r) => ({
+            broadcastId: r.broadcast_id,
+            requestedByMemberId: r.requested_by_member_id,
+          })),
+        };
       });
     },
 

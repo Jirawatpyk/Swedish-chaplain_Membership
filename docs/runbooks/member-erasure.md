@@ -108,6 +108,51 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
 
 ---
 
+## Inline E-Blast images (F119 PR-1, review finding F2-2)
+
+**What the cascade does now.** Inside the same transaction as the F7 content
+redaction, `scrubBroadcastContentForMember` calls
+`imagesRepo.markDeletedForMember(...)`, which stamps `deleted_at` on every live
+`broadcast_images` row owned by a broadcast the erased member originated, and
+emits one `broadcast_image_removed { reason: 'member_erased', blob_deleted: false,
+actor_role: 'system' }` per stamped row. The count lands on the completion log
+line as `imagesMarked`.
+
+**Why it is a separate step.** Redacting `subject` / `body_html` removes the
+POINTER to the member's uploaded photograph. The file itself lives in Vercel
+Blob at a PUBLIC, unauthenticated URL, and nothing about redacting the HTML
+touches it. Until F2-2 the erasure was certified complete while the image was
+still being served.
+
+**The bytes go on the next sweep, not here.** The daily image sweep
+(`reclaimOrphanedImages`, in the `prune-expired-drafts` cron) deletes the blob
+under the LAST-REFERENCE rule — only when no live row of either owner_kind
+shares its `content_hash` AND no live `body_html` still embeds the URL. So the
+erasure evidence is “the reference is gone”; “the bytes are gone” follows within
+24 h. That is deliberate: a hash shared with a template image the chamber still
+uses must not be deleted out from under it.
+
+### Verifying it after an erasure
+
+1. `audit_log` for the erasure's `request_id`: expect `broadcast_content_redacted`
+   AND one `broadcast_image_removed { reason: 'member_erased' }` per image. Zero
+   removal rows with a non-zero `imagesMarked` in the log line is a contradiction
+   — escalate.
+2. `SELECT count(*) FROM broadcast_images bi JOIN broadcasts b ON b.broadcast_id = bi.owner_id
+   WHERE b.requested_by_member_id = '<member>' AND bi.deleted_at IS NULL;` must be 0.
+3. After the next daily tick, expect a matching `broadcast_image_removed
+   { reason: 'sweep', blob_deleted: true }`. If instead you see
+   `reason: 'sweep_referenced'`, the blob is still embedded in OTHER live content
+   — that is correct behaviour and not an erasure failure, but record it: the
+   bytes survive because another data subject's E-Blast uses the identical file.
+
+**Known limitation, recorded not guessed.** `broadcast_images` was NOT
+backfilled by migration 0304. An image uploaded BEFORE 0304 has no row, so this
+step cannot find it; it is reachable only by editing the `body_html` that
+references it. If an erasure concerns a member active before 2026-09, check
+their broadcasts' `body_html` for blob URLs by hand.
+---
+
 ## Sub-processor erasure propagation (COMP-1 US3-C)
 
 GDPR Art. 17 + Art. 19 + PDPA §33 require the controller to propagate an

@@ -6066,11 +6066,13 @@
           "uploadingAria": "Laddar upp bild — vänta",
           "uploadedToast": "Bilden har laddats upp.",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
+          "publicLinkNotice": "Din bild sparas på en offentlig webbadress som inte kräver inloggning — vem som helst med länken kan öppna den, så ladda inte upp något privat.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
           "disallowedSourcesHeading": "Dessa bildkällor är inte tillåtna:",
           "disallowedSourceItem": "{host} — ersätt med en bild från kammarens tillåtna lista.",
           "errors": {
             "broadcast_image_too_large": "Bilden är större än 5 MB.",
+            "broadcast_image_empty": "Filen är tom. Välj en bildfil med innehåll.",
             "broadcast_image_unsafe": "Bilden markerades av virusskannern och avvisades.",
             "broadcast_image_invalid_mime": "Endast bilder i formaten PNG, JPG, WebP och GIF tillåts.",
             "storage_unavailable": "Bildlagringen är tillfälligt otillgänglig. Försök igen om en stund.",

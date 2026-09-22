@@ -1,10 +1,16 @@
 /**
  * T075 — DELETE `/api/broadcasts/draft/[id]`.
  *
- * Deletes a draft broadcast. No audit emission per FR-001 — drafts are
- * user-controlled scratch space; only `broadcast_drafted` (on create)
+ * Deletes a draft broadcast. No LIFECYCLE audit emission per FR-001 — drafts
+ * are user-controlled scratch space; only `broadcast_drafted` (on create)
  * + `broadcast_submitted` / `broadcast_cancelled` (post-submit lifecycle)
- * generate audit rows.
+ * generate lifecycle audit rows.
+ *
+ * It DOES emit one `broadcast_image_removed` per inline image the draft owns
+ * (F119 review finding F2-1). That is not a lifecycle event, it is PDPA
+ * evidence that a member's uploaded bytes stopped being referenced — the
+ * discard is the only signal the sweep and the erasure cascade will ever get,
+ * because `broadcast_images.owner_id` has no FK and this DELETE is a hard one.
  *
  * Authz: caller MUST be the originating member (`requested_by_member_id`).
  * Cross-member probe → 404 (FR-037).
@@ -19,6 +25,9 @@ import { sql } from 'drizzle-orm';
 import {
   parseBroadcastId,
   makeGetBroadcastDeps,
+  markOwnerImagesRemoved,
+  drizzleBroadcastImagesRepo,
+  f7AuditAdapter,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import {
@@ -89,6 +98,31 @@ export async function DELETE(
            AND broadcast_id = ${broadcastId as string}
            AND status = 'draft'
       `);
+      // F119 review finding F2-1 (PDPA) — the draft's images go WITH it, in
+      // this transaction. `broadcast_images.owner_id` carries no FK (two
+      // possible parents), so this hard DELETE left the image rows live and
+      // un-stamped; the daily sweep reads `deleted_at IS NOT NULL`, so those
+      // rows were invisible to it FOREVER and the member's uploaded photo
+      // stayed at a public, unauthenticated blob URL that no code path could
+      // reach — not the sweep, not the Art. 17 / §33 erasure cascade.
+      // Stamping here marks the reference gone; the bytes go on the next
+      // sweep under the last-reference rule.
+      await markOwnerImagesRemoved(
+        { imagesRepo: drizzleBroadcastImagesRepo, audit: f7AuditAdapter },
+        {
+          tenantId: ctx.tenant.slug as never,
+          owner: { kind: 'broadcast', id: broadcastId as string },
+          reason: 'draft_discarded',
+          at: new Date(),
+          requestId: correlationId,
+          actorUserId: ctx.current.user.id,
+          // The session's role as held, never a literal stand-in
+          // (`pnpm check:actor-role-truth`).
+          actorRole: ctx.current.user.role ?? null,
+          relatedMemberId: ctx.memberId as unknown as string,
+        },
+        tx,
+      );
     });
 
     return new NextResponse(null, {
