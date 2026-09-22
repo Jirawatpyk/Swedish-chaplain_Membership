@@ -675,6 +675,7 @@ pnpm test:e2e tests/e2e/broadcasts/eblast-a11y.spec.ts --workers=1
 | --- | --- |
 | 2026-09-18 | **29 passed / 1 documented skip** |
 | 2026-09-22 | the **U2** case (queue header at 320 px) — the measurement OWED above — **passed** |
+| 2026-09-22 (final tree `4b4a3f03f`, all three projects) | **26 passed / 1 documented skip / 6 failed — all six on `mobile-safari`, all staff screens, message `Captured 1 client-side pageerror(s); first: Type error`.** Re-run of exactly those cases with the fixture's NARROW opt-out `E2E_PAGEERROR_IGNORE_PATTERN=flushComponentPerformance` (the WebKit rendering of the Next.js 16 `next dev` component-performance profiler error — dev-only, stripped from prod builds; documented in `tests/e2e/fixtures.ts`): **7 passed**. A non-matching error would still have failed, so the six are the known dev-server artefact, not an application error. Re-check on the next Next.js upgrade; a prod build never emits it. |
 
 **Read a green run with this caveat.** Several cases in this spec SELF-SKIP when an environment
 variable is absent, and Playwright reports a skip as a non-failure:
