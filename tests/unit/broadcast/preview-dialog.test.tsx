@@ -77,6 +77,13 @@ describe('T093 — the dialog shows the complete email at both recipient widths'
     expect(srcdoc).toContain('Hello members');
     expect(srcdoc).toContain('unsubscribe');
     // Sandboxed, no network from inside, and never injected into this page.
+    //
+    // DO NOT RELAX THIS. Security review F1-1 (2026-09-22): the design-block
+    // renderer's output is deliberately never re-sanitised (Outlook needs the
+    // platform's `bgcolor` + inline styles), so `sandbox=""` — the EMPTY
+    // allow-list, no scripts, no forms, no navigation — is the last barrier
+    // between that markup and this origin. See
+    // `tests/unit/broadcasts/infrastructure/sanitizer-design-block-splice.test.ts`.
     expect(frame().getAttribute('sandbox')).toBe('');
     expect(frame().hasAttribute('src')).toBe(false);
     expect(dialog.querySelector('h1')).toBeNull();

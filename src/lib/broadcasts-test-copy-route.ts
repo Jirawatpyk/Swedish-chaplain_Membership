@@ -16,7 +16,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { makeSendTestCopyDeps } from '@/lib/broadcast-test-copy-deps';
-import { baseHeaders, errorResponse } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders, designBlockErrorResponse, errorResponse } from '@/lib/broadcasts-route-helpers';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import {
@@ -99,10 +99,12 @@ export async function handleTestCopy(
       switch (result.error.kind) {
         case 'invalid_body':
           return errorResponse(400, 'invalid_body', correlationId, { details: { reason: result.error.reason } });
-        case 'content_rules': {
-          const first = result.error.violations[0]!;
-          return errorResponse(422, first.code, correlationId, { details: { violations: result.error.violations } });
-        }
+        case 'content_rules':
+          // F119 FR-041 — the same mapping the draft and submit routes use
+          // since security review F1-2 wired `validateBlocks` into `saveDraft`
+          // and `submitBroadcast`; it lives in `broadcasts-route-helpers.ts`
+          // so the five surfaces cannot drift.
+          return designBlockErrorResponse(result.error.violations, correlationId);
         case 'mailer_unavailable':
           logger.warn(
             { err: result.error.reason, correlationId, errorId: `M119.${actor.surface}.test_copy.mailer` },

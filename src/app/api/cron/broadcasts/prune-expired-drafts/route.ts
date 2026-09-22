@@ -36,6 +36,12 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Reliability review (2026-09-22) — match the sibling cron
+// (`dispatch-scheduled`). This job sweeps every tenant's expired drafts AND
+// the orphaned image blobs, so it is not bounded by the default function
+// timeout; without this it could be killed mid-sweep and leave the blob store
+// and `broadcast_images` disagreeing until the next run.
+export const maxDuration = 300;
 
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's
 // Bearer-gated logic lives in POST. Alias GET → POST so one handler serves

@@ -22,6 +22,7 @@ import {
 // into `proxySubmitBroadcast` without deep-importing the use-case module.
 import { drizzleMemberRepo, asMemberId } from '@/modules/members';
 import {
+  designBlockErrorResponse,
   errorResponse,
   httpStatusForBroadcastError,
   resolveTenantDisplayName,
@@ -196,6 +197,12 @@ function mapProxySubmitError(
   }
   if (error.kind === 'submit.server_error') {
     return errorResponse(500, 'internal_error', correlationId);
+  }
+  // F119 FR-041 (security review F1-2) — each violation has its OWN 422 code,
+  // so this cannot go through `httpStatusForBroadcastError(error.kind)`. The
+  // staff proxy answers exactly as the member route does (FR-039).
+  if (error.kind === 'content_rules') {
+    return designBlockErrorResponse(error.violations, correlationId);
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);
   // 108 PR-C T085 (FR-041): the over-ceiling refusal names the true count and

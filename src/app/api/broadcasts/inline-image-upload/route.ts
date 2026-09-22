@@ -24,7 +24,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { handleImageUpload } from '@/lib/broadcasts-image-upload-route';
-import { baseHeaders, errorResponse } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
 import { f71aUs2DisabledReason, isF71aUs2Enabled, parseBroadcastId } from '@/modules/broadcasts';
 
@@ -45,23 +45,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const ctx = await requireMemberContext(request);
   if ('response' in ctx && ctx.response) return ctx.response;
 
-  // The draft id rides the multipart body; read it from a clone so the shared
-  // handler can parse the same form once more for the file.
-  let draftId: unknown;
-  try {
-    draftId = (await request.clone().formData()).get('draftId');
-  } catch {
-    return errorResponse(400, 'invalid_body', correlationId);
-  }
-  if (typeof draftId !== 'string' || !parseBroadcastId(draftId).ok) {
-    return errorResponse(400, 'invalid_body', correlationId, { fieldErrors: { draftId: ['draftId is required'] } });
-  }
-
+  // The draft id rides the multipart body. Security review F1-3 (2026-09-22):
+  // this used to be `await request.clone().formData()` HERE, which buffered
+  // and parsed the whole body before the shared handler's `content-length`
+  // 413 guard ran — and the handler then parsed it a second time. The shared
+  // handler now hands us the ONE parsed form, after the 413.
   return handleImageUpload(
     request,
     {
       tenant: ctx.tenant,
-      owner: { kind: 'broadcast', id: draftId },
+      owner: {
+        kind: 'broadcast',
+        field: 'draftId',
+        readOwnerId: (form) => {
+          const draftId = form.get('draftId');
+          return typeof draftId === 'string' && parseBroadcastId(draftId).ok ? draftId : null;
+        },
+      },
       actor: {
         kind: 'member',
         memberId: ctx.member.memberId as unknown as string,

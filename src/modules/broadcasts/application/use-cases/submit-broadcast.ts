@@ -54,6 +54,11 @@ import type { RecipientSegment } from '../../domain/recipient-segment';
 import type { AudienceMode } from '../../domain/audience-mode';
 import { composeBroadcastFromName } from '../../domain/from-name';
 import {
+  parseBlockMarkers,
+  validateBlocks,
+  type BlockViolation,
+} from '../../domain/design-blocks/block-markers';
+import {
   type EmailLower,
 } from '../../domain/value-objects/email-lower';
 import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
@@ -112,6 +117,10 @@ export type SubmitBroadcastError =
   | { readonly kind: 'broadcast_subject_empty' }
   | { readonly kind: 'broadcast_body_too_large'; readonly bytes: number }
   | { readonly kind: 'broadcast_body_unsafe_html'; readonly reason: string }
+  // F119 FR-041 (security review F1-2) — the design-block bounds. Same kind
+  // and shape as `SendTestCopyError` / `SaveDraftError` so all three surfaces
+  // map through the one helper (`designBlockErrorResponse`).
+  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
   // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 + AS2 closure.
   // `validateImageSourceAllowlist` is invoked AFTER sanitizeHtml +
   // BEFORE persistence; non-allowlisted <img src> hosts surface here
@@ -548,6 +557,24 @@ export async function submitBroadcast(
         : { reason: sanitised.error.reason }),
     });
     return err(sanitised.error);
+  }
+
+  // ---- Precondition (e1): design-block rules (F119 FR-041) ---------
+  // Security review F1-2 (2026-09-22): `validateBlocks` ran ONLY in
+  // `send-test-copy.ts`, so a body with four CTA buttons or an undescribed
+  // banner reached review and the recipients' inboxes — while
+  // `broadcasts-route-helpers.ts` documented the codes as refused "at every
+  // save, at send-to-member and on the test copy". Runs on the SANITISED body
+  // (the markers are read back from what actually ships) and ABOVE the first
+  // write: a `Result` refusal returned from inside `withTx` commits.
+  //
+  // No reject audit: there is no `broadcast_content_rules` audit event type,
+  // and reusing `broadcast_body_unsafe_html` would state something untrue of
+  // the body (audit-truth invariant). The submit-funnel counter carries it.
+  const blockViolations = validateBlocks(parseBlockMarkers(sanitised.value.sanitisedHtml));
+  if (blockViolations.length > 0) {
+    broadcastsMetrics.submitPreconditionBlocked(deps.tenant.slug, 'design_block_rules');
+    return err({ kind: 'content_rules', violations: blockViolations });
   }
 
   // ---- Precondition (e2): image-source allowlist (F7.1a US2) -------

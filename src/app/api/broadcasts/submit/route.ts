@@ -22,6 +22,7 @@ import {
   type SubmitBroadcastInput,
 } from '@/modules/broadcasts';
 import {
+  designBlockErrorResponse,
   errorResponse,
   httpStatusForBroadcastError,
   resolveTenantDisplayName,
@@ -188,6 +189,11 @@ function mapSubmitError(
   // submit.server_error → 500 generic
   if (error.kind === 'submit.server_error') {
     return errorResponse(500, 'internal_error', correlationId);
+  }
+  // F119 FR-041 (security review F1-2) — each violation has its OWN 422 code,
+  // so this cannot go through `httpStatusForBroadcastError(error.kind)`.
+  if (error.kind === 'content_rules') {
+    return designBlockErrorResponse(error.violations, correlationId);
   }
 
   const { status, code } = httpStatusForBroadcastError(error.kind);

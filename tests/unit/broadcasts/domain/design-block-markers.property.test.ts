@@ -14,16 +14,24 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  findBlockMarkers,
   parseBlockMarkers,
   type DesignBlock,
 } from '@/modules/broadcasts/domain/design-blocks/block-markers';
 
-// Values as they arrive AFTER sanitisation: DOMPurify (via jsdom) serialises
-// `"` as `&quot;`, `&` as `&amp;`, `<` as `&lt;`, `>` as `&gt;` — so the
-// markup never carries a raw `"` inside a value or a raw `<` in text. The
-// parser DECODES them: a block carries the real string the user typed.
+// Values as they arrive AFTER sanitisation.
+//
+// Security review F1-1 (2026-09-22): this generator used to escape `<` and
+// `>` inside ATTRIBUTE values too, which is FALSE — HTML attribute
+// serialisation escapes only `&`, NBSP and `"`, so a raw `>` reaches the
+// markup and `OPEN_TAG`'s `[^>]*` cuts the tag short. Escaping them here made
+// the whole property suite blind to the splice that shipped. It now matches
+// the real serialiser, and `rawAttr` deliberately SEEDS `<` / `>` so the
+// property exercises the case. The sanitiser hook
+// (`installBroadcastSanitizerHooks`) is what guarantees no such value reaches
+// this parser in production; the parser stays sound either way.
 const escapeAttr = (s: string): string =>
-  s.replace(/[<>"&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', '&': '&amp;' })[c]!);
+  s.replace(/["&]/g, (c) => ({ '"': '&quot;', '&': '&amp;' })[c]!);
 const escapeText = (s: string): string =>
   s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]!);
 // Whitespace-normalised: the parser collapses runs and trims CTA text the way
@@ -31,7 +39,13 @@ const escapeText = (s: string): string =>
 const rawText = fc
   .string({ minLength: 1, maxLength: 60 })
   .filter((s) => s === s.replace(/\s+/g, ' ').trim() && s.length > 0);
-const rawAttr = fc.string({ minLength: 1, maxLength: 40 });
+const rawAttr = fc.oneof(
+  fc.string({ minLength: 1, maxLength: 40 }),
+  // Angle brackets seeded into the value — the F1-1 shape.
+  fc
+    .tuple(fc.string({ maxLength: 12 }), fc.constantFrom('<', '>', '><', '"><'), fc.string({ maxLength: 12 }))
+    .map(([a, b, c]) => `${a}${b}${c}`),
+);
 const httpsUrl = fc.webUrl({ validSchemes: ['https'] });
 
 function shuffle<T>(arr: readonly T[], seed: number): T[] {
@@ -69,13 +83,30 @@ describe('parseBlockMarkers — property: any attribute order parses to the same
     );
   });
 
-  it('a banner parses to { banner, src, alt } whatever the attribute order', () => {
+  it('a banner parses to { banner, src, alt } whatever the attribute order — and a value that could break the tag is refused outright, never parsed short', () => {
+    const PREFIX = '<h2>t</h2>';
     fc.assert(
       fc.property(httpsUrl, rawAttr, fc.nat(), (src, alt, seed) => {
-        const blocks = parseBlockMarkers(`<h2>t</h2>${bannerHtml(src, alt, seed)}<p>x</p>`);
-        expect(blocks).toEqual([{ kind: 'banner', src, alt }]);
+        const element = bannerHtml(src, alt, seed);
+        const spans = findBlockMarkers(`${PREFIX}${element}<p>x</p>`);
+        // Security review F1-1: the span MUST cover the whole element or the
+        // element must not be a block at all. A span that ends inside the
+        // element is what let `applyDesignBlocks` emit the tail as raw markup.
+        expect(spans.length).toBeLessThanOrEqual(1);
+        if (spans.length === 1) {
+          expect(spans[0]).toEqual({
+            block: { kind: 'banner', src, alt },
+            start: PREFIX.length,
+            end: PREFIX.length + element.length,
+          });
+        }
+        // Free of angle brackets — what the sanitiser hook guarantees in
+        // production — it IS a block.
+        if (!/[<>]/.test(src) && !/[<>]/.test(alt)) {
+          expect(spans).toHaveLength(1);
+        }
       }),
-      { numRuns: 200 },
+      { numRuns: 300 },
     );
   });
 

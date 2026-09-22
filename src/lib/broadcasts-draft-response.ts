@@ -12,7 +12,11 @@
  * staff routes, where they could drift a field at a time.
  */
 import type { NextResponse } from 'next/server';
-import { errorResponse, httpStatusForBroadcastError } from '@/lib/broadcasts-route-helpers';
+import {
+  designBlockErrorResponse,
+  errorResponse,
+  httpStatusForBroadcastError,
+} from '@/lib/broadcasts-route-helpers';
 import type { SaveDraftError } from '@/modules/broadcasts';
 
 /** The `saveDraft` success envelope both draft routes return. */
@@ -47,6 +51,13 @@ export function mapSaveDraftError(
 ): NextResponse {
   if (error.kind === 'sanitizer_unavailable' || error.kind === 'save_draft.server_error') {
     return errorResponse(500, 'internal_error', correlationId);
+  }
+  // F119 FR-041 (security review F1-2) — the design-block codes are their own
+  // 422s (`cta_text_length` / `too_many_cta` / `cta_link_scheme` /
+  // `banner_alt_required`), not one generic kind, so they cannot go through
+  // `httpStatusForBroadcastError(error.kind)`.
+  if (error.kind === 'content_rules') {
+    return designBlockErrorResponse(error.violations, correlationId);
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);
   const details: Record<string, unknown> = {};

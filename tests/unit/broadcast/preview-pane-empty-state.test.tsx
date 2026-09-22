@@ -168,6 +168,10 @@ describe("T103 — the pane renders the ROUTE's document in a sandboxed srcdoc i
     const iframe = frame();
     expect(iframe).not.toBeNull();
     expect(iframe!.getAttribute('srcdoc')).toBe(DOCUMENT_HTML);
+    // DO NOT RELAX THIS — security review F1-1 (2026-09-22). The design-block
+    // renderer's output is never re-sanitised by design, so the empty
+    // sandbox allow-list is the last barrier between it and this origin. See
+    // `tests/unit/broadcasts/infrastructure/sanitizer-design-block-splice.test.ts`.
     expect(iframe!.getAttribute('sandbox')).toBe('');
     expect(iframe!.hasAttribute('src')).toBe(false);
     expect(iframe!.getAttribute('title')).toBeTruthy();

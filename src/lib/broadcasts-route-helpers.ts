@@ -22,6 +22,7 @@
 import { NextResponse } from 'next/server';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
+import type { BlockViolation } from '@/modules/broadcasts';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -395,6 +396,32 @@ export function errorResponse(
     status,
     headers: baseHeaders(correlationId, extraHeaders),
   });
+}
+
+/**
+ * F119 FR-041 — the ONE mapping from a design-block violation set to the 422
+ * envelope, shared by the test copy, both draft routes and both submit routes.
+ *
+ * Security review F1-2 (2026-09-22): `validateBlocks` used to run only on the
+ * test copy, so this mapping lived inline in `broadcasts-test-copy-route.ts`.
+ * Now that five surfaces refuse the same way, the shape (the FIRST violation's
+ * code as the error code, the whole list in `details.violations` so the
+ * compose form can highlight every offending block at once) is defined here so
+ * the surfaces cannot drift a field at a time.
+ *
+ * `violations` is never empty at a call site — a use case returns
+ * `content_rules` only when `validateBlocks` found at least one — but an empty
+ * list falls back to `validation_error` rather than indexing into nothing.
+ */
+export function designBlockErrorResponse(
+  violations: readonly BlockViolation[],
+  correlationId: string,
+): NextResponse {
+  const first = violations[0];
+  if (first === undefined) {
+    return errorResponse(422, 'validation_error', correlationId);
+  }
+  return errorResponse(422, first.code, correlationId, { details: { violations } });
 }
 
 /**

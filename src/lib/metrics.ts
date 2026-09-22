@@ -1991,6 +1991,9 @@ export const broadcastsMetrics = {
       | 'body_unsafe_html'
       // R4-H4 — keep in sync with submit-broadcast.ts SubmitPrecondition
       | 'body_image_source_unsafe'
+      // F119 security review F1-2 — FR-041 design-block bounds (CTA count /
+      // text length / link scheme, banner alt), now enforced at submit too.
+      | 'design_block_rules'
       | 'audience_too_large'
       | 'custom_recipient_unknown'
       | 'member_missing_primary_contact_email'

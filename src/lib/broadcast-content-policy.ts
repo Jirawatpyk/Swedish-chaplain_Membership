@@ -137,9 +137,24 @@ const hooked = new WeakSet<SanitizerHookHost>();
  *      lets a `data:` URI through on `<img>`, and a base64 body would
  *      inflate past every cap. The src is removed, the element stays as a
  *      visible broken image (the author sees the URL was refused).
+ *   3. Angle brackets stripped from EVERY surviving attribute value
+ *      (security review F1-1, 2026-09-22). HTML attribute serialisation
+ *      escapes only `&`, NBSP and `"` — NOT `<` / `>` — and `alt` is in
+ *      DOMPurify's default URI-safe set, so
+ *      `alt="x&gt;&lt;img src=q onerror=…&gt;"` came back out of the
+ *      sanitiser carrying a RAW `>`. The design-block marker scanner
+ *      (`domain/design-blocks/block-markers.ts`) matches an opening tag with
+ *      `[^>]*`, so that `>` ended the banner span early and
+ *      `applyDesignBlocks` re-emitted the tail as raw markup in the
+ *      delivered email — whose output is deliberately never re-sanitised.
+ *      No allow-listed attribute (href / src / alt / target / rel /
+ *      data-eb) has a legitimate use for `<` or `>`, so stripping them here
+ *      makes `[^>]*` structurally sound on the editor and the server alike,
+ *      one hop above every consumer.
  *
- * Neither touches `data-eb`: the design-block marker is user content the
- * policy keeps, and the renderer consumes it after sanitisation.
+ * None of them touches the VALUE of `data-eb` beyond that strip: the
+ * design-block marker is user content the policy keeps, and the renderer
+ * consumes it after sanitisation.
  */
 export function installBroadcastSanitizerHooks(purify: SanitizerHookHost): void {
   if (hooked.has(purify)) return;
@@ -149,12 +164,28 @@ export function installBroadcastSanitizerHooks(purify: SanitizerHookHost): void 
     const el = node as {
       nodeType?: number;
       tagName?: string;
+      attributes?: ArrayLike<{ readonly name?: unknown; readonly value?: unknown }>;
       hasAttribute?: (name: string) => boolean;
       setAttribute?: (name: string, value: string) => void;
       getAttribute?: (name: string) => string | null;
       removeAttribute?: (name: string) => void;
     };
     if (el.nodeType !== 1) return;
+    // (3) — runs FIRST and for every element, including the `<a>` that
+    // returns early below. Rewriting an existing attribute's value in place
+    // does not change `attributes.length`, so the live NamedNodeMap is stable
+    // across this loop.
+    const attributes = el.attributes;
+    if (attributes !== undefined && typeof el.setAttribute === 'function') {
+      for (let i = 0; i < attributes.length; i += 1) {
+        const attr = attributes[i];
+        if (attr === undefined) continue;
+        const { name, value } = attr;
+        if (typeof name !== 'string' || typeof value !== 'string') continue;
+        if (!value.includes('<') && !value.includes('>')) continue;
+        el.setAttribute(name, value.replace(/[<>]/g, ''));
+      }
+    }
     if (
       el.tagName === 'A' &&
       typeof el.hasAttribute === 'function' &&

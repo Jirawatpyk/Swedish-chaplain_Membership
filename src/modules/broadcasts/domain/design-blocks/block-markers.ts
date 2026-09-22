@@ -108,7 +108,20 @@ export function findBlockMarkers(sanitisedHtml: string): readonly MarkerSpan[] {
   while ((m = OPEN_TAG.exec(sanitisedHtml)) !== null) {
     const tag = m[1]!.toLowerCase();
     // Group 2 always participates (`[^>]*` matches the empty string).
-    const attrs = parseAttributes(m[2]!);
+    const rawAttrs = m[2]!;
+    // Defence in depth (security review F1-1, 2026-09-22). `[^>]*` cannot
+    // cross a `>`, so a `>` sitting INSIDE a quoted attribute value ends this
+    // match early and the span would stop inside the element — which is how
+    // `applyDesignBlocks` came to re-emit the remainder as raw markup. After
+    // sanitisation a value never carries a raw `"` (serialised `&quot;`) nor,
+    // since the sanitiser hook, a raw `<`/`>`; so in a well-formed tag the
+    // quotes pair up. An ODD count proves the match was cut mid-value: the
+    // element is not well-formed here, therefore it is NOT a block (unknown ⇒
+    // no block ⇒ fail-safe, the same principle as an unknown marker value).
+    let quotes = 0;
+    for (let i = 0; i < rawAttrs.length; i += 1) if (rawAttrs[i] === '"') quotes += 1;
+    if (quotes % 2 !== 0) continue;
+    const attrs = parseAttributes(rawAttrs);
     const marker = attrs.get('data-eb');
     if (marker === undefined) continue;
     if (tag === 'a' && marker === 'cta') {
