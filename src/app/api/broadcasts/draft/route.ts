@@ -18,6 +18,7 @@ import {
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import {
+  draftBodyRefusal,
   draftResponseBody,
   mapSaveDraftError,
 } from '@/lib/broadcasts-draft-response';
@@ -66,6 +67,10 @@ async function handle(
   }
   const parsed = DraftBodySchema.safeParse(raw);
   if (!parsed.success) {
+    // U28 — a refusal the member can act on gets the code the locales already
+    // translate; only a genuinely malformed body stays `invalid_body`.
+    const correctable = draftBodyRefusal(raw, correlationId);
+    if (correctable !== null) return correctable;
     return errorResponse(400, 'invalid_body', correlationId, {
       fieldErrors: parsed.error.flatten().fieldErrors as Record<
         string,

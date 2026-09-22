@@ -17,10 +17,11 @@
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 
 export interface QuotaSnapshot {
@@ -65,6 +66,10 @@ export function QuotaDisplay({
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
+  // U30 — the year is a DISPLAY value and goes through the same calendar the
+  // reset date beside it uses; the card used to print a raw CE integer above a
+  // BE date. Storage is untouched (CLAUDE.md § Conventions).
+  const locale = useLocale();
   const [snap, setSnap] = useState<QuotaSnapshot | null>(initial);
   const [loading, setLoading] = useState<boolean>(initial === null);
   const [error, setError] = useState<boolean>(false);
@@ -128,9 +133,12 @@ export function QuotaDisplay({
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="text-sm font-medium">
-            {snap === null
-              ? t('headerLabel', { year: new Date().getFullYear() })
-              : t('headerLabel', { year: snap.quotaYear })}
+            {t('headerLabel', {
+              year: formatCalendarYear(
+                snap === null ? new Date().getFullYear() : snap.quotaYear,
+                locale,
+              ),
+            })}
           </div>
           {snap?.planName ? (
             <span className="text-xs text-muted-foreground">
@@ -175,7 +183,11 @@ export function QuotaDisplay({
               />
             </div>
             {exhausted ? (
-              <p className="text-xs text-destructive">{t('exhausted', { year: snap.quotaYear })}</p>
+              <p className="text-xs text-destructive">
+                {t('exhausted', {
+                  year: formatCalendarYear(snap.quotaYear, locale),
+                })}
+              </p>
             ) : showComposeCta ? (
               <Link
                 href="/portal/broadcasts/new"

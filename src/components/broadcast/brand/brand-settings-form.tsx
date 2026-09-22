@@ -44,7 +44,7 @@
  */
 import Link from 'next/link';
 import { useId, useMemo, useState, useTransition } from 'react';
-import { useBeforeUnloadGuard } from '@/hooks/use-beforeunload-guard';
+import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useTranslations } from 'next-intl';
 import { InfoIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -131,11 +131,13 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
 
   // U18 — the last SAVED view is `view`; `save()` replaces it on 200, so a
   // successful save disarms this without a second snapshot to keep in step.
-  useBeforeUnloadGuard(
+  // U27 (portal live walk) — the same flag now arms BOTH exits: the browser's
+  // unload prompt and an in-app `<Link>`, including the "Manage logo" link
+  // inside this very form.
+  const unsavedChanges =
     !isPending &&
-      (colour !== (view.primaryColor ?? '') ||
-        address !== (view.postalAddress ?? '')),
-  );
+    (colour !== (view.primaryColor ?? '') ||
+      address !== (view.postalAddress ?? ''));
 
   function save(): void {
     startTransition(async () => {
@@ -199,6 +201,7 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
         if (canSave) save();
       }}
     >
+      <UnsavedChangesGuard armed={unsavedChanges} />
       <Card>
         <CardHeader>
           <CardTitle>{t('colour.heading')}</CardTitle>

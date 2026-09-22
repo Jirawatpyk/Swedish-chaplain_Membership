@@ -374,7 +374,7 @@ customRecipientEmails, scheduledFor }`.
 | 404 `broadcast_member_not_found` | no such member in the caller's tenant — the id is echoed, never which ids exist |
 | 409 `broadcast_member_erased` | the member is GDPR-Art.17 / PDPA-§33 erased: a staff draft must not stamp a scrubbed company name on a fresh row the erase cascade already ran past (the `proxy-submit` rule, same read) |
 | 409 `broadcast_immutable_after_submit` | the named draft is past `draft` — exactly the member route's refusal |
-| 422 | the member route's content rules — subject > 200, body > 200 KB, unsafe HTML, member without a primary contact email |
+| 422 | the member route's content rules — an **empty** subject (`broadcast_subject_empty`), subject > 200 (`broadcast_subject_too_long`), body > 200 KB (`broadcast_body_too_large`), unsafe HTML, member without a primary contact email. F119 U28: the route used to answer these 400 `invalid_body`, contradicting this row and rendering as "an unexpected error occurred" because `invalid_body` had no locale key; it now emits the codes the locales already carry, the same ones `submit` emits |
 | 429 `broadcast_rate_limit_exceeded` | the staff write bucket, with `retryAfterSeconds` |
 
 **Rate bucket**: the **same** staff 30 requests / 60 seconds per (tenant, actor) as the formatting and

@@ -28,6 +28,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -49,7 +50,7 @@ import { type MemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-banner';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
 
 const PER_PAGE = 10;
@@ -268,8 +269,13 @@ export async function BroadcastsPanel({
         {composeDisabled ? (
           <ComposeButtonWithTooltip
             label={tCompose('title')}
+            // U30 — the same calendar the reset date and the table dates use;
+            // this used to interpolate a raw CE integer beside BE dates.
             tooltipText={t('quotaExhaustedTooltip', {
-              year: quota?.quotaYear ?? new Date().getFullYear(),
+              year: formatCalendarYear(
+                quota?.quotaYear ?? new Date().getFullYear(),
+                locale,
+              ),
             })}
           />
         ) : (
@@ -313,6 +319,12 @@ export async function BroadcastsPanel({
               aria-label={t('title')}
               className="min-w-[640px]"
             >
+              {/* U31 — the shared `Table` primitive pulls `aria-label` off and
+                  names the scroll REGION with it, so the <table> itself was
+                  anonymous to a screen reader listing tables (SC 1.3.1). Same
+                  class as the F7.1a US1 missing-caption blocker; same fix, and
+                  it reuses the key the region already carries. */}
+              <TableCaption className="sr-only">{t('title')}</TableCaption>
               <TableHeader>
                 <TableRow>
                   <TableHead scope="col">{t('columns.subject')}</TableHead>

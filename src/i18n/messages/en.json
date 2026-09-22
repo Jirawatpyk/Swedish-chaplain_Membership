@@ -194,6 +194,12 @@
     "retry": "Try again"
   },
   "common": {
+    "unsavedChanges": {
+      "title": "Leave without saving?",
+      "description": "You have changes that have not been saved. Leaving this page discards them.",
+      "confirmLabel": "Leave the page",
+      "cancelLabel": "Stay on this page"
+    },
     "yes": "Yes",
     "no": "No",
     "languageOptions": {
@@ -3386,6 +3392,8 @@
         "quotaBlockedError": "{company} has used all their e-blasts for this period.",
         "notInPlanError": "{company}'s plan doesn't include E-Blast.",
         "submitErrorToast": "Couldn't submit the broadcast. Please try again.",
+        "memberRequiredHint": "Pick the member this E-Blast is for before submitting for review.",
+        "subjectEmptyError": "Subject is required.",
         "subjectTooLongError": "Subject must be 200 characters or fewer.",
         "bodyTooLargeError": "Message body exceeds the 200 KB size limit.",
         "bodyUnsafeHtmlError": "Message body contains formatting we can't accept — please simplify.",
@@ -6019,6 +6027,10 @@
           "saveDraft": "Save as draft",
           "submit": "Submit for review"
         },
+        "submitBlocked": {
+          "subjectRequired": "Add a subject before submitting for review.",
+          "tierRequired": "Choose at least one membership tier before submitting for review."
+        },
         "submitNote": {
           "cancellable": "You can cancel this broadcast at any time until an admin approves it."
         },
@@ -6059,6 +6071,7 @@
           "broadcast_member_missing_primary_contact_email": "Your profile is missing a primary contact email.",
           "broadcast_member_halted_pending_review": "Your broadcast privileges are paused pending admin review.",
           "broadcast_rate_limit_exceeded": "Too many submissions. Please try again later.",
+          "invalid_body": "Something in the form could not be saved. Please check your entries and try again.",
           "broadcast_immutable_after_submit": "This broadcast has been submitted and can no longer be edited.",
           "broadcast_not_found": "We could not find that broadcast.",
           "internal_error": "An unexpected error occurred. Please try again."

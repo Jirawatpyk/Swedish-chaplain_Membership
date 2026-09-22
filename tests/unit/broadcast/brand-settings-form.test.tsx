@@ -21,6 +21,12 @@ import { BrandSettingsForm } from '@/components/broadcast/brand/brand-settings-f
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// U27 (portal live walk) — the form renders `<UnsavedChangesGuard>`, which
+// `router.push`es a confirmed in-app navigation. jsdom has no app router.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
+
 /** A `fetch` double returning one scripted Response-shaped object. */
 function stubFetch(init: {
   status: number;

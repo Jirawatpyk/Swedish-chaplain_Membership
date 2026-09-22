@@ -58,6 +58,51 @@ export function submitBlockedByCount(state: RecipientCountState): boolean {
   return state.status === 'ready' && (state.exceeds || state.count === 0);
 }
 
+/**
+ * Portal live walk U29 (WCAG 3.3.2) — which line explains a dimmed
+ * "Submit for review", for the reasons that have NO visible element of their
+ * own. Measured live with a body typed and the subject empty: the button was
+ * inert and the page produced no alert, no status, no toast and no mark on the
+ * field, so there was nothing to point `aria-describedby` at.
+ *
+ * Two of the four blocking reasons already speak for themselves and are
+ * DELIBERATELY absent here, because the caller associates their existing
+ * elements instead of repeating their words: an over-size body (the
+ * `#broadcast-body-error` line under the editor) and a measured count refusal
+ * (the red recipient-count line, which already ends "submission is blocked
+ * until you widen it"). A zero-length body would also block, but the editor
+ * serialises an untouched document as `<p></p>`, so no surface can produce it.
+ *
+ * Keys are relative to `portal.broadcasts.compose`, the namespace both compose
+ * forms translate against; two of the four already existed.
+ */
+export type SubmitBlockedHintKey =
+  | 'submitBlocked.subjectRequired'
+  | 'submitBlocked.tierRequired'
+  | 'errors.broadcast_subject_too_long'
+  | 'errors.broadcast_custom_recipient_empty'
+  | 'errors.broadcast_custom_recipient_too_many';
+
+export function submitBlockedHintKey(input: {
+  readonly subjectEmpty: boolean;
+  readonly subjectTooLong: boolean;
+  readonly tierValid: boolean;
+  readonly customListValid: boolean;
+  readonly customLineCount: number;
+}): SubmitBlockedHintKey | null {
+  // Top-down, matching the form's own reading order, so the one line shown is
+  // the first thing the member would fix.
+  if (input.subjectEmpty) return 'submitBlocked.subjectRequired';
+  if (input.subjectTooLong) return 'errors.broadcast_subject_too_long';
+  if (!input.tierValid) return 'submitBlocked.tierRequired';
+  if (!input.customListValid) {
+    return input.customLineCount === 0
+      ? 'errors.broadcast_custom_recipient_empty'
+      : 'errors.broadcast_custom_recipient_too_many';
+  }
+  return null;
+}
+
 export type ComposeSegmentKind = 'all_members' | 'tier' | 'custom' | 'event_attendees_last_90d';
 export type ComposeAudienceMode = 'primary_only' | 'all_contacts';
 

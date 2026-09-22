@@ -143,6 +143,42 @@ describe('T092 — an empty message renders the translated empty-state line, not
   });
 });
 
+/**
+ * F119 portal live walk U32 — the header's subject heading was
+ * `{subject.length > 0 ? subject : ' '}`, i.e. an `<h3>` holding a single
+ * space on every cold load and again whenever the subject is cleared.
+ * Measured `textContent.length === 1` and 0 px tall. An empty heading is a
+ * real accessibility smell; axe cannot see it because `empty-heading` sits on
+ * the best-practice tag, outside the AA set T139 scans.
+ */
+describe('U32 — the preview header never renders an empty heading', () => {
+  it('with no subject there is no heading at all', () => {
+    stubFetch();
+    renderPane({ subject: '' });
+
+    expect(screen.queryByRole('heading')).toBeNull();
+  });
+
+  it('with a subject the heading carries it', () => {
+    stubFetch();
+    renderPane({ subject: 'Spring update' });
+
+    expect(
+      screen.getByRole('heading', { name: 'Spring update' }),
+    ).toBeInTheDocument();
+  });
+
+  it('every heading in the pane has a non-blank accessible name', () => {
+    stubFetch();
+    const { container } = renderPane({ subject: '  ' });
+
+    const blank = Array.from(
+      container.querySelectorAll('h1,h2,h3,h4,h5,h6'),
+    ).filter((h) => (h.textContent ?? '').trim() === '');
+    expect(blank).toEqual([]);
+  });
+});
+
 describe("T103 — the pane renders the ROUTE's document in a sandboxed srcdoc iframe", () => {
   it('posts the subject, body and locale to the given endpoint', async () => {
     const fetchMock = stubFetch();

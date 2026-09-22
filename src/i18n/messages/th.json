@@ -194,6 +194,12 @@
     "retry": "ลองอีกครั้ง"
   },
   "common": {
+    "unsavedChanges": {
+      "title": "ออกจากหน้านี้โดยไม่บันทึกหรือไม่",
+      "description": "คุณมีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก หากออกจากหน้านี้ การเปลี่ยนแปลงจะหายไป",
+      "confirmLabel": "ออกจากหน้านี้",
+      "cancelLabel": "อยู่ในหน้านี้ต่อ"
+    },
     "yes": "ใช่",
     "no": "ไม่ใช่",
     "languageOptions": {
@@ -3386,6 +3392,8 @@
         "quotaBlockedError": "{company} ใช้โควตา E-Blast ของช่วงเวลานี้ครบแล้ว",
         "notInPlanError": "แพ็กเกจของ {company} ไม่รวมสิทธิ์ E-Blast",
         "submitErrorToast": "ส่ง E-Blast ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+        "memberRequiredHint": "เลือกสมาชิกที่ส่ง E-Blast นี้แทนก่อนส่งขออนุมัติ",
+        "subjectEmptyError": "ต้องระบุหัวข้อ",
         "subjectTooLongError": "หัวข้อต้องมีไม่เกิน 200 ตัวอักษร",
         "bodyTooLargeError": "เนื้อหามีขนาดเกิน 200 KB",
         "bodyUnsafeHtmlError": "เนื้อหามีรูปแบบที่ระบบไม่รองรับ กรุณาลดความซับซ้อน",
@@ -6019,6 +6027,10 @@
           "saveDraft": "บันทึกฉบับร่าง",
           "submit": "ส่งเพื่อตรวจสอบ"
         },
+        "submitBlocked": {
+          "subjectRequired": "กรอกหัวข้อก่อนส่งขออนุมัติ",
+          "tierRequired": "เลือกระดับสมาชิกอย่างน้อยหนึ่งระดับก่อนส่งขออนุมัติ"
+        },
         "submitNote": {
           "cancellable": "คุณสามารถยกเลิกการส่งนี้ได้จนกว่าผู้ดูแลจะอนุมัติ"
         },
@@ -6059,6 +6071,7 @@
           "broadcast_member_missing_primary_contact_email": "โปรไฟล์ของคุณยังไม่มีอีเมลผู้ติดต่อหลัก",
           "broadcast_member_halted_pending_review": "สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รอผู้ดูแลระบบตรวจสอบ",
           "broadcast_rate_limit_exceeded": "ส่งบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
+          "invalid_body": "มีข้อมูลบางส่วนในแบบฟอร์มที่บันทึกไม่ได้ กรุณาตรวจสอบข้อมูลแล้วลองอีกครั้ง",
           "broadcast_immutable_after_submit": "E-Blast นี้ถูกส่งเพื่ออนุมัติแล้วและไม่สามารถแก้ไขได้",
           "broadcast_not_found": "ไม่พบ E-Blast",
           "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่"

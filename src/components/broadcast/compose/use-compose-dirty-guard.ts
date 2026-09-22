@@ -17,7 +17,6 @@
  * paragraph used to say "no staff draft endpoint exists"; it does.)
  */
 import { useCallback, useState } from 'react';
-import { useBeforeUnloadGuard } from '@/hooks/use-beforeunload-guard';
 
 export interface ComposeSnapshot {
   readonly subject: string;
@@ -27,6 +26,13 @@ export interface ComposeSnapshot {
 export interface ComposeDirtyGuard {
   /** True when the live content differs from the last saved snapshot. */
   readonly dirty: boolean;
+  /**
+   * `dirty` minus the suspension, i.e. whether leaving right now would lose
+   * something. Hand it to `<UnsavedChangesGuard armed={…}>`, which owns BOTH
+   * exits — the browser's unload prompt and the in-app `<Link>` interception
+   * the portal live walk found missing (U27, 2026-09-22).
+   */
+  readonly armed: boolean;
   /** When the last successful save landed, for the "Saved at HH:MM" line. */
   readonly savedAt: Date | null;
   /** Call on a SUCCESSFUL save with the content that was sent. */
@@ -55,9 +61,11 @@ export function useComposeDirtyGuard(
     current.bodyHtml !== saved.snapshot.bodyHtml;
   const armed = dirty && options.suspended !== true;
 
-  // The listener itself is shared with Brand settings (T155 U18); what is NOT
-  // shared is the comparison above, which is this surface's own rule.
-  useBeforeUnloadGuard(armed);
+  // The LISTENERS are shared with Brand settings through
+  // `<UnsavedChangesGuard>` (T155 U18 for the unload arm, U27 for the in-app
+  // one); what is NOT shared is the comparison above, which is this surface's
+  // own rule. This hook therefore only decides `armed` — the caller renders
+  // the guard, so both exits stay in one place for every surface.
 
   const markSaved = useCallback(
     (snapshot: ComposeSnapshot, at: Date = new Date()): void => {
@@ -66,5 +74,5 @@ export function useComposeDirtyGuard(
     [],
   );
 
-  return { dirty, savedAt: saved.at, markSaved };
+  return { dirty, armed, savedAt: saved.at, markSaved };
 }

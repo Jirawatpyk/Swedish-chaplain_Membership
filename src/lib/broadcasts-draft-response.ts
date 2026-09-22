@@ -44,6 +44,71 @@ export function draftResponseBody(broadcast: {
   };
 }
 
+/**
+ * The subject / body limits both draft schemas apply, named once so the
+ * classifier below cannot drift from the zod objects it explains.
+ */
+export const DRAFT_SUBJECT_MAX_LENGTH = 200;
+export const DRAFT_BODY_MAX_LENGTH = 200 * 1024;
+
+/**
+ * Portal live walk U28 (2026-09-22) — the CORRECTABLE half of a schema
+ * refusal, answered with the code the locales already translate.
+ *
+ * Both draft routes used to answer every zod failure with `invalid_body`.
+ * `portal.broadcasts.compose.errors` carries no `invalid_body` key in en, th
+ * or sv, so `compose-form.tsx`'s `t.has()` fell through to `internal_error` —
+ * "An unexpected error occurred. Please try again." — for an empty subject.
+ * That is both wrong and unactionable: a retry can never succeed. The right
+ * copy already existed and was unreachable, because `broadcast_subject_empty`
+ * / `broadcast_subject_too_long` were only ever emitted by `submit/route.ts`
+ * and Submit is disabled in exactly the state that produces them.
+ *
+ * So Save-as-draft and Submit now refuse the same input with the same code,
+ * and therefore the same words. Returns `null` when the body is malformed
+ * rather than correctable (an unknown segment kind, a missing `draftId` on
+ * PUT, a non-JSON payload) — those keep a truthful `invalid_body`.
+ */
+export function draftBodyRefusal(
+  raw: unknown,
+  correlationId: string,
+): NextResponse | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const body = raw as Record<string, unknown>;
+
+  const subject = body['subject'];
+  if (typeof subject === 'string') {
+    if (subject.length === 0) {
+      const { status, code } = httpStatusForBroadcastError(
+        'broadcast_subject_empty',
+      );
+      return errorResponse(status, code, correlationId);
+    }
+    if (subject.length > DRAFT_SUBJECT_MAX_LENGTH) {
+      const { status, code } = httpStatusForBroadcastError(
+        'broadcast_subject_too_long',
+      );
+      return errorResponse(status, code, correlationId, {
+        // The same detail key `submit/route.ts` puts on this code, measured
+        // the same way the schema measures it — characters, not bytes.
+        details: { submittedLength: subject.length },
+      });
+    }
+  }
+
+  const bodyHtml = body['bodyHtml'];
+  if (typeof bodyHtml === 'string' && bodyHtml.length > DRAFT_BODY_MAX_LENGTH) {
+    const { status, code } = httpStatusForBroadcastError(
+      'broadcast_body_too_large',
+    );
+    return errorResponse(status, code, correlationId, {
+      details: { submittedSize: bodyHtml.length },
+    });
+  }
+
+  return null;
+}
+
 /** `SaveDraftError` → the bilingual envelope, identical on both routes. */
 export function mapSaveDraftError(
   error: SaveDraftError,

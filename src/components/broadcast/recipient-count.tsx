@@ -161,10 +161,18 @@ export function useRecipientCount(props: UseRecipientCountProps, retryNonce = 0)
 export function RecipientCountLine({
   state,
   onRetry,
+  textId,
 }: {
   readonly state: RecipientCountState;
   /** Review round 2 (UX H-5) — re-runs the count for the same segment. */
   readonly onRetry?: () => void;
+  /**
+   * Portal live walk U29 — an id on the STATUS text (not on the wrapper,
+   * which also holds the retry button), so a disabled Submit can point
+   * `aria-describedby` at the refusal the member can already see rather than
+   * repeating its words somewhere else.
+   */
+  readonly textId?: string;
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.recipientCount');
   let text: string | null = null;
@@ -228,7 +236,12 @@ export function RecipientCountLine({
         alongside `role="status"` — redundant, but it is the hook the e2e
         reflow assertion selects on and it costs nothing.
       */}
-      <p role="status" aria-live="polite" className="flex items-start gap-1.5">
+      <p
+        id={textId}
+        role="status"
+        aria-live="polite"
+        className="flex items-start gap-1.5"
+      >
         {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
         {text !== null ? <span>{text}</span> : null}
       </p>

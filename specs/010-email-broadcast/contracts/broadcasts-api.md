@@ -40,7 +40,13 @@ const CreateDraftBody = z.object({
 }
 ```
 
-**Response 400**: zod validation failure (per-field errors).
+**Response 400**: zod validation failure (per-field errors) — **narrowed by F119 (U28, PR-1,
+unflagged)**: a refusal the writer can act on now answers **422 with the specific code the locales
+already carry** — `broadcast_subject_empty`, `broadcast_subject_too_long`,
+`broadcast_body_too_large` — so Save-as-draft and Submit refuse the same input with the same words.
+400 `invalid_body` is kept for a body that is genuinely malformed rather than correctable. Before
+that change an empty subject answered 400 `invalid_body`, a code that existed in no locale, so the
+form rendered "an unexpected error occurred — please try again" for a state no retry could clear.
 **Response 403**: not authorised (e.g., manager role).
 **Response 429**: draft-save rate limit exceeded (60/5min per actor).
 

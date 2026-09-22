@@ -159,31 +159,6 @@ describe('POST/PUT /api/broadcasts/draft — Wave 6 GREEN (T036)', () => {
     expect(typeof body.createdAt).toBe('string');
   });
 
-  it('POST 400 invalid_body: subject empty', async () => {
-    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
-    const { POST } = await importRoute();
-    const res = await POST(makeRequest({ ...VALID_BODY, subject: '' }));
-    expect(res.status).toBe(400);
-    expect(saveDraftMock).not.toHaveBeenCalled();
-  });
-
-  it('POST 400 invalid_body: subject > 200 chars', async () => {
-    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
-    const { POST } = await importRoute();
-    const res = await POST(
-      makeRequest({ ...VALID_BODY, subject: 'x'.repeat(201) }),
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it('POST 400 invalid_body: bodyHtml > 200 KB', async () => {
-    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
-    const { POST } = await importRoute();
-    const big = 'x'.repeat(200 * 1024 + 1);
-    const res = await POST(makeRequest({ ...VALID_BODY, bodyHtml: big }));
-    expect(res.status).toBe(400);
-  });
-
   it('POST 400 invalid_body: unknown segmentType', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     const { POST } = await importRoute();
@@ -340,6 +315,79 @@ describe('POST/PUT /api/broadcasts/draft — Wave 6 GREEN (T036)', () => {
  * `designBlockErrorResponse` in `broadcasts-route-helpers.ts`: the FIRST
  * violation's code as the error code, the whole list in `details.violations`.
  */
+
+/**
+ * F119 portal live walk U28 (2026-09-22) — a CORRECTABLE refusal must carry
+ * the code the locales already translate, not the generic `invalid_body`.
+ *
+ * Measured live: body typed, subject empty, `Save as draft` → 400
+ * `invalid_body` → `portal.broadcasts.compose.errors` has no `invalid_body`
+ * key in en, th or sv → `compose-form.tsx`'s `t.has()` falls through to
+ * `internal_error`, so the member read "An unexpected error occurred. Please
+ * try again." for a refusal a retry can never fix. The right copy already
+ * existed and was unreachable: `broadcast_subject_empty` /
+ * `broadcast_subject_too_long` were only ever emitted by `submit/route.ts`,
+ * and Submit is disabled in exactly the state that produces them.
+ *
+ * Save-as-draft and Submit now refuse the same input with the same code — and
+ * therefore the same words — while a genuinely malformed body (unknown segment
+ * kind, missing `draftId` on PUT, non-JSON) keeps a truthful `invalid_body`.
+ */
+describe('POST /api/broadcasts/draft — U28 correctable refusals name the field', () => {
+  it('POST 422 broadcast_subject_empty: subject empty', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest({ ...VALID_BODY, subject: '' }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe('broadcast_subject_empty');
+    expect(saveDraftMock).not.toHaveBeenCalled();
+  });
+
+  it('POST 422 broadcast_subject_too_long: subject > 200 chars', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    const { POST } = await importRoute();
+    const res = await POST(
+      makeRequest({ ...VALID_BODY, subject: 'x'.repeat(201) }),
+    );
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_subject_too_long');
+    expect(body.error.details.submittedLength).toBe(201);
+    expect(saveDraftMock).not.toHaveBeenCalled();
+  });
+
+  it('POST 422 broadcast_body_too_large: bodyHtml > 200 KB', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    const { POST } = await importRoute();
+    const big = 'x'.repeat(200 * 1024 + 1);
+    const res = await POST(makeRequest({ ...VALID_BODY, bodyHtml: big }));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_body_too_large');
+    expect(body.error.details.submittedSize).toBe(200 * 1024 + 1);
+    expect(saveDraftMock).not.toHaveBeenCalled();
+  });
+
+  it('PUT 422 broadcast_subject_empty: the update path refuses identically', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    const { PUT } = await importRoute();
+    const res = await PUT(
+      makePutRequest({ ...VALID_BODY, subject: '', draftId: NEW_BROADCAST_ID }),
+    );
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe('broadcast_subject_empty');
+  });
+
+  it('a body that is malformed rather than correctable keeps invalid_body', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    const { POST } = await importRoute();
+    const res = await POST(
+      makeRequest({ ...VALID_BODY, segmentType: 'random' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_body');
+  });
+});
 
 describe('POST /api/broadcasts/draft — F119 FR-041 design-block rules', () => {
   it('422 content_rules → the first violation code + details.violations', async () => {

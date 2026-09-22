@@ -40,6 +40,7 @@ import {
   resolveTenantDisplayName,
 } from '@/lib/broadcasts-route-helpers';
 import {
+  draftBodyRefusal,
   draftResponseBody,
   mapSaveDraftError,
 } from '@/lib/broadcasts-draft-response';
@@ -92,6 +93,10 @@ async function handle(
   }
   const parsed = AdminDraftBodySchema.safeParse(raw);
   if (!parsed.success) {
+    // U28 — FR-039 parity: the staff form shares the member form's error copy
+    // and its draft-save helper, so it must share the refusal codes too.
+    const correctable = draftBodyRefusal(raw, correlationId);
+    if (correctable !== null) return correctable;
     return errorResponse(400, 'invalid_body', correlationId, {
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
     });

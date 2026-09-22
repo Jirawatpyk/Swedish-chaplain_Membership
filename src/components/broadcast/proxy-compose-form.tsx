@@ -53,9 +53,11 @@ import {
   PREFERENCE_TOAST_DURATION_MS,
   proxySelfExclusionNoticeKey,
   submitBlockedByCount,
+  submitBlockedHintKey,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
+import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -102,6 +104,10 @@ const ADMIN_DRAFT_ENDPOINT = '/api/admin/broadcasts/draft';
 
 const INITIAL_BODY_HTML = '<p></p>';
 const BODY_ERROR_ID = 'proxy-broadcast-body-error';
+/** U29 — the elements a dimmed Submit points at, plus its own hint line. */
+const MISSING_EMAIL_ID = 'proxy-missing-contact-email';
+const RECIPIENT_COUNT_TEXT_ID = 'proxy-recipient-count';
+const SUBMIT_BLOCKED_HINT_ID = 'proxy-submit-blocked';
 
 const SubmitSchema = z.object({
   subject: z.string().min(1).max(200),
@@ -131,6 +137,7 @@ type ProxyErrorHandling =
       readonly kind: 'field';
       readonly field: 'subject' | 'body' | 'segment';
       readonly key:
+        | 'subjectEmptyError'
         | 'subjectTooLongError'
         | 'bodyTooLargeError'
         | 'bodyUnsafeHtmlError'
@@ -153,6 +160,14 @@ const ERROR_HANDLING: Record<string, ProxyErrorHandling> = {
   },
   broadcast_quota_blocked: { kind: 'toast', key: 'quotaBlockedError' },
   broadcast_not_in_plan: { kind: 'toast', key: 'notInPlanError' },
+  // Portal live walk U28 — `/api/admin/broadcasts/draft` answers this code
+  // since the classifier landed, so the staff form puts it on the field the
+  // member form does rather than falling to the generic save-failed toast.
+  broadcast_subject_empty: {
+    kind: 'field',
+    field: 'subject',
+    key: 'subjectEmptyError',
+  },
   broadcast_subject_too_long: {
     kind: 'field',
     field: 'subject',
@@ -206,6 +221,10 @@ export function ProxyComposeForm({
   imagesEnabled = false,
 }: ProxyComposeFormProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.proxySubmitDialog');
+  // U29 / FR-039 — the shared compose copy this form already renders through
+  // `SubjectCounter`, `SegmentPicker` and `SubmitButton`; the blocked-reason
+  // line must read the same on both surfaces, so it comes from the same keys.
+  const tCompose = useTranslations('portal.broadcasts.compose');
   // The proxySubmitDialog namespace has no member-search loading string;
   // reuse the canonical members-picker loading copy ("Loading members…")
   // rather than hardcoding a new string.
@@ -297,16 +316,49 @@ export function ProxyComposeForm({
   // blocking early lets the admin know immediately and avoids a wasted round trip.
   const memberMissingEmail =
     member !== null && member.hasPrimaryContactEmail === false;
+  // Round 2 (UX H-4): a measured refusal from the live count blocks here too.
+  const countBlocked = submitBlockedByCount(recipientCount);
   const submitDisabled =
     member === null ||
     memberMissingEmail ||
     !validation.success ||
     !customListValid ||
     !tierValid ||
-    // Round 2 (UX H-4): a measured refusal from the live count blocks here too.
-    submitBlockedByCount(recipientCount);
+    countBlocked;
 
-  const bodyHasError = fieldError?.field === 'body';
+  // U29 — the member form marks an over-size body locally; this one only ever
+  // showed the SERVER's refusal, so a paste over the limit dimmed Submit with
+  // nothing said anywhere. Same derivation, same copy.
+  const bodyInvalid = bodyHtml.length > 200 * 1024;
+  const bodyHasError = bodyInvalid || fieldError?.field === 'body';
+
+  /**
+   * U29 (WCAG 3.3.2) — why Submit is dimmed, in the member form's own words
+   * wherever the reason is shared (FR-039: the same writing tool). The two
+   * staff-only reasons come first because they gate everything else: no member
+   * picked, and a picked member with no primary contact email — the latter
+   * already has its own visible warning, so it is associated rather than
+   * repeated.
+   */
+  function blockedReasonText(): string | null {
+    if (member === null) return t('memberRequiredHint');
+    if (memberMissingEmail) return null;
+    const key = submitBlockedHintKey({
+      subjectEmpty: subject.length === 0,
+      subjectTooLong: subject.length > 200,
+      tierValid,
+      customListValid,
+      customLineCount: customLines.length,
+    });
+    return key === null ? null : tCompose(key);
+  }
+  const blockedReasonMessage = blockedReasonText();
+  const submitBlockedReasonIds = [
+    ...(blockedReasonMessage !== null ? [SUBMIT_BLOCKED_HINT_ID] : []),
+    ...(memberMissingEmail ? [MISSING_EMAIL_ID] : []),
+    ...(bodyInvalid ? [BODY_ERROR_ID] : []),
+    ...(countBlocked ? [RECIPIENT_COUNT_TEXT_ID] : []),
+  ].join(' ');
 
   /**
    * F119 T140/T145 (FR-046) — re-seed in place; the picked member, the
@@ -494,6 +546,9 @@ export function ProxyComposeForm({
 
   return (
     <div className="min-w-0 space-y-6">
+      {/* Portal live walk U27 (FR-045) — unload AND in-app navigation, the
+          same guard the member form renders. */}
+      <UnsavedChangesGuard armed={dirtyGuard.armed} />
       {/* F119 T145 (FR-039) — the PROXIED member's allowance, from the staff
           quota route. Keyed on the member so picking another one re-fetches
           rather than showing the previous member's numbers; nothing at all is
@@ -549,7 +604,11 @@ export function ProxyComposeForm({
                 // submission before the admin fills in the gap. `role="alert"`
                 // announces it to SR users without stealing focus (WCAG 4.1.3
                 // Status Messages).
-                <p role="alert" className="text-xs text-destructive">
+                <p
+                  id={MISSING_EMAIL_ID}
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
                   {t('missingContactEmailWarning')}
                 </p>
               ) : null}
@@ -595,6 +654,7 @@ export function ProxyComposeForm({
             {/* 108 PR-C T089 (FR-040): live count for the proxied member. */}
             <RecipientCountLine
               state={recipientCount}
+              textId={RECIPIENT_COUNT_TEXT_ID}
               onRetry={() => setCountRetry((n) => n + 1)}
             />
 
@@ -683,6 +743,17 @@ export function ProxyComposeForm({
                 >
                   {fieldError.message}
                 </p>
+              ) : bodyInvalid ? (
+                // U29 — the member form's local over-size line, which this one
+                // lacked: Submit was dimmed on a too-large paste with nothing
+                // said until the server refused it.
+                <p
+                  id={BODY_ERROR_ID}
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {tCompose('errors.broadcast_body_too_large')}
+                </p>
               ) : null}
             </div>
 
@@ -691,6 +762,19 @@ export function ProxyComposeForm({
               onChange={setScheduledFor}
               disabled={submitting}
             />
+
+            {/* U29 — the reason a dimmed Submit is dimmed, for the cases with
+                no element of their own. "Needs input" is not an error state,
+                so it is muted rather than red. */}
+            {blockedReasonMessage !== null ? (
+              <p
+                id={SUBMIT_BLOCKED_HINT_ID}
+                data-compose-feature="submit-blocked-reason"
+                className="text-xs text-muted-foreground"
+              >
+                {blockedReasonMessage}
+              </p>
+            ) : null}
 
             <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
               {/* F119 T145 (FR-045) — the member form's save receipt, same
@@ -734,6 +818,7 @@ export function ProxyComposeForm({
               <SubmitButton
                 disabled={submitDisabled}
                 submitting={submitting}
+                blockedReasonIds={submitBlockedReasonIds}
                 onClick={() => {
                   void handleSubmit();
                 }}

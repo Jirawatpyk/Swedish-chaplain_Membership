@@ -194,6 +194,12 @@
     "retry": "Försök igen"
   },
   "common": {
+    "unsavedChanges": {
+      "title": "Lämna sidan utan att spara?",
+      "description": "Du har ändringar som inte har sparats. Om du lämnar sidan försvinner de.",
+      "confirmLabel": "Lämna sidan",
+      "cancelLabel": "Stanna kvar på sidan"
+    },
     "yes": "Ja",
     "no": "Nej",
     "languageOptions": {
@@ -3386,6 +3392,8 @@
         "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
         "notInPlanError": "{company}:s paket inkluderar inte e-utskick.",
         "submitErrorToast": "Det gick inte att skicka utskicket. Försök igen.",
+        "memberRequiredHint": "Välj vilken medlem utskicket gäller innan du skickar för granskning.",
+        "subjectEmptyError": "Ämne krävs.",
         "subjectTooLongError": "Ämnet får vara högst 200 tecken.",
         "bodyTooLargeError": "Meddelandet överskrider gränsen på 200 KB.",
         "bodyUnsafeHtmlError": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
@@ -6019,6 +6027,10 @@
           "saveDraft": "Spara som utkast",
           "submit": "Skicka för granskning"
         },
+        "submitBlocked": {
+          "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
+          "tierRequired": "Välj minst en medlemsnivå innan du skickar för granskning."
+        },
         "submitNote": {
           "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
         },
@@ -6059,6 +6071,7 @@
           "broadcast_member_missing_primary_contact_email": "Din profil saknar en primär kontakt-e-post.",
           "broadcast_member_halted_pending_review": "Dina utskicksbehörigheter är pausade i väntan på administratörsgranskning.",
           "broadcast_rate_limit_exceeded": "För många inskickningar. Försök igen senare.",
+          "invalid_body": "Något i formuläret kunde inte sparas. Kontrollera dina uppgifter och försök igen.",
           "broadcast_immutable_after_submit": "Detta utskick har skickats in och kan inte längre redigeras.",
           "broadcast_not_found": "Vi kunde inte hitta det utskicket.",
           "internal_error": "Ett oväntat fel inträffade. Försök igen."

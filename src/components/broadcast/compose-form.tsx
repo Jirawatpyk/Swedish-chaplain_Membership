@@ -30,6 +30,7 @@ import {
   PREFERENCE_TOAST_DURATION_MS,
   selfExclusionHintKey,
   submitBlockedByCount,
+  submitBlockedHintKey,
   type ComposeAudienceMode,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
@@ -37,6 +38,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
 import { CustomListInput, parseLines } from './custom-list-input';
@@ -71,6 +73,9 @@ const TiptapEditor = loadTiptapEditor<{
 /** What an untouched Tiptap document serialises to. */
 const EMPTY_BODY_HTML = '<p></p>';
 const BODY_ERROR_ID = 'broadcast-body-error';
+/** U29 — the two elements a dimmed Submit points at, plus its own hint line. */
+const RECIPIENT_COUNT_TEXT_ID = 'broadcast-recipient-count';
+const SUBMIT_BLOCKED_HINT_ID = 'broadcast-submit-blocked';
 
 const SubmitSchema = z.object({
   subject: z.string().min(1).max(200),
@@ -275,8 +280,9 @@ export function ComposeForm({
   // Round 2 (UX H-4, decision (a)): a MEASURED refusal from the live count
   // blocks the submit — the count line, in red, is the reason. `unavailable`
   // never blocks (the server recomputes — FR-040b).
+  const countBlocked = submitBlockedByCount(recipientCount);
   const submitDisabled =
-    !validation.success || !customListValid || !tierValid || submitBlockedByCount(recipientCount);
+    !validation.success || !customListValid || !tierValid || countBlocked;
 
   // UX-C2 — per-field error tracking for aria-describedby + aria-invalid.
   // Empty subject/body is the "needs input" state, not an "error" state
@@ -287,6 +293,27 @@ export function ComposeForm({
   // F119 T144 (FR-048) — one derivation, handed to the editor as `invalid` +
   // `describedById` so assistive tech announces the reason ON the control.
   const bodyHasError = bodyInvalid || serverError?.field === 'body';
+
+  /**
+   * U29 (WCAG 3.3.2) — why Submit is dimmed, associated with the visible
+   * element that says so. The over-size body and a measured count refusal
+   * already have their own lines on the page, so those ids are reused rather
+   * than their words repeated; the remaining reasons get the one hint line
+   * rendered above the button row. Empty when Submit is enabled — the U17
+   * rule from Brand settings: never describe a control with nothing wrong.
+   */
+  const blockedHintKey = submitBlockedHintKey({
+    subjectEmpty: subject.length === 0,
+    subjectTooLong: subject.length > 200,
+    tierValid,
+    customListValid,
+    customLineCount: customLines.length,
+  });
+  const submitBlockedReasonIds = [
+    ...(blockedHintKey !== null ? [SUBMIT_BLOCKED_HINT_ID] : []),
+    ...(bodyInvalid ? [BODY_ERROR_ID] : []),
+    ...(countBlocked ? [RECIPIENT_COUNT_TEXT_ID] : []),
+  ].join(' ');
 
   /**
    * F119 T140 (FR-046) — re-seed in place. The subject and the body are
@@ -428,6 +455,7 @@ export function ComposeForm({
     // to store, so it — not whatever the member typed while it was in flight —
     // is the snapshot the dirty guard must compare against afterwards.
     const savedSnapshot = { subject, bodyHtml };
+    setServerError(null);
     try {
       const body: Record<string, unknown> = {
         subject,
@@ -451,7 +479,17 @@ export function ComposeForm({
         // code with no key toasted the raw path. This file already SAID so
         // 50 lines up; `t.has()` is what acts on it.
         const key = saved.code as Parameters<typeof tErr>[0];
-        toast.error(tErr.has(key) ? tErr(key) : tErr('internal_error'));
+        const msg = tErr.has(key)
+          ? tErr(key, errorValues(saved.code, undefined, audienceCeiling))
+          : tErr('internal_error');
+        // Portal live walk U28 — a refused draft save used to toast and stop
+        // there, so the offending field carried no `aria-invalid`, no inline
+        // message and never took focus (measured: `aria-invalid: null` on
+        // `#broadcast-subject` throughout). The submit path has mapped code →
+        // field through `ERROR_CODE_FIELD` since UX-R2-1; this one does now
+        // too, and the `useEffect` above moves focus.
+        setServerError({ field: ERROR_CODE_FIELD[saved.code] ?? null, message: msg });
+        toast.error(msg);
         return;
       }
       // E2E + UX bug fix 2026-05-21: when the FIRST `Save as draft` POST
@@ -481,6 +519,10 @@ export function ComposeForm({
 
   return (
     <div className="min-w-0 space-y-6">
+      {/* Portal live walk U27 (FR-045) — the unload prompt covered the exits
+          the browser owns; the member shell's own links did not prompt at all
+          and lost the draft on one click. Both exits now come from here. */}
+      <UnsavedChangesGuard armed={dirtyGuard.armed} />
       <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} />
       {/* F119 T140 (FR-046) — inside the form, so a choice re-seeds state
           instead of navigating and remounting it. */}
@@ -563,7 +605,11 @@ export function ComposeForm({
             ) : null}
             {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
                 decides the send, so the number shown is the number sent (SC-004). */}
-            <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />
+            <RecipientCountLine
+              state={recipientCount}
+              textId={RECIPIENT_COUNT_TEXT_ID}
+              onRetry={() => setCountRetry((n) => n + 1)}
+            />
 
             {segment.kind === 'custom' ? (
               <CustomListInput
@@ -651,6 +697,20 @@ export function ComposeForm({
               {t('submitNote.cancellable')}
             </p>
 
+            {/* U29 — the reason a dimmed Submit is dimmed, for the cases with
+                no element of their own. "Needs input" is not an error state,
+                so it is muted like the note above it rather than red (the
+                same call `subjectInvalid` already makes for the field). */}
+            {blockedHintKey !== null ? (
+              <p
+                id={SUBMIT_BLOCKED_HINT_ID}
+                data-compose-feature="submit-blocked-reason"
+                className="text-xs text-muted-foreground"
+              >
+                {t(blockedHintKey)}
+              </p>
+            ) : null}
+
             <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
               {/* F119 T143 (FR-045) — the receipt for the save, in the member's
                   own locale via next-intl's formatter (never hand-formatted). */}
@@ -688,6 +748,7 @@ export function ComposeForm({
               <SubmitButton
                 disabled={submitDisabled}
                 submitting={submitting}
+                blockedReasonIds={submitBlockedReasonIds}
                 onClick={onSubmit}
               />
             </div>

@@ -65,9 +65,16 @@ export function PreviewPane({
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
             {t('previewLabel')}
           </p>
-          <h3 className="truncate text-sm font-semibold">
-            {subject.length > 0 ? subject : ' '}
-          </h3>
+          {/* Portal live walk U32 — this used to be
+              `{subject.length > 0 ? subject : ' '}`, i.e. an `<h3>` holding a
+              single space on every cold load and again whenever the subject is
+              cleared: measured `textContent.length === 1` and 0 px tall, so it
+              reserved nothing and only ever existed as an empty heading in the
+              accessibility tree. Omitting it is byte-for-byte the same layout
+              (a lone space collapses) without the phantom heading. */}
+          {subject.trim().length > 0 ? (
+            <h3 className="truncate text-sm font-semibold">{subject}</h3>
+          ) : null}
         </div>
         {/* The dialog reads the state this pane already fetched — opening it
             never spends a second token of the 30/min budget. */}

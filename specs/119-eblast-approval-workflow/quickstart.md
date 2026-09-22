@@ -337,6 +337,16 @@ no `FEATURE_EBLAST_*` flag over any of it. Each line is **code-revert-only** —
 - **Migration `0304`** plus the **four `audit_event_type` values** it adds
   (`broadcast_test_copy_sent`, `broadcast_brand_settings_changed`, `broadcast_image_uploaded`,
   `broadcast_image_removed`) and the `tenant_broadcast_settings.brand_*` columns.
+- **The draft routes' refusal codes narrowed** (U28, both `POST | PUT /api/broadcasts/draft` and
+  `/api/admin/broadcasts/draft`): an empty or over-long subject and an over-size body now answer
+  **422 with the specific code** (`broadcast_subject_empty`, `broadcast_subject_too_long`,
+  `broadcast_body_too_large`) instead of **400 `invalid_body`**. A client that switched on the
+  status alone sees a different number; the F7 contract
+  (`specs/010-email-broadcast/contracts/broadcasts-api.md` § 1.1) is annotated, and the staff
+  contract row already SPECIFIED 422 — the route had been contradicting it. `invalid_body` is
+  kept for a genuinely malformed body and finally has a locale key, so the old path (a refusal
+  rendering as "an unexpected error occurred — please try again", which no retry could clear)
+  cannot recur.
 - **Member inline-image upload now re-encodes through `sharp`** (F2-3): EXIF / GPS / XMP / IPTC /
   ICC are stripped, the SHA-256 and the stored `byte_size` describe the RE-ENCODED bytes, a
   decode / MIME mismatch answers **415**, a decode that exceeds 15 s answers **503**, and the
@@ -662,6 +672,292 @@ delete UI) · **U14** (chip focus ring) · **U15** (toolbar Arrow Up/Down + `ari
 Two measurement debts remain from the record above and are NOT discharged by this round: the three
 member-portal surfaces were walked from code only (the `E2E_MEMBER_EMAIL_EMPTY` persona does not
 sign in on the `dev` branch), and no screen reader was run.
+
+##### Portal live walk — 2026-09-22 (closes the OWED item)
+
+This block discharges the **first** of those two debts. The three member-portal surfaces —
+`/portal/broadcasts/new` (**PC**), `/portal/benefits?tab=broadcasts` (**PB**) and
+`/portal/broadcasts/[id]` (**PD**) — were walked against the maintainer's running dev server on
+:3100 at 320 / 375 / 768 / 1440 / 1920 px in EN, SV and TH, light and dark, signed in as
+`e2e-member-empty@swecham.test`. **Nothing was fixed; every finding below is OPEN.**
+
+**The persona DOES sign in — the earlier claim was a wrong password, not a missing account.**
+`.env.local` gives each persona its own secret: the empty member is `E2E_MEMBER_EMAIL_EMPTY` +
+**`E2E_MEMBER_PASSWORD_EMPTY`**. The pass above used `E2E_ADMIN_PASSWORD`, was told "Email or
+password is incorrect", and recorded that as "the account is not signable-in on the `dev` branch".
+It is signable-in, no re-seed was needed, and `scripts/seed-e2e-portal-invoices.ts` was not run.
+Anything downstream that treats this persona as unavailable — including the a11y-e2e caveat in the
+next block — should be read against that correction.
+
+**Tooling note, so the next walk does not lose an hour to it.** Chrome could not be driven here:
+`resize_window` reports success and changes nothing while the window is maximised, and the
+same-origin iframe fallback is refused because the app sends `frame-ancestors`, so the framed
+document comes back cross-origin and every measurement throws `SecurityError`. The walk was done
+through the Playwright MCP tools, whose `setViewportSize` is exact. The colour maths needed a
+**positive control**: this repo's computed colours are `lab()` / `oklch()`, a naive `rgb()` regex
+parses none of them, and the first contrast sweep returned a clean "0 low-contrast nodes" purely
+because it had resolved nothing. Every scan below re-resolves colour through a 1×1 canvas and
+asserts `lab(50 0 0) → rgb(119,119,119)` before it reports.
+
+###### § 15 walk — the three portal screens, now live
+
+`L` = live-verified this round · `c` = still code-only · carried rows keep the earlier verdict.
+
+| § 15 item | PC | PB | PD |
+|---|---|---|---|
+| 320 × 568, no horizontal scroll | **L PASS** | **L PASS** | **L PASS** |
+| 1920 × 1080, no ugly stretch | **L PASS**¹ | **L PASS**¹ | c PASS¹ |
+| axe WCAG 2.1 AA | T139 | T139 | T139 |
+| EN + TH + SV on every string | L PASS² | L PASS² | **L PASS** |
+| Shimmer skeleton on first load | FAIL³ | FAIL³ | **L PASS** |
+| Empty state designed | N/A | c PASS⁴ | PASS |
+| Error states (field / form / page) | **L FAIL** | c PART | c PART |
+| Toast on success | c PASS⁵ | N/A | c PASS |
+| Confirmation dialog on destructive | c PASS | N/A | **L PASS**⁶ |
+| Auto-focus on the primary input | **L FAIL** | N/A | N/A |
+| Enter submits the form | **L FAIL**⁷ | N/A | N/A |
+| Escape closes modal / popover | L PASS | PASS | **L PASS** |
+| Focus-visible ring on every control | L PASS | **L PASS**⁸ | L PASS |
+| Dark mode renders correctly | **L PASS** | **L PASS** | **L PASS** |
+| SR: landmarks, errors, navigable | **L PART** | **L PART** | **L PASS** |
+| `prefers-reduced-motion` honoured | c PASS | c PASS | c PASS |
+| Session user menu on the shell | L PASS | L PASS | L PASS |
+| Idle-warning modal | N/A | N/A | N/A |
+
+¹ the layout container caps at **1152 px**, so nothing stretches; PD was measured at 1440 and 320,
+not at 1920. ² parity is green and no raw key path rendered on any of the three, in any locale —
+but the Thai quota card prints two calendars, U30. ³ unchanged: this is **U12** skeleton drift on
+`/portal/broadcasts/new/loading.tsx`, which is still on the STILL OPEN list; the page-level skeleton
+was not re-caught live. ⁴ not reachable with this persona — it has one broadcast, so the table
+renders. ⁵ only the *error* toast was exercised (U28); the success path was not, because the
+persona's 2026 quota is fully reserved. ⁶ `role="alertdialog"`, labelled + described, initial focus
+on the **safe** button, ESC closes, focus returns to the trigger — all four verified; see U35 for
+the one caveat. ⁷ **U19 stands** — there is no `<form>` in `main` on PC, by the earlier round's
+deliberate choice for a rich-text surface. ⁸ the history table's scroll wrapper is
+`tabindex="0"` + `role="region"` + `aria-label` + a focus ring, so the shared `TableContainer`
+primitive does the right thing here.
+
+**Dark mode is now clean on all three, which upgrades the earlier `PART⁵`.** A full-page sweep for
+opaque near-white boxes ≥ 24 × 16 px returns **exactly one** element per surface — the preview
+`<iframe>` itself, the documented exception. No chrome-scale white patch anywhere. The
+`.skip-to-content` bar reads as white in dark mode and was checked before being reported: it is
+`background: var(--foreground); color: var(--background)` at `globals.css:634-635`, a deliberate
+token-driven inversion that flips with the theme. **Not a defect — do not "fix" it.**
+
+**Contrast, measured, all three surfaces × both themes: zero failures.** `muted-foreground` is
+**5.66:1** light and **7.66:1** dark; the 12 px destructive quota line is **6.69:1**; the quota
+progress fill against its track is **6.14:1** (SC 1.4.11 needs 3:1). **Zero** interactive elements
+anywhere on the three surfaces use `muted-foreground` as their only signal. **No italic on Thai** on
+any of the three, in any state.
+
+###### The toolbar row count in the PORTAL shell — the specific gap this walk was called for
+
+Measured on `/portal/broadcasts/new` (not `/admin`), `data-toolbar-control` grouped by
+`getBoundingClientRect().top`. Buttons are 44 × 44 px at every width.
+
+| viewport | editor column | EN | SV | TH |
+|---|---|---|---|---|
+| **320 px** (305 usable) | **207 px** | 13 controls, **4 rows** — 4 / 4 / 4 / **1** | identical to EN | 12, **3 rows** — 4 / 4 / 4 |
+| **375 px** (360) | **262 px** | 13, 3 rows — 5 / 5 / 3 | identical | 12, 3 rows — 5 / 5 / 2 |
+| **768 px** (753) | **655 px** | 13, **1 row** | identical | 12, **1 row** |
+| **1920 px** (capped 1152) | **430 px** | 13, **2 rows** — 8 / **5** | — | 12, 2 rows — 8 / 4 |
+
+**Nothing clips at any width in any locale** — `scrollWidth === clientWidth` on the toolbar every
+time — and **page-level horizontal scroll is 0** at 320, 375 and 768 in all three locales.
+
+**The carry-over was right at two widths out of three, and wrong at the third.** At 320 and 375 the
+portal reproduces the admin numbers *exactly* — 207 px and 262 px editor column, the same 4 / 4 / 4
+/ 1 wrap, the same lone `banner` orphan, the same TH-drops-italic 3-row shape. At **768 px the two
+shells diverge**: admin gives the editor **607 px** and needs **2 rows (12 / 1)**, the portal gives
+it **655 px** and the whole strip fits in **one row**. The portal is the better surface at tablet
+width, and the earlier record's "the numbers carry over, the portal shell's padding is unmeasured"
+is now settled: they carry at phone widths, they do not at 768.
+
+**The row count is worst at the WIDEST viewport, which nothing predicted.** From 1152 px up the
+layout container stops growing while the preview pane keeps its share, so the editor column freezes
+at **430 px** — narrower than it is at a 768 px viewport — and the strip wraps back to **2 rows**.
+A member on a 1920 px monitor sees more toolbar rows than one on an iPad. Recorded as U33.
+
+###### The preview pane settles with zero movement — U7 is closed on this surface
+
+MutationObserver on the pane, `/portal/broadcasts/new` at 1440 px, cold load → typed → settled:
+
+| state | reserving box | padded outer | section | document height |
+|---|---|---|---|---|
+| empty (`Your message preview appears here.`) | **420 px** | 436 px | 483 px | 1723 px |
+| loading (shimmer, `Loading preview…`) | **420 px** | 436 px | 483 px | 1723 px |
+| ready (`<iframe>`) | **420 px** | 436 px | 483 px | 1723 px |
+
+**Every number is identical across all three states.** F3's fix — moving `py-2` to an outer box at
+`preview-pane.tsx:86` so the 420 px reservation and the 16 px padding are no longer the same
+border-box — holds: the ready frame no longer exceeds the reservation, and nothing below the pane
+can move regardless of DOM order. The 436 → 436 → 436 outer is the proof the padding is now outside
+the reserving box rather than inside it.
+
+**Empty-state first paint: PASS, and verified one layer deeper than a screenshot.** The
+server-rendered HTML for a cold `/portal/broadcasts/new` already contains the translated line
+*"Your message preview appears here."*, the `preview-pane-frame-reservation` node and its
+`min-height:420px`, and **no** raw `broadcast.editor.preview.empty` key path. The first paint, before
+a byte of JS runs, is the translated sentence inside the full-height box. **Never a blank box.**
+US3-AS6 satisfied.
+
+###### The detail page's three-card skeleton matches the settled page — U1 is closed
+
+Captured across a client-side navigation from PB into PD (which is what renders `loading.tsx`), at
+1440 px:
+
+| card | skeleton — height / top | settled — height / top |
+|---|---|---|
+| fields | 208 / 396 | 204 / 396 |
+| content (560 px preview frame) | 644 / 628 | 646 / 624 |
+| **delivery breakdown** | 192 / **1296** | 203 / **1294** |
+| document height | 1512 | 1581 |
+
+**Three cards reserved, three cards rendered.** The delivery card's top moves **2 px** on settle,
+against the ~640 px jump this record opened with. Document height grows 69 px, all of it below the
+last card. `DETAIL_PREVIEW_FRAME_HEIGHT` is shared between `loading.tsx:70` and `page.tsx:256`, and
+it shows.
+
+The rest of PD checks out live: the body renders in `<iframe title="Email preview" sandbox=""
+srcdoc=… loading="lazy">` — `sandbox=""` is the maximally restrictive form, no `allow-*` token — and
+in TH the title is translated (`ตัวอย่างอีเมล`). The subject is a real `<h2>` inside
+`data-slot="card-header"`, not a styled `<div>`. Dates render BE (`22 ก.ย. 2569 20:57`). No page
+horizontal scroll at 320 px, where the shell's fixed bottom tab bar (53 px) is cleared by `main`'s
+`pb-[calc(var(--bottom-tab-height)…)]` = 56 px — the overlap visible in a full-page screenshot is a
+stitching artefact of `position: fixed`, not a real collision.
+
+###### Defects found this round — U27–U37, all OPEN, nothing was fixed
+
+Severity is against the FR-051 gate, as above: **HIGH** blocks the flip, **MEDIUM** is a follow-up,
+**LOW** is polish.
+
+**HIGH**
+
+- **U27 — the unsaved-changes guard misses the way members actually leave the page.**
+  `src/components/broadcast/compose/use-compose-dirty-guard.ts:60` arms `useBeforeUnloadGuard` and
+  nothing else, so the guard covers close / reload / external navigation and **not** an in-app
+  `<Link>`. Verified both halves live: a `page.goto` away from a dirty form **was blocked** by the
+  browser's own dialog, and clicking **Dashboard** in the member shell header with the same dirty
+  body navigated instantly, silently, and lost the draft. The shell puts four header links directly
+  above the form and five fixed bottom-tab links directly below it, so the unguarded path is the
+  near one. This is US6-AS9 / FR-045, and the "compose has a dirty guard, Brand does not" framing in
+  U18 obscured that what compose has only covers one of the two exits.
+- **U28 — a validation refusal on `Save as draft` is reported to the member as an internal error.**
+  Live: body typed, subject empty, `Save as draft` → `POST /api/broadcasts/draft` **400** →
+  toast **"An unexpected error occurred. Please try again."** Retrying can never succeed. The chain:
+  `src/app/api/broadcasts/draft/route.ts:69` and `:77` answer with code `invalid_body`;
+  `portal.broadcasts.compose.errors` has **no `invalid_body` key in en, th or sv**; so
+  `compose-form.tsx:453-454`'s `tErr.has(key)` is false and it falls to `internal_error`. The
+  *correct* copy already exists and is unreachable — `broadcast_subject_empty` and
+  `broadcast_subject_too_long` are present in all three locales but are only ever emitted by
+  `src/app/api/broadcasts/submit/route.ts:223,251`, and the submit button is disabled in exactly the
+  state that would produce them. Second layer: `onSaveDraft` never consults `ERROR_CODE_FIELD`
+  (`compose-form.tsx:91-107`), so even the right code would not set `aria-invalid`, focus the field
+  or render an inline message — measured `aria-invalid: null` on `#broadcast-subject` throughout.
+  Note this is **not** a repeat of U8: `t.has()` is working correctly; the key it is asked about
+  genuinely does not exist.
+
+**MEDIUM**
+
+- **U29 — `Submit for review` is disabled with nothing anywhere saying why.**
+  `src/components/broadcast/submit-button.tsx:57-58` renders a hard `disabled` with no
+  `aria-describedby` and no `title`; the verdict comes from `compose-form.tsx:278-279`. Measured with
+  a body typed and the subject empty: the button is inert and the page produces **no** `role="alert"`,
+  **no** `role="status"`, **no** toast and no mark on the subject field. A keyboard or SR member
+  hears "Submit for review, button, dimmed" and has no route to the reason. WCAG 3.3.2 — and the
+  **second recurrence of U17**, which was closed on Brand settings in F3 while this instance shipped
+  untouched. The pattern to copy is two files away: `benefits/_components/broadcasts-panel.tsx:271`
+  puts the reason on its own disabled Compose button and keeps it focusable with `aria-disabled`
+  rather than `disabled`. (It puts the reason in the accessible *name* rather than a description,
+  which passes SC 2.5.3 because the visible label is a prefix — `aria-describedby` would be the
+  cleaner form for both.)
+- **U30 — one Thai card prints the same quota year in two calendars, 544 years apart.**
+  `quota-display.tsx:132`, `:133` and `:178`, plus `broadcasts-panel.tsx:271`, interpolate `{year}`
+  as a **raw CE integer**, while `broadcasts-panel.tsx:164-166` formats `{date}` through
+  `dateOnlyFormatter` and correctly yields BE. Measured live on PB in `th`: the line
+  *"โควตา E-Blast ของปี **2026** ถูกใช้หมดแล้ว"* renders directly above
+  *"รีเซ็ตโควตา 1 มกราคม **2570**"*, with the history table's ส่งเมื่อ column reading
+  *"22 ก.ย. **2569**"* a few pixels lower — three calendars on one screen. The card header
+  (`โควตา E-Blast (2026)`) and the disabled-button tooltip carry the CE year too. Same class as the
+  F9 US2 audit-log dual-year finding. Storage is untouched and correct; this is display only.
+- **U31 — the member's broadcast history `<table>` has no accessible name.** No `<caption>`, no
+  `aria-label`, no `aria-labelledby`; only the wrapping `role="region"` is named "My broadcasts", so
+  a SR user listing tables on the page finds an anonymous one. SC 1.3.1, and the same class as the
+  F7.1a US1 missing-caption blocker. Cheap fix: a visually-hidden `<caption>` reusing the key the
+  region already uses.
+- **U32 — the preview header renders an empty `<h2>`-level heading on every cold load.**
+  `src/components/broadcast/preview-pane.tsx:68-70` — `{subject.length > 0 ? subject : ' '}` puts a
+  single space inside an `<h3>`, measured at `textContent.length === 1` and **0 px tall**. It is
+  present before the first keystroke and returns whenever the subject is cleared. axe's
+  `empty-heading` sits on the best-practice tag, so the AA-scoped T139 run cannot see it. Render the
+  heading conditionally, or reserve the row with a non-heading element.
+
+**LOW**
+
+- **U33 — the toolbar wraps to 2 rows at ≥ 1152 px but fits in 1 row at 768 px.** The container caps
+  at 1152 px while the preview pane keeps its column, freezing the editor at 430 px — see the table
+  above. Not a defect in any checklist sense; recorded because it is the opposite of what a
+  "responsive" reading of the earlier admin-only numbers would predict, and because it makes 768 px,
+  not desktop, the width at which this toolbar looks designed.
+- **U34 — the ClamAV health probe 404s forever, once on mount and then every 30 s.**
+  `src/components/broadcast/clamav-unreachable-banner.tsx:34` polls
+  `/api/internal/clamav/health`; **no such route exists under `src/app/api/`** — the component's own
+  docblock says the endpoint is out of scope and `:42-44` deliberately treats 404 as "no signal", so
+  the *UI* is correct and no false banner appears. The cost is that every open compose tab (member
+  and staff) emits a console error every 30 s — measured 3 on first paint — which makes "zero console
+  errors" useless as a smoke signal on this surface and buries anything real. Either ship the route
+  or stop polling until it exists.
+- **U35 — the cancel-broadcast confirm has no typed-match while its own copy says the act is
+  final.** The dialog body reads "Once cancelled it cannot be re-sent" / *"เมื่อยกเลิกแล้วจะไม่สามารถส่งซ้ำได้"*.
+  Everything else about it is right (see footnote ⁶). The inconsistency is that
+  `clear-halt-dialog.tsx:132` gates a *less* final, staff-side action behind a normalised typed-match
+  while the member's irreversible one is a single click. Pick one rule.
+- **U36 — the marketing-consent banner puts an `<h2>` above the page `<h1>` and owns the first three
+  tab stops**, on all three surfaces walked here and on `/portal` besides. The outline reads
+  h2 → h1 → h2 …, which axe permits (a level decrease is legal) but which no outline reader expects,
+  and a keyboard member passes "Read the privacy policy / I acknowledge / Remind me later" before
+  reaching the Subject field on every single visit until they acknowledge.
+- **U37 — the member history table does not collapse to cards below `md`.** `min-w-[640px]` inside
+  the shared `overflow-x-auto` container: at a 320 px viewport the table is **729 px** wide in a
+  **209 px** box, so Status / Audience / Submitted / Sent are reachable only by swiping a nested
+  region. § 15 item 1 still PASSES — there is no *page* scroll — and the region is named and
+  keyboard-reachable, so this is a density decision rather than a violation. It is recorded because
+  the **admin** queue has `QueueCardList` below `md` and the member surface, which is the one most
+  likely to be read on a phone, does not.
+
+###### Still not verifiable
+
+- **NVDA — the screen-reader pass remains OWED to the maintainer and is NOT discharged by anything
+  above.** What this round adds is only more accessibility-tree evidence (names, roles, live
+  regions, focus order, `aria-disabled` on the PB compose button, focus return from the PD dialog).
+  It is not a screen-reader run and must not be quoted as one.
+- **axe was not run in this walk** — the § 15 `axe WCAG 2.1 AA` row still points at T139. U31 and
+  U32 are the two findings most likely to move a future axe run, and U32 will not, because
+  `empty-heading` is outside the AA tag set.
+- **PD was not measured at 1920 px** (320 and 1440 only).
+- Two dev-server artefacts, checked and deliberately **not** recorded as defects: the very first
+  navigation to `/portal/benefits?tab=broadcasts` returned **HTTP 500** with an empty body and no
+  error boundary, and did not reproduce on reload or on any of the six later visits (Turbopack cold
+  compile); and one locale switch on that same route left the page in the previous locale until a
+  hard reload, which also did not reproduce on a second attempt. Both are noted so a future walk
+  that sees them once does not spend the afternoon on them — but if either becomes repeatable on a
+  warm server, it is a real finding.
+
+###### Status after U27–U32 — 2026-09-22
+
+**CLOSED** (each test RED before the fix; no commits): **U27** (the unsaved-changes guard is now
+`<UnsavedChangesGuard>` — `beforeunload` AND a capture-phase in-app `<a>` interception with a
+confirmation dialog — rendered by member compose, staff compose-on-behalf and Brand settings) ·
+**U28** (both draft routes answer `broadcast_subject_empty` / `broadcast_subject_too_long` /
+`broadcast_body_too_large` instead of `invalid_body`, which now has a key in all three locales,
+and the member form maps a draft refusal through `ERROR_CODE_FIELD`) · **U29** (a dimmed Submit
+carries `aria-describedby`; on BOTH compose forms, because `compose-parity.test.tsx` refuses a
+member-only feature) · **U30** (`formatCalendarYear` — every year on the quota surface now
+renders in the locale’s own calendar; storage untouched) · **U31** (a visually-hidden
+`<caption>`) · **U32** (the empty `<h3>` is not rendered).
+
+**STILL OPEN**, untouched by that round: **U33** · **U34** · **U35** · **U36** · **U37** — and
+the two measurement debts above (NVDA, and axe on these three screens) remain OWED.
 
 ##### a11y e2e — the command, the result, and what a green run does NOT prove
 
