@@ -147,6 +147,24 @@ const getCurrentSessionMock = vi.fn();
 const countTemplateStartMock = vi.fn();
 const isF71aUs7EnabledMock = vi.fn();
 const checkLimitMock = vi.fn();
+const auditAppendMock = vi.fn(async (_event: unknown) => {});
+const permissionDeniedMock = vi.fn();
+
+// The staff 403 records the same `permission_denied` row + metric every other
+// staff refusal does (`@/lib/rbac`'s denial path, audit repo imported lazily).
+vi.mock('@/modules/auth/infrastructure/db/audit-repo', () => ({
+  auditRepo: { append: (event: unknown) => auditAppendMock(event) },
+}));
+vi.mock('@/lib/metrics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/metrics')>();
+  return {
+    ...actual,
+    authMetrics: {
+      ...actual.authMetrics,
+      permissionDenied: (labels: unknown) => permissionDeniedMock(labels),
+    },
+  };
+});
 
 vi.mock('@/lib/auth-session', () => ({
   getCurrentSession: (...args: unknown[]) => getCurrentSessionMock(...args),
@@ -183,7 +201,7 @@ function makeContext(id: string = TEMPLATE_ID): {
 describe('F119 T108 — POST /api/broadcasts/templates/[id]/started', () => {
   beforeEach(() => {
     isF71aUs7EnabledMock.mockReturnValue(true);
-    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1' } });
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1', role: 'member' } });
     checkLimitMock.mockResolvedValue({ ok: true });
     countTemplateStartMock.mockReset();
     countTemplateStartMock.mockResolvedValue(ok({ counted: true }));
@@ -256,6 +274,76 @@ describe('F119 T108 — POST /api/broadcasts/templates/[id]/started', () => {
       err({ kind: 'template_soft_deleted' }),
     );
     expect((await POST(makeRequest(), makeContext())).status).toBe(410);
+  });
+
+  // The picker is shared by member compose and staff compose-on-behalf, so a
+  // member session counts; a STAFF session counts only when it could have
+  // composed at all (`broadcasts.write`, the permission the staff
+  // compose-on-behalf draft route gates on). A read-only `manager` cannot
+  // compose, so its "start" is not an adoption signal — it is inflation.
+  it.each([
+    ['member', 200],
+    ['admin', 200],
+    ['marketing', 200],
+    ['super_admin', 200],
+    ['manager', 403],
+  ] as const)('%s session → %i', async (role, status) => {
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1', role } });
+    const { POST } = await import(
+      '@/app/api/broadcasts/templates/[id]/started/route'
+    );
+    const res = await POST(makeRequest(), makeContext());
+
+    expect(res.status).toBe(status);
+    expect(countTemplateStartMock).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+  });
+
+  it('a refused staff session writes ONE permission_denied row and bumps the denial metric', async () => {
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-mgr', role: 'manager' } });
+    const { POST } = await import(
+      '@/app/api/broadcasts/templates/[id]/started/route'
+    );
+    const res = await POST(makeRequest(), makeContext());
+
+    expect(res.status).toBe(403);
+    expect(auditAppendMock).toHaveBeenCalledTimes(1);
+    const event = auditAppendMock.mock.calls[0]![0] as {
+      eventType: string;
+      actorUserId: string;
+      summary: string;
+    };
+    expect(event.eventType).toBe('permission_denied');
+    expect(event.actorUserId).toBe('usr-mgr');
+    // The REAL role (audit-truth) and the route, never a coerced one.
+    expect(event.summary).toBe(
+      `role=manager permission=broadcasts.write route=/api/broadcasts/templates/${TEMPLATE_ID}/started`,
+    );
+    expect(permissionDeniedMock).toHaveBeenCalledTimes(1);
+    expect(permissionDeniedMock).toHaveBeenCalledWith({
+      role: 'manager',
+      permission: 'broadcasts.write',
+    });
+  });
+
+  it('an admitted session writes no permission_denied row', async () => {
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1', role: 'member' } });
+    const { POST } = await import(
+      '@/app/api/broadcasts/templates/[id]/started/route'
+    );
+    await POST(makeRequest(), makeContext());
+
+    expect(auditAppendMock).not.toHaveBeenCalled();
+    expect(permissionDeniedMock).not.toHaveBeenCalled();
+  });
+
+  it('a refused staff session consumes no rate-limit bucket', async () => {
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1', role: 'manager' } });
+    const { POST } = await import(
+      '@/app/api/broadcasts/templates/[id]/started/route'
+    );
+    await POST(makeRequest(), makeContext());
+
+    expect(checkLimitMock).not.toHaveBeenCalled();
   });
 });
 

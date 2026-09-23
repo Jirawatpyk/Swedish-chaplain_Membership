@@ -29,8 +29,9 @@ import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 import { sanitizeHtml } from './sanitize-html';
 import {
   parseBlockMarkers,
+  hasBlockViolations,
   validateBlocks,
-  type BlockViolation,
+  type BlockViolations,
 } from '../../domain/design-blocks/block-markers';
 import {
   validateImageSourceAllowlist,
@@ -73,7 +74,7 @@ export type CreateBroadcastTemplateError =
       readonly unsafeImageSources: readonly string[];
     }
   /** FR-041 design-block rules — same kind and shape as `submitBroadcast`. */
-  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
+  | { readonly kind: 'content_rules'; readonly violations: BlockViolations }
   | TemplateCreateError;
 
 export interface CreateBroadcastTemplateOutput {
@@ -149,7 +150,7 @@ export async function createBroadcastTemplate(
   //     gives: there is no `broadcast_content_rules` event type, and reusing
   //     `broadcast_body_unsafe_html` would state something untrue of the body.
   const blockViolations = validateBlocks(parseBlockMarkers(sanitisedBody));
-  if (blockViolations.length > 0) {
+  if (hasBlockViolations(blockViolations)) {
     return err({ kind: 'content_rules', violations: blockViolations });
   }
 

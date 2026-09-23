@@ -115,7 +115,6 @@ function makeRepo(opts: {
           const take = Math.min(limit ?? remaining, remaining);
           remaining -= take;
           return {
-            prunedCount: take,
             prunedDrafts: Array.from({ length: take }, (_v, i) => ({
               broadcastId: `pooled-${remaining + take - i}`,
               requestedByMemberId: null,
@@ -124,7 +123,6 @@ function makeRepo(opts: {
         }
         const n = opts.prunedCount ?? 0;
         return {
-          prunedCount: n,
           // F2-1 — the ids the caller needs to stamp each draft's images.
           prunedDrafts: Array.from({ length: n }, (_v, i) => ({
             broadcastId: `pruned-${i}`,

@@ -30,11 +30,17 @@ export function contrastRatio(a: string, b: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-/** Ratio of `hex` against `#ffffff`, rounded to two decimals for messages. */
+/**
+ * Ratio of `hex` against `#ffffff`, for DISPLAY only — FLOORED to two
+ * decimals, never rounded, so a readout can never claim a threshold the raw
+ * ratio misses (#0080aa is ≈ 4.4986 raw: rounded it read "4.5"). Decisions
+ * use `meetsAaOnWhiteText`, which compares the raw ratio.
+ */
 export function contrastRatioOnWhite(hex: string): number {
-  return Math.round(contrastRatio(hex, '#ffffff') * 100) / 100;
+  return Math.floor(contrastRatio(hex, '#ffffff') * 100) / 100;
 }
 
+/** THE AA decision — raw ratio, server and client alike. */
 export function meetsAaOnWhiteText(hex: string): boolean {
   return contrastRatio(hex, '#ffffff') >= AA_MIN_CONTRAST;
 }

@@ -153,11 +153,13 @@ export interface DispatchScheduledBroadcastDeps {
   /**
    * F119 T031 (FR-041c) — the tenant's brand chrome, read LIVE at dispatch
    * and handed to the gateway so the delivered email equals the preview.
-   * Optional so every pre-F119 composition keeps compiling; the cron passes
-   * `brandChromePort`. A read fault degrades to no chrome (fail-soft) —
-   * a brand outage must never fail a send.
+   * REQUIRED: a composition that forgot it would ship every E-Blast without
+   * the postal address FR-041c requires, silently. The cron composes
+   * `brandChromePort` (the seam lives in `src/lib`, so the module's deps
+   * factory returns this type without it). A read FAULT degrades to no
+   * chrome (fail-soft, metered) — a brand outage must never fail a send.
    */
-  readonly brandChrome?: BrandChromePort;
+  readonly brandChrome: BrandChromePort;
   readonly membersBridge: MembersBridgePort;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
   readonly eventAttendees: EventAttendeesRepository;

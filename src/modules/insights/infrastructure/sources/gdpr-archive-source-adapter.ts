@@ -28,7 +28,12 @@ import {
   getEventAttendeesByMember,
   drizzleEventAttendeesQueryStrict,
 } from '@/modules/events';
-import { listMemberBroadcasts, makeListMemberBroadcastsDeps } from '@/modules/broadcasts';
+import {
+  listMemberBroadcasts,
+  listMemberBroadcastImages,
+  makeListMemberBroadcastImagesDeps,
+  makeListMemberBroadcastsDeps,
+} from '@/modules/broadcasts';
 import { gdprAuditSubsetReadAdapter } from '@/modules/auth';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -53,6 +58,7 @@ const MAX_INVOICES = 1000;
 const MAX_EVENTS = 1000;
 const BROADCAST_PAGE = 100;
 const MAX_BROADCASTS = 1000;
+const MAX_BROADCAST_IMAGES = 1000;
 const MAX_AUDIT_ROWS = 5000;
 const CHANGE_REQUEST_PAGE = 50;
 const MAX_CHANGE_REQUESTS = 1000;
@@ -285,6 +291,26 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     const broadcastsTruncated = broadcasts.length > MAX_BROADCASTS;
     if (broadcastsTruncated) broadcasts.length = MAX_BROADCASTS; // trim the probe row
 
+    // 5a) F119 R17 — every image uploaded for those E-Blasts, live AND stamped
+    //     (newest first). `listMemberBroadcastImages` already dropped the uploader
+    //     (the archive never names a user) and the URL of a stamped image (about
+    //     to be reclaimed — not re-published). Over-fetch by one like events.
+    const imagesRaw = await listMemberBroadcastImages(makeListMemberBroadcastImagesDeps(ctx.slug), {
+      memberId,
+      limit: MAX_BROADCAST_IMAGES + 1,
+    });
+    const broadcastImagesTruncated = imagesRaw.length > MAX_BROADCAST_IMAGES;
+    const broadcastImages = imagesRaw.slice(0, MAX_BROADCAST_IMAGES).map((img) => ({
+      imageId: img.imageId,
+      broadcastId: img.broadcastId,
+      contentHash: img.contentHash,
+      mimeType: img.mimeType,
+      byteSize: img.byteSize,
+      createdAt: img.createdAt.toISOString(),
+      deletedAt: isoOrNull(img.deletedAt),
+      ...(img.blobUrl === undefined ? {} : { blobUrl: img.blobUrl }),
+    }));
+
     // 5b) F114 — change requests (FR-030). Scoped as FR-029 when the requester
     //     is one of the member's linked contacts (their own in full + the
     //     company-level ones as a non-submitter sees them). An ON-BEHALF
@@ -361,6 +387,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     if (invoiceTotal > MAX_INVOICES) truncatedCategories.push('invoices');
     if (eventsTruncated) truncatedCategories.push('events');
     if (broadcastsTruncated) truncatedCategories.push('broadcasts');
+    if (broadcastImagesTruncated) truncatedCategories.push('broadcastImages');
     if (auditTruncated) truncatedCategories.push('auditEvents');
     if (changeRequestsTruncated) truncatedCategories.push('changeRequests');
 
@@ -432,6 +459,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
       invoices,
       events,
       broadcasts,
+      broadcastImages,
       auditEvents,
       changeRequests,
     };

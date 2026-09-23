@@ -63,6 +63,7 @@ export function buildGdprReadme(
     `- ${r.files.invoices}`,
     `- ${r.files.events}`,
     `- ${r.files.broadcasts}`,
+    `- ${r.files.broadcastImages}`,
     `- ${r.files.auditEvents}`,
     `- ${r.files.changeRequests}`,
     `- ${r.files.manifest}`,

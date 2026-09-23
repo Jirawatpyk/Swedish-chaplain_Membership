@@ -17,6 +17,7 @@
  */
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { markOwnerImagesRemoved } from '@/modules/broadcasts/application/use-cases/_mark-owner-images-removed';
 import { reclaimOrphanedImages } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-images';
 import { pruneExpiredDrafts } from '@/modules/broadcasts/application/use-cases/prune-expired-drafts';
@@ -35,7 +36,7 @@ import {
 const TENANT = 'tenant-swe' as never;
 const NOW = new Date('2026-09-22T03:00:00Z');
 const DRAFT = '11111111-1111-1111-1111-111111111111';
-const MEMBER = '22222222-2222-2222-2222-222222222222';
+const MEMBER = '22222222-2222-2222-2222-222222222222' as MemberId;
 
 function makeAudit(): AuditPort & { events: Array<{ tx: unknown; eventType: string; payload: Record<string, unknown> }> } {
   const events: Array<{ tx: unknown; eventType: string; payload: Record<string, unknown> }> = [];
@@ -345,7 +346,7 @@ describe('markOwnerImagesRemoved — F2-1', () => {
   it('an audit-emit failure propagates so the caller\'s tx rolls the stamp back', async () => {
     const imagesRepo = makeFakeBroadcastImagesRepo([imageRow({ id: 'img-1' })]);
     const audit = makeAudit();
-    vi.mocked(audit.emit).mockRejectedValueOnce(new Error('audit down'));
+    vi.mocked(audit.emitTyped).mockRejectedValueOnce(new Error('audit down'));
     await expect(
       markOwnerImagesRemoved(
         { imagesRepo, audit },
@@ -380,7 +381,6 @@ describe('pruneExpiredDrafts — F2-1: a pruned draft takes its images with it',
     const broadcastsRepo = {
       withTx: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn(TX)),
       pruneExpiredDrafts: vi.fn(async () => ({
-        prunedCount: 2,
         prunedDrafts: [
           { broadcastId: 'draft-a', requestedByMemberId: MEMBER },
           { broadcastId: 'draft-b', requestedByMemberId: null },
@@ -432,21 +432,19 @@ describe('pruneExpiredDrafts — F2-1: a pruned draft takes its images with it',
     const TX = Symbol('prune-tx');
     const pages = [
       {
-        prunedCount: 2,
         prunedDrafts: [
           { broadcastId: 'draft-a', requestedByMemberId: MEMBER },
           { broadcastId: 'draft-b', requestedByMemberId: null },
         ],
       },
       {
-        prunedCount: 1,
         prunedDrafts: [{ broadcastId: 'draft-c', requestedByMemberId: MEMBER }],
       },
     ];
     let page = 0;
     const pruneSpy = vi.fn(
       async (_t: unknown, _cutoff: unknown, _tx: unknown, _limit?: number) =>
-        pages[page++] ?? { prunedCount: 0, prunedDrafts: [] },
+        pages[page++] ?? { prunedDrafts: [] },
     );
     const broadcastsRepo = {
       withTx: vi.fn(async <T,>(fn: (tx: unknown) => Promise<T>) => fn(TX)),
@@ -667,7 +665,7 @@ describe('reclaimOrphanedImages — F2-1 orphan arm + F2-10 races', () => {
     );
 
     expect(audit.events.map((e) => e.payload['blob_disposition'])).toEqual(['deleted', 'reclaimed_by_sibling']);
-    const summaries = vi.mocked(audit.emit).mock.calls.map(([, e]) => e.summary);
+    const summaries = vi.mocked(audit.emitTyped).mock.calls.map(([, e]) => e.summary);
     expect(summaries).toEqual([
       'E-Blast image swept (blob deleted)',
       'E-Blast image swept (blob already deleted by an earlier row of this sweep)',

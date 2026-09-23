@@ -13,6 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
 import type {
   ImageAllowlistPort,
@@ -35,7 +36,7 @@ const DRAFT = '11111111-1111-1111-1111-111111111111';
 // F119 T033 — the use case now takes the OWNER (a draft is a `broadcasts`
 // row) and the ACTOR (a member upload carries `member_id` in the audit).
 const OWNER = { kind: 'broadcast', id: DRAFT } as const;
-const MEMBER_ACTOR = { role: 'member', memberId: '22222222-2222-2222-2222-222222222222' } as const;
+const MEMBER_ACTOR = { role: 'member', memberId: '22222222-2222-2222-2222-222222222222' as MemberId } as const;
 
 const PNG_4MB = Buffer.alloc(4 * 1024 * 1024, 0x42);
 const JPG_6MB = Buffer.alloc(6 * 1024 * 1024, 0x42);
@@ -104,6 +105,7 @@ const makeDeps = (
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(),
     markDeletedForMember: vi.fn(async () => []),
+    listByMember: vi.fn(async () => []),
     // ROUND-2 R-M1 / S-3 — the batched prune stamp and the sweep's
     // keep-the-row arm. Unstubbed, either is an unexercised branch.
     markDeletedByOwners: vi.fn(async () => []),
@@ -395,7 +397,9 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     expect(deps.storage.put).toHaveBeenCalledTimes(2);
     expect(deps.imagesRepo.lockContentHash).toHaveBeenCalledTimes(1);
     expect(deps.imagesRepo.record).not.toHaveBeenCalled();
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+    // The upload audit is emitted through `emitTyped` (F119 typed shapes) —
+    // asserting on `emit` could never fail.
+    expect(deps.audit.emitTyped).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ eventType: 'broadcast_image_uploaded' }),
     );

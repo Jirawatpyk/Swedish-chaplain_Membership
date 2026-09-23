@@ -9,6 +9,7 @@
  * 100 % branch pinned (T157).
  */
 import { describe, expect, it, vi } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { setBrandSettings } from '@/modules/broadcasts/application/use-cases/set-brand-settings';
 import type { BrandSettingsRecord, BrandSettingsRepo } from '@/modules/broadcasts/application/ports/brand-settings-repo';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
@@ -18,7 +19,7 @@ const NOW = new Date('2026-09-18T10:00:00Z');
 
 function makeDeps(current: Partial<BrandSettingsRecord> = {}) {
   const record: BrandSettingsRecord = {
-    primaryColor: '#10487a',
+    primaryColor: '#10487a' as BrandHexColor,
     postalAddress: 'Old street 1',
     updatedAt: null,
     updatedByUserId: null,
@@ -34,6 +35,7 @@ function makeDeps(current: Partial<BrandSettingsRecord> = {}) {
   const repo: BrandSettingsRepo = {
     withTx: vi.fn(async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn('tx-1')),
     find: vi.fn(async () => record),
+    findForUpdate: vi.fn(async () => record),
     save: save as never,
   };
   const audit: AuditPort = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };
@@ -50,8 +52,8 @@ describe('setBrandSettings', () => {
     if (!r.ok) return;
     expect(r.value).toMatchObject({ primaryColor: '#b04a00', postalAddress: 'New street 2\nBangkok' });
     expect(save).toHaveBeenCalledWith(TENANT, { primaryColor: '#b04a00', postalAddress: 'New street 2\nBangkok', updatedByUserId: 'user-admin-1' }, 'tx-1');
-    expect(audit.emit).toHaveBeenCalledTimes(1);
-    const [tx, event] = (audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(audit.emitTyped).toHaveBeenCalledTimes(1);
+    const [tx, event] = (audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(tx).toBe('tx-1');
     expect(event).toMatchObject({
       eventType: 'broadcast_brand_settings_changed',
@@ -76,7 +78,7 @@ describe('setBrandSettings', () => {
     expect(r.error.required).toBe(4.5);
     expect(r.error.ratio).toBeLessThan(1.2);
     expect(save).not.toHaveBeenCalled();
-    expect(audit.emit).not.toHaveBeenCalled();
+    expect(audit.emitTyped).not.toHaveBeenCalled();
     expect(repo.withTx).not.toHaveBeenCalled();
   });
 
@@ -108,13 +110,13 @@ describe('setBrandSettings', () => {
     const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#10487a', postalAddress: 'Old street 1' });
     expect(r.ok).toBe(true);
     expect(save).not.toHaveBeenCalled();
-    expect(audit.emit).not.toHaveBeenCalled();
+    expect(audit.emitTyped).not.toHaveBeenCalled();
   });
 
   it('records actor_role as null when the session carries no role — never a literal', async () => {
     const { repo, audit } = makeDeps();
     await setBrandSettings({ repo, audit }, { ...base, actorRole: null, primaryColor: '#b04a00', postalAddress: undefined });
-    const [, event] = (audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, event] = (audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect((event as { payload: { actor_role: unknown } }).payload.actor_role).toBeNull();
   });
 

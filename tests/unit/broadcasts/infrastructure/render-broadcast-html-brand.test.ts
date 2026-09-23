@@ -11,6 +11,7 @@
  * (`render-broadcast-html-baseline.test.ts`, T007).
  */
 import { describe, expect, it } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { renderBroadcastHtml } from '@/modules/broadcasts/infrastructure/resend/email-template';
 
 const BASE = {
@@ -68,7 +69,7 @@ describe('design blocks are applied after sanitisation (T016 wiring)', () => {
   const cta = '<p>x</p><a data-eb="cta" href="https://e.example/">Go</a>';
 
   it('the CTA cell carries the tenant\'s brand_primary_color', () => {
-    const html = renderBroadcastHtml({ ...BASE, bodyHtml: cta, brand: { ...NO_BRAND, primaryColor: '#b04a00' } });
+    const html = renderBroadcastHtml({ ...BASE, bodyHtml: cta, brand: { ...NO_BRAND, primaryColor: '#b04a00' as BrandHexColor } });
     expect(html).toContain('bgcolor="#b04a00"');
     expect(html).not.toContain('data-eb="cta"');
   });

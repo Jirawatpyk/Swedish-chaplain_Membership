@@ -603,8 +603,8 @@ no post-erasure email is rendered from a `[redacted]` version. This is stated so
 task list names the outbox, not only the two child tables.
 **D (the last-reference rule spans both owner kinds)**: a blob is deleted only when **no** live
 `broadcast_images` row of **either** `owner_kind` — no E-Blast and no template — shares its
-`content_hash`. The reference is removed from the content immediately; the bytes go on the next daily
-sweep, i.e. **within 24 hours** of becoming unreferenced (spec § Personal data).
+`content_hash`. The reference is removed from the content immediately; the bytes go **on the next
+daily sweep tick (200 rows per arm per tenant)** after becoming unreferenced (spec § Personal data).
 **R**: spec § Personal data requires erasure and export to reach "every stored version, every
 feedback/note text and every image uploaded for the E-Blast, not only the current content", and
 "images of a withdrawn, rejected or erased E-Blast must not remain reachable". The panel's

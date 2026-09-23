@@ -16,13 +16,14 @@
  *             template probe.
  */
 import { describe, expect, it, vi } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { authorizeImageOwner } from '@/modules/broadcasts/application/use-cases/authorize-image-owner';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 
 const TENANT = 'tenant-swe' as never;
 const BID = '11111111-1111-1111-1111-111111111111';
-const MEMBER = '22222222-2222-2222-2222-222222222222';
-const OTHER = '33333333-3333-3333-3333-333333333333';
+const MEMBER = '22222222-2222-2222-2222-222222222222' as MemberId;
+const OTHER = '33333333-3333-3333-3333-333333333333' as MemberId;
 
 function broadcast(status: string, requestedByMemberId = MEMBER) {
   return { broadcastId: BID, status, requestedByMemberId } as never;

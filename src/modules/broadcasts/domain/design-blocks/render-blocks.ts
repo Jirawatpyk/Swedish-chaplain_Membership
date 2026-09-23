@@ -17,12 +17,12 @@
  * Appearance is defined here and by the tenant's brand colour only. The
  * user supplies text, link, image and description — nothing else.
  */
-import { DEFAULT_BRAND_PRIMARY_COLOR } from '../brand/brand-settings';
+import { DEFAULT_BRAND_PRIMARY_COLOR, type BrandHexColor } from '../brand/brand-settings';
 import { findBlockMarkers, type DesignBlock } from './block-markers';
 
 export interface DesignBlockBrand {
   /** `#rrggbb` or null ⇒ `DEFAULT_BRAND_PRIMARY_COLOR`. Email only (FR-041c). */
-  readonly primaryColor: string | null;
+  readonly primaryColor: BrandHexColor | null;
 }
 
 function escapeAttr(s: string): string {

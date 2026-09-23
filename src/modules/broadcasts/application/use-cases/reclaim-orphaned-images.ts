@@ -288,7 +288,7 @@ export async function reclaimOrphanedImages(
         }
 
         await deps.imagesRepo.remove(input.tenantId, image.id, tx);
-        await deps.audit.emit(tx, {
+        await deps.audit.emitTyped(tx, {
           eventType: 'broadcast_image_removed',
           tenantId: input.tenantId,
           requestId: input.requestId,

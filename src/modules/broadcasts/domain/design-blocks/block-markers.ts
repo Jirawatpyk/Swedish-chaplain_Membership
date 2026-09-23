@@ -183,3 +183,15 @@ export function validateBlocks(blocks: readonly DesignBlock[]): readonly BlockVi
   });
   return violations;
 }
+
+/**
+ * At least one violation — the shape a `content_rules` refusal carries. Typed
+ * non-empty so the 422 mapping reads the first code without an "empty list"
+ * fallback that no caller could reach.
+ */
+export type BlockViolations = readonly [BlockViolation, ...BlockViolation[]];
+
+/** Narrows `validateBlocks`' result: true iff the body broke at least one rule. */
+export function hasBlockViolations(violations: readonly BlockViolation[]): violations is BlockViolations {
+  return violations.length > 0;
+}

@@ -14,6 +14,7 @@
  * infected, invalid MIME) writes no row at all.
  */
 import { describe, expect, it, vi } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
 import type { ImageAllowlistPort, Hostname } from '@/modules/broadcasts/application/ports/image-allowlist-port';
 import type { VirusScannerPort } from '@/modules/broadcasts/application/ports/virus-scanner-port';
@@ -24,7 +25,7 @@ import { makeFakeImageReencoder } from '../../helpers/eblast-approval-fakes';
 
 const TENANT = 'tenant-swe' as never;
 const OWNER = '11111111-1111-1111-1111-111111111111';
-const MEMBER = '22222222-2222-2222-2222-222222222222';
+const MEMBER = '22222222-2222-2222-2222-222222222222' as MemberId;
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(1024, 0)]);
 const BLOB_URL = 'https://assets.swecham.zyncdata.app/broadcasts/images/tenant-swe/abc.png';
 const BLOB_KEY = 'broadcasts/images/tenant-swe/abc.png';
@@ -61,6 +62,7 @@ function makeDeps(o?: { existing?: boolean; verdict?: 'clean' | 'infected' }) {
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(),
     markDeletedForMember: vi.fn(async () => []),
+    listByMember: vi.fn(async () => []),
     // ROUND-2 R-M1 / S-3 — the batched prune stamp and the sweep's
     // keep-the-row arm. Unstubbed, either is an unexercised branch.
     markDeletedByOwners: vi.fn(async () => []),
@@ -110,8 +112,8 @@ describe('uploadInlineImage — records the image row + audit (T033)', () => {
       uploadedByUserId: 'user-1',
     });
     expect(typeof (row as { contentHash: string }).contentHash).toBe('string');
-    expect(deps.audit.emit).toHaveBeenCalledTimes(1);
-    const [auditTx, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(1);
+    const [auditTx, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(auditTx).toBe('tx-1');
     expect(event).toMatchObject({ eventType: 'broadcast_image_uploaded', tenantId: TENANT, actorUserId: 'user-1' });
   });
@@ -119,7 +121,7 @@ describe('uploadInlineImage — records the image row + audit (T033)', () => {
   it('a MEMBER upload\'s payload carries snake_case `member_id` (the 0009 trigger key), never the blob URL', async () => {
     const deps = makeDeps();
     await uploadInlineImage(deps, { ...base, owner: { kind: 'broadcast', id: OWNER }, actor: { role: 'member', memberId: MEMBER } });
-    const [, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     const payload = (event as { payload: Record<string, unknown> }).payload;
     expect(payload).toMatchObject({
       member_id: MEMBER,
@@ -143,7 +145,7 @@ describe('uploadInlineImage — records the image row + audit (T033)', () => {
       owner: { kind: 'broadcast', id: OWNER },
       actor: { role: 'marketing', relatedMemberId: MEMBER },
     });
-    const [, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     const payload = (event as { payload: Record<string, unknown> }).payload;
     expect(payload.related_member_id).toBe(MEMBER);
     expect(payload).not.toHaveProperty('member_id');
@@ -159,7 +161,7 @@ describe('uploadInlineImage — records the image row + audit (T033)', () => {
     });
     const [, row] = deps.record.mock.calls[0]!;
     expect(row).toMatchObject({ ownerKind: 'template', ownerId: OWNER });
-    const [, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect((event as { payload: Record<string, unknown> }).payload).toMatchObject({ owner_kind: 'template', related_member_id: null });
   });
 
@@ -177,7 +179,7 @@ describe('uploadInlineImage — records the image row + audit (T033)', () => {
     const r = await uploadInlineImage(deps, { ...base, owner: { kind: 'broadcast', id: OWNER }, actor: { role: 'member', memberId: MEMBER } });
     expect(r.ok).toBe(false);
     expect(deps.record).not.toHaveBeenCalled();
-    const types = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => (c[1] as { eventType: string }).eventType);
+    const types = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls.map((c) => (c[1] as { eventType: string }).eventType);
     expect(types).not.toContain('broadcast_image_uploaded');
   });
 });

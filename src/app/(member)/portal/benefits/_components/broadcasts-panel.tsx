@@ -52,6 +52,10 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-banner';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
+import {
+  BroadcastHistoryCardList,
+  type BroadcastHistoryRowView,
+} from './broadcast-history-card-list';
 
 const PER_PAGE = 10;
 
@@ -253,6 +257,24 @@ export async function BroadcastsPanel({
 
   const composeDisabled = quota !== null && quota.remaining === 0;
 
+  // U37 — formatted ONCE for both the desktop table and the phone card list,
+  // so the two representations cannot drift apart.
+  const historyRows: ReadonlyArray<BroadcastHistoryRowView> = history.map((row) => {
+    // Guard the i18n lookup: a broadcast status without a matching
+    // `status.*` key would otherwise throw at render (next-intl). Fall back
+    // to the raw status so a future enum value degrades gracefully.
+    const statusKey = row.status as Parameters<typeof tStatus>[0];
+    return {
+      broadcastId: row.broadcastId,
+      subject: row.subject,
+      statusLabel: tStatus.has(statusKey) ? tStatus(statusKey) : row.status,
+      estimatedRecipientCount: row.estimatedRecipientCount,
+      submitted:
+        row.submittedAt !== null ? dateFormatter.format(new Date(row.submittedAt)) : '—',
+      sent: row.sentAt !== null ? dateFormatter.format(new Date(row.sentAt)) : '—',
+    };
+  });
+
   return (
     <section aria-labelledby="broadcasts-panel-heading" className="flex flex-col gap-6">
       {/* Panel heading + Compose CTA. The <h2> replaces the e-blasts page
@@ -295,7 +317,7 @@ export async function BroadcastsPanel({
       />
 
       {/* AS4 empty-state OR AS1 history-table */}
-      {history.length === 0 ? (
+      {historyRows.length === 0 ? (
         // Shared EmptyState (standalone, so the default bordered placeholder).
         // One canonical empty-state treatment across the app (UX R2 #8/#10).
         <EmptyState
@@ -312,37 +334,33 @@ export async function BroadcastsPanel({
           }
         />
       ) : (
-        <Card>
-          <CardContent>
-            <Table
-              data-testid="broadcast-history-table"
-              aria-label={t('title')}
-              className="min-w-[640px]"
-            >
-              {/* U31 — the shared `Table` primitive pulls `aria-label` off and
-                  names the scroll REGION with it, so the <table> itself was
-                  anonymous to a screen reader listing tables (SC 1.3.1). Same
-                  class as the F7.1a US1 missing-caption blocker; same fix, and
-                  it reuses the key the region already carries. */}
-              <TableCaption className="sr-only">{t('title')}</TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead scope="col">{t('columns.subject')}</TableHead>
-                  <TableHead scope="col">{t('columns.status')}</TableHead>
-                  <TableHead scope="col">{t('columns.audience')}</TableHead>
-                  <TableHead scope="col">{t('columns.submittedAt')}</TableHead>
-                  <TableHead scope="col">{t('columns.sentAt')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.map((row) => {
-                  // Guard the i18n lookup: a broadcast status without a matching
-                  // `status.*` key would otherwise throw at render (next-intl).
-                  // Fall back to the raw status so a future enum value degrades
-                  // gracefully. Cast hoisted once (was repeated in has()+call()).
-                  const statusKey = row.status as Parameters<typeof tStatus>[0];
-                  const statusLabel = tStatus.has(statusKey) ? tStatus(statusKey) : row.status;
-                  return (
+        <>
+          {/* U37 — dual-render: the table from `md` up, the card list below it
+              (at 320 px the table was 729 px wide inside a 209 px box). */}
+          <Card className="hidden md:flex">
+            <CardContent>
+              <Table
+                data-testid="broadcast-history-table"
+                aria-label={t('title')}
+                className="min-w-[640px]"
+              >
+                {/* U31 — the shared `Table` primitive pulls `aria-label` off and
+                    names the scroll REGION with it, so the <table> itself was
+                    anonymous to a screen reader listing tables (SC 1.3.1). Same
+                    class as the F7.1a US1 missing-caption blocker; same fix, and
+                    it reuses the key the region already carries. */}
+                <TableCaption className="sr-only">{t('title')}</TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">{t('columns.subject')}</TableHead>
+                    <TableHead scope="col">{t('columns.status')}</TableHead>
+                    <TableHead scope="col">{t('columns.audience')}</TableHead>
+                    <TableHead scope="col">{t('columns.submittedAt')}</TableHead>
+                    <TableHead scope="col">{t('columns.sentAt')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {historyRows.map((row) => (
                     <TableRow key={row.broadcastId}>
                       <TableCell>
                         <Link
@@ -353,24 +371,27 @@ export async function BroadcastsPanel({
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{statusLabel}</Badge>
+                        <Badge variant="outline">{row.statusLabel}</Badge>
                       </TableCell>
                       <TableCell className="tabular-nums">{row.estimatedRecipientCount}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {row.submittedAt !== null
-                          ? dateFormatter.format(new Date(row.submittedAt))
-                          : '—'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {row.sentAt !== null ? dateFormatter.format(new Date(row.sentAt)) : '—'}
-                      </TableCell>
+                      <TableCell className="text-muted-foreground">{row.submitted}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.sent}</TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+          <BroadcastHistoryCardList
+            rows={historyRows}
+            labels={{
+              audience: t('columns.audience'),
+              submittedAt: t('columns.submittedAt'),
+              sentAt: t('columns.sentAt'),
+            }}
+            className="md:hidden"
+          />
+        </>
       )}
 
       {/* Server-driven pagination (T128 / T129). At edges, render a

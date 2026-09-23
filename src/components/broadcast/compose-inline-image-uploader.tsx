@@ -13,7 +13,7 @@
  *   - <progress aria-label> for upload-in-flight feedback
  *   - role="alert" on inline error so it's announced immediately
  */
-import { useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -43,6 +43,13 @@ interface Props {
    * pre-check, one error surface — never a second component.
    */
   readonly uploadUrl?: string;
+  /**
+   * The file picker was dismissed without a file — the input's `cancel`
+   * event, or (where that event does not exist) the uploader's own button
+   * being clicked afterwards — so a caller holding state for "the file about
+   * to arrive" — the editor's pending description — can drop it.
+   */
+  readonly onPickerCancel?: () => void;
   readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
 }
 
@@ -50,6 +57,7 @@ export function ComposeInlineImageUploader({
   draftId,
   onUploaded,
   uploadUrl = MEMBER_INLINE_IMAGE_UPLOAD_URL,
+  onPickerCancel,
   ref,
 }: Props): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.imageUpload');
@@ -59,7 +67,22 @@ export function ComposeInlineImageUploader({
 
   useImperativeHandle(ref, () => ({ openPicker: () => fileRef.current?.click() }), []);
 
+  // A native listener, not React's `onCancel` prop: React attaches `cancel`
+  // only to <dialog>, so the prop would never fire on an <input type="file">.
+  useEffect(() => {
+    const input = fileRef.current;
+    if (input === null || onPickerCancel === undefined) return;
+    input.addEventListener('cancel', onPickerCancel);
+    return () => input.removeEventListener('cancel', onPickerCancel);
+  }, [onPickerCancel]);
+
+  // The uploader's OWN button — never `openPicker()`, which the alt-first flow
+  // uses. If this button can be clicked, no picker the description opened is
+  // still open, so that picker was dismissed: report it. That is the guard on
+  // browsers without the input `cancel` event (Safari < 16.4), where the
+  // listener above never fires.
   const handlePick = (): void => {
+    onPickerCancel?.();
     fileRef.current?.click();
   };
 

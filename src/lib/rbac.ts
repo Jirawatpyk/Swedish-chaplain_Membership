@@ -321,6 +321,25 @@ export async function requireApiPermission(
 }
 
 /**
+ * The denial trail of {@link requireApiPermission} — the `permission_denied`
+ * row plus `rbac_permission_denied_total` — for a route that decided the
+ * refusal itself with {@link canPerform}. For a dual-audience (session-any)
+ * route that cannot use `requireApiPermission`, because that needs a
+ * role-matrix baseline row and a role-matrix row would refuse its members.
+ * Never throws, like the gate's own path.
+ */
+export async function recordApiPermissionDenial(
+  request: NextRequest,
+  current: CurrentSession,
+  key: PermissionKey,
+  deps: RbacDeps = defaultDeps,
+): Promise<void> {
+  const requestId = await deps.requestId(request);
+  const routePath = await deps.routePath(request);
+  await recordDenial(deps, current, key, routePath, requestId, deps.sourceIp(request));
+}
+
+/**
  * Read-only check for render decisions (does this staff user get the button?).
  * No audit, no denial — callers use it to shape a page, never to gate one.
  *

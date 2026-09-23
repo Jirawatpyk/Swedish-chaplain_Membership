@@ -346,12 +346,19 @@ export {
   type ListMemberBroadcastsInput,
   type ListMemberBroadcastsOutput,
 } from './application/use-cases/list-member-broadcasts';
+// F119 R17 — the member's E-Blast images, for the F9 GDPR archive
+export {
+  listMemberBroadcastImages,
+  type ListMemberBroadcastImagesInput,
+  type MemberBroadcastImage,
+} from './application/use-cases/list-member-broadcast-images';
 
 // --- Composition root factories (Phase 5 US3) ----------------------------
 export {
   makeAcknowledgeBroadcastsTermsDeps,
   makeGetMemberBroadcastDeps,
   makeListMemberBroadcastsDeps,
+  makeListMemberBroadcastImagesDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 7 US5) ---------------------------------
@@ -656,6 +663,7 @@ export {
   BRAND_POSTAL_ADDRESS_MAX,
   parseBrandPrimaryColor,
   parseBrandPostalAddress,
+  type BrandHexColor,
   type BrandSettings,
 } from './domain/brand/brand-settings';
 export {
@@ -669,9 +677,11 @@ export {
   CTA_MAX_PER_MESSAGE,
   CTA_TEXT_MAX,
   BANNER_ALT_MAX,
+  hasBlockViolations,
   parseBlockMarkers,
   validateBlocks,
   type BlockViolation,
+  type BlockViolations,
   type DesignBlock,
 } from './domain/design-blocks/block-markers';
 export { applyDesignBlocks } from './domain/design-blocks/render-blocks';

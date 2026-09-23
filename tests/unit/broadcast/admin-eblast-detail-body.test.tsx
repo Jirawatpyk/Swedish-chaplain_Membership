@@ -24,6 +24,7 @@
  * Mirrors `portal-eblast-detail-body.test.tsx`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement, ReactNode } from 'react';
 import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
@@ -186,7 +187,7 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
    */
   it('the delivered document turns a CTA marker into a bgcolor table; the raw sanitiser leaves a bare link', async () => {
     const delivered = await renderBroadcastPreview(
-      { sanitizer: dompurifySanitizer, brand: { load: async () => ({ primaryColor: '#123456', postalAddress: null, logoUrl: null }) }, renderer: emailTemplateRenderer },
+      { sanitizer: dompurifySanitizer, brand: { load: async () => ({ primaryColor: '#123456' as BrandHexColor, postalAddress: null, logoUrl: null }) }, renderer: emailTemplateRenderer },
       {
         tenantId: 'tenant-a' as never,
         tenantDisplayName: 'Tenant A',

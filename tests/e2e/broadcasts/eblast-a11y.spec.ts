@@ -147,8 +147,12 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
         // render branches — not `getByRole('tab', { selected: true })`, which
         // the fallback would satisfy just as happily and hand axe the wrong
         // screen under the right test name.
+        //
+        // U37 — at this 320 px viewport the history is the CARD LIST; the
+        // table is `hidden` below `md`, so anchoring on it would never be
+        // visible (and `.or()`-ing both would match two elements).
         p
-          .getByTestId('broadcast-history-table')
+          .getByTestId('broadcast-history-card-list')
           .or(p.getByTestId('broadcast-empty-state')),
       );
     });

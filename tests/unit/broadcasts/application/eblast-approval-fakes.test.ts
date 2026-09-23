@@ -7,6 +7,8 @@
  * `satisfies`) before it can make a use-case test lie.
  */
 import { describe, expect, it } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
+import type { MemberId } from '@/modules/members';
 import { reclaimOrphanedImages } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-images';
 import { setBrandSettings } from '@/modules/broadcasts/application/use-cases/set-brand-settings';
 import { getBrandSettings } from '@/modules/broadcasts/application/use-cases/get-brand-settings';
@@ -66,7 +68,7 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
     };
     // Two owners share one blob (a template image carried into a draft).
     const a = await uploadInlineImage({ allowlistPort, scanner, storage, audit, imagesRepo, reencoder: makeFakeImageReencoder() }, { ...base, owner: { kind: 'template', id: '11111111-1111-1111-1111-111111111111' }, actor: { role: 'admin', relatedMemberId: null } });
-    const b = await uploadInlineImage({ allowlistPort, scanner, storage, audit, imagesRepo, reencoder: makeFakeImageReencoder() }, { ...base, owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' }, actor: { role: 'member', memberId: 'm-1' } });
+    const b = await uploadInlineImage({ allowlistPort, scanner, storage, audit, imagesRepo, reencoder: makeFakeImageReencoder() }, { ...base, owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' }, actor: { role: 'member', memberId: 'm-1' as MemberId } });
     expect(a.ok && b.ok).toBe(true);
     expect(imagesRepo.rows).toHaveLength(2);
     expect(storage.keys.size).toBe(1);
@@ -87,7 +89,7 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
   });
 
   it('brand repo + logo port: set then get round-trips through the fakes', async () => {
-    const repo = makeFakeBrandSettingsRepo({ [TENANT as unknown as string]: { primaryColor: '#10487a' } });
+    const repo = makeFakeBrandSettingsRepo({ [TENANT as unknown as string]: { primaryColor: '#10487a' as BrandHexColor } });
     const audit = makeAudit();
     const set = await setBrandSettings({ repo, audit }, { tenantId: TENANT, actorUserId: 'u1', actorRole: 'admin', requestId: 'r', primaryColor: '#b04a00', postalAddress: '1 Street' });
     expect(set.ok).toBe(true);
@@ -102,7 +104,7 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
     const r = await sendTestCopy(
       {
         sanitizer: { sanitize: (h) => h },
-        brand: makeFakeBrandChromePort({ primaryColor: '#b04a00', postalAddress: '1 Street', logoUrl: null }),
+        brand: makeFakeBrandChromePort({ primaryColor: '#b04a00' as BrandHexColor, postalAddress: '1 Street', logoUrl: null }),
         renderer: makeFakeEmailRenderer(),
         mailer,
         audit,

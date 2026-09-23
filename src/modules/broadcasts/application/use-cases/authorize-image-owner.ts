@@ -21,6 +21,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import type { MemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
@@ -49,7 +50,7 @@ export interface AuthorizeImageOwnerDeps {
 }
 
 export type ImageUploadActor =
-  | { readonly kind: 'member'; readonly memberId: string }
+  | { readonly kind: 'member'; readonly memberId: MemberId }
   | { readonly kind: 'staff' };
 
 export interface AuthorizeImageOwnerInput {
@@ -95,7 +96,7 @@ export async function authorizeImageOwner(
 
   const broadcastId = input.owner.id as BroadcastId;
   if (input.actor.kind === 'member') {
-    const found = await deps.broadcastsRepo.findOwnedByMember(input.tenantId, input.actor.memberId as never, broadcastId);
+    const found = await deps.broadcastsRepo.findOwnedByMember(input.tenantId, input.actor.memberId, broadcastId);
     if (found.broadcast === null) {
       if (found.probeKind === 'cross_member') {
         // F2-5: emit through the COMPILE-CHECKED shape with the camelCase keys

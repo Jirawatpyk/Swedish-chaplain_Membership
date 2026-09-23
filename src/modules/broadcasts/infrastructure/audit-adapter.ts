@@ -92,33 +92,52 @@ export const f7AuditAdapter: AuditPort = {
    * syntax error, and there is nothing to write).
    */
   async emitMany(txUnknown: unknown, events: readonly AuditEmitInput[]): Promise<void> {
-    if (events.length === 0) return;
-    for (const event of events) {
-      if (txUnknown !== null && event.tenantId === null) {
-        throw new AuditPortInvariantError(
-          event.eventType,
-          `mutation tx requires non-null tenantId. Use tx=null for system audits.`,
-        );
-      }
-    }
+    await insertAuditRows(txUnknown, events);
+  },
 
-    const tx = (txUnknown as TenantTx | null) ?? db;
-    const rows = events.map(
-      (event) => sql`(
-        ${event.eventType}::audit_event_type,
-        ${event.actorUserId},
-        ${event.summary},
-        ${event.requestId ?? 'no-request-id'},
-        ${JSON.stringify(event.payload)}::jsonb,
-        ${event.tenantId},
-        ${f7RetentionFor(event.eventType)}
-      )`,
-    );
-
-    await tx.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-      VALUES ${sql.join(rows, sql`, `)}
-    `);
+  /**
+   * F119 — typed counterpart of `emitMany`, exactly as `emitTyped` is of
+   * `emit`: the payload is constrained at the call site, the INSERT is the
+   * same one statement.
+   */
+  async emitManyTyped<E extends keyof F7AuditPayloadShapes>(
+    txUnknown: unknown,
+    events: readonly TypedAuditEmitInput<E>[],
+  ): Promise<void> {
+    await insertAuditRows(txUnknown, events as readonly AuditEmitInput[]);
   },
 };
+
+/**
+ * ROUND-2 R-M6 — the multi-row INSERT behind `emitMany` / `emitManyTyped`.
+ */
+async function insertAuditRows(txUnknown: unknown, events: readonly AuditEmitInput[]): Promise<void> {
+  if (events.length === 0) return;
+  for (const event of events) {
+    if (txUnknown !== null && event.tenantId === null) {
+      throw new AuditPortInvariantError(
+        event.eventType,
+        `mutation tx requires non-null tenantId. Use tx=null for system audits.`,
+      );
+    }
+  }
+
+  const tx = (txUnknown as TenantTx | null) ?? db;
+  const rows = events.map(
+    (event) => sql`(
+      ${event.eventType}::audit_event_type,
+      ${event.actorUserId},
+      ${event.summary},
+      ${event.requestId ?? 'no-request-id'},
+      ${JSON.stringify(event.payload)}::jsonb,
+      ${event.tenantId},
+      ${f7RetentionFor(event.eventType)}
+    )`,
+  );
+
+  await tx.execute(sql`
+    INSERT INTO audit_log
+      (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+    VALUES ${sql.join(rows, sql`, `)}
+  `);
+}

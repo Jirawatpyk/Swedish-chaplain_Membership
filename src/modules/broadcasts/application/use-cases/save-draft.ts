@@ -31,8 +31,9 @@ import type { BroadcastSegmentType } from '../../domain/value-objects/segment-ty
 import { composeBroadcastFromName } from '../../domain/from-name';
 import {
   parseBlockMarkers,
+  hasBlockViolations,
   validateBlocks,
-  type BlockViolation,
+  type BlockViolations,
 } from '../../domain/design-blocks/block-markers';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
@@ -50,7 +51,7 @@ export type SaveDraftError =
   // route helper always documented as "refused 422 at every save" but which
   // only `sendTestCopy` actually ran. Same kind + shape as `SendTestCopyError`
   // so both surfaces map through one helper.
-  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
+  | { readonly kind: 'content_rules'; readonly violations: BlockViolations }
   | {
       readonly kind: 'broadcast_member_missing_primary_contact_email';
       readonly memberId: string;
@@ -136,7 +137,7 @@ export async function saveDraft(
   // `Result` refusal returned from inside a transaction COMMITS whatever the
   // transaction already wrote.
   const violations = validateBlocks(parseBlockMarkers(sanitised.value.sanitisedHtml));
-  if (violations.length > 0) {
+  if (hasBlockViolations(violations)) {
     return err({ kind: 'content_rules', violations });
   }
 

@@ -18,7 +18,7 @@
  * deletion co-commit. A stamp that commits without the delete marks live
  * images for reaping; a delete that commits without the stamp is the bug above.
  *
- * The audit emit is RAW (`audit.emit`, not `safeAuditEmit`): this row is the
+ * The audit emit is RAW (`audit.emitTyped`, not `safeAuditEmitTyped`): this row is the
  * PDPA evidence that the reference was removed, so a failed emit must roll the
  * stamp back rather than leave an unevidenced deletion.
  *
@@ -29,7 +29,7 @@
  * Pure Application — only ports.
  */
 import type { TenantSlug } from '@/modules/tenants';
-import type { AuditPort } from '../ports/audit-port';
+import type { AuditPort, TypedAuditEmitInput } from '../ports/audit-port';
 import type { BroadcastImageOwnerKind, BroadcastImagesRepo, BroadcastImagesTx } from '../ports/broadcast-images-repo';
 
 /**
@@ -85,13 +85,18 @@ export async function markOwnerImagesRemoved(
 export async function auditImagesRemoved(
   audit: AuditPort,
   input: Omit<MarkOwnerImagesRemovedInput, 'owner'>,
-  images: readonly { readonly id: string; readonly ownerKind: string; readonly ownerId: string; readonly contentHash: string }[],
+  images: readonly {
+    readonly id: string;
+    readonly ownerKind: BroadcastImageOwnerKind;
+    readonly ownerId: string;
+    readonly contentHash: string;
+  }[],
   tx: BroadcastImagesTx,
 ): Promise<void> {
   if (images.length === 0) return;
 
-  const events = images.map((image) => ({
-    eventType: 'broadcast_image_removed' as const,
+  const events = images.map((image): TypedAuditEmitInput<'broadcast_image_removed'> => ({
+    eventType: 'broadcast_image_removed',
     tenantId: input.tenantId,
     requestId: input.requestId,
     actorUserId: input.actorUserId,
@@ -114,15 +119,15 @@ export async function auditImagesRemoved(
   // round-trip issued INSIDE the erasure transaction, which is already holding
   // the member row and every other cascade write open for its whole length.
   //
-  // `emitMany` is OPTIONAL on the port (it is annotated at ~196 sites, mostly
-  // doubles), so the per-row loop stays as the fallback. Both arms write the
-  // same rows in the same order on the same `tx`.
-  const emitMany = audit.emitMany;
-  if (emitMany !== undefined) {
-    await emitMany.call(audit, tx, events);
+  // `emitManyTyped` is OPTIONAL on the port (it is annotated at ~196 sites,
+  // mostly doubles), so the per-row loop stays as the fallback. Both arms
+  // write the same rows in the same order on the same `tx`, and both are
+  // typed: the payload is checked against `F7AuditPayloadShapes` either way.
+  if (audit.emitManyTyped !== undefined) {
+    await audit.emitManyTyped(tx, events);
     return;
   }
   for (const event of events) {
-    await audit.emit(tx, event);
+    await audit.emitTyped(tx, event);
   }
 }

@@ -486,7 +486,7 @@ export interface BroadcastsRepo {
     tx?: unknown | null,
     limit?: number,
   ): Promise<{
-    readonly prunedCount: number;
+    /** The drafts this batch deleted; its `length` is the batch's count. */
     readonly prunedDrafts: readonly {
       readonly broadcastId: string;
       /** The owning member, for the image audit's `related_member_id`. */

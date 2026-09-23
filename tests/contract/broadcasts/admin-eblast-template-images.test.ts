@@ -15,6 +15,7 @@
  * sweep keeps the blob.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { NextRequest, NextResponse } from 'next/server';
 import { err, ok } from '@/lib/result';
 
@@ -130,7 +131,7 @@ describe('template images travel by reference (FR-046a) — real use cases over 
     const tpl = await __actualUpload(deps, { ...base, owner: { kind: 'template', id: TID }, actor: { role: 'admin', relatedMemberId: null } });
     expect(tpl.ok).toBe(true);
     // The member starts a draft from the template: same bytes, its own row.
-    const draft = await __actualUpload(deps, { ...base, owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' }, actor: { role: 'member', memberId: 'm-1' } });
+    const draft = await __actualUpload(deps, { ...base, owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' }, actor: { role: 'member', memberId: 'm-1' as MemberId } });
     expect(draft.ok).toBe(true);
     expect(imagesRepo.rows).toHaveLength(2);
     expect(storage.keys.size).toBe(1);

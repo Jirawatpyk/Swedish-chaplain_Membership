@@ -10,9 +10,11 @@
  *     before the round-trip. `PATCH` answers 422 `colour_contrast` when white
  *     text on the colour is below WCAG AA 4.5:1, so the readout states the
  *     measured ratio live and Save is disabled below the threshold: the
- *     refusal is never a surprise. The arithmetic is the Domain's own
- *     (`contrastRatioOnWhite`), reached through `@/lib/brand-settings-client`
- *     — a second copy would drift from what the server refuses with.
+ *     refusal is never a surprise. The arithmetic is the Domain's own,
+ *     reached through `@/lib/brand-settings-client` — a second copy would
+ *     drift from what the server refuses with. Save is gated on the SAME
+ *     predicate the server refuses with (`meetsAaOnWhiteText`, raw ratio),
+ *     never on the displayed ratio (`contrastRatioOnWhite`, two decimals).
  *   - **Postal address** — writable, free text, line breaks allowed, 300
  *     characters the only bound (FR-041c). Empty is a legitimate state of the
  *     world, so it reads as a `role="status"` NOTICE, never a field error, and
@@ -60,10 +62,12 @@ import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-aler
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
 import {
   AA_MIN_CONTRAST,
   BRAND_POSTAL_ADDRESS_MAX,
   contrastRatioOnWhite,
+  meetsAaOnWhiteText,
   parseBrandPrimaryColor,
 } from '@/lib/brand-settings-client';
 import type { BrandSettingsView } from '@/modules/broadcasts';
@@ -113,7 +117,7 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
   const parsed = useMemo(() => parseBrandPrimaryColor(effective), [effective]);
   const normalisedColour = parsed.ok ? parsed.value : null;
   const ratio = normalisedColour === null ? null : contrastRatioOnWhite(normalisedColour);
-  const meetsAa = ratio !== null && ratio >= AA_MIN_CONTRAST;
+  const meetsAa = normalisedColour !== null && meetsAaOnWhiteText(normalisedColour);
 
   const normalisedAddress = normaliseAddress(address);
   const addressTooLong = normalisedAddress.length > BRAND_POSTAL_ADDRESS_MAX;
@@ -336,22 +340,16 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
                `images.remotePatterns` — same call as
                `directory-logo-control.tsx`.
 
-               T155 finding U16 — the backing was `bg-white`: measured in dark
-               mode as a 91 × 64 px `rgb(255,255,255)` patch on a `lab(7.8 …)`
-               card. The email PREVIEW iframe keeps white and is right to (see
-               `use-preview-html.tsx` — it is a whole document every mail
-               client composites on white); this is a chrome-scale swatch, and
-               chrome follows the theme. The checker is the affordance that
-               white was standing in for: it says "this part of the PNG is
-               transparent" in either theme, without a glare patch. */
+               T155 finding U16, revised by the F119 UX review — the backing
+               is the fixed LIGHT checker: the logo shown the way the E-Blast
+               shows it, on white (every mail client composites the email on
+               white), with the check marking transparent pixels. A themed
+               checker (`bg-card` + `--color-muted`) hid dark logos in dark
+               mode. */
             <div
               data-testid="brand-logo-preview"
-              className="inline-block rounded-md border bg-card p-2"
-              style={{
-                backgroundImage:
-                  'repeating-conic-gradient(var(--color-muted) 0% 25%, transparent 0% 50%)',
-                backgroundSize: '12px 12px',
-              }}
+              className="inline-block rounded-md border p-2"
+              style={TRANSPARENCY_CHECKER_STYLE}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img

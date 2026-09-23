@@ -31,6 +31,13 @@
  *   (c) cancel         — an abandoned description is not inherited by the next
  *       upload: the author is asked again, and the image that lands carries
  *       the NEW description.
+ *   (d) dismissed picker — describe, Insert, then close the file picker with no
+ *       file: the next upload through the uploader's own button is asked for
+ *       its own description (the stale `{ kind, alt }` was being attached).
+ *       Its second case runs the REAL uploader, since the stub cannot prove
+ *       the input's native `cancel` event is wired; its third proves the
+ *       uploader's own button reports the dismissal too (browsers without the
+ *       event), while `openPicker()` — the alt-first hand-off — does not.
  *   (a) also kills clearing `pendingImageRef` UNCONDITIONALLY on close (`if
  *       (!next)`): the confirmed description must survive the dialog's own
  *       close render, or the upload that follows finds nothing to attach and
@@ -56,6 +63,8 @@ const mocks = vi.hoisted(() => ({
   openPicker: vi.fn<() => void>(),
   /** The editor's own `handleUploaded`, captured so the test can drive it. */
   onUploaded: { current: null as ((blobUrl: string) => void) | null },
+  /** The editor's picker-cancel handler, captured so the test can dismiss the picker. */
+  onPickerCancel: { current: null as (() => void) | null },
 }));
 
 vi.mock('@/components/broadcast/clamav-unreachable-banner', () => ({
@@ -65,9 +74,11 @@ vi.mock('@/components/broadcast/clamav-unreachable-banner', () => ({
 vi.mock('@/components/broadcast/compose-inline-image-uploader', () => ({
   ComposeInlineImageUploader: (props: {
     readonly onUploaded: (blobUrl: string) => void;
+    readonly onPickerCancel?: () => void;
     readonly ref?: React.Ref<{ openPicker(): void }>;
   }): React.ReactElement => {
     mocks.onUploaded.current = props.onUploaded;
+    mocks.onPickerCancel.current = props.onPickerCancel ?? null;
     useImperativeHandle(props.ref, () => ({ openPicker: mocks.openPicker }), []);
     return <span data-testid="uploader-stub" />;
   },
@@ -131,6 +142,7 @@ beforeEach(() => {
   vi.useRealTimers();
   mocks.openPicker.mockClear();
   mocks.onUploaded.current = null;
+  mocks.onPickerCancel.current = null;
 });
 
 afterEach(() => {
@@ -234,5 +246,89 @@ describe('T099 (c) — Cancel abandons the insert; the next upload does not inhe
 
     await waitFor(() => expect(insertedImages()).toHaveLength(1));
     expect(insertedImages()[0]!.getAttribute('alt')).toBe('The real description');
+  });
+});
+
+describe('T099 (d) — a DISMISSED file picker abandons the described insert', () => {
+  it('cancel the picker, then upload through the uploader: the author is asked again', async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+
+    await user.click(imageControl());
+    await screen.findByRole('dialog');
+    await user.type(altField(), 'Stale description');
+    await user.click(insertControl());
+    expect(mocks.openPicker).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // The author closes the OS file picker without choosing a file.
+    act(() => mocks.onPickerCancel.current?.());
+
+    // A later upload through the uploader's own button must not inherit the
+    // abandoned description (or kind) — it is asked for its own.
+    act(() => mocks.onUploaded.current!(BLOB_URL));
+    await screen.findByRole('dialog');
+    expect(insertedImages()).toHaveLength(0);
+
+    await user.type(altField(), 'Fresh description');
+    await user.click(insertControl());
+    await waitFor(() => expect(insertedImages()).toHaveLength(1));
+    expect(insertedImages()[0]!.getAttribute('alt')).toBe('Fresh description');
+  });
+
+  it('the real uploader reports a dismissed picker (the file input `cancel` event)', async () => {
+    const { ComposeInlineImageUploader } = await vi.importActual<
+      typeof import('@/components/broadcast/compose-inline-image-uploader')
+    >('@/components/broadcast/compose-inline-image-uploader');
+    const onPickerCancel = vi.fn();
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposeInlineImageUploader
+          draftId={DRAFT_ID}
+          onUploaded={() => {}}
+          onPickerCancel={onPickerCancel}
+        />
+      </NextIntlClientProvider>,
+    );
+    const input = container.querySelector('input[type="file"]')!;
+
+    act(() => {
+      input.dispatchEvent(new Event('cancel'));
+    });
+
+    expect(onPickerCancel).toHaveBeenCalledTimes(1);
+  });
+
+  // Browsers without the input `cancel` event (Safari < 16.4) never report the
+  // dismissal. The uploader's OWN button is the other guard: when it can be
+  // clicked, no picker the description opened is still open, so the pending
+  // description is abandoned. `openPicker()` (the alt-first flow) must not.
+  it('the uploader’s own button reports the abandoned picker; openPicker (alt-first) does not', async () => {
+    const { ComposeInlineImageUploader } = await vi.importActual<
+      typeof import('@/components/broadcast/compose-inline-image-uploader')
+    >('@/components/broadcast/compose-inline-image-uploader');
+    const onPickerCancel = vi.fn();
+    const handle: { current: { openPicker(): void } | null } = { current: null };
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposeInlineImageUploader
+          ref={handle}
+          draftId={DRAFT_ID}
+          onUploaded={() => {}}
+          onPickerCancel={onPickerCancel}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    act(() => handle.current!.openPicker());
+    expect(onPickerCancel).not.toHaveBeenCalled();
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole('button', {
+        name: enMessages.portal.broadcasts.compose.imageUpload.uploadButton,
+      }),
+    );
+    expect(onPickerCancel).toHaveBeenCalledTimes(1);
   });
 });

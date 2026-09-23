@@ -48,6 +48,9 @@ import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/applicati
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
+/** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
+const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
+
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 
 interface Tracker {
@@ -228,6 +231,7 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
       locale: 'en' as const,
       plansBridge,
       emailTransactional: emailTransactionalBridge,
+      brandChrome: NO_BRAND_CHROME,
     });
 
     // ---- tick 1: the send fails AFTER createBroadcast + the persist ----------

@@ -115,6 +115,8 @@ export function makeFakeBroadcastImagesRepo(seed: readonly BroadcastImageRecord[
     // F2-2 — the erasure cascade's by-member stamp. The fake holds no
     // broadcasts, so a test that needs it overrides the return.
     markDeletedForMember: vi.fn(async (_tenantId: never, _memberId: string, _at: Date, _tx: unknown) => [] as BroadcastImageRecord[]),
+    // F119 R17 — the GDPR export's by-member read; same no-broadcasts default.
+    listByMember: vi.fn(async (_tenantId: never, _memberId: string, _limit: number, _tx: unknown) => [] as BroadcastImageRecord[]),
     listOrphaned: vi.fn(async (_tenantId: never, _limit: number) => [] as BroadcastImageRecord[]),
     countLiveByContentHash: vi.fn(async (tenantId: never, contentHash: string, _tx: unknown, excludeImageId?: string) =>
       rows.filter(
@@ -165,6 +167,7 @@ export function makeFakeBrandSettingsRepo(seed: Record<string, Partial<BrandSett
     records,
     withTx: vi.fn(async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(FAKE_TX)),
     find: vi.fn(async (tenantId: never) => records.get(tenantId as unknown as string) ?? empty),
+    findForUpdate: vi.fn(async (tenantId: never, _tx: unknown) => records.get(tenantId as unknown as string) ?? empty),
     save: vi.fn(async (tenantId: never, input: BrandSettingsWrite, _tx: unknown) => {
       const next: BrandSettingsRecord = {
         primaryColor: input.primaryColor,

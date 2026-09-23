@@ -37,15 +37,24 @@ afterEach(() => {
 function renderAction(surface: 'admin' | 'member', broadcastId = 'b1') {
   const action =
     surface === 'admin' ? (
-      <CancelBroadcastAction broadcastId={broadcastId} surface="admin" />
+      <CancelBroadcastAction broadcastId={broadcastId} surface="admin" subject={SUBJECT} />
     ) : (
-      <CancelBroadcastAction broadcastId={broadcastId} surface="member" />
+      <CancelBroadcastAction broadcastId={broadcastId} surface="member" subject={SUBJECT} />
     );
   return render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
       {action}
     </NextIntlClientProvider>,
   );
+}
+
+/** U35 — confirm is gated on typing the E-Blast's subject, threaded from the page. */
+const SUBJECT = 'Autumn networking evening';
+
+function typePhrase(dialog: HTMLElement, ns: { readonly subjectLabel: string }): void {
+  fireEvent.change(within(dialog).getByLabelText(ns.subjectLabel), {
+    target: { value: SUBJECT },
+  });
 }
 
 // ── Admin surface (reason required) ─────────────────────────────────────
@@ -95,6 +104,7 @@ describe('CancelBroadcastAction (admin surface)', () => {
       ),
       { target: { value: 'test cancellation reason' } },
     );
+    typePhrase(dialog, en.admin.broadcasts.cancelDialog);
     fireEvent.click(
       within(dialog).getByRole('button', {
         name: en.admin.broadcasts.cancelDialog.confirm,
@@ -135,11 +145,12 @@ describe('CancelBroadcastAction (member surface)', () => {
     ).toBeInTheDocument();
   });
 
-  it('dialog does NOT require a reason (confirm enabled without input)', async () => {
+  it('dialog does NOT require a reason (confirm enabled with only the typed phrase)', async () => {
     renderAction('member');
     fireEvent.click(screen.getByRole('button', { name: triggerName }));
     await screen.findByText(en.portal.broadcasts.detail.cancelDialog.title);
     const dialog = screen.getByRole('alertdialog');
+    typePhrase(dialog, en.portal.broadcasts.detail.cancelDialog);
     expect(
       within(dialog).getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -158,6 +169,7 @@ describe('CancelBroadcastAction (member surface)', () => {
     await screen.findByText(en.portal.broadcasts.detail.cancelDialog.title);
 
     const dialog = screen.getByRole('alertdialog');
+    typePhrase(dialog, en.portal.broadcasts.detail.cancelDialog);
     fireEvent.click(
       within(dialog).getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -189,6 +201,7 @@ describe('CancelBroadcastAction (member surface)', () => {
     fireEvent.change(within(dialog).getByLabelText(memberReasonLabel), {
       target: { value: 'changing my mind' },
     });
+    typePhrase(dialog, en.portal.broadcasts.detail.cancelDialog);
     fireEvent.click(
       within(dialog).getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,

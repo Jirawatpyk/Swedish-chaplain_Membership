@@ -6,7 +6,8 @@
  * The three reads that could leak are the ones that take an identifier from
  * OUTSIDE the row: `markDeletedForMember` joins to `broadcasts` by member,
  * `listOrphaned` anti-joins two owner tables, and `isBlobReferencedByContent`
- * searches two content columns for a URL. Each is written with an explicit
+ * searches two content columns for a URL (and `listByMember`, the GDPR
+ * export's read, joins to `broadcasts` by member the same way). Each is written with an explicit
  * `tenant_id` predicate AND runs under RLS+FORCE; this suite is what proves
  * both halves actually hold against the deployed schema rather than in the
  * docblock.
@@ -149,6 +150,24 @@ describe('broadcast_images — cross-tenant isolation (live Neon)', () => {
       `)) as unknown as Array<{ tenant_id: string; marked: boolean }>;
       expect(rows).toHaveLength(2);
       expect(rows.every((r) => r.marked === false)).toBe(true);
+    },
+    180_000,
+  );
+
+  it(
+    "listByMember in tenant A returns nothing for a member of tenant B — and A's own member's image is returned",
+    async () => {
+      const probe = await runInTenant(tenantA.ctx, (tx) =>
+        drizzleBroadcastImagesRepo.listByMember(tenantA.ctx.slug as never, memberB, 100, tx),
+      );
+      expect(probe).toEqual([]);
+
+      // Positive control in A (B's only image row is an orphan, so B's own
+      // read would be empty for the wrong reason).
+      const own = await runInTenant(tenantA.ctx, (tx) =>
+        drizzleBroadcastImagesRepo.listByMember(tenantA.ctx.slug as never, memberA, 100, tx),
+      );
+      expect(own.map((r) => r.contentHash)).toEqual([hashA]);
     },
     180_000,
   );

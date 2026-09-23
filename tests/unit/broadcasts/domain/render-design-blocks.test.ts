@@ -8,6 +8,7 @@
  * table still shows the plain link and the plain image.
  */
 import { describe, expect, it } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { applyDesignBlocks } from '@/modules/broadcasts/domain/design-blocks/render-blocks';
 
 const NO_BRAND = { primaryColor: null } as const;
@@ -16,7 +17,7 @@ describe('applyDesignBlocks — CTA', () => {
   const cta = '<p>Intro</p><a data-eb="cta" href="https://example.org/x?a=1&amp;b=2" target="_blank" rel="noopener noreferrer nofollow">Register now</a><p>Outro</p>';
 
   it('renders with the brand colour and degrades to the same <a>', () => {
-    const out = applyDesignBlocks(cta, { primaryColor: '#b04a00' });
+    const out = applyDesignBlocks(cta, { primaryColor: '#b04a00' as BrandHexColor });
     // The button cell carries the tenant colour as bgcolor AND inline background.
     expect(out).toContain('bgcolor="#b04a00"');
     expect(out).toMatch(/background(-color)?:#b04a00/);
@@ -75,6 +76,6 @@ describe('applyDesignBlocks — fail-safe', () => {
 
   it('a body without markers is returned as the identical string (the byte-identical guard)', () => {
     const html = '<h2>Q</h2><p>Hello <strong>x</strong></p><hr><ul><li>a</li></ul>';
-    expect(applyDesignBlocks(html, { primaryColor: '#b04a00' })).toBe(html);
+    expect(applyDesignBlocks(html, { primaryColor: '#b04a00' as BrandHexColor })).toBe(html);
   });
 });

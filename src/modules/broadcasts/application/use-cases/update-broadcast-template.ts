@@ -41,8 +41,9 @@ import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 import { sanitizeHtml } from './sanitize-html';
 import {
   parseBlockMarkers,
+  hasBlockViolations,
   validateBlocks,
-  type BlockViolation,
+  type BlockViolations,
 } from '../../domain/design-blocks/block-markers';
 import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import {
@@ -84,7 +85,7 @@ export type UpdateBroadcastTemplateError =
       readonly unsafeImageSources: readonly string[];
     }
   /** FR-041 design-block rules — same kind and shape as `submitBroadcast`. */
-  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
+  | { readonly kind: 'content_rules'; readonly violations: BlockViolations }
   | TemplateUpdateError;
 
 export interface UpdateBroadcastTemplateOutput {
@@ -159,7 +160,7 @@ export async function updateBroadcastTemplate(
     // into a draft. Only reached when the body is actually being changed; a
     // rename must not be refused for a body it never supplied.
     const blockViolations = validateBlocks(parseBlockMarkers(sanitisedBody));
-    if (blockViolations.length > 0) {
+    if (hasBlockViolations(blockViolations)) {
       return err({ kind: 'content_rules', violations: blockViolations });
     }
 

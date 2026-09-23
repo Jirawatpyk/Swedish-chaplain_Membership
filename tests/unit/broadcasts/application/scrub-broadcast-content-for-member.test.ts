@@ -58,8 +58,8 @@ interface MakeDepsOverrides {
   severImpl?: () => Promise<{ affected: number }>;
   /** F2-2 — the erased member's inline images, stamped in this same tx. */
   imageRows?: ReadonlyArray<Record<string, unknown>>;
-  /** ROUND-2 R-M6 — omit `emitMany` to exercise the per-row fallback. */
-  noEmitMany?: boolean;
+  /** ROUND-2 R-M6 — omit `emitManyTyped` to exercise the per-row fallback. */
+  noEmitManyTyped?: boolean;
 }
 
 function makeDeps(overrides: MakeDepsOverrides = {}) {
@@ -88,13 +88,13 @@ function makeDeps(overrides: MakeDepsOverrides = {}) {
     emit: vi.fn(),
     emitTyped: auditEmitImpl,
     // ROUND-2 R-M6 — the batched emit. Optional on the port (196 annotated
-    // doubles), so `auditImagesRemoved` prefers it and falls back to `emit`;
-    // `overrides.noEmitMany` exercises that fallback arm.
-    ...(overrides.noEmitMany === true ? {} : { emitMany: vi.fn(async () => undefined) }),
+    // doubles), so `auditImagesRemoved` prefers it and falls back to per-row
+    // `emitTyped`; `overrides.noEmitManyTyped` exercises that fallback arm.
+    ...(overrides.noEmitManyTyped === true ? {} : { emitManyTyped: vi.fn(async () => undefined) }),
   } as {
     emit: ReturnType<typeof vi.fn>;
     emitTyped: typeof auditEmitImpl;
-    emitMany?: ReturnType<typeof vi.fn>;
+    emitManyTyped?: ReturnType<typeof vi.fn>;
   };
   // 108 PR-C T104 — the suppression repo severs the erased member's
   // `member_id` / `contact_id` back-references (rows survive, email-keyed).
@@ -142,7 +142,7 @@ describe('scrubBroadcastContentForMember — F2-2: erasure reaches the images', 
     // member's erasure can stamp dozens of images, and each `audit.emit` was a
     // separate statement inside the erasure transaction, which holds the
     // member row and every cascade write open for its whole length.
-    const batched = deps.audit.emitMany!.mock.calls;
+    const batched = deps.audit.emitManyTyped!.mock.calls;
     expect(batched).toHaveLength(1);
     expect(batched[0]![0]).toBe(deps.fakeTx);
     const rows = batched[0]![1] as ReadonlyArray<{
@@ -165,15 +165,15 @@ describe('scrubBroadcastContentForMember — F2-2: erasure reaches the images', 
     expect(Object.keys(rows[0]!.payload)).not.toContain('member_id');
     // The per-row path is not ALSO used.
     expect(
-      deps.audit.emit.mock.calls.filter(
+      deps.audit.emitTyped.mock.calls.filter(
         (c) => (c[1] as { eventType: string }).eventType === 'broadcast_image_removed',
       ),
     ).toHaveLength(0);
   });
 
-  it('R-M6 fallback: an audit port without `emitMany` still writes one row per image', async () => {
+  it('R-M6 fallback: an audit port without `emitManyTyped` still writes one row per image', async () => {
     const deps = makeDeps({
-      noEmitMany: true,
+      noEmitManyTyped: true,
       imageRows: [
         { id: 'img-1', ownerKind: 'broadcast', ownerId: 'b-1', contentHash: 'h1' },
         { id: 'img-2', ownerKind: 'broadcast', ownerId: 'b-2', contentHash: 'h2' },
@@ -188,7 +188,7 @@ describe('scrubBroadcastContentForMember — F2-2: erasure reaches the images', 
     });
 
     expect(result.ok).toBe(true);
-    const removals = deps.audit.emit.mock.calls.filter(
+    const removals = deps.audit.emitTyped.mock.calls.filter(
       (c) => (c[1] as { eventType: string }).eventType === 'broadcast_image_removed',
     );
     expect(removals).toHaveLength(2);

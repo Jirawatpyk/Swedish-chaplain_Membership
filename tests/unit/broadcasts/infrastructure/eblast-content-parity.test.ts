@@ -32,6 +32,7 @@
  */
 import DOMPurify from 'isomorphic-dompurify';
 import { describe, expect, it } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { installBroadcastSanitizerHooks, makeBroadcastSanitizerConfig } from '@/lib/broadcast-content-policy';
 import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
 import { renderBroadcastHtml } from '@/modules/broadcasts/infrastructure/resend/email-template';
@@ -174,7 +175,7 @@ describe('SC-011 — element+attribute multiset is identical at every stage', ()
    */
   it('a non-null brand reaches the PREVIEW too — logo, postal line and CTA colour, byte-identical to the send', async () => {
     const brand = {
-      primaryColor: '#b04a00',
+      primaryColor: '#b04a00' as BrandHexColor,
       postalAddress: '12 Sukhumvit <Rd>\nBangkok & 10110',
       logoUrl: 'https://blob.example/logos/abc.png?x=1&y=2',
     };

@@ -207,6 +207,7 @@ export default async function AdminBroadcastDetailPage({
             <CancelBroadcastAction
               broadcastId={broadcast.broadcastId as string}
               surface="admin"
+              subject={broadcast.subject}
             />
           ) : null}
           {broadcast.status === 'submitted' && !bodyRenderFailed ? (

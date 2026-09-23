@@ -1288,9 +1288,9 @@ export function makeDrizzleBroadcastsRepo(
      * though SQL `WHERE tenant_id = $1` already enforces isolation).
      *
      * NO audit emission per FR-001a (drafts are user scratch space).
-     * Returns the deleted row count for cron observability + test
-     * assertions; the cron route logs this as `prunedCount` in the
-     * tick-complete summary.
+     * Returns the deleted drafts; the use case sums their count for cron
+     * observability + test assertions, and the cron route logs it as
+     * `prunedCount` in the tick-complete summary.
      */
     async pruneExpiredDrafts(tenantIdArg, olderThan, txMaybe, limit) {
       // F2-1 — run on the CALLER's tx when it has one, so the image stamps it
@@ -1323,7 +1323,6 @@ export function makeDrizzleBroadcastsRepo(
           RETURNING broadcast_id, requested_by_member_id
         `)) as unknown as Array<{ broadcast_id: string; requested_by_member_id: string | null }>;
         return {
-          prunedCount: deleted.length,
           prunedDrafts: deleted.map((r) => ({
             broadcastId: r.broadcast_id,
             requestedByMemberId: r.requested_by_member_id,

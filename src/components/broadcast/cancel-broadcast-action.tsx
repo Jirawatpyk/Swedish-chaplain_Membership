@@ -35,6 +35,8 @@ import { CancelBroadcastDialog } from '@/components/broadcast/cancel-broadcast-d
 export interface CancelBroadcastActionProps {
   readonly broadcastId: string;
   readonly surface: 'admin' | 'member';
+  /** The E-Blast's subject — the dialog's typed confirmation (F119 U35). */
+  readonly subject: string;
 }
 
 interface CancelActionConfig {
@@ -77,6 +79,7 @@ function resolveConfig(surface: 'admin' | 'member'): CancelActionConfig {
 export function CancelBroadcastAction({
   broadcastId,
   surface,
+  subject,
 }: CancelBroadcastActionProps): React.ReactElement {
   const cfg = resolveConfig(surface);
   const t = useTranslations(cfg.labelNamespace);
@@ -103,6 +106,7 @@ export function CancelBroadcastAction({
         reasonRequired={cfg.reasonRequired}
         successToastKey={cfg.successToastKey}
         triggerRef={triggerRef}
+        subject={subject}
       />
     </>
   );

@@ -61,9 +61,17 @@ describe('meetsAaOnWhiteText (FR-041b — 4.5:1 against #ffffff)', () => {
     expect(meetsAaOnWhiteText('#b04a00')).toBe(true);
   });
 
-  it('returns a ratio rounded to two decimals for the refusal message', () => {
+  it('returns a ratio truncated to two decimals for the refusal message', () => {
     const ratio = contrastRatioOnWhite('#f5f5f5');
-    expect(ratio).toBe(Math.round(ratio * 100) / 100);
+    expect(ratio).toBe(Math.floor(ratio * 100) / 100);
+  });
+
+  // The display value is FLOORED, never rounded: #0080aa is ≈ 4.4986:1 raw,
+  // which rounds UP to 4.5 — a readout that would claim the very threshold
+  // the refusal says it misses ("{ ratio: 4.5, required: 4.5 }").
+  it('`#0080aa` (≈ 4.4986 raw) is refused and displays 4.49, never 4.5', () => {
+    expect(meetsAaOnWhiteText('#0080aa')).toBe(false);
+    expect(contrastRatioOnWhite('#0080aa')).toBe(4.49);
   });
 });
 

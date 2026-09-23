@@ -2,11 +2,11 @@
  * F119 T031 — fail-soft brand read for the two dispatch use cases.
  *
  * Brand chrome is read LIVE at send time (FR-041c) and handed to the
- * gateway so the delivered email equals the preview. A missing port (a
- * pre-F119 composition) or a read fault degrades to no chrome — the
+ * gateway so the delivered email equals the preview. The port is REQUIRED
+ * (a composition cannot omit it); a read FAULT degrades to no chrome — the
  * chamber-name header, the "Sent by" footer and the platform CTA colour —
- * because a brand outage must never fail a send. The degrade is logged so
- * an operator can tell "no brand set" from "brand read failed".
+ * because a brand outage must never fail a send. The degrade is logged and
+ * metered so an operator can tell "no brand set" from "brand read failed".
  */
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -25,13 +25,10 @@ const NO_BRAND: BrandSettings = { primaryColor: null, postalAddress: null, logoU
 export type BrandChromeSurface = 'dispatch' | 'audience_tick';
 
 export async function loadBrandChrome(
-  port: BrandChromePort | undefined,
+  port: BrandChromePort,
   tenant: TenantContext,
   surface: BrandChromeSurface,
 ): Promise<BrandSettings> {
-  // An ABSENT port is "this tenant has no brand configured" (or a pre-F119
-  // composition) — expected, not an outage. Only a FAULT is counted.
-  if (port === undefined) return NO_BRAND;
   try {
     return await port.load(tenant.slug as never);
   } catch (e) {

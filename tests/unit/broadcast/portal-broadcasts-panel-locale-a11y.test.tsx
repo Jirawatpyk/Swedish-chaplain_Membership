@@ -195,6 +195,55 @@ describe('U30 — the Thai quota surface shows ONE calendar', () => {
   });
 });
 
+describe('U37 — the history renders as a card list below md', () => {
+  // jsdom applies no CSS, so BOTH representations mount; the breakpoint
+  // classes are what hand each one its viewport.
+  it('the card list carries the same row as the table, with list semantics', async () => {
+    await renderPanel('en');
+
+    const table = screen.getByRole('table', { name: /my broadcasts/i });
+    const list = screen.getByTestId('broadcast-history-card-list');
+    expect(list).toHaveAttribute('role', 'list');
+    expect(list.className).toMatch(/\bmd:hidden\b/);
+    // `md:flex`, not `md:block` — Card's own display is `flex flex-col`.
+    expect(table.closest('.hidden.md\\:flex')).not.toBeNull();
+
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    const card = items[0]!;
+    // Same detail link as the table row.
+    const tableLink = within(table).getByRole('link', { name: 'Spring mixer' });
+    const cardLink = within(card).getByRole('link', { name: 'Spring mixer' });
+    expect(cardLink).toHaveAttribute('href', tableLink.getAttribute('href'));
+    // Same status badge text, audience count and formatted dates.
+    const sent = enMessages.portal.broadcasts.list.status.sent;
+    // `selector: 'span'` — the badge, not the "Sent" column header / label.
+    expect(within(table).getByText(sent, { selector: 'span' })).toBeInTheDocument();
+    expect(within(card).getByText(sent, { selector: 'span' })).toBeInTheDocument();
+    expect(within(card).getByText('42')).toBeInTheDocument();
+    for (const cell of within(table).getAllByRole('cell').slice(3)) {
+      expect(card.textContent).toContain(cell.textContent);
+    }
+  });
+
+  // F119 UX review — at 320 px the `shrink-0` badge beside the subject
+  // squeezed a long subject into a narrow column. Below `sm` the badge stacks
+  // under the subject; the subject link is a full-row tap target.
+  it('stacks the status badge under the subject below sm, with a block tap target', async () => {
+    await renderPanel('en');
+
+    const card = within(screen.getByTestId('broadcast-history-card-list')).getAllByRole(
+      'listitem',
+    )[0]!;
+    const link = within(card).getByRole('link', { name: 'Spring mixer' });
+    expect(link.className).toMatch(/(^|\s)block(\s|$)/);
+    expect(link.className).toMatch(/(^|\s)py-2(\s|$)/);
+    const row = link.parentElement!;
+    expect(row.className).toMatch(/(^|\s)flex-col(\s|$)/);
+    expect(row.className).toMatch(/(^|\s)sm:flex-row(\s|$)/);
+  });
+});
+
 describe('U31 — the history table has an accessible name', () => {
   it('the <table> itself is named, not only its scroll region', async () => {
     await renderPanel('en');

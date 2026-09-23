@@ -129,15 +129,20 @@ export default async function MemberLayout({ children }: { children: ReactNode }
           </div>
         </div>
       </header>
+      {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
+          Server component returns null when ineligible (member already
+          acknowledged, plan has no eblast quota, or feature flag off).
+          U36 — mounted BETWEEN the header and <main>, not inside it, so
+          "Skip to main content" bypasses its three controls (SC 2.4.1). It is
+          its own named `role="region"` landmark, and its wrapper carries the
+          same max-width + page padding it had inside <main> (which has no top
+          padding of its own), so the layout does not move. */}
+      <MarketingAcknowledgementBanner />
       <main
         className="flex-1 pb-[calc(var(--bottom-tab-height)+env(safe-area-inset-bottom))] lg:pb-0"
         id="main-content"
         tabIndex={-1}
       >
-        {/* F7 Q15 — GDPR Art. 7 demonstrable consent banner.
-            Server component returns null when ineligible (member already
-            acknowledged, plan has no eblast quota, or feature flag off). */}
-        <MarketingAcknowledgementBanner />
         {children}
       </main>
       {/* 057 — mobile bottom tab bar (hidden ≥ lg). Fixed; <main> reserves

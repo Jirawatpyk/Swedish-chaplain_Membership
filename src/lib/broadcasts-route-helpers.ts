@@ -22,7 +22,7 @@
 import { NextResponse } from 'next/server';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
-import type { BlockViolation } from '@/modules/broadcasts';
+import type { BlockViolations } from '@/modules/broadcasts';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -430,19 +430,15 @@ export function errorResponse(
  * compose form can highlight every offending block at once) is defined here so
  * the surfaces cannot drift a field at a time.
  *
- * `violations` is never empty at a call site — a use case returns
- * `content_rules` only when `validateBlocks` found at least one — but an empty
- * list falls back to `validation_error` rather than indexing into nothing.
+ * `violations` is non-empty by type (`BlockViolations`): a use case builds a
+ * `content_rules` refusal only through `hasBlockViolations`, so there is no
+ * empty-list arm to fall back from.
  */
 export function designBlockErrorResponse(
-  violations: readonly BlockViolation[],
+  violations: BlockViolations,
   correlationId: string,
 ): NextResponse {
-  const first = violations[0];
-  if (first === undefined) {
-    return errorResponse(422, 'validation_error', correlationId);
-  }
-  return errorResponse(422, first.code, correlationId, { details: { violations } });
+  return errorResponse(422, violations[0].code, correlationId, { details: { violations } });
 }
 
 /**

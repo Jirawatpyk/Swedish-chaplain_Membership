@@ -93,33 +93,37 @@ const COMPARISON = new RegExp(
  * `scanned === 0` catches a wrong scope root but not a broken parser — and a
  * broken parser is exactly what shipped. A gate that reports "0 unmarked"
  * because it saw nothing is worse than no gate at all. Raise this deliberately
- * when sites are legitimately removed; never lower it to make a run pass.
+ * when sites are legitimately ADDED; never lower it to make a run pass — a
+ * lowering is allowed only when the removed site is named here and reviewable
+ * in the same diff.
  *
  * Pinned to the MEASURED TOTAL — `marked + unmarked`, which is what `scanned`
- * counts — not to the `marked` counter. 67 as of the 018 clear-halt narrowing:
- * the 018 follow-ups ADDED one site (the refund-initiate route's attribution
- * ternary, 67 → 68) and then REMOVED one (the halt-clear route's `marketing`
- * arm, deleted when `broadcasts.clear_halt` narrowed clearing to the admin
- * tier — a deliberate capability change, not a scanner regression), landing
- * back at 67. Lowering this number is otherwise forbidden; it is allowed here
- * only because the removed site is named above and reviewable in the diff.
- * Also 67 as of the 017 truth
- * sweep (2026-08-15): the invoicing/events/broadcasts route stamps each add
- * a marker-hosted `role === 'super_admin' ? … : 'admin'` attribution
- * ternary. It was 52 after the 016 post-ship review fixes (2026-08-14): the finding-#3 sweep added 14 marker-hosted
- * `role === 'super_admin' ? … : 'admin'` audit-stamp ternaries across the
- * renewals mutation routes. It was 38 as of PR 5 (the legacy shim died with
- * its one `rbac-legacy-shim-arm-ok` site), 39 as of PR 4 after
- * `src/components/auth` joined SCOPE; before that a wrong-counter reading set
- * it one below the truth — exactly the slack this docblock forbids, inside
- * the gate whose whole thesis is that a low floor is how partial blindness
- * ships.
+ * counts — not to the `marked` counter. History, oldest first:
+ *
+ *   - 39 — 016 PR 4, once `src/components/auth` joined SCOPE (before that a
+ *     wrong-counter reading had set it one below the truth — exactly the slack
+ *     this docblock forbids).
+ *   - 38 — 016 PR 5: the legacy shim died with its one
+ *     `rbac-legacy-shim-arm-ok` site.
+ *   - 52 — 016 post-ship review fixes (2026-08-14): the finding-#3 sweep added
+ *     14 marker-hosted `role === 'super_admin' ? … : 'admin'` audit-stamp
+ *     ternaries across the renewals mutation routes.
+ *   - 67 — 017 truth sweep (2026-08-15): the invoicing / events / broadcasts
+ *     route stamps each added the same marker-hosted attribution ternary.
+ *   - 68 — 018 follow-up: the refund-initiate route's attribution ternary.
+ *   - 67 — 018 clear-halt narrowing: the halt-clear route's `marketing` arm was
+ *     deleted when `broadcasts.clear_halt` narrowed clearing to the admin tier
+ *     (a deliberate capability change, not a scanner regression — the named
+ *     removal that permits this one lowering).
+ *   - 68 — F119 template-start member/staff split: the
+ *     `/api/broadcasts/templates/[id]/started` route's `rbac-portal-identity-ok`
+ *     site.
  *
  * The earlier 28 (against a then-total of 33) left the scanner free to go ~15%
  * blind before tripping. The T065 gate reported "0 unmarked" while it could not
  * see 341 lines of src/config/nav.ts.
  */
-const MIN_EXPECTED_SITES = 67;
+const MIN_EXPECTED_SITES = 68;
 
 /**
  * Every accepted claim. Each says what the literal is doing INSTEAD of

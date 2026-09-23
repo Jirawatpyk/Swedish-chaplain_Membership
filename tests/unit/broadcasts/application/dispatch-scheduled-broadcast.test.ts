@@ -13,6 +13,7 @@
  *   - DB write failure AFTER Resend success โ’ kind='gateway_retryable'
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import type { BrandSettings } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -49,6 +50,9 @@ import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/pla
 import type { EmailTransactionalPort } from '@/modules/broadcasts/application/ports/email-transactional-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+
+/** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
+const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
 
 const useCasePath = resolve(
   __dirname,
@@ -273,7 +277,7 @@ function makeRepo(opts: RepoOpts): {
         return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
       },
       async pruneExpiredDrafts() {
-        return { prunedCount: 0, prunedDrafts: [] };
+        return { prunedDrafts: [] };
       },
     async listInFlightOwnedByMember() { return []; },
     async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
@@ -630,7 +634,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
     const gw = makeGateway();
-    const brand = { primaryColor: '#b04a00', postalAddress: '1 Street', logoUrl: 'https://blob.example/l.png' };
+    const brand = { primaryColor: '#b04a00' as BrandHexColor, postalAddress: '1 Street', logoUrl: 'https://blob.example/l.png' };
     const base = {
       tenant,
       broadcastsRepo: repo.port,
@@ -647,6 +651,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       locale: 'en' as const,
       plansBridge: makePlansBridge(),
       emailTransactional: makeEmailTransactional().port,
+      brandChrome: NO_BRAND_CHROME,
     };
     const r1 = await dispatchScheduledBroadcast({ ...base, brandChrome: { load: async () => brand } }, baseInput);
     expect(r1.ok).toBe(true);
@@ -692,6 +697,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -759,6 +765,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -791,6 +798,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -822,6 +830,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -862,6 +871,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -912,6 +922,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -977,6 +988,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1042,6 +1054,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1087,6 +1100,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1134,6 +1148,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1174,6 +1189,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1229,6 +1245,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1283,6 +1300,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1331,6 +1349,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1368,6 +1387,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1407,6 +1427,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1462,6 +1483,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1504,6 +1526,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1551,6 +1574,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1606,6 +1630,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1658,6 +1683,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1705,6 +1731,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1745,6 +1772,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1806,6 +1834,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1883,6 +1912,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -1963,6 +1993,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2032,6 +2063,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2105,6 +2137,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2171,6 +2204,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2223,6 +2257,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2291,6 +2326,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2358,6 +2394,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2399,6 +2436,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2458,6 +2496,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2527,6 +2566,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2580,6 +2620,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2646,6 +2687,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2713,6 +2755,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2754,6 +2797,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2823,6 +2867,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2879,6 +2924,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2934,6 +2980,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -2987,6 +3034,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3049,6 +3097,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3097,6 +3146,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3145,6 +3195,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3202,6 +3253,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3248,6 +3300,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3291,6 +3344,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3340,6 +3394,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3398,6 +3453,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3438,6 +3494,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3481,6 +3538,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3544,6 +3602,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3596,6 +3655,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3678,6 +3738,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3730,6 +3791,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         // Plan still matches snapshot's planId 'p' โ’ no expired-plan audit
         plansBridge: makePlansBridge({ planId: 'p' }),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3769,6 +3831,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         // Snapshot is 'p'; current plan is 'p2' โ’ expired-plan audit fires
         plansBridge: makePlansBridge({ planId: 'p2' }),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3811,6 +3874,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           lookupError: { kind: 'plan_lookup.member_no_plan', memberId: 'm-1' },
         }),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3850,6 +3914,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge({ shouldThrow: true }),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3897,6 +3962,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -3949,6 +4015,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4008,6 +4075,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4051,6 +4119,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4108,6 +4177,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4151,6 +4221,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4201,6 +4272,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4257,6 +4329,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           locale: 'en' as const,
           plansBridge: makePlansBridge(),
           emailTransactional: email.port,
+          brandChrome: NO_BRAND_CHROME,
         },
         baseInput,
       );
@@ -4298,6 +4371,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4357,6 +4431,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4415,6 +4490,7 @@ describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );
@@ -4469,6 +4545,7 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
     };
   }
@@ -4583,6 +4660,7 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
     );

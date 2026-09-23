@@ -58,9 +58,4 @@ describe('loadBrandChrome — the fail-soft degrade is alertable', () => {
     await expect(loadBrandChrome(port as never, TENANT, 'dispatch')).resolves.toEqual(settings);
     expect(brandChromeUnavailableSpy).not.toHaveBeenCalled();
   });
-
-  it('an ABSENT port is "no brand configured", not an outage — no counter', async () => {
-    await expect(loadBrandChrome(undefined, TENANT, 'dispatch')).resolves.toEqual(NO_BRAND);
-    expect(brandChromeUnavailableSpy).not.toHaveBeenCalled();
-  });
 });

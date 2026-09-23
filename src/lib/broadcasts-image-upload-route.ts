@@ -61,6 +61,7 @@ import {
   uploadInlineImage,
   type BroadcastImageOwnerKind,
 } from '@/modules/broadcasts';
+import type { MemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 
 /** 10 % headroom over the use case's 5 MB cap — the form is refused before it is buffered. */
@@ -69,7 +70,7 @@ export const MAX_IMAGE_FORM_BYTES = 5.5 * 1024 * 1024;
 export type ImageUploadRouteActor =
   | {
       readonly kind: 'member';
-      readonly memberId: string;
+      readonly memberId: MemberId;
       readonly userId: string;
       readonly email: string;
       readonly role: string | null;

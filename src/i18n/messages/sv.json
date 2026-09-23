@@ -3375,6 +3375,14 @@
         "reasonHelp": "1–500 tecken.",
         "confirm": "Avbryt utskick",
         "cancel": "Behåll utskick",
+        "phrase": "AVBRYT",
+        "phraseLabel": "Skriv {phrase} för att bekräfta",
+        "phraseError": "Texten matchar inte.",
+        "subjectLabel": "Skriv ämnet för detta utskick för att bekräfta",
+        "phraseHelp": "Versaler och extra mellanslag spelar ingen roll.",
+        "subjectError": "Stämmer ännu inte med ämnet.",
+        "copySubject": "Kopiera ämnet",
+        "subjectCopied": "Kopierat",
         "errors": {
           "reasonTooLong": "Anledningen överskrider 500 tecken."
         }
@@ -6203,6 +6211,14 @@
           "reasonHelp": "Upp till 500 tecken.",
           "confirm": "Avbryt utskick",
           "cancel": "Behåll det",
+          "phrase": "AVBRYT",
+          "phraseLabel": "Skriv {phrase} för att bekräfta",
+          "phraseError": "Texten matchar inte.",
+          "subjectLabel": "Skriv ämnet för detta utskick för att bekräfta",
+          "phraseHelp": "Versaler och extra mellanslag spelar ingen roll.",
+          "subjectError": "Stämmer ännu inte med ämnet.",
+          "copySubject": "Kopiera ämnet",
+          "subjectCopied": "Kopierat",
           "errors": {
             "reasonTooLong": "Anledningen överskrider 500 tecken."
           }
@@ -7368,6 +7384,7 @@
         "invoices": "invoices.json — dina fakturor (nummer, datum, belopp, status). PDF-dokumenten finns i mappen invoices/.",
         "events": "events.json — evenemang du har deltagit i.",
         "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
+        "broadcastImages": "broadcast-images.json — alla bilder som laddats upp för dina E-Blast-utskick, även bilder som redan markerats för radering. En markerad bild visas utan webbadress: den är markerad för radering, och filen kan behållas om en identisk bild fortfarande används någon annanstans. Bilder från ett kasserat eller utgånget utkast listas inte; att de tagits bort syns i audit-events.json, och filen raderas vid nästa dagliga rensning.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
         "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering. Ett arkiv som kammarens personal tagit fram för din räkning, eller som en kollega begärt, innehåller endast begäranden på företagsnivå och utan granskarens motivering. Kontakta kammaren om du behöver din personliga historik.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."

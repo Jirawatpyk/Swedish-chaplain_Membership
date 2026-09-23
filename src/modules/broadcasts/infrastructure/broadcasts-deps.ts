@@ -61,6 +61,7 @@ import type { MarkOwnerImagesRemovedDeps } from '../application/use-cases/_mark-
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
+import type { ListMemberBroadcastImagesDeps } from '../application/use-cases/list-member-broadcast-images';
 // Two imports were removed here in 108 Phase 9 review round 1: the batch
 // deletion left `makeDrizzleBroadcastsRetryRepo` and `pgAdvisoryLockAdapter`
 // unused in this file.
@@ -407,10 +408,14 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
  * route helpers (no per-tenant settings table for support email yet —
  * F12 scope). MVP: locale defaults to the static tenant default
  * resolved by `tenantDefaultLocaleFor(...)` below.
+ *
+ * `brandChrome` is NOT wired here: its adapter lives in `src/lib` (it reads
+ * the invoicing logo too), so the cron route adds it and the type makes that
+ * the route's obligation rather than an optional it can forget.
  */
 export async function makeDispatchScheduledBroadcastDeps(
   tenantId: string,
-): Promise<DispatchScheduledBroadcastDeps> {
+): Promise<Omit<DispatchScheduledBroadcastDeps, 'brandChrome'>> {
   const tenant = asTenantContext(tenantId);
   const { resolveTenantDisplayName } = await import(
     '@/lib/broadcasts-route-helpers'
@@ -602,6 +607,16 @@ export function makeListMemberBroadcastsDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+  };
+}
+
+/** F119 R17 — the member's E-Blast images for the F9 GDPR archive. */
+export function makeListMemberBroadcastImagesDeps(
+  tenantId: string,
+): ListMemberBroadcastImagesDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    imagesRepo: drizzleBroadcastImagesRepo,
   };
 }
 
@@ -978,12 +993,13 @@ export function makeCountTemplateStartDeps(
  *
  * The per-tick memo wrapper is applied by the CALLER (the cron builds one per
  * tick and shares it across broadcasts), so it is passed in rather than built
- * here — the same shape `makeDispatchScheduledBroadcastDeps` expects.
+ * here — the same shape `makeDispatchScheduledBroadcastDeps` expects, and
+ * `brandChrome` is left to the cron route for the same reason.
  */
 export async function makeBuildAudienceTickDeps(
   tenantId: string,
   bridge: MembersBridgePort,
-): Promise<BuildAudienceTickDeps> {
+): Promise<Omit<BuildAudienceTickDeps, 'brandChrome'>> {
   const tenant = asTenantContext(tenantId);
   const { resolveTenantDisplayName } = await import('@/lib/broadcasts-route-helpers');
   let tenantDisplayName: string;
