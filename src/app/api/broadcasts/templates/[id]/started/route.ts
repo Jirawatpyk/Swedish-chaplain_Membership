@@ -20,10 +20,11 @@
  * `SESSION_ANY` allow-list because members must keep reaching it — a
  * role-matrix row would refuse them.
  *
- * The staff refusal writes no `permission_denied` row (unlike
- * `requireApiPermission`, which this route cannot use without a role-matrix
- * baseline row): the same trade the hand-rolled member/staff splits on the
- * credit-note routes make.
+ * The staff refusal writes the same `permission_denied` row and
+ * `rbac_permission_denied_total` increment as every other staff refusal, via
+ * `recordApiPermissionDenial` — `requireApiPermission` itself is not usable
+ * here, because it needs a role-matrix baseline row and that row would refuse
+ * members. The role recorded is the session's real one (audit-truth).
  *
  * A counter that anyone may increment is a counter anyone may inflate, so the
  * bucket is checked BEFORE the use case runs, atomically. The request carries
@@ -43,7 +44,7 @@ import {
 } from '@/modules/broadcasts';
 import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
 import { getCurrentSession } from '@/lib/auth-session';
-import { canPerform } from '@/lib/rbac';
+import { canPerform, recordApiPermissionDenial } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -90,6 +91,7 @@ export async function POST(
   // rbac-portal-identity-ok: member-portal subject vs staff split; the staff arm is decided by canPerform, never a literal.
   const isMemberSession = current.user.role === 'member';
   if (!isMemberSession && !canPerform(current.user.role, 'broadcasts.write')) {
+    await recordApiPermissionDenial(request, current, 'broadcasts.write');
     return jsonError(403, 'forbidden', correlationId);
   }
 

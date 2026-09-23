@@ -369,26 +369,20 @@ describe('BrandSettingsForm — U18: unsaved changes are guarded', () => {
 });
 
 /**
- * U16 — the logo swatch was `bg-white`: measured in dark mode as a 91 × 64 px
- * `rgb(255,255,255)` patch on a `lab(7.8 …)` card. The intent (a transparent
- * PNG needs a backing to be judged) is legitimate, but unlike the email
- * PREVIEW — a whole document every mail client composites on white — this is a
- * chrome-scale swatch, and chrome follows the theme.
+ * U16, revised by the F119 UX review — the logo swatch shows the logo the way
+ * the E-Blast shows it: on WHITE, because every mail client composites the
+ * email on white. The first fix used a THEMED checker (`bg-card` + the
+ * `--color-muted` token), and in dark mode a dark logo vanished into it. The
+ * backing is now a fixed light checker in both themes.
  */
-describe('BrandSettingsForm — U16: the logo swatch is themed, not white', () => {
-  it('the logo preview backing carries no bg-white', () => {
-    renderForm();
-    const img = screen.getByAltText(/logo/i);
-    const backing = img.closest('[data-testid="brand-logo-preview"]') ?? img;
-    expect(`${backing.className} ${img.className}`).not.toMatch(/\bbg-white\b/);
-  });
-
-  it('it uses a themed surface with a transparency checker instead', () => {
+describe('BrandSettingsForm — U16: the logo swatch uses the email light backing', () => {
+  it('sits on a fixed light checker, not a theme token', () => {
     renderForm();
     const backing = screen.getByTestId('brand-logo-preview');
-    expect(backing.className).toMatch(/\bbg-card\b/);
-    // The checker is what replaces the white backing as the "this part is
-    // transparent" affordance.
+    expect(backing.style.backgroundColor).toBe('rgb(255, 255, 255)');
     expect(backing.style.backgroundImage).toMatch(/gradient/);
+    // A theme variable here is what made dark logos disappear in dark mode.
+    expect(backing.style.backgroundImage).not.toContain('var(');
+    expect(backing.className).not.toMatch(/\bbg-card\b/);
   });
 });

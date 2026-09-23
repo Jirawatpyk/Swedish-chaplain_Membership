@@ -35,7 +35,9 @@
  *       file: the next upload through the uploader's own button is asked for
  *       its own description (the stale `{ kind, alt }` was being attached).
  *       Its second case runs the REAL uploader, since the stub cannot prove
- *       the input's native `cancel` event is wired.
+ *       the input's native `cancel` event is wired; its third proves the
+ *       uploader's own button reports the dismissal too (browsers without the
+ *       event), while `openPicker()` — the alt-first hand-off — does not.
  *   (a) also kills clearing `pendingImageRef` UNCONDITIONALLY on close (`if
  *       (!next)`): the confirmed description must survive the dialog's own
  *       close render, or the upload that follows finds nothing to attach and
@@ -294,6 +296,39 @@ describe('T099 (d) — a DISMISSED file picker abandons the described insert', (
       input.dispatchEvent(new Event('cancel'));
     });
 
+    expect(onPickerCancel).toHaveBeenCalledTimes(1);
+  });
+
+  // Browsers without the input `cancel` event (Safari < 16.4) never report the
+  // dismissal. The uploader's OWN button is the other guard: when it can be
+  // clicked, no picker the description opened is still open, so the pending
+  // description is abandoned. `openPicker()` (the alt-first flow) must not.
+  it('the uploader’s own button reports the abandoned picker; openPicker (alt-first) does not', async () => {
+    const { ComposeInlineImageUploader } = await vi.importActual<
+      typeof import('@/components/broadcast/compose-inline-image-uploader')
+    >('@/components/broadcast/compose-inline-image-uploader');
+    const onPickerCancel = vi.fn();
+    const handle: { current: { openPicker(): void } | null } = { current: null };
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposeInlineImageUploader
+          ref={handle}
+          draftId={DRAFT_ID}
+          onUploaded={() => {}}
+          onPickerCancel={onPickerCancel}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    act(() => handle.current!.openPicker());
+    expect(onPickerCancel).not.toHaveBeenCalled();
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole('button', {
+        name: enMessages.portal.broadcasts.compose.imageUpload.uploadButton,
+      }),
+    );
     expect(onPickerCancel).toHaveBeenCalledTimes(1);
   });
 });

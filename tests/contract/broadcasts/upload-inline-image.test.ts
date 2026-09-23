@@ -397,7 +397,9 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     expect(deps.storage.put).toHaveBeenCalledTimes(2);
     expect(deps.imagesRepo.lockContentHash).toHaveBeenCalledTimes(1);
     expect(deps.imagesRepo.record).not.toHaveBeenCalled();
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+    // The upload audit is emitted through `emitTyped` (F119 typed shapes) —
+    // asserting on `emit` could never fail.
+    expect(deps.audit.emitTyped).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ eventType: 'broadcast_image_uploaded' }),
     );

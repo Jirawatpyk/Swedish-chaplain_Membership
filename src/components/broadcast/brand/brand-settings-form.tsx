@@ -340,17 +340,15 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
                `images.remotePatterns` — same call as
                `directory-logo-control.tsx`.
 
-               T155 finding U16 — the backing was `bg-white`: measured in dark
-               mode as a 91 × 64 px `rgb(255,255,255)` patch on a `lab(7.8 …)`
-               card. The email PREVIEW iframe keeps white and is right to (see
-               `use-preview-html.tsx` — it is a whole document every mail
-               client composites on white); this is a chrome-scale swatch, and
-               chrome follows the theme. The checker is the affordance that
-               white was standing in for: it says "this part of the PNG is
-               transparent" in either theme, without a glare patch. */
+               T155 finding U16, revised by the F119 UX review — the backing
+               is the fixed LIGHT checker: the logo shown the way the E-Blast
+               shows it, on white (every mail client composites the email on
+               white), with the check marking transparent pixels. A themed
+               checker (`bg-card` + `--color-muted`) hid dark logos in dark
+               mode. */
             <div
               data-testid="brand-logo-preview"
-              className="inline-block rounded-md border bg-card p-2"
+              className="inline-block rounded-md border p-2"
               style={TRANSPARENCY_CHECKER_STYLE}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}

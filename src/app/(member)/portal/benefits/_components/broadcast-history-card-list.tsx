@@ -62,10 +62,14 @@ export function BroadcastHistoryCardList({
         <li key={row.broadcastId} aria-label={`${row.subject}, ${row.statusLabel}`}>
           <Card>
             <CardContent className="flex flex-col gap-3">
-              <div className="flex items-start justify-between gap-3">
+              {/* Below `sm` the badge stacks under the subject: side by side at
+                  320 px, the `shrink-0` badge squeezed a long subject into a
+                  narrow column. The link is a block with vertical padding so
+                  the whole subject row is the tap target. */}
+              <div className="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-3">
                 <Link
                   href={`/portal/broadcasts/${row.broadcastId}`}
-                  className="min-w-0 break-words font-medium text-primary hover:underline"
+                  className="block min-w-0 break-words py-2 font-medium text-primary hover:underline"
                 >
                   {row.subject}
                 </Link>

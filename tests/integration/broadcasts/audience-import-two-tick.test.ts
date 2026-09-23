@@ -141,6 +141,11 @@ function makeDeps(gateway: FakeGateway, recipients: readonly string[] = RECIPIEN
     },
     emailTransactional: { sendMemberEmail: async () => undefined },
     plansBridge: { getPlanForMember: async () => ok({ planId: 'plan-unchanged' }) },
+    // Required since F119 T031. Missing, `loadBrandChrome` swallowed the
+    // TypeError and the file passed by accident (hidden by `as never`).
+    brandChrome: {
+      load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }),
+    },
   };
 }
 

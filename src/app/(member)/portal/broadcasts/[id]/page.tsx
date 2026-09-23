@@ -320,6 +320,7 @@ export default async function BroadcastDetailPage(props: {
           <CancelBroadcastAction
             broadcastId={broadcast.broadcastId as string}
             surface="member"
+            subject={broadcast.subject}
           />
         </div>
       ) : null}

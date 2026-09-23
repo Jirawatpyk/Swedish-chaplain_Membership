@@ -86,11 +86,12 @@ export function DirectoryLogoControl({
   return (
     <div className="space-y-3">
       {currentLogoUrl !== null ? (
-        // Themed checker backing, not `bg-white` (which glared in dark mode) —
-        // the same swatch as the Brand settings logo preview (T155 U16).
+        // The fixed light checker — the logo as an email shows it, on white in
+        // either theme (a themed checker hid dark logos). Same swatch as the
+        // Brand settings logo preview (T155 U16, F119 UX review).
         <div
           data-testid="directory-logo-preview"
-          className="inline-block rounded-md border bg-card p-1"
+          className="inline-block rounded-md border p-1"
           style={TRANSPARENCY_CHECKER_STYLE}
         >
           {/* eslint-disable-next-line @next/next/no-img-element -- external Blob URL; next/image remotePatterns not configured for tenant logos */}

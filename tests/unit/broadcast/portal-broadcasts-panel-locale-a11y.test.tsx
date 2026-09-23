@@ -225,6 +225,23 @@ describe('U37 — the history renders as a card list below md', () => {
       expect(card.textContent).toContain(cell.textContent);
     }
   });
+
+  // F119 UX review — at 320 px the `shrink-0` badge beside the subject
+  // squeezed a long subject into a narrow column. Below `sm` the badge stacks
+  // under the subject; the subject link is a full-row tap target.
+  it('stacks the status badge under the subject below sm, with a block tap target', async () => {
+    await renderPanel('en');
+
+    const card = within(screen.getByTestId('broadcast-history-card-list')).getAllByRole(
+      'listitem',
+    )[0]!;
+    const link = within(card).getByRole('link', { name: 'Spring mixer' });
+    expect(link.className).toMatch(/(^|\s)block(\s|$)/);
+    expect(link.className).toMatch(/(^|\s)py-2(\s|$)/);
+    const row = link.parentElement!;
+    expect(row.className).toMatch(/(^|\s)flex-col(\s|$)/);
+    expect(row.className).toMatch(/(^|\s)sm:flex-row(\s|$)/);
+  });
 });
 
 describe('U31 — the history table has an accessible name', () => {

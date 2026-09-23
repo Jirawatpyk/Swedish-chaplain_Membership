@@ -44,9 +44,10 @@ interface Props {
    */
   readonly uploadUrl?: string;
   /**
-   * The file picker was dismissed without a file (the input's `cancel`
-   * event), so a caller holding state for "the file about to arrive" — the
-   * editor's pending description — can drop it.
+   * The file picker was dismissed without a file — the input's `cancel`
+   * event, or (where that event does not exist) the uploader's own button
+   * being clicked afterwards — so a caller holding state for "the file about
+   * to arrive" — the editor's pending description — can drop it.
    */
   readonly onPickerCancel?: () => void;
   readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
@@ -75,7 +76,13 @@ export function ComposeInlineImageUploader({
     return () => input.removeEventListener('cancel', onPickerCancel);
   }, [onPickerCancel]);
 
+  // The uploader's OWN button — never `openPicker()`, which the alt-first flow
+  // uses. If this button can be clicked, no picker the description opened is
+  // still open, so that picker was dismissed: report it. That is the guard on
+  // browsers without the input `cancel` event (Safari < 16.4), where the
+  // listener above never fires.
   const handlePick = (): void => {
+    onPickerCancel?.();
     fileRef.current?.click();
   };
 

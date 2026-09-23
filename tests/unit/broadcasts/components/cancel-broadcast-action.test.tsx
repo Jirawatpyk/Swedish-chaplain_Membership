@@ -37,9 +37,9 @@ afterEach(() => {
 function renderAction(surface: 'admin' | 'member', broadcastId = 'b1') {
   const action =
     surface === 'admin' ? (
-      <CancelBroadcastAction broadcastId={broadcastId} surface="admin" />
+      <CancelBroadcastAction broadcastId={broadcastId} surface="admin" subject={SUBJECT} />
     ) : (
-      <CancelBroadcastAction broadcastId={broadcastId} surface="member" />
+      <CancelBroadcastAction broadcastId={broadcastId} surface="member" subject={SUBJECT} />
     );
   return render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
@@ -48,15 +48,13 @@ function renderAction(surface: 'admin' | 'member', broadcastId = 'b1') {
   );
 }
 
-/** U35 — confirm is gated on typing the dialog's phrase. */
-function typePhrase(
-  dialog: HTMLElement,
-  ns: { readonly phrase: string; readonly phraseLabel: string },
-): void {
-  fireEvent.change(
-    within(dialog).getByLabelText(ns.phraseLabel.replace('{phrase}', ns.phrase)),
-    { target: { value: ns.phrase } },
-  );
+/** U35 — confirm is gated on typing the E-Blast's subject, threaded from the page. */
+const SUBJECT = 'Autumn networking evening';
+
+function typePhrase(dialog: HTMLElement, ns: { readonly subjectLabel: string }): void {
+  fireEvent.change(within(dialog).getByLabelText(ns.subjectLabel), {
+    target: { value: SUBJECT },
+  });
 }
 
 // ── Admin surface (reason required) ─────────────────────────────────────

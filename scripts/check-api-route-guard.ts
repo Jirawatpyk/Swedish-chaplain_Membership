@@ -360,32 +360,49 @@ const NARROW_MARKER = 'rbac-narrow-ok';
 const SUBGATE_MARKER = 'rbac-subgate-ok';
 
 /**
- * Routes that declare a staff gate yet legitimately carry no baseline row.
- * Exactly one: the dual-audience GDPR artefact proxy, which a subject MEMBER
- * also reaches (session-any, not role-matrix) — see
- * `api-route-exhaustiveness.test.ts` SESSION_ANY. Any OTHER gated-but-
- * unbaselined route is a staff surface hiding under an auto-classified prefix
+ * Routes that declare a staff gate yet legitimately carry no baseline row —
+ * dual-audience (session-any) routes a MEMBER also reaches, where a role-matrix
+ * row would refuse the member (see `api-route-exhaustiveness.test.ts`
+ * SESSION_ANY). Each entry carries its reason. Any OTHER gated-but-unbaselined
+ * route is a staff surface hiding under an auto-classified prefix
  * (`/api/payments/**`, `/api/portal/**`, `/api/broadcasts/**`,
  * `/api/internal/**`), which both gates and the exhaustiveness "no
  * staff-looking route hides" check (scoped to /api/admin + /api/auth/users)
  * would otherwise miss — re-review finding 11.
+ *
+ * The GDPR artefact proxy (`/api/internal/exports/[jobId]/download`) used to
+ * sit here, but it declares no gate this script recognises (its RBAC runs
+ * inside `downloadExport`), so the entry exempted nothing; the stale-entry
+ * check after the walk now refuses such an entry.
  */
-const GATED_WITHOUT_BASELINE_OK: ReadonlySet<string> = new Set([
-  '/api/internal/exports/[jobId]/download',
+const GATED_WITHOUT_BASELINE_OK: ReadonlyMap<string, string> = new Map([
+  [
+    '/api/broadcasts/templates/[id]/started',
+    'F119 T108 — the compose template picker is shared by member compose and staff ' +
+      'compose-on-behalf; a member session counts, a staff session needs ' +
+      'broadcasts.write (canPerform + recordApiPermissionDenial)',
+  ],
 ]);
 
-/** True when the file declares any admission gate this script understands. */
+/**
+ * True when the file declares any admission gate this script understands.
+ * FORM4 (`canPerform`) counts: every baselined route that uses it is already
+ * matched per method above, so here it only catches an UN-baselined one.
+ */
 function declaresStaffGate(code: string): boolean {
   return (
     /requireApiPermission\(/.test(code) ||
     /requireRenewalAdminContext\(/.test(code) ||
-    /permissionKey:\s*'/.test(code)
+    /permissionKey:\s*'/.test(code) ||
+    /canPerform\(/.test(code)
   );
 }
 
 const baseline = loadBaseline();
 const errors: string[] = [];
 const seen = new Set<string>();
+/** GATED_WITHOUT_BASELINE_OK entries whose file was walked AND declared a gate. */
+const allowanceUsed = new Set<string>();
 let checked = 0;
 
 for (const file of walk(API_DIR)) {
@@ -395,12 +412,14 @@ for (const file of walk(API_DIR)) {
     // Non-role-matrix class, owned elsewhere — UNLESS the file declares a staff
     // gate, in which case it is a role-matrix surface missing its baseline row.
     const code = stripCommentsPreserveLines(readFileSync(file, 'utf8'));
-    if (declaresStaffGate(code) && !GATED_WITHOUT_BASELINE_OK.has(surface)) {
+    const gated = declaresStaffGate(code);
+    if (gated && GATED_WITHOUT_BASELINE_OK.has(surface)) allowanceUsed.add(surface);
+    if (gated && !GATED_WITHOUT_BASELINE_OK.has(surface)) {
       const shown = relative(ROOT, file).replace(/\\/g, '/');
       errors.push(
         `${shown}: declares a staff permission gate but has no row in ` +
           `rbac-observed-baseline.ts. A staff API surface must be in the frozen ` +
-          `baseline (or, if genuinely session-any like the GDPR export proxy, be ` +
+          `baseline (or, if genuinely session-any — a member also reaches it — be ` +
           `added to GATED_WITHOUT_BASELINE_OK with a reason).`,
       );
     }
@@ -538,6 +557,18 @@ for (const file of walk(API_DIR)) {
 
 for (const path of baseline.keys()) {
   if (!seen.has(path)) errors.push(`baseline expects a route file for '${path}' — none found`);
+}
+
+// Positive control on the allowance: an entry whose route is gone, or no
+// longer declares a gate, exempts nothing today and would silently exempt
+// whatever gate is added there next.
+for (const path of GATED_WITHOUT_BASELINE_OK.keys()) {
+  if (!allowanceUsed.has(path)) {
+    errors.push(
+      `GATED_WITHOUT_BASELINE_OK lists '${path}' but no route file there declares a gate — ` +
+        'remove the stale entry.',
+    );
+  }
 }
 
 if (errors.length > 0) {

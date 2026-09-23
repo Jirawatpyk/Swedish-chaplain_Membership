@@ -7,9 +7,10 @@
  * dedup): this file owns only the cancel-specific fetch + toast mapping; the
  * shared component owns reason state, focus, validation, render, and pending.
  *
- *   - F119 U35 — confirm also waits for the typed phrase (`phrase` /
- *     `phraseLabel` / `phraseError` in `namespace`) on both surfaces: a
- *     cancelled E-Blast cannot be re-sent (ux-standards § 6.3).
+ *   - F119 U35 — confirm also waits for the E-Blast's SUBJECT to be typed
+ *     (maintainer decision) on both surfaces: a cancelled E-Blast cannot be
+ *     re-sent (ux-standards § 6.3). A punctuation-only subject falls back to
+ *     the fixed per-locale word — see `ReasonConfirmationDialog.typedPhrase`.
  *   - Cap 500 chars.
  *   - reasonRequired=true  (admin) → textarea auto-focus; reason required 1–500.
  *   - reasonRequired=false (member) → Cancel button initial focus; reason ≤500.
@@ -61,6 +62,8 @@ export interface CancelBroadcastDialogProps {
    * (Cancel / ESC paths where the trigger survives).
    */
   readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  /** The E-Blast's subject — what the person types to confirm (U35). */
+  readonly subject: string;
 }
 
 export function CancelBroadcastDialog({
@@ -72,6 +75,7 @@ export function CancelBroadcastDialog({
   reasonRequired,
   successToastKey = 'cancelled',
   triggerRef,
+  subject,
 }: CancelBroadcastDialogProps): React.ReactElement {
   const tToast = useTranslations(toastNamespace);
   const router = useRouter();
@@ -146,9 +150,9 @@ export function CancelBroadcastDialog({
       textareaRows={4}
       onConfirm={onConfirm}
       finalFocus={finalFocus}
-      // U35 — a cancelled E-Blast cannot be re-sent, so confirm waits for the
-      // typed phrase (ux-standards § 6.3), on the member AND staff surface.
-      requireTypedPhrase
+      // U35 — a cancelled E-Blast cannot be re-sent, so confirm waits for its
+      // typed subject (ux-standards § 6.3), on the member AND staff surface.
+      typedPhrase={subject}
     />
   );
 }

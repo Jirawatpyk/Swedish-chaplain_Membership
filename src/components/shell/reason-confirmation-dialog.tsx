@@ -53,9 +53,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import {
   TypedPhraseField,
+  normalizeTypedPhrase,
   typedPhraseMatches,
 } from '@/components/shell/typed-phrase-field';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
+
+/** What the typed-phrase gate asks for, resolved from the caller's text. */
+interface PhraseGate {
+  readonly expected: string;
+  readonly label: string;
+  readonly error: string;
+  /** Null on the fixed-word fallback — "Copy subject" would be untrue there. */
+  readonly copy: { readonly label: string; readonly copiedMessage: string } | null;
+}
 
 /**
  * F7-A11Y-1 — shared focus-return chain for the broadcast confirmation dialogs.
@@ -144,13 +154,21 @@ export interface ReasonConfirmationDialogProps {
   /** `false` = "Base UI moves nothing" — the hook focuses the landmark itself. */
   readonly finalFocus: () => HTMLElement | false | null;
   /**
-   * ux-standards § 6.3 — for an IRREVERSIBLE action, gate Confirm behind a
-   * typed phrase (the shared {@link TypedPhraseField}, same rule as
-   * clear-halt). Reads `phrase`, `phraseLabel` (`{phrase}` placeholder) and
-   * `phraseError` from `namespace`. Default false: reject / the F114 decision
+   * ux-standards § 6.3 — for an IRREVERSIBLE action, the text the person must
+   * type before Confirm enables (the shared {@link TypedPhraseField}, same
+   * matching rule as clear-halt). F119 U35: the E-Blast cancel passes the
+   * SUBJECT, read from `namespace` as `subjectLabel` / `subjectError` /
+   * `copySubject` / `subjectCopied`, with `phraseHelp` under the input.
+   *
+   * A value that normalises to EMPTY (punctuation only) falls back to the
+   * fixed per-locale `phrase` (`phraseLabel` with `{phrase}`, `phraseError`):
+   * an empty expected text would let an empty — or any punctuation-only —
+   * input through.
+   *
+   * Undefined (the default) = no gate: reject / approve / the F114 decision
    * dialog are not irreversible and stay one step.
    */
-  readonly requireTypedPhrase?: boolean;
+  readonly typedPhrase?: string;
 }
 
 export function ReasonConfirmationDialog({
@@ -163,13 +181,13 @@ export function ReasonConfirmationDialog({
   textareaRows,
   onConfirm,
   finalFocus,
-  requireTypedPhrase = false,
+  typedPhrase,
 }: ReasonConfirmationDialogProps): React.ReactElement {
   const t = useTranslations(namespace);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [reason, setReason] = useState('');
-  const [typedPhrase, setTypedPhrase] = useState('');
+  const [phraseInput, setPhraseInput] = useState('');
   const [pending, startTransition] = useTransition();
 
   // Reset on OPEN so every re-open starts fresh — covers the programmatic close
@@ -182,7 +200,7 @@ export function ReasonConfirmationDialog({
     setPrevOpen(open);
     if (open) {
       setReason('');
-      setTypedPhrase('');
+      setPhraseInput('');
     }
   }
 
@@ -209,9 +227,25 @@ export function ReasonConfirmationDialog({
     ? reason.trim().length >= 1 && !overCap
     : !overCap;
   // Only read when the gate is on — callers without it ship no phrase keys.
-  const expectedPhrase = requireTypedPhrase ? t('phrase') : '';
-  const phraseValid =
-    !requireTypedPhrase || typedPhraseMatches(typedPhrase, expectedPhrase);
+  // An expected text that normalises to empty falls back to the fixed word,
+  // or an empty input would pass (see the `typedPhrase` prop).
+  const gate: PhraseGate | null =
+    typedPhrase === undefined
+      ? null
+      : normalizeTypedPhrase(typedPhrase) === ''
+        ? {
+            expected: t('phrase'),
+            label: t('phraseLabel', { phrase: t('phrase') }),
+            error: t('phraseError'),
+            copy: null,
+          }
+        : {
+            expected: typedPhrase,
+            label: t('subjectLabel'),
+            error: t('subjectError'),
+            copy: { label: t('copySubject'), copiedMessage: t('subjectCopied') },
+          };
+  const phraseValid = gate === null || typedPhraseMatches(phraseInput, gate.expected);
   const valid = reasonValid && phraseValid;
 
   function handleConfirm(): void {
@@ -275,14 +309,17 @@ export function ReasonConfirmationDialog({
           ) : null}
         </div>
 
-        {requireTypedPhrase ? (
+        {gate !== null ? (
           <TypedPhraseField
             id={`${fieldIdPrefix}-phrase`}
-            label={t('phraseLabel', { phrase: expectedPhrase })}
-            phrase={expectedPhrase}
-            value={typedPhrase}
-            onChange={setTypedPhrase}
-            errorMessage={t('phraseError')}
+            label={gate.label}
+            phrase={gate.expected}
+            value={phraseInput}
+            onChange={setPhraseInput}
+            errorMessage={gate.error}
+            helpText={t('phraseHelp')}
+            {...(gate.copy !== null ? { copy: gate.copy } : {})}
+            onSubmit={handleConfirm}
             disabled={pending}
           />
         ) : null}

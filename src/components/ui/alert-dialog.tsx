@@ -62,7 +62,10 @@ function AlertDialogContent({
         style={{ animationTimingFunction: 'var(--modal-easing)' }}
         className={cn(
           // Narrower max-width fits confirmation-dialog copy; grows to sm on viewport ≥ 640px.
-          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[var(--card-radius)] bg-popover p-[var(--card-padding)] text-popover-foreground shadow-[var(--card-shadow)] ring-1 ring-foreground/10 duration-[var(--modal-duration)] motion-reduce:duration-0 outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-[var(--modal-max-width-sm)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // Height is capped to the dynamic viewport (minus a 1rem margin each side) and
+          // scrolls inside: at 320×568 a tall dialog otherwise pushed its footer — the
+          // Confirm button — off-screen (F119 UX review). A caller's own max-h wins.
+          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full overflow-y-auto -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[var(--card-radius)] bg-popover p-[var(--card-padding)] text-popover-foreground shadow-[var(--card-shadow)] ring-1 ring-foreground/10 duration-[var(--modal-duration)] motion-reduce:duration-0 outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-[var(--modal-max-width-sm)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

@@ -1062,7 +1062,11 @@ step 5's flip safe to take immediately after this merge.
    - the **chamber postal address** now stored in brand settings and printed in every E-Blast footer;
    - the new export category (`broadcast-versions.json`); `broadcast-images.json` (R17 — the
      member's uploaded images) is already in the archive and in the RoPA Access row since the
-     PR-1 follow-up, so it is **closed** here;
+     PR-1 follow-up, so it is **closed** here. Images of a discarded or expired draft are not
+     listed (the E-Blast row is hard-deleted first); their removal is in `audit-events.json`
+     (`broadcast_image_removed`, `related_member_id` arm) and the file goes on the next daily
+     sweep. Bytes still held by another owner's live row are disclosed on the erasure DSR ticket
+     (runbook step 4, decision (e)), not in the export;
    - the erasure reach — versions, notes, reasons, decisions, images **and the notifications about
      the E-Blast** — with images unreferenced by any E-Blast or template deleted **on the next
      daily sweep tick, 200 rows per arm per tenant** (ROUND-3 #15 — "within 24 hours" is a ceiling

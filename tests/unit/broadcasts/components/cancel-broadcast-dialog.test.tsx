@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { toast } from 'sonner';
@@ -33,6 +34,7 @@ function renderAdmin(extra: Partial<React.ComponentProps<typeof CancelBroadcastD
         namespace="admin.broadcasts.cancelDialog"
         toastNamespace="admin.broadcasts.toast"
         reasonRequired
+        subject={SUBJECT}
         {...extra}
       />
     </NextIntlClientProvider>,
@@ -53,6 +55,7 @@ function renderMember(
         namespace="portal.broadcasts.detail.cancelDialog"
         toastNamespace="portal.broadcasts.detail.toast"
         reasonRequired={false}
+        subject={SUBJECT}
         {...extra}
       />
     </NextIntlClientProvider>,
@@ -66,18 +69,17 @@ const MEMBER_REASON_LABEL = new RegExp(
   'i',
 );
 
-// U35 — cancelling is irreversible, so confirm is gated on a typed phrase.
+// U35 — cancelling is irreversible, so confirm is gated on typing the
+// E-Blast's SUBJECT (maintainer decision), on both surfaces.
 const ADMIN = en.admin.broadcasts.cancelDialog;
 const MEMBER = en.portal.broadcasts.detail.cancelDialog;
+const SUBJECT = 'Spring mixer — 2026 edition';
 
-function phraseInput(ns: { phrase: string; phraseLabel: string }): HTMLElement {
-  return screen.getByLabelText(ns.phraseLabel.replace('{phrase}', ns.phrase));
+function phraseInput(ns: { subjectLabel: string }): HTMLElement {
+  return screen.getByLabelText(ns.subjectLabel);
 }
 
-function typePhrase(
-  ns: { phrase: string; phraseLabel: string },
-  value: string = ns.phrase,
-): void {
+function typePhrase(ns: { subjectLabel: string }, value: string = SUBJECT): void {
   fireEvent.change(phraseInput(ns), { target: { value } });
 }
 
@@ -460,49 +462,102 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
   });
 });
 
-// ── Typed-phrase gate (U35) ─────────────────────────────────────────────
+// ── Typed-subject gate (U35) ────────────────────────────────────────────
 
-describe('CancelBroadcastDialog — typed-phrase gate (U35)', () => {
+describe('CancelBroadcastDialog — typed-subject gate (U35)', () => {
   const adminConfirm = () => screen.getByRole('button', { name: ADMIN.confirm });
   const memberConfirm = () => screen.getByRole('button', { name: MEMBER.confirm });
 
-  it('admin: a valid reason alone does not enable confirm', () => {
+  it('staff: a valid reason alone does not enable confirm, nor does the old fixed word', () => {
     renderAdmin();
     fireEvent.change(screen.getByLabelText(new RegExp(ADMIN.reasonLabel, 'i')), {
       target: { value: 'duplicate send' },
     });
     expect(adminConfirm()).toBeDisabled();
+    typePhrase(ADMIN, ADMIN.phrase);
+    expect(adminConfirm()).toBeDisabled();
     typePhrase(ADMIN);
     expect(adminConfirm()).not.toBeDisabled();
   });
 
-  it('member: confirm is disabled until the phrase matches', () => {
+  it('member: confirm is disabled until the subject matches; the old fixed word does not unlock it', () => {
     renderMember();
+    expect(memberConfirm()).toBeDisabled();
+    typePhrase(MEMBER, MEMBER.phrase);
     expect(memberConfirm()).toBeDisabled();
     typePhrase(MEMBER);
     expect(memberConfirm()).not.toBeDisabled();
   });
 
-  it('shows the expected phrase as a copy target', () => {
+  it('shows the whole subject as the copy target, with a Copy subject button and help text', () => {
     renderMember();
-    expect(screen.getByText(MEMBER.phrase, { selector: 'code' })).toBeInTheDocument();
+    expect(screen.getByText(SUBJECT)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: MEMBER.copySubject })).toBeInTheDocument();
+    expect(screen.getByText(MEMBER.phraseHelp)).toBeInTheDocument();
   });
 
-  it('matches case-, whitespace- and punctuation-insensitively (same rule as clear-halt)', () => {
+  it('matches case-, whitespace- and punctuation-insensitively', () => {
     renderMember();
-    typePhrase(MEMBER, `  ${MEMBER.phrase.toLowerCase()}.  `);
+    typePhrase(MEMBER, '  spring   MIXER 2026 edition ');
     expect(memberConfirm()).not.toBeDisabled();
   });
 
-  it('a mismatch keeps confirm disabled, announces the error and does not fetch', () => {
+  it('a paste of the subject enables confirm', async () => {
+    const user = userEvent.setup();
+    renderMember();
+    await user.click(phraseInput(MEMBER));
+    await user.paste(SUBJECT);
+    expect(phraseInput(MEMBER)).toHaveValue(SUBJECT);
+    expect(memberConfirm()).not.toBeDisabled();
+  });
+
+  it('a 200-character subject is shown in full, wrapped', () => {
+    const long = 'Annual members meeting '.repeat(9).slice(0, 200);
+    renderAdmin({ subject: long });
+    const target = screen.getByText(long.trim());
+    expect(target.textContent).toBe(long);
+    expect(target.className).toMatch(/(^|\s)whitespace-pre-wrap(\s|$)/);
+    expect(target.className).toMatch(/(^|\s)break-words(\s|$)/);
+  });
+
+  it('a subject that normalises to empty falls back to the fixed word', () => {
+    renderMember({ subject: '!!! — ???' });
+    const fallback = screen.getByLabelText(
+      MEMBER.phraseLabel.replace('{phrase}', MEMBER.phrase),
+    );
+    // Typing the (empty-normalising) subject itself must NOT pass the gate.
+    fireEvent.change(fallback, { target: { value: '!!! — ???' } });
+    expect(memberConfirm()).toBeDisabled();
+    fireEvent.change(fallback, { target: { value: MEMBER.phrase } });
+    expect(memberConfirm()).not.toBeDisabled();
+    // "Copy subject" would be a lie here.
+    expect(screen.queryByRole('button', { name: MEMBER.copySubject })).toBeNull();
+  });
+
+  it('a mismatch keeps confirm disabled, announces the error once blurred and does not fetch', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     renderMember();
-    typePhrase(MEMBER, 'cancle');
+    typePhrase(MEMBER, 'Spring');
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.blur(phraseInput(MEMBER));
     expect(memberConfirm()).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent(MEMBER.phraseError);
+    expect(screen.getByRole('alert')).toHaveTextContent(MEMBER.subjectError);
     expect(phraseInput(MEMBER)).toHaveAttribute('aria-invalid', 'true');
     fireEvent.click(memberConfirm());
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('Enter in the subject input confirms once it matches, not before', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+    renderMember();
+    typePhrase(MEMBER, 'Spring');
+    fireEvent.keyDown(phraseInput(MEMBER), { key: 'Enter' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    typePhrase(MEMBER);
+    fireEvent.keyDown(phraseInput(MEMBER), { key: 'Enter' });
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
   });
 
   it('a re-opened dialog starts with an empty phrase', () => {
@@ -515,6 +570,7 @@ describe('CancelBroadcastDialog — typed-phrase gate (U35)', () => {
           namespace="portal.broadcasts.detail.cancelDialog"
           toastNamespace="portal.broadcasts.detail.toast"
           reasonRequired={false}
+          subject={SUBJECT}
         />
       </NextIntlClientProvider>
     );
@@ -542,6 +598,7 @@ describe('CancelBroadcastDialog — reset on open', () => {
         namespace="admin.broadcasts.cancelDialog"
         toastNamespace="admin.broadcasts.toast"
         reasonRequired
+        subject={SUBJECT}
       />
     </NextIntlClientProvider>
   );

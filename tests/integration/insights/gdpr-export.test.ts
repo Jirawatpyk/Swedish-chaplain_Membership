@@ -202,15 +202,26 @@ describe('F9 GDPR archive — integration (T086)', () => {
 
     await seedDraftBroadcast(tenant, subjectBroadcast, subject);
     await seedDraftBroadcast(tenant, peerBroadcast, otherMember);
-    liveImageId = await seedBroadcastImage(tenant, subjectBroadcast, liveHash, uploaderIds[0]);
+    // The stamped row comes from the path that really produces one the export
+    // can see — the erasure cascade's `markDeletedForMember`, which stamps and
+    // KEEPS the (redacted) E-Blast. Discard and prune hard-delete the E-Blast
+    // first, so their images never reach this join. The live image is seeded
+    // AFTER the stamp (the stamp reaches every live image of the member); an
+    // upload after an erasure is not a real sequence — this models the read
+    // shape, one live + one stamped row, not a lifecycle.
     stampedImageId = await seedBroadcastImage(tenant, subjectBroadcast, stampedHash, uploaderIds[1]);
     await seedBroadcastImage(tenant, peerBroadcast, peerHash, uploaderIds[2]);
-    await runInTenant(tenant.ctx, (tx) =>
-      tx.execute(sql`
-        UPDATE broadcast_images SET deleted_at = now()
-         WHERE tenant_id = ${tenant.ctx.slug} AND id = ${stampedImageId}::uuid
-      `),
+    const stamped = await runInTenant(tenant.ctx, (tx) =>
+      drizzleBroadcastImagesRepo.markDeletedForMember(
+        tenant.ctx.slug as never,
+        subject,
+        new Date(),
+        tx,
+      ),
     );
+    // Only the subject's row — the peer's image is untouched.
+    expect(stamped.map((r) => r.id)).toEqual([stampedImageId]);
+    liveImageId = await seedBroadcastImage(tenant, subjectBroadcast, liveHash, uploaderIds[0]);
   }, 180_000);
 
   afterAll(async () => {

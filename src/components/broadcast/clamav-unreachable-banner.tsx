@@ -6,7 +6,8 @@
  * probe.
  *
  * Behaviour:
- *   - Polls `GET /api/internal/clamav/health` every 30s
+ *   - Polls the caller's `healthEndpoint` every 30s — and nothing at all
+ *     when none is passed (U34 below; no caller passes one today)
  *   - Renders only when the most-recent probe failed (ok=false or
  *     network error)
  *   - role="status" + aria-live="polite" so SR users hear the state

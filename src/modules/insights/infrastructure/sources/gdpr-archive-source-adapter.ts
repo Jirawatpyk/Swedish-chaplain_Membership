@@ -292,7 +292,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
     if (broadcastsTruncated) broadcasts.length = MAX_BROADCASTS; // trim the probe row
 
     // 5a) F119 R17 — every image uploaded for those E-Blasts, live AND stamped
-    //     (newest first). The broadcasts use case already dropped the uploader
+    //     (newest first). `listMemberBroadcastImages` already dropped the uploader
     //     (the archive never names a user) and the URL of a stamped image (about
     //     to be reclaimed — not re-published). Over-fetch by one like events.
     const imagesRaw = await listMemberBroadcastImages(makeListMemberBroadcastImagesDeps(ctx.slug), {

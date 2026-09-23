@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * F119 follow-up — the member directory logo sat on a hard-coded `bg-white`
- * patch, which glares in dark mode (same defect T155 U16 closed on the Brand
- * settings logo). It now uses the same themed transparency checker.
+ * F119 follow-up — the member directory logo sits on the SAME backing as the
+ * Brand settings logo preview: a fixed light checker (the white every mail
+ * client and most web pages composite a logo on). A themed checker hid dark
+ * logos in dark mode (F119 UX review).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -27,16 +28,12 @@ function renderControl(): HTMLElement {
 }
 
 describe('DirectoryLogoControl logo backing', () => {
-  it('carries no bg-white', () => {
-    const img = renderControl();
-    const backing = img.closest('[data-testid="directory-logo-preview"]') ?? img;
-    expect(`${backing.className} ${img.className}`).not.toMatch(/\bbg-white\b/);
-  });
-
-  it('uses a themed surface with the shared transparency checker', () => {
+  it('sits on a fixed light checker, not a theme token', () => {
     renderControl();
     const backing = screen.getByTestId('directory-logo-preview');
-    expect(backing.className).toMatch(/\bbg-card\b/);
+    expect(backing.style.backgroundColor).toBe('rgb(255, 255, 255)');
     expect(backing.style.backgroundImage).toMatch(/gradient/);
+    expect(backing.style.backgroundImage).not.toContain('var(');
+    expect(backing.className).not.toMatch(/\bbg-card\b/);
   });
 });
