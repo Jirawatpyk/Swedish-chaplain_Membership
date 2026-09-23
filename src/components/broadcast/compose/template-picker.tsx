@@ -17,12 +17,16 @@
  * listBroadcastTemplates (Phase 5D T103) — this component just
  * renders the already-filtered, already-ordered rows.
  *
- * Selecting an option navigates to /portal/broadcasts/new?template=
- * {id} so the server page re-renders with substituteChamberName
- * applied to the template body + subject.
+ * F119 T140 (FR-046): selecting an option REPORTS the choice to the parent
+ * (`onSelect(id | null)`) and nothing else. It used to `router.push(
+ * ?template={id})`, which remounted `<ComposeForm>` via the `key=` on
+ * `new/page.tsx` and destroyed whatever the member had typed, with no
+ * confirmation and no undo. The confirm-then-re-seed decision now lives one
+ * level up in `<ComposeTemplatePickerField>`; `?template=` still works as a
+ * deep link on a fresh page load, which is the only thing it was ever needed
+ * for.
  */
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -47,8 +51,11 @@ export interface TemplatePickerRow {
 
 interface Props {
   readonly templates: readonly TemplatePickerRow[];
-  /** Currently-selected template id (from `?template=` query). */
+  /** Currently-applied template id (`null` = blank / started from scratch). */
   readonly selectedId?: string | null;
+  /** Reports the choice; `null` means the blank option. */
+  readonly onSelect: (id: string | null) => void;
+  readonly disabled?: boolean;
 }
 
 const BLANK_VALUE = '__blank__';
@@ -56,9 +63,10 @@ const BLANK_VALUE = '__blank__';
 export function ComposeTemplatePicker({
   templates,
   selectedId = null,
+  onSelect,
+  disabled = false,
 }: Props): React.ReactElement | null {
   const t = useTranslations('portal.broadcasts.compose.templatePicker');
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   // Hide entirely when no templates exist (FR-018 implicit — no
@@ -70,15 +78,14 @@ export function ComposeTemplatePicker({
 
   function selectTemplate(value: string): void {
     setOpen(false);
-    if (value === BLANK_VALUE) {
-      router.push('/portal/broadcasts/new');
-    } else {
-      router.push(`/portal/broadcasts/new?template=${encodeURIComponent(value)}`);
-    }
+    onSelect(value === BLANK_VALUE ? null : value);
   }
 
   return (
-    <div className="mb-6 space-y-2">
+    // F119 T140 — no `mb-6` any more: the picker is a child of the compose
+    // form's own `space-y-6` stack now, so its old page-level bottom margin
+    // would double the gap above the editor.
+    <div className="space-y-2" data-compose-feature="template-picker">
       <Label id="compose-template-picker-label">{t('triggerLabel')}</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
@@ -89,6 +96,7 @@ export function ComposeTemplatePicker({
               aria-expanded={open}
               aria-labelledby="compose-template-picker-label"
               aria-describedby="compose-template-picker-help"
+              disabled={disabled}
               className="w-full justify-between"
             />
           }

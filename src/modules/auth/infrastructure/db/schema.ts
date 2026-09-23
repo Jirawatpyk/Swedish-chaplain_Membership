@@ -438,6 +438,16 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F7_AUDIT_EVENT_TYPES (broadcasts audit port) — the F7 parity test's
   //     `broadcast_` prefix already covers it. ---
   'broadcast_membership_suspended_blocked',
+  // --- F119 PR-1 (migration 0304) — E-Blast writing tool + brand: test copy
+  //     sent, brand settings changed (values, not member text), image
+  //     uploaded / removed (ids, hash, size, reason — never the blob URL).
+  //     5y retention. Keep in lockstep with F7_AUDIT_EVENT_TYPES — the F7
+  //     parity test's `broadcast_` prefix covers them. The ten PR-2 workflow
+  //     events ship with 0305. ---
+  'broadcast_test_copy_sent',
+  'broadcast_brand_settings_changed',
+  'broadcast_image_uploaded',
+  'broadcast_image_removed',
   // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
   //     `InvoiceDueBridge` credit-window guard. Emitted by
   //     `lapseCyclesOnGraceExpiry` when a member past the grace window

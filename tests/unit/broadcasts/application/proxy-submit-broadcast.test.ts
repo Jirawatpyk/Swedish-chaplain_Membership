@@ -209,7 +209,7 @@ function makeRepo(opts: FixtureOpts): {
         return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
       },
       async pruneExpiredDrafts() {
-        return { prunedCount: 0 };
+        return { prunedCount: 0, prunedDrafts: [] };
       },
     async listInFlightOwnedByMember() { return []; },
     async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
@@ -744,5 +744,82 @@ describe('proxy-submit-broadcast โ€” Wave 6 GREEN (T102 / Q12)', () => {
     // from_name composed as "Acme AB via <tenant>" - assert via the inserted
     // row's fromName field captured by the repo mock.
     expect(repo.inserted[0]?.fromName).toContain('Acme AB');
+  });
+
+  // F119 T145 (FR-039 parity) — a staff draft saved through
+  // `POST /api/admin/broadcasts/draft` is submitted IN PLACE: the row is
+  // updated + transitioned, never duplicated. Ownership is the delegate's:
+  // a draft of another member -> broadcast_not_found (anti-enumeration).
+  it('F119 draftId: submits the staff-saved draft in place (updateDraft, no second insertDraft)', async () => {
+    const { deps, repo } = makeDeps({
+      primaryContact: 'm-target@example.com',
+      recipients: [
+        { memberId: 'm-other', primaryContactEmail: 'other@example.com' },
+      ],
+    });
+    const DRAFT_ID = '11111111-1111-4111-8111-111111111111';
+    const existingDraft = makeBroadcast({
+      tenantId: tenant.slug,
+      broadcastId: DRAFT_ID as never,
+      requestedByMemberId: 'm-target',
+      requestedByMemberPlanIdSnapshot: 'plan-1',
+      submittedByUserId: 'admin-7',
+      actorRole: 'admin_proxy',
+      subject: 'old',
+      bodyHtml: '<p>old</p>',
+      bodySource: 'old',
+      fromName: 'Acme Co via Test Chamber',
+      replyToEmail: 'm-target@example.com',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      estimatedRecipientCount: 0,
+      scheduledFor: null,
+    } as NewBroadcastDraftInput);
+    const updates: Array<{ id: string; subject: string }> = [];
+    const wrappedRepo: BroadcastsRepo = {
+      ...repo.port,
+      async findByIdInTx(_tx, _tenant, id) {
+        return (id as string) === DRAFT_ID ? existingDraft : null;
+      },
+      async updateDraft(_tx, _tenant, id, patch) {
+        const subject = patch.subject ?? existingDraft.subject;
+        updates.push({ id: id as string, subject });
+        return { ...existingDraft, subject };
+      },
+      async applyTransition(_tx, _t, _b, status) {
+        return { ...existingDraft, status };
+      },
+    };
+    const result = await proxySubmitBroadcast(
+      { ...deps, broadcastsRepo: wrappedRepo },
+      { ...baseInput, draftId: DRAFT_ID },
+    );
+    expect(result.ok).toBe(true);
+    expect(updates).toEqual([{ id: DRAFT_ID, subject: baseInput.subject }]);
+    expect(repo.inserted).toHaveLength(0);
+  });
+
+  it("F119 draftId: another member's draft -> broadcast_not_found, nothing inserted", async () => {
+    const { deps, repo } = makeDeps({
+      primaryContact: 'm-target@example.com',
+      recipients: [
+        { memberId: 'm-other', primaryContactEmail: 'other@example.com' },
+      ],
+    });
+    const DRAFT_ID = '22222222-2222-4222-8222-222222222222';
+    const wrappedRepo: BroadcastsRepo = {
+      ...repo.port,
+      async findByIdInTx() {
+        return { ...makeBroadcast(repo.inserted[0] ?? ({} as NewBroadcastDraftInput)), requestedByMemberId: 'm-someone-else', status: 'draft' as const };
+      },
+    };
+    const result = await proxySubmitBroadcast(
+      { ...deps, broadcastsRepo: wrappedRepo },
+      { ...baseInput, draftId: DRAFT_ID },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('broadcast_not_found');
+    expect(repo.inserted).toHaveLength(0);
   });
 });

@@ -194,6 +194,12 @@
     "retry": "Try again"
   },
   "common": {
+    "unsavedChanges": {
+      "title": "Leave without saving?",
+      "description": "You have changes that have not been saved. Leaving this page discards them.",
+      "confirmLabel": "Leave the page",
+      "cancelLabel": "Stay on this page"
+    },
     "yes": "Yes",
     "no": "No",
     "languageOptions": {
@@ -2009,11 +2015,64 @@
       "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
     },
     "settings": {
+      "broadcasts": {
+        "brand": {
+          "pageTitle": "E-Blast brand",
+          "pageDescription": "The logo, colour and postal address applied to every e-blast.",
+          "colour": {
+            "heading": "Brand colour",
+            "description": "Used for buttons and headings in e-blasts. It is never applied to the admin portal or the member portal.",
+            "label": "Primary colour",
+            "pickerLabel": "Colour picker",
+            "hint": "Six hex digits, for example #10487a.",
+            "defaultHint": "Platform default: {color}",
+            "contrastPass": "Contrast with white text: {ratio}:1 — meets AA",
+            "contrastFail": "Contrast with white text: {ratio}:1 — below {required}:1",
+            "contrastFailHelp": "Saving is unavailable until the colour reaches {required}:1 with white text.",
+            "invalid": "Enter a colour as #RRGGBB."
+          },
+          "address": {
+            "heading": "Postal address",
+            "description": "Shown in the e-blast footer, where a physical address is required.",
+            "label": "Chamber postal address",
+            "placeholder": "Street, city, postal code",
+            "counter": "{count} of {max} characters",
+            "missing": "No postal address on file. E-blasts go out without a footer address until one is saved.",
+            "tooLong": "Use at most {max} characters."
+          },
+          "logo": {
+            "heading": "Logo",
+            "description": "Shown at the top of every e-blast.",
+            "source": "From invoice settings",
+            "manage": "Manage the logo",
+            "askAdministrator": "Ask an administrator to change it.",
+            "none": "No logo on file.",
+            "alt": "Chamber logo"
+          },
+          "actions": {
+            "save": "Save brand settings",
+            "saving": "Saving…"
+          },
+          "toast": {
+            "saved": "Brand settings saved."
+          },
+          "errors": {
+            "colourContrast": "White text on this colour reaches only {ratio}:1. WCAG AA needs {required}:1.",
+            "validation": "Check the highlighted fields and try again.",
+            "rateLimited": "Too many changes. Try again in {seconds} seconds.",
+            "generic": "The brand settings could not be saved. Try again."
+          }
+        }
+      },
       "index": {
         "title": "Settings",
         "subtitle": "Tenant-wide configuration for your chamber, grouped by feature.",
         "empty": "No settings are available to your role.",
         "categories": {
+          "eblastBrand": {
+            "title": "E-Blast brand",
+            "description": "Logo, colour and postal address applied to every e-blast."
+          },
           "invoicing": {
             "title": "Invoice settings",
             "description": "VAT, currency, registration fee, and document defaults for invoices, receipts, and credit notes."
@@ -3333,6 +3392,8 @@
         "quotaBlockedError": "{company} has used all their e-blasts for this period.",
         "notInPlanError": "{company}'s plan doesn't include E-Blast.",
         "submitErrorToast": "Couldn't submit the broadcast. Please try again.",
+        "memberRequiredHint": "Pick the member this E-Blast is for before submitting for review.",
+        "subjectEmptyError": "Subject is required.",
         "subjectTooLongError": "Subject must be 200 characters or fewer.",
         "bodyTooLargeError": "Message body exceeds the 200 KB size limit.",
         "bodyUnsafeHtmlError": "Message body contains formatting we can't accept — please simplify.",
@@ -3343,7 +3404,11 @@
         "searchFailed": "Member search failed. Try again.",
         "noResults": "No members found.",
         "missingContactEmailWarning": "This member has no primary contact email. A broadcast can't be sent on their behalf until a primary contact with an email address is added.",
-        "missingContactEmailError": "This member has no primary contact email. Add a primary contact first, then retry."
+        "missingContactEmailError": "This member has no primary contact email. Add a primary contact first, then retry.",
+        "saveDraftButton": "Save as draft",
+        "draftSavedToast": "Draft saved.",
+        "draftSaveErrorToast": "Couldn't save the draft. Please try again.",
+        "savedAt": "Saved at {time}"
       },
       "proxySubmitButton": "Submit on behalf of member",
       "haltBanner": {
@@ -3423,7 +3488,8 @@
           "subjectHelp": "Up to 200 characters. May include '{{chamber_name}}' placeholder.",
           "bodyHtml": "Body (HTML)",
           "bodyHtmlHelp": "Up to 200 KB. Use [bracketed text] for member-editable placeholders; '{{chamber_name}}' is substituted at draft-start.",
-          "localeLabel": "Locale"
+          "localeLabel": "Locale",
+          "imagesAfterSaveHint": "Images can be added once the template is saved."
         },
         "saveButton": "Save template",
         "cancelButton": "Cancel",
@@ -3436,6 +3502,10 @@
           "template_name_duplicate": "A template with this name + locale already exists.",
           "template_not_found": "Template not found.",
           "template_soft_deleted": "This template has been deleted. Please choose another or start blank.",
+          "cta_text_length": "Button text must be between 1 and 60 characters.",
+          "too_many_cta": "A template can carry at most 3 call-to-action buttons.",
+          "cta_link_scheme": "A button link must start with http://, https:// or mailto:.",
+          "banner_alt_required": "A banner image needs a description of 1 to 125 characters.",
           "storage_error": "A storage error occurred. Please try again.",
           "unknown": "An unexpected error occurred."
         }
@@ -5459,6 +5529,7 @@
       "settingsRenewalSchedules": "Reminder schedules",
       "settingsMemberChanges": "Member change approval",
       "settingsBroadcasts": "Broadcast settings",
+      "settingsBroadcastsBrand": "E-Blast brand",
       "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
         "main": "Main",
@@ -5498,6 +5569,7 @@
     }
   },
   "breadcrumb": {
+    "brand": "Brand",
     "admin": "Admin",
     "dashboard": "Dashboard",
     "users": "Users",
@@ -5540,6 +5612,83 @@
     "loadingPage": "Loading page content",
     "loadingTable": "Loading table data",
     "loadingForm": "Loading form"
+  },
+  "broadcast": {
+    "editor": {
+      "toolbar": {
+        "label": "Formatting toolbar",
+        "heading2": "Heading",
+        "heading3": "Subheading",
+        "quote": "Quote",
+        "divider": "Divider",
+        "bulletList": "Bulleted list",
+        "orderedList": "Numbered list",
+        "bold": "Bold",
+        "italic": "Italic",
+        "underline": "Underline",
+        "link": "Link",
+        "image": "Image",
+        "cta": "Button",
+        "banner": "Banner image",
+        "imageNeedsDraft": "Save this draft first to add an image."
+      },
+      "altDialog": {
+        "title": "Describe this image",
+        "bannerTitle": "Describe this banner",
+        "description": "A short description is read aloud to people who cannot see the image, and shows in email apps that block images.",
+        "fieldLabel": "Image description",
+        "counter": "{count} of {max} characters",
+        "insert": "Insert image",
+        "bannerInsert": "Insert banner",
+        "cancel": "Cancel",
+        "errors": {
+          "required": "Enter a description of the image, from {min} to {max} characters.",
+          "tooLong": "Shorten the description to {max} characters or fewer."
+        }
+      },
+      "linkDialog": {
+        "title": "Add a link",
+        "description": "Links open in a new tab.",
+        "urlLabel": "Link address",
+        "urlPlaceholder": "https://example.com",
+        "textLabel": "Link text",
+        "confirm": "Save link",
+        "cancel": "Cancel",
+        "remove": "Remove link",
+        "errors": {
+          "required": "Enter a link address.",
+          "scheme": "A link must start with http://, https:// or mailto:."
+        }
+      },
+      "ctaDialog": {
+        "title": "Add a button",
+        "description": "The chamber brand colour and spacing are applied automatically.",
+        "textLabel": "Button text",
+        "urlLabel": "Button link",
+        "urlPlaceholder": "https://example.com",
+        "counter": "{count} of {max} characters",
+        "confirm": "Insert button",
+        "cancel": "Cancel",
+        "errors": {
+          "textRequired": "Enter the button text, from {min} to {max} characters.",
+          "textTooLong": "Shorten the button text to {max} characters or fewer.",
+          "required": "Enter a link for the button.",
+          "scheme": "A link must start with http://, https:// or mailto:."
+        }
+      },
+      "pasteNotice": "Some formatting is not supported in email and was removed.",
+      "preview": {
+        "empty": "Your message preview appears here.",
+        "paused": "Preview paused for {seconds} seconds — it refreshes on your next edit.",
+        "frameTitle": "Email preview",
+        "openLabel": "Preview",
+        "dialogTitle": "Email preview",
+        "dialogDescription": "Exactly what a recipient receives: header, message and footer.",
+        "widthLabel": "Preview width",
+        "widthDesktop": "Desktop (600 px)",
+        "widthPhone": "Phone (375 px)"
+      }
+    }
   },
   "portal": {
     "dashboard": {
@@ -5814,20 +5963,21 @@
           "starterBadgeAria": "Seeded by the platform",
           "searchPlaceholder": "Search templates by name",
           "emptyMessage": "No templates match your search",
-          "helpText": "Picking a template fills the subject + message. You can still edit before sending."
+          "helpText": "Picking a template fills the subject + message. You can still edit before sending.",
+          "confirm": {
+            "title": "Replace what you have written?",
+            "description": "Starting from “{template}” replaces your subject and message. Everything else you have set stays as it is.",
+            "descriptionBlank": "Starting from scratch clears your subject and message. Everything else you have set stays as it is.",
+            "confirmLabel": "Use the template",
+            "confirmLabelBlank": "Start from scratch",
+            "cancelLabel": "Keep my message"
+          }
         },
-        "staleDraftBanner": {
-          "title": "Template has been updated",
-          "body": "The \"{templateName}\" template was edited since you started this draft. Refresh to load the current version (your edits to subject + body will be overwritten).",
-          "refreshButton": "Refresh from current",
-          "refreshingButton": "Refreshing…",
-          "dismissAria": "Dismiss stale-draft notice for {templateName}"
-        },
+        "savedAt": "Saved at {time}",
         "fields": {
           "subject": "Subject",
           "subjectPlaceholder": "Subject line (max 200 characters)",
           "bodyLabel": "Message",
-          "bodyPlaceholder": "Write your message — formatting is preserved.",
           "segmentLabel": "Recipients",
           "customListLabel": "Custom email list",
           "customListHelp": "One email per line, up to 100 entries. Each must already be in your tenant directory.",
@@ -5838,9 +5988,6 @@
           "previewUnavailable": "Preview is temporarily unavailable",
           "previewUnavailableHint": "Refresh the page to retry — your draft is safe.",
           "subjectCounter": "{count} / {max} characters",
-          "linkUrlLabel": "Link URL",
-          "linkConfirm": "Set link",
-          "linkCancel": "Cancel",
           "tierCodesPlaceholder": "premium, large",
           "tierCodesHelp": "Comma-separated tier codes",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
@@ -5853,17 +6000,6 @@
         },
         "tierLabel": "Tier code",
         "editor": {
-          "bracketHint": "Click any [bracketed text] to replace with your content.",
-          "aria": {
-            "toolbar": "Formatting toolbar",
-            "bold": "Bold (Ctrl+B)",
-            "italic": "Italic (Ctrl+I)",
-            "underline": "Underline (Ctrl+U)",
-            "bulletList": "Bullet list",
-            "orderedList": "Numbered list",
-            "link": "Insert link",
-            "clearLink": "Remove link"
-          },
           "announcements": {
             "boldOn": "Bold on",
             "boldOff": "Bold off",
@@ -5884,14 +6020,16 @@
           "submitted": "Submitted for admin review.",
           "submittedSlaHint": "Admin review target: 48 hours.",
           "preferenceExcluded": "{count, plural, one {# address was} other {# addresses were}} excluded by recipient preference.",
-          "sanitiserStripped": "Some unsupported formatting was removed automatically.",
           "submitting": "Submitting…",
           "takingLonger": "Taking longer than expected — please wait."
         },
         "button": {
           "saveDraft": "Save as draft",
-          "submit": "Submit for review",
-          "deleteDraft": "Discard draft"
+          "submit": "Submit for review"
+        },
+        "submitBlocked": {
+          "subjectRequired": "Add a subject before submitting for review.",
+          "tierRequired": "Choose at least one membership tier before submitting for review."
         },
         "submitNote": {
           "cancellable": "You can cancel this broadcast at any time until an admin approves it."
@@ -5933,29 +6071,25 @@
           "broadcast_member_missing_primary_contact_email": "Your profile is missing a primary contact email.",
           "broadcast_member_halted_pending_review": "Your broadcast privileges are paused pending admin review.",
           "broadcast_rate_limit_exceeded": "Too many submissions. Please try again later.",
+          "invalid_body": "Something in the form could not be saved. Please check your entries and try again.",
           "broadcast_immutable_after_submit": "This broadcast has been submitted and can no longer be edited.",
           "broadcast_not_found": "We could not find that broadcast.",
           "internal_error": "An unexpected error occurred. Please try again."
-        },
-        "delete": {
-          "title": "Discard this draft?",
-          "body": "This will permanently remove your draft. This action cannot be undone.",
-          "confirm": "Discard",
-          "cancel": "Keep editing"
         },
         "imageUpload": {
           "pickerLabel": "Choose an image to upload",
           "uploadButton": "Upload image",
           "uploadingLabel": "Uploading…",
-          "progressAria": "Image upload progress",
           "uploadingAria": "Uploading image — please wait",
           "uploadedToast": "Image uploaded.",
           "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
+          "publicLinkNotice": "Your image is stored at a public web address that needs no sign-in — anyone with the link can open it, so don't upload anything private.",
           "draftRequiredHint": "Save this draft first to enable image uploads.",
           "disallowedSourcesHeading": "These image sources aren't allowed:",
           "disallowedSourceItem": "{host} — replace with an image from your chamber's allowlist.",
           "errors": {
             "broadcast_image_too_large": "Image is larger than 5 MB.",
+            "broadcast_image_empty": "That file is empty. Please choose an image file with content.",
             "broadcast_image_unsafe": "Image was flagged by the virus scanner. The upload was rejected.",
             "broadcast_image_invalid_mime": "Only PNG, JPG, WebP or GIF images are allowed.",
             "storage_unavailable": "Image storage is temporarily unavailable. Please try again in a moment.",
@@ -6047,7 +6181,8 @@
           "submittedAt": "Submitted",
           "sentAt": "Sent",
           "status": "Status",
-          "recipients": "Recipients"
+          "recipients": "Recipients",
+          "content": "Content"
         },
         "delivery": {
           "title": "Delivery breakdown",
@@ -6838,6 +6973,10 @@
       "broadcast_image_allowlist_updated": "Broadcast image allowlist updated",
       "broadcast_image_too_large": "Broadcast image too large",
       "broadcast_image_unsafe": "Unsafe broadcast image",
+      "broadcast_brand_settings_changed": "E-Blast brand settings changed",
+      "broadcast_image_removed": "E-Blast image removed",
+      "broadcast_image_uploaded": "E-Blast image uploaded",
+      "broadcast_test_copy_sent": "E-Blast test copy sent",
       "broadcast_immutable_after_submit": "Broadcast edit blocked after submit",
       "broadcast_member_dispatch_resumed": "Member dispatch resumed",
       "broadcast_member_halted_pending_review": "Member dispatch halted pending review",

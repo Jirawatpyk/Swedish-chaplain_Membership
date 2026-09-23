@@ -29,6 +29,11 @@ import {
 } from '../../domain/broadcast';
 import type { BroadcastSegmentType } from '../../domain/value-objects/segment-type';
 import { composeBroadcastFromName } from '../../domain/from-name';
+import {
+  parseBlockMarkers,
+  validateBlocks,
+  type BlockViolation,
+} from '../../domain/design-blocks/block-markers';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
@@ -41,6 +46,11 @@ export type SaveDraftError =
   | { readonly kind: 'broadcast_subject_too_long'; readonly length: number }
   | { readonly kind: 'broadcast_subject_empty' }
   | SanitizeHtmlError
+  // F119 FR-041 (security review F1-2) — the design-block bounds, which the
+  // route helper always documented as "refused 422 at every save" but which
+  // only `sendTestCopy` actually ran. Same kind + shape as `SendTestCopyError`
+  // so both surfaces map through one helper.
+  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
   | {
       readonly kind: 'broadcast_member_missing_primary_contact_email';
       readonly memberId: string;
@@ -115,6 +125,19 @@ export async function saveDraft(
   );
   if (!sanitised.ok) {
     return err(sanitised.error);
+  }
+
+  // 2b. Design-block rules (FR-041). Security review F1-2 (2026-09-22): this
+  // ran ONLY in `send-test-copy.ts`, so a body with four CTA buttons or an
+  // undescribed banner saved and submitted cleanly and was refused only if the
+  // author happened to send themselves a test copy — while the route helper
+  // and the test-copy docblock both claimed it was refused at every save.
+  // Guard placement is deliberate: ABOVE the `withTx` block, because a
+  // `Result` refusal returned from inside a transaction COMMITS whatever the
+  // transaction already wrote.
+  const violations = validateBlocks(parseBlockMarkers(sanitised.value.sanitisedHtml));
+  if (violations.length > 0) {
+    return err({ kind: 'content_rules', violations });
   }
 
   // 3. Member primary contact (reply-to). Review 2026-09-07 — the bridge

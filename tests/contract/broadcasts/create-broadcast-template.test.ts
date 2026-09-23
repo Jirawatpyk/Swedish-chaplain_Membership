@@ -203,6 +203,77 @@ describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
     expect(deps.port.create).not.toHaveBeenCalled();
   });
 
+  // ── F119 security-round residual: design-block content rules (FR-041) ────
+  // `validateBlocks` ran on submit, on both draft saves and on the test copy,
+  // and NOT here — while `snapshotTemplateToDraft` copies a template body
+  // straight into a draft. A template with four CTA buttons was therefore a
+  // stored bypass of the rule the compose surface refuses to save.
+  const ctaHtml = (n: number): string =>
+    Array.from(
+      { length: n },
+      (_, i) => `<a data-eb="cta" href="https://example.org/${i}">Register</a>`,
+    ).join('');
+
+  it('four CTA buttons → content_rules `too_many_cta`, and NOTHING is written', async () => {
+    const deps = makeDeps();
+    const r = await createBroadcastTemplate(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_ADMIN,
+      name: 'Four buttons',
+      subject: 'OK',
+      bodyHtml: `<p>Hello</p>${ctaHtml(4)}`,
+      locale: 'en',
+      requestId: 'req-006',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('content_rules');
+      if (r.error.kind === 'content_rules') {
+        expect(r.error.violations.map((v) => v.code)).toContain('too_many_cta');
+      }
+    }
+    // Above the first write: a refusal returned from INSIDE withTx commits.
+    expect(deps.port.create).not.toHaveBeenCalled();
+    expect(deps.port.withTx).not.toHaveBeenCalled();
+  });
+
+  it('a banner with no description → content_rules `banner_alt_required`', async () => {
+    const deps = makeDeps();
+    const r = await createBroadcastTemplate(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_ADMIN,
+      name: 'Undescribed banner',
+      subject: 'OK',
+      bodyHtml:
+        '<p><img data-eb="banner" src="https://assets.swecham.zyncdata.app/b.png" alt=""></p>',
+      locale: 'en',
+      requestId: 'req-007',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'content_rules') {
+      expect(r.error.violations.map((v) => v.code)).toEqual(['banner_alt_required']);
+    } else {
+      expect.unreachable('a banner with no alt must be refused');
+    }
+  });
+
+  it('three compliant CTAs and a described banner still save', async () => {
+    const deps = makeDeps();
+    const r = await createBroadcastTemplate(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_ADMIN,
+      name: 'Within the rules',
+      subject: 'OK',
+      bodyHtml:
+        `<p>Hello</p>${ctaHtml(3)}` +
+        '<img data-eb="banner" src="https://assets.swecham.zyncdata.app/b.png" alt="Autumn dinner">',
+      locale: 'en',
+      requestId: 'req-008',
+    });
+    expect(r.ok).toBe(true);
+    expect(deps.port.create).toHaveBeenCalledTimes(1);
+  });
+
   it('duplicate name within tenant+locale → duplicate_name from port', async () => {
     const deps = makeDeps({
       createResult: err({ kind: 'duplicate_name', locale: 'en' }),

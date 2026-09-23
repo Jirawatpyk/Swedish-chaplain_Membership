@@ -56,6 +56,10 @@ interface MakeDepsOverrides {
   auditEmitImpl?: () => Promise<void>;
   /** 108 PR-C T104 — rows whose member/contact back-references were nulled. */
   severImpl?: () => Promise<{ affected: number }>;
+  /** F2-2 — the erased member's inline images, stamped in this same tx. */
+  imageRows?: ReadonlyArray<Record<string, unknown>>;
+  /** ROUND-2 R-M6 — omit `emitMany` to exercise the per-row fallback. */
+  noEmitMany?: boolean;
 }
 
 function makeDeps(overrides: MakeDepsOverrides = {}) {
@@ -83,6 +87,14 @@ function makeDeps(overrides: MakeDepsOverrides = {}) {
   const audit = {
     emit: vi.fn(),
     emitTyped: auditEmitImpl,
+    // ROUND-2 R-M6 — the batched emit. Optional on the port (196 annotated
+    // doubles), so `auditImagesRemoved` prefers it and falls back to `emit`;
+    // `overrides.noEmitMany` exercises that fallback arm.
+    ...(overrides.noEmitMany === true ? {} : { emitMany: vi.fn(async () => undefined) }),
+  } as {
+    emit: ReturnType<typeof vi.fn>;
+    emitTyped: typeof auditEmitImpl;
+    emitMany?: ReturnType<typeof vi.fn>;
   };
   // 108 PR-C T104 — the suppression repo severs the erased member's
   // `member_id` / `contact_id` back-references (rows survive, email-keyed).
@@ -92,8 +104,152 @@ function makeDeps(overrides: MakeDepsOverrides = {}) {
       async () => (await overrides.severImpl?.()) ?? { affected: 0 },
     ),
   };
-  return { broadcastsRepo, audit, marketingUnsubscribes, fakeTx };
+  // F119 review finding F2-2 — erasure redacted subject/body but never
+  // reached the member's UPLOADED IMAGES, which sit at public blob URLs.
+  const imagesRepo = {
+    markDeletedForMember: vi.fn(
+      async (_t: unknown, _m: unknown, _at: unknown, _tx: unknown) => overrides.imageRows ?? [],
+    ),
+  };
+  return { broadcastsRepo, audit, marketingUnsubscribes, imagesRepo, fakeTx };
 }
+
+describe('scrubBroadcastContentForMember — F2-2: erasure reaches the images', () => {
+  it('stamps every inline image of the erased member IN THE SCRUB TX and audits each', async () => {
+    const deps = makeDeps({
+      imageRows: [
+        { id: 'img-1', ownerKind: 'broadcast', ownerId: 'b-1', contentHash: 'h1' },
+        { id: 'img-2', ownerKind: 'broadcast', ownerId: 'b-2', contentHash: 'h2' },
+      ],
+    });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      reason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-1',
+      requestId: 'req-erase',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.imagesMarked).toBe(2);
+    // Same transaction as the content redaction — a stamp that commits without
+    // the redaction, or vice versa, is the forensic gap Principle I forbids.
+    expect(deps.imagesRepo.markDeletedForMember).toHaveBeenCalledTimes(1);
+    expect(deps.imagesRepo.markDeletedForMember.mock.calls[0]![3]).toBe(deps.fakeTx);
+
+    // ROUND-2 R-M6 — ONE batched call, not N round-trips. A long-standing
+    // member's erasure can stamp dozens of images, and each `audit.emit` was a
+    // separate statement inside the erasure transaction, which holds the
+    // member row and every cascade write open for its whole length.
+    const batched = deps.audit.emitMany!.mock.calls;
+    expect(batched).toHaveLength(1);
+    expect(batched[0]![0]).toBe(deps.fakeTx);
+    const rows = batched[0]![1] as ReadonlyArray<{
+      eventType: string;
+      payload: Record<string, unknown>;
+    }>;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((e) => e.eventType)).toEqual([
+      'broadcast_image_removed',
+      'broadcast_image_removed',
+    ]);
+    expect(rows[0]!.payload).toMatchObject({
+      image_id: 'img-1',
+      reason: 'member_erased',
+      blob_deleted: false,
+      actor_role: 'system',
+    });
+    expect(rows[1]!.payload).toMatchObject({ image_id: 'img-2' });
+    // A deletion is not member activity: never the snake_case trigger key.
+    expect(Object.keys(rows[0]!.payload)).not.toContain('member_id');
+    // The per-row path is not ALSO used.
+    expect(
+      deps.audit.emit.mock.calls.filter(
+        (c) => (c[1] as { eventType: string }).eventType === 'broadcast_image_removed',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('R-M6 fallback: an audit port without `emitMany` still writes one row per image', async () => {
+    const deps = makeDeps({
+      noEmitMany: true,
+      imageRows: [
+        { id: 'img-1', ownerKind: 'broadcast', ownerId: 'b-1', contentHash: 'h1' },
+        { id: 'img-2', ownerKind: 'broadcast', ownerId: 'b-2', contentHash: 'h2' },
+      ],
+    });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      initiatedByUserId: 'admin-1',
+      requestId: 'req-erase',
+    });
+
+    expect(result.ok).toBe(true);
+    const removals = deps.audit.emit.mock.calls.filter(
+      (c) => (c[1] as { eventType: string }).eventType === 'broadcast_image_removed',
+    );
+    expect(removals).toHaveLength(2);
+    expect(removals.every((c) => c[0] === deps.fakeTx)).toBe(true);
+  });
+
+  /**
+   * ROUND-2 P-M2. `broadcast_content_redacted` is the erasure ATTESTATION —
+   * the one row an auditor reads to see what the cascade reached. It carried
+   * the content, delivery and suppression counts but not the image count, so
+   * the axis that was added precisely because redacting `body_html` does not
+   * delete the member's photograph was invisible in the evidence.
+   */
+  it('P-M2: the redaction attestation records `images_marked` alongside the other axes', async () => {
+    const deps = makeDeps({
+      imageRows: [
+        { id: 'img-1', ownerKind: 'broadcast', ownerId: 'b-1', contentHash: 'h1' },
+        { id: 'img-2', ownerKind: 'broadcast', ownerId: 'b-2', contentHash: 'h2' },
+      ],
+    });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: TOMBSTONED_COUNT,
+      reason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-1',
+      requestId: 'req-erase',
+    });
+
+    expect(result.ok).toBe(true);
+    const attestation = deps.audit.emitTyped.mock.calls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'broadcast_content_redacted',
+    );
+    expect(attestation).toBeDefined();
+    expect((attestation![1] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      scrubbed_count: 2,
+      tombstoned_count: TOMBSTONED_COUNT,
+      suppression_refs_severed: 0,
+      images_marked: 2,
+      reason: 'gdpr_erasure_request',
+    });
+  });
+
+  it('a member with no images is a clean no-op on the image axis', async () => {
+    const deps = makeDeps();
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      initiatedByUserId: null,
+      requestId: 'r',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.imagesMarked).toBe(0);
+    expect(
+      deps.audit.emit.mock.calls.filter(
+        (c) => (c[1] as { eventType: string }).eventType === 'broadcast_image_removed',
+      ),
+    ).toHaveLength(0);
+  });
+});
 
 describe('scrubBroadcastContentForMember (COMP-1 US2b)', () => {
   beforeEach(() => {

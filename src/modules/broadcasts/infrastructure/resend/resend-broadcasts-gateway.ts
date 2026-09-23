@@ -321,6 +321,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           bodyHtml: input.htmlBody,
           tenantDisplayName: input.tenantDisplayName,
           locale: input.locale,
+          // F119 T031 — live brand chrome; omitted ⇒ byte-identical to pre-F119.
+          ...(input.brand !== undefined ? { brand: input.brand } : {}),
         });
         const bareFromEmail = extractBareEmail(input.fromEmail);
         // Finding B — strip `<`/`>` from the display name so a member company

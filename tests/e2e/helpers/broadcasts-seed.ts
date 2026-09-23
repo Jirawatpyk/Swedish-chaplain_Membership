@@ -584,3 +584,124 @@ export async function wipeE2EMemberBroadcasts(
     await sql.end({ timeout: 5 });
   }
 }
+
+/** Subject of the single row `seedMemberDetailBroadcast` owns. */
+export const DETAIL_FIXTURE_SUBJECT = '[E2E SEED] T139 detail-screen fixture';
+
+/**
+ * F119 T139 (US6-AS6, FR-051) — one broadcast owned by the persona the a11y
+ * suite SIGNS IN AS, so `/portal/broadcasts/[id]` can be scanned with its body
+ * view (T141) actually rendered.
+ *
+ * Why a dedicated seeder rather than `seedF7Broadcasts`: that one is keyed to
+ * `E2E_MEMBER_EMAIL` (the primary `e2e-member`, LAPSED by the F8 fixture), and
+ * the detail page resolves the member from the SESSION — a row owned by another
+ * member answers 404 by design (`broadcast_cross_member_probe`). The screen can
+ * only be scanned on a row the signed-in member owns.
+ *
+ * `body_html` is deliberately non-empty and multi-element: `PreviewSurface`
+ * renders its translated EMPTY state instead of the sandboxed `<iframe srcdoc>`
+ * when `isPreviewBodyEmpty(html)` holds, and the frame is the thing T139
+ * asserts is present and titled.
+ *
+ * Idempotent by subject (DELETE + re-INSERT — the immutability trigger blocks
+ * UPDATE once a row leaves `draft`). Returns `null` (never throws) when
+ * `DATABASE_URL` / the persona email are absent or the persona has no member
+ * row, so callers gate the case with `test.skip`.
+ */
+export async function seedMemberDetailBroadcast(
+  memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL_EMPTY,
+): Promise<string | null> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl || !memberEmail) {
+    console.warn(
+      '[e2e seed detail-broadcast] skipped — DATABASE_URL or persona email missing',
+    );
+    return null;
+  }
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const memberRows = await sql<
+      Array<{
+        user_id: string;
+        member_id: string;
+        plan_uuid: string;
+        primary_contact_email: string;
+      }>
+    >`
+      SELECT u.id::text AS user_id,
+             m.member_id::text AS member_id,
+             m.plan_id AS plan_uuid,
+             COALESCE(pc.email, u.email) AS primary_contact_email
+      FROM users u
+      JOIN contacts c
+        ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
+      JOIN members m
+        ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
+      LEFT JOIN contacts pc
+        ON pc.member_id = m.member_id
+       AND pc.tenant_id = ${TENANT_ID}
+       AND pc.is_primary = TRUE
+       AND pc.removed_at IS NULL
+      WHERE u.email = ${memberEmail}
+      LIMIT 1
+    `;
+    const member = memberRows[0];
+    if (!member) {
+      console.warn(
+        `[e2e seed detail-broadcast] ${memberEmail} has no member row in tenant ${TENANT_ID}; skipping seed`,
+      );
+      return null;
+    }
+
+    await sql`
+      ALTER TABLE broadcast_deliveries DISABLE TRIGGER broadcast_deliveries_no_delete
+    `;
+    await sql`
+      DELETE FROM broadcast_deliveries
+      WHERE tenant_id = ${TENANT_ID}
+        AND broadcast_id IN (
+          SELECT broadcast_id FROM broadcasts
+          WHERE tenant_id = ${TENANT_ID} AND subject = ${DETAIL_FIXTURE_SUBJECT}
+        )
+    `;
+    await sql`
+      ALTER TABLE broadcast_deliveries ENABLE TRIGGER broadcast_deliveries_no_delete
+    `;
+    await sql`
+      DELETE FROM broadcasts
+      WHERE tenant_id = ${TENANT_ID} AND subject = ${DETAIL_FIXTURE_SUBJECT}
+    `;
+
+    const broadcastId = randomUUID();
+    await sql`
+      INSERT INTO broadcasts (
+        tenant_id, broadcast_id,
+        requested_by_member_id, requested_by_member_plan_id_snapshot,
+        submitted_by_user_id, actor_role,
+        subject, body_html, body_source,
+        from_name, reply_to_email,
+        segment_type, segment_params, custom_recipient_emails,
+        estimated_recipient_count,
+        status, submitted_at,
+        retention_years, created_at, updated_at
+      ) VALUES (
+        ${TENANT_ID}, ${broadcastId}::uuid,
+        ${member.member_id}::uuid, ${member.plan_uuid},
+        ${member.user_id}::uuid, 'member_self_service',
+        ${DETAIL_FIXTURE_SUBJECT},
+        '<h2>Spring mixer</h2><p>Join us for the Thai-Swedish spring mixer.</p><ul><li>Drinks</li><li>Talks</li></ul>',
+        '<h2>Spring mixer</h2><p>Join us for the Thai-Swedish spring mixer.</p><ul><li>Drinks</li><li>Talks</li></ul>',
+        'SweCham', ${member.primary_contact_email},
+        'all_members', NULL, NULL,
+        1,
+        'submitted', NOW(),
+        5, NOW(), NOW()
+      )
+    `;
+    console.log(`[e2e seed detail-broadcast] OK broadcast=${broadcastId}`);
+    return broadcastId;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}

@@ -40,6 +40,28 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    {`verified_account_login`, `in_person`, `email_confirmation_loop`,
    `official_document`}. Do not proceed on an unverified request.
 
+2a. **PRE-CASCADE — enumerate pre-0304 inline E-Blast image blobs.** Run this
+   **before** step 3, because it reads `body_html` the cascade is about to
+   redact. `broadcast_images` was NOT backfilled by migration 0304, so an image
+   uploaded before 2026-09 has no row and the cascade's image step cannot see
+   it; once the HTML is redacted the blob URL is gone from the database and the
+   file is unreachable by any query. Record the keys on the DSR ticket now,
+   delete them from Vercel Blob by hand after the cascade completes (step 4),
+   and note it as residual (e) in step 7:
+
+   ```sql
+   SELECT broadcast_id, body_html, body_source
+     FROM broadcasts
+    WHERE requested_by_member_id = '<member>'
+      AND (body_html   LIKE '%/broadcasts/images/%'
+        OR body_source LIKE '%/broadcasts/images/%');
+   ```
+
+   Zero rows is the normal result for a member who joined after 2026-09. Any
+   row: extract every `/broadcasts/images/<tenant>/<hash>.<ext>` path from the
+   HTML, put the list on the ticket, and delete those objects from the Blob
+   store after step 4 confirms the cascade completed.
+
 3. **Execute via the admin UI (US3-A).** As an **admin** (the page is admin-only
    — manager/member get 404), open the member at `/admin/members/[memberId]`,
    click **Erase member**, and complete the gated dialog: type-to-confirm the
@@ -72,13 +94,20 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    fired `failed`/`partial` for this member, run the **manual remediation
    procedure** (§ Sub-processor erasure propagation) within the H-1 window.
 
-7. **Acknowledge the out-of-reach copies.** THREE copies cannot be erased by the
+7. **Acknowledge the out-of-reach copies.** FIVE copies cannot be erased by the
    controller and are accepted residuals (§ Documented residuals + the RoPA):
    **(a)** a GDPR-export ZIP the subject **already downloaded** to their own
    device; **(b)** pre-erasure data in **backup / PITR snapshots** (re-erased
-   only on a restore); **(c)** ⚠️ **the Resend "Global Contact" record.**
-   If the DSR specifically asks about these, explain the limitation honestly;
-   they do not block closure of the controller-copy erasure.
+   only on a restore); **(c)** ⚠️ **the Resend "Global Contact" record;**
+   **(d)** an **inline E-Blast image already fetched or cached by a recipient's
+   mail client, mail gateway or image proxy** — the image is served from a
+   public URL and a mail client fetches it on open, so a copy can persist in a
+   recipient's cache or their provider's proxy after the blob is deleted;
+   **(e)** **pre-0304 image blobs** that step 2a found and you deleted by hand —
+   deleted from the Blob store, but never represented by a row, so there is no
+   in-product evidence of the deletion beyond your DSR ticket. If the DSR
+   specifically asks about these, explain the limitation honestly; they do not
+   block closure of the controller-copy erasure.
 
    **(c) is new to this list and it is the one a DSR answer is most likely to get
    wrong** (round 2 R2-2). The cascade calls
@@ -105,6 +134,207 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    `member_erasure_requested` + `member_erased` audit timestamps (visible on the
    evidence log) and any manual sub-processor remediation (step 6). The US3-D
    evidence log is the durable accountability artefact (GDPR Art. 5(2) / Art. 30).
+
+---
+
+## Inline E-Blast images (F119 PR-1, review finding F2-2)
+
+**What the cascade does now.** Inside the same transaction as the F7 content
+redaction, `scrubBroadcastContentForMember` calls
+`imagesRepo.markDeletedForMember(...)`, which stamps `deleted_at` on every live
+`broadcast_images` row owned by a broadcast the erased member originated, and
+emits one `broadcast_image_removed { reason: 'member_erased', blob_deleted: false,
+actor_role: 'system' }` per stamped row. The count lands on the completion log
+line as `imagesMarked`.
+
+**Why it is a separate step.** Redacting `subject` / `body_html` removes the
+POINTER to the member's uploaded photograph. The file itself lives in Vercel
+Blob at a PUBLIC, unauthenticated URL, and nothing about redacting the HTML
+touches it. Until F2-2 the erasure was certified complete while the image was
+still being served.
+
+**The bytes go on the next sweep, not here.** The daily image sweep
+(`reclaimOrphanedImages`, in the `prune-expired-drafts` cron) deletes the blob
+under the LAST-REFERENCE rule — only when no live row of either owner_kind
+shares its `content_hash` AND no live `body_html` still embeds the URL. So the
+erasure evidence is “the reference is gone”; “the bytes are gone” follows on the
+next daily sweep tick (200 rows per arm per tenant); a backlog, or a row that
+fails, takes later ticks — watch `broadcasts_image_sweep_row_failed_total`
+(`docs/observability.md` § 22.12). That is deliberate: a hash shared with a
+template image the chamber still uses must not be deleted out from under it.
+
+### Verifying it after an erasure
+
+1. `audit_log` for the erasure's `request_id`: expect `broadcast_content_redacted`
+   AND one `broadcast_image_removed { reason: 'member_erased' }` per image. Zero
+   removal rows with a non-zero `imagesMarked` in the log line is a contradiction
+   — escalate.
+2. The join MUST carry `tenant_id` on both sides — `broadcast_images.owner_id`
+   has no FK and `broadcast_id` is only unique WITHIN a tenant, so a join on
+   the id alone can pair rows across tenants and quietly report the wrong
+   count:
+
+   ```sql
+   SELECT count(*)
+     FROM broadcast_images bi
+     JOIN broadcasts b
+       ON b.broadcast_id = bi.owner_id
+      AND b.tenant_id    = bi.tenant_id
+    WHERE bi.tenant_id = '<tenant>'
+      AND b.requested_by_member_id = '<member>'
+      AND bi.deleted_at IS NULL;
+   ```
+
+   It must be 0.
+3. After the next daily tick, expect one of **three** outcomes for that image.
+   They are different states and the runbook used to describe only two of them,
+   which made the middle one look like the third.
+
+   **(a) Reclaimed — the ordinary case.** `broadcast_image_removed
+   { reason: 'sweep', blob_deleted: true, blob_disposition: 'deleted' }` — or
+   `blob_disposition: 'reclaimed_by_sibling'` (`blob_deleted: false`) when an
+   earlier row of the same tick sharing the hash already deleted the bytes.
+   Either way the row is gone and so are the bytes. Nothing further to record.
+
+   **(b) Row removed, bytes KEPT — a live row shares the hash.** Another
+   `broadcast_images` row, of either `owner_kind`, still points at the same
+   `content_hash`: another member uploaded the identical file, or it is a
+   chamber template's image. You get `broadcast_image_removed
+   { reason: 'sweep', blob_deleted: false, blob_disposition: 'kept_shared_row' }`
+   — the erased member's REFERENCE and ROW are gone, while the file stays for
+   the other holder. The identical bytes are still publicly served, so this
+   outcome is **disclosed on the DSR ticket** (decision (e), step 4 query ii).
+   Record which holder, so the next erasure of THAT subject is understood to be
+   the one that frees the bytes.
+
+   **(c) Retained — no live row, but live CONTENT still embeds the URL.** NO
+   audit row at all for that image and a non-zero `retained` in the tick
+   summary. This is the pre-0304 backfill gap (or a draft started from a
+   template, data-model § 4): some live `body_html` / `body_source` still
+   carries the blob URL although no row proves it. ROUND-2 S-3 keeps the row
+   AND un-stamps it — nothing was removed, so nothing claims it was. Correct
+   behaviour, not an erasure failure, but record it and name the content that
+   holds the URL: until that content goes, the file is still served. **Nothing
+   re-examines this row automatically.** The sweep's orphan arm selects only
+   rows whose OWNER is gone, and an erasure REDACTS the member's broadcast — it
+   does not delete it — so the un-stamped row's owner survives and no later
+   tick reaches it. Step 4 query (i) surfaces it; it is reclaimed by hand once
+   the holding content goes (re-stamp the row — `deleted_at = now()` — and the
+   next tick applies the last-reference rule to it). (A retained row whose
+   owner was a DISCARDED or PRUNED draft is different: its owner is gone, so
+   the orphan arm re-examines it every tick.)
+
+4. **Enumerate what is STILL SERVED, for the DSR answer.** The audit trail
+   alone cannot answer "what is still served?": outcome (c) writes **no audit
+   row** (nothing was removed), and outcome (b) says the bytes were kept but
+   not who still holds them. Read the state instead, with the three queries
+   below. Run them **after** the daily tick that follows the cascade (and
+   again after later ticks while query (iii) is non-zero). Every join carries
+   `tenant_id` on BOTH sides — `broadcast_id` and `owner_id` are unique only
+   within a tenant, so a join on the id alone can pair rows across tenants and
+   quietly report the wrong count.
+
+   **(i) The member's own images, live again (outcome c).** The cascade stamped
+   them; the sweep un-stamped them (`restoreLive`) because live content embeds
+   the URL. Being un-stamped is exactly what makes this query see them:
+
+   ```sql
+   SELECT bi.id, bi.content_hash, bi.blob_url, bi.created_at
+     FROM broadcast_images bi
+     JOIN broadcasts b
+       ON b.tenant_id = bi.tenant_id      -- broadcast_id is unique per tenant only
+      AND b.broadcast_id = bi.owner_id
+    WHERE bi.tenant_id = '<tenant>'
+      AND bi.owner_kind = 'broadcast'
+      AND b.requested_by_member_id = '<member>'
+      AND bi.deleted_at IS NULL;          -- stamped by the cascade, then un-stamped
+   ```
+
+   For each row, name the holder with the same two legs the sweep itself
+   checks (`isBlobReferencedByContent`) — live broadcasts AND templates:
+
+   ```sql
+   SELECT 'broadcast' AS holder_kind, broadcast_id AS holder_id, requested_by_member_id
+     FROM broadcasts
+    WHERE tenant_id = '<tenant>'
+      AND (position('<blob_url>' in body_html) > 0
+        OR position('<blob_url>' in body_source) > 0)
+   UNION ALL
+   SELECT 'template', id, NULL
+     FROM broadcast_templates
+    WHERE tenant_id = '<tenant>'
+      AND position('<blob_url>' in body_html) > 0;
+   ```
+
+   **(ii) The member's images whose identical bytes another owner still holds
+   (outcome b).** The member's rows are gone, so their hashes come from the
+   cascade's own audit rows (`payload.content_hash`, same `request_id` as
+   step 1), matched to LIVE rows of any OTHER owner in the same tenant:
+
+   ```sql
+   SELECT DISTINCT bi.id, bi.owner_kind, bi.owner_id, bi.content_hash
+     FROM audit_log al
+     JOIN broadcast_images bi
+       ON bi.tenant_id = al.tenant_id
+      AND bi.content_hash = al.payload->>'content_hash'
+    WHERE al.tenant_id = '<tenant>'
+      AND al.event_type = 'broadcast_image_removed'
+      AND al.request_id = '<erasure request_id>'
+      AND al.payload->>'reason' = 'member_erased'
+      AND bi.deleted_at IS NULL
+      AND NOT EXISTS (                    -- not the member's own row: that is (i)
+            SELECT 1 FROM broadcasts b
+             WHERE b.tenant_id = bi.tenant_id
+               AND b.broadcast_id = bi.owner_id
+               AND bi.owner_kind = 'broadcast'
+               AND b.requested_by_member_id = '<member>');
+   ```
+
+   (If the cascade ran without a request id its rows carry `request_id =
+   'erasure'`, which is not unique — narrow by `al.timestamp` around the
+   `member_erased` event instead.)
+
+   **(iii) The pending backlog.** Rows of the member's broadcasts the cascade
+   stamped that no tick has swept yet — non-zero after a bulk erasure (200 rows
+   per arm per tenant per tick) or while `broadcasts_image_sweep_row_failed_total`
+   is climbing. Their bytes are still served until a tick reaches them:
+
+   ```sql
+   SELECT count(*)
+     FROM broadcast_images bi
+     JOIN broadcasts b
+       ON b.tenant_id = bi.tenant_id
+      AND b.broadcast_id = bi.owner_id
+    WHERE bi.tenant_id = '<tenant>'
+      AND bi.owner_kind = 'broadcast'
+      AND b.requested_by_member_id = '<member>'
+      AND bi.deleted_at IS NOT NULL;
+   ```
+
+   **"0 retained" means ZERO in all three.** Then every image of theirs was
+   reclaimed (outcome a) and the DSR answer needs no image caveat. Otherwise
+   **the answer must say so** and record on the DSR ticket:
+
+   - the count from (i), and the holder of each (another data subject's live
+     content, or a chamber template, still embeds the file) — reclaimed by hand
+     once that content goes, per outcome (c) above;
+   - the count from (ii) — **decision (e), 2026-09-23** (delegated by the
+     maintainer to Claude as a conservative default; the DPO may revise): a file
+     whose identical bytes are still held by another owner's live row COUNTS as
+     still-served personal data of the erased member and MUST be disclosed,
+     exactly like a retained row — its bytes are freed when that holder's row
+     goes (the holder's own erasure, discard or prune);
+   - the count from (iii), and a re-run of this step after the ticks that clear
+     it.
+
+   Record all three counts on the DSR ticket either way, including zeros —
+   "0 retained" is evidence, not silence.
+
+**Known limitation, recorded not guessed.** `broadcast_images` was NOT
+backfilled by migration 0304. An image uploaded BEFORE 0304 has no row, so this
+step cannot find it; it is reachable only by reading the `body_html` that
+references it — which is why the enumeration is **step 2a, before the cascade
+redacts that HTML**, and why the blobs are residual (e) in step 7.
 
 ---
 

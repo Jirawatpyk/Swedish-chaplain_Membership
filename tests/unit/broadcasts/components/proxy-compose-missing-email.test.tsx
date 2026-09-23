@@ -179,6 +179,7 @@ const { ProxyComposeForm } = await import('@/components/broadcast/proxy-compose-
 afterEach(() => {
   cleanup();
   capturedOnSelect = null;
+  vi.restoreAllMocks();
 });
 
 function renderForm() {
@@ -192,6 +193,11 @@ function renderForm() {
 describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // F119 T145 — picking a member now also fetches that member's E-Blast
+    // allowance (`GET /api/admin/broadcasts/quota?memberId=`). Stub every call
+    // so no test in this file reaches the network, and so no one-shot mock can
+    // be consumed by a request it was not written for.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeFetchResponse(200, {}));
   });
 
   it('submit is disabled and warning is shown when hasPrimaryContactEmail is false', async () => {
@@ -274,10 +280,15 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
     //       (NOT a generic toast — the member needs to know WHICH member is broken)
     //   (b) preserve the member selection (the admin may want to navigate to the
     //       member's profile to add a contact — clearing the picker loses context)
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      makeFetchResponse(422, {
-        error: { code: 'broadcast_member_missing_primary_contact_email' },
-      }),
+    // Keyed on the ROUTE, never `…Once`: the allowance fetch fires first (on
+    // member select), so a one-shot mock hands the 422 to the wrong request
+    // and the submit silently falls through to an unmocked fetch.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) =>
+      String(input).startsWith('/api/admin/broadcasts/proxy-submit')
+        ? makeFetchResponse(422, {
+            error: { code: 'broadcast_member_missing_primary_contact_email' },
+          })
+        : makeFetchResponse(200, {}),
     );
 
     renderForm();

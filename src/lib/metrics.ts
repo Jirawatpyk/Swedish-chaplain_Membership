@@ -1751,6 +1751,18 @@ export const paymentsMetrics = {
 //   - NO recipient-email or member-id labels (FR-042 forbidden in logs/metrics)
 
 /**
+ * The bounded `surface` label on the two F119 preview instruments.
+ *
+ * Declared here rather than imported from
+ * `@/modules/broadcasts/application/use-cases/render-broadcast-preview`
+ * because `src/lib/metrics.ts` is reached from every layer and must not pull a
+ * module barrel in (Principle III). It mirrors that use case's
+ * `PreviewSurface` exactly — widening one without the other stops typechecking
+ * at the call site, which is the coupling we want.
+ */
+type PreviewMetricSurface = 'member' | 'staff' | 'detail';
+
+/**
  * Swallow OTel emission failures. The `@opentelemetry/api` calls usually
  * no-op when no SDK is registered, but `@vercel/otel` exporter init can
  * throw on first record under transient pipeline misconfiguration. The
@@ -1856,6 +1868,56 @@ export const broadcastsMetrics = {
     });
   },
 
+  // --- F119 E-Blast approval — the registration list ---------------------
+  // `specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md`
+  // § 4.2: a metric not on this list does not exist, and an emit against an
+  // unregistered field does not typecheck. PR-1 (T122a) registers the two
+  // preview instruments T032 emits; PR-2 (T122) adds the five workflow
+  // counters and `broadcasts_member_decide_ms`. Labels are bounded: tenant +
+  // a small discriminator — never an id, never a value.
+
+  /**
+   * `broadcasts_preview_rendered_total{tenant,surface}` — one per successful
+   * preview render: member compose, staff format / sign-off compare, and
+   * (ROUND-3 #11) `detail`, the two E-Blast DETAIL pages reading a stored
+   * broadcast back through the same renderer.
+   *
+   * `detail` is separate because it is a different shape of traffic: compose
+   * renders once per keystroke pause under the 30/min per-actor bucket, while
+   * a read-back fires once per page view and has no bucket at all. Folded
+   * together, neither rate means anything. Research R11: the preview IS a
+   * server render of the real email; the bucket is the amplification guard,
+   * this is the meter.
+   */
+  previewRendered(tenantId: string | null, surface: PreviewMetricSurface): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_preview_rendered_total',
+        'E-Blast preview renders (F119) — paired with `surface` label',
+      ).add(1, { tenant: tenantId ?? 'unknown', surface });
+    });
+  },
+
+  /**
+   * `broadcasts_preview_render_ms{tenant,surface}` — server duration of one
+   * preview render (sanitise + brand read + wrapper). Budget p95 < 400 ms
+   * (plan § Technical Context; recorded by T160a in observability § 28).
+   *
+   * ROUND-3 #11 — `surface` joins the counter's label here too. The budget is
+   * a COMPOSE budget (it is what a member waits for between keystrokes); a
+   * detail read-back sharing the histogram would move the p95 without anyone
+   * being able to say which surface moved.
+   */
+  previewRenderMs(tenantId: string | null, ms: number, surface: PreviewMetricSurface): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_preview_render_ms',
+        'E-Blast preview render duration, p95 target 400 ms (F119)',
+        'ms',
+      ).record(ms, { tenant: tenantId ?? 'unknown', surface });
+    });
+  },
+
   /**
    * `broadcasts.dispatch_budget_exhausted{tenant, sub_kind}` — counter
    * incremented when the FR-021 / AS2 1-hour retry budget elapses with
@@ -1953,6 +2015,9 @@ export const broadcastsMetrics = {
       | 'body_unsafe_html'
       // R4-H4 — keep in sync with submit-broadcast.ts SubmitPrecondition
       | 'body_image_source_unsafe'
+      // F119 security review F1-2 — FR-041 design-block bounds (CTA count /
+      // text length / link scheme, banner alt), now enforced at submit too.
+      | 'design_block_rules'
       | 'audience_too_large'
       | 'custom_recipient_unknown'
       | 'member_missing_primary_contact_email'
@@ -1996,6 +2061,72 @@ export const broadcastsMetrics = {
         'broadcasts_failed_to_dispatch_count',
         'Dispatch failures by reason — alert at >10% over send_started',
       ).add(1, { tenant: tenantId, failure_reason: failureReason });
+    });
+  },
+
+  /**
+   * `broadcasts_image_reencode_failed_total{tenant,kind}` — ROUND-2 R-M3. One
+   * per inline-image upload the EXIF-strip re-encoder refused or could not
+   * run.
+   *
+   * `kind` is the only thing that separates two very different events that
+   * used to look identical: `decode_failed` is the member's bytes (415, and a
+   * `broadcast_image_unsafe` audit row), `reencoder_unavailable` is ours
+   * (503, no audit — nothing is known about the bytes). Any sustained
+   * `reencoder_unavailable` rate is an outage signal, not a security one.
+   */
+  imageReencodeFailed(tenantId: string, kind: 'decode_failed' | 'reencoder_unavailable'): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_image_reencode_failed_total',
+        'Inline-image EXIF-strip re-encode failures, split by whose fault it is',
+      ).add(1, { tenant: tenantId, kind });
+    });
+  },
+
+  /**
+   * `broadcasts_image_sweep_retained_total{tenant}` — ROUND-2 S-3. One per
+   * image row the daily blob sweep RETAINED: its own reference is gone, but
+   * live content (a `body_html` / `body_source` / template body) still embeds
+   * the blob URL, so the bytes stay and the row is put back in the live set
+   * rather than removed. A row removed here would be reachable by nothing
+   * afterwards — not the marked arm, not the orphan arm, not the erasure
+   * cascade.
+   *
+   * Reading it: a small steady rate is normal for pre-0304 images (never
+   * backfilled, so they are referenced by HTML with no row of their own). A
+   * rate that keeps CLIMBING means retained rows are accumulating in the
+   * orphan arm's bounded batch and can starve genuine orphans — look at why
+   * the referencing content is not going away.
+   */
+  imageSweepRetained(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_image_sweep_retained_total',
+        'Image rows the blob sweep retained because live content still embeds the URL',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_image_sweep_row_failed_total{tenant}` — F7-1. One per image
+   * row whose per-row transaction THREW in the daily blob sweep (a Blob delete
+   * that failed, a lock or content scan that hit the row's statement timeout).
+   * The row is left for the next tick, which is correct for a transient fault
+   * — but a persistent one (an expired `BLOB_READ_WRITE_TOKEN`) fails every
+   * row every day while the tick still returns 200, and an erased member's
+   * image stays publicly served indefinitely. Before this counter the only
+   * trace was a `warn` line inside the use case.
+   *
+   * Reading it: any increment is worth a look; the same tenant incrementing on
+   * two consecutive daily ticks is a fault that is not going away on its own.
+   */
+  imageSweepRowFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_image_sweep_row_failed_total',
+        'Image rows whose per-row sweep transaction threw and were left for the next tick',
+      ).add(1, { tenant: tenantId });
     });
   },
 
@@ -2670,6 +2801,30 @@ export const broadcastsMetrics = {
         'broadcasts_content_scrub_failed_total',
         'F3 member-erasure → F7 content redaction cascade failed (stuck cascade — authored broadcast content still holds PII until reconciler re-drives; received deliveries already tombstoned atomically)',
       ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_brand_chrome_unavailable_total{tenant, surface}` — F119 T031
+   * fail-soft degrade (review finding F2-8). `loadBrandChrome` swallows a
+   * brand-read fault and sends with NO chrome so a brand outage never fails a
+   * send — but FR-041c says the footer MUST carry the chamber's postal
+   * address, so every degraded send ships a non-compliant footer. The warn log
+   * alone was greppable, not alertable; this counter is the durable signal.
+   *
+   * `surface` names the CALLING use case (`dispatch` | `audience_tick`) — it
+   * is a required argument so the helper can never stamp one caller's identity
+   * onto all of them (the F8 errorId defect class).
+   *
+   * Alert: any non-zero over 15 min → investigate the brand-settings read
+   * (docs/observability.md § F7/F119).
+   */
+  brandChromeUnavailable(tenantId: string, surface: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_brand_chrome_unavailable_total',
+        'F119 brand chrome read failed at send time — the E-Blast shipped without the mandatory postal-address footer (fail-soft degrade)',
+      ).add(1, { tenant: tenantId, surface });
     });
   },
 } as const;

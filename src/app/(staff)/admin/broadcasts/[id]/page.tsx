@@ -2,8 +2,6 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
@@ -11,11 +9,13 @@ import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
+import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
+import { PreviewSurface } from '@/components/broadcast/use-preview-html';
 import { makeGetBroadcastDeps, parseBroadcastId } from '@/modules/broadcasts';
+import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
 import { runInTenant } from '@/lib/db';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { dompurifySanitizer } from '@/modules/broadcasts';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -73,14 +73,27 @@ export default async function AdminBroadcastDetailPage({
     { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' },
   );
 
-  // UX I14 — defence-in-depth: re-sanitise stored bodyHtml at render
-  // time. The body was already sanitised at submit (sanitize-html.ts)
-  // but a future migration loosening at-submit rules MUST NOT widen
-  // the trust boundary. Sanitising twice is cheap + idempotent.
-  // IMP-3 (round-3) — sanitiser failure returns a sentinel so staff
-  // sees an explicit warning panel + Approve is blocked, not an empty
-  // body indistinguishable from a whitespace-only draft.
-  const sanitisedBody = renderTimeSanitise(broadcast.bodyHtml);
+  // ROUND-3 #2 — the approver reads the DOCUMENT THAT SHIPS.
+  //
+  // This page used to re-sanitise the stored body and inject it with
+  // `dangerouslySetInnerHTML`. The sanitiser is not the renderer: the design
+  // blocks and the tenant's brand are applied by `renderBroadcastHtml`, which
+  // every other surface goes through — the member's read-back, the preview,
+  // the test copy and the dispatch. So sign-off happened on three text links
+  // while the recipients got three brand-coloured buttons.
+  //
+  // The shared helper keeps UX I14's defence in depth (the same sanitiser
+  // still runs, inside `renderBroadcastPreview`) and IMP-3's sentinel: a
+  // render that fails shows an explicit warning panel and BLOCKS Approve,
+  // rather than an empty body indistinguishable from a whitespace-only draft.
+  const previewState = await renderBroadcastDetailBody({
+    tenantSlug: tenant.slug,
+    broadcastId: broadcast.broadcastId as string,
+    subject: broadcast.subject,
+    bodyHtml: broadcast.bodyHtml,
+    locale,
+  });
+  const bodyRenderFailed = previewState.status === 'error';
 
   // 108 US5 — the batch path is gone, and with it this page's per-batch
   // breakdown, its load-failure banner, the manual-retry budget and the
@@ -162,17 +175,16 @@ export default async function AdminBroadcastDetailPage({
         <h3 className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
           {t('fields.body')}
         </h3>
-        {sanitisedBody.error ? (
+        {bodyRenderFailed ? (
           <div role="alert" className="rounded-md border border-destructive/40 bg-destructive-surface p-3 text-sm text-destructive">
             <p className="font-medium">{t('bodyRenderFailedTitle')}</p>
             <p className="text-xs">{t('bodyRenderFailedHint')}</p>
           </div>
         ) : (
-          <div
-            className="prose prose-sm dark:prose-invert max-w-none"
-            // Defence-in-depth: re-sanitised at render time (UX I14).
-            dangerouslySetInnerHTML={{ __html: sanitisedBody.html }}
-          />
+          // ROUND-3 #2 — the delivered document, in the shared sandboxed
+          // `<iframe srcdoc>`. Same component, same frame height and same
+          // translated states as the member's read-back.
+          <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
         )}
       </section>
 
@@ -197,7 +209,7 @@ export default async function AdminBroadcastDetailPage({
               surface="admin"
             />
           ) : null}
-          {broadcast.status === 'submitted' && !sanitisedBody.error ? (
+          {broadcast.status === 'submitted' && !bodyRenderFailed ? (
             <ReviewActions broadcastId={broadcast.broadcastId as string} />
           ) : null}
         </div>
@@ -205,30 +217,6 @@ export default async function AdminBroadcastDetailPage({
     </DetailContainer>
   );
 }
-
-/**
- * Render-time sanitisation helper (UX I14 + IMP-3 round-3).
- *
- * Returns a sentinel `{html, error}` so the caller can distinguish a
- * legitimately-empty body from a sanitiser failure — the latter shows
- * a `role="alert"` warning panel and BLOCKS the Approve button so staff
- * doesn't approve content they couldn't render safely.
- */
-function renderTimeSanitise(html: string): {
-  readonly html: string;
-  readonly error: boolean;
-} {
-  try {
-    return { html: dompurifySanitizer.sanitize(html), error: false };
-  } catch (e) {
-    logger.error(
-      { err: errKind(e) },
-      'admin.broadcasts.detail.render_sanitise_failed',
-    );
-    return { html: '', error: true };
-  }
-}
-
 
 function Field({
   label,

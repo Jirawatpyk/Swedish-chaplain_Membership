@@ -39,6 +39,11 @@ import type {
 import type { AuditPort } from '../ports/audit-port';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 import { sanitizeHtml } from './sanitize-html';
+import {
+  parseBlockMarkers,
+  validateBlocks,
+  type BlockViolation,
+} from '../../domain/design-blocks/block-markers';
 import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import {
   validateImageSourceAllowlist,
@@ -78,6 +83,8 @@ export type UpdateBroadcastTemplateError =
       readonly kind: 'template_body_unsafe';
       readonly unsafeImageSources: readonly string[];
     }
+  /** FR-041 design-block rules — same kind and shape as `submitBroadcast`. */
+  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
   | TemplateUpdateError;
 
 export interface UpdateBroadcastTemplateOutput {
@@ -144,6 +151,17 @@ export async function updateBroadcastTemplate(
       });
     }
     sanitisedBody = sanitised.value.sanitisedHtml;
+
+    // Design-block content rules (FR-041), on the SANITISED body and OUTSIDE
+    // the mutation tx. Security-round residual (T155 hand-off): the edit path
+    // had the same gap as create — a compliant template could be EDITED into
+    // a non-compliant one and `snapshotTemplateToDraft` would still copy it
+    // into a draft. Only reached when the body is actually being changed; a
+    // rename must not be refused for a body it never supplied.
+    const blockViolations = validateBlocks(parseBlockMarkers(sanitisedBody));
+    if (blockViolations.length > 0) {
+      return err({ kind: 'content_rules', violations: blockViolations });
+    }
 
     const allowlistCheck = await validateImageSourceAllowlist(
       deps.validateImageSourceAllowlist,

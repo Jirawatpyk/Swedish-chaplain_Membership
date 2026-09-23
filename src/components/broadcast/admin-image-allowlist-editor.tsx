@@ -20,8 +20,14 @@
  *     destructive privileged-surface mutation requires confirm per
  *     docs/ux-standards.md). Add operation stays single-step because
  *     it's non-destructive.
+ *   - T155 finding U4 — `finalFocus` on that confirm. A successful remove
+ *     replaces `rows` with the server's new allowlist, so the row — and the
+ *     Remove button Base UI would restore focus to — is gone; focus dropped
+ *     to `<body>`, and removing several hostnames meant re-Tabbing from the
+ *     top of the page each time. The success close lands on the table, which
+ *     survives; Cancel / ESC keep Base UI's default. WCAG 2.1 AA SC 2.4.3.
  */
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -39,6 +45,10 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { useSurvivingTargetFinalFocus } from '@/components/broadcast/unmounting-trigger-final-focus';
+
+/** The list container — the element that outlives a removed row. */
+const ALLOWLIST_TABLE_ID = 'broadcast-image-allowlist-table';
 
 export interface AllowlistRow {
   readonly hostname: string;
@@ -55,6 +65,17 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   const [hostname, setHostname] = useState('');
   const [isPending, startTransition] = useTransition();
   const [announcement, setAnnouncement] = useState<string>('');
+  // U4 — raised on the CONFIRM click, not on the 200. `AlertDialogAction`
+  // closes the dialog itself, so Base UI reads `finalFocus` synchronously with
+  // that click, long before the fetch settles: deciding on the response would
+  // always read `false`. The confirm click is the close that takes the trigger
+  // with it, so that is where the flag belongs. Reset when the dialog reopens,
+  // because this component (unlike the row-scoped dialogs) survives.
+  const closedViaSuccessRef = useRef<boolean>(false);
+  const removeFinalFocus = useSurvivingTargetFinalFocus(
+    ALLOWLIST_TABLE_ID,
+    closedViaSuccessRef,
+  );
 
   const submit = (action: 'add' | 'remove', h: string): void => {
     startTransition(async () => {
@@ -69,7 +90,12 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
             error?: string;
           };
           const code = body.error ?? 'unknown';
-          toast.error(t(`errors.${code}`));
+          // T155 finding U8 — this site had no fallback at ALL: next-intl
+          // returns the key PATH for a missing key rather than throwing, so
+          // an unmapped code toasted
+          // `admin.broadcasts.settings.allowlist.errors.<code>` verbatim.
+          const key = `errors.${code}` as Parameters<typeof t>[0];
+          toast.error(t.has(key) ? t(key) : t('errors.unknown'));
           return;
         }
         const data = (await res.json()) as { allowlist: AllowlistRow[] };
@@ -139,7 +165,14 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
         </p>
       </form>
 
-      <table className="w-full border-collapse">
+      {/* U4 — `tabIndex={-1}` makes the list container focusable (not
+          tabbable, so it adds no tab stop): it is where the Remove confirm
+          lands focus once the row it was opened from is gone. */}
+      <table
+        id={ALLOWLIST_TABLE_ID}
+        tabIndex={-1}
+        className="w-full border-collapse focus-visible:outline-none"
+      >
         <caption className="sr-only">{t('tableCaption')}</caption>
         <thead>
           <tr>
@@ -190,7 +223,11 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
                   // PR-review fix 2026-05-20 UX-H1 — wrap destructive
                   // Remove action in AlertDialog confirm. Add stays
                   // single-step (non-destructive).
-                  <AlertDialog>
+                  <AlertDialog
+                    onOpenChange={(next: boolean) => {
+                      if (next) closedViaSuccessRef.current = false;
+                    }}
+                  >
                     <AlertDialogTrigger
                       render={
                         <Button
@@ -205,7 +242,7 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
                         </Button>
                       }
                     />
-                    <AlertDialogContent>
+                    <AlertDialogContent finalFocus={removeFinalFocus}>
                       <AlertDialogHeader>
                         <AlertDialogTitle>
                           {t('removeConfirm.title', {
@@ -231,7 +268,12 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
                           // hostname already removed → unexpected
                           // error toast.
                           disabled={isPending}
-                          onClick={() => submit('remove', row.hostname)}
+                          onClick={() => {
+                            // Base UI closes on this click and reads
+                            // finalFocus synchronously — see the ref's note.
+                            closedViaSuccessRef.current = true;
+                            submit('remove', row.hostname);
+                          }}
                         >
                           {t('removeConfirm.confirm')}
                         </AlertDialogAction>

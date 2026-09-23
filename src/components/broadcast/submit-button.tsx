@@ -23,12 +23,21 @@ export interface SubmitButtonProps {
   readonly disabled: boolean;
   readonly submitting: boolean;
   readonly onClick: () => void;
+  /**
+   * Portal live walk U29 (WCAG 3.3.2) — the element(s) that say WHY this is
+   * dimmed, space-separated, in DOM order. The parent owns the verdict, so it
+   * owns the reason too. Applied only while the button is actually disabled:
+   * an `aria-describedby` that always pointed somewhere would describe a
+   * control that has nothing wrong with it (the U17 rule on Brand settings).
+   */
+  readonly blockedReasonIds?: string;
 }
 
 export function SubmitButton({
   disabled,
   submitting,
   onClick,
+  blockedReasonIds,
 }: SubmitButtonProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,12 +59,19 @@ export function SubmitButton({
     };
   }, [submitting, t]);
 
+  const describedBy =
+    disabled && !submitting && blockedReasonIds !== undefined && blockedReasonIds !== ''
+      ? blockedReasonIds
+      : undefined;
+
   return (
     <Button
       type="button"
+      data-compose-feature="submit"
       onClick={onClick}
       disabled={disabled || submitting}
       aria-busy={submitting}
+      {...(describedBy !== undefined ? { 'aria-describedby': describedBy } : {})}
     >
       {submitting ? (
         <>

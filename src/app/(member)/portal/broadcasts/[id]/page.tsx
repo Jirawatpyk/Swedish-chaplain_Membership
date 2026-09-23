@@ -22,10 +22,13 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowLeft } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
+import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
+import { PreviewSurface } from '@/components/broadcast/use-preview-html';
+import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
@@ -48,6 +51,28 @@ import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-a
  * when the rendered body is the not-found UI; AS5 spec mandates 404). */
 export const dynamic = 'force-dynamic';
 
+/**
+ * F119 T141 — the read-back frame is taller than the compose pane's 420 px:
+ * this screen has the full 72 rem column to itself and the member is reading,
+ * not typing beside it. Fixed, so the frame scrolls internally instead of
+ * growing the page.
+ *
+ * T155 finding U1 — the number lives in `preview-frame-heights.ts` so
+ * `loading.tsx` reserves exactly this, not a copy of it.
+ */
+
+/**
+ * F119 T141 (US6-AS2, FR-049) — the body the member reads back is the REAL
+ * email, produced by `renderBroadcastDetailBody` and shown in the shared
+ * sandboxed `PreviewSurface`. ROUND-3 #2 moved that helper to
+ * `src/lib/broadcast-detail-body.ts` so the STAFF detail page reads the same
+ * document: it was rendering the raw sanitised body instead, which is not
+ * what ships.
+ *
+ * PR-1 renders the broadcast RECORD's own content. "the latest **sent**
+ * version while awaiting the member" reads `broadcast_versions` (migration
+ * `0305`) and lands with T141a in PR-2 (plan Amendment 5).
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.broadcasts.detail');
   return { title: t('title') };
@@ -121,6 +146,14 @@ export default async function BroadcastDetailPage(props: {
     timeZone: env.tenant.timezone,
   });
 
+  const previewState = await renderBroadcastDetailBody({
+    tenantSlug: tenant.slug,
+    broadcastId: broadcast.broadcastId as string,
+    subject: broadcast.subject,
+    bodyHtml: broadcast.bodyHtml,
+    locale,
+  });
+
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
@@ -134,21 +167,31 @@ export default async function BroadcastDetailPage(props: {
       </Link>
 
       <Card role="region" aria-labelledby="broadcast-detail-fields-heading">
+        {/* The subject value is the card's title (and its accessible
+            region name); "Subject" is a small overline label so the value
+            reads as the dominant element rather than being subordinate to
+            its own label (UX R2-I3 — the text-h4 label outweighed the 16px
+            value).
+
+            F119 T141 — the title moved into `CardHeader` and carries the
+            portal's card-heading treatment: a REAL `<h2>` with the
+            `CardTitle` font classes, never the shadcn `CardTitle` `<div>`,
+            which would drop the subject out of the SR heading tree
+            (`portal/account/page.tsx` HubCard, `portal/profile/page.tsx`
+            SectionHeading — the same fix twice before this one). */}
+        <CardHeader className="space-y-1">
+          <p className="text-caption uppercase tracking-wide text-muted-foreground">
+            {t('fields.subject')}
+          </p>
+          <h2
+            id="broadcast-detail-fields-heading"
+            className="font-heading text-base font-medium leading-snug"
+          >
+            {broadcast.subject}
+          </h2>
+        </CardHeader>
         <CardContent className="space-y-3">
-          {/* The subject value is the card's title (and its accessible
-              region name); "Subject" is a small overline label so the value
-              reads as the dominant element rather than being subordinate to
-              its own label (UX R2-I3 — the text-h4 label outweighed the 16px
-              value). */}
-          <div className="space-y-1">
-            <p className="text-caption uppercase tracking-wide text-muted-foreground">
-              {t('fields.subject')}
-            </p>
-            <h2 id="broadcast-detail-fields-heading" className="text-h4">
-              {broadcast.subject}
-            </h2>
-          </div>
-          <dl className="grid grid-cols-2 gap-3 pt-2 text-sm">
+          <dl className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <dt className="text-xs text-muted-foreground">{t('fields.status')}</dt>
               <dd className="mt-1">
@@ -191,6 +234,27 @@ export default async function BroadcastDetailPage(props: {
               </dd>
             </div>
           </dl>
+        </CardContent>
+      </Card>
+
+      {/* F119 T141 (US6-AS2, FR-049) — the content itself, rendered as the
+          recipient sees it. `PreviewSurface` owns the sandboxed frame and the
+          translated empty / error states; this page only decides WHICH
+          document goes in it. */}
+      <Card role="region" aria-labelledby="broadcast-detail-body-heading">
+        <CardHeader>
+          <h2
+            id="broadcast-detail-body-heading"
+            className="font-heading text-base font-medium leading-snug"
+          >
+            {t('fields.content')}
+          </h2>
+        </CardHeader>
+        <CardContent>
+          <PreviewSurface
+            state={previewState}
+            height={DETAIL_PREVIEW_FRAME_HEIGHT}
+          />
         </CardContent>
       </Card>
 

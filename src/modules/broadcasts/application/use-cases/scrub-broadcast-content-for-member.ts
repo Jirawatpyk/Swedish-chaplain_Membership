@@ -61,6 +61,8 @@ import type { MemberId } from '@/modules/members';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { FullMarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
+import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import { auditImagesRemoved } from './_mark-owner-images-removed';
 
 export type ScrubBroadcastContentForMemberError = {
   readonly kind: 'scrub.server_error';
@@ -119,6 +121,13 @@ export interface ScrubBroadcastContentForMemberOutput {
    * back-references were nulled here (rows retained, email-keyed).
    */
   readonly suppressionRefsSevered: number;
+  /**
+   * F119 review finding F2-2 — inline images of the member's E-Blasts whose
+   * `deleted_at` was stamped here. The BYTES go on the next daily sweep under
+   * the last-reference rule; this count is the erasure proof that the
+   * references are gone.
+   */
+  readonly imagesMarked: number;
 }
 
 export interface ScrubBroadcastContentForMemberDeps {
@@ -130,6 +139,14 @@ export interface ScrubBroadcastContentForMemberDeps {
    * here at compile time (the port's alias — review 2026-09-07).
    */
   readonly marketingUnsubscribes: FullMarketingUnsubscribesRepo;
+  /**
+   * F119 review finding F2-2 — REQUIRED. Redacting `subject` / `body_html`
+   * removes the POINTER to the member's uploaded photograph; the file itself
+   * stayed at its public blob URL, served unchanged, after the erasure was
+   * certified complete. A composition that forgets this port must fail at
+   * `tsc`, not inside a GDPR erasure transaction.
+   */
+  readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedForMember'>;
 }
 
 const SYSTEM_ACTOR_USER_ID = 'system';
@@ -151,7 +168,7 @@ export async function scrubBroadcastContentForMember(
   const tombstonedCount = input.tombstonedCount ?? 0;
 
   try {
-    const { scrubbedCount, suppressionRefsSevered } = await deps.broadcastsRepo.withTx(async (tx) => {
+    const { scrubbedCount, suppressionRefsSevered, imagesMarked } = await deps.broadcastsRepo.withTx(async (tx) => {
       // Order: scrub authored content → sever suppression back-references →
       // emit audit. All co-commit in this single tx. (The delivery tombstone
       // is no longer here — it ran in the caller's atomic members-scrub tx;
@@ -169,6 +186,35 @@ export async function scrubBroadcastContentForMember(
       // fails at `tsc`, not inside a GDPR erasure transaction.
       const sever = await deps.marketingUnsubscribes.severMemberRefs(tx, tenantSlug, input.memberId);
 
+      // F2-2: the member's UPLOADED IMAGES. Same tx as the redaction, so the
+      // pointer and the reference record go together; one `broadcast_image_removed`
+      // per row so the sweep's later `reason: 'sweep'` row has an antecedent.
+      const stampedImages = await deps.imagesRepo.markDeletedForMember(
+        tenantSlug,
+        input.memberId as unknown as string,
+        new Date(),
+        tx,
+      );
+      await auditImagesRemoved(
+        deps.audit,
+        {
+          tenantId: tenantSlug,
+          reason: 'member_erased',
+          at: new Date(),
+          requestId: input.requestId ?? 'erasure',
+          // The erasure is system-initiated; the member is the SUBJECT, not
+          // the actor. Never a fabricated role (`check:actor-role-truth`).
+          actorUserId: input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
+          actorRole: 'system',
+          // A deletion is not member activity — `related_member_id`, never the
+          // snake_case `member_id` the 0009 trigger reads. Null because the
+          // member is being erased: the audit must not re-key to them.
+          relatedMemberId: null,
+        },
+        stampedImages,
+        tx,
+      );
+
       // Audit hygiene: skip the `broadcast_content_redacted` emit on a pure
       // no-op (the member authored nothing left to scrub AND the caller
       // tombstoned no deliveries — e.g. a US2d reconciler re-drive after a
@@ -182,8 +228,13 @@ export async function scrubBroadcastContentForMember(
       // caller's delivery tombstone), the audit still fires so both counts
       // are recorded.
       // 108 PR-C T104: severed back-references are a THIRD axis of work.
-      if (scrub.scrubbedCount === 0 && tombstonedCount === 0 && sever.affected === 0) {
-        return { scrubbedCount: 0, suppressionRefsSevered: 0 };
+      if (
+        scrub.scrubbedCount === 0 &&
+        tombstonedCount === 0 &&
+        sever.affected === 0 &&
+        stampedImages.length === 0
+      ) {
+        return { scrubbedCount: 0, suppressionRefsSevered: 0, imagesMarked: 0 };
       }
 
       // S1 type-design: emit via the COMPILE-CHECKED `emitTyped` path
@@ -208,6 +259,10 @@ export async function scrubBroadcastContentForMember(
           // 108 PR-C T104 — suppression rows whose back-references were
           // nulled (rows retained). A count, never an address.
           suppression_refs_severed: sever.affected,
+          // ROUND-2 P-M2 — the image axis, in the same attestation row. The
+          // bytes go on the next daily sweep; this count is the evidence that
+          // the references are gone.
+          images_marked: stampedImages.length,
           reason,
           // Forensic join key: same `cascade` tag the completion/
           // failure logs carry, so the audit row correlates with the
@@ -217,12 +272,16 @@ export async function scrubBroadcastContentForMember(
         requestId: input.requestId,
       });
 
-      return { scrubbedCount: scrub.scrubbedCount, suppressionRefsSevered: sever.affected };
+      return {
+        scrubbedCount: scrub.scrubbedCount,
+        suppressionRefsSevered: sever.affected,
+        imagesMarked: stampedImages.length,
+      };
     });
 
     // Only count an audit emit when one actually happened — a zero-work run
     // skips the emit (above), so it must not bump the audit-emit metric.
-    if (scrubbedCount > 0 || tombstonedCount > 0 || suppressionRefsSevered > 0) {
+    if (scrubbedCount > 0 || tombstonedCount > 0 || suppressionRefsSevered > 0 || imagesMarked > 0) {
       broadcastsMetrics.auditEmitCount(tenantSlug, 'broadcast_content_redacted');
     }
     logger.info(
@@ -232,12 +291,13 @@ export async function scrubBroadcastContentForMember(
         scrubbedCount,
         tombstonedCount,
         suppressionRefsSevered,
+        imagesMarked,
         cascade: 'f3_member_erasure',
       },
       'broadcasts.content_scrub.completed',
     );
 
-    return ok({ scrubbedCount, tombstonedCount, suppressionRefsSevered });
+    return ok({ scrubbedCount, tombstonedCount, suppressionRefsSevered, imagesMarked });
   } catch (e) {
     // Fail-loud: the repo methods + audit emit propagate DB errors so
     // the caller's tx rolls back. We translate the throw to a typed

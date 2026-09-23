@@ -194,6 +194,12 @@
     "retry": "Försök igen"
   },
   "common": {
+    "unsavedChanges": {
+      "title": "Lämna sidan utan att spara?",
+      "description": "Du har ändringar som inte har sparats. Om du lämnar sidan försvinner de.",
+      "confirmLabel": "Lämna sidan",
+      "cancelLabel": "Stanna kvar på sidan"
+    },
     "yes": "Ja",
     "no": "Nej",
     "languageOptions": {
@@ -2009,11 +2015,64 @@
       "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
     },
     "settings": {
+      "broadcasts": {
+        "brand": {
+          "pageTitle": "Profil för utskick",
+          "pageDescription": "Logotyp, färg och postadress som används i varje utskick.",
+          "colour": {
+            "heading": "Profilfärg",
+            "description": "Används för knappar och rubriker i utskick. Aldrig i admin- eller medlemsportalen.",
+            "label": "Primärfärg",
+            "pickerLabel": "Färgväljare",
+            "hint": "Sex hexsiffror, till exempel #10487a.",
+            "defaultHint": "Plattformens standard: {color}",
+            "contrastPass": "Kontrast mot vit text: {ratio}:1 — uppfyller AA",
+            "contrastFail": "Kontrast mot vit text: {ratio}:1 — under {required}:1",
+            "contrastFailHelp": "Går inte att spara förrän färgen når {required}:1 mot vit text.",
+            "invalid": "Ange en färg som #RRGGBB."
+          },
+          "address": {
+            "heading": "Postadress",
+            "description": "Visas i utskickets sidfot, där en fysisk adress krävs.",
+            "label": "Kammarens postadress",
+            "placeholder": "Gata, ort, postnummer",
+            "counter": "{count} av {max} tecken",
+            "missing": "Ingen postadress är sparad. Utskick går ut utan adress i sidfoten tills en sparas.",
+            "tooLong": "Använd högst {max} tecken."
+          },
+          "logo": {
+            "heading": "Logotyp",
+            "description": "Visas överst i varje utskick.",
+            "source": "Från fakturainställningarna",
+            "manage": "Hantera logotypen",
+            "askAdministrator": "Be en administratör att ändra den.",
+            "none": "Ingen logotyp är sparad.",
+            "alt": "Kammarens logotyp"
+          },
+          "actions": {
+            "save": "Spara profilinställningar",
+            "saving": "Sparar…"
+          },
+          "toast": {
+            "saved": "Profilinställningarna har sparats."
+          },
+          "errors": {
+            "colourContrast": "Vit text på den här färgen når bara {ratio}:1. WCAG AA kräver {required}:1.",
+            "validation": "Kontrollera de markerade fälten och försök igen.",
+            "rateLimited": "För många ändringar. Försök igen om {seconds} sekunder.",
+            "generic": "Profilinställningarna kunde inte sparas. Försök igen."
+          }
+        }
+      },
       "index": {
         "title": "Inställningar",
         "subtitle": "Kammarövergripande inställningar, ordnade per funktion.",
         "empty": "Inga inställningar är tillgängliga för din roll.",
         "categories": {
+          "eblastBrand": {
+            "title": "Profil för utskick",
+            "description": "Logotyp, färg och postadress för varje utskick."
+          },
           "invoicing": {
             "title": "Fakturainställningar",
             "description": "Moms, valuta, registreringsavgift och standardvärden för fakturor, kvitton och kreditnotor."
@@ -3333,6 +3392,8 @@
         "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
         "notInPlanError": "{company}:s paket inkluderar inte e-utskick.",
         "submitErrorToast": "Det gick inte att skicka utskicket. Försök igen.",
+        "memberRequiredHint": "Välj vilken medlem utskicket gäller innan du skickar för granskning.",
+        "subjectEmptyError": "Ämne krävs.",
         "subjectTooLongError": "Ämnet får vara högst 200 tecken.",
         "bodyTooLargeError": "Meddelandet överskrider gränsen på 200 KB.",
         "bodyUnsafeHtmlError": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
@@ -3343,7 +3404,11 @@
         "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
         "noResults": "Inga medlemmar hittades.",
         "missingContactEmailWarning": "Den här medlemmen saknar e-postadress för primär kontakt. Det går inte att skicka utskick å deras vägnar förrän en primär kontakt med e-postadress har lagts till.",
-        "missingContactEmailError": "Den här medlemmen saknar e-postadress för primär kontakt. Lägg till en primär kontakt först och försök sedan igen."
+        "missingContactEmailError": "Den här medlemmen saknar e-postadress för primär kontakt. Lägg till en primär kontakt först och försök sedan igen.",
+        "saveDraftButton": "Spara som utkast",
+        "draftSavedToast": "Utkast sparat.",
+        "draftSaveErrorToast": "Utkastet kunde inte sparas. Försök igen.",
+        "savedAt": "Sparat {time}"
       },
       "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
@@ -3423,7 +3488,8 @@
           "subjectHelp": "Upp till 200 tecken. Kan innehålla '{{chamber_name}}'-platshållare.",
           "bodyHtml": "Innehåll (HTML)",
           "bodyHtmlHelp": "Upp till 200 KB. Använd [text inom hakparenteser] som platshållare som medlemmen kan redigera; '{{chamber_name}}' ersätts vid utkaststart.",
-          "localeLabel": "Språk"
+          "localeLabel": "Språk",
+          "imagesAfterSaveHint": "Bilder kan läggas till när mallen har sparats."
         },
         "saveButton": "Spara mall",
         "cancelButton": "Avbryt",
@@ -3436,6 +3502,10 @@
           "template_name_duplicate": "En mall med detta namn + språk finns redan.",
           "template_not_found": "Mallen hittades inte.",
           "template_soft_deleted": "Denna mall har raderats. Välj en annan eller starta tom.",
+          "cta_text_length": "Knapptexten måste vara mellan 1 och 60 tecken.",
+          "too_many_cta": "En mall kan innehålla högst 3 uppmaningsknappar.",
+          "cta_link_scheme": "En knapplänk måste börja med http://, https:// eller mailto:.",
+          "banner_alt_required": "En bannerbild behöver en beskrivning på 1 till 125 tecken.",
           "storage_error": "Ett lagringsfel inträffade. Försök igen.",
           "unknown": "Ett oväntat fel inträffade."
         }
@@ -5458,6 +5528,7 @@
       "settingsRenewalSchedules": "Påminnelseschema",
       "settingsMemberChanges": "Godkännande av medlemsändringar",
       "settingsBroadcasts": "Inställningar för utskick",
+      "settingsBroadcastsBrand": "Profil för utskick",
       "settingsIntegrationEventcreate": "EventCreate-integration",
       "events": "Evenemang",
       "sections": {
@@ -5498,6 +5569,7 @@
     }
   },
   "breadcrumb": {
+    "brand": "Profil",
     "admin": "Admin",
     "dashboard": "Instrumentpanel",
     "users": "Användare",
@@ -5540,6 +5612,83 @@
     "loadingPage": "Laddar sidinnehåll",
     "loadingTable": "Laddar tabelldata",
     "loadingForm": "Laddar formulär"
+  },
+  "broadcast": {
+    "editor": {
+      "toolbar": {
+        "label": "Formateringsverktygsfält",
+        "heading2": "Rubrik",
+        "heading3": "Underrubrik",
+        "quote": "Citat",
+        "divider": "Avdelare",
+        "bulletList": "Punktlista",
+        "orderedList": "Numrerad lista",
+        "bold": "Fet",
+        "italic": "Kursiv",
+        "underline": "Understruken",
+        "link": "Länk",
+        "image": "Bild",
+        "cta": "Knapp",
+        "banner": "Bannerbild",
+        "imageNeedsDraft": "Spara utkastet först för att kunna lägga till en bild."
+      },
+      "altDialog": {
+        "title": "Beskriv bilden",
+        "bannerTitle": "Beskriv bannern",
+        "description": "En kort beskrivning läses upp för den som inte kan se bilden och visas i e-postappar som blockerar bilder.",
+        "fieldLabel": "Bildbeskrivning",
+        "counter": "{count} av {max} tecken",
+        "insert": "Infoga bild",
+        "bannerInsert": "Infoga banner",
+        "cancel": "Avbryt",
+        "errors": {
+          "required": "Ange en beskrivning av bilden, {min} till {max} tecken.",
+          "tooLong": "Korta ner beskrivningen till högst {max} tecken."
+        }
+      },
+      "linkDialog": {
+        "title": "Lägg till länk",
+        "description": "Länkar öppnas i en ny flik.",
+        "urlLabel": "Länkadress",
+        "urlPlaceholder": "https://example.com",
+        "textLabel": "Länktext",
+        "confirm": "Spara länk",
+        "cancel": "Avbryt",
+        "remove": "Ta bort länk",
+        "errors": {
+          "required": "Ange en länkadress.",
+          "scheme": "En länk måste börja med http://, https:// eller mailto:."
+        }
+      },
+      "ctaDialog": {
+        "title": "Lägg till knapp",
+        "description": "Kammarens färg och avstånd tillämpas automatiskt.",
+        "textLabel": "Knapptext",
+        "urlLabel": "Knapplänk",
+        "urlPlaceholder": "https://example.com",
+        "counter": "{count} av {max} tecken",
+        "confirm": "Infoga knapp",
+        "cancel": "Avbryt",
+        "errors": {
+          "textRequired": "Ange knapptexten, {min} till {max} tecken.",
+          "textTooLong": "Korta ner knapptexten till högst {max} tecken.",
+          "required": "Ange en länk för knappen.",
+          "scheme": "En länk måste börja med http://, https:// eller mailto:."
+        }
+      },
+      "pasteNotice": "Viss formatering stöds inte i e-post och togs bort.",
+      "preview": {
+        "empty": "Din förhandsgranskning visas här.",
+        "paused": "Förhandsgranskningen är pausad i {seconds} sekunder – den uppdateras vid din nästa ändring.",
+        "frameTitle": "Förhandsgranskning av e-post",
+        "openLabel": "Förhandsgranska",
+        "dialogTitle": "Förhandsgranskning av e-post",
+        "dialogDescription": "Exakt vad en mottagare får: sidhuvud, meddelande och sidfot.",
+        "widthLabel": "Förhandsgranskningens bredd",
+        "widthDesktop": "Dator (600 px)",
+        "widthPhone": "Telefon (375 px)"
+      }
+    }
   },
   "portal": {
     "dashboard": {
@@ -5814,20 +5963,21 @@
           "starterBadgeAria": "Förseedad av plattformen",
           "searchPlaceholder": "Sök mallar efter namn",
           "emptyMessage": "Inga mallar matchar din sökning",
-          "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar."
+          "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar.",
+          "confirm": {
+            "title": "Ersätta det du har skrivit?",
+            "description": "Att utgå från ”{template}” ersätter din ämnesrad och ditt meddelande. Allt annat du har ställt in är kvar.",
+            "descriptionBlank": "Att börja om rensar din ämnesrad och ditt meddelande. Allt annat du har ställt in är kvar.",
+            "confirmLabel": "Använd mallen",
+            "confirmLabelBlank": "Börja om",
+            "cancelLabel": "Behåll mitt meddelande"
+          }
         },
-        "staleDraftBanner": {
-          "title": "Mallen har uppdaterats",
-          "body": "Mallen \"{templateName}\" har redigerats sedan du startade detta utkast. Klicka uppdatera för att ladda nuvarande version (dina ändringar i ämne och innehåll skrivs över).",
-          "refreshButton": "Uppdatera från nuvarande",
-          "refreshingButton": "Uppdaterar…",
-          "dismissAria": "Stäng meddelandet om föråldrat utkast för {templateName}"
-        },
+        "savedAt": "Sparat {time}",
         "fields": {
           "subject": "Ämne",
           "subjectPlaceholder": "Ämnesrad (max 200 tecken)",
           "bodyLabel": "Meddelande",
-          "bodyPlaceholder": "Skriv ditt meddelande — formatering bevaras.",
           "segmentLabel": "Mottagare",
           "customListLabel": "Anpassad e-postlista",
           "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din kammares katalog.",
@@ -5838,9 +5988,6 @@
           "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
           "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
           "subjectCounter": "{count} / {max} tecken",
-          "linkUrlLabel": "Länk-URL",
-          "linkConfirm": "Använd länk",
-          "linkCancel": "Avbryt",
           "tierCodesPlaceholder": "premium, large",
           "tierCodesHelp": "Kommaseparerade nivåkoder",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
@@ -5853,17 +6000,6 @@
         },
         "tierLabel": "Nivåkod",
         "editor": {
-          "bracketHint": "Klicka på [text inom hakparenteser] för att ersätta med ditt innehåll.",
-          "aria": {
-            "toolbar": "Formateringsverktygsfält",
-            "bold": "Fet (Ctrl+B)",
-            "italic": "Kursiv (Ctrl+I)",
-            "underline": "Understruken (Ctrl+U)",
-            "bulletList": "Punktlista",
-            "orderedList": "Numrerad lista",
-            "link": "Infoga länk",
-            "clearLink": "Ta bort länk"
-          },
           "announcements": {
             "boldOn": "Fet på",
             "boldOff": "Fet av",
@@ -5884,14 +6020,16 @@
           "submitted": "Inskickad för administratörsgranskning.",
           "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
           "preferenceExcluded": "{count, plural, one {# e-postadress uteslöts} other {# e-postadresser uteslöts}} enligt mottagarnas önskemål.",
-          "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
           "submitting": "Skickar in…",
           "takingLonger": "Det tar längre tid än väntat — vänligen vänta."
         },
         "button": {
           "saveDraft": "Spara som utkast",
-          "submit": "Skicka för granskning",
-          "deleteDraft": "Ta bort utkast"
+          "submit": "Skicka för granskning"
+        },
+        "submitBlocked": {
+          "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
+          "tierRequired": "Välj minst en medlemsnivå innan du skickar för granskning."
         },
         "submitNote": {
           "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
@@ -5933,29 +6071,25 @@
           "broadcast_member_missing_primary_contact_email": "Din profil saknar en primär kontakt-e-post.",
           "broadcast_member_halted_pending_review": "Dina utskicksbehörigheter är pausade i väntan på administratörsgranskning.",
           "broadcast_rate_limit_exceeded": "För många inskickningar. Försök igen senare.",
+          "invalid_body": "Något i formuläret kunde inte sparas. Kontrollera dina uppgifter och försök igen.",
           "broadcast_immutable_after_submit": "Detta utskick har skickats in och kan inte längre redigeras.",
           "broadcast_not_found": "Vi kunde inte hitta det utskicket.",
           "internal_error": "Ett oväntat fel inträffade. Försök igen."
-        },
-        "delete": {
-          "title": "Ta bort detta utkast?",
-          "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
-          "confirm": "Ta bort",
-          "cancel": "Fortsätt redigera"
         },
         "imageUpload": {
           "pickerLabel": "Välj en bild att ladda upp",
           "uploadButton": "Ladda upp bild",
           "uploadingLabel": "Laddar upp…",
-          "progressAria": "Förlopp för bilduppladdning",
           "uploadingAria": "Laddar upp bild — vänta",
           "uploadedToast": "Bilden har laddats upp.",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
+          "publicLinkNotice": "Din bild sparas på en offentlig webbadress som inte kräver inloggning — vem som helst med länken kan öppna den, så ladda inte upp något privat.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
           "disallowedSourcesHeading": "Dessa bildkällor är inte tillåtna:",
           "disallowedSourceItem": "{host} — ersätt med en bild från kammarens tillåtna lista.",
           "errors": {
             "broadcast_image_too_large": "Bilden är större än 5 MB.",
+            "broadcast_image_empty": "Filen är tom. Välj en bildfil med innehåll.",
             "broadcast_image_unsafe": "Bilden markerades av virusskannern och avvisades.",
             "broadcast_image_invalid_mime": "Endast bilder i formaten PNG, JPG, WebP och GIF tillåts.",
             "storage_unavailable": "Bildlagringen är tillfälligt otillgänglig. Försök igen om en stund.",
@@ -6047,7 +6181,8 @@
           "submittedAt": "Inskickad",
           "sentAt": "Skickad",
           "status": "Status",
-          "recipients": "Mottagare"
+          "recipients": "Mottagare",
+          "content": "Innehåll"
         },
         "delivery": {
           "title": "Leveranssammanfattning",
@@ -6838,6 +6973,10 @@
       "broadcast_image_allowlist_updated": "Tillåtna bildkällor för utskick uppdaterade",
       "broadcast_image_too_large": "Bild i utskick för stor",
       "broadcast_image_unsafe": "Osäker bild i utskick",
+      "broadcast_brand_settings_changed": "E-Blast-varumärkesinställningar ändrade",
+      "broadcast_image_removed": "E-Blast-bild borttagen",
+      "broadcast_image_uploaded": "E-Blast-bild uppladdad",
+      "broadcast_test_copy_sent": "Testkopia av E-Blast skickad",
       "broadcast_immutable_after_submit": "Utskick låst efter inlämning",
       "broadcast_member_dispatch_resumed": "Utskick till medlem återupptaget",
       "broadcast_member_halted_pending_review": "Utskick till medlem pausat i väntan på granskning",

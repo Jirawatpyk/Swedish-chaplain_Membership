@@ -194,6 +194,12 @@
     "retry": "ลองอีกครั้ง"
   },
   "common": {
+    "unsavedChanges": {
+      "title": "ออกจากหน้านี้โดยไม่บันทึกหรือไม่",
+      "description": "คุณมีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก หากออกจากหน้านี้ การเปลี่ยนแปลงจะหายไป",
+      "confirmLabel": "ออกจากหน้านี้",
+      "cancelLabel": "อยู่ในหน้านี้ต่อ"
+    },
     "yes": "ใช่",
     "no": "ไม่ใช่",
     "languageOptions": {
@@ -2009,11 +2015,64 @@
       "stuckPending": "{count, plural, other {อีเมล # ฉบับค้างอยู่}} ในคิว (อาจมีปัญหากับ cron)"
     },
     "settings": {
+      "broadcasts": {
+        "brand": {
+          "pageTitle": "แบรนด์ E-Blast",
+          "pageDescription": "โลโก้ สี และที่อยู่ทางไปรษณีย์ที่ใช้กับ E-Blast ทุกฉบับ",
+          "colour": {
+            "heading": "สีหลักของแบรนด์",
+            "description": "ใช้กับปุ่มและหัวข้อใน E-Blast เท่านั้น ไม่มีผลกับหน้าจอผู้ดูแลระบบหรือหน้าจอสมาชิก",
+            "label": "สีหลัก",
+            "pickerLabel": "เครื่องมือเลือกสี",
+            "hint": "รหัสสีฐานสิบหกหกหลัก เช่น #10487a",
+            "defaultHint": "ค่าเริ่มต้นของระบบ: {color}",
+            "contrastPass": "ค่าความต่างสีกับตัวอักษรสีขาว: {ratio}:1 — ผ่านเกณฑ์ AA",
+            "contrastFail": "ค่าความต่างสีกับตัวอักษรสีขาว: {ratio}:1 — ต่ำกว่า {required}:1",
+            "contrastFailHelp": "บันทึกไม่ได้จนกว่าค่าความต่างสีกับตัวอักษรสีขาวจะถึง {required}:1",
+            "invalid": "กรอกรหัสสีในรูปแบบ #RRGGBB"
+          },
+          "address": {
+            "heading": "ที่อยู่ทางไปรษณีย์",
+            "description": "แสดงในส่วนท้ายของ E-Blast ตามข้อกำหนดที่ต้องระบุที่อยู่จริง",
+            "label": "ที่อยู่ทางไปรษณีย์ของหอการค้า",
+            "placeholder": "ถนน เขต/อำเภอ จังหวัด รหัสไปรษณีย์",
+            "counter": "{count} จาก {max} ตัวอักษร",
+            "missing": "ยังไม่มีที่อยู่ทางไปรษณีย์ในระบบ E-Blast จะส่งออกโดยไม่มีที่อยู่ในส่วนท้ายจนกว่าจะบันทึกที่อยู่",
+            "tooLong": "ใช้ได้ไม่เกิน {max} ตัวอักษร"
+          },
+          "logo": {
+            "heading": "โลโก้",
+            "description": "แสดงที่ด้านบนของ E-Blast ทุกฉบับ",
+            "source": "มาจากการตั้งค่าการออกใบแจ้งหนี้",
+            "manage": "จัดการโลโก้",
+            "askAdministrator": "ติดต่อผู้ดูแลระบบเพื่อเปลี่ยนโลโก้",
+            "none": "ยังไม่มีโลโก้ในระบบ",
+            "alt": "โลโก้หอการค้า"
+          },
+          "actions": {
+            "save": "บันทึกการตั้งค่าแบรนด์",
+            "saving": "กำลังบันทึก…"
+          },
+          "toast": {
+            "saved": "บันทึกการตั้งค่าแบรนด์แล้ว"
+          },
+          "errors": {
+            "colourContrast": "ตัวอักษรสีขาวบนสีนี้ได้ค่าความต่างสีเพียง {ratio}:1 เกณฑ์ WCAG AA ต้องการ {required}:1",
+            "validation": "ตรวจสอบช่องที่ทำเครื่องหมายไว้แล้วลองใหม่",
+            "rateLimited": "เปลี่ยนแปลงถี่เกินไป ลองใหม่ในอีก {seconds} วินาที",
+            "generic": "บันทึกการตั้งค่าแบรนด์ไม่สำเร็จ ลองใหม่อีกครั้ง"
+          }
+        }
+      },
       "index": {
         "title": "ตั้งค่า",
         "subtitle": "กำหนดค่าระดับองค์กร แยกตามส่วนการทำงานของระบบ",
         "empty": "ไม่มีการตั้งค่าที่เปิดให้บทบาทของคุณ",
         "categories": {
+          "eblastBrand": {
+            "title": "แบรนด์ E-Blast",
+            "description": "โลโก้ สี และที่อยู่ทางไปรษณีย์ที่ใช้กับ E-Blast ทุกฉบับ"
+          },
           "invoicing": {
             "title": "ตั้งค่าการออกใบแจ้งหนี้",
             "description": "VAT สกุลเงิน ค่าธรรมเนียมแรกเข้า และค่าเริ่มต้นของเอกสารใบแจ้งหนี้ ใบเสร็จ และใบลดหนี้"
@@ -3333,6 +3392,8 @@
         "quotaBlockedError": "{company} ใช้โควตา E-Blast ของช่วงเวลานี้ครบแล้ว",
         "notInPlanError": "แพ็กเกจของ {company} ไม่รวมสิทธิ์ E-Blast",
         "submitErrorToast": "ส่ง E-Blast ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+        "memberRequiredHint": "เลือกสมาชิกที่ส่ง E-Blast นี้แทนก่อนส่งขออนุมัติ",
+        "subjectEmptyError": "ต้องระบุหัวข้อ",
         "subjectTooLongError": "หัวข้อต้องมีไม่เกิน 200 ตัวอักษร",
         "bodyTooLargeError": "เนื้อหามีขนาดเกิน 200 KB",
         "bodyUnsafeHtmlError": "เนื้อหามีรูปแบบที่ระบบไม่รองรับ กรุณาลดความซับซ้อน",
@@ -3343,7 +3404,11 @@
         "searchFailed": "ค้นหาสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง",
         "noResults": "ไม่พบสมาชิก",
         "missingContactEmailWarning": "สมาชิกรายนี้ไม่มีอีเมลผู้ติดต่อหลัก ไม่สามารถส่ง E-Blast แทนได้จนกว่าจะเพิ่มผู้ติดต่อหลักที่มีอีเมล",
-        "missingContactEmailError": "สมาชิกรายนี้ไม่มีอีเมลผู้ติดต่อหลัก กรุณาเพิ่มผู้ติดต่อหลักก่อน แล้วลองใหม่อีกครั้ง"
+        "missingContactEmailError": "สมาชิกรายนี้ไม่มีอีเมลผู้ติดต่อหลัก กรุณาเพิ่มผู้ติดต่อหลักก่อน แล้วลองใหม่อีกครั้ง",
+        "saveDraftButton": "บันทึกฉบับร่าง",
+        "draftSavedToast": "บันทึกฉบับร่างแล้ว",
+        "draftSaveErrorToast": "บันทึกฉบับร่างไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+        "savedAt": "บันทึกเมื่อ {time}"
       },
       "proxySubmitButton": "ส่งแทนสมาชิก",
       "haltBanner": {
@@ -3423,7 +3488,8 @@
           "subjectHelp": "ไม่เกิน 200 ตัวอักษร สามารถใช้ตัวแปร '{{chamber_name}}' ได้",
           "bodyHtml": "เนื้อหา (HTML)",
           "bodyHtmlHelp": "ไม่เกิน 200 KB ใช้ [ข้อความในวงเล็บเหลี่ยม] เป็น placeholder ที่สมาชิกแก้ไขได้ ส่วน '{{chamber_name}}' จะถูกแทนที่ตอนเริ่มฉบับร่าง",
-          "localeLabel": "ภาษา"
+          "localeLabel": "ภาษา",
+          "imagesAfterSaveHint": "เพิ่มรูปภาพได้หลังบันทึกเทมเพลตแล้ว"
         },
         "saveButton": "บันทึกเทมเพลต",
         "cancelButton": "ยกเลิก",
@@ -3436,6 +3502,10 @@
           "template_name_duplicate": "มีเทมเพลตที่ใช้ชื่อ + ภาษาเดียวกันนี้อยู่แล้ว",
           "template_not_found": "ไม่พบเทมเพลต",
           "template_soft_deleted": "เทมเพลตนี้ถูกลบแล้ว กรุณาเลือกเทมเพลตอื่นหรือเริ่มต้นจากแบบเปล่า",
+          "cta_text_length": "ข้อความบนปุ่มต้องมีความยาว 1–60 ตัวอักษร",
+          "too_many_cta": "เทมเพลตหนึ่งมีปุ่ม call-to-action ได้ไม่เกิน 3 ปุ่ม",
+          "cta_link_scheme": "ลิงก์ของปุ่มต้องขึ้นต้นด้วย http://, https:// หรือ mailto:",
+          "banner_alt_required": "รูปแบนเนอร์ต้องมีคำอธิบายความยาว 1–125 ตัวอักษร",
           "storage_error": "เกิดข้อผิดพลาดในการบันทึก กรุณาลองอีกครั้ง",
           "unknown": "เกิดข้อผิดพลาดที่ไม่คาดคิด"
         }
@@ -5458,6 +5528,7 @@
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
       "settingsMemberChanges": "การอนุมัติคำขอแก้ไขข้อมูลของสมาชิก",
       "settingsBroadcasts": "ตั้งค่า E-Blast",
+      "settingsBroadcastsBrand": "แบรนด์ E-Blast",
       "settingsIntegrationEventcreate": "การเชื่อมต่อ EventCreate",
       "events": "กิจกรรม",
       "sections": {
@@ -5498,6 +5569,7 @@
     }
   },
   "breadcrumb": {
+    "brand": "แบรนด์",
     "admin": "ผู้ดูแลระบบ",
     "dashboard": "แดชบอร์ด",
     "users": "ผู้ใช้งาน",
@@ -5540,6 +5612,83 @@
     "loadingPage": "กำลังโหลดเนื้อหา",
     "loadingTable": "กำลังโหลดตารางข้อมูล",
     "loadingForm": "กำลังโหลดแบบฟอร์ม"
+  },
+  "broadcast": {
+    "editor": {
+      "toolbar": {
+        "label": "แถบเครื่องมือจัดรูปแบบ",
+        "heading2": "หัวข้อ",
+        "heading3": "หัวข้อย่อย",
+        "quote": "ข้อความอ้างอิง",
+        "divider": "เส้นคั่น",
+        "bulletList": "รายการแบบจุด",
+        "orderedList": "รายการแบบตัวเลข",
+        "bold": "ตัวหนา",
+        "italic": "ตัวเอียง",
+        "underline": "ขีดเส้นใต้",
+        "link": "ลิงก์",
+        "image": "รูปภาพ",
+        "cta": "ปุ่ม",
+        "banner": "ภาพแบนเนอร์",
+        "imageNeedsDraft": "บันทึกฉบับร่างนี้ก่อน จึงจะเพิ่มรูปภาพได้"
+      },
+      "altDialog": {
+        "title": "อธิบายรูปภาพนี้",
+        "bannerTitle": "อธิบายภาพแบนเนอร์นี้",
+        "description": "คำอธิบายสั้น ๆ จะถูกอ่านให้ผู้ที่มองไม่เห็นรูปภาพฟัง และแสดงแทนรูปในแอปอีเมลที่บล็อกรูปภาพ",
+        "fieldLabel": "คำอธิบายรูปภาพ",
+        "counter": "{count} จาก {max} ตัวอักษร",
+        "insert": "แทรกรูปภาพ",
+        "bannerInsert": "แทรกภาพแบนเนอร์",
+        "cancel": "ยกเลิก",
+        "errors": {
+          "required": "กรุณากรอกคำอธิบายรูปภาพ ความยาว {min} ถึง {max} ตัวอักษร",
+          "tooLong": "กรุณาย่อคำอธิบายให้ไม่เกิน {max} ตัวอักษร"
+        }
+      },
+      "linkDialog": {
+        "title": "เพิ่มลิงก์",
+        "description": "ลิงก์จะเปิดในแท็บใหม่",
+        "urlLabel": "ที่อยู่ลิงก์",
+        "urlPlaceholder": "https://example.com",
+        "textLabel": "ข้อความลิงก์",
+        "confirm": "บันทึกลิงก์",
+        "cancel": "ยกเลิก",
+        "remove": "ลบลิงก์",
+        "errors": {
+          "required": "กรุณากรอกที่อยู่ลิงก์",
+          "scheme": "ลิงก์ต้องขึ้นต้นด้วย http:// https:// หรือ mailto:"
+        }
+      },
+      "ctaDialog": {
+        "title": "เพิ่มปุ่ม",
+        "description": "สีและระยะห่างของปุ่มใช้ค่าจากแบรนด์ของหอการค้าโดยอัตโนมัติ",
+        "textLabel": "ข้อความบนปุ่ม",
+        "urlLabel": "ลิงก์ของปุ่ม",
+        "urlPlaceholder": "https://example.com",
+        "counter": "{count} จาก {max} ตัวอักษร",
+        "confirm": "แทรกปุ่ม",
+        "cancel": "ยกเลิก",
+        "errors": {
+          "textRequired": "กรุณากรอกข้อความบนปุ่ม ความยาว {min} ถึง {max} ตัวอักษร",
+          "textTooLong": "กรุณาย่อข้อความบนปุ่มให้ไม่เกิน {max} ตัวอักษร",
+          "required": "กรุณากรอกลิงก์ของปุ่ม",
+          "scheme": "ลิงก์ต้องขึ้นต้นด้วย http:// https:// หรือ mailto:"
+        }
+      },
+      "pasteNotice": "รูปแบบบางอย่างไม่รองรับในอีเมล และถูกนำออกแล้ว",
+      "preview": {
+        "empty": "ตัวอย่างข้อความของคุณจะแสดงที่นี่",
+        "paused": "หยุดแสดงตัวอย่างชั่วคราว {seconds} วินาที — จะรีเฟรชเมื่อคุณแก้ไขข้อความครั้งถัดไป",
+        "frameTitle": "ตัวอย่างอีเมล",
+        "openLabel": "ดูตัวอย่าง",
+        "dialogTitle": "ตัวอย่างอีเมล",
+        "dialogDescription": "สิ่งที่ผู้รับจะได้เห็นจริง ทั้งส่วนหัว เนื้อหา และส่วนท้าย",
+        "widthLabel": "ความกว้างของตัวอย่าง",
+        "widthDesktop": "เดสก์ท็อป (600 พิกเซล)",
+        "widthPhone": "โทรศัพท์ (375 พิกเซล)"
+      }
+    }
   },
   "portal": {
     "dashboard": {
@@ -5814,20 +5963,21 @@
           "starterBadgeAria": "เทมเพลตเริ่มต้นจากระบบ",
           "searchPlaceholder": "ค้นหาเทมเพลตจากชื่อ",
           "emptyMessage": "ไม่พบเทมเพลตที่ตรงกับการค้นหา",
-          "helpText": "การเลือกเทมเพลตจะเติมหัวข้อและเนื้อหาให้ คุณยังแก้ไขก่อนส่งได้"
+          "helpText": "การเลือกเทมเพลตจะเติมหัวข้อและเนื้อหาให้ คุณยังแก้ไขก่อนส่งได้",
+          "confirm": {
+            "title": "แทนที่ข้อความที่เขียนไว้หรือไม่",
+            "description": "การเริ่มจากเทมเพลต “{template}” จะแทนที่หัวเรื่องและข้อความของคุณ ส่วนอื่นที่ตั้งค่าไว้จะยังคงเดิม",
+            "descriptionBlank": "การเริ่มใหม่จะล้างหัวเรื่องและข้อความของคุณ ส่วนอื่นที่ตั้งค่าไว้จะยังคงเดิม",
+            "confirmLabel": "ใช้เทมเพลตนี้",
+            "confirmLabelBlank": "เริ่มใหม่",
+            "cancelLabel": "เก็บข้อความเดิมไว้"
+          }
         },
-        "staleDraftBanner": {
-          "title": "เทมเพลตได้รับการอัปเดตแล้ว",
-          "body": "เทมเพลต \"{templateName}\" ถูกแก้ไขหลังจากที่คุณเริ่มฉบับร่างนี้ คลิกรีเฟรชเพื่อโหลดเวอร์ชันปัจจุบัน (การแก้ไขหัวข้อและเนื้อหาของคุณจะถูกเขียนทับ)",
-          "refreshButton": "รีเฟรชจากปัจจุบัน",
-          "refreshingButton": "กำลังรีเฟรช…",
-          "dismissAria": "ปิดการแจ้งเตือนฉบับร่างเก่าสำหรับ {templateName}"
-        },
+        "savedAt": "บันทึกเมื่อ {time}",
         "fields": {
           "subject": "หัวข้อ",
           "subjectPlaceholder": "ระบุหัวข้อ (ไม่เกิน 200 ตัวอักษร)",
           "bodyLabel": "ข้อความ",
-          "bodyPlaceholder": "พิมพ์ข้อความของคุณ — รูปแบบจะถูกเก็บไว้",
           "segmentLabel": "ผู้รับ",
           "customListLabel": "รายชื่ออีเมลกำหนดเอง",
           "customListHelp": "ใส่อีเมลหนึ่งรายการต่อหนึ่งบรรทัด สูงสุด 100 รายการ ทุกอีเมลต้องอยู่ในไดเรกทอรีของคุณ",
@@ -5838,9 +5988,6 @@
           "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
           "previewUnavailableHint": "รีเฟรชหน้าเพื่อลองใหม่ — แบบร่างของคุณยังอยู่ครบ",
           "subjectCounter": "{count} / {max} ตัวอักษร",
-          "linkUrlLabel": "URL ของลิงก์",
-          "linkConfirm": "ตั้งค่าลิงก์",
-          "linkCancel": "ยกเลิก",
           "tierCodesPlaceholder": "premium, large",
           "tierCodesHelp": "รหัสระดับ คั่นด้วยเครื่องหมายจุลภาค",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
@@ -5853,17 +6000,6 @@
         },
         "tierLabel": "รหัสระดับ",
         "editor": {
-          "bracketHint": "คลิกที่ [ข้อความในวงเล็บ] เพื่อแทนที่ด้วยเนื้อหาของคุณ",
-          "aria": {
-            "toolbar": "แถบเครื่องมือจัดรูปแบบ",
-            "bold": "ตัวหนา (Ctrl+B)",
-            "italic": "ตัวเอียง (Ctrl+I)",
-            "underline": "ขีดเส้นใต้ (Ctrl+U)",
-            "bulletList": "รายการแบบจุด",
-            "orderedList": "รายการแบบลำดับ",
-            "link": "แทรกลิงก์",
-            "clearLink": "ลบลิงก์"
-          },
           "announcements": {
             "boldOn": "เปิดตัวหนา",
             "boldOff": "ปิดตัวหนา",
@@ -5884,14 +6020,16 @@
           "submitted": "ส่งให้ผู้ดูแลตรวจสอบแล้ว",
           "submittedSlaHint": "เป้าหมายตรวจสอบโดยผู้ดูแล: 48 ชั่วโมง",
           "preferenceExcluded": "ไม่ส่งถึง {count, number} อีเมล ตามความประสงค์ของผู้รับ",
-          "sanitiserStripped": "รูปแบบที่ไม่รองรับถูกลบออกอัตโนมัติ",
           "submitting": "กำลังส่ง…",
           "takingLonger": "ใช้เวลานานกว่าที่คาด กรุณารอสักครู่"
         },
         "button": {
           "saveDraft": "บันทึกฉบับร่าง",
-          "submit": "ส่งเพื่อตรวจสอบ",
-          "deleteDraft": "ลบฉบับร่าง"
+          "submit": "ส่งเพื่อตรวจสอบ"
+        },
+        "submitBlocked": {
+          "subjectRequired": "กรอกหัวข้อก่อนส่งขออนุมัติ",
+          "tierRequired": "เลือกระดับสมาชิกอย่างน้อยหนึ่งระดับก่อนส่งขออนุมัติ"
         },
         "submitNote": {
           "cancellable": "คุณสามารถยกเลิกการส่งนี้ได้จนกว่าผู้ดูแลจะอนุมัติ"
@@ -5933,29 +6071,25 @@
           "broadcast_member_missing_primary_contact_email": "โปรไฟล์ของคุณยังไม่มีอีเมลผู้ติดต่อหลัก",
           "broadcast_member_halted_pending_review": "สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รอผู้ดูแลระบบตรวจสอบ",
           "broadcast_rate_limit_exceeded": "ส่งบ่อยเกินไป กรุณาลองใหม่ภายหลัง",
+          "invalid_body": "มีข้อมูลบางส่วนในแบบฟอร์มที่บันทึกไม่ได้ กรุณาตรวจสอบข้อมูลแล้วลองอีกครั้ง",
           "broadcast_immutable_after_submit": "E-Blast นี้ถูกส่งเพื่ออนุมัติแล้วและไม่สามารถแก้ไขได้",
           "broadcast_not_found": "ไม่พบ E-Blast",
           "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่"
-        },
-        "delete": {
-          "title": "ลบฉบับร่างนี้?",
-          "body": "ฉบับร่างจะถูกลบถาวรและไม่สามารถกู้คืนได้",
-          "confirm": "ลบ",
-          "cancel": "แก้ไขต่อ"
         },
         "imageUpload": {
           "pickerLabel": "เลือกรูปภาพที่ต้องการอัปโหลด",
           "uploadButton": "อัปโหลดรูปภาพ",
           "uploadingLabel": "กำลังอัปโหลด…",
-          "progressAria": "ความคืบหน้าการอัปโหลดรูปภาพ",
           "uploadingAria": "กำลังอัปโหลดรูปภาพ กรุณารอสักครู่",
           "uploadedToast": "อัปโหลดรูปภาพเรียบร้อย",
           "helpText": "รองรับไฟล์ PNG, JPG, WebP หรือ GIF ขนาดไม่เกิน 5 MB ระบบจะสแกนไวรัสก่อนอัปโหลด",
+          "publicLinkNotice": "ระบบจะจัดเก็บรูปภาพของคุณไว้ที่ที่อยู่เว็บสาธารณะ ซึ่งเปิดดูได้โดยไม่ต้องเข้าสู่ระบบ — ผู้ที่มีลิงก์ทุกคนเปิดดูได้ จึงไม่ควรอัปโหลดรูปที่เป็นความลับ",
           "draftRequiredHint": "กรุณาบันทึกฉบับร่างก่อนเพื่อเปิดใช้งานการอัปโหลดรูปภาพ",
           "disallowedSourcesHeading": "แหล่งรูปภาพต่อไปนี้ไม่ได้รับอนุญาต:",
           "disallowedSourceItem": "{host} — กรุณาเปลี่ยนเป็นรูปภาพจากรายการอนุญาตของหอการค้า",
           "errors": {
             "broadcast_image_too_large": "ขนาดไฟล์รูปภาพเกิน 5 MB",
+            "broadcast_image_empty": "ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล",
             "broadcast_image_unsafe": "ระบบสแกนไวรัสตรวจพบไฟล์ไม่ปลอดภัย ปฏิเสธการอัปโหลด",
             "broadcast_image_invalid_mime": "รองรับเฉพาะไฟล์ PNG, JPG, WebP หรือ GIF เท่านั้น",
             "storage_unavailable": "พื้นที่จัดเก็บรูปภาพไม่พร้อมใช้งานชั่วคราว กรุณาลองอีกครั้งในอีกสักครู่",
@@ -6047,7 +6181,8 @@
           "submittedAt": "ส่งเมื่อ",
           "sentAt": "ส่งสำเร็จเมื่อ",
           "status": "สถานะ",
-          "recipients": "ผู้รับ"
+          "recipients": "ผู้รับ",
+          "content": "เนื้อหา"
         },
         "delivery": {
           "title": "สรุปผลการจัดส่ง",
@@ -6838,6 +6973,10 @@
       "broadcast_image_allowlist_updated": "อัปเดตรายการแหล่งรูปภาพที่อนุญาต",
       "broadcast_image_too_large": "รูปภาพในอีเมลมีขนาดเกินขีดจำกัด",
       "broadcast_image_unsafe": "พบรูปภาพไม่ปลอดภัยในอีเมล",
+      "broadcast_brand_settings_changed": "เปลี่ยนการตั้งค่าแบรนด์ E-Blast",
+      "broadcast_image_removed": "ลบรูปภาพ E-Blast",
+      "broadcast_image_uploaded": "อัปโหลดรูปภาพ E-Blast",
+      "broadcast_test_copy_sent": "ส่งสำเนาทดสอบ E-Blast แล้ว",
       "broadcast_immutable_after_submit": "แก้ไขอีเมลหลังส่งอนุมัติไม่ได้",
       "broadcast_member_dispatch_resumed": "กลับมาส่งอีเมลถึงสมาชิกอีกครั้ง",
       "broadcast_member_halted_pending_review": "พักส่งอีเมลถึงสมาชิกระหว่างรอตรวจสอบ",

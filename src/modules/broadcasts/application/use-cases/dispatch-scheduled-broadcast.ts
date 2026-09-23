@@ -34,6 +34,8 @@
  *   does NOT carry a default to prevent fake-domain regressions.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { loadBrandChrome } from './_load-brand-chrome';
+import type { BrandChromePort } from '../ports/brand-chrome-port';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -148,6 +150,14 @@ export interface DispatchScheduledBroadcastDeps {
   readonly tenant: TenantContext;
   readonly broadcastsRepo: BroadcastsRepo;
   readonly broadcastsGateway: BroadcastsGatewayPort;
+  /**
+   * F119 T031 (FR-041c) — the tenant's brand chrome, read LIVE at dispatch
+   * and handed to the gateway so the delivered email equals the preview.
+   * Optional so every pre-F119 composition keeps compiling; the cron passes
+   * `brandChromePort`. A read fault degrades to no chrome (fail-soft) —
+   * a brand outage must never fail a send.
+   */
+  readonly brandChrome?: BrandChromePort;
   readonly membersBridge: MembersBridgePort;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
   readonly eventAttendees: EventAttendeesRepository;
@@ -893,6 +903,7 @@ export async function dispatchScheduledBroadcast(
         broadcastNameForResendDashboard: resendDashboardName(broadcast.fromName, broadcast.subject),
         tenantDisplayName: deps.tenantDisplayName,
         locale: deps.locale,
+        brand: await loadBrandChrome(deps.brandChrome, deps.tenant, 'dispatch'),
       });
       resendBroadcastId = createResult.broadcastId;
       // Persist BEFORE the send, in its own tx. The window this closes is the

@@ -11,17 +11,20 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import {
-  saveDraft,
-  makeSaveDraftDeps,
-  type SaveDraftError,
-} from '@/modules/broadcasts';
+import { saveDraft, makeSaveDraftDeps } from '@/modules/broadcasts';
 import {
   errorResponse,
-  httpStatusForBroadcastError,
   resolveTenantDisplayName,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import {
+  CUSTOM_RECIPIENTS_MAX_ENTRIES,
+  DRAFT_BODY_MAX_LENGTH,
+  DRAFT_SUBJECT_MAX_LENGTH,
+  draftBodyRefusal,
+  draftResponseBody,
+  mapSaveDraftError,
+} from '@/lib/broadcasts-draft-response';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
 
@@ -34,15 +37,12 @@ const SegmentTypeEnum = z.enum([
 
 const DraftBodySchema = z.object({
   draftId: z.string().uuid().optional(),
-  subject: z.string().min(1).max(200),
-  bodyHtml: z
-    .string()
-    .min(1)
-    .max(200 * 1024),
-  bodySource: z.string().max(200 * 1024),
+  subject: z.string().min(1).max(DRAFT_SUBJECT_MAX_LENGTH),
+  bodyHtml: z.string().min(1).max(DRAFT_BODY_MAX_LENGTH),
+  bodySource: z.string().max(DRAFT_BODY_MAX_LENGTH),
   segmentType: SegmentTypeEnum,
   segmentParams: z.record(z.string(), z.unknown()).nullish(),
-  customRecipientEmails: z.array(z.string().email()).max(100).nullish(),
+  customRecipientEmails: z.array(z.string().email()).max(CUSTOM_RECIPIENTS_MAX_ENTRIES).nullish(),
   scheduledFor: z
     .string()
     .datetime({ offset: true })
@@ -67,6 +67,10 @@ async function handle(
   }
   const parsed = DraftBodySchema.safeParse(raw);
   if (!parsed.success) {
+    // U28 — a refusal the member can act on gets the code the locales already
+    // translate; only a genuinely malformed body stays `invalid_body`.
+    const correctable = draftBodyRefusal(raw, correlationId);
+    if (correctable !== null) return correctable;
     return errorResponse(400, 'invalid_body', correlationId, {
       fieldErrors: parsed.error.flatten().fieldErrors as Record<
         string,
@@ -108,27 +112,16 @@ async function handle(
     });
 
     if (!result.ok) {
-      return mapDraftError(result.error, correlationId);
+      return mapSaveDraftError(result.error, correlationId);
     }
 
-    return NextResponse.json(
-      {
-        broadcastId: result.value.broadcast.broadcastId,
-        status: result.value.broadcast.status,
-        createdAt: result.value.broadcast.createdAt.toISOString(),
-        updatedAt: result.value.broadcast.updatedAt.toISOString(),
-        subject: result.value.broadcast.subject,
-        segmentType: result.value.broadcast.segmentType,
-        segmentParams: result.value.broadcast.segmentParams,
-        customRecipientEmails: result.value.broadcast.customRecipientEmails,
-        scheduledFor:
-          result.value.broadcast.scheduledFor?.toISOString() ?? null,
-      },
-      {
-        status: result.value.created ? 201 : 200,
-        headers: baseHeaders(correlationId),
-      },
-    );
+    // F119 T145 — shared with the staff `/api/admin/broadcasts/draft`, which
+    // runs the SAME `saveDraft` for a member named in the body. Both forms
+    // save through one client helper, so both routes answer in one shape.
+    return NextResponse.json(draftResponseBody(result.value.broadcast), {
+      status: result.value.created ? 201 : 200,
+      headers: baseHeaders(correlationId),
+    });
   } catch (e) {
     logger.error(
       {
@@ -141,40 +134,6 @@ async function handle(
     );
     return errorResponse(500, 'internal_error', correlationId);
   }
-}
-
-function mapDraftError(
-  error: SaveDraftError,
-  correlationId: string,
-): NextResponse {
-  if (
-    error.kind === 'sanitizer_unavailable' ||
-    error.kind === 'save_draft.server_error'
-  ) {
-    return errorResponse(500, 'internal_error', correlationId);
-  }
-  const { status, code } = httpStatusForBroadcastError(error.kind);
-  const details: Record<string, unknown> = {};
-  if (error.kind === 'broadcast_subject_too_long' && 'length' in error) {
-    details['submittedLength'] = error.length;
-  } else if (error.kind === 'broadcast_body_too_large' && 'bytes' in error) {
-    details['submittedSize'] = error.bytes;
-  } else if (error.kind === 'broadcast_body_unsafe_html' && 'reason' in error) {
-    details['reason'] = error.reason;
-  } else if (
-    error.kind === 'broadcast_member_missing_primary_contact_email' &&
-    'memberId' in error
-  ) {
-    details['memberId'] = error.memberId;
-  } else if (error.kind === 'broadcast_immutable_after_submit') {
-    details['broadcastId'] = error.broadcastId;
-    details['currentStatus'] = error.currentStatus;
-  } else if (error.kind === 'broadcast_not_found') {
-    details['broadcastId'] = error.broadcastId;
-  }
-  return errorResponse(status, code, correlationId, {
-    ...(Object.keys(details).length > 0 && { details }),
-  });
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

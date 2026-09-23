@@ -31,7 +31,11 @@ import {
   TEMPLATE_MAX_SUBJECT_LENGTH,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
+import {
+  baseHeaders,
+  designBlockErrorResponse,
+  jsonError,
+} from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -99,6 +103,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           return jsonError(422, 'template_body_unsafe', correlationId, {
             unsafeImageSources: result.error.unsafeImageSources,
           });
+        // FR-041 design-block rules. The ONE shared mapping — first
+        // violation's code as the error code, the whole list in
+        // `details.violations` — so the template surface answers exactly as
+        // the five others do, and the "refused 422 at every save" line in
+        // `broadcasts-route-helpers.ts` is literally true.
+        case 'content_rules':
+          return designBlockErrorResponse(result.error.violations, correlationId);
         case 'duplicate_name':
           return jsonError(409, 'template_name_duplicate', correlationId, {
             locale: result.error.locale,

@@ -17,10 +17,11 @@
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { formatCalendarYear } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 
 export interface QuotaSnapshot {
@@ -44,6 +45,15 @@ export interface QuotaDisplayProps {
   readonly nextResetCopy?: string | null;
   /** AS2: localised "Plan changed on <date>" explainer when applicable. */
   readonly planChangedExplainer?: string | null;
+  /**
+   * F119 T145 (FR-039) — where the counter comes from. The member's own
+   * allowance is the default; the staff compose-on-behalf form passes
+   * `/api/admin/broadcasts/quota?memberId=<picked member>`, which returns the
+   * IDENTICAL envelope (`src/lib/broadcasts-draft-response.ts`). Changing it
+   * re-fetches, so picking a different member shows that member's allowance
+   * rather than a stale one.
+   */
+  readonly endpoint?: string;
 }
 
 export function QuotaDisplay({
@@ -52,9 +62,14 @@ export function QuotaDisplay({
   showComposeCta = false,
   nextResetCopy = null,
   planChangedExplainer = null,
+  endpoint = '/api/broadcasts/quota',
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
+  // U30 — the year is a DISPLAY value and goes through the same calendar the
+  // reset date beside it uses; the card used to print a raw CE integer above a
+  // BE date. Storage is untouched (CLAUDE.md § Conventions).
+  const locale = useLocale();
   const [snap, setSnap] = useState<QuotaSnapshot | null>(initial);
   const [loading, setLoading] = useState<boolean>(initial === null);
   const [error, setError] = useState<boolean>(false);
@@ -66,7 +81,7 @@ export function QuotaDisplay({
       setLoading(true);
       setError(false);
       try {
-        const res = await fetch('/api/broadcasts/quota', {
+        const res = await fetch(endpoint, {
           credentials: 'same-origin',
         });
         if (!res.ok) {
@@ -104,7 +119,7 @@ export function QuotaDisplay({
     return () => {
       cancelled = true;
     };
-  }, [refreshKey, retryNonce]);
+  }, [endpoint, refreshKey, retryNonce]);
 
   // Clamp percentage at 100 to avoid race conditions where used+reserved
   // briefly exceeds cap (P6 finding).
@@ -114,13 +129,16 @@ export function QuotaDisplay({
   const ariaValueNow = snap ? Math.min(snap.cap, snap.used + snap.reserved) : 0;
 
   return (
-    <Card aria-busy={loading} data-testid="quota-display">
+    <Card aria-busy={loading} data-testid="quota-display" data-compose-feature="quota">
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="text-sm font-medium">
-            {snap === null
-              ? t('headerLabel', { year: new Date().getFullYear() })
-              : t('headerLabel', { year: snap.quotaYear })}
+            {t('headerLabel', {
+              year: formatCalendarYear(
+                snap === null ? new Date().getFullYear() : snap.quotaYear,
+                locale,
+              ),
+            })}
           </div>
           {snap?.planName ? (
             <span className="text-xs text-muted-foreground">
@@ -165,7 +183,11 @@ export function QuotaDisplay({
               />
             </div>
             {exhausted ? (
-              <p className="text-xs text-destructive">{t('exhausted', { year: snap.quotaYear })}</p>
+              <p className="text-xs text-destructive">
+                {t('exhausted', {
+                  year: formatCalendarYear(snap.quotaYear, locale),
+                })}
+              </p>
             ) : showComposeCta ? (
               <Link
                 href="/portal/broadcasts/new"

@@ -147,6 +147,20 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'member_change_request_withdrawn',
     'member_change_request_rate_limited',
     'member_change_approval_setting_changed',
+    // F119 PR-1 (0304) — `setBrandSettings`, `uploadInlineImage`,
+    // `sendTestCopy`, the image sweep and the discard / prune / erasure stamps
+    // INSERT these in the same tx as their state change; a non-persisting ADD
+    // VALUE would 500 every brand save and every image upload in prod instead
+    // of failing the deploy here.
+    //
+    // ROUND-3 — this list used to name the "withdrawal / rejection stamp" as a
+    // PR-1 emitter. It is not one: the widened withdraw + reject routes are
+    // T081, in PR-2. The PR-1 emitters of `broadcast_image_removed` are the
+    // draft discard, the daily prune, the sweep and the erasure cascade.
+    'broadcast_test_copy_sent',
+    'broadcast_brand_settings_changed',
+    'broadcast_image_uploaded',
+    'broadcast_image_removed',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [

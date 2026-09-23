@@ -65,7 +65,9 @@ describe('settings index declares a permission per card', () => {
     // 4 since the 016 post-ship review closed the 2-of-4 sidebar-parity gap
     // (broadcasts + eventcreate cards, both feature-flag-aware); 5 with the
     // F114 US6 member-change approval card (flag-aware too).
-    expect(CATEGORIES).toHaveLength(5);
+    // F119 T029: 6 with the chamber brand card (flag-aware, same
+    // `settings.broadcasts` key as its allow-list sibling).
+    expect(CATEGORIES).toHaveLength(6);
   });
 
   it('the page still filters — `visible` is derived, not the raw list', () => {

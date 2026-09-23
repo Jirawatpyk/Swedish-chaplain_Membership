@@ -161,10 +161,18 @@ export function useRecipientCount(props: UseRecipientCountProps, retryNonce = 0)
 export function RecipientCountLine({
   state,
   onRetry,
+  textId,
 }: {
   readonly state: RecipientCountState;
   /** Review round 2 (UX H-5) — re-runs the count for the same segment. */
   readonly onRetry?: () => void;
+  /**
+   * Portal live walk U29 — an id on the STATUS text (not on the wrapper,
+   * which also holds the retry button), so a disabled Submit can point
+   * `aria-describedby` at the refusal the member can already see rather than
+   * repeating its words somewhere else.
+   */
+  readonly textId?: string;
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.recipientCount');
   let text: string | null = null;
@@ -213,7 +221,10 @@ export function RecipientCountLine({
     // Always rendered, `min-h` for two lines of TH / SV, so the count
     // settling never shifts the form (UX M-4) and the live region exists
     // before its content changes (L-1 — an inserted region is not announced).
-    <div className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}>
+    <div
+      data-compose-feature="recipient-count"
+      className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}
+    >
       {/*
         /code-review 2026-09-07 (finding #8) — the retry BUTTON used to live
         inside this region. A live region announces its whole text content on
@@ -225,7 +236,12 @@ export function RecipientCountLine({
         alongside `role="status"` — redundant, but it is the hook the e2e
         reflow assertion selects on and it costs nothing.
       */}
-      <p role="status" aria-live="polite" className="flex items-start gap-1.5">
+      <p
+        id={textId}
+        role="status"
+        aria-live="polite"
+        className="flex items-start gap-1.5"
+      >
         {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
         {text !== null ? <span>{text}</span> : null}
       </p>

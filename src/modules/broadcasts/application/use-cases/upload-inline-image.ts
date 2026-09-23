@@ -1,25 +1,50 @@
 /**
  * T071 (F7.1a US2) — `uploadInlineImage` Application use-case.
  *
- * Pipeline (FR-012 / FR-013 + critique E6):
+ * Pipeline (FR-012 / FR-013 + critique E6 + review findings F2-3 / F2-6):
  *   1. MIME-type allowlist (image/png|jpeg|webp|gif) — fast-fail
- *   2. Size cap (≤5 MB) — fast-fail emits `broadcast_image_too_large`
+ *   2. Size band — fast-fail. `> 5 MB` emits `broadcast_image_too_large`;
+ *      `< 1 byte` emits `broadcast_image_empty` (F2-6)
  *   3. Filename sanitisation (strip <>&"'\\/ + max 255 chars)
- *   4. SHA-256 content-hash — dedup short-circuit if already stored
- *   5. ClamAV virus scan via `VirusScannerPort` — fail-closed on
+ *   4. ClamAV virus scan via `VirusScannerPort` — fail-closed on
  *      verdict !== 'clean'
- *   6. Vercel Blob persistence in tenant-scoped namespace
- *   7. Return { blobUrl, allowlistedHostname, contentHash }
+ *   5. F2-3 — re-encode through `ImageReencoderPort` to strip EXIF/GPS/XMP
+ *   6. SHA-256 content-hash + byte size OF THE RE-ENCODED BYTES — dedup
+ *      short-circuit if already stored
+ *   7. Vercel Blob persistence in tenant-scoped namespace
+ *   8. F119 T033 — record ONE `broadcast_images` row (owner = the E-Blast or
+ *      the template) and audit `broadcast_image_uploaded` in the SAME
+ *      tenant tx — on the dedup path too (a second owner is a second
+ *      reference; the last-reference sweep needs it)
+ *   9. Return { blobUrl, allowlistedHostname, contentHash, imageId }
  *
  * Pipeline-order invariant (data-model § FR-013 + critique P/E
  * security clauses): bytes NEVER reach storage before verdict='clean'
  * is recorded. Rejected uploads are NEVER persisted.
  *
+ * F2-3 moved steps 4–6 into this order deliberately. The re-encoder is an
+ * image DECODER, so it must sit BELOW the ClamAV verdict — never point a
+ * decoder at unscanned bytes. And the hash must be taken ABOVE it, on the
+ * OUTPUT: the hash is both the dedup key and the blob key, so hashing the
+ * INPUT would key the store on bytes that were never stored and the next
+ * upload of the same photo would miss the dedup and orphan a blob. The cost
+ * is that a deduplicated upload is now scanned before the short-circuit; that
+ * is the correct trade (an identical file from a second member is still
+ * verified) and it is what makes the dedup key honest.
+ *
+ * F2-6: the empty-file refusal sits ABOVE the scanner because the DB CHECK is
+ * `byte_size BETWEEN 1 AND 5 MB`. Without it a 0-byte `File` passed MIME +
+ * size, was scanned, was PUT, and only then violated the CHECK — a 500 for
+ * the member plus an orphan blob with NO row, which the sweep (keyed on
+ * MARKED ROWS) can never see.
+ *
  * Pure Application logic — no framework imports.
  */
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { asHostname } from '../../domain/value-objects/image-source-allowlist';
 import { safeAuditEmit } from './_safe-audit-emit';
 import type {
@@ -27,12 +52,15 @@ import type {
 } from '../ports/image-allowlist-port';
 import type { VirusScannerPort } from '../ports/virus-scanner-port';
 import {
+  ImageStorageUnavailableError,
   isImageMimeType,
   type ImageMimeType,
   type ImageStoragePort,
 } from '../ports/image-storage-port';
 import type { Hostname } from '../ports/image-allowlist-port';
 import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastImageOwnerKind, BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import type { ImageReencoderPort } from '../ports/image-reencoder-port';
 import type { TenantSlug } from '@/modules/tenants';
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -42,13 +70,35 @@ export interface UploadInlineImageDeps {
   readonly scanner: VirusScannerPort;
   readonly storage: ImageStoragePort;
   readonly audit: AuditPort;
+  /** F119 T033 — the image lifecycle record. */
+  readonly imagesRepo: BroadcastImagesRepo;
+  /**
+   * F2-3 — strips EXIF/GPS before the bytes reach a PUBLIC blob URL.
+   * REQUIRED, never optional: a composition that forgot to wire it would
+   * publish the member's GPS co-ordinates silently, and silence is exactly
+   * what this control exists to prevent.
+   */
+  readonly reencoder: ImageReencoderPort;
 }
+
+/**
+ * F119 T033 — who uploads decides the audit's member key (#336/#337): a
+ * portal user's upload to their own draft IS member activity, so it carries
+ * snake_case `member_id` (the 0009 `last_activity_at` trigger key); a staff
+ * upload carries `related_member_id` (the member it is FOR, or null for a
+ * template) so it never refreshes the member's recency.
+ */
+export type UploadInlineImageActor =
+  | { readonly role: 'member'; readonly memberId: string }
+  | { readonly role: string | null; readonly relatedMemberId: string | null };
 
 export interface UploadInlineImageInput {
   readonly tenantId: TenantSlug;
   readonly actorUserId: string;
   readonly actorEmail: string;
-  readonly draftId: string;
+  /** The E-Blast (a draft IS a `broadcasts` row) or the template that owns the image. */
+  readonly owner: { readonly kind: BroadcastImageOwnerKind; readonly id: string };
+  readonly actor: UploadInlineImageActor;
   readonly requestId: string;
   readonly fileBytes: Buffer | Uint8Array;
   readonly filename: string;
@@ -57,6 +107,10 @@ export interface UploadInlineImageInput {
 
 export type UploadInlineImageError =
   | { readonly kind: 'broadcast_image_too_large'; readonly sizeBytes: number }
+  // F2-6 — a 0-byte upload. Refused ABOVE the scanner; the DB CHECK on
+  // `broadcast_images.byte_size` is `BETWEEN 1 AND 5 MB`, so letting it
+  // through cost a 500 and an unsweepable orphan blob.
+  | { readonly kind: 'broadcast_image_empty' }
   | {
       readonly kind: 'broadcast_image_invalid_mime';
       readonly receivedMime: string;
@@ -78,6 +132,8 @@ export interface UploadInlineImageOutput {
   // parseable URL; null only fires on the dedup-fallthrough log path.)
   readonly allowlistedHostname: Hostname | null;
   readonly contentHash: string;
+  /** F119 T033 — the `broadcast_images` row written for this upload. */
+  readonly imageId: string;
 }
 
 export async function uploadInlineImage(
@@ -96,7 +152,8 @@ export async function uploadInlineImage(
       tenantId: input.tenantId,
       summary: `Inline image rejected — invalid MIME ${input.mimeType}`,
       payload: {
-        draftId: input.draftId,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
         reason: 'invalid_mime',
         receivedMime: input.mimeType,
       },
@@ -121,48 +178,21 @@ export async function uploadInlineImage(
       actorUserId: input.actorUserId,
       tenantId: input.tenantId,
       summary: `Inline image rejected — size ${sizeBytes} > ${MAX_BYTES}`,
-      payload: { sizeBytes, draftId: input.draftId, mime },
+      payload: { sizeBytes, owner_kind: input.owner.kind, owner_id: input.owner.id, mime },
       requestId: input.requestId,
     });
     return err({ kind: 'broadcast_image_too_large', sizeBytes });
   }
+  // F2-6 — the OTHER end of the DB CHECK `byte_size BETWEEN 1 AND 5 MB`.
+  // Above the scanner and above storage: an empty file is not something to
+  // scan, store, and then discover is unrepresentable. No audit row — unlike
+  // the too-large / unsafe rejections this is not a security signal, it is a
+  // mis-click or a browser that handed us an empty `File`.
+  if (sizeBytes < 1) {
+    return err({ kind: 'broadcast_image_empty' });
+  }
 
   const sanitisedFilename = sanitiseFilename(input.filename);
-  const contentHash = createHash('sha256')
-    .update(input.fileBytes as Uint8Array)
-    .digest('hex');
-
-  // Dedup short-circuit (best-effort; correctness handled by put's
-  // tenant-scoped + content-addressed key). CR-M3 — passes mime so
-  // adapter probes ONE key not 4.
-  const existing = await deps.storage.existsByContentHash(
-    input.tenantId,
-    contentHash,
-    mime,
-  );
-  if (existing) {
-    const dedupHost = safeAsHostname(existing);
-    // PR-review fix 2026-05-20 SF-M3 — when the existing blob URL is
-    // unparseable (corrupt cache / future URL-shape change), don't
-    // return an unusable success. Log + fall through to fresh upload
-    // so the member's image actually ends up at a hostname the
-    // submit-time allowlist can validate.
-    if (!dedupHost) {
-      logger.warn(
-        { tenantId: input.tenantId, contentHash, existing },
-        'broadcasts.uploadInlineImage.dedup_url_unparseable_fallthrough',
-      );
-    } else {
-      // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
-      // hostname is in the tenant allowlist BEFORE returning success.
-      await ensureBlobHostAllowlisted(deps, input.tenantId, dedupHost);
-      return ok({
-        blobUrl: existing,
-        allowlistedHostname: dedupHost,
-        contentHash,
-      });
-    }
-  }
 
   const verdict = await deps.scanner.scan(Buffer.from(input.fileBytes));
   if (verdict.verdict !== 'clean') {
@@ -181,7 +211,8 @@ export async function uploadInlineImage(
       tenantId: input.tenantId,
       summary: `Inline image rejected — virus-scan verdict=${verdict.verdict}`,
       payload: {
-        draftId: input.draftId,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
         verdict: verdict.verdict,
         signature: verdict.verdict === 'infected' ? verdict.signature : null,
         durationMs: verdict.durationMs,
@@ -191,30 +222,183 @@ export async function uploadInlineImage(
     return err({ kind: 'broadcast_image_unsafe', reason });
   }
 
-  // PR-review fix 2026-05-20 SF-M4 — wrap storage.put + map Blob error
-  // classes to a typed `storage_unavailable` result so the route can
+  // F2-3 — strip EXIF/GPS/XMP. Below the verdict (never decode unscanned
+  // bytes), above the hash (the hash is the dedup + blob key and must
+  // describe the bytes that are actually stored).
+  const reencoded = await deps.reencoder.reencode(input.fileBytes as Uint8Array, mime);
+  if (!reencoded.ok) {
+    broadcastsMetrics.imageReencodeFailed(
+      input.tenantId as unknown as string,
+      reencoded.error.kind,
+    );
+    // ROUND-2 R-M3 — an OUTAGE is not a verdict about the member's file.
+    // Every throw out of the adapter used to arrive here as `decode_failed`,
+    // so a libvips OOM or a hung decode gave the member a permanent 415 AND
+    // wrote `broadcast_image_unsafe` into the audit log — a statement about
+    // something they did not do. Nothing is known about these bytes, so
+    // nothing is recorded about them; the member gets the 503 class and can
+    // retry.
+    if (reencoded.error.kind === 'reencoder_unavailable') {
+      logger.error(
+        {
+          err: reencoded.error.kind,
+          tenantId: input.tenantId,
+          ownerKind: input.owner.kind,
+          mime,
+          requestId: input.requestId,
+        },
+        'broadcasts.uploadInlineImage.reencoder_unavailable',
+      );
+      return err({ kind: 'storage_unavailable', reason: reencoded.error.reason });
+    }
+    // Fail-closed: bytes we cannot decode are bytes whose metadata we cannot
+    // strip. Mapped onto the existing `invalid_mime` class — from the
+    // member's side "this is not an image we can accept" is the same answer.
+    logger.warn(
+      {
+        err: reencoded.error.kind,
+        tenantId: input.tenantId,
+        ownerKind: input.owner.kind,
+        mime,
+        requestId: input.requestId,
+      },
+      'broadcasts.uploadInlineImage.reencode_failed',
+    );
+    await safeAuditEmit(deps.audit, null, {
+      eventType: 'broadcast_image_unsafe',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Inline image rejected — undecodable as ${mime}`,
+      payload: {
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
+        reason: 'reencode_failed',
+        receivedMime: input.mimeType,
+      },
+      requestId: input.requestId,
+    });
+    return err({ kind: 'broadcast_image_invalid_mime', receivedMime: input.mimeType });
+  }
+  const storedBytes = reencoded.value.bytes;
+  const storedSizeBytes = storedBytes.byteLength;
+  // Re-check the cap on the OUTPUT: a re-encode can grow a file (a heavily
+  // optimised PNG round-tripped at compressionLevel 9 still can), and the DB
+  // CHECK and the storage quota both apply to what we write, not what we read.
+  if (storedSizeBytes > MAX_BYTES) {
+    await safeAuditEmit(deps.audit, null, {
+      eventType: 'broadcast_image_too_large',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Inline image rejected — re-encoded size ${storedSizeBytes} > ${MAX_BYTES}`,
+      payload: {
+        sizeBytes: storedSizeBytes,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
+        mime,
+        stage: 'reencoded',
+      },
+      requestId: input.requestId,
+    });
+    return err({ kind: 'broadcast_image_too_large', sizeBytes: storedSizeBytes });
+  }
+  if (storedSizeBytes < 1) {
+    return err({ kind: 'broadcast_image_empty' });
+  }
+
+  const contentHash = createHash('sha256').update(storedBytes).digest('hex');
+
+  // Dedup short-circuit (best-effort; correctness handled by put's
+  // tenant-scoped + content-addressed key). CR-M3 — passes mime so
+  // adapter probes ONE key not 4.
+  // ROUND-3 #1 — only `present` short-circuits. `absent` and `unknown` both
+  // fall through to the PUT: on `absent` because the bytes really are not
+  // there, and on `unknown` because a probe that failed is not permission to
+  // skip storing the member's file. The PUT is content-addressed, so if the
+  // `unknown` was hiding a hit, `allowOverwrite: false` refuses it and the
+  // catch below turns that into a retryable 503 rather than a 500 — a retry
+  // then dedups cleanly once `head` recovers.
+  const existing = await deps.storage.existsByContentHash(
+    input.tenantId,
+    contentHash,
+    mime,
+  );
+  if (existing.status === 'present') {
+    const dedupHost = safeAsHostname(existing.blobUrl);
+    // PR-review fix 2026-05-20 SF-M3 — when the existing blob URL is
+    // unparseable (corrupt cache / future URL-shape change), don't
+    // return an unusable success. Log + fall through to fresh upload
+    // so the member's image actually ends up at a hostname the
+    // submit-time allowlist can validate.
+    if (!dedupHost) {
+      logger.warn(
+        { tenantId: input.tenantId, contentHash, existing },
+        'broadcasts.uploadInlineImage.dedup_url_unparseable_fallthrough',
+      );
+    } else {
+      // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
+      // hostname is in the tenant allowlist BEFORE returning success.
+      await ensureBlobHostAllowlisted(deps, input.tenantId, dedupHost);
+      const recorded = await recordImage(deps, input, {
+        contentHash,
+        blobUrl: existing.blobUrl,
+        blobKey: existing.blobKey,
+        mime,
+        sizeBytes: storedSizeBytes,
+        bytes: storedBytes,
+        sanitisedFilename,
+      });
+      if (!recorded.ok) return recorded;
+      return ok({
+        blobUrl: existing.blobUrl,
+        allowlistedHostname: dedupHost,
+        contentHash,
+        imageId: recorded.value,
+      });
+    }
+  }
+
+  // PR-review fix 2026-05-20 SF-M4 — wrap storage.put + map the port's
+  // `ImageStorageUnavailableError` to a typed `storage_unavailable` result so the route can
   // return 503 (not generic 500) on token-expired / suspended /
   // rate-limited outages. Other exceptions still propagate.
   let blobUrl: string;
+  let blobKey: string;
   try {
     const result = await deps.storage.put({
       tenantId: input.tenantId,
-      bytes: input.fileBytes as Uint8Array,
+      // F2-3 — the METADATA-STRIPPED bytes, never `input.fileBytes`.
+      bytes: storedBytes,
       contentHash,
       mimeType: mime,
       sanitisedFilename,
     });
     blobUrl = result.blobUrl;
+    blobKey = result.blobKey;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (
-      /BlobAccessError|BlobStoreSuspendedError|BlobClientTokenExpiredError|BlobServiceRateLimited|BlobServiceNotAvailable/i.test(
-        msg,
-      )
-    ) {
+    // ROUND-3 #1 — the bytes ARE at the content-addressed key (that is what
+    // the refusal means), but this leg never learned the URL because the
+    // probe above came back `unknown`. 503 rather than 500: the member
+    // retries, the probe answers `present`, and the retry dedups. Deliberately
+    // NOT a silent success — inventing a URL from the key would put a guess
+    // into `broadcast_images.blob_url`.
+    if (isBlobAlreadyExists(msg)) {
+      logger.warn(
+        { tenantId: input.tenantId, contentHash, mime, requestId: input.requestId },
+        'broadcasts.uploadInlineImage.put_rejected_existing_after_unknown_probe',
+      );
+      return err({ kind: 'storage_unavailable', reason: msg });
+    }
+    // F119 F7-2 — the ADAPTER classifies an outage by the SDK's own classes
+    // and throws the port error. This used to be a regex over `msg` for the
+    // SDK CLASS names, which the real messages never contain, so every real
+    // outage fell through to `throw e` → 500.
+    if (e instanceof ImageStorageUnavailableError) {
       logger.error(
         {
-          err: msg,
+          err: errKind(e),
+          // Which outage (rate-limited vs suspended vs token): the SDK class.
+          cause: errKind(e.cause),
           tenantId: input.tenantId,
           contentHash,
           mime,
@@ -234,7 +418,183 @@ export async function uploadInlineImage(
     await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
   }
 
-  return ok({ blobUrl, allowlistedHostname: hostname, contentHash });
+  const recorded = await recordImage(deps, input, {
+    contentHash,
+    blobUrl,
+    blobKey,
+    mime,
+    sizeBytes: storedSizeBytes,
+    bytes: storedBytes,
+    sanitisedFilename,
+  });
+  if (!recorded.ok) return recorded;
+  return ok({ blobUrl, allowlistedHostname: hostname, contentHash, imageId: recorded.value });
+}
+
+/**
+ * F119 T033 — the `broadcast_images` row + the `broadcast_image_uploaded`
+ * audit row, in ONE tenant tx (a row without its audit, or an audit without
+ * its row, is the forensic gap Principle I clause 3 forbids). The payload
+ * carries ids, keys, counts and the hash — never the blob URL. The audit
+ * emit is RAW (not `safeAuditEmit`): it is the load-bearing record of a
+ * write, so a failed emit rolls the row back and the route answers 500;
+ * the bytes stay in Blob and the next upload of the same file dedups.
+ *
+ * F119 F7-6 — a storage OUTAGE on the re-PUT under the lock is the same
+ * 503 `storage_unavailable` the first PUT answers. It is mapped HERE, after
+ * the throw has left `withTx`: an `err()` returned inside the tenant tx would
+ * COMMIT it, whereas the throw rolls it back, so the row never outlives its
+ * blob. Only the adapter's `put` raises that class.
+ */
+async function recordImage(
+  deps: UploadInlineImageDeps,
+  input: UploadInlineImageInput,
+  stored: Parameters<typeof recordImageInTx>[2],
+): Promise<Result<string, UploadInlineImageError>> {
+  try {
+    return ok(await recordImageInTx(deps, input, stored));
+  } catch (e) {
+    if (!(e instanceof ImageStorageUnavailableError)) throw e;
+    logger.error(
+      {
+        err: errKind(e),
+        cause: errKind(e.cause),
+        tenantId: input.tenantId,
+        contentHash: stored.contentHash,
+        mime: stored.mime,
+        requestId: input.requestId,
+      },
+      'broadcasts.uploadInlineImage.reput_storage_unavailable',
+    );
+    return err({ kind: 'storage_unavailable', reason: e.message });
+  }
+}
+
+async function recordImageInTx(
+  deps: UploadInlineImageDeps,
+  input: UploadInlineImageInput,
+  stored: {
+    readonly contentHash: string;
+    readonly blobUrl: string;
+    readonly blobKey: string;
+    readonly mime: ImageMimeType;
+    readonly sizeBytes: number;
+    /** ROUND-2 R-H2 — the stored bytes, for the re-PUT under the lock. */
+    readonly bytes: Uint8Array;
+    readonly sanitisedFilename: string;
+  },
+): Promise<string> {
+  return deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+    // F119 review finding F2-10(a) — the OTHER half of the sweep's lock. The
+    // dedup probe above asks BLOB STORAGE whether the bytes exist, not the
+    // database, so without this lock a fresh reference could be inserted in
+    // the window between the sweep counting 0 live rows and deleting the
+    // blob: a live row pointing at a 404. Held to the end of this tx.
+    await deps.imagesRepo.lockContentHash(input.tenantId, stored.contentHash, tx);
+
+    // ROUND-2 R-H2 — the lock closes the window from HERE onwards, but the
+    // dedup probe and the PUT both happened ABOVE it. A whole sweep pass for
+    // this same hash (lock → count 0 → delete the blob → remove the row →
+    // commit) fits in that gap, and the row we are about to insert would then
+    // point at bytes that no longer exist. So, holding the lock the sweep also
+    // needs, ask storage again and put the bytes back if they are gone.
+    //
+    // ROUND-3 #1 — the re-PUT fires on `absent` ONLY.
+    //
+    // An earlier version of this comment claimed "a spurious re-PUT is the
+    // only way this can be wrong". It was not: the adapter answered `null` for
+    // every non-404 `head` failure too, and `put` is `allowOverwrite: false`,
+    // so a Blob rate-limit made the re-PUT THROW — inside this transaction,
+    // rolling the row back for a 500, while on the fresh-upload leg the first
+    // PUT had already written the bytes. The result was a blob with no row:
+    // invisible to the sweep (which reads MARKED rows), to the orphan arm and
+    // to the erasure cascade. Precisely the class F2-1 exists to close.
+    //
+    // So `unknown` proceeds straight to the INSERT. On either reading of an
+    // `unknown` the bytes are there: the fresh leg PUT them itself a moment
+    // ago, and the dedup leg got a `present` from the pre-lock probe. The lock
+    // is held, so the sweep cannot take them between here and COMMIT.
+    const stillStored = await deps.storage.existsByContentHash(
+      input.tenantId,
+      stored.contentHash,
+      stored.mime,
+    );
+    if (stillStored.status === 'absent') {
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          contentHash: stored.contentHash,
+          mime: stored.mime,
+          requestId: input.requestId,
+        },
+        'broadcasts.uploadInlineImage.blob_reclaimed_under_lock_reput',
+      );
+      try {
+        await deps.storage.put({
+          tenantId: input.tenantId,
+          bytes: stored.bytes,
+          contentHash: stored.contentHash,
+          mimeType: stored.mime,
+          sanitisedFilename: stored.sanitisedFilename,
+        });
+      } catch (e) {
+        // `allowOverwrite: false` refuses a PUT over a taken pathname. At a
+        // CONTENT-ADDRESSED key that refusal is the outcome the re-PUT wanted
+        // — the bytes are there (another upload of the same file won the race
+        // between the probe and here). Anything else is a real storage fault
+        // and still aborts the transaction, so the row never outlives its blob;
+        // `recordImage` answers an `ImageStorageUnavailableError` with the
+        // first PUT's 503, once the throw has rolled this tx back (F7-6).
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!isBlobAlreadyExists(msg)) throw e;
+        logger.info(
+          {
+            tenantId: input.tenantId,
+            contentHash: stored.contentHash,
+            requestId: input.requestId,
+          },
+          'broadcasts.uploadInlineImage.reput_already_stored',
+        );
+      }
+    }
+
+    const row = await deps.imagesRepo.record(
+      input.tenantId,
+      {
+        ownerKind: input.owner.kind,
+        ownerId: input.owner.id,
+        contentHash: stored.contentHash,
+        blobUrl: stored.blobUrl,
+        blobKey: stored.blobKey,
+        mimeType: stored.mime,
+        byteSize: stored.sizeBytes,
+        uploadedByUserId: input.actorUserId,
+      },
+      tx,
+    );
+    const memberKey =
+      input.actor.role === 'member' && 'memberId' in input.actor
+        ? { member_id: input.actor.memberId }
+        : { related_member_id: 'relatedMemberId' in input.actor ? input.actor.relatedMemberId : null };
+    await deps.audit.emit(tx, {
+      eventType: 'broadcast_image_uploaded',
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      actorUserId: input.actorUserId,
+      summary: `E-Blast image uploaded (${input.owner.kind})`,
+      payload: {
+        ...memberKey,
+        owner_kind: input.owner.kind,
+        owner_id: input.owner.id,
+        image_id: row.id,
+        byte_size: stored.sizeBytes,
+        mime_type: stored.mime,
+        content_hash: stored.contentHash,
+        actor_role: input.actor.role ?? null,
+      },
+    });
+    return row.id;
+  });
 }
 
 /**
@@ -257,13 +617,40 @@ async function ensureBlobHostAllowlisted(
   } catch (e) {
     logger.warn(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
         tenantId,
         hostname,
       },
       'broadcasts.uploadInlineImage.allowlist_seed_failed',
     );
   }
+}
+
+/**
+ * ROUND-3 #1 — does this storage error mean "the pathname is already taken"?
+ *
+ * MEASURED against the live dev store on 2026-09-22 (a deliberate duplicate
+ * PUT with `allowOverwrite` defaulted): `@vercel/blob@2.3.3` throws a plain
+ * **`BlobError`** — there is NO `BlobAlreadyExists` subclass to test with
+ * `instanceof`, unlike NOT-FOUND (`BlobNotFoundError`, which the adapter now
+ * classifies by class). The verbatim message is:
+ *
+ *   Vercel Blob: This blob already exists, use `allowOverwrite: true` if you
+ *   want to overwrite it. Or `addRandomSuffix: true` to generate a unique
+ *   filename. Read more about this error in our documentation:
+ *   https://vercel.link/blob-allow-overwrite
+ *
+ * So a message regex is the only instrument available here, and both halves
+ * are matched — the sentence and the flag it names — so a wording change on
+ * one side still classifies. `tests/helpers/eblast-approval-fakes.ts` throws a
+ * verbatim copy of that string, measured 2026-09-22 against @vercel/blob
+ * 2.3.3; re-measure on an SDK bump.
+ *
+ * At a CONTENT-ADDRESSED key this is not a failure: whatever is at the key is
+ * the bytes we were writing.
+ */
+function isBlobAlreadyExists(message: string): boolean {
+  return /already exists|allowOverwrite/i.test(message);
 }
 
 function sanitiseFilename(raw: string): string {

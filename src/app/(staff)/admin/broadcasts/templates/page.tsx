@@ -14,13 +14,7 @@ import { LayoutTemplate } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { EmptyState } from '@/components/shell/empty-state';
 import {
   AdminTemplateLibrary,
   type TemplateLibraryRow,
@@ -92,26 +86,25 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
       />
 
       {rows.length === 0 ? (
-        <Card>
-          <CardHeader className="items-center text-center">
-            <LayoutTemplate
-              className="size-12 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <CardTitle>{t('emptyState.title')}</CardTitle>
-            <CardDescription className="max-w-md mx-auto">
-              {t('emptyState.body')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center pb-6">
+        /* F119 T147 (FR-047, FR-051) — the platform's shared empty state.
+           The hand-rolled Card copy that stood here rendered the title as a
+           `CardTitle` div with its own icon sizing and centring, so the one
+           screen an operator meets FIRST looked unlike every other empty list
+           in the product. */
+        <EmptyState
+          icon={LayoutTemplate}
+          title={t('emptyState.title')}
+          description={t('emptyState.body')}
+          data-testid="broadcast-templates-empty"
+          action={
             <Link
               href="/admin/broadcasts/templates/new"
               className={buttonVariants()}
             >
               {t('emptyState.cta')}
             </Link>
-          </CardContent>
-        </Card>
+          }
+        />
       ) : (
         <AdminTemplateLibrary rows={rows} />
       )}

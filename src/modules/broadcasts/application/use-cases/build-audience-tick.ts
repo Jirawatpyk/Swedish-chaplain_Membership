@@ -48,6 +48,8 @@
  * attempt" — enforced by comparison rather than by a working table.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { loadBrandChrome } from './_load-brand-chrome';
+import type { BrandChromePort } from '../ports/brand-chrome-port';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -288,6 +290,14 @@ export interface BuildAudienceTickDeps {
   readonly tenant: TenantContext;
   readonly broadcastsRepo: BroadcastsRepo;
   readonly broadcastsGateway: BroadcastsGatewayPort;
+  /**
+   * F119 T031 (FR-041c) — the tenant's brand chrome, read LIVE at dispatch
+   * and handed to the gateway so the delivered email equals the preview.
+   * Optional so every pre-F119 composition keeps compiling; the cron passes
+   * `brandChromePort`. A read fault degrades to no chrome (fail-soft) —
+   * a brand outage must never fail a send.
+   */
+  readonly brandChrome?: BrandChromePort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly fromEmail: string;
@@ -1069,6 +1079,9 @@ async function confirmImport(
     broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
   }
 
+  // F119 T031 — read outside the gateway retry wrapper: a brand read is not a
+  // provider call and must not be classified as one.
+  const brand = await loadBrandChrome(deps.brandChrome, deps.tenant, 'audience_tick');
   const createdRb = await viaGateway(() =>
     deps.broadcastsGateway.createBroadcast({
       audienceId,
@@ -1080,6 +1093,7 @@ async function confirmImport(
       broadcastNameForResendDashboard: `${deps.tenantDisplayName} — ${broadcast.subject}`,
       tenantDisplayName: deps.tenantDisplayName,
       locale: deps.locale,
+      brand,
     }),
   );
   if (!createdRb.ok) return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);

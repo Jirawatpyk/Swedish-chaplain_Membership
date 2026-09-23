@@ -77,6 +77,10 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin/plans/[year]/[planId]/edit', kind: 'page', key: 'plans.write' },
   { surface: '/admin/renewals/tier-upgrades', kind: 'page', key: 'renewals.write' },
   { surface: '/admin/settings/broadcasts', kind: 'page', key: 'settings.broadcasts' },
+  // F119 T028 — the chamber brand page (logo / colour / postal address). Same
+  // key as its sibling AND as both verbs of `/api/admin/broadcasts/brand`:
+  // `marketing` holds neither, so the surface is invisible to it, not disabled.
+  { surface: '/admin/settings/broadcasts/brand', kind: 'page', key: 'settings.broadcasts' },
   { surface: '/admin/settings/integrations/eventcreate', kind: 'page', key: 'settings.integrations' },
   // F114 US6 — the member-change approval setting; `members.write` like the
   // PATCH route behind it (an admin surface, never manager / marketing).
@@ -103,6 +107,12 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'DELETE /api/plans/[year]/[planId]', kind: 'api', key: 'plans.write' },
   { surface: 'GET /api/admin/audit/export.csv', kind: 'api', key: 'audit.read' },
   { surface: 'GET /api/admin/broadcasts', kind: 'api', key: 'broadcasts.read' },
+  // F119 — chamber brand settings (FR-041b): admin tier, never marketing.
+  { surface: 'GET /api/admin/broadcasts/brand', kind: 'api', key: 'settings.broadcasts' },
+  // F119 T145 (FR-039) — the PROXIED member's E-Blast allowance, read by the
+  // staff compose-on-behalf form. `broadcasts.read`, so a read-only manager
+  // sees it; the member comes from the query, never the session.
+  { surface: 'GET /api/admin/broadcasts/quota', kind: 'api', key: 'broadcasts.read' },
   // 108 PR-C T088 — admin proxy compose count (data-model § 4).
   { surface: 'GET /api/admin/broadcasts/recipient-count', kind: 'api', key: 'broadcasts.write' },
   { surface: 'GET /api/admin/broadcasts/sla-stats', kind: 'api', key: 'broadcasts.read' },
@@ -170,6 +180,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/plans/[year]/[planId]', kind: 'api', key: 'plans.read' },
   { surface: 'GET /api/plans/[year]/[planId]/affected-members', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/tenant-invoice-settings', kind: 'api', key: 'settings.invoicing' },
+  { surface: 'PATCH /api/admin/broadcasts/brand', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'PATCH /api/admin/broadcasts/templates/[id]', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/change-requests/[id]/decide', kind: 'api', key: 'members.write' },
   { surface: 'PATCH /api/admin/members/[id]/preferred-locale', kind: 'api', key: 'members.write' },
@@ -183,12 +194,22 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   // frozen marketing set in role-endpoint-matrix.test.ts moved 50 → 48 in the
   // SAME commit, because that test derives `actual` from this file and would
   // otherwise go red while comparing two lists that were stale together.
+  // F119 — staff image uploads (E-Blast + template): the same rules as a member's image.
+  { surface: 'POST /api/admin/broadcasts/[id]/images', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/approve', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/[id]/cancel', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/reject', kind: 'api', key: 'broadcasts.write' },
+  // F119 T145 (FR-039) — the staff compose-on-behalf DRAFT. `broadcasts.write`,
+  // NOT `proxy-submit`'s `broadcasts.send`: saving a draft is not sending.
+  { surface: 'POST /api/admin/broadcasts/draft', kind: 'api', key: 'broadcasts.write' },
+  // F119 — the staff preview renders the real email; a manager may look (read key).
+  { surface: 'POST /api/admin/broadcasts/preview', kind: 'api', key: 'broadcasts.read' },
   { surface: 'POST /api/admin/broadcasts/proxy-submit', kind: 'api', key: 'broadcasts.send' },
+  // F119 — the staff test copy goes to the staff session address only (write key: a manager may not).
+  { surface: 'POST /api/admin/broadcasts/test-copy', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/settings/allowlist', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'POST /api/admin/broadcasts/templates', kind: 'api', key: 'broadcasts.write' },
+  { surface: 'POST /api/admin/broadcasts/templates/[id]/images', kind: 'api', key: 'broadcasts.write' },
   // 108 PR-D — the staff marketing toggle (FR-030); marketing holds the key.
   { surface: 'POST /api/admin/contacts/[contactId]/marketing', kind: 'api', key: 'contacts.marketing' },
   { surface: 'POST /api/admin/directory/exports', kind: 'api', key: 'directory.export' },
@@ -260,6 +281,10 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/refunds/initiate', kind: 'api', key: 'refunds.write' },
   { surface: 'POST /api/refunds/resolve-auto-refund-failure', kind: 'api', key: 'refunds.write' },
   { surface: 'POST /api/tenant-invoice-settings/logo', kind: 'api', key: 'settings.invoicing' },
+  // F119 T145 — the update verb of the staff draft route; same key as its POST
+  // sibling. Registered per-METHOD because `check:api-route-guard` matches
+  // per-METHOD, not per-file.
+  { surface: 'PUT /api/admin/broadcasts/draft', kind: 'api', key: 'broadcasts.write' },
   { surface: 'PUT /api/admin/renewals/settings/schedules/[tierBucket]', kind: 'api', key: 'settings.renewal_schedules' },
 ];
 

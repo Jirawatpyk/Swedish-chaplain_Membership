@@ -78,6 +78,13 @@ const SCOPED_TABLES = [
   'broadcast_deliveries',
   'marketing_unsubscribes',
   'broadcast_segment_definitions',
+  // F119 E-Blast approval (migration 0304) — the image lifecycle record, RLS
+  // ENABLE + FORCE + the 0064 policy; and the pre-existing-but-unlisted
+  // tenant_broadcast_settings (RLS since 0166), which 0304 turns into a
+  // tenant-authored WRITE surface (brand colour + postal address).
+  // `broadcast_versions` + `broadcast_member_decisions` join with 0305 (PR-2).
+  'broadcast_images',
+  'tenant_broadcast_settings',
   // F8 renewals (Wave C)
   'scheduled_plan_changes',
   'renewal_cycles',

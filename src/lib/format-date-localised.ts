@@ -88,3 +88,29 @@ export function formatLocalisedDate(
       : { ...options, timeZone: 'Asia/Bangkok' };
   return getFormatter(locale, withTz).format(d);
 }
+
+/**
+ * A bare calendar YEAR for display: `2026` in en/sv, `2569` in th (Buddhist
+ * Era — CLAUDE.md § Conventions: BE is display-only, storage stays CE/UTC).
+ *
+ * Portal live walk U30 (2026-09-22): the member quota surface interpolated
+ * `{year}` as a raw CE integer in four places while interpolating `{date}`
+ * through a formatter one line away, so the Thai card printed
+ * "โควตา E-Blast (2026)" directly above "รีเซ็ตโควตา 1 มกราคม 2570" with
+ * "22 ก.ย. 2569" in the table below — three calendars on one screen. Any
+ * surface that prints a year beside a formatted date must send it through
+ * here.
+ *
+ * The era prefix is dropped: `th-TH-u-ca-buddhist` renders `{year:'numeric'}`
+ * as "พ.ศ. 2569", which reads wrong inside copy that already says "ของปี".
+ * `formatToParts` gives the digits alone, in the locale's own numbering.
+ *
+ * The instant is mid-year UTC on purpose: every tenant timezone offset lands
+ * inside the same calendar year, so this never depends on the runtime zone.
+ */
+export function formatCalendarYear(year: number, locale: string): string {
+  if (!Number.isFinite(year)) return String(year);
+  const midYear = new Date(Date.UTC(year, 6, 1));
+  const parts = getFormatter(locale, { year: 'numeric' }).formatToParts(midYear);
+  return parts.find((p) => p.type === 'year')?.value ?? String(year);
+}

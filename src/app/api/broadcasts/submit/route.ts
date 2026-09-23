@@ -16,12 +16,14 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
+  CUSTOM_RECIPIENTS_MAX_ENTRIES,
   submitBroadcast,
   makeSubmitBroadcastDeps,
   type SubmitBroadcastError,
   type SubmitBroadcastInput,
 } from '@/modules/broadcasts';
 import {
+  designBlockErrorResponse,
   errorResponse,
   httpStatusForBroadcastError,
   resolveTenantDisplayName,
@@ -42,7 +44,7 @@ const SegmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('event_attendees_last_90d') }),
   z.object({
     kind: z.literal('custom'),
-    emails: z.array(z.string()).min(1).max(100),
+    emails: z.array(z.string()).min(1).max(CUSTOM_RECIPIENTS_MAX_ENTRIES),
   }),
 ]);
 
@@ -188,6 +190,11 @@ function mapSubmitError(
   // submit.server_error → 500 generic
   if (error.kind === 'submit.server_error') {
     return errorResponse(500, 'internal_error', correlationId);
+  }
+  // F119 FR-041 (security review F1-2) — each violation has its OWN 422 code,
+  // so this cannot go through `httpStatusForBroadcastError(error.kind)`.
+  if (error.kind === 'content_rules') {
+    return designBlockErrorResponse(error.violations, correlationId);
   }
 
   const { status, code } = httpStatusForBroadcastError(error.kind);

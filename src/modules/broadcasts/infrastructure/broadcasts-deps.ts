@@ -57,6 +57,7 @@ import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-su
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
 import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
 import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expired-drafts';
+import type { MarkOwnerImagesRemovedDeps } from '../application/use-cases/_mark-owner-images-removed';
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
@@ -77,6 +78,10 @@ import { vercelBlobImageStorage } from './vercel-blob-image-storage';
 import { makeClamavVirusScanner } from './clamav-virus-scanner';
 import type { ManageImageAllowlistDeps } from '../application/use-cases/manage-image-allowlist';
 import type { UploadInlineImageDeps } from '../application/use-cases/upload-inline-image';
+import type { ReclaimOrphanedImagesDeps } from '../application/use-cases/reclaim-orphaned-images';
+import type { AuthorizeImageOwnerDeps } from '../application/use-cases/authorize-image-owner';
+import { drizzleBroadcastImagesRepo } from './db/drizzle-broadcast-images-repo';
+import { sharpImageReencoder } from './sharp-image-reencoder';
 import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
 export const systemClock: ClockPort = {
@@ -469,13 +474,42 @@ export async function makeDispatchScheduledBroadcastDeps(
  */
 export function makePruneExpiredDraftsDeps(
   tenantId: string,
+  requestId: string,
 ): PruneExpiredDraftsDeps {
   const tenant = asTenantContext(tenantId);
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     clock: systemClock,
+    // F119 review finding F2-1 — a pruned draft's `broadcast_images` rows are
+    // stamped in the DELETE's own transaction; without it the bytes stayed at
+    // a public blob URL that neither the sweep nor erasure could reach.
+    imagesRepo: drizzleBroadcastImagesRepo,
+    audit: f7AuditAdapter,
+    requestId,
     // Defaults to 30 days inside the use-case per FR-001a.
+  };
+}
+
+/**
+ * ROUND-2 (LOW) — composition for the `markOwnerImagesRemoved` helper.
+ *
+ * `DELETE /api/broadcasts/draft/[id]` used to import `drizzleBroadcastImagesRepo`
+ * and `f7AuditAdapter` itself and hand-build this object, which is Presentation
+ * reaching straight into Infrastructure (Principle III). The prune cron already
+ * composes the same two through `makePruneExpiredDraftsDeps`; this is the same
+ * wiring for the one caller that had no factory.
+ *
+ * `tenantId` is accepted (and unused by these two stateless singletons) so the
+ * signature does not have to change if either adapter ever becomes per-tenant.
+ */
+export function makeMarkOwnerImagesRemovedDeps(
+  tenantId: string,
+): MarkOwnerImagesRemovedDeps {
+  void tenantId;
+  return {
+    imagesRepo: drizzleBroadcastImagesRepo,
+    audit: f7AuditAdapter,
   };
 }
 
@@ -528,6 +562,9 @@ export function makeScrubBroadcastContentForMemberDeps(tenantId: string) {
     // 108 PR-C T104 — severs the erased member's suppression back-references
     // inside the same content-scrub tx.
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    // F119 review finding F2-2 — the erasure cascade's reach into the member's
+    // UPLOADED IMAGES. Redacting body_html removes the pointer, not the file.
+    imagesRepo: drizzleBroadcastImagesRepo,
   };
 }
 
@@ -777,6 +814,36 @@ export function makeUploadInlineImageDeps(
     scanner: makeClamavVirusScanner(),
     storage: vercelBlobImageStorage,
     audit: f7AuditAdapter,
+    // F119 T033 — the image lifecycle record (`broadcast_images`).
+    imagesRepo: drizzleBroadcastImagesRepo,
+    // F119 review finding F2-3 — strips EXIF/GPS before the bytes reach the
+    // PUBLIC blob URL every recipient of the E-Blast fetches.
+    reencoder: sharpImageReencoder,
+  };
+}
+
+/**
+ * F119 T106 / T107 / T146 — composition root for `authorizeImageOwner`, the
+ * ownership check every image upload route runs before the scan.
+ */
+export function makeAuthorizeImageOwnerDeps(tenantId: string): AuthorizeImageOwnerDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    templates: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * F119 T035 — composition root for the daily image-blob sweep, the second
+ * block of `/api/cron/broadcasts/prune-expired-drafts`.
+ */
+export function makeReclaimOrphanedImagesDeps(_tenantId: string): ReclaimOrphanedImagesDeps {
+  return {
+    imagesRepo: drizzleBroadcastImagesRepo,
+    storage: vercelBlobImageStorage,
+    audit: f7AuditAdapter,
   };
 }
 
@@ -808,6 +875,7 @@ import type { CreateBroadcastTemplateDeps } from '../application/use-cases/creat
 import type { UpdateBroadcastTemplateDeps } from '../application/use-cases/update-broadcast-template';
 import type { DeleteBroadcastTemplateDeps } from '../application/use-cases/delete-broadcast-template';
 import type { SnapshotTemplateToDraftDeps } from '../application/use-cases/snapshot-template-to-draft';
+import type { CountTemplateStartDeps } from '../application/use-cases/count-template-start';
 import type { ListBroadcastTemplatesDeps } from '../application/use-cases/list-broadcast-templates';
 
 /**
@@ -881,6 +949,20 @@ export function makeListBroadcastTemplatesDeps(
 ): ListBroadcastTemplatesDeps {
   return {
     port: makeDrizzleBroadcastTemplatesRepo(),
+  };
+}
+
+/**
+ * F119 T108 — composition root for `countTemplateStart`. The counter needs
+ * only the templates port (read + increment inside ONE tx) and the audit port
+ * for the cross-tenant refusal; it never touches a broadcast row.
+ */
+export function makeCountTemplateStartDeps(
+  _tenantId: string,
+): CountTemplateStartDeps {
+  return {
+    templatesPort: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
   };
 }
 

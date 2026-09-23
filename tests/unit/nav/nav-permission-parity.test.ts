@@ -71,7 +71,8 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     // F114: +1 — the change-request queue under Membership.
     // F114 US6: +1 — the member-change approval SETTING under Settings, which
     // shipped reachable only from the /admin/settings hub card.
-    expect(STAFF_ITEMS).toHaveLength(19);
+    // F119 T029: +1 — the chamber brand page under Settings.
+    expect(STAFF_ITEMS).toHaveLength(20);
   });
 
   it('every staff nav item declares a guard', () => {
@@ -252,6 +253,8 @@ describe('ON-leg sidebar per role (T063)', () => {
       '/admin/settings/invoicing',
       '/admin/settings/renewals/schedules',
       '/admin/settings/broadcasts',
+      // F119 T029 — `settings.broadcasts`, which marketing does not hold.
+      '/admin/settings/broadcasts/brand',
       '/admin/settings/integrations/eventcreate',
       // F114 US6 — `members.write`: marketing reads the queue, never the switch.
       '/admin/settings/member-changes',

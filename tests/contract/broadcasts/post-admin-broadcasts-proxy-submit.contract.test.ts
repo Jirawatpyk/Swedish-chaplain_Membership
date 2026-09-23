@@ -37,7 +37,13 @@ vi.mock('@/lib/broadcasts-route-helpers', async () => {
       resolveTenantDisplayNameMock(...args),
   };
 });
-vi.mock('@/modules/broadcasts', () => ({
+vi.mock('@/modules/broadcasts', async () => ({
+  // F7-6 — the schema caps the custom list with the module's own constant.
+  CUSTOM_RECIPIENTS_MAX_ENTRIES: (
+    await vi.importActual<
+      typeof import('@/modules/broadcasts/application/use-cases/validate-custom-recipients')
+    >('@/modules/broadcasts/application/use-cases/validate-custom-recipients')
+  ).CUSTOM_RECIPIENTS_MAX_ENTRIES,
   proxySubmitBroadcast: (...args: unknown[]) => proxySubmitMock(...args),
   makeProxySubmitBroadcastDeps: () => ({}),
 }));
@@ -149,6 +155,20 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     };
     expect(callArgs.proxiedMemberId).toBe(VALID_MEMBER_ID);
     expect(callArgs.adminUserId).toBe('user-admin-1');
+  });
+
+  it('F119 T145: an optional draftId (the staff draft) reaches the use-case; absent → not sent; malformed → 400', async () => {
+    const DRAFT_ID = '33333333-3333-4333-8333-333333333333';
+    requireApiPermissionMock.mockResolvedValue(adminCtx);
+    proxySubmitMock.mockResolvedValue(ok(submitOutput));
+    const { POST } = await importRoute();
+    await POST(makeRequest({ ...VALID_BODY, draftId: DRAFT_ID }));
+    expect(proxySubmitMock.mock.calls[0]?.[1]).toMatchObject({ draftId: DRAFT_ID });
+    await POST(makeRequest(VALID_BODY));
+    expect(proxySubmitMock.mock.calls[1]?.[1]).not.toHaveProperty('draftId');
+    const res = await POST(makeRequest({ ...VALID_BODY, draftId: 'nope' }));
+    expect(res.status).toBe(400);
+    expect(proxySubmitMock).toHaveBeenCalledTimes(2);
   });
 
   it('DV-17 + #18: route resolves proxied member companyName → memberLookup.found', async () => {
@@ -451,5 +471,35 @@ describe('POST /api/admin/broadcasts/proxy-submit — 108 PR-C audience_too_larg
     const body = await res.json();
     expect(body.error.code).toBe('broadcast_audience_too_large');
     expect(body.error.details).toMatchObject({ count: 5001, cap: 5000 });
+  });
+});
+/**
+ * F119 security review F1-2 (2026-09-22) — the FR-041 design-block codes are
+ * refused 422 on THIS route too, not only on the test copy. `validateBlocks`
+ * used to run solely in `send-test-copy.ts`, so a body with four CTA buttons
+ * or an undescribed banner was saved, submitted and delivered. The mapping is
+ * `designBlockErrorResponse` in `broadcasts-route-helpers.ts`: the FIRST
+ * violation's code as the error code, the whole list in `details.violations`.
+ */
+
+describe('POST /api/admin/broadcasts/proxy-submit — F119 FR-041 design-block rules', () => {
+  it('422 content_rules → the same envelope the member submit route returns (FR-039)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({
+        kind: 'content_rules' as const,
+        violations: [
+        { code: 'too_many_cta' as const, index: 3, max: 3 as const },
+        { code: 'banner_alt_required' as const, index: 4, min: 1 as const, max: 125 as const },
+      ],
+      }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('too_many_cta');
+    expect(body.error.details.violations).toHaveLength(2);
   });
 });

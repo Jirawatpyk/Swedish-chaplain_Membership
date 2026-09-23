@@ -22,6 +22,7 @@
 import { NextResponse } from 'next/server';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
+import type { BlockViolation } from '@/modules/broadcasts';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -89,6 +90,31 @@ export type F7RouteErrorCode =
   // 108 PR-C T088 — recipient-count endpoints (contract broadcast-audience § 5)
   | 'invalid_query'
   | 'count_unavailable'
+  // F119 — brand settings (FR-041b): white text on the colour is below WCAG
+  // AA 4.5:1 (422, details { ratio, required }); a malformed `#RRGGBB` or an
+  // address over 300 chars (422). Distinct from `invalid_body` (400 — the
+  // request SHAPE is wrong) because the client renders these as field errors.
+  | 'colour_contrast'
+  | 'validation_error'
+  // F119 — design-block content rules (FR-041), refused 422 at every save,
+  // at send-to-member and on the test copy, naming the block by index.
+  | 'cta_text_length'
+  | 'too_many_cta'
+  | 'cta_link_scheme'
+  | 'banner_alt_required'
+  // F119 — the synchronous test copy could not be handed to the mailer (503).
+  | 'test_copy_unavailable'
+  // F119 F7-5 — the mailer PERMANENTLY refused the test copy (422): Resend
+  // `validation_error` or `invalid_to_address`, so the session address OR the
+  // chamber's sending setup (F7-6 — the copy must not blame the address). A
+  // retry cannot help, so it must not share the 503 "try again" copy.
+  | 'test_copy_invalid_recipient'
+  // F119 review finding F2-6 — a 0-byte file (400). The DB CHECK on
+  // `broadcast_images.byte_size` is `BETWEEN 1 AND 5 MB`; before this code
+  // existed an empty upload passed MIME + the size cap, was scanned, was PUT,
+  // and only then violated the CHECK — a 500 for the member plus an orphan
+  // blob with no row that the sweep could never reach.
+  | 'broadcast_image_empty'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -274,6 +300,44 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'The recipient count is unavailable right now. You can still submit; the server recomputes the audience.',
     messageThai: 'ไม่สามารถนับจำนวนผู้รับได้ในขณะนี้ คุณยังส่งได้ตามปกติ ระบบจะคำนวณผู้รับใหม่ฝั่งเซิร์ฟเวอร์',
   },
+  colour_contrast: {
+    message: 'White text on this colour does not meet the WCAG AA contrast ratio of 4.5:1. The previous colour stays in force.',
+    messageThai: 'ตัวอักษรสีขาวบนสีนี้ไม่ผ่านอัตราส่วนความคมชัด WCAG AA 4.5:1 ระบบยังใช้สีเดิมต่อไป',
+  },
+  validation_error: {
+    message: 'One or more fields are invalid.',
+    messageThai: 'มีบางช่องข้อมูลไม่ถูกต้อง',
+  },
+  cta_text_length: {
+    message: 'Button text must be between 1 and 60 characters.',
+    messageThai: 'ข้อความบนปุ่มต้องมีความยาว 1–60 ตัวอักษร',
+  },
+  too_many_cta: {
+    message: 'A message can carry at most 3 call-to-action buttons.',
+    messageThai: 'ข้อความหนึ่งมีปุ่ม call-to-action ได้ไม่เกิน 3 ปุ่ม',
+  },
+  cta_link_scheme: {
+    message: 'A button link must start with http://, https:// or mailto:.',
+    messageThai: 'ลิงก์ของปุ่มต้องขึ้นต้นด้วย http://, https:// หรือ mailto:',
+  },
+  banner_alt_required: {
+    message: 'A banner image needs a description of 1 to 125 characters.',
+    messageThai: 'รูปแบนเนอร์ต้องมีคำอธิบายความยาว 1–125 ตัวอักษร',
+  },
+  test_copy_unavailable: {
+    message: 'The test copy could not be sent right now. Please try again in a moment.',
+    messageThai: 'ไม่สามารถส่งสำเนาทดสอบได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง',
+  },
+  test_copy_invalid_recipient: {
+    message:
+      "The email provider refused this test copy (for example because of the address you sign in with, or the chamber's email sending setup). Trying again will not help. Please contact your chamber administrator.",
+    messageThai:
+      'ผู้ให้บริการอีเมลปฏิเสธการส่งสำเนาทดสอบนี้ (อาจเกิดจากอีเมลที่คุณใช้เข้าสู่ระบบ หรือการตั้งค่าการส่งอีเมลของหอการค้า) การลองส่งใหม่จะไม่ช่วยแก้ปัญหา กรุณาติดต่อผู้ดูแลระบบของหอการค้า',
+  },
+  broadcast_image_empty: {
+    message: 'That file is empty. Please choose an image file with content.',
+    messageThai: 'ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล',
+  },
   internal_error: {
     message: 'An unexpected error occurred. Please try again.',
     messageThai: 'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
@@ -353,6 +417,32 @@ export function errorResponse(
     status,
     headers: baseHeaders(correlationId, extraHeaders),
   });
+}
+
+/**
+ * F119 FR-041 — the ONE mapping from a design-block violation set to the 422
+ * envelope, shared by the test copy, both draft routes and both submit routes.
+ *
+ * Security review F1-2 (2026-09-22): `validateBlocks` used to run only on the
+ * test copy, so this mapping lived inline in `broadcasts-test-copy-route.ts`.
+ * Now that five surfaces refuse the same way, the shape (the FIRST violation's
+ * code as the error code, the whole list in `details.violations` so the
+ * compose form can highlight every offending block at once) is defined here so
+ * the surfaces cannot drift a field at a time.
+ *
+ * `violations` is never empty at a call site — a use case returns
+ * `content_rules` only when `validateBlocks` found at least one — but an empty
+ * list falls back to `validation_error` rather than indexing into nothing.
+ */
+export function designBlockErrorResponse(
+  violations: readonly BlockViolation[],
+  correlationId: string,
+): NextResponse {
+  const first = violations[0];
+  if (first === undefined) {
+    return errorResponse(422, 'validation_error', correlationId);
+  }
+  return errorResponse(422, first.code, correlationId, { details: { violations } });
 }
 
 /**
@@ -441,6 +531,16 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   invalid_locale: 400,
   invalid_query: 400,
   count_unavailable: 503,
+  colour_contrast: 422,
+  validation_error: 422,
+  cta_text_length: 422,
+  too_many_cta: 422,
+  cta_link_scheme: 422,
+  banner_alt_required: 422,
+  test_copy_unavailable: 503,
+  test_copy_invalid_recipient: 422,
+  // F2-6 — the member can fix this one; 400, not a 413 and not a 500.
+  broadcast_image_empty: 400,
   internal_error: 500,
 };
 

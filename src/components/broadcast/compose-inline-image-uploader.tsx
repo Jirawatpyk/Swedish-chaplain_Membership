@@ -13,25 +13,51 @@
  *   - <progress aria-label> for upload-in-flight feedback
  *   - role="alert" on inline error so it's announced immediately
  */
-import { useRef, useState } from 'react';
+import { useImperativeHandle, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
+/**
+ * F119 T099 — the editor's toolbar Image / Banner controls collect the
+ * description FIRST (FR-040) and then need the file picker. They open it
+ * through this handle rather than rendering a second uploader, so both entry
+ * points share one upload path, one size pre-check and one error surface.
+ */
+export interface ComposeInlineImageUploaderHandle {
+  openPicker(): void;
+}
+
+/** The member's own draft upload — the default, so the member form is untouched. */
+export const MEMBER_INLINE_IMAGE_UPLOAD_URL = '/api/broadcasts/inline-image-upload';
+
 interface Props {
   readonly draftId: string;
   readonly onUploaded: (blobUrl: string) => void;
+  /**
+   * F119 T145 (FR-039) — where the file goes. The staff compose-on-behalf form
+   * uploads to `POST /api/admin/broadcasts/[id]/images`, which carries the
+   * draft in the PATH and runs the identical 5 MB / MIME / ClamAV / allow-list
+   * rules (`broadcasts-image-upload-route.ts`). One uploader, one size
+   * pre-check, one error surface — never a second component.
+   */
+  readonly uploadUrl?: string;
+  readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
 }
 
 export function ComposeInlineImageUploader({
   draftId,
   onUploaded,
+  uploadUrl = MEMBER_INLINE_IMAGE_UPLOAD_URL,
+  ref,
 }: Props): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.imageUpload');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({ openPicker: () => fileRef.current?.click() }), []);
 
   const handlePick = (): void => {
     fileRef.current?.click();
@@ -64,28 +90,33 @@ export function ComposeInlineImageUploader({
     fd.append('draftId', draftId);
 
     try {
-      const res = await fetch('/api/broadcasts/inline-image-upload', {
+      const res = await fetch(uploadUrl, {
         method: 'POST',
         body: fd,
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
+          error?: string | { code?: string };
         };
-        const code = body.error ?? 'unknown';
-        // UX M-3 fix 2026-05-21 (review finding enterprise-ux-designer
-        // M-3): wrap dynamic-key lookup in try/catch with fallback to
-        // `errors.unknown`. next-intl throws on missing keys by
-        // default — a future API expansion adding a new error code
-        // (e.g. `rate_limited`, `tenant_not_found`) would crash the
-        // upload UI before this guard landed. Pattern mirrors F6.1
-        // Phase 5 US5 fix.
-        let msg: string;
-        try {
-          msg = t(`errors.${code}`);
-        } catch {
-          msg = t('errors.unknown');
-        }
+        // Two envelopes reach here: the upload use-case refusals are
+        // `{ error: '<kind>' }` on every surface, while the staff route's gate
+        // and ownership refusals ride the bilingual `{ error: { code } }`
+        // (`errorResponse`). Reading only the first would render every staff
+        // 404 / 409 / 429 as "unknown".
+        const code =
+          typeof body.error === 'string'
+            ? body.error
+            : (body.error?.code ?? 'unknown');
+        // UX M-3 fix 2026-05-21 — a future API expansion adding a new error
+        // code (`rate_limited`, `tenant_not_found`, …) must not reach the
+        // member as a raw key.
+        //
+        // T155 finding U8 — the original guard was a `try/catch`, on the
+        // premise that "next-intl throws on missing keys by default". It does
+        // NOT: it returns the key PATH, so the catch was dead and the raw path
+        // was shown. `t.has()` is the guard that actually runs.
+        const key = `errors.${code}` as Parameters<typeof t>[0];
+        const msg = t.has(key) ? t(key) : t('errors.unknown');
         setError(msg);
         toast.error(msg);
         return;
@@ -121,6 +152,12 @@ export function ComposeInlineImageUploader({
         type="file"
         accept="image/png,image/jpeg,image/webp,image/gif"
         className="sr-only"
+        // `sr-only` CLIPS, it does not hide, so this input is still a tab stop
+        // — and the visible Button is a second one. Both carry the description
+        // (the `custom-list-input.tsx` pattern), because a member who tabs to
+        // the Button would otherwise never hear the public-link notice, and
+        // that notice is the entire PDPA transparency control.
+        aria-describedby="broadcast-image-help broadcast-image-public-notice"
         onChange={handleChange}
       />
       <Button
@@ -128,6 +165,7 @@ export function ComposeInlineImageUploader({
         variant="outline"
         onClick={handlePick}
         disabled={uploading}
+        aria-describedby="broadcast-image-help broadcast-image-public-notice"
         // PR-review fix 2026-05-20 UX-H3 — mobile tap target ≥44px
         // per iOS HIG (default Button height is 36px, fails on file-
         // picker triggers on mobile Safari).
@@ -152,7 +190,21 @@ export function ComposeInlineImageUploader({
           {error}
         </div>
       )}
-      <p className="text-caption text-muted-foreground">{t('helpText')}</p>
+      <p id="broadcast-image-help" className="text-caption text-muted-foreground">
+        {t('helpText')}
+      </p>
+      {/*
+        F119 review finding F2-11 (PDPA M-4) — transparency BEFORE the choice.
+        An inline image is written to a public, unauthenticated blob URL and
+        then fetched by every recipient's mail client (a mail client cannot
+        carry a session, so the tier has to be public). A member picking a
+        photo off their phone has no way to know that from the button, so the
+        sentence sits next to the picker, above it in reading order, not in a
+        toast after the upload.
+      */}
+      <p id="broadcast-image-public-notice" className="text-caption text-muted-foreground">
+        {t('publicLinkNotice')}
+      </p>
     </div>
   );
 }

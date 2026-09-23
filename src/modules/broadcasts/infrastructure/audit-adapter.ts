@@ -81,4 +81,44 @@ export const f7AuditAdapter: AuditPort = {
   ): Promise<void> {
     await this.emit(txUnknown, event as AuditEmitInput);
   },
+
+  /**
+   * ROUND-2 R-M6 — the same INSERT with N VALUES tuples.
+   *
+   * Same invariant as `emit`: a non-null tx MUST carry a non-null tenantId,
+   * checked per row so a single bad event in a batch fails at the call site
+   * rather than landing the whole batch in the wrong RLS slice. An empty
+   * batch issues no statement at all (`INSERT … VALUES` with nothing is a
+   * syntax error, and there is nothing to write).
+   */
+  async emitMany(txUnknown: unknown, events: readonly AuditEmitInput[]): Promise<void> {
+    if (events.length === 0) return;
+    for (const event of events) {
+      if (txUnknown !== null && event.tenantId === null) {
+        throw new AuditPortInvariantError(
+          event.eventType,
+          `mutation tx requires non-null tenantId. Use tx=null for system audits.`,
+        );
+      }
+    }
+
+    const tx = (txUnknown as TenantTx | null) ?? db;
+    const rows = events.map(
+      (event) => sql`(
+        ${event.eventType}::audit_event_type,
+        ${event.actorUserId},
+        ${event.summary},
+        ${event.requestId ?? 'no-request-id'},
+        ${JSON.stringify(event.payload)}::jsonb,
+        ${event.tenantId},
+        ${f7RetentionFor(event.eventType)}
+      )`,
+    );
+
+    await tx.execute(sql`
+      INSERT INTO audit_log
+        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+      VALUES ${sql.join(rows, sql`, `)}
+    `);
+  },
 };

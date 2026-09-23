@@ -50,7 +50,11 @@ export function SegmentPicker({
   const tOption = useTranslations('portal.broadcasts.compose.segmentOption');
 
   return (
-    <fieldset className="space-y-3" aria-disabled={disabled}>
+    <fieldset
+      className="space-y-3"
+      aria-disabled={disabled}
+      data-compose-feature="segment-picker"
+    >
       <legend className="text-sm font-medium">{t('fields.segmentLabel')}</legend>
       <RadioGroup
         value={value.kind}

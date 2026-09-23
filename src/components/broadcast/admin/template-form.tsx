@@ -89,6 +89,11 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
   const tLang = useTranslations('common');
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  /**
+   * F119 T108 — the saved template's id, which is also the owner id the image
+   * upload route ties an upload to. `undefined` on a template being created.
+   */
+  const templateId = initial.templateId;
 
   const [name, setName] = useState(initial.name);
   const [subject, setSubject] = useState(initial.subject);
@@ -145,23 +150,39 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
               },
             );
             return {};
-          })) as { error?: string };
-          const code = payload.error ?? 'unknown';
-          const msg = ((): string => {
-            try {
-              return t(`errors.${code}` as never);
-            } catch {
-              // R2.2 silent-M1 — log unknown code so observability picks
-              // up new server error codes that need an i18n key. Falls
-              // back to a generic translated message for the user.
-              // R3.5 M-11 — message-first arg syntax.
-              console.warn(
-                'broadcasts.template.form.unknown_error_code',
-                { code, correlationId },
-              );
-              return t('errors.unknown');
-            }
-          })();
+          })) as { error?: string | { code?: string } };
+          // Two envelopes reach this handler. The template routes' own
+          // `jsonError` is flat (`{ error: 'template_name_duplicate' }`); the
+          // FR-041 design-block refusal reuses the platform's shared
+          // `designBlockErrorResponse`, which nests
+          // (`{ error: { code, message, messageThai, details } }`) so all six
+          // save surfaces answer one shape. Read both rather than making this
+          // screen the exception.
+          const code =
+            (typeof payload.error === 'string'
+              ? payload.error
+              : payload.error?.code) ?? 'unknown';
+          // T155 finding U8 — next-intl does NOT throw on a missing key; it
+          // returns the key PATH. The `try/catch` that stood here could never
+          // run, so an unmapped server code rendered
+          // `admin.broadcasts.templates.errors.<code>` verbatim into the
+          // `role="alert"` and the toast. `t.has()` is the real guard (the
+          // form `benefits/_components/broadcasts-panel.tsx` uses).
+          const key = `errors.${code}` as Parameters<typeof t>[0];
+          let msg: string;
+          if (t.has(key)) {
+            msg = t(key);
+          } else {
+            // R2.2 silent-M1 — log unknown code so observability picks
+            // up new server error codes that need an i18n key. Falls
+            // back to a generic translated message for the user.
+            // R3.5 M-11 — message-first arg syntax.
+            console.warn(
+              'broadcasts.template.form.unknown_error_code',
+              { code, correlationId },
+            );
+            msg = t('errors.unknown');
+          }
           setError(msg);
           toast.error(msg);
           return;
@@ -284,11 +305,27 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
             isBodyInvalid ? 'tpl-body-help tpl-body-error' : 'tpl-body-help'
           }
           invalid={isBodyInvalid}
-          imagesEnabled={false}
+          {...(templateId !== undefined
+            ? {
+                imagesEnabled: true,
+                draftId: templateId,
+                imageUploadUrl: `/api/admin/broadcasts/templates/${templateId}/images`,
+              }
+            : { imagesEnabled: false })}
         />
         <p id="tpl-body-help" className="text-caption">
           {t('fields.bodyHtmlHelp')}
         </p>
+        {/* F119 T108 (FR-046a) — a template may carry every block the tool
+            offers, images included. The upload route ties an image to the
+            TEMPLATE row (`owner_kind='template'`, T107), so it needs an id: a
+            template being created for the first time has none yet, and says so
+            rather than showing a control that cannot work. */}
+        {templateId === undefined ? (
+          <p className="text-caption text-muted-foreground">
+            {t('fields.imagesAfterSaveHint')}
+          </p>
+        ) : null}
         {isBodyInvalid ? (
           <p
             id="tpl-body-error"

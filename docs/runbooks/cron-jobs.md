@@ -469,8 +469,83 @@ choose POST per HTTP semantics.
 Daily housekeeping cron deleting `broadcasts WHERE status='draft' AND
 updated_at < NOW() - INTERVAL '30 days'` per FR-001a (US1 AS3 draft
 restoration window). Drafts are user-controlled scratch space; pruning
-emits NO audit event (preserves the FR-001 "drafts do NOT consume or
-reserve quota" invariant).
+emits no LIFECYCLE audit event (preserves the FR-001 "drafts do NOT consume
+or reserve quota" invariant).
+
+It does emit one `broadcast_image_removed { reason: 'draft_pruned' }` per
+inline image a pruned draft owned — PDPA evidence, not a lifecycle event
+(F119 review finding F2-1). `broadcast_images.owner_id` has no FK, so this
+DELETE used to leave the image rows live and un-stamped; the image sweep in
+block 2 reads `deleted_at IS NOT NULL`, so those rows were invisible to it
+forever and the member's uploaded photograph stayed at a public,
+unauthenticated blob URL that nothing — including the GDPR Art. 17 / PDPA
+§33 erasure cascade — could reach. The stamp and the DELETE now share one
+transaction.
+
+### Block 2: the inline-image blob sweep (F119 T035)
+
+The same tick runs `reclaimOrphanedImages`, independently transacted (one
+transaction per row, so one bad blob never blocks the batch). It reaps two
+sets: rows already MARKED (`deleted_at IS NOT NULL`) and, as defence in
+depth, ORPHANED rows whose owner no longer exists. A blob is deleted only
+under the LAST-REFERENCE rule — no live row of either owner_kind shares the
+`content_hash` AND no live `body_html` still embeds the URL.
+
+**Advisory lock.** Each per-row transaction takes `pg_advisory_xact_lock` on
+`hashtextextended('broadcasts-image:' || tenant || ':' || content_hash, 0)`
+BEFORE it counts live rows; the upload path takes the same lock around its
+insert. This is a FOURTH, deliberately disjoint sub-namespace: `invoicing:` is
+§87 gap-free numbering, `payments:` is a per-invoice TOCTOU guard,
+`broadcasts:` is per-broadcast, and `broadcasts-image:` is per
+(tenant, content_hash) and guards blob reclamation ONLY. Never reuse it.
+Without it, a dedup upload landing between the sweep's count and its delete
+left a live row pointing at a 404 blob.
+
+The lock alone does NOT close that window, and this runbook used to say it
+did (ROUND-2 R-H2). The upload's dedup probe asks BLOB STORAGE, not the
+database, and both that probe and the PUT happen ABOVE the lock — a complete
+sweep pass for the same hash fits between them. So `recordImage` re-asks
+`existsByContentHash` while holding the lock and re-PUTs the bytes when they
+are gone; the blob key is content-addressed, so the PUT is idempotent. If you
+see `broadcasts.uploadInlineImage.blob_reclaimed_under_lock_reput` in the
+logs, that is this guard firing — the upload succeeded and the bytes are
+back, but it means an upload and the sweep raced for the same hash.
+
+**Reading the outcome.** The tick body carries
+`imageSweep: { ok, scanned, blobsDeleted, rowsRemoved, retained, rowsFailed }`.
+`rowsRemoved` exceeding `blobsDeleted` is NORMAL: it means blobs were kept
+because another reference survives, or that two rows of one batch shared a
+hash and the first one deleted the bytes. The audit `reason` says which arm —
+`sweep` (marked row) or `sweep_orphaned` (owner vanished) — and
+`blob_disposition` (F7-1) says what happened to the bytes: `deleted` (this row
+deleted them), `kept_shared_row` (another live row shares the hash; bytes
+stay) or `reclaimed_by_sibling` (an earlier row of this tick already deleted
+them). `blob_deleted` is kept for older readers and is true only for
+`deleted`.
+
+`rowsFailed` (F7-1) counts rows whose per-row transaction threw; they are left
+for the next tick. The tick still returns 200 — a 500 would hide the rows that
+succeeded — but a non-zero count logs `cron.broadcasts.image_sweep.rows_failed`
+at `error` (`errorId: 'M119.cron.image_sweep.rows_failed'`) and increments
+`broadcasts_image_sweep_row_failed_total{tenant}` (alert: `docs/observability.md`
+§ 22.12). The per-row cause is on `broadcasts.image_sweep.row_retry_next_tick`
+(`err`). The same tenant failing on consecutive days is a fault that is not
+clearing — an expired `BLOB_READ_WRITE_TOKEN` fails every row — and while it
+lasts, erased members' images stay publicly served.
+
+`retained` (ROUND-2 S-3) is the case where live content still embeds the blob
+URL. Those rows keep their bytes AND their row: the row is un-stamped back
+into the live set rather than removed, because a removed row is reachable by
+nothing afterwards — not the marked arm (nothing to stamp), not the orphan arm
+(nothing to anti-join), not the Art. 17 / §33 erasure cascade (which stamps
+rows), while the blob goes on being served. A retained row emits NO audit
+(nothing was removed); the durable signals are the counter
+`broadcasts_image_sweep_retained_total{tenant}` and the log line
+`broadcasts.image_sweep.retained_still_referenced`. A retained ORPHAN row is
+re-examined on every tick by design, so a `retained` count that keeps climbing
+means those rows are eating into the bounded 200-per-arm batch and can starve
+genuine orphans — find out why the referencing content is not going away. A
+small steady rate usually means pre-0304 images, which have no row at all.
 
 Members are NOT notified of impending draft expiry in MVP — a "your
 draft will expire in N days" toast remains in scope for a future

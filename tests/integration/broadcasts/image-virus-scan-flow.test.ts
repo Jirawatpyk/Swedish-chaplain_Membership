@@ -17,6 +17,8 @@ import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/up
 import { makeClamavVirusScanner } from '@/modules/broadcasts/infrastructure/clamav-virus-scanner';
 import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo';
 import { vercelBlobImageStorage } from '@/modules/broadcasts/infrastructure/vercel-blob-image-storage';
+import { drizzleBroadcastImagesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-images-repo';
+import { sharpImageReencoder } from '@/modules/broadcasts/infrastructure/sharp-image-reencoder';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -70,6 +72,8 @@ describe.skipIf(!hasClamAV)(
             allowlistPort: makeDrizzleImageAllowlistRepo(),
             scanner: makeClamavVirusScanner(),
             storage: vercelBlobImageStorage,
+            imagesRepo: drizzleBroadcastImagesRepo,
+            reencoder: sharpImageReencoder,
             audit: {
               async emit(_tx, e) {
                 auditEvents.push({ eventType: e.eventType });
@@ -83,7 +87,8 @@ describe.skipIf(!hasClamAV)(
             tenantId: tenantId as never,
             actorUserId: 'user_test',
             actorEmail: 't@test.local',
-            draftId: '11111111-1111-1111-1111-111111111111',
+            owner: { kind: 'broadcast', id: '11111111-1111-1111-1111-111111111111' },
+            actor: { role: 'member', memberId: '33333333-3333-3333-3333-333333333333' },
             requestId: 'req-eicar',
             fileBytes: Buffer.from(EICAR),
             filename: 'eicar.txt',
@@ -105,13 +110,16 @@ describe.skipIf(!hasClamAV)(
             allowlistPort: makeDrizzleImageAllowlistRepo(),
             scanner: makeClamavVirusScanner(),
             storage: vercelBlobImageStorage,
+            imagesRepo: drizzleBroadcastImagesRepo,
+            reencoder: sharpImageReencoder,
             audit: { async emit() {}, async emitTyped() {} },
           },
           {
             tenantId: tenantId as never,
             actorUserId: 'user_test',
             actorEmail: 't@test.local',
-            draftId: '22222222-2222-2222-2222-222222222222',
+            owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' },
+            actor: { role: 'member', memberId: '33333333-3333-3333-3333-333333333333' },
             requestId: 'req-clean',
             fileBytes: PNG_HEADER,
             filename: 'pixel.png',

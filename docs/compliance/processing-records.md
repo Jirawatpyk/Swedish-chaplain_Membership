@@ -11,7 +11,7 @@ retention periods, and technical + organisational measures (TOMs).
 chamber legal-counsel for regulatory updates and with platform
 on-call for technical detail.
 
-**Last reviewed**: 2026-09-16 (F114 — Member change requests / approval workflow RoPA authored before the SweCham tenant switch, per FR-040)
+**Last reviewed**: 2026-09-22 (F119 PR-1 — E-Blast inline images, the Vercel Blob image tier, the test copy and the chamber postal address; authored before PR-1 merges because PR-1 carries no feature flag. Previous review 2026-09-16 — F114 member change requests / approval workflow, per FR-040)
 
 > **AUTHORED 2026-06-21 (COMP-1 US3-E)**: the **F3 — Members & Contacts** core
 > RoPA and the **COMP-1 — Member Erasure (Art. 17 / §33)** processing-activity
@@ -1704,3 +1704,207 @@ Same as F7.
 | Date | Change | Author |
 |---|---|---|
 | 2026-09-16 | Record authored for F114 before the SweCham tenant switch (spec FR-040 precondition); cross-refs to the cutover record `specs/114-member-change-approval/reviews/cutover.md` | F114 cutover (T114) |
+
+---
+
+## F119 — E-Blast Writing Tool, PR-1: inline images, image storage tier, test copy + brand postal address (amendment to F7)
+
+**Status**: **UNFLAGGED — live on merge.** PR-1 of branch `119-eblast-approval-workflow`
+(migration `0304`). The member-approval round is gated by
+`FEATURE_EBLAST_MEMBER_APPROVAL`, but the **writing-tool upgrade (US3) and the screen
+fixes (US6) are deliberately NOT behind it** (spec § Feature flag / kill-switch) — there
+is no flag to hold this processing back, so this record is authored for the **merge
+date**, not for a later cutover. Setting an env var is itself a production deploy; a
+record that waits for the flag would be a record that was false the day the processing
+started.
+**Scope**: amends the **F7 — Email Broadcast (E-Blast)** record above with exactly the
+four items PR-1 introduces — (a) the `broadcast_images` table, (b) the **Vercel Blob
+`sin1`** storage tier for the image bytes, (c) the E-Blast **test copy**, and (d) the
+**chamber postal address** rendered in every E-Blast footer. Nothing here changes the F7
+recipient-side lawful basis, the audience model, the suppression list or any
+cross-border path. Authority: `specs/119-eblast-approval-workflow/spec.md` § Personal
+data, `data-model.md` §§ 4 + 6, `drizzle/migrations/0304_eblast_images_and_brand.sql`.
+
+### New processing activities
+
+| Activity | Lawful basis | Retention | Recipients | TOMs |
+|---|---|---|---|---|
+| **Inline image upload + storage** — one `broadcast_images` row per upload plus the image bytes in Vercel Blob (`upload-inline-image.ts`) | **Contract** — GDPR Art. 6(1)(b) / PDPA §24 ¶2: the annual E-Blast quota is a contractually promised membership benefit and an illustrated E-Blast is how that benefit is delivered. Not consent, and not the recipient-side legitimate interest that governs who is sent to | **Follows the parent E-Blast**; blobs are deleted by the daily sweep once nothing references them — the sweep is bounded at **200 rows per arm per tick**, so a backlog clears over successive daily ticks, not within a flat 24 h; rows are stamped on draft discard, draft prune and member erasure — note that **draft discard is API-only today** (`DELETE /api/broadcasts/draft/[id]`; the portal has no Discard button, ROUND-3 #13), so in practice the live stamping paths a member can trigger are the prune and their own erasure — and rejection + withdrawal stamping is **PR-2, T081 — not yet shipped** | Vercel Blob (`sin1`) + Neon; and — because the image is embedded in the sent email — **every recipient's mail client, which fetches the blob URL unauthenticated** | RLS + FORCE on `broadcast_images` with the canonical 0064 policy; upload is gated per surface — a **member** uploads only to a draft they own (`requireMemberContext` + the ownership check; another member's row → 404 + `broadcast_cross_member_probe`), **staff** need `broadcasts.write` (marketing / admin / super_admin — **never** `manager`); 5 MB cap + 4-MIME allowlist; **ClamAV fail-closed before any byte reaches storage** (rejected uploads are never persisted); **EXIF / GPS / XMP / IPTC / ICC stripped by a server-side `sharp` re-encode, with the SHA-256 and the stored `byte_size` both computed on the re-encoded bytes**; content-addressed key; per-actor write bucket; `broadcast_image_uploaded` audited in the SAME tenant tx as the row (ids, hash, size, MIME — **never the blob URL**) |
+| **Image reclamation (the daily sweep)** — a retention-management activity in its own right, recorded as such for the same reason as the F4 redaction cron (`reclaim-orphaned-images.ts`, `/api/cron/broadcasts/prune-expired-drafts`, 04:30 UTC) | **GDPR Art. 5(1)(e)** storage limitation + **Art. 17** — the mechanism that makes "not reachable" mean "gone" | Runs daily; a marked row's bytes are deleted on the first tick where **no live row of either `owner_kind` shares the `content_hash`** (the last-reference rule) | Vercel Blob only | One transaction per row so one bad blob never blocks the batch; a delete that throws leaves the row for the next tick and audits nothing (a row is never removed twice), and since F7-1 is counted (`rowsFailed` in the tick body, logged at `error`) and metered (`broadcasts_image_sweep_row_failed_total{tenant}`, alert on two consecutive daily ticks) so a persistent fault cannot read as a clean tick; `broadcast_image_removed { blob_deleted, blob_disposition, reason, actor_role: 'system' }` in the same tx; an **orphan arm** (`listOrphaned` — live rows anti-joined against `broadcasts` and `broadcast_templates`) so a future hard-delete path that forgets to stamp cannot strand bytes; and, before any byte is deleted, a tenant-scoped `isBlobReferencedByContent` EXISTS over `broadcasts.body_html` / `body_source` and the templates' body **keeps** a blob that live content still points at — and, since ROUND-2 S-3, keeps the ROW too: it is un-stamped back into the live set rather than removed, because a removed row is reachable by nothing afterwards (no marked arm, no orphan arm, no erasure stamp) while the bytes go on being served. Nothing was removed, so **no `broadcast_image_removed` row is written** and there is no `sweep_referenced` reason; the durable signal is `broadcasts_image_sweep_retained_total{tenant}` plus the `broadcasts.image_sweep.retained_still_referenced` log line |
+| **E-Blast test copy** — a single verification send to the requesting actor's own inbox (`send-test-copy.ts`) | **Contract** — Art. 6(1)(b) / PDPA §24 ¶2: verifying the rendering of the benefit before it is delivered. No new lawful basis is needed because no new data subject is processed | No durable copy of the message is stored (no outbox row, no version); the `broadcast_test_copy_sent` audit row **5 years**; Resend's own send log at the provider's default 90 days | **The requesting actor only.** The audience is never a recipient; no member or contact address is read for a test copy | Recipient resolved **server-side from the session** — a body-supplied address never reaches the use case; localised `[Test]` subject prefix held in code, not in the message JSON, so a missing i18n key can never send an unmarked test; the identical sanitiser + design-block rules as a real send; 10 per user per hour; the audit payload carries a **`recipient_hash`**, never the address |
+| **Chamber brand settings** — one primary colour + the chamber postal address per tenant (`set-brand-settings.ts`, `tenant_broadcast_settings.brand_*`) | **Legitimate interest** — Art. 6(1)(f) / PDPA §24(5): identifying the sender of a mass email to its recipients. See § Chamber postal address below: the address itself is **organisational data, not personal data** | Life of the tenant's settings row; the `broadcast_brand_settings_changed` audit row **5 years** | The chamber's own staff (the Brand page) and, for the address and colour, **every recipient of every E-Blast** | Write needs the existing E-Blast settings permission; the write and its audit share one tenant tx (a failed emit rolls the write back); the WCAG AA 4.5:1 contrast refusal is Application + Domain; **the logo is never written here** — it is READ from `tenant_invoice_settings.logo_blob_key`, which stays `settings.invoicing` (super-admin only) |
+
+> **Merge gate — VERIFIED 2026-09-22.** This record was authored while two of the controls
+> it states were still in flight, and it carried a gate saying so. **Both have since landed
+> and were re-verified against the working tree before this line was written**; the gate is
+> kept rather than deleted so a reviewer can see what it required and what closed it.
+> **(1) The EXIF/GPS strip** (finding **F2-3**) — `ImageReencoderPort`
+> (`application/ports/image-reencoder-port.ts`) implemented by
+> `infrastructure/sharp-image-reencoder.ts`, wired **REQUIRED, never optional** in
+> `makeUploadInlineImageDeps`; proven against real libvips in
+> `tests/unit/broadcasts/infrastructure/sharp-image-reencoder.test.ts` (6 cases green,
+> including a JPEG carrying EXIF Copyright/Make and IFD3 GPS whose output has neither an
+> EXIF block nor an APP1 `Exif\0\0` marker). **(2) The `deleted_at` stamping** (finding
+> **F2-1 / F2-2**) — the shared `markOwnerImagesRemoved` helper called from the draft-discard
+> route, the prune use case and, as `markDeletedForMember`, the member-erasure content
+> scrub, each **inside the caller's own transaction**; plus the sweep's new orphan arm.
+> Green on live Neon in `tests/integration/broadcasts/eblast-image-lifecycle.test.ts`
+> (4 cases: upload → discard → sweep; a referenced blob survives; erasure stamps the erased
+> member and not a peer; the orphan arm reaps). A RoPA states what the deployed system
+> does — this is the line where that was checked, and it now reads as satisfied.
+
+### New data items stored
+
+| Storage | Data category | Subject category | New as of F119 PR-1? |
+|---|---|---|---|
+| `broadcast_images` (NEW table, migration 0304) | Lifecycle + operational metadata: `owner_kind` ∈ {`broadcast`,`template`}, `owner_id`, `content_hash` (SHA-256 **of the re-encoded bytes**), `blob_url`, `blob_key`, `mime_type`, `byte_size` (post-re-encode), `uploaded_by_user_id`, `created_at`, `deleted_at` | The **uploading user** (`uploaded_by_user_id`) — **the member** (portal compose, `POST /api/broadcasts/inline-image-upload`) or **staff** (`POST /api/admin/broadcasts/[id]/images`); both surfaces exist in PR-1. **The row itself holds no subject PII**; whatever personal data exists is in the image BYTES, which the row only points at | YES (table) |
+| Vercel Blob `broadcasts/images/{tenant}/{sha256}.{ext}` (`sin1`) | The image **bytes verbatim** — may depict or name natural persons (event photography, headshots, a scanned page, a signature block) | Any person depicted in or named by an uploaded image | YES (storage tier for this content type) |
+| `tenant_broadcast_settings.brand_primary_color`, `brand_postal_address`, `brand_updated_at`, `brand_updated_by_user_id` (migration 0304) | Chamber configuration (colour + postal address ≤ 300 chars) + the **staff actor id** of the last change | Chamber (a legal entity, not a data subject); the staff actor for `brand_updated_by_user_id` | YES (columns) |
+| `audit_log` payload `broadcast_test_copy_sent.recipient_hash` | Truncated SHA-256 (16 hex) of the lowercased requester address — **pseudonymous**, and the only representation of that address anywhere in the trail | The staff or member user who asked for the test copy | YES |
+
+### Vercel Blob processor amendment (image bytes)
+
+The F6.1 amendment already widened the **Vercel Inc.** processor scope to Vercel Blob
+(error-CSV bytes, 30-day TTL) and F4 stores the tax-document PDFs there. F119 PR-1 adds a
+**third content type** to the same processor in the same region (`sin1` Singapore) — the
+E-Blast inline images. **No new DPA and no new SCC** are required: this is the existing
+F1–F9 Vercel DPA + SCCs, and the PDPA §28 / GDPR-SCC cross-border basis recorded for F7 is
+unchanged. No new sub-processor is introduced by PR-1.
+
+**Public-blob design caveat**: as with the F6.1 error CSV, the non-Enterprise Vercel Blob
+tier has no private bucket — the image is written with `access:'public'`. Unlike the error
+CSV it does **not** even carry a random suffix: `addRandomSuffix:false` with the
+content-addressed key `broadcasts/images/{tenant}/{sha256}.{ext}`
+(`src/modules/broadcasts/infrastructure/vercel-blob-image-storage.ts`), because re-uploading
+the same bytes must be idempotent. The resulting URL is therefore **unauthenticated and
+guessable-by-possession**: anyone holding the link — a forwarded E-Blast, a mail-client
+cache, a corporate mail gateway, a web-archived newsletter — can fetch the bytes with no
+session, and the URL stays live until the sweep deletes it. **This is a design constraint,
+not a misconfiguration**: a mail-client user agent cannot present a Bearer token or follow a
+server-signed URL, so an image embedded in an email MUST be an unauthenticated GET (the same
+rationale as the F4 invoice logo). The control is therefore possession of an unguessable
+URL, not authorisation — a DSR answer must say so plainly.
+
+**Transparency to the uploader (PDPA §23 / GDPR Art. 13)**: the member is told this
+**before choosing a file**, not afterwards — the compose uploader renders
+`portal.broadcasts.compose.imageUpload.publicLinkNotice` (EN + TH + SV) stating that the
+image is stored at a public web link, is sent to everyone who receives the E-Blast, and can
+be opened by anyone holding the link. A residual the data subject is warned about before
+they create it is a different thing from one they discover later.
+
+**EXIF / GPS metadata — stripped before storage (SHIPPED)**: every accepted image is
+**re-encoded server-side through `sharp`** before a byte reaches Blob, so an uploaded phone
+photo cannot carry the photographer's coordinates, device serial or capture timestamp out to
+every recipient of the E-Blast and into a permanently public URL. `sharp` drops EXIF, XMP,
+IPTC and ICC on re-encode unless `keepMetadata()` / `withMetadata()` is called, and neither
+appears in the adapter; `.rotate()` reads the EXIF orientation tag and **bakes it into the
+pixels first**, so stripping the tag cannot leave a member's picture sideways. Same control
+and same library as the F4 invoice-logo re-encode (`sharp-image-reencode-adapter.ts`) and
+the F9 insights logo (`sharp-logo-adapter.ts`). Three properties matter to this record:
+the re-encode sits **after** the ClamAV verdict and **before** the hash, so the stored
+`content_hash` and `byte_size` are those of the **stripped** bytes and `storage.put` never
+sees the original; GIF and WebP are decoded `{ animated: true }` so a member's animated
+banner is not silently frozen by the privacy control; and a declared MIME that does not
+match the decoded format is refused **fail-closed** (`decode_failed`), because the declared
+type is what the blob key extension and the recipient's mail client act on.
+
+### Residual risk — public-blob tier (F6.1 DPIA risk-row format)
+
+| Risk | Likelihood × Severity | Mitigation | Residual |
+|---|---|---|---|
+| Vercel Blob `access:'public'` exposes an E-Blast inline image to anyone holding the URL, for the life of the image (non-Enterprise tier limitation; an email client cannot authenticate, so the unauthenticated GET is required by the medium) | M × M | Content-addressed key — guessing one requires a SHA-256 preimage of the tenant's own bytes; EXIF/GPS stripped by the server-side `sharp` re-encode so the bytes disclose no location, device or capture time; 5 MB + 4-MIME allowlist and ClamAV fail-closed **before** any byte is stored; upload gated per surface (own-draft ownership for a member; `broadcasts.write`, never `manager`, for staff); the member is warned **before** choosing a file that the link is public and reaches every recipient (`…imageUpload.publicLinkNotice`, EN/TH/SV); the reference is removed immediately on discard / prune / erasure (**rejection and withdrawal are PR-2, T081 — not yet shipped**) and the bytes deleted by the daily sweep, which reaps at most **200 rows per arm per tick** (marked + orphaned), so a backlog clears over successive daily ticks rather than within any single 24 h window; every upload and removal audited | **M (accepted — same class and same footing as the F6.1 error-CSV blob residual; DPO sign-off recorded here)** |
+| Image bytes uploaded **before migration 0304** have no `broadcast_images` row at all — the table is **not backfilled**, by decision — so no lifecycle mechanism reaches them, and the ONLY thing that attributes such a blob to a member is the `body_html` the erasure cascade is about to redact | L × L | Recorded rather than guessed: reconstructing owners from historical HTML **at erasure time** would attribute one member's bytes to another, which is a worse privacy outcome than the exposure it would close. These blobs are therefore **never swept**, and they are equally **protected from deletion** — if the same bytes are re-uploaded and acquire a row, the sweep's `isBlobReferencedByContent` check keeps them while any live E-Blast or template body still points at the URL. **The attribution window closes at redaction**, so the DSR procedure enumerates them from `body_html` as a numbered PRE-cascade step (`docs/runbooks/member-erasure.md` step 2a), records the keys on the ticket and deletes them from the Blob store by hand afterwards — residual (e) in that runbook's step 7. The population is finite and enumerable from the Blob store — the same shape as COMP-1 residual #5 (NULL-`matched_member_id` registrations) | **L (accepted — bounded, pre-0304 only)** |
+| A **post-0304** row's owner is hard-deleted by a path that forgets to stamp `deleted_at`, stranding the bytes at a public URL that no code path can reach | L × M | **Closed structurally, not by discipline.** The three known paths stamp inside their own transaction (discard, prune, erasure), and the daily sweep's **orphan arm** anti-joins live rows against `broadcasts` and `broadcast_templates`, so a row whose owner no longer exists is reaped whether or not anyone remembered to stamp it. `broadcast_images.owner_id` carries no FK (two possible parents), which is exactly why the anti-join, rather than a cascade, is the backstop | **L** |
+
+### New audit event types (migration 0304)
+
+| Event type | Severity | Purpose | Retention |
+|---|---|---|---|
+| `broadcast_image_uploaded` | info | Record of an image byte-write — ids, `content_hash`, `byte_size`, `mime_type`, `owner_kind`/`owner_id`, `actor_role`; **never the blob URL**. Emitted RAW (not best-effort) in the row's own tx: a failed emit rolls the row back | 5y |
+| `broadcast_image_removed` | info | Record of a reference removal or a byte deletion — carries `blob_deleted`, a `content_hash`, and (sweep rows only, F7-1) a `blob_disposition` stating what happened to the bytes: `deleted`, `kept_shared_row` (another live row shares the hash) or `reclaimed_by_sibling` (an earlier row of the same tick already deleted them — previously mis-audited as "kept") — and a `reason`: `draft_discarded`, `draft_pruned`, `member_erased` (the three stamping sites, each emitted in the same transaction as the state change) and `sweep` / `sweep_orphaned` (the two sweep outcomes that actually remove a row). A blob KEPT because live content still embeds it emits **no row at all** (ROUND-2 S-3: nothing was removed, and the image keeps its `broadcast_images` row, un-stamped, so it stays in the live set — re-examined by the orphan arm when its owner is gone, but NOT automatically when its owner survives, as an erased member's redacted broadcast does; see the Erasure row below); the durable signal there is `broadcasts_image_sweep_retained_total{tenant}`. The withdrawal and rejection stamping reasons are **PR-2, T081 — not yet shipped** | 5y |
+| `broadcast_test_copy_sent` | info | Record of a verification send — `related_member_id` (deliberately, even for a portal user, so the 0009 `last_activity_at` trigger does NOT fire), `broadcast_id`, `version_id`, `locale`, `actor_role` and `recipient_hash` | 5y |
+| `broadcast_brand_settings_changed` | info | Record of a brand change — `{ previous, next, actor_role }`. **The one F119 payload that legitimately carries VALUES**, because a colour and a postal address are chamber configuration, not text a member wrote | 5y |
+
+`f7RetentionFor` returns 5 for every F7 event — PR-1 produces no tax document, so none of
+the four is a 10-year event (`audit-port.ts`).
+
+### E-Blast test copy — recipient and audit discipline
+
+- **Tier**: the **transactional** Resend surface (the shared F1/F4 `emailSender`), **never
+  the F7 Broadcasts surface** — a test must not enter the marketing suppression list or the
+  Broadcasts reputation pool. It is synchronous and non-durable: no `notifications_outbox`
+  row, and no `notification_type` enum value was added for it.
+- **Recipient = the requesting actor, and only them.** The address is resolved server-side
+  from the session in both routes (`POST /api/broadcasts/test-copy` for a portal user,
+  `POST /api/admin/broadcasts/test-copy` for staff under `broadcasts.write`); a
+  body-supplied address never reaches the use case. **The audience is never a recipient of a
+  test copy**, and no member or contact address is read to send one.
+- **The audit row carries only a `recipient_hash`** — SHA-256 of the lowercased address,
+  truncated to 16 hex. The address itself never enters the audit trail, in line with the
+  F119 payload rule that free-text and contact values stay out of `audit_log`.
+
+### Chamber postal address in the E-Blast footer
+
+- Stored as `tenant_broadcast_settings.brand_postal_address` (migration 0304; free text,
+  1–300 chars, line breaks allowed). NULL ⇒ the footer shows the chamber name only and the
+  Brand page flags the address as missing.
+- **It is organisational / brand data, not member PII** — it is the chamber's own address,
+  as are the primary colour and the logo. It is nevertheless recorded here as a processing
+  record because it is **transmitted to every recipient of every E-Blast**, which is a
+  disclosure the record has to name (spec § Personal data requires exactly this).
+- The only personal datum among the four brand columns is `brand_updated_by_user_id` (the
+  staff actor id), plus the `broadcast_brand_settings_changed` audit.
+- Brand chrome — logo, colour, address — is read **live at render time** and is never copied
+  into a stored version, so changing the address rewrites nothing already sent: the address
+  in a delivered E-Blast is whatever was configured at that send. A brand change therefore
+  never voids an approval, and equally never retro-edits a disclosure already made.
+
+### Data subject rights — F119 PR-1 amendments
+
+| Right (GDPR / PDPA) | PR-1 procedure |
+|---|---|
+| **Access (Art. 15 / §30)** | The F3/F9 export surface is unchanged by PR-1. A member's image inventory is reachable by a tenant-scoped query on `broadcast_images` by owner (the member's broadcasts and the templates used for them); the self-service export **category** for the E-Blast round arrives with PR-2 (T162). |
+| **Rectification (Art. 16 / §31)** | Not applicable to an image or to the brand address (neither is a member-record field). An incorrect image is replaced by editing the E-Blast; the old reference is removed and the bytes are swept under the last-reference rule. |
+| **Erasure (Art. 17 / §33)** | The COMP-1 member-erasure cascade reaches the F7 broadcast CONTENT (subject / body → `'[redacted]'`); PR-1 adds the image leg — the `broadcast_images` row is stamped inside the erasure transaction and the bytes are deleted by the next daily sweep, **unless another live row of either `owner_kind` still shares the `content_hash`**, in which case the image is kept by design (an image still referenced elsewhere is not the erased member's alone). The stamp is `imagesRepo.markDeletedForMember(...)` inside the same transaction as the content redaction (`reason: 'member_erased'`), and it reaches **the erased member's rows only** — a peer's images are untouched, pinned by the live-Neon lifecycle test. Pre-0304 images are the documented residual above. **The public blob URL is unauthenticated, so a copy already fetched by a recipient's mail client or gateway is out of reach** — the same shape as COMP-1 residual #2 (already-downloaded export ZIPs), and a DSR answer must say so. **A kept file has two different outcomes, and they leave different evidence.** (1) *Another live row of either `owner_kind` shares the `content_hash`* (`live > 0`): the erased member's row IS removed and audited `broadcast_image_removed { reason: 'sweep', blob_deleted: false, blob_disposition: 'kept_shared_row' }`; the identical bytes stay for that other holder. (2) *No live row, but live content still embeds the URL*: **the row is not merely left behind — it is un-stamped back into the live set (ROUND-2 S-3), and no audit row records that**, because nothing was removed and an audit row saying otherwise would be untrue. The consequence for accountability is explicit: the trail shows `broadcast_image_removed { reason: 'member_erased' }` with no counter-event, while the database shows a live row and the bytes still served. **The state, not the trail, is the evidence** — `docs/runbooks/member-erasure.md` § Verifying step 4 carries the query that enumerates exactly which of the subject's images survived and which live content holds each one, and requires the count (including zero) on the DSR ticket. A DSR answer must disclose a non-zero count, the reason (another data subject's live content or a chamber template embeds the identical file), and how it is reclaimed: **an erasure-retained row is not re-examined automatically** — the sweep's orphan arm selects only rows whose OWNER is gone, and an erasure redacts the member's broadcast rather than deleting it, so the un-stamped row's owner survives; the runbook step surfaces it and it is reclaimed by hand once the holding content goes. The same step also counts the rows stamped but not yet swept (a backlog or a failing row takes later ticks than the next one; `broadcasts_image_sweep_row_failed_total`). **Decision (e), 2026-09-23** (delegated by the maintainer to Claude as a conservative default; the DPO may revise): a file whose identical bytes are still held by another owner's live row — outcome (1) above — COUNTS as still-served personal data of the erased member and MUST be disclosed on the DSR ticket with its count (including zero), the same as a retained row; runbook step 4 query (ii) derives it from the cascade's own `broadcast_image_removed` rows (`payload.content_hash`). |
+| **Restrict (Art. 18 / §34)** | The F7.1a US2 image kill-switch halts all new uploads tenant-wide (503 at the route); the F7 master switch halts the whole surface. |
+| **Portability (Art. 20)** | Unchanged in PR-1 — see Access. |
+| **Object (Art. 21 / §32)** | Unchanged — objection is exercised against the SEND (one-click unsubscribe, `marketing_unsubscribes`), not against the image or the footer address. |
+| **No automated decision (Art. 22)** | PR-1 makes none: an upload, a sweep, a test copy and a settings write are all actor-initiated or a fixed rule. |
+
+### DPIA
+
+Not triggered under `dpia-template.md`: no special-category data, no large-scale systematic
+monitoring, no automated decision, **no new processor and no new cross-border path** — the
+image tier is the existing Vercel Blob processor in the existing region, and the test copy
+is the existing transactional Resend surface. The public-blob exposure is assessed as a
+residual-risk row above rather than as an Art. 35 trigger, on the same footing as F6.1.
+Re-assess if images are ever served to a non-recipient audience, if the Blob tier changes,
+or if a member-facing upload path widens the population of uploaders beyond the chamber's
+own staff and members.
+
+### DPO contact
+
+Same as F7.
+
+### Relationship to T162 (the PR-2 RoPA task)
+
+**T162 adds only the PR-2 columns on top of this amendment — it does not supersede it.**
+PR-2 brings the member-approval round itself: the stored versions, the member decisions,
+the free-text notes and rejection reasons, the five hand-off notification types and their
+**staff recipients**, the `broadcast-versions.json` export category, and the erasure reach
+across those new rows. Those are additions to the record below this line, not a rewrite of
+it. The four items recorded here — `broadcast_images`, the Vercel Blob image tier and its
+public-URL residual, the test copy, and the chamber postal address — belong to **PR-1**,
+which ships **unflagged and live on merge**, and they must therefore stay true and in force
+from the PR-1 merge date onwards, independently of whether
+`FEATURE_EBLAST_MEMBER_APPROVAL` is ever set. A future reader who finds only T162's PR-2
+text and concludes that the image and brand processing began with the flag flip would be
+reading the record wrongly.
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-09-23 | F119 PR-1 fix batch F7-1: the sweep's `broadcast_image_removed` gains `blob_disposition` (`deleted` / `kept_shared_row` / `reclaimed_by_sibling`) after a row whose bytes an earlier row of the same tick had deleted was audited "blob kept"; failed sweep rows are counted and metered; the Erasure row now separates the shared-row outcome (row removed, audited) from the retained outcome (row un-stamped, not audited), corrects "reclamation follows the first daily tick after that content goes" (an erasure-retained row is not re-examined automatically), and records **decision (e)** — identical bytes still held by another owner's live row are disclosed on the DSR ticket. The DPO option-A decision (2026-09-22) is unchanged | F119 PR-1 review, fix batch F7-1 |
+| 2026-09-22 | **Reconciled against the landed code the same day**: the two merge-gate controls (EXIF/GPS `sharp` re-encode, finding F2-3; the `deleted_at` stamping on discard / prune / erasure, findings F2-1 / F2-2) are now recorded as **shipped and verified** rather than pending, with the sweep's orphan arm and its live-content reference check, the member-facing public-link notice (PDPA §23 / Art. 13), and the corrected fact that the **member** uploads from PR-1 as well as staff. The residual-risk rows were re-cut accordingly | F119 PR-1 privacy review (round 2) |
+| 2026-09-22 | F119 **PR-1** amendment authored to close privacy finding **F2-4** (RoPA gap on an unflagged PR): the `broadcast_images` table and its lifecycle, the Vercel Blob `sin1` image tier with the public-URL residual-risk row and the EXIF-strip control, the transactional test copy (requester-only recipient, `recipient_hash` in the audit), and the chamber postal address transmitted in every E-Blast footer. Authored **before merge** because PR-1 carries no feature flag. T162 (PR-2) extends this record; it does not replace it | F119 PR-1 privacy review |

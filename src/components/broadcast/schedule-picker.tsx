@@ -59,7 +59,7 @@ export function SchedulePicker({
   }, [value, locale]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-compose-feature="schedule-picker">
       <div className="flex items-center gap-2">
         <Checkbox
           id="schedule-immediate"

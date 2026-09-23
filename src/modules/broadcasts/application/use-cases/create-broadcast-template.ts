@@ -4,6 +4,9 @@
  * Admin-only template create flow per contracts/broadcast-template.md
  * § 1.1 + FR-046:
  *   1. zod validate name (≤100) + subject (≤200) + body (≤200KB)
+ *   1c. Design-block content rules (FR-041) — `validateBlocks` on the
+ *      sanitised body, the same refusal `submitBroadcast` and both draft
+ *      saves answer with
  *   2. Body validated against tenant image-source allowlist (FR-017
  *      — same enforcement as broadcast submit, no template bypass)
  *   3. Atomic mutation+audit via port.withTx (Constitution Principle I
@@ -24,6 +27,11 @@ import type {
 import type { AuditPort } from '../ports/audit-port';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 import { sanitizeHtml } from './sanitize-html';
+import {
+  parseBlockMarkers,
+  validateBlocks,
+  type BlockViolation,
+} from '../../domain/design-blocks/block-markers';
 import {
   validateImageSourceAllowlist,
   type ValidateImageSourceAllowlistDeps,
@@ -64,6 +72,8 @@ export type CreateBroadcastTemplateError =
       readonly kind: 'template_body_unsafe';
       readonly unsafeImageSources: readonly string[];
     }
+  /** FR-041 design-block rules — same kind and shape as `submitBroadcast`. */
+  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
   | TemplateCreateError;
 
 export interface CreateBroadcastTemplateOutput {
@@ -125,6 +135,23 @@ export async function createBroadcastTemplate(
     });
   }
   const sanitisedBody = sanitised.value.sanitisedHtml;
+
+  // 1c. Design-block content rules (FR-041). Runs on the SANITISED body (the
+  //     markers are read back from what actually ships) and ABOVE the first
+  //     write — a `Result` refusal returned from inside `withTx` COMMITS.
+  //
+  //     Security-round residual, T155 hand-off: `validateBlocks` was wired
+  //     into submit, both draft saves and the test copy, and NOT here, while
+  //     `snapshotTemplateToDraft` copies a template body straight into a
+  //     draft. A template authored with four CTA buttons or an undescribed
+  //     banner was therefore a STORED bypass of the rule the compose surface
+  //     refuses to save. No reject audit, for the reason `submit-broadcast.ts`
+  //     gives: there is no `broadcast_content_rules` event type, and reusing
+  //     `broadcast_body_unsafe_html` would state something untrue of the body.
+  const blockViolations = validateBlocks(parseBlockMarkers(sanitisedBody));
+  if (blockViolations.length > 0) {
+    return err({ kind: 'content_rules', violations: blockViolations });
+  }
 
   // 2. Image-source allowlist check (FR-017) — runs on the SANITISED body
   //    so any <img src=non-http(s)> already had its src stripped by the

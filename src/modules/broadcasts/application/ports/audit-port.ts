@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 59 audit event types as a const tuple + discriminated union for
+ * 59 live audit event types (55 before F119) as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -39,9 +39,13 @@
  *     (`broadcast_content_redacted`, migration 0224)
  *   - 059-membership-suspension Task 8: 1 event
  *     (`broadcast_membership_suspended_blocked`, migration 0246)
- *   = 61 total. Static-assert below (`extends 61`) is the
- *   source of truth; the header summary is informational only and
- *   should be re-derived when the assert changes. R4.3 M-8 fixed
+ *   - F119 PR-1 (migration 0304): 4 events — test copy, brand settings
+ *     changed, image uploaded, image removed. The ten PR-2 workflow events
+ *     ship with 0305.
+ *   = 65 declared, minus the 6 RETIRED batch events kept only in
+ *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **59 live** (this tuple). Static-assert
+ *   below (`extends 59`) is the source of truth; the header summary is
+ *   informational only and should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
  * Pure interface — no framework imports (Constitution Principle III).
@@ -175,15 +179,27 @@ export const F7_AUDIT_EVENT_TYPES = [
   // (Task 5) rejects a suspended/terminated member's submission, BEFORE
   // rate-limit/plan/quota. 5y retention (no tax-document overlap).
   'broadcast_membership_suspended_blocked',
+
+  // --- F119 PR-1 (migration 0304) — writing tool + brand — 4 events --------
+  // `actor_role` is the SESSION role (`member` for a portal user's upload or
+  // test copy). Payloads carry ids, keys, counts and lengths — never the blob
+  // URL, the subject, the body or an address. `broadcast_image_uploaded` on a
+  // MEMBER upload carries snake_case `member_id` (the 0009 `last_activity_at`
+  // trigger key); a staff upload, the test copy (even for a portal user) and
+  // every removal carry `related_member_id` instead (#336/#337 rule).
+  'broadcast_test_copy_sent',
+  'broadcast_brand_settings_changed',
+  'broadcast_image_uploaded',
+  'broadcast_image_removed',
 ] as const;
 
 /**
- * Static assertion: the tuple length is 60. The authoritative per-category
- * breakdown is the file-header taxonomy above (it sums to 60); this assert
- * is the enforced source of truth. If a spec amendment adds/removes an
- * event, update the tuple, this literal, and the header taxonomy —
- * TypeScript errors here ("Type '61' is not assignable to type '60'") if
- * the count drifts.
+ * Static assertion: the tuple length is 59. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it nets to 59 live); this
+ * assert is the enforced source of truth. If a spec amendment adds/removes
+ * an event, update the tuple, this literal, and the header taxonomy —
+ * TypeScript errors here ("Type '60' is not assignable to type '59'") if
+ * the count drifts. (F119 T022: 55 → 59; T050 takes it 59 → 69.)
  *
  * (The previous inline arithmetic here was dropped — it double-counted
  * `broadcast_image_unsafe`, which is already inside the "11 F7.1a
@@ -231,7 +247,7 @@ export const RETIRED_F7_AUDIT_EVENT_TYPES = [
 export type RetiredF7AuditEventType =
   (typeof RETIRED_F7_AUDIT_EVENT_TYPES)[number];
 
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 55
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 59
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -337,8 +353,24 @@ export interface F7AuditPayloadShapes {
     readonly resourceKind?: 'broadcast' | 'template';
   };
   readonly broadcast_cross_member_probe: {
+    // camelCase is DELIBERATE and load-bearing: `member_id` (snake_case) is the
+    // ONLY key the 0009 `last_activity_at` SECURITY DEFINER trigger reads
+    // (#336/#337), so a REFUSED probe must never spell it that way — otherwise
+    // an attacker guessing ids would refresh the probed member's recency.
     readonly probedMemberId: string;
     readonly probedBroadcastId: string;
+    /**
+     * F119 F2-5 — which surface refused the probe. Optional: the pre-F119 emit
+     * sites omit it.
+     *
+     * ROUND-2 (LOW) — the LITERAL UNION, not `string`. The docblock already
+     * said "bounded-cardinality literal, never free text"; the type said
+     * otherwise, so nothing stopped a future emit site from putting a value
+     * (or an id) in here and blowing up the label cardinality of anything that
+     * groups on it. The comment is now the type. A new surface adds its member
+     * here.
+     */
+    readonly operation?: 'image_upload' | 'snapshot_template';
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;
@@ -401,6 +433,18 @@ export interface F7AuditPayloadShapes {
      * themselves survive, email-keyed). A third axis of erasure work.
      */
     readonly suppression_refs_severed: number;
+    /**
+     * ROUND-2 P-M2 — inline images of the member's E-Blasts whose `deleted_at`
+     * was stamped by this cascade (their BYTES go on the next daily sweep,
+     * under the last-reference rule).
+     *
+     * A fourth axis, and the one most easily missed: redacting `body_html`
+     * removes the POINTER to the member's uploaded photograph, not the file,
+     * which is why F2-2 added the stamp at all. The attestation is the single
+     * row an auditor reads to see what the cascade reached, so leaving this
+     * count out of it made that axis invisible in the evidence.
+     */
+    readonly images_marked: number;
     readonly reason:
       | 'originator_member_deleted'
       | 'gdpr_erasure_request'
@@ -526,6 +570,25 @@ export interface AuditPort {
     tx: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void>;
+  /**
+   * ROUND-2 R-M6 — N audit rows in ONE statement, on the caller's `tx`.
+   *
+   * The erasure cascade stamps every inline image the erased member ever
+   * uploaded and audits each one. A long-standing member can have dozens, and
+   * each `emit` was a separate round-trip issued INSIDE the erasure
+   * transaction — which is already holding the member row and every other
+   * cascade write open for its whole length. One multi-row INSERT is the same
+   * evidence at one round-trip.
+   *
+   * OPTIONAL, deliberately. `AuditPort` is annotated at ~196 sites, mostly
+   * test doubles; making this required would fail `tsc` in every one of them
+   * for a purely performance-shaped addition. Callers that want it use
+   * `audit.emitMany?.(…)` and fall back to a per-row loop — see
+   * `auditImagesRemoved`. Semantics are identical to N `emit` calls: all-or-
+   * nothing with the caller's transaction, same rows, same order. An empty
+   * array is a no-op.
+   */
+  emitMany?(tx: unknown, events: readonly AuditEmitInput[]): Promise<void>;
 }
 
 /**

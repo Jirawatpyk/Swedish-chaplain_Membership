@@ -111,6 +111,15 @@ export interface BroadcastsContentScrubPort {
         readonly outcome: 'ok';
         readonly scrubbedCount: number;
         readonly tombstonedCount: number;
+        /**
+         * ROUND-2 P-M2 — inline images of the member's E-Blasts whose
+         * `deleted_at` the cascade stamped. Their BYTES go on the next daily
+         * sweep, under the last-reference rule; this count is the erasure
+         * proof that the references are gone. Surfaced here because redacting
+         * `body_html` removes the POINTER, not the file, and the erasure
+         * evidence has to say which of the two happened.
+         */
+        readonly imagesMarked: number;
       }
     | { readonly outcome: 'failed' }
   >;

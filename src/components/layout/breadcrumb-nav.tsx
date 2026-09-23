@@ -159,6 +159,10 @@ const STATIC_LABEL_KEYS = {
   // the centralised-settings page render "Settings / Broadcasts"
   // correctly.
   broadcasts: 'broadcasts',
+  // F119 T028 — `/admin/settings/broadcasts/brand`. Without a label the trail
+  // renders the raw slug, which reads as an untranslated Latin word on the TH
+  // and SV surfaces (the `erasure-log` incident, 2026-07-18).
+  brand: 'brand',
   // F7.1a US7 — `/admin/broadcasts/templates` breadcrumb segment +
   // `new` + `edit` verb-overrides for /templates/new and /templates/
   // [id]/edit. The `new`/`edit` keys also re-use the resource-aware

@@ -1488,6 +1488,35 @@ Extends § 22.3 with **4 new alerts**:
 
 The 4 F7.1a alerts route per § 22.8 (alarm → `#oncall-platform`; page → PagerDuty). Two F7.1a-specific runbooks land under `docs/runbooks/` for the ClamAV alerts; the partial-send alert shares the broadcasts-perf-regression triage tree plus a dedicated `broadcast-partial-send-recovery.md` decision tree.
 
+### 22.11 F119 E-Blast approval workflow (PR-1) — brand chrome
+
+Extends § 22.1 with **1 metric**. Brand chrome (chamber name header, the postal-address footer, the CTA colour) is read LIVE at send time (FR-041c) and the read is **fail-soft** — a brand outage must never fail a send. But FR-041 says the footer MUST carry the chamber's postal address, so every degraded send ships a footer that does not meet that requirement. Before this metric the degrade was a `logger.warn` only: greppable, never alertable, and invisible on a dashboard.
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts_brand_chrome_unavailable_total` | counter | `tenant`, `surface` ∈ {dispatch, audience_tick} | F119 T031 — `loadBrandChrome` caught a fault from `BrandChromePort.load` and degraded to NO chrome. Each increment is one send (or one audience tick) whose footer went out WITHOUT the postal address. `surface` is a REQUIRED argument of the helper, so the two dispatch call sites can never be confused for one another (the F8 `errorId` defect class — a shared helper stamping one caller's identity onto all of them). An ABSENT port is *not* counted: that is "this tenant has no brand configured", not an outage. |
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts_brand_chrome_unavailable_total` rate > 0 sustained 15 min | **alarm** | the brand-settings read is failing and E-Blasts are shipping without the mandatory postal-address footer. Read `surface` first: both labels point at the same `tenant_broadcast_settings` read, so a fault on BOTH is Neon / the settings row, while one alone is that use case's composition (a pre-F119 `makeDeps` that never wired `brandChrome` degrades SILENTLY and is not counted — check the composition before blaming the database). Not a page: nothing is lost and no state is wrong, but every message sent while it is up is non-compliant, so it is fixed same-day. | `docs/runbooks/broadcast-audience-build.md` § C |
+
+Routes per § 22.8 (alarm → `#oncall-platform`).
+
+### 22.12 F119 E-Blast approval workflow (PR-1) — the daily image-blob sweep
+
+Extends § 22.1 with **2 metrics**, both emitted by `reclaimOrphanedImages` (the image block of the daily `prune-expired-drafts` cron, 04:30 UTC). The sweep deletes an inline image's bytes under the last-reference rule and is the step that makes a member erasure's "the reference is gone" become "the bytes are gone" — the images sit at PUBLIC, unauthenticated Vercel Blob URLs, so a sweep that silently stops working keeps an erased member's photograph served. `retained_total` predates this section and was undocumented until F7-1 added `row_failed_total` beside it.
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts_image_sweep_retained_total` | counter | `tenant` | ROUND-2 S-3 — one per row the sweep KEPT and put back in the live set, because live content (`broadcasts.body_html` / `body_source`, `broadcast_templates.body_html`) still embeds the blob URL. No audit row is written for it (nothing was removed). A small steady rate is normal for pre-0304 images; a climbing one means retained rows are eating the orphan arm's 200-row batch. |
+| `broadcasts_image_sweep_row_failed_total` | counter | `tenant` | F7-1 — one per row whose per-row transaction THREW (a Blob `del` that failed, a lock or content scan that hit the 5 s `SET LOCAL statement_timeout`). The row is left for the next tick and the tick still returns **200** (a 500 would hide the rows that did succeed); the tick body carries `imageSweep.rowsFailed` and the route logs `cron.broadcasts.image_sweep.rows_failed` at `error` with `errorId: 'M119.cron.image_sweep.rows_failed'`. Before this counter a persistent fault — an expired `BLOB_READ_WRITE_TOKEN` fails every row every day — was a `warn` line only. |
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts_image_sweep_row_failed_total` increments on **two consecutive daily ticks** for the same `tenant` | **alarm** | one tick's failure is usually transient and the next tick retries it; the same tenant failing again the next day is a fault that is not clearing (Blob token, Blob outage, a content scan that no longer fits the 5 s bound). Every day it stays up, erased members' images the sweep should have deleted stay publicly served, and the runbook's "bytes gone on the next tick" statement is false for them. Read the `broadcasts.image_sweep.row_retry_next_tick` log lines for `err` first. | `docs/runbooks/cron-jobs.md` § F7 — broadcasts/prune-expired-drafts, Block 2; `docs/runbooks/member-erasure.md` § Inline E-Blast images |
+
+Routes per § 22.8 (alarm → `#oncall-platform`).
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability

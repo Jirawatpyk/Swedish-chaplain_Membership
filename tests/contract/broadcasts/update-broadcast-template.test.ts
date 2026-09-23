@@ -95,6 +95,49 @@ const makeDeps = (overrides?: {
 };
 
 describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
+  // ── F119 security-round residual: design-block content rules (FR-041) ──
+  // The same gap as create: the edit path sanitised and checked image
+  // sources, and never called `validateBlocks`, so a compliant template
+  // could be EDITED into a non-compliant one and still be snapshot into a
+  // draft by `snapshotTemplateToDraft`.
+  const ctaHtml = (n: number): string =>
+    Array.from(
+      { length: n },
+      (_, i) => `<a data-eb="cta" href="https://example.org/${i}">Register</a>`,
+    ).join('');
+
+  it('editing the body to four CTA buttons → content_rules, and no tx is opened', async () => {
+    const deps = makeDeps();
+    const r = await updateBroadcastTemplate(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_ADMIN,
+      templateId: TEMPLATE_ID,
+      bodyHtml: `<p>Hello</p>${ctaHtml(4)}`,
+      requestId: 'req-content-rules-1',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'content_rules') {
+      expect(r.error.violations.map((v) => v.code)).toContain('too_many_cta');
+    } else {
+      expect.unreachable('four CTA buttons must be refused');
+    }
+    expect(deps.port.update).not.toHaveBeenCalled();
+    expect(deps.port.withTx).not.toHaveBeenCalled();
+  });
+
+  it('an edit that does not touch the body is not block-validated', async () => {
+    const deps = makeDeps();
+    const r = await updateBroadcastTemplate(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_ADMIN,
+      templateId: TEMPLATE_ID,
+      name: 'Rename only',
+      requestId: 'req-content-rules-2',
+    });
+    // A rename must not be refused for a body it never supplied.
+    expect(r.ok).toBe(true);
+  });
+
   it('admin updates name → port.update called + audit with before/after', async () => {
     const deps = makeDeps();
     const r = await updateBroadcastTemplate(deps, {

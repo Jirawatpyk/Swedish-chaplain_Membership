@@ -17,7 +17,7 @@
  *   session-any        any authenticated session, no role differentiation
  *
  * `session-any` is an amendment to the contract's original five (see the
- * SESSION_ANY list below for the four handlers and why each one is genuinely
+ * SESSION_ANY list below for the handlers and why each one is genuinely
  * role-agnostic). Recorded so the class cannot become a dumping ground.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -118,7 +118,7 @@ function parseHandlers(route: string, src: string): { handlers: Handler[]; unkno
 }
 
 /**
- * Four handlers that serve every authenticated session identically, by design.
+ * The handlers that serve every authenticated session identically, by design.
  * Each is listed with the reason it carries no role differentiation — this is
  * an allow-list of INTENT, not of convenience.
  */
@@ -128,6 +128,8 @@ const SESSION_ANY: Readonly<Record<string, string>> = {
   'POST /api/internal/client-error': 'client telemetry sink — no tenant data is read',
   'GET /api/broadcasts/templates':
     'deliberately shared member+staff template picker (F7.1a T110 header) — anonymous 401, no role branch',
+  'POST /api/broadcasts/templates/[id]/started':
+    'the SAME shared picker telling the server a template was used (F119 T108) — increments broadcast_templates.started_from_count and nothing else; anonymous 401, no role branch, bucketed 30/min per (tenant, user)',
   'GET /api/internal/exports/[jobId]/download':
     'dual-audience private-artefact proxy — the portal 303-redirects the SUBJECT MEMBER here for their own GDPR archive, so no staff key can gate it; real guards = single-use job-bound HMAC token + downloadExport subject-or-staff authorize() (T028 capture correction, see the baseline header note)',
 };
@@ -213,8 +215,8 @@ describe('T016 API route exhaustiveness', () => {
     expect(stale).toEqual([]);
   });
 
-  it('the session-any allow-list is exactly the five documented handlers', () => {
-    expect(Object.keys(SESSION_ANY)).toHaveLength(5);
+  it('the session-any allow-list is exactly the six documented handlers', () => {
+    expect(Object.keys(SESSION_ANY)).toHaveLength(6);
     const applied = ALL.filter((h) => classify(h) === 'session-any').map((h) => `${h.method} ${h.route}`);
     expect(applied.sort()).toEqual(Object.keys(SESSION_ANY).sort());
   });

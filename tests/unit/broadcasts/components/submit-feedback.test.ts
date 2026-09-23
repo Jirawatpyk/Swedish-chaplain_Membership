@@ -25,6 +25,7 @@ import {
   selfExclusionHintKey,
   showsSelfExclusionHint,
   submitBlockedByCount,
+  submitBlockedHintKey,
 } from '@/components/broadcast/submit-feedback';
 
 type Messages = Record<string, unknown>;
@@ -76,6 +77,47 @@ describe('submitBlockedByCount', () => {
     expect(submitBlockedByCount({ status: 'unavailable' })).toBe(false);
     expect(submitBlockedByCount({ status: 'loading' })).toBe(false);
     expect(submitBlockedByCount({ status: 'idle' })).toBe(false);
+  });
+});
+
+// Portal live walk U29 (WCAG 3.3.2) — the one line that explains a dimmed
+// Submit, for the reasons with no element of their own. One reason at a time,
+// in the form's reading order, so the line names the first thing to fix.
+describe('submitBlockedHintKey', () => {
+  const valid = {
+    subjectEmpty: false,
+    subjectTooLong: false,
+    tierValid: true,
+    customListValid: true,
+    customLineCount: 3,
+  } as const;
+  it.each([
+    ['nothing blocks', {}, null],
+    ['an empty subject', { subjectEmpty: true }, 'submitBlocked.subjectRequired'],
+    ['an over-long subject', { subjectTooLong: true }, 'errors.broadcast_subject_too_long'],
+    ['a tier segment with no tier', { tierValid: false }, 'submitBlocked.tierRequired'],
+    [
+      'an empty custom list',
+      { customListValid: false, customLineCount: 0 },
+      'errors.broadcast_custom_recipient_empty',
+    ],
+    [
+      'a custom list over the cap',
+      { customListValid: false, customLineCount: 101 },
+      'errors.broadcast_custom_recipient_too_many',
+    ],
+    [
+      'the subject before the audience',
+      { subjectEmpty: true, tierValid: false, customListValid: false, customLineCount: 0 },
+      'submitBlocked.subjectRequired',
+    ],
+    [
+      'the tier before the custom list',
+      { tierValid: false, customListValid: false, customLineCount: 0 },
+      'submitBlocked.tierRequired',
+    ],
+  ] as const)('%s', (_label, overrides, expected) => {
+    expect(submitBlockedHintKey({ ...valid, ...overrides })).toBe(expected);
   });
 });
 

@@ -328,44 +328,53 @@ export default async function AdminBroadcastsPage({
 
   return (
     <TableContainer>
-      <div className="flex items-start justify-between gap-4">
-        <PageHeader
-          title={t('title')}
-          subtitle={
-            totalPending > 0
-              ? `${t('subtitle')} · ${t('totalPending', { count: totalPending })}`
-              : t('subtitle')
-          }
-        />
-        <div className="flex items-center gap-2">
-          {templatesEnabled ? (
-            <Link
-              href="/admin/broadcasts/templates"
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              <LayoutTemplateIcon
-                className="mr-2 size-4"
-                aria-hidden="true"
-              />
-              {t('templatesEntryButton')}
-            </Link>
-          ) : null}
-          {/* DV-4 — admin-only proxy-submit entry. Hidden entirely for
-              manager (read-only): the e2e asserts the link is absent for
-              manager, so this is gated, not merely disabled. Uses the
-              `buttonVariants` default (primary CTA, h-9 36px tap target)
-              applied to a <Link> — the repo `Button` has no `asChild`
-              (Base UI), matching the sibling templates-entry pattern. */}
-          {!isReadOnlyManager ? (
-            <Link
-              href="/admin/broadcasts/new"
-              className={buttonVariants()}
-            >
-              {tBroadcasts('proxySubmitButton')}
-            </Link>
-          ) : null}
-        </div>
-      </div>
+      {/* T155 finding U2 — the actions go through `PageHeader`'s own `actions`
+          slot, as `templates/page.tsx` does. The hand-rolled
+          `flex items-center gap-2` row that stood here had no `flex-wrap`,
+          and `buttonVariants` bakes in `whitespace-nowrap`, so the two links
+          overflowed 320 px in every locale (SV +260 px, EN +172 px, TH +32 px
+          — measured 2026-09-22). `PageHeader` stacks title and actions below
+          `sm`, wraps the action row, and stretches each child to a full-width
+          tap target there. axe has no horizontal-scroll rule, so T139 could
+          never have caught this; `eblast-a11y.spec.ts` now measures it. */}
+      <PageHeader
+        title={t('title')}
+        subtitle={
+          totalPending > 0
+            ? `${t('subtitle')} · ${t('totalPending', { count: totalPending })}`
+            : t('subtitle')
+        }
+        actions={
+          <>
+            {templatesEnabled ? (
+              <Link
+                href="/admin/broadcasts/templates"
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                <LayoutTemplateIcon
+                  className="mr-2 size-4"
+                  aria-hidden="true"
+                />
+                {t('templatesEntryButton')}
+              </Link>
+            ) : null}
+            {/* DV-4 — admin-only proxy-submit entry. Hidden entirely for
+                manager (read-only): the e2e asserts the link is absent for
+                manager, so this is gated, not merely disabled. Uses the
+                `buttonVariants` default (primary CTA, h-9 36px tap target)
+                applied to a <Link> — the repo `Button` has no `asChild`
+                (Base UI), matching the sibling templates-entry pattern. */}
+            {!isReadOnlyManager ? (
+              <Link
+                href="/admin/broadcasts/new"
+                className={buttonVariants()}
+              >
+                {tBroadcasts('proxySubmitButton')}
+              </Link>
+            ) : null}
+          </>
+        }
+      />
       <OverdueBanner count={showOverdue ? overdueCount : 0} />
       <SlaBanner stats={slaStats} compact={showOverdue} />
       {truncated ? (

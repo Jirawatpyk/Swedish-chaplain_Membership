@@ -73,6 +73,14 @@ export interface ProxySubmitBroadcastInput {
    * "<companyName> via <tenantDisplayName>" (data-model.md:59).
    */
   readonly memberLookup: ProxyMemberLookup;
+  /**
+   * F119 T145 (FR-039) — the staff draft saved through
+   * `POST /api/admin/broadcasts/draft`, submitted IN PLACE so the row is
+   * updated + transitioned rather than duplicated. Ownership (the draft
+   * belongs to `proxiedMemberId`) and the `draft`-only status check are
+   * the delegate's; omitted → a fresh row, as before.
+   */
+  readonly draftId?: string;
   readonly subject: string;
   readonly bodySource: string;
   readonly bodyHtml: string;
@@ -126,6 +134,7 @@ export async function proxySubmitBroadcast(
     memberId: input.proxiedMemberId,
     submittedByUserId: input.adminUserId,
     actorRole: 'admin_proxy',
+    ...(input.draftId !== undefined && { draftId: input.draftId }),
     tenantDisplayName: input.tenantDisplayName,
     memberDisplayName: input.memberLookup.companyName,
     subject: input.subject,

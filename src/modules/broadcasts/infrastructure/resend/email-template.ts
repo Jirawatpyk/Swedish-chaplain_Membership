@@ -50,6 +50,8 @@ import svMessages from '@/i18n/messages/sv.json' with { type: 'json' };
 import { logger } from '@/lib/logger';
 import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
+import type { BrandSettings } from '../../domain/brand/brand-settings';
+import { applyDesignBlocks } from '../../domain/design-blocks/render-blocks';
 import type { EmailLower } from '../../domain/value-objects/email-lower';
 import { unsubscribeTokenSigner } from '../unsubscribe-token/hmac-signer';
 
@@ -123,6 +125,35 @@ export interface RenderBroadcastHtmlInput {
   readonly bodyHtml: string;
   readonly tenantDisplayName: string;
   readonly locale: BroadcastLocale;
+  /**
+   * F119 (FR-041a/c) — brand chrome, read LIVE at render time by the caller
+   * and never frozen into a version (a brand change never voids an
+   * approval, FR-012). Omitted or all-null ⇒ the output is byte-identical
+   * to the pre-F119 email (T007 baseline): chamber name in the header,
+   * "Sent by {name}." in the footer, platform colour on any CTA.
+   */
+  readonly brand?: BrandSettings;
+}
+
+/**
+ * F119 T031 — the header shows the logo when one is on file (FR-041a). The
+ * `alt` names the chamber so a client that blocks images still shows who
+ * sent it; height is capped so a tall logo never dominates the email.
+ */
+function renderHeaderCell(safeTenantName: string, logoUrl: string | null): string {
+  if (logoUrl === null) {
+    return `<strong style="font-size:14px;color:#666">${safeTenantName}</strong>`;
+  }
+  return `<img src="${escapeHtml(logoUrl)}" alt="${safeTenantName}" height="48" style="display:block;max-height:48px;height:auto;max-width:240px;border:0">`;
+}
+
+/**
+ * F119 T031 — the footer postal address (FR-041c): free text, line breaks
+ * kept as `<br>`, everything escaped. `null` ⇒ the pre-F119 "Sent by" line.
+ */
+function renderPostalLine(physicalLine: string, postalAddress: string | null): string {
+  if (postalAddress === null) return physicalLine;
+  return escapeHtml(postalAddress).replace(/\n/g, '<br>');
 }
 
 export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
@@ -146,6 +177,13 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
   const physicalLine = fillTemplate(f.physicalAddress, {
     tenantDisplayName: input.tenantDisplayName,
   });
+  const brand = input.brand;
+  // Design blocks are rendered AFTER sanitisation (the caller sanitised
+  // `bodyHtml`) and the result is never fed back through DOMPurify. A body
+  // without markers is returned as the identical string (T007).
+  const bodyHtml = applyDesignBlocks(input.bodyHtml, {
+    primaryColor: brand?.primaryColor ?? null,
+  });
 
   return [
     '<!doctype html>',
@@ -158,12 +196,12 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f6">',
     '<tr><td align="center" style="padding:24px 12px">',
     '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">',
-    `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee"><strong style="font-size:14px;color:#666">${safeTenantName}</strong></td></tr>`,
-    `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a">${input.bodyHtml}</td></tr>`,
+    `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee">${renderHeaderCell(safeTenantName, brand?.logoUrl ?? null)}</td></tr>`,
+    `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a">${bodyHtml}</td></tr>`,
     '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#888">',
     `<p style="margin:0 0 8px 0">${receivedLine}</p>`,
     `<p style="margin:0 0 8px 0"><a href="${RESEND_UNSUBSCRIBE_MERGE_TAG}" style="color:#666;text-decoration:underline">${escapeHtml(f.unsubscribeCta)}</a> ${escapeHtml(f.unsubscribeSuffix)}</p>`,
-    `<p style="margin:0">${physicalLine}</p>`,
+    `<p style="margin:0">${renderPostalLine(physicalLine, brand?.postalAddress ?? null)}</p>`,
     '</td></tr>',
     '</table>',
     '</td></tr>',

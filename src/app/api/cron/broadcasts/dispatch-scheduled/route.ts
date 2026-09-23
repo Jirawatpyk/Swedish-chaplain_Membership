@@ -68,6 +68,7 @@ import {
   buildAudienceTick,
   makeBuildAudienceTickDeps,
 } from '@/modules/broadcasts';
+import { brandChromePort } from '@/lib/broadcast-brand-deps';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -275,6 +276,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const deps = {
       ...baseDeps,
       membersBridge: makeTickMemoizedMembersBridge(baseDeps.membersBridge),
+      // F119 T031 (FR-041c) — brand chrome read live at dispatch, composed
+      // here (the seam lives in src/lib) so the delivered email carries the
+      // logo, colour and address the preview showed.
+      brandChrome: brandChromePort,
     };
     // T087 — with the import flag ON, the whole audience goes to Resend in ONE
     // call and is confirmed on a later tick, so this cron drives
@@ -286,6 +291,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const importDeps = importEnabled
       ? {
           ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge)),
+          brandChrome: brandChromePort,
           // Share the tick memo: several broadcasts on one segment resolve it
           // once, exactly as the single-tick path does.
           tenant: deps.tenant,

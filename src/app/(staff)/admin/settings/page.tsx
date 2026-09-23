@@ -26,6 +26,7 @@ import {
   CalendarClockIcon,
   ClipboardCheckIcon,
   Settings2Icon,
+  PaletteIcon,
   PlugZapIcon,
 } from 'lucide-react';
 import { env } from '@/lib/env';
@@ -100,6 +101,19 @@ const CATEGORIES = [
     descriptionKey: 'categories.broadcasts.description',
     href: '/admin/settings/broadcasts',
     icon: Settings2Icon,
+    permission: 'settings.broadcasts',
+    visibilityFlag: 'broadcastsEnabled',
+  },
+  // F119 T029 — the chamber brand page, directly under its allow-list sibling
+  // (the hub mirrors the sidebar in ORDER as well as in set / permission /
+  // flag / label / icon). Same `settings.broadcasts` key and same F7 flag as
+  // that sibling: the page 404s on the flag, so a card behind it would be a
+  // dead end.
+  {
+    titleKey: 'categories.eblastBrand.title',
+    descriptionKey: 'categories.eblastBrand.description',
+    href: '/admin/settings/broadcasts/brand',
+    icon: PaletteIcon,
     permission: 'settings.broadcasts',
     visibilityFlag: 'broadcastsEnabled',
   },

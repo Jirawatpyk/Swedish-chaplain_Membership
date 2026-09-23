@@ -463,10 +463,36 @@ export interface BroadcastsRepo {
    * a different `runInTenant` context cannot accidentally prune
    * another tenant's drafts (Constitution Principle I clause 1+2).
    */
+  /**
+   * F119 review finding F2-1 — `tx` and `prunedDrafts` were added so the
+   * caller can stamp each pruned draft's `broadcast_images` rows INSIDE this
+   * DELETE's transaction. `owner_id` has no FK, so the delete left the image
+   * rows live and un-stamped; the sweep reads `deleted_at IS NOT NULL`, so
+   * those bytes became unreachable at a public blob URL — permanently, and
+   * including by the erasure cascade. Omitting `tx` keeps the old behaviour of
+   * opening one.
+   */
+  /**
+   * ROUND-2 R-M1 — `limit` bounds ONE statement. The DELETE was unqualified,
+   * so a tenant with a backlog held row locks on every expired draft for the
+   * length of one transaction (and the caller then issued one image-stamp
+   * UPDATE per draft inside it). The adapter selects the oldest `limit` drafts
+   * and the caller loops until a short batch or its time budget. Omitting it
+   * falls back to the adapter's own bound — never to "all of them".
+   */
   pruneExpiredDrafts(
     tenantId: TenantSlug,
     olderThan: Date,
-  ): Promise<{ readonly prunedCount: number }>;
+    tx?: unknown | null,
+    limit?: number,
+  ): Promise<{
+    readonly prunedCount: number;
+    readonly prunedDrafts: readonly {
+      readonly broadcastId: string;
+      /** The owning member, for the image audit's `related_member_id`. */
+      readonly requestedByMemberId: string | null;
+    }[];
+  }>;
 
   /**
    * F7 Phase 9 / T178a — list `submitted` + `approved` broadcasts owned

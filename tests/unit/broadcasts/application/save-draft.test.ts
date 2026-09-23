@@ -193,7 +193,7 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       return { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0 };
     },
     async pruneExpiredDrafts() {
-      return { prunedCount: 0 };
+      return { prunedCount: 0, prunedDrafts: [] };
     },
     async listInFlightOwnedByMember() { return []; },
     async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
@@ -565,5 +565,116 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
     // The victim's draft was NOT overwritten and nothing was audited.
     expect(broadcastsRepo.updates).toHaveLength(0);
     expect(audit.emits).toHaveLength(0);
+  });
+
+  // ---- F119 T145: the staff compose-on-behalf draft -------------------
+  //
+  // `actorRole: 'admin_proxy'` has been in this use case's input union since
+  // T068, but nothing could reach it: the only caller was the member's own
+  // `requireMemberContext`-gated route. `POST /api/admin/broadcasts/draft`
+  // (T145) reaches it now, so the audit's actor fields are pinned here — the
+  // route's contract test mocks `saveDraft` and cannot see inside the emit.
+
+  it('admin_proxy create: the broadcast_drafted audit records the PROXY actor and the member it is for', async () => {
+    const { audit, broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+    });
+
+    const result = await saveDraft(deps, {
+      ...baseInput,
+      actorRole: 'admin_proxy',
+      submittedByUserId: 'user-staff-1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.inserted[0]).toMatchObject({
+      actorRole: 'admin_proxy',
+      requestedByMemberId: 'm-1',
+      submittedByUserId: 'user-staff-1',
+    });
+
+    const drafted = audit.emits.find((e) => e.eventType === 'broadcast_drafted');
+    expect(drafted).toBeDefined();
+    // Who acted: the staff user. Who it is for: the member.
+    expect(drafted?.actorUserId).toBe('user-staff-1');
+    expect(drafted?.payload).toMatchObject({
+      actorRole: 'admin_proxy',
+      memberId: 'm-1',
+    });
+  });
+  // ---- F119 security review F1-2 - design-block rules at EVERY save -----
+  //
+  // `src/lib/broadcasts-route-helpers.ts` documents the FR-041 codes as
+  // "refused 422 at every save, at send-to-member and on the test copy", but
+  // `validateBlocks` was only ever called from `send-test-copy.ts`: a body with
+  // four CTAs, or a banner with no description, saved and submitted fine and
+  // was only refused if the author happened to send themselves a test copy.
+  // The guard runs ABOVE the first write - a refusal inside the repo tx would
+  // commit (see `reference_result_refusal_in_runintenant_commits`).
+
+  it('a body with 4 CTA buttons is refused `too_many_cta` and inserts no row', async () => {
+    const { broadcastsRepo, audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const cta = (n: number) => `<a data-eb="cta" href="https://x.example/${n}">Go ${n}</a>`;
+    const result = await saveDraft(deps, {
+      ...baseInput,
+      bodyHtml: `<p>hi</p>${cta(1)}${cta(2)}${cta(3)}${cta(4)}`,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === 'content_rules') {
+      expect(result.error.violations.map((v) => v.code)).toEqual(['too_many_cta']);
+    } else {
+      expect.unreachable('expected a content_rules refusal');
+    }
+    expect(broadcastsRepo.inserted).toHaveLength(0);
+    expect(audit.emits).toHaveLength(0);
+  });
+
+  it('a banner with no alt text is refused `banner_alt_required` and inserts no row', async () => {
+    const { broadcastsRepo, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const result = await saveDraft(deps, {
+      ...baseInput,
+      bodyHtml: '<p>hi</p><img data-eb="banner" src="https://cdn.example/b.png" alt="">',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === 'content_rules') {
+      expect(result.error.violations.map((v) => v.code)).toEqual(['banner_alt_required']);
+    } else {
+      expect.unreachable('expected a content_rules refusal');
+    }
+    expect(broadcastsRepo.inserted).toHaveLength(0);
+  });
+
+  it('an UPDATE carrying a bad block is refused before updateDraft runs', async () => {
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      existingDraft: { broadcastId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' as never, status: 'draft' },
+    });
+    const result = await saveDraft(deps, {
+      ...baseInput,
+      draftId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      bodyHtml: '<a data-eb="cta" href="ftp://x.example/">Go</a>',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.kind === 'content_rules') {
+      expect(result.error.violations.map((v) => v.code)).toContain('cta_link_scheme');
+    } else {
+      expect.unreachable('expected a content_rules refusal');
+    }
+    expect(broadcastsRepo.updates).toHaveLength(0);
+  });
+
+  it('a compliant body with 3 CTAs and a described banner still saves', async () => {
+    const { broadcastsRepo, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const cta = (n: number) => `<a data-eb="cta" href="https://x.example/${n}">Go ${n}</a>`;
+    const result = await saveDraft(deps, {
+      ...baseInput,
+      bodyHtml: `${cta(1)}${cta(2)}${cta(3)}<img data-eb="banner" src="https://cdn.example/b.png" alt="Spring event">`,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.inserted).toHaveLength(1);
   });
 });

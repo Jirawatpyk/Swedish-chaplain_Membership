@@ -2,16 +2,25 @@
  * F7 US6 / Phase 8 — T171a daily draft-expiry cleanup cron.
  * POST `/api/cron/broadcasts/prune-expired-drafts`.
  *
- * Triggered DAILY by cron-job.org (per docs/runbooks/cron-jobs.md
- * § F7 prune-expired-drafts) — separate cadence from the 5-min
- * dispatch-scheduled cron because pruning is a low-frequency
- * housekeeping task with no time-sensitive business impact.
+ * Triggered DAILY by native Vercel Cron (`vercel.json`, UTC-only, invoked
+ * with GET — `export const GET = POST` below; cron-job.org is a paused
+ * standby). See docs/runbooks/cron-jobs.md § F7 prune-expired-drafts —
+ * separate cadence from the 5-min dispatch-scheduled cron because pruning
+ * is a low-frequency housekeeping task with no time-sensitive business
+ * impact.
  *
  * FR-001a: deletes broadcasts with `status='draft' AND updated_at <
- * now() - interval '30 days'`. NO audit event (drafts are user-
+ * now() - interval '30 days'`. No LIFECYCLE audit event (drafts are user-
  * controlled scratch space — preserves the FR-001 "drafts do NOT
  * consume or reserve quota" invariant). Members are not notified of
  * impending draft expiry in MVP.
+ *
+ * ROUND-3 #9 — it is NOT audit-silent, though, and this header used to say
+ * "NO audit event". F119 F2-1 made the prune stamp `deleted_at` on every
+ * image of every pruned draft, and each stamp emits `broadcast_image_removed
+ * { reason: 'draft_pruned', actor_role: 'system' }` in the same transaction
+ * as the DELETE. That is deliberate: the bytes are a member's personal data
+ * and their removal is the reachable record of it.
  *
  * Auth: Bearer token via `CRON_SECRET` (shared with F4 outbox-dispatch
  * + F5 stale-pending-count + F7 dispatch-scheduled + F7
@@ -24,8 +33,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import {
   makePruneExpiredDraftsDeps,
+  makeReclaimOrphanedImagesDeps,
   pruneExpiredDrafts,
+  reclaimOrphanedImages,
 } from '@/modules/broadcasts';
+import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
@@ -33,6 +45,12 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// Reliability review (2026-09-22) — match the sibling cron
+// (`dispatch-scheduled`). This job sweeps every tenant's expired drafts AND
+// the orphaned image blobs, so it is not bounded by the default function
+// timeout; without this it could be killed mid-sweep and leave the blob store
+// and `broadcast_images` disagreeing until the next run.
+export const maxDuration = 300;
 
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's
 // Bearer-gated logic lives in POST. Alias GET → POST so one handler serves
@@ -72,10 +90,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  let result;
+  // --- Block 1: the F7 draft prune (unchanged) ------------------------------
+  // F119 T035 — each block owns its try/catch and its OK flag; a fault in
+  // one never drops the other, and the 500 is decided only at the end.
+  let pruneOk = false;
+  let prunedCount: number | null = null;
+  let cutoff: string | null = null;
   try {
-    const deps = makePruneExpiredDraftsDeps(tenantCtx.slug);
-    result = await pruneExpiredDrafts(deps);
+    const deps = makePruneExpiredDraftsDeps(tenantCtx.slug, `cron-prune-drafts-${startedAt}`);
+    const result = await pruneExpiredDrafts(deps);
+    if (result.ok) {
+      pruneOk = true;
+      prunedCount = result.value.prunedCount;
+      cutoff = result.value.cutoff;
+    } else {
+      logger.error(
+        { tenantId: tenantCtx.slug, message: result.error.message },
+        'cron.broadcasts.prune_drafts.server_error',
+      );
+    }
   } catch (e) {
     logger.error(
       {
@@ -85,34 +118,71 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'cron.broadcasts.prune_drafts.uncaught_error',
     );
-    return NextResponse.json(
-      { error: { code: 'internal_error' } },
-      { status: 500 },
-    );
   }
 
-  if (!result.ok) {
+  // --- Block 2: the F119 image-blob sweep (T035) ----------------------------
+  // Independently transacted (one tx per row inside the use case), its own
+  // flag in the body. T130 (PR-2) adds the reminder / expiry steps here.
+  // ROUND-2 S-3 — `retained` is the fourth count: rows the sweep KEPT (and put
+  // back in the live set) because live content still embeds their blob URL.
+  // F7-1 — `rowsFailed` is the fifth: rows whose per-row tx threw and were
+  // left for the next tick. A non-zero count is logged at `error` but the tick
+  // stays 200 — a daily-cron 500 would hide the rows that DID succeed, and the
+  // alert rides `broadcasts_image_sweep_row_failed_total` instead.
+  let imageSweep: {
+    ok: boolean;
+    scanned?: number;
+    blobsDeleted?: number;
+    rowsRemoved?: number;
+    retained?: number;
+    rowsFailed?: number;
+  } = { ok: false };
+  try {
+    const result = await reclaimOrphanedImages(makeReclaimOrphanedImagesDeps(tenantCtx.slug), {
+      tenantId: tenantCtx.slug as never,
+      now: new Date(),
+      requestId: `cron-image-sweep-${startedAt}`,
+    });
+    if (result.ok) {
+      imageSweep = { ok: true, ...result.value };
+      if (result.value.rowsFailed > 0) {
+        logger.error(
+          {
+            tenantId: tenantCtx.slug,
+            rowsFailed: result.value.rowsFailed,
+            scanned: result.value.scanned,
+            errorId: 'M119.cron.image_sweep.rows_failed',
+          },
+          'cron.broadcasts.image_sweep.rows_failed',
+        );
+      }
+    } else {
+      logger.error(
+        { tenantId: tenantCtx.slug, message: result.error.message, errorId: 'M119.cron.image_sweep' },
+        'cron.broadcasts.image_sweep.server_error',
+      );
+    }
+  } catch (e) {
     logger.error(
-      {
-        tenantId: tenantCtx.slug,
-        message: result.error.message,
-      },
-      'cron.broadcasts.prune_drafts.server_error',
-    );
-    return NextResponse.json(
-      { error: { code: 'internal_error', message: result.error.message } },
-      { status: 500 },
+      { err: errKind(e), tenantId: tenantCtx.slug, errorId: 'M119.cron.image_sweep.uncaught' },
+      'cron.broadcasts.image_sweep.uncaught_error',
     );
   }
 
   const durationMs = Date.now() - startedAt;
   const summary = {
     tenantId: tenantCtx.slug,
-    prunedCount: result.value.prunedCount,
-    cutoff: result.value.cutoff,
+    pruneOk,
+    prunedCount,
+    cutoff,
+    imageSweep,
     durationMs,
   };
 
+  if (!pruneOk || !imageSweep.ok) {
+    logger.error(summary, 'cron.broadcasts.prune_drafts.tick_partial_failure');
+    return NextResponse.json({ ...summary, error: { code: 'internal_error' } }, { status: 500 });
+  }
   logger.info(summary, 'cron.broadcasts.prune_drafts.tick_complete');
   return NextResponse.json(summary, { status: 200 });
 }
