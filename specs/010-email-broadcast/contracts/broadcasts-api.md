@@ -44,6 +44,11 @@ const CreateDraftBody = z.object({
 unflagged)**: a refusal the writer can act on now answers **422 with the specific code the locales
 already carry** — `broadcast_subject_empty`, `broadcast_subject_too_long`,
 `broadcast_body_too_large` — so Save-as-draft and Submit refuse the same input with the same words.
+A custom recipient list is classified the same way (F119 F7-4): an entry failing the RFC-5321
+check answers 422 `broadcast_custom_recipient_invalid_format` `{ invalid }` (Submit's code), and
+more than 100 entries answers 422 `broadcast_custom_recipient_too_many` `{ count }` — more specific
+than Submit, whose schema still answers that one 400 `invalid_body`. An empty list stays a legal
+draft; a non-string entry stays 400 `invalid_body`.
 400 `invalid_body` is kept for a body that is genuinely malformed rather than correctable. Before
 that change an empty subject answered 400 `invalid_body`, a code that existed in no locale, so the
 form rendered "an unexpected error occurred — please try again" for a state no retry could clear.

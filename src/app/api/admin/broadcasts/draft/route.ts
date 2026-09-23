@@ -40,6 +40,8 @@ import {
   resolveTenantDisplayName,
 } from '@/lib/broadcasts-route-helpers';
 import {
+  DRAFT_BODY_MAX_LENGTH,
+  DRAFT_SUBJECT_MAX_LENGTH,
   draftBodyRefusal,
   draftResponseBody,
   mapSaveDraftError,
@@ -65,12 +67,9 @@ const SegmentTypeEnum = z.enum([
 const AdminDraftBodySchema = z.object({
   memberId: z.string().uuid(),
   draftId: z.string().uuid().optional(),
-  subject: z.string().min(1).max(200),
-  bodyHtml: z
-    .string()
-    .min(1)
-    .max(200 * 1024),
-  bodySource: z.string().max(200 * 1024),
+  subject: z.string().min(1).max(DRAFT_SUBJECT_MAX_LENGTH),
+  bodyHtml: z.string().min(1).max(DRAFT_BODY_MAX_LENGTH),
+  bodySource: z.string().max(DRAFT_BODY_MAX_LENGTH),
   segmentType: SegmentTypeEnum,
   segmentParams: z.record(z.string(), z.unknown()).nullish(),
   customRecipientEmails: z.array(z.string().email()).max(100).nullish(),

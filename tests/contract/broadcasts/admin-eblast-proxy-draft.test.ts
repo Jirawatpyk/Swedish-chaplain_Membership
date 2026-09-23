@@ -51,11 +51,23 @@ vi.mock('@/lib/broadcasts-route-helpers', async () => {
     resolveTenantDisplayName: (...args: unknown[]) => resolveTenantDisplayNameMock(...args),
   };
 });
-vi.mock('@/modules/broadcasts', () => ({
-  saveDraft: (...args: unknown[]) => saveDraftMock(...args),
-  makeSaveDraftDeps: () => ({}),
-  broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => checkLimitMock(...args) },
-}));
+vi.mock('@/modules/broadcasts', async () => {
+  // The custom-list classifier runs the REAL submit-time check, so the two
+  // halves it needs come through unmocked.
+  const entries = await vi.importActual<
+    typeof import('@/modules/broadcasts/application/use-cases/validate-custom-recipients')
+  >('@/modules/broadcasts/application/use-cases/validate-custom-recipients');
+  const validator = await vi.importActual<
+    typeof import('@/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator')
+  >('@/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator');
+  return {
+    saveDraft: (...args: unknown[]) => saveDraftMock(...args),
+    makeSaveDraftDeps: () => ({}),
+    broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => checkLimitMock(...args) },
+    checkCustomRecipientEntries: entries.checkCustomRecipientEntries,
+    rfc5321EmailValidator: validator.rfc5321EmailValidator,
+  };
+});
 vi.mock('@/modules/members', () => ({
   drizzleMemberRepo: {
     findById: (...args: unknown[]) => findByIdMock(...args),
@@ -259,5 +271,91 @@ describe('POST /api/admin/broadcasts/draft — F119 FR-041 design-block rules', 
     const body = await res.json();
     expect(body.error.code).toBe('too_many_cta');
     expect(body.error.details.violations).toHaveLength(2);
+  });
+});
+
+/**
+ * Portal live walk U28 (FR-039) — the staff draft route refuses a correctable
+ * body with the SAME codes the member draft route does, because the two forms
+ * share one error copy and one draft-save helper. The refusal lands before the
+ * rate-limit bucket and the member read, so nothing is read or stored.
+ */
+describe('POST | PUT /api/admin/broadcasts/draft — U28 correctable refusals name the field', () => {
+  it('POST 422 broadcast_subject_empty: subject empty, nothing read or saved', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(req({ ...VALID_BODY, subject: '' }));
+
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe('broadcast_subject_empty');
+    expect(findByIdMock).not.toHaveBeenCalled();
+    expect(saveDraftMock).not.toHaveBeenCalled();
+  });
+
+  it('PUT 422 broadcast_subject_empty: the update path refuses identically', async () => {
+    const { PUT } = await importRoute();
+    const res = await PUT(req({ ...VALID_BODY, subject: '', draftId: DRAFT_ID }, 'PUT'));
+
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe('broadcast_subject_empty');
+    expect(saveDraftMock).not.toHaveBeenCalled();
+  });
+
+  it('POST 422 broadcast_subject_too_long: subject > 200 chars, with its length', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(req({ ...VALID_BODY, subject: 'x'.repeat(201) }));
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_subject_too_long');
+    expect(body.error.details.submittedLength).toBe(201);
+    expect(saveDraftMock).not.toHaveBeenCalled();
+  });
+
+  it('POST 422 broadcast_custom_recipient_invalid_format: names the entries that failed', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(
+      req({
+        ...VALID_BODY,
+        segmentType: 'custom',
+        customRecipientEmails: ['ok@example.com', 'not-an-email'],
+      }),
+    );
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_custom_recipient_invalid_format');
+    expect(body.error.details.invalid).toEqual(['not-an-email']);
+    expect(findByIdMock).not.toHaveBeenCalled();
+    expect(saveDraftMock).not.toHaveBeenCalled();
+  });
+
+  it('POST and PUT 422 broadcast_custom_recipient_too_many: 101 entries, with the count', async () => {
+    const { POST, PUT } = await importRoute();
+    const emails = Array.from({ length: 101 }, (_, i) => `u${i}@example.com`);
+
+    const created = await POST(
+      req({ ...VALID_BODY, segmentType: 'custom', customRecipientEmails: emails }),
+    );
+    expect(created.status).toBe(422);
+    const body = await created.json();
+    expect(body.error.code).toBe('broadcast_custom_recipient_too_many');
+    expect(body.error.details.count).toBe(101);
+
+    const updated = await PUT(
+      req(
+        {
+          ...VALID_BODY,
+          draftId: DRAFT_ID,
+          segmentType: 'custom',
+          customRecipientEmails: ['not-an-email'],
+        },
+        'PUT',
+      ),
+    );
+    expect(updated.status).toBe(422);
+    expect((await updated.json()).error.code).toBe(
+      'broadcast_custom_recipient_invalid_format',
+    );
+    expect(saveDraftMock).not.toHaveBeenCalled();
   });
 });

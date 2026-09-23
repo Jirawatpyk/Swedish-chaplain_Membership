@@ -75,6 +75,20 @@ function getFormatter(
  * day in both zones. Full timestamps were the hazard (hour always
  * differed; the day differed for instants ≥ 17:00 UTC).
  */
+export function formatLocalisedDate(
+  iso: string,
+  locale: string,
+  options: Intl.DateTimeFormatOptions = { dateStyle: 'medium' },
+): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const withTz: Intl.DateTimeFormatOptions =
+    options.timeZone !== undefined
+      ? options
+      : { ...options, timeZone: 'Asia/Bangkok' };
+  return getFormatter(locale, withTz).format(d);
+}
+
 /**
  * A bare calendar YEAR for display: `2026` in en/sv, `2569` in th (Buddhist
  * Era — CLAUDE.md § Conventions: BE is display-only, storage stays CE/UTC).
@@ -99,18 +113,4 @@ export function formatCalendarYear(year: number, locale: string): string {
   const midYear = new Date(Date.UTC(year, 6, 1));
   const parts = getFormatter(locale, { year: 'numeric' }).formatToParts(midYear);
   return parts.find((p) => p.type === 'year')?.value ?? String(year);
-}
-
-export function formatLocalisedDate(
-  iso: string,
-  locale: string,
-  options: Intl.DateTimeFormatOptions = { dateStyle: 'medium' },
-): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const withTz: Intl.DateTimeFormatOptions =
-    options.timeZone !== undefined
-      ? options
-      : { ...options, timeZone: 'Asia/Bangkok' };
-  return getFormatter(locale, withTz).format(d);
 }

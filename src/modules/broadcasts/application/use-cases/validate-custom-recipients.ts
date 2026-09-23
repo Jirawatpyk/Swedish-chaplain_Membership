@@ -65,29 +65,44 @@ export interface ValidateCustomRecipientsOutput {
   readonly normalised: ReadonlyArray<EmailLower>;
 }
 
-export async function validateCustomRecipients(
-  deps: ValidateCustomRecipientsDeps,
-  input: ValidateCustomRecipientsInput,
-): Promise<
-  Result<ValidateCustomRecipientsOutput, ValidateCustomRecipientsError>
+/**
+ * The half of the check that needs no tenant graph: the entry count and each
+ * entry's RFC-5321 format, in that order. Exported so the draft routes refuse
+ * a custom list with exactly the codes and details Submit's check produces
+ * (portal live walk U28) instead of re-deriving the rules.
+ */
+export function checkCustomRecipientEntries(
+  emailValidator: EmailValidatorPort,
+  raw: ReadonlyArray<string>,
+): Result<
+  ReadonlyArray<EmailLower>,
+  Extract<
+    ValidateCustomRecipientsError,
+    {
+      readonly kind:
+        | 'broadcast_custom_recipient_empty'
+        | 'broadcast_custom_recipient_too_many'
+        | 'broadcast_custom_recipient_invalid_format';
+    }
+  >
 > {
-  if (input.raw.length < MIN_ENTRIES) {
+  if (raw.length < MIN_ENTRIES) {
     return err({ kind: 'broadcast_custom_recipient_empty' });
   }
-  if (input.raw.length > MAX_ENTRIES) {
+  if (raw.length > MAX_ENTRIES) {
     return err({
       kind: 'broadcast_custom_recipient_too_many',
-      count: input.raw.length,
+      count: raw.length,
       max: MAX_ENTRIES,
     });
   }
 
   const invalid: string[] = [];
   const normalised: EmailLower[] = [];
-  for (const raw of input.raw) {
-    const validation = deps.emailValidator.validate(raw);
+  for (const entry of raw) {
+    const validation = emailValidator.validate(entry);
     if (!validation.ok) {
-      invalid.push(raw);
+      invalid.push(entry);
       continue;
     }
     normalised.push(unsafeBrandEmailLower(validation.value));
@@ -95,9 +110,20 @@ export async function validateCustomRecipients(
   if (invalid.length > 0) {
     return err({ kind: 'broadcast_custom_recipient_invalid_format', invalid });
   }
+  return ok(normalised);
+}
+
+export async function validateCustomRecipients(
+  deps: ValidateCustomRecipientsDeps,
+  input: ValidateCustomRecipientsInput,
+): Promise<
+  Result<ValidateCustomRecipientsOutput, ValidateCustomRecipientsError>
+> {
+  const entries = checkCustomRecipientEntries(deps.emailValidator, input.raw);
+  if (!entries.ok) return entries;
 
   // De-duplicate before tenant-graph lookups
-  const uniq = Array.from(new Set(normalised)) as EmailLower[];
+  const uniq = Array.from(new Set(entries.value)) as EmailLower[];
 
   const unresolved: string[] = [];
   try {

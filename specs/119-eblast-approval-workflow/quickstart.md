@@ -340,7 +340,9 @@ no `FEATURE_EBLAST_*` flag over any of it. Each line is **code-revert-only** —
 - **The draft routes' refusal codes narrowed** (U28, both `POST | PUT /api/broadcasts/draft` and
   `/api/admin/broadcasts/draft`): an empty or over-long subject and an over-size body now answer
   **422 with the specific code** (`broadcast_subject_empty`, `broadcast_subject_too_long`,
-  `broadcast_body_too_large`) instead of **400 `invalid_body`**. A client that switched on the
+  `broadcast_body_too_large`) instead of **400 `invalid_body`** — and (F7-4) a custom list with a
+  malformed entry or more than 100 entries answers 422 `broadcast_custom_recipient_invalid_format` /
+  `broadcast_custom_recipient_too_many`. A client that switched on the
   status alone sees a different number; the F7 contract
   (`specs/010-email-broadcast/contracts/broadcasts-api.md` § 1.1) is annotated, and the staff
   contract row already SPECIFIED 422 — the route had been contradicting it. `invalid_body` is

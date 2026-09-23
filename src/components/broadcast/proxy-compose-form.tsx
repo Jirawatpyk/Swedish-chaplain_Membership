@@ -118,7 +118,7 @@ const SubmitSchema = z.object({
  * Field-level server error target. `null` for form-level errors handled
  * by toast. Mirrors `compose-form.tsx`'s `ServerErrorField`.
  */
-type ServerErrorField = 'subject' | 'body' | 'segment' | null;
+type ServerErrorField = 'subject' | 'body' | 'segment' | 'customList' | null;
 
 /**
  * Map a route error code → how the proxy form reacts. Field codes set an
@@ -143,6 +143,14 @@ type ProxyErrorHandling =
         | 'bodyUnsafeHtmlError'
         | 'emptySegmentError'
         | 'audienceTooLargeError';
+    }
+  | {
+      // Portal live walk U28 (FR-039) — the custom-list refusals read in the
+      // member form's own words (`portal.broadcasts.compose.errors.*`).
+      readonly kind: 'customList';
+      readonly key:
+        | 'errors.broadcast_custom_recipient_invalid_format'
+        | 'errors.broadcast_custom_recipient_too_many';
     }
   | {
       readonly kind: 'toast';
@@ -192,6 +200,16 @@ const ERROR_HANDLING: Record<string, ProxyErrorHandling> = {
     kind: 'field',
     field: 'segment',
     key: 'audienceTooLargeError',
+  },
+  // U28 — both draft routes refuse the custom list with these codes, so a
+  // refused draft save names the list rather than "couldn't save the draft".
+  broadcast_custom_recipient_invalid_format: {
+    kind: 'customList',
+    key: 'errors.broadcast_custom_recipient_invalid_format',
+  },
+  broadcast_custom_recipient_too_many: {
+    kind: 'customList',
+    key: 'errors.broadcast_custom_recipient_too_many',
   },
 };
 
@@ -415,6 +433,14 @@ export function ProxyComposeForm({
       case 'field': {
         const message = t(handling.key, errorValues(code, details, audienceCeiling));
         setFieldError({ field: handling.field, message });
+        toast.error(message);
+        break;
+      }
+      case 'customList': {
+        // As in the member form, the textarea takes no focus — the toast
+        // carries the reason, and editing the list clears it.
+        const message = tCompose(handling.key);
+        setFieldError({ field: 'customList', message });
         toast.error(message);
         break;
       }
@@ -661,7 +687,10 @@ export function ProxyComposeForm({
             {segment.kind === 'custom' ? (
               <CustomListInput
                 value={customList}
-                onChange={setCustomList}
+                onChange={(next) => {
+                  setCustomList(next);
+                  if (fieldError?.field === 'customList') setFieldError(null);
+                }}
                 disabled={submitting}
               />
             ) : null}

@@ -168,6 +168,7 @@ export {
   type SanitizeHtmlOutput,
 } from './application/use-cases/sanitize-html';
 export {
+  checkCustomRecipientEntries,
   validateCustomRecipients,
   type ValidateCustomRecipientsError,
   type ValidateCustomRecipientsInput,
@@ -496,6 +497,10 @@ export type {
 // detail server component re-sanitises stored HTML at render time as a
 // defence-in-depth measure (UX I14 + IMP-3 round-3).
 export { dompurifySanitizer } from './infrastructure/sanitizer/dompurify-sanitizer';
+
+// The RFC-5321 adapter Submit's custom-list check runs — exposed so the draft
+// routes refuse a custom list with the same check (portal live walk U28).
+export { rfc5321EmailValidator } from './infrastructure/email-validator/rfc5321-email-validator';
 
 // F7 transactional notification email builders (Phase 8 — 2026-05-02).
 // Exposed at the barrel because the F4 cron outbox-dispatcher

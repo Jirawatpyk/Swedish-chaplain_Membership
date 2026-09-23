@@ -17,7 +17,11 @@ import {
   errorResponse,
   httpStatusForBroadcastError,
 } from '@/lib/broadcasts-route-helpers';
-import type { SaveDraftError } from '@/modules/broadcasts';
+import {
+  checkCustomRecipientEntries,
+  rfc5321EmailValidator,
+  type SaveDraftError,
+} from '@/modules/broadcasts';
 
 /** The `saveDraft` success envelope both draft routes return. */
 export function draftResponseBody(broadcast: {
@@ -45,29 +49,37 @@ export function draftResponseBody(broadcast: {
 }
 
 /**
- * The subject / body limits both draft schemas apply, named once so the
- * classifier below cannot drift from the zod objects it explains.
+ * The subject / body limits both draft schemas apply. Both zod objects read
+ * these constants, so the classifier below cannot drift from the schemas it
+ * explains.
  */
 export const DRAFT_SUBJECT_MAX_LENGTH = 200;
 export const DRAFT_BODY_MAX_LENGTH = 200 * 1024;
 
 /**
  * Portal live walk U28 (2026-09-22) — the CORRECTABLE half of a schema
- * refusal, answered with the code the locales already translate.
+ * refusal, answered with a code the compose copy translates.
  *
  * Both draft routes used to answer every zod failure with `invalid_body`.
- * `portal.broadcasts.compose.errors` carries no `invalid_body` key in en, th
- * or sv, so `compose-form.tsx`'s `t.has()` fell through to `internal_error` —
- * "An unexpected error occurred. Please try again." — for an empty subject.
- * That is both wrong and unactionable: a retry can never succeed. The right
+ * `portal.broadcasts.compose.errors` had no `invalid_body` key then, so
+ * `compose-form.tsx`'s `t.has()` fell through to `internal_error` — "An
+ * unexpected error occurred. Please try again." — for an empty subject. That
+ * was both wrong and unactionable: a retry can never succeed. (The key exists
+ * in en, th and sv now, but it still cannot say WHICH field to fix.) The right
  * copy already existed and was unreachable, because `broadcast_subject_empty`
- * / `broadcast_subject_too_long` were only ever emitted by `submit/route.ts`
+ * / `broadcast_subject_too_long` were only ever emitted by `submit/route.ts`,
  * and Submit is disabled in exactly the state that produces them.
  *
- * So Save-as-draft and Submit now refuse the same input with the same code,
- * and therefore the same words. Returns `null` when the body is malformed
- * rather than correctable (an unknown segment kind, a missing `draftId` on
- * PUT, a non-JSON payload) — those keep a truthful `invalid_body`.
+ * So a correctable draft body is refused with the code its field's copy is
+ * keyed on: the subject and body codes Submit's use case emits, and for the
+ * custom list the codes and details of Submit's own check
+ * (`checkCustomRecipientEntries`, run with the same RFC-5321 adapter). On the
+ * wire Submit answers a 101-entry list with `invalid_body` — its zod schema
+ * caps the list first — so there the draft route is the more specific of the
+ * two. Returns `null` when the body is malformed rather than correctable (an
+ * unknown segment kind, a missing `draftId` on PUT, a non-JSON payload, a
+ * list entry zod rejects but the RFC-5321 check accepts) — those keep a
+ * truthful `invalid_body`.
  */
 export function draftBodyRefusal(
   raw: unknown,
@@ -104,6 +116,25 @@ export function draftBodyRefusal(
     return errorResponse(status, code, correlationId, {
       details: { submittedSize: bodyHtml.length },
     });
+  }
+
+  const list = body['customRecipientEmails'];
+  if (Array.isArray(list) && list.every((entry) => typeof entry === 'string')) {
+    const entries = checkCustomRecipientEntries(rfc5321EmailValidator, list);
+    // An empty list is a legal draft — only the count and format refusals
+    // are Submit's to borrow here.
+    if (!entries.ok && entries.error.kind === 'broadcast_custom_recipient_too_many') {
+      const { status, code } = httpStatusForBroadcastError(entries.error.kind);
+      return errorResponse(status, code, correlationId, {
+        details: { count: entries.error.count },
+      });
+    }
+    if (!entries.ok && entries.error.kind === 'broadcast_custom_recipient_invalid_format') {
+      const { status, code } = httpStatusForBroadcastError(entries.error.kind);
+      return errorResponse(status, code, correlationId, {
+        details: { invalid: entries.error.invalid },
+      });
+    }
   }
 
   return null;

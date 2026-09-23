@@ -294,3 +294,69 @@ describe('T137 — the staff compose-on-behalf form offers what the member form 
     );
   });
 });
+
+/**
+ * Portal live walk U28 + U29 on the STAFF form. U29: a dimmed Submit says why,
+ * and the staff-only reason — no member picked yet — comes first. U28: a draft
+ * save the route refuses with a correctable code lands on the field the member
+ * form puts it on, not on the generic "couldn't save" toast.
+ */
+describe('U28 / U29 — the staff form explains a dimmed Submit and a refused draft save', () => {
+  const proxyCopy = enMessages.admin.broadcasts.proxySubmitDialog;
+  const composeErrors = enMessages.portal.broadcasts.compose.errors;
+
+  /** `fetch` refuses the staff draft route with `code`; everything else is 200. */
+  function refuseDraftWith(code: string): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).startsWith('/api/admin/broadcasts/draft')
+          ? { ok: false, status: 422, json: async () => ({ error: { code } }) }
+          : { ok: true, status: 200, json: async () => ({}) },
+      ),
+    );
+  }
+
+  it('U29 — no member picked: Submit is described by the "pick the member" line', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.type(screen.getByLabelText('Subject'), 'Spring mixer');
+
+    const submit = screen.getByRole('button', { name: /submit for review/i });
+    expect(submit).toBeDisabled();
+    const describedBy = submit.getAttribute('aria-describedby') ?? '';
+    const reasons = describedBy
+      .split(' ')
+      .map((id) => document.getElementById(id)?.textContent ?? '');
+    expect(reasons).toContain(proxyCopy.memberRequiredHint);
+  });
+
+  it('U28 — a draft save refused broadcast_subject_empty marks the subject invalid and focuses it', async () => {
+    refuseDraftWith('broadcast_subject_empty');
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'pick-member' }));
+    await user.click(screen.getByRole('button', { name: 'Save as draft' }));
+
+    const subject = screen.getByLabelText('Subject');
+    await waitFor(() => expect(subject).toHaveAttribute('aria-invalid', 'true'));
+    expect(subject).toHaveFocus();
+  });
+
+  it.each([
+    ['broadcast_custom_recipient_invalid_format', composeErrors.broadcast_custom_recipient_invalid_format],
+    ['broadcast_custom_recipient_too_many', composeErrors.broadcast_custom_recipient_too_many],
+  ])('U28 — a draft save refused %s says so in the member form\'s words', async (code, copy) => {
+    const { toast } = await import('sonner');
+    refuseDraftWith(code);
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'pick-member' }));
+    await user.click(screen.getByRole('button', { name: 'Save as draft' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(copy));
+    expect(toast.error).not.toHaveBeenCalledWith(proxyCopy.draftSaveErrorToast);
+  });
+});

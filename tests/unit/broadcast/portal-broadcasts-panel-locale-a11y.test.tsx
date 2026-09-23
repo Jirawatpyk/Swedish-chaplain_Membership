@@ -175,6 +175,17 @@ describe('U30 — the Thai quota surface shows ONE calendar', () => {
     expect(text).not.toContain('2026');
   });
 
+  // `textContent` cannot see an attribute: the disabled Compose button carries
+  // its `{year}` only inside `aria-label` (the tooltip is not rendered while
+  // closed), so a raw CE year there would pass the test above.
+  it('the disabled Compose button is NAMED with the Buddhist year under th', async () => {
+    await renderPanel('th');
+
+    const compose = screen.getByRole('button', { name: /2569/ });
+    expect(compose).toHaveAttribute('aria-disabled', 'true');
+    expect(compose.getAttribute('aria-label')).not.toContain('2026');
+  });
+
   it('English is unchanged — the Gregorian year still reads 2026', async () => {
     await renderPanel('en');
 
