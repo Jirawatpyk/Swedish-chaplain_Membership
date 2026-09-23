@@ -15,6 +15,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { err } from '@/lib/result';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
@@ -47,6 +48,42 @@ vi.mock('@/lib/broadcast-marketing-deps', async () =>
 vi.mock('@/modules/broadcasts', async () =>
   (await import('../../helpers/eblast-version-route-harness')).broadcastsBarrelMock(),
 );
+// T074 — the two reads the REAL `requireMemberContext` makes once
+// `harness.member.realGate` is set: the member behind the session, and the
+// member's latest renewal cycle (LAPSED, grace long expired → `terminated`).
+// The gate itself — `checkPortalAccess` and its route policy — runs for real.
+const gateAudit = vi.hoisted(() => ({ events: [] as Array<{ type: string; payload: Record<string, unknown> }> }));
+vi.mock('@/modules/members/members-deps', async () => {
+  const { ok } = await import('@/lib/result');
+  const { harness: h } = await import('../../helpers/eblast-version-route-harness');
+  return {
+    buildMembersDeps: () => ({
+      memberRepo: { findByLinkedUserId: async () => ok({ memberId: h.member.memberId }) },
+      contactRepo: {
+        listByMember: async () =>
+          ok([{ contactId: h.member.contactId, memberId: h.member.memberId, linkedUserId: h.member.userId }]),
+      },
+    }),
+  };
+});
+vi.mock('@/lib/portal-access-deps', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/portal-access-deps')>('@/lib/portal-access-deps');
+  const { buildCycle } = await import('../../unit/renewals/_helpers/build-cycle');
+  const { HARNESS_MEMBER_ID: memberId } = await import('../../helpers/eblast-version-route-harness');
+  const lapsed = buildCycle({ tenantId: 'test-tenant', memberId, status: 'lapsed', expiresAt: '2026-01-01T00:00:00Z' });
+  return {
+    ...actual,
+    buildPortalAccessDeps: () => ({
+      cyclesRepo: { findLatestCycleForMember: async () => lapsed },
+      auditEmitter: {
+        emit: async (event: { type: string; payload: Record<string, unknown> }) => {
+          gateAudit.events.push(event);
+        },
+      },
+      clock: { now: () => new Date('2026-09-24T03:00:00.000Z') },
+    }),
+  };
+});
 
 const ROOT = join(__dirname, '..', '..', '..');
 const ID = makeApprovalBroadcast().broadcastId as string;
@@ -347,6 +384,34 @@ describe('owning member and session (FR-013, spec § Tenant scope)', () => {
     for (const source of sources) {
       expect(source).not.toMatch(/membershipAccess|MembershipAccessPort|checkPortalAccess|deriveMembershipAccess|isHalted|haltedUntil/);
     }
+  });
+
+  it("T074 (real gate): a LAPSED member's decision passes the REAL requireMemberContext → 200, while that member's submit and inline-image upload stay refused", async () => {
+    const { requireMemberContext } = await import('@/lib/member-context');
+    gateAudit.events.length = 0;
+    harness.member = { ...harness.member, realGate: true };
+
+    const res = await decide({ versionId: V1.id, decision: 'approved' });
+    expect(res.status).toBe(200);
+    expect(row().status).toBe('member_approved');
+    expect(gateAudit.events).toHaveLength(0);
+
+    const { POST: cancel } = await importMemberCancelRoute();
+    resetVersionHarness({ broadcasts: [awaiting()], versions: [V0, V1] });
+    harness.member = { ...harness.member, realGate: true };
+    expect((await cancel(postMemberCancelRequest(ID), routeParams(ID))).status).toBe(200);
+
+    // Positive control: the same gate, the same lapsed member, a benefit-consuming route.
+    for (const path of ['/api/broadcasts/submit', '/api/broadcasts/inline-image-upload', `/api/broadcasts/draft/${ID}`]) {
+      const refused = await requireMemberContext(new NextRequest(`http://localhost${path}`, { method: 'POST' }));
+      expect(refused.response?.status, path).toBe(403);
+      expect((await refused.response!.json()).error.code).toBe('membership_access_restricted');
+    }
+    expect(gateAudit.events.map((e) => e.payload.blocked_route)).toEqual([
+      '/api/broadcasts/submit',
+      '/api/broadcasts/inline-image-upload',
+      `/api/broadcasts/draft/${ID}`,
+    ]);
   });
 
   it('a body that is not JSON, or names an unknown decision → 400 invalid_body before the use case', async () => {

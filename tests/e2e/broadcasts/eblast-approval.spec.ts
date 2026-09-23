@@ -42,6 +42,8 @@ test.describe('F119 T063 — the staff format surface', () => {
     const start = page.locator('[data-testid="eblast-start-version"]:visible');
     await expect(start, 'Start is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?').toBeVisible();
     await start.click();
+    // From `submitted`, starting ends approve-as-submitted, so it asks first (UX review M3).
+    await page.locator('[data-testid="eblast-start-version-confirm"]:visible').click();
 
     const workspace = page.locator('[data-testid="eblast-format-workspace"]:visible');
     await expect(workspace).toBeVisible({ timeout: 60_000 });

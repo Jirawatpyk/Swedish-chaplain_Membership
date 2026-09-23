@@ -14,6 +14,10 @@
  * `DetailContainer` matches `page.tsx` + `error.tsx` (`check:layout` pins the
  * page/loading pair). Only the framework-free `preview-frame-heights` module
  * is imported — never the client preview component.
+ *
+ * UX review M9: `aria-busy` like every other admin loading state; header bars
+ * are capped (`w-full max-w-*`) so they fit 320 px; card-heading bars are
+ * `h-5.5` — the real `<h2>` (`text-base leading-snug`) is ~22 px, not 20.
  */
 import { DetailContainer } from '@/components/layout';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -35,12 +39,12 @@ function FieldSkeletons({ count }: { readonly count: number }): React.ReactEleme
 
 export default function AdminBroadcastDetailLoading(): React.ReactElement {
   return (
-    <DetailContainer>
+    <DetailContainer aria-busy="true">
       {/* PageHeader: subject (h1) + "member · subtitle" + the stage badge. */}
       <header className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-start">
         <div className="min-w-0 flex-1 space-y-2">
-          <Skeleton className="h-7 w-72" />
-          <Skeleton className="h-4 w-80" />
+          <Skeleton className="h-7 w-full max-w-72" />
+          <Skeleton className="h-4 w-full max-w-80" />
         </div>
         <Skeleton className="h-5 w-24 rounded-4xl" />
       </header>
@@ -48,7 +52,7 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
       {/* "Approval round" — whose turn, time in stage, round, proposed, scheduled. */}
       <Card>
         <CardHeader>
-          <Skeleton className="h-5 w-36" />
+          <Skeleton className="h-5.5 w-36" />
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -60,7 +64,7 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
       {/* "Submission" — five `<dl>` rows in two columns. */}
       <Card>
         <CardHeader>
-          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-5.5 w-28" />
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -72,7 +76,7 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
       {/* The message — heading + the sandboxed frame's fixed height. */}
       <Card>
         <CardHeader>
-          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-5.5 w-24" />
         </CardHeader>
         <CardContent>
           <Skeleton className="w-full" style={{ height: DETAIL_PREVIEW_FRAME_HEIGHT }} />

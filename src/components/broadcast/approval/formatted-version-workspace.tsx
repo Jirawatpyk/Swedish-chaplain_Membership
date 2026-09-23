@@ -16,14 +16,24 @@
  * Save is `PATCH …/version` with the optimistic-concurrency token
  * `expectedUpdatedAt` (FR-033): a second marketing user's save loses with 409
  * `version_changed`, which is shown as "someone else changed this" with a
- * reload — never a silent overwrite. "Send to member" saves pending edits
- * first, then `POST …/version/send`, behind a confirmation because the
- * version becomes read-only the moment it is sent (FR-003).
+ * reload that says it discards the edits — never a silent overwrite. "Send to
+ * member" saves pending edits first, then `POST …/version/send`, behind a
+ * confirmation because the version becomes read-only the moment it is sent
+ * (FR-003).
+ *
+ * Focus (UX review H2): Save, Send and the test copy turn unavailable while
+ * they hold focus, so they are `focusableWhenDisabled` (`aria-disabled`), never
+ * natively `disabled` — that drops focus to `<body>`. A FAILED send closes its
+ * dialog onto what needs fixing: the field the refusal names (the body's own
+ * error line, since the editor exposes no focus handle), Reload on a conflict,
+ * or the form-level line. Each refusal renders under its field (§ 4.1), is
+ * cleared at the start of every request so a repeat is announced again, and
+ * is the ONLY channel for it — no toast on top.
  *
  * The page mounts this island with `key={updatedAt}`, so a reload after a
  * conflict remounts it from the server's current copy.
  */
-import { useDeferredValue, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Loader2Icon, Save, Send } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useFormatter, useLocale, useTranslations } from 'next-intl';
@@ -53,6 +63,7 @@ import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-fram
 import { SubjectCounter, SUBJECT_MAX_LENGTH } from '@/components/broadcast/compose/subject-counter';
 import { useComposeDirtyGuard } from '@/components/broadcast/compose/use-compose-dirty-guard';
 import { approvalErrorMessage, readRouteError, type RouteError } from './approval-error';
+import { InlineError } from './inline-error';
 import { TestCopyButton } from './test-copy-button';
 
 const TiptapEditor = loadTiptapEditor<{
@@ -75,12 +86,25 @@ const SUBJECT_COUNTER_ID = 'eblast-format-subject-counter';
 const BODY_LABEL_ID = 'eblast-format-body-label';
 const NOTE_ID = 'eblast-format-note';
 const NOTE_HELP_ID = 'eblast-format-note-help';
-const ERROR_ID = 'eblast-format-error';
+/** One error line per field, directly under it (§ 4.1); `null` = the end of the form. */
+const ERROR_IDS = {
+  subject: 'eblast-format-subject-error',
+  body: 'eblast-format-body-error',
+  note: 'eblast-format-note-error',
+  form: 'eblast-format-error',
+} as const;
 /** `CardTitle`'s type, on a real heading: the shadcn `CardTitle` is a `<div>` (not in the SR heading tree). */
 const CARD_HEADING = 'font-heading text-base leading-snug font-medium';
+/** Footer buttons wrap their label below `sm` rather than overflow a 320 px screen (SV runs long). */
+const FOOTER_BUTTON = 'max-sm:h-auto max-sm:min-h-9 max-sm:whitespace-normal';
 
 /** Which field a refusal belongs to, so the message lands where the problem is. */
 type ErrorField = 'subject' | 'body' | 'note' | null;
+/** Where focus goes when a send fails: the refused field, or Reload on a conflict. */
+type FailFocus = ErrorField | 'conflict';
+type SaveOutcome =
+  | { readonly kind: 'saved' | 'conflict' | 'stale' }
+  | { readonly kind: 'refused'; readonly field: ErrorField };
 
 const BODY_CODES: ReadonlySet<string> = new Set([
   'unsafe_content',
@@ -142,8 +166,39 @@ export function FormattedVersionWorkspace({
   const [sendOpen, setSendOpen] = useState(false);
 
   const sendTriggerRef = useRef<HTMLButtonElement>(null);
+  const reloadRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef(false);
-  const sendFinalFocus = useDialogFinalFocus(sendTriggerRef, undefined, closedViaSuccessRef);
+  const failFocusRef = useRef<FailFocus | undefined>(undefined);
+  const triggerFinalFocus = useDialogFinalFocus(sendTriggerRef, undefined, closedViaSuccessRef);
+  // Read at close, from a ref (a value captured in state would be stale by
+  // then): a failed send sets `failFocusRef` in the same commit that renders
+  // the error line and closes the dialog, so the target exists once the close
+  // has committed. Focus it ourselves after Base UI's own microtask and answer
+  // `false` ("move nothing") — Base UI returns focus only to a TABBABLE node,
+  // and an error line is focusable, not tabbable.
+  const sendFinalFocus = useCallback((): HTMLElement | false | null => {
+    const target = failFocusRef.current;
+    if (target === undefined) return triggerFinalFocus();
+    failFocusRef.current = undefined;
+    queueMicrotask(() => {
+      queueMicrotask(() => {
+        const el =
+          target === 'conflict'
+            ? reloadRef.current
+            : document.getElementById(
+                target === 'subject' ? SUBJECT_ID : target === 'note' ? NOTE_ID : ERROR_IDS[target ?? 'form'],
+              );
+        el?.focus();
+      });
+    });
+    return false;
+  }, [triggerFinalFocus]);
+
+  // M6 — the conflict notice takes focus when it appears (a failed Save leaves
+  // focus on Save otherwise, and Reload is the only way forward).
+  useEffect(() => {
+    if (conflict) reloadRef.current?.focus();
+  }, [conflict]);
 
   const busy = saving || sending;
   const guard = useComposeDirtyGuard(
@@ -153,8 +208,8 @@ export function FormattedVersionWorkspace({
   const dirty = guard.dirty || note !== savedNote;
   const deferredBody = useDeferredValue(bodyHtml);
 
-  /** One save. Resolves true when the copy on the server now equals the screen. */
-  async function save(): Promise<boolean> {
+  /** One save; the copy on the server equals the screen only on `saved`. */
+  async function save(): Promise<SaveOutcome> {
     const snapshot = { subject, bodyHtml };
     const noteToMember = note.trim() === '' ? null : note;
     const res = await fetch(`/api/admin/broadcasts/${broadcastId}/version`, {
@@ -174,28 +229,29 @@ export function FormattedVersionWorkspace({
       if (typeof body.version?.updatedAt === 'string') setToken(body.version.updatedAt);
       guard.markSaved(snapshot);
       setSavedNote(note);
-      setError(null);
-      return true;
+      return { kind: 'saved' };
     }
     const refusal = await readRouteError(res);
     if (refusal.code === 'version_changed') {
       setConflict(true);
-      return false;
+      return { kind: 'conflict' };
     }
     if (refusal.code === 'stage_changed' || refusal.code === 'broadcast_not_found') {
       toast.error(approvalErrorMessage(tErrors, refusal.code));
       router.refresh();
-      return false;
+      return { kind: 'stale' };
     }
-    setError({ message: approvalErrorMessage(tErrors, refusal.code), field: fieldOf(refusal) });
-    return false;
+    const field = fieldOf(refusal);
+    setError({ message: approvalErrorMessage(tErrors, refusal.code), field });
+    return { kind: 'refused', field };
   }
 
   async function onSave(): Promise<void> {
-    if (busy) return;
+    if (busy || !dirty) return;
     setSaving(true);
+    setError(null);
     try {
-      if (await save()) toast.success(t('saved'));
+      if ((await save()).kind === 'saved') toast.success(t('saved'));
     } catch {
       setError({ message: approvalErrorMessage(tErrors, null), field: null });
     } finally {
@@ -203,13 +259,32 @@ export function FormattedVersionWorkspace({
     }
   }
 
+  /** Close the send dialog onto what needs fixing (see `sendFinalFocus`). */
+  function closeSendOnto(target: FailFocus): void {
+    failFocusRef.current = target;
+    setSendOpen(false);
+  }
+
   async function onSend(): Promise<void> {
     if (busy) return;
     setSending(true);
+    setError(null);
     try {
-      if (dirty && !(await save())) {
-        setSendOpen(false);
-        return;
+      if (dirty) {
+        const outcome = await save();
+        if (outcome.kind === 'stale') {
+          closedViaSuccessRef.current = true;
+          setSendOpen(false);
+          return;
+        }
+        if (outcome.kind === 'conflict') {
+          closeSendOnto('conflict');
+          return;
+        }
+        if (outcome.kind === 'refused') {
+          closeSendOnto(outcome.field);
+          return;
+        }
       }
       const res = await fetch(`/api/admin/broadcasts/${broadcastId}/version/send`, {
         method: 'POST',
@@ -224,27 +299,39 @@ export function FormattedVersionWorkspace({
       }
       const refusal = await readRouteError(res);
       const message = approvalErrorMessage(tErrors, refusal.code);
-      setSendOpen(false);
       if (res.status === 409 && refusal.code === 'stage_changed') {
+        closedViaSuccessRef.current = true;
+        setSendOpen(false);
         toast.error(message);
         router.refresh();
         return;
       }
+      if (refusal.code === 'version_changed') {
+        setConflict(true);
+        closeSendOnto('conflict');
+        return;
+      }
       // Content refusals keep the version editable: say so where the problem is.
-      setError({ message, field: fieldOf(refusal) });
-      toast.error(message);
+      const field = fieldOf(refusal);
+      setError({ message, field });
+      closeSendOnto(field);
     } catch {
-      setSendOpen(false);
-      toast.error(approvalErrorMessage(tErrors, null));
+      setError({ message: approvalErrorMessage(tErrors, null), field: null });
+      closeSendOnto(null);
     } finally {
       setSending(false);
     }
   }
 
+  const errorFor = (field: ErrorField): string | null => (error !== null && error.field === field ? error.message : null);
   const describedBy = (field: Exclude<ErrorField, null>, base?: string): string | undefined => {
-    const ids = [base, error?.field === field ? ERROR_ID : undefined].filter(Boolean);
+    const ids = [base, error?.field === field ? ERROR_IDS[field] : undefined].filter(Boolean);
     return ids.length > 0 ? ids.join(' ') : undefined;
   };
+  const subjectError = errorFor('subject');
+  const bodyError = errorFor('body');
+  const noteError = errorFor('note');
+  const formError = errorFor(null);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
@@ -267,7 +354,13 @@ export function FormattedVersionWorkspace({
               <InlineAlertTitle>{t('conflictTitle')}</InlineAlertTitle>
               <InlineAlertDescription className="space-y-2">
                 <span className="block">{t('conflictBody')}</span>
-                <Button type="button" variant="outline" onClick={() => router.refresh()}>
+                <Button
+                  ref={reloadRef}
+                  type="button"
+                  variant="outline"
+                  className={FOOTER_BUTTON}
+                  onClick={() => router.refresh()}
+                >
                   {t('reload')}
                 </Button>
               </InlineAlertDescription>
@@ -285,10 +378,11 @@ export function FormattedVersionWorkspace({
                 setSubject(e.target.value);
                 if (error?.field === 'subject') setError(null);
               }}
-              aria-invalid={error?.field === 'subject' || undefined}
+              aria-invalid={subjectError !== null || undefined}
               aria-describedby={describedBy('subject', SUBJECT_COUNTER_ID)}
             />
             <SubjectCounter id={SUBJECT_COUNTER_ID} value={subject} />
+            {subjectError !== null ? <InlineError id={ERROR_IDS.subject} message={subjectError} /> : null}
           </div>
 
           <div className="space-y-2">
@@ -301,12 +395,13 @@ export function FormattedVersionWorkspace({
               }}
               disabled={busy}
               labelledById={BODY_LABEL_ID}
-              invalid={error?.field === 'body'}
-              {...(error?.field === 'body' ? { describedById: ERROR_ID } : {})}
+              invalid={bodyError !== null}
+              {...(bodyError !== null ? { describedById: ERROR_IDS.body } : {})}
               imagesEnabled={imagesEnabled}
               draftId={broadcastId}
               imageUploadUrl={`/api/admin/broadcasts/${broadcastId}/images`}
             />
+            {bodyError !== null ? <InlineError id={ERROR_IDS.body} message={bodyError} /> : null}
           </div>
 
           <div className="space-y-2">
@@ -321,23 +416,23 @@ export function FormattedVersionWorkspace({
                 setNote(e.target.value);
                 if (error?.field === 'note') setError(null);
               }}
-              aria-invalid={error?.field === 'note' || undefined}
+              aria-invalid={noteError !== null || undefined}
               aria-describedby={describedBy('note', NOTE_HELP_ID)}
             />
             <p id={NOTE_HELP_ID} className="text-xs text-muted-foreground">
               {t('noteHelp', { count: note.length, max: NOTE_TO_MEMBER_MAX })}
             </p>
+            {noteError !== null ? <InlineError id={ERROR_IDS.note} message={noteError} /> : null}
           </div>
 
-          {error !== null ? (
-            <p id={ERROR_ID} role="alert" className="text-sm text-destructive">
-              {error.message}
-            </p>
-          ) : null}
+          {formError !== null ? <InlineError id={ERROR_IDS.form} message={formError} /> : null}
 
-          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          {/* DOM order = visual order = Tab order at every width: the footer
+              stacks top-to-bottom below `sm` and runs left-to-right above it. */}
+          <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {guard.savedAt !== null ? (
-              <p className="text-xs text-muted-foreground sm:mr-auto" aria-live="polite">
+              // Not a live region: the save's toast is the one announcement.
+              <p className="text-xs text-muted-foreground sm:mr-auto">
                 {t('savedAt', { time: format.dateTime(guard.savedAt, { hour: '2-digit', minute: '2-digit' }) })}
               </p>
             ) : null}
@@ -347,12 +442,15 @@ export function FormattedVersionWorkspace({
               subject={subject}
               bodyHtml={bodyHtml}
               disabled={busy}
+              className={FOOTER_BUTTON}
             />
             <Button
               type="button"
               variant="outline"
               data-testid="eblast-format-save"
+              className={FOOTER_BUTTON}
               disabled={busy || !dirty}
+              focusableWhenDisabled
               aria-busy={saving || undefined}
               onClick={() => {
                 void onSave();
@@ -369,9 +467,13 @@ export function FormattedVersionWorkspace({
               ref={sendTriggerRef}
               type="button"
               data-testid="eblast-send-to-member"
+              className={FOOTER_BUTTON}
               disabled={busy || conflict}
+              focusableWhenDisabled
               onClick={() => {
+                if (busy || conflict) return;
                 closedViaSuccessRef.current = false;
+                failFocusRef.current = undefined;
                 setSendOpen(true);
               }}
             >
@@ -404,7 +506,7 @@ export function FormattedVersionWorkspace({
           if (!sending) setSendOpen(next);
         }}
       >
-        <AlertDialogContent className="max-w-lg" finalFocus={sendFinalFocus}>
+        <AlertDialogContent finalFocus={sendFinalFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>{tSend('title')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -417,6 +519,7 @@ export function FormattedVersionWorkspace({
             <AlertDialogAction
               data-testid="eblast-send-to-member-confirm"
               disabled={sending}
+              focusableWhenDisabled
               aria-busy={sending || undefined}
               onClick={(e) => {
                 e.preventDefault();

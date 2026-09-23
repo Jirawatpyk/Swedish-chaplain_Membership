@@ -322,3 +322,64 @@ describe('isTerminatedAllowedRoute (route-matching table)', () => {
     expect(LAPSED_PORTAL_ALLOWED_PREFIXES.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * F119 T074 (spec § Edge Cases) — a lapsed member may still OPEN their own
+ * E-Blast and DECIDE on a pending version (approve, request changes, withdraw)
+ * or cancel it: reading and deciding are not benefit actions. The exemption is
+ * EXACT-PATH, anchored on a UUID `[id]` segment, so every benefit-consuming
+ * sibling under `/api/broadcasts/**` stays refused.
+ */
+describe('isTerminatedAllowedRoute — the F119 E-Blast sign-off exemption (T074)', () => {
+  const ID = '0f3c9a2e-5b1d-4c7e-9a8b-2d4e6f8a0b1c';
+
+  it.each([
+    [`/api/broadcasts/${ID}/decision`, true],
+    [`/api/broadcasts/${ID}/cancel`, true],
+    [`/api/broadcasts/${ID}`, true],
+    [`/api/broadcasts/${ID}/versions`, true],
+    [`/portal/broadcasts/${ID}`, true],
+    [`/portal/broadcasts/${ID}?from=email`, true],
+    [`/api/broadcasts/${ID.toUpperCase()}/decision`, true],
+    // Benefit-consuming siblings stay refused.
+    ['/api/broadcasts/submit', false],
+    ['/api/broadcasts/inline-image-upload', false],
+    ['/api/broadcasts/preview', false],
+    ['/api/broadcasts/test-copy', false],
+    ['/api/broadcasts/quota', false],
+    ['/api/broadcasts/recipient-count', false],
+    ['/api/broadcasts/draft', false],
+    [`/api/broadcasts/draft/${ID}`, false],
+    [`/api/broadcasts/templates/${ID}/started`, false],
+    ['/portal/broadcasts/new', false],
+    ['/portal/broadcasts', false],
+    // Anchoring: a non-UUID segment, a trailing segment, a suffix, a prefix.
+    ['/api/broadcasts/not-a-uuid/decision', false],
+    [`/api/broadcasts/${ID}/decision/extra`, false],
+    [`/api/broadcasts/${ID}/decision-evil`, false],
+    [`/api/broadcasts/${ID}x/decision`, false],
+    [`/api/broadcasts/${ID}/images`, false],
+    [`/x/api/broadcasts/${ID}/decision`, false],
+    [`/portal/broadcasts/${ID}/edit`, false],
+  ])('isTerminatedAllowedRoute(%s) === %s', (path, expected) => {
+    expect(isTerminatedAllowedRoute(path)).toBe(expected);
+  });
+
+  it("a lapsed member's decision POST passes the gate; their submit is still refused and audited", async () => {
+    const { deps, emitMock } = fakeDeps({ cycle: buildCycle() });
+    const decision = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: `/api/broadcasts/${ID}/decision`,
+      action: 'POST',
+    });
+    expect(decision).toEqual({ allowed: true, reason: 'route_whitelisted' });
+    expect(emitMock).not.toHaveBeenCalled();
+
+    const submit = await checkPortalAccess(deps, { ...baseCtx, pathname: '/api/broadcasts/submit', action: 'POST' });
+    expect(submit.allowed).toBe(false);
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'lapsed_member_action_blocked',
+      payload: { blocked_route: '/api/broadcasts/submit' },
+    });
+  });
+});

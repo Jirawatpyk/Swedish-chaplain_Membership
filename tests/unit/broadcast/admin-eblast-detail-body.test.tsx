@@ -31,6 +31,7 @@ import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitize
 import { emailTemplateRenderer } from '@/modules/broadcasts/infrastructure/resend/email-template-renderer';
 import { renderBroadcastPreview } from '@/modules/broadcasts/application/use-cases/render-broadcast-preview';
 import { canCancel } from '@/modules/broadcasts/domain/policies/cancel-cutoff-policy';
+import { canTransition } from '@/modules/broadcasts/domain/policies/broadcast-status-transitions';
 
 vi.mock('next/link', () => ({
   default: ({ children }: { children?: ReactNode }) => children as ReactElement,
@@ -62,8 +63,14 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
   CancelBroadcastAction: () => <div data-testid="cancel-action" />,
 }));
+// F119 B1 — the marker surfaces which half of the pair the page asked for.
 vi.mock('@/components/broadcast/admin/review-actions', () => ({
-  ReviewActions: () => <div data-testid="review-actions" />,
+  ReviewActions: (p: { showApprove?: boolean; showReject?: boolean }) => (
+    <div data-testid="review-actions">
+      {p.showApprove === true ? <span data-testid="approve-action" /> : null}
+      {p.showReject === true ? <span data-testid="reject-action" /> : null}
+    </div>
+  ),
 }));
 vi.mock('@/components/broadcast/admin/audit-timeline', () => ({
   AuditTimeline: () => null,
@@ -99,6 +106,11 @@ const renderBroadcastPreviewMock = vi.fn();
 // F119 T051 — the page gates Cancel on the Domain `canCancel`; the real
 // policy, not a copy of its rule.
 vi.mock('@/modules/broadcasts', async () => ({
+  canTransition: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/policies/broadcast-status-transitions')>(
+      '@/modules/broadcasts/domain/policies/broadcast-status-transitions',
+    )
+  ).canTransition,
   canCancel: (
     await vi.importActual<typeof import('@/modules/broadcasts/domain/policies/cancel-cutoff-policy')>(
       '@/modules/broadcasts/domain/policies/cancel-cutoff-policy',
@@ -209,24 +221,27 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
     expect(html).toContain(SUBJECT);
     // The body is never shown at all on this path.
     expect(html).not.toContain('data-testid="preview-surface"');
-    // Staff must not sign off on content the server could not render.
-    expect(html).not.toContain('data-testid="review-actions"');
+    // Staff must not sign off on content the server could not render —
+    // though they may still refuse it (Reject is not a sign-off).
+    expect(html).not.toContain('data-testid="approve-action"');
+    expect(html).toContain('data-testid="reject-action"');
   });
 
   it('a submitted broadcast that renders keeps its Approve / Reject actions', async () => {
     const html = await renderPage();
-    expect(html).toContain('data-testid="review-actions"');
+    expect(html).toContain('data-testid="approve-action"');
+    expect(html).toContain('data-testid="reject-action"');
     // Positive control for the case below: the Cancel slot does render.
     expect(html).toContain('data-testid="cancel-action"');
   });
 
   /**
-   * F119 T051 — the five 0305 stages must not inherit today's CTAs. Approve /
-   * Reject stay `submitted`-only (the approval-round actions are their own
-   * tasks), and Cancel follows the Domain `canCancel` — the same policy the
-   * `/cancel` use case enforces — so the button can never offer what the
-   * server would refuse. Derived, not hard-coded: T081 widens the policy and
-   * this keeps holding.
+   * F119 T051 + B1 — the five 0305 stages must not inherit today's Approve:
+   * it is approve-AS-SUBMITTED, so it stays `submitted`-only. Reject follows
+   * the Domain `canTransition(status, 'rejected')` (T081 widened it), and
+   * Cancel the Domain `canCancel` — the same policies the `/reject` and
+   * `/cancel` use cases enforce — so a button can never offer what the server
+   * would refuse. Derived, not hard-coded.
    */
   it.each([
     'in_design',
@@ -234,10 +249,11 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
     'changes_requested',
     'member_approved',
     'expired_no_member_response',
-  ] as const)('%s shows no Approve / Reject, and Cancel only if canCancel admits it', async (status) => {
+  ] as const)('%s shows no Approve, Reject only if canTransition admits it, Cancel only if canCancel does', async (status) => {
     findByIdMock.mockResolvedValue(makeBroadcast({ status }));
     const html = await renderPage();
-    expect(html).not.toContain('data-testid="review-actions"');
+    expect(html).not.toContain('data-testid="approve-action"');
+    expect(html.includes('data-testid="reject-action"')).toBe(canTransition(status, 'rejected'));
     expect(html.includes('data-testid="cancel-action"')).toBe(canCancel(status));
   });
 

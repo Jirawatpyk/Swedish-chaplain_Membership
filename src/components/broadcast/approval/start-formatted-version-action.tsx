@@ -6,14 +6,26 @@
  * `POST /api/admin/broadcasts/[id]/version` → 201, then the page refreshes
  * into `in_design` with the writing tool open. The server page decides
  * WHETHER this control exists (the flag affordance on `submitted`, the
- * stage, the round, `broadcasts.write`); this island only performs it.
+ * stage, the round, `broadcasts.write`) and what starting COSTS from its
+ * stage (`confirm`); this island only performs it.
  *
- * Starting from `member_approved` / `approved` VOIDS the member's approval
- * and clears any confirmed send time (contract step 5, spec § Edge Cases
- * "Marketing edits after the member approved") — irreversible from here, so
- * that path asks first. From `submitted` / `changes_requested` nothing is
- * lost (the member was told at submission that marketing may format it,
- * FR-001), so it runs on the click.
+ *   - `voids_approval` (from `member_approved` / `approved` after a round):
+ *     starting withdraws the member's approval and clears any confirmed send
+ *     time (contract step 5, spec § Edge Cases "Marketing edits after the
+ *     member approved") — irreversible from here, so it asks first, in the
+ *     destructive voice.
+ *   - `leaves_submitted` (from `submitted`, UX review M3): the approve-as-
+ *     submitted path ends — the member must approve the formatted version —
+ *     so it asks first, without alarm. Approve is that stage's primary action,
+ *     so this one is the secondary (`outline`) button.
+ *   - `none` (from `changes_requested`): nothing is lost, and starting the
+ *     next version is the stage's primary action, so it runs on the click.
+ *
+ * A refusal that keeps the confirmation open is said inside it (`role="alert"`,
+ * cleared at the start of each request so a repeat is announced) — a toast
+ * renders outside the modal, which hides everything outside itself from AT
+ * (H1). The trigger turns unavailable while it holds focus, so it is
+ * `focusableWhenDisabled` (H2).
  *
  * Focus: on success the trigger unmounts with the stage, so the shared
  * resolver lands on `#main-content`; on Cancel/ESC it returns to the trigger.
@@ -36,30 +48,38 @@ import {
 import { Button } from '@/components/ui/button';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { approvalErrorMessage, readErrorCode } from './approval-error';
+import { InlineError } from './inline-error';
+
+/** What starting a formatted version costs from the page's stage — and so whether it asks first. */
+export type StartConfirm = 'none' | 'leaves_submitted' | 'voids_approval';
 
 export interface StartFormattedVersionActionProps {
   readonly broadcastId: string;
-  /** True from `member_approved` / `approved`: starting voids that approval. */
-  readonly voidsApproval: boolean;
-  /** The round the member approved — named in the confirmation. */
+  readonly confirm: StartConfirm;
+  /** The round the member approved — named in the `voids_approval` confirmation. */
   readonly round: number;
 }
 
 export function StartFormattedVersionAction({
   broadcastId,
-  voidsApproval,
+  confirm,
   round,
 }: StartFormattedVersionActionProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approval.start');
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
+  const asks = confirm !== 'none';
+  const voids = confirm === 'voids_approval';
 
   function start(): void {
+    if (pending) return;
+    setDialogError(null);
     startTransition(async () => {
       try {
         const res = await fetch(`/api/admin/broadcasts/${broadcastId}/version`, {
@@ -73,16 +93,21 @@ export function StartFormattedVersionAction({
           router.refresh();
           return;
         }
-        const code = await readErrorCode(res);
-        toast.error(approvalErrorMessage(tErrors, code));
+        const message = approvalErrorMessage(tErrors, await readErrorCode(res));
         if (res.status === 409 || res.status === 404) {
           // The stage moved (or the entry closed) under the page — refresh it.
           closedViaSuccessRef.current = true;
           setConfirmOpen(false);
+          toast.error(message);
           router.refresh();
+          return;
         }
+        if (asks) setDialogError(message);
+        else toast.error(message);
       } catch {
-        toast.error(approvalErrorMessage(tErrors, null));
+        const message = approvalErrorMessage(tErrors, null);
+        if (asks) setDialogError(message);
+        else toast.error(message);
       }
     });
   }
@@ -93,13 +118,17 @@ export function StartFormattedVersionAction({
         ref={triggerRef}
         type="button"
         data-testid="eblast-start-version"
-        variant={voidsApproval ? 'outline' : 'default'}
+        variant={asks ? 'outline' : 'default'}
         disabled={pending}
+        focusableWhenDisabled
         aria-busy={pending || undefined}
         onClick={() => {
+          if (pending) return;
           closedViaSuccessRef.current = false;
-          if (voidsApproval) setConfirmOpen(true);
-          else start();
+          if (asks) {
+            setDialogError(null);
+            setConfirmOpen(true);
+          } else start();
         }}
       >
         {pending && !confirmOpen ? (
@@ -109,23 +138,26 @@ export function StartFormattedVersionAction({
         )}
         {t('button')}
       </Button>
-      {voidsApproval ? (
+      {asks ? (
         <AlertDialog
           open={confirmOpen}
           onOpenChange={(next) => {
             if (!pending) setConfirmOpen(next);
           }}
         >
-          <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
+          <AlertDialogContent finalFocus={finalFocus}>
             <AlertDialogHeader>
-              <AlertDialogTitle>{t('voidTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('voidBody', { round })}</AlertDialogDescription>
+              <AlertDialogTitle>{voids ? t('voidTitle') : t('submittedTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{voids ? t('voidBody', { round }) : t('submittedBody')}</AlertDialogDescription>
             </AlertDialogHeader>
+            {dialogError !== null ? <InlineError id="eblast-start-version-error" message={dialogError} /> : null}
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>{t('voidCancel')}</AlertDialogCancel>
+              <AlertDialogCancel disabled={pending}>{voids ? t('voidCancel') : t('submittedCancel')}</AlertDialogCancel>
               <AlertDialogAction
-                variant="destructive"
+                data-testid="eblast-start-version-confirm"
+                variant={voids ? 'destructive' : 'default'}
                 disabled={pending}
+                focusableWhenDisabled
                 aria-busy={pending || undefined}
                 onClick={(e) => {
                   e.preventDefault();
@@ -133,7 +165,7 @@ export function StartFormattedVersionAction({
                 }}
               >
                 {pending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
-                {t('voidConfirm')}
+                {voids ? t('voidConfirm') : t('submittedConfirm')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

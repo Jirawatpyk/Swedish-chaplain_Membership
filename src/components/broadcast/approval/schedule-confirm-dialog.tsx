@@ -25,8 +25,17 @@
  * E-Blast schedule surface advertises. Focus returns to the trigger on close;
  * on success the page refreshes and the trigger may unmount, so the shared
  * resolver skips it and lands on `#main-content` (WCAG 2.4.3).
+ *
+ * UX review: a refusal that keeps the dialog open (a 422 other than too-soon,
+ * a 429, a 5xx, a network failure) is said INSIDE it (`role="alert"`) — a
+ * toast renders outside the modal, which hides everything outside itself from
+ * AT (H1) — and the line is cleared at the start of every request so a repeat
+ * is announced again. A too-soon refusal focuses the picker (M4). The
+ * "differs" callout sits in a live region that is mounted from the start, so
+ * its appearance is announced (M4). Submit is `focusableWhenDisabled`: it
+ * turns unavailable while it holds focus (H2).
  */
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { CalendarClock, Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
@@ -53,9 +62,13 @@ import {
 } from '@/components/broadcast/bangkok-datetime';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { approvalErrorMessage, readErrorCode } from './approval-error';
+import { InlineError } from './inline-error';
 
 /** The route's floor (`approve-broadcast.ts` / `confirm-schedule.ts`). */
 const MIN_LEAD_MS = 5 * 60 * 1000;
+
+const WHEN_ID = 'schedule-confirm-when';
+const PROPOSAL_ID = 'schedule-confirm-proposal';
 
 export type ScheduleConfirmStatus = 'member_approved' | 'approved';
 export type ScheduleConfirmMode = 'keep_proposal' | 'schedule' | 'send_now' | 'cancel';
@@ -89,6 +102,7 @@ export function ScheduleConfirmAction({
 }: ScheduleConfirmActionProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approval.schedule');
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
+  const tStatus = useTranslations('admin.broadcasts.queue.status');
   const locale = useLocale();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -97,12 +111,25 @@ export function ScheduleConfirmAction({
   const [minWhen, setMinWhen] = useState('');
   const [proposalUsable, setProposalUsable] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef(false);
+  const focusWhenRef = useRef(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
 
-  const modes = SCHEDULE_MODES_BY_STATUS[status];
+  // M4 — a too-soon refusal makes the picker the answer: focus it once it is
+  // mounted and no longer inside the `pending`-disabled fieldset.
+  useEffect(() => {
+    if (!focusWhenRef.current || pending) return;
+    const when = document.getElementById(WHEN_ID);
+    if (when === null) return;
+    focusWhenRef.current = false;
+    when.focus();
+  }, [pending, fieldError, mode]);
+
+  // The keep option exists only when there is a proposal to keep.
+  const modes = SCHEDULE_MODES_BY_STATUS[status].filter((m) => m !== 'keep_proposal' || proposedSendAt !== null);
   const isChange = status === 'approved';
 
   const fmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
@@ -126,6 +153,8 @@ export function ScheduleConfirmAction({
     setWhen(isChange && isAtLeastFiveMinutesAway(scheduledFor, now) ? isoToBangkokInput(scheduledFor) : '');
     setMinWhen(bangkokMinInputAfterMinutes(6));
     setFieldError(null);
+    setFormError(null);
+    focusWhenRef.current = false;
     setOpen(true);
   }
 
@@ -143,10 +172,13 @@ export function ScheduleConfirmAction({
   function onConfirm(): void {
     if (submitDisabled) return;
     if (mode === 'schedule' && (chosenIso === null || Date.parse(chosenIso) < Date.now() + MIN_LEAD_MS)) {
+      focusWhenRef.current = true;
       setFieldError(t('tooSoon'));
       return;
     }
     const body = mode === 'schedule' ? { mode, scheduledFor: chosenIso } : { mode };
+    // Cleared first, so a repeated refusal mounts a NEW alert and is announced.
+    setFormError(null);
     startTransition(async () => {
       try {
         const res = await fetch(`/api/admin/broadcasts/${broadcastId}/schedule`, {
@@ -167,6 +199,7 @@ export function ScheduleConfirmAction({
         if (res.status === 422 && code === 'broadcast_schedule_too_soon') {
           // The proposal (or the picked time) slipped under the floor while
           // the dialog was open: stay here, and make the picker the answer.
+          focusWhenRef.current = true;
           setProposalUsable(false);
           setMode('schedule');
           setFieldError(message);
@@ -180,9 +213,10 @@ export function ScheduleConfirmAction({
           router.refresh();
           return;
         }
-        toast.error(message);
+        // The dialog stays open: say it inside it (H1).
+        setFormError(message);
       } catch {
-        toast.error(approvalErrorMessage(tErrors, null));
+        setFormError(approvalErrorMessage(tErrors, null));
       }
     });
   }
@@ -212,12 +246,12 @@ export function ScheduleConfirmAction({
           if (!pending) setOpen(next);
         }}
       >
-        <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
+        <AlertDialogContent finalFocus={finalFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>{isChange ? t('titleChange') : t('title')}</AlertDialogTitle>
             <AlertDialogDescription>
               {isChange ? t('descriptionChange') : t('description')}
-              <span className="mt-2 block font-medium text-foreground" data-testid="schedule-confirm-proposal">
+              <span id={PROPOSAL_ID} className="mt-2 block font-medium text-foreground" data-testid="schedule-confirm-proposal">
                 {proposalLine}
               </span>
             </AlertDialogDescription>
@@ -235,27 +269,32 @@ export function ScheduleConfirmAction({
               disabled={pending}
               className="space-y-2"
             >
-              {modes.map((m) => (
-                <div key={m} className="flex items-center gap-2">
-                  <RadioGroupItem
-                    id={`schedule-mode-${m}`}
-                    data-testid={`schedule-mode-${m}`}
-                    value={m}
-                    aria-label={t(`mode.${m}`)}
-                    disabled={m === 'keep_proposal' && !proposalUsable}
-                  />
-                  <Label htmlFor={`schedule-mode-${m}`} className="cursor-pointer">
-                    {t(`mode.${m}`)}
-                  </Label>
-                </div>
-              ))}
+              {modes.map((m) => {
+                const unavailable = m === 'keep_proposal' && !proposalUsable;
+                return (
+                  <div key={m} className="flex items-center gap-2">
+                    {/* Named by its <Label htmlFor> alone; an unavailable keep
+                        option points at the proposal line that says why. */}
+                    <RadioGroupItem
+                      id={`schedule-mode-${m}`}
+                      data-testid={`schedule-mode-${m}`}
+                      value={m}
+                      disabled={unavailable}
+                      {...(unavailable ? { 'aria-describedby': PROPOSAL_ID } : {})}
+                    />
+                    <Label htmlFor={`schedule-mode-${m}`} className="cursor-pointer">
+                      {t(`mode.${m}`)}
+                    </Label>
+                  </div>
+                );
+              })}
             </RadioGroup>
 
             {mode === 'schedule' ? (
               <div className="ml-6 space-y-2">
-                <Label htmlFor="schedule-confirm-when">{t('whenLabel')}</Label>
+                <Label htmlFor={WHEN_ID}>{t('whenLabel')}</Label>
                 <Input
-                  id="schedule-confirm-when"
+                  id={WHEN_ID}
                   data-testid="schedule-confirm-when"
                   type="datetime-local"
                   required
@@ -278,26 +317,28 @@ export function ScheduleConfirmAction({
 
             {mode === 'cancel' ? (
               <p className="text-sm text-muted-foreground" data-testid="schedule-confirm-cancel-hint">
-                {t('cancelHint')}
+                {t('cancelHint', { stage: tStatus('changes_requested') })}
               </p>
             ) : null}
 
-            {fieldError !== null ? (
-              <p id="schedule-confirm-when-error" role="alert" className="text-sm text-destructive">
-                {fieldError}
-              </p>
-            ) : null}
+            {fieldError !== null ? <InlineError id="schedule-confirm-when-error" message={fieldError} /> : null}
 
-            {differs && proposedSendAt !== null ? (
-              <p
-                data-testid="schedule-confirm-differs"
-                role="status"
-                className="rounded-md border border-warning/30 bg-warning-surface px-3 py-2 text-sm text-warning"
-              >
-                {t('differs', { time: formatIso(proposedSendAt) })}
-              </p>
-            ) : null}
+            {/* Mounted from the start and only its content swaps: a live
+                region that mounts WITH its text is not announced (M4). */}
+            <div role="status" aria-live="polite">
+              {differs && proposedSendAt !== null ? (
+                <p
+                  data-testid="schedule-confirm-differs"
+                  className="rounded-md border border-warning/30 bg-warning-surface px-3 py-2 text-sm text-warning"
+                >
+                  {t('differs', { time: formatIso(proposedSendAt) })}
+                </p>
+              ) : null}
+            </div>
           </fieldset>
+          {formError !== null ? (
+            <InlineError id="schedule-confirm-error" data-testid="schedule-confirm-error" message={formError} />
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="schedule-confirm-cancel" disabled={pending}>
               {t('close')}
@@ -305,6 +346,7 @@ export function ScheduleConfirmAction({
             <AlertDialogAction
               data-testid="schedule-confirm-submit"
               disabled={submitDisabled}
+              focusableWhenDisabled
               aria-busy={pending || undefined}
               onClick={(e) => {
                 e.preventDefault();

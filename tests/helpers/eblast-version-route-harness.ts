@@ -74,6 +74,13 @@ export interface HarnessMemberSession {
   userId: string;
   memberId: string;
   contactId: string;
+  /**
+   * T074 — hand a MEMBER session to the REAL `requireMemberContext` too, so
+   * its `checkPortalAccess` gate runs. The suite that sets it must `vi.mock`
+   * the two reads that gate makes (`@/modules/members/members-deps`,
+   * `@/lib/portal-access-deps`); unset, a member resolves to `memberCtx()`.
+   */
+  realGate?: boolean;
 }
 
 interface Harness {
@@ -197,7 +204,9 @@ export async function memberContextMock() {
   const actual = await vi.importActual<typeof import('@/lib/member-context')>('@/lib/member-context');
   return {
     requireMemberContext: async (request: NextRequest) =>
-      harness.member.role === 'member' ? memberCtx() : actual.requireMemberContext(request),
+      harness.member.role === 'member' && harness.member.realGate !== true
+        ? memberCtx()
+        : actual.requireMemberContext(request),
   };
 }
 

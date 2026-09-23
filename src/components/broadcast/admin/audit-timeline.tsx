@@ -130,7 +130,8 @@ export async function AuditTimeline({
       aria-label={t('title')}
       className="rounded-md border bg-muted/20 p-4"
     >
-      <h3 className="mb-3 text-sm font-semibold">{t('title')}</h3>
+      {/* h2: the detail page's only caller outlines every section at h2. */}
+      <h2 className="mb-3 text-sm font-semibold">{t('title')}</h2>
       {events.length === 0 ? (
         <p className="text-xs text-muted-foreground">—</p>
       ) : (

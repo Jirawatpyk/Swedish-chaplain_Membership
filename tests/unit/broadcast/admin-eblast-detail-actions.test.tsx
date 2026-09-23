@@ -64,11 +64,17 @@ vi.mock('@/components/ui/relative-time', () => ({ RelativeTime: () => <time /> }
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
   CancelBroadcastAction: () => <div data-testid="cancel-action" />,
 }));
+// F119 B1 — the marker surfaces which half of the pair the page asked for.
 vi.mock('@/components/broadcast/admin/review-actions', () => ({
-  ReviewActions: () => <div data-testid="review-actions" />,
+  ReviewActions: (p: { showApprove?: boolean; showReject?: boolean }) => (
+    <div data-testid="review-actions">
+      {p.showApprove === true ? <span data-testid="approve-action" /> : null}
+      {p.showReject === true ? <span data-testid="reject-action" /> : null}
+    </div>
+  ),
 }));
 vi.mock('@/components/broadcast/approval/start-formatted-version-action', () => ({
-  StartFormattedVersionAction: () => <div data-testid="start-version" />,
+  StartFormattedVersionAction: (p: { confirm: string }) => <div data-testid="start-version" data-confirm={p.confirm} />,
 }));
 vi.mock('@/components/broadcast/approval/schedule-confirm-dialog', () => ({
   ScheduleConfirmAction: () => <div data-testid="confirm-schedule" />,
@@ -100,8 +106,12 @@ vi.mock('@/modules/broadcasts', async () => {
   const turn = await vi.importActual<typeof import('@/modules/broadcasts/domain/stage/whose-turn')>(
     '@/modules/broadcasts/domain/stage/whose-turn',
   );
+  const transitions = await vi.importActual<
+    typeof import('@/modules/broadcasts/domain/policies/broadcast-status-transitions')
+  >('@/modules/broadcasts/domain/policies/broadcast-status-transitions');
   return {
     canCancel: cutoff.canCancel,
+    canTransition: transitions.canTransition,
     stageOf: stage.stageOf,
     turnOf: turn.turnOf,
     isEblastMemberApprovalEnabled: () => flagOn,
@@ -151,6 +161,8 @@ function makeBroadcast(over: Record<string, unknown> = {}) {
   };
 }
 
+let decisions: Array<Record<string, unknown>> = [];
+
 /** The thread for a stage: in_design carries an unsent working copy. */
 function threadFor(status: string, round: number) {
   const working = { ...V1, versionNo: round + 1, sentToMemberAt: null };
@@ -165,7 +177,7 @@ function threadFor(status: string, round: number) {
       memberOriginal: { version: V0, authoredByName: null },
       sentVersions: round >= 1 ? [{ version: V1, authoredByName: 'Marketing' }] : [],
       workingCopy: status === 'in_design' ? { version: working, authoredByName: 'Marketing' } : null,
-      decisions: [],
+      decisions,
       approvedAsSubmitted: null,
     },
   };
@@ -193,6 +205,7 @@ describe('F119 T063 — the staff detail page action controls', () => {
     vi.clearAllMocks();
     role = 'admin';
     flagOn = true;
+    decisions = [];
     warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
   });
 
@@ -222,7 +235,41 @@ describe('F119 T063 — the staff detail page action controls', () => {
     flagOn = false;
     const html = await renderPage('submitted');
     expect(has(html, 'start-version')).toBe(false);
-    expect(has(html, 'review-actions')).toBe(true);
+    expect(has(html, 'approve-action')).toBe(true);
+    expect(has(html, 'reject-action')).toBe(true);
+  });
+
+  /**
+   * F119 B1 — T081 widened reject to every pre-send stage but `approved`
+   * (which has no rejected edge). Approve here is approve-AS-SUBMITTED, so it
+   * stays `submitted`-only; Reject follows the Domain `canTransition`.
+   */
+  it.each([
+    ['in_design', 0],
+    ['awaiting_member_approval', 1],
+    ['changes_requested', 1],
+    ['member_approved', 1],
+  ] as const)('%s → Reject is offered, Approve is not', async (status, round) => {
+    const html = await renderPage(status, round);
+    expect(has(html, 'reject-action')).toBe(true);
+    expect(has(html, 'approve-action')).toBe(false);
+  });
+
+  it.each([
+    ['approved', 0],
+    ['approved', 1],
+  ] as const)('%s (round %s) → neither Approve nor Reject (no rejected edge)', async (status, round) => {
+    const html = await renderPage(status, round);
+    expect(has(html, 'reject-action')).toBe(false);
+    expect(has(html, 'approve-action')).toBe(false);
+    expect(has(html, 'review-actions')).toBe(false);
+  });
+
+  it('a manager is offered neither half on any stage that could reject (absent, not disabled)', async () => {
+    role = 'manager';
+    for (const [status, round] of [['submitted', 0], ['awaiting_member_approval', 1], ['member_approved', 1]] as const) {
+      expect(has(await renderPage(status, round), 'review-actions'), status).toBe(false);
+    }
   });
 
   it('submitted + flag on → Start button', async () => {
@@ -273,6 +320,80 @@ describe('F119 T063 — the staff detail page action controls', () => {
     flagOn = on;
     warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: false, unsafeImages: [] } });
     expect(has(await renderPage(status, round), 'eblast-warning-no-portal-user')).toBe(true);
+  });
+
+  /** M3 — what starting costs from each stage, which is what the island asks (or not) before it posts. */
+  it.each([
+    ['submitted', 0, 'leaves_submitted'],
+    ['changes_requested', 1, 'none'],
+    ['member_approved', 1, 'voids_approval'],
+    ['approved', 1, 'voids_approval'],
+  ] as const)('%s (round %s) → Start asks: %s', async (status, round, confirm) => {
+    expect(await renderPage(status, round)).toContain(`data-confirm="${confirm}"`);
+  });
+
+  /** M1 — the standing warnings are persistent page content, not live announcements. */
+  it('the standing warnings are notes, not status live regions', async () => {
+    warningsMock.mockResolvedValue({
+      ok: true,
+      value: { hasPortalUser: false, unsafeImages: [{ src: 'https://evil.example/x.png', reason: 'not_allowlisted' }] },
+    });
+    const html = await renderPage('changes_requested', 1);
+    for (const testId of ['eblast-warning-no-portal-user', 'eblast-warning-unsafe-images']) {
+      const tag = html.slice(html.lastIndexOf('<div', html.indexOf(`data-testid="${testId}"`)), html.indexOf(`data-testid="${testId}"`));
+      expect(tag, testId).toContain('role="note"');
+    }
+    expect(html).not.toContain('role="status" data-testid="eblast-warning');
+  });
+
+  /** M2 — "Not sent to the member yet" only where a version could still be sent. */
+  it('approved as submitted (round 0) does not claim the E-Blast is "not sent to the member yet"', async () => {
+    const html = await renderPage('approved', 0);
+    expect(html).not.toContain('roundNone');
+    expect(html).toContain('roundNoRound');
+  });
+
+  it('submitted with the flag off shows no Round row (there is no approval round to speak of)', async () => {
+    flagOn = false;
+    expect(has(await renderPage('submitted'), 'eblast-round')).toBe(false);
+  });
+
+  it('submitted with the flag on, and in_design, keep "not sent to the member yet"', async () => {
+    expect(await renderPage('submitted')).toContain('roundNone');
+    expect(await renderPage('in_design')).toContain('roundNone');
+  });
+
+  /** LOW — an empty sentinel is muted, and "whose turn" names nobody for AT. */
+  it('nobody\'s turn → a muted dash for sight and a word for AT', async () => {
+    const html = await renderPage('approved', 0);
+    const cell = html.slice(html.indexOf('data-testid="eblast-whose-turn"'), html.indexOf('</dd>', html.indexOf('data-testid="eblast-whose-turn"')));
+    expect(cell).toContain('<span aria-hidden="true" class="text-muted-foreground">—</span>');
+    expect(cell).toContain('<span class="sr-only">turnValue.none</span>');
+  });
+
+  /** FR-011 follow-up — marketing edits with the member's latest reason in view (T085 replaces this). */
+  it.each([
+    ['changes_requested', 1, 'changes_requested', 'changesRequestedTitle'],
+    ['changes_requested', 1, 'approval_withdrawn', 'withdrawnTitle'],
+    ['in_design', 1, 'changes_requested', 'changesRequestedTitle'],
+  ] as const)('%s (round %s) after a %s decision → the latest reason, read-only, as a note', async (status, round, decision, title) => {
+    decisions = [
+      { id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: null, decidedAt: new Date('2026-09-21T08:00:00Z') },
+      { id: 'd1', versionId: V1.id, round: 1, decision, reason: 'The date in the heading is wrong', decidedAt: new Date('2026-09-22T08:00:00Z') },
+    ];
+    const html = await renderPage(status, round);
+    const at = html.indexOf('data-testid="eblast-member-feedback"');
+    expect(at).toBeGreaterThan(-1);
+    expect(html.slice(html.lastIndexOf('<div', at), at)).toContain('role="note"');
+    expect(html).toContain('The date in the heading is wrong');
+    expect(html).toContain(title);
+  });
+
+  it('no member feedback note when the latest decision was an approval (or there is none)', async () => {
+    decisions = [{ id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: 'Looks good', decidedAt: new Date('2026-09-21T08:00:00Z') }];
+    expect(has(await renderPage('changes_requested', 1), 'eblast-member-feedback')).toBe(false);
+    decisions = [];
+    expect(has(await renderPage('changes_requested', 1), 'eblast-member-feedback')).toBe(false);
   });
 
   it('in_design whose thread cannot be read → an explicit alert, never the record body as if nothing were wrong', async () => {

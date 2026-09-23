@@ -10,6 +10,11 @@
  * here to choose. `broadcastId` / `versionId` only reference the audit row.
  * The route allows 10 per user per hour; a 429 reads as the localised
  * rate-limit line, never a raw code.
+ *
+ * `focusableWhenDisabled` (UX review H2): the button turns unavailable while it
+ * holds focus (its own request, or the workspace's save / send), and a native
+ * `disabled` would drop focus to `<body>`; `aria-disabled` keeps it, and the
+ * handler refuses the click itself.
  */
 import { useTransition } from 'react';
 import { Loader2Icon, MailCheck } from 'lucide-react';
@@ -25,6 +30,7 @@ export interface TestCopyButtonProps {
   readonly subject: string;
   readonly bodyHtml: string;
   readonly disabled?: boolean;
+  readonly className?: string;
 }
 
 export function TestCopyButton({
@@ -33,6 +39,7 @@ export function TestCopyButton({
   subject,
   bodyHtml,
   disabled = false,
+  className,
 }: TestCopyButtonProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approval.testCopy');
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
@@ -40,6 +47,7 @@ export function TestCopyButton({
   const [pending, startTransition] = useTransition();
 
   function send(): void {
+    if (disabled || pending) return;
     startTransition(async () => {
       try {
         const res = await fetch('/api/admin/broadcasts/test-copy', {
@@ -70,8 +78,10 @@ export function TestCopyButton({
       type="button"
       variant="outline"
       data-testid="eblast-test-copy"
+      className={className}
       onClick={send}
       disabled={disabled || pending}
+      focusableWhenDisabled
       aria-busy={pending || undefined}
     >
       {pending ? (

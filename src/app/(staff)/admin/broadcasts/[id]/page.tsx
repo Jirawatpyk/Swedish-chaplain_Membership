@@ -19,6 +19,7 @@ import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-fram
 import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
 import {
   canCancel,
+  canTransition,
   isEblastMemberApprovalEnabled,
   isF71aUs2Enabled,
   listBroadcastVersions,
@@ -31,6 +32,7 @@ import {
   type BroadcastVersion,
   type BroadcastVersionThread,
   type FormattingWarnings,
+  type MemberDecision,
 } from '@/modules/broadcasts';
 import {
   makeListBroadcastVersionsDeps,
@@ -81,6 +83,7 @@ export default async function AdminBroadcastDetailPage({
   const tHeader = await getTranslations('admin.broadcasts.approval.header');
   const tWarnings = await getTranslations('admin.broadcasts.approval.warnings');
   const tContent = await getTranslations('admin.broadcasts.approval.content');
+  const tFeedback = await getTranslations('admin.broadcasts.approval.feedback');
   const session = await requirePagePermission('broadcasts.read');
   // 016 re-review D — evaluator-derived, never ROLE_BUNDLES: a `manager` holds
   // `broadcasts.read` only, so every action control below is ABSENT for them
@@ -124,7 +127,8 @@ export default async function AdminBroadcastDetailPage({
     getDateFormatLocale(locale),
     { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' },
   );
-  const formatDate = (d: Date | null): string => (d !== null ? fmt.format(d) : '—');
+  const notSet = <EmptyValue label={tHeader('notSet')} />;
+  const formatDate = (d: Date | null): React.ReactNode => (d !== null ? fmt.format(d) : notSet);
 
   // ROUND-3 #2 — the approver reads the DOCUMENT THAT SHIPS: every body on
   // this page goes through `renderBroadcastDetailBody` (the shared renderer
@@ -192,13 +196,40 @@ export default async function AdminBroadcastDetailPage({
   const shownPreview =
     shownVersion === null || showWorkspace ? null : await render(shownVersion.subject, shownVersion.bodyHtml);
   const showSchedule = canSend && (status === 'member_approved' || (status === 'approved' && round >= 1));
+  // M3 — what starting a version costs from this stage, so the island asks
+  // (or not) before it posts: from `submitted` it ends approve-as-submitted.
+  const startConfirm = status === 'submitted' ? 'leaves_submitted' : voidsApproval ? 'voids_approval' : 'none';
   // F119 T051 — Cancel reads the Domain cut-off (`canCancel`), the same policy
-  // the `/cancel` use case enforces; Approve / Reject stay `submitted`-only.
+  // the `/cancel` use case enforces. B1 — Approve is approve-AS-SUBMITTED, so
+  // it stays `submitted`-only (and refuses content the server could not
+  // render, IMP-3); Reject follows the Domain edge T081 widened
+  // (`canTransition(status, 'rejected')` — every pre-send stage but
+  // `approved`), which is what the `/reject` use case enforces.
   const isCancellable = canCancel(status);
-  const showReview = canWrite && status === 'submitted' && !bodyRenderFailed;
+  const showApprove = canWrite && status === 'submitted' && !bodyRenderFailed;
+  const showReject = canWrite && canTransition(status, 'rejected');
+  const showReview = showApprove || showReject;
   const showActionRow = canWrite && (isCancellable || showReview || showStart || showSchedule);
 
   const turn = turnOf(status);
+  // M2 — the Round row speaks only where a round exists or can still start:
+  // with the flag off, `submitted` has no formatting round (FR-034 — "behave
+  // as today"). At round 0, "not sent to the member yet" is true only while
+  // a version can still be sent (`submitted`, `in_design`); an E-Blast
+  // approved as submitted, rejected or cancelled at round 0 had no round.
+  const showRoundRow = !(status === 'submitted' && !memberApprovalOn);
+  const roundValue: React.ReactNode =
+    round >= 1
+      ? String(round)
+      : status === 'submitted' || status === 'in_design'
+        ? tHeader('roundNone')
+        : <EmptyValue label={tHeader('roundNoRound')} />;
+  // FR-011 (interim until T085's thread) — marketing formats the next version
+  // with the member's latest reason in view. Only a request for changes or a
+  // withdrawn approval carries one; an approval (or a staff-cancelled time)
+  // leaves nothing to act on.
+  const memberFeedback =
+    (status === 'changes_requested' || status === 'in_design') ? latestChangeRequest(thread) : null;
 
   return (
     <DetailContainer>
@@ -208,7 +239,7 @@ export default async function AdminBroadcastDetailPage({
         title={broadcast.subject}
         subtitle={`${memberDisplayName} · ${t('subtitle')}`}
         badge={
-          <span role="status" aria-live="polite">
+          <span role="status" aria-live="polite" className="inline-flex max-w-full min-w-0">
             <StatusBadge status={status} />
           </span>
         }
@@ -222,7 +253,7 @@ export default async function AdminBroadcastDetailPage({
         </InlineAlert>
       ) : null}
       {showNoPortalUser ? (
-        <InlineAlert tone="warning" role="status" data-testid="eblast-warning-no-portal-user">
+        <InlineAlert tone="warning" role="note" data-testid="eblast-warning-no-portal-user">
           <InlineAlertTitle>{tWarnings('noPortalUserTitle')}</InlineAlertTitle>
           <InlineAlertDescription>
             {tWarnings('noPortalUserBody', { company: memberDisplayName })}
@@ -230,7 +261,7 @@ export default async function AdminBroadcastDetailPage({
         </InlineAlert>
       ) : null}
       {unsafeImages.length > 0 ? (
-        <InlineAlert tone="warning" role="status" data-testid="eblast-warning-unsafe-images">
+        <InlineAlert tone="warning" role="note" data-testid="eblast-warning-unsafe-images">
           <InlineAlertTitle>{tWarnings('unsafeImagesTitle')}</InlineAlertTitle>
           <InlineAlertDescription>
             <span className="block">{tWarnings('unsafeImagesBody')}</span>
@@ -262,7 +293,7 @@ export default async function AdminBroadcastDetailPage({
             <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field
                 label={tHeader('turn')}
-                value={tHeader(`turnValue.${turn ?? 'none'}`)}
+                value={turn === null ? <EmptyValue label={tHeader('turnValue.none')} /> : tHeader(`turnValue.${turn}`)}
                 testId="eblast-whose-turn"
               />
               <div>
@@ -273,11 +304,7 @@ export default async function AdminBroadcastDetailPage({
                   <RelativeTime iso={broadcast.stageEnteredAt.toISOString()} title={fmt.format(broadcast.stageEnteredAt)} />
                 </dd>
               </div>
-              <Field
-                label={tHeader('round')}
-                value={round >= 1 ? String(round) : tHeader('roundNone')}
-                testId="eblast-round"
-              />
+              {showRoundRow ? <Field label={tHeader('round')} value={roundValue} testId="eblast-round" /> : null}
               <Field label={tHeader('proposedSendAt')} value={formatDate(broadcast.proposedSendAt)} />
               <Field label={t('fields.scheduledFor')} value={formatDate(broadcast.scheduledFor)} />
             </dl>
@@ -308,6 +335,19 @@ export default async function AdminBroadcastDetailPage({
           </CardContent>
         </Card>
       </section>
+
+      {memberFeedback !== null ? (
+        <InlineAlert tone="info" role="note" data-testid="eblast-member-feedback">
+          <InlineAlertTitle>
+            {tFeedback(memberFeedback.decision === 'approval_withdrawn' ? 'withdrawnTitle' : 'changesRequestedTitle', {
+              version: thread?.sentVersions.find((e) => e.version.id === memberFeedback.versionId)?.version.versionNo ?? memberFeedback.round,
+            })}
+          </InlineAlertTitle>
+          <InlineAlertDescription>
+            <span className="block whitespace-pre-line break-words text-foreground">{memberFeedback.reason}</span>
+          </InlineAlertDescription>
+        </InlineAlert>
+      ) : null}
 
       {showWorkspace && workingCopy !== null && original !== null && originalPreview !== null ? (
         // The writing tool, with the member's original beside it read-only.
@@ -385,7 +425,7 @@ export default async function AdminBroadcastDetailPage({
             <CancelBroadcastAction broadcastId={broadcastId} surface="admin" subject={broadcast.subject} />
           ) : null}
           {showStart ? (
-            <StartFormattedVersionAction broadcastId={broadcastId} voidsApproval={voidsApproval} round={round} />
+            <StartFormattedVersionAction broadcastId={broadcastId} confirm={startConfirm} round={round} />
           ) : null}
           {showSchedule ? (
             <ScheduleConfirmAction
@@ -395,7 +435,9 @@ export default async function AdminBroadcastDetailPage({
               scheduledFor={broadcast.scheduledFor?.toISOString() ?? null}
             />
           ) : null}
-          {showReview ? <ReviewActions broadcastId={broadcastId} /> : null}
+          {showReview ? (
+            <ReviewActions broadcastId={broadcastId} showApprove={showApprove} showReject={showReject} />
+          ) : null}
         </div>
       ) : null}
     </DetailContainer>
@@ -418,6 +460,13 @@ async function readThread(
     'broadcasts.detail_page.thread_read_failed',
   );
   return null;
+}
+
+/** The member's latest decision when it asked for changes (or withdrew an approval) with a reason. */
+function latestChangeRequest(thread: BroadcastVersionThread | null): MemberDecision | null {
+  const latest = thread?.decisions.at(-1) ?? null;
+  if (latest === null || latest.decision === 'approved' || latest.reason === null) return null;
+  return latest;
 }
 
 /** The version the member approved, else the latest one sent to them. */
@@ -487,13 +536,23 @@ function ContentCard({
   );
 }
 
+/** An empty value: a muted dash for sight (the empty sentinel), a word for AT. */
+function EmptyValue({ label }: { readonly label: string }): React.ReactElement {
+  return (
+    <>
+      <span aria-hidden="true" className="text-muted-foreground">—</span>
+      <span className="sr-only">{label}</span>
+    </>
+  );
+}
+
 function Field({
   label,
   value,
   testId,
 }: {
   readonly label: string;
-  readonly value: string;
+  readonly value: React.ReactNode;
   readonly testId?: string;
 }): React.ReactElement {
   // B1 UX hardening — `<dl>` parent, so each Field is a `<div>` wrapping

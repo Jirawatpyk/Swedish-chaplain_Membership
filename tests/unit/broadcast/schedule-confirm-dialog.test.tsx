@@ -16,8 +16,9 @@
  * `finalFocus` names the trigger.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+import { toast } from 'sonner';
 import enMessages from '@/i18n/messages/en.json';
 import { ScheduleConfirmAction } from '@/components/broadcast/approval/schedule-confirm-dialog';
 
@@ -31,8 +32,25 @@ beforeEach(() => {
   // The shared setup installs fake timers; Base UI's focus return and
   // `waitFor` both need real ones.
   vi.useRealTimers();
+  vi.mocked(toast.error).mockReset();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const tSchedule = enMessages.admin.broadcasts.approval.schedule;
+const tErrors = enMessages.admin.broadcasts.approval.errors;
+const refusal = (status: number, code: string) =>
+  new Response(JSON.stringify({ error: { code, message: code } }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+async function chooseSendNow(): Promise<void> {
+  fireEvent.click(document.querySelector('label[for="schedule-mode-send_now"]')!);
+  await waitFor(() => expect(mode('send_now')).toHaveAttribute('aria-checked', 'true'));
+}
 
 function renderAction(props: {
   status: 'member_approved' | 'approved';
@@ -76,7 +94,11 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     const when = screen.getByTestId('schedule-confirm-when');
     expect(when).toBeRequired();
     expect(when).toHaveValue('');
-    expect(screen.getByTestId('schedule-confirm-submit')).toBeDisabled();
+    // H2 — unavailable, but still focusable (`aria-disabled`, never native `disabled`).
+    expect(screen.getByTestId('schedule-confirm-submit')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('schedule-confirm-submit')).not.toHaveAttribute('disabled');
+    // LOW — the unavailable keep option says why: it points at the proposal line.
+    expect(mode('keep_proposal')).toHaveAttribute('aria-describedby', 'schedule-confirm-proposal');
   });
 
   it('a proposal still far enough away IS pre-selected (positive control)', async () => {
@@ -89,7 +111,7 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
 
     expect(mode('keep_proposal')).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByTestId('schedule-confirm-when')).toBeNull();
-    expect(screen.getByTestId('schedule-confirm-submit')).toBeEnabled();
+    expect(screen.getByTestId('schedule-confirm-submit')).toHaveAttribute('aria-disabled', 'false');
     // Nothing differs while the member's own time is kept.
     expect(screen.queryByTestId('schedule-confirm-differs')).toBeNull();
   });
@@ -118,6 +140,107 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
 
     for (const m of offered) expect(mode(m)).not.toBeNull();
     for (const m of refused) expect(mode(m)).toBeNull();
+  });
+
+  it('M4: the "differs" live region is mounted (empty) from the start, so the callout is ANNOUNCED when it appears', async () => {
+    renderAction({
+      status: 'member_approved',
+      proposedSendAt: new Date(Date.now() + 2 * HOUR_MS).toISOString(),
+    });
+    open();
+    const dialog = await screen.findByRole('alertdialog');
+    const region = within(dialog).getByRole('status');
+    expect(region).toHaveTextContent('');
+
+    await chooseSendNow();
+    await waitFor(() => expect(region).toHaveTextContent(/not the member.s proposed time/));
+    expect(within(dialog).getByRole('status')).toBe(region);
+  });
+
+  it('LOW: with no proposal the keep option is not offered at all', async () => {
+    renderAction({ status: 'member_approved', proposedSendAt: null });
+    open();
+    await screen.findByRole('alertdialog');
+    expect(mode('keep_proposal')).toBeNull();
+    expect(mode('schedule')).not.toBeNull();
+  });
+
+  it('LOW: a radio is named by its <label> alone (no competing aria-label)', async () => {
+    renderAction({ status: 'approved', proposedSendAt: null });
+    open();
+    await screen.findByRole('alertdialog');
+    expect(mode('send_now')).not.toHaveAttribute('aria-label');
+  });
+
+  it.each([
+    [429, 'broadcast_rate_limit_exceeded', tErrors.broadcast_rate_limit_exceeded],
+    [422, 'image_source_not_allowlisted', tErrors.image_source_not_allowlisted],
+    [500, 'internal_error', tErrors.internal_error],
+  ] as const)(
+    'H1: a %s refusal is said INSIDE the dialog (role=alert), not by a toast the modal hides',
+    async (status, code, text) => {
+      vi.stubGlobal('fetch', vi.fn(async () => refusal(status, code)));
+      renderAction({ status: 'approved', proposedSendAt: null });
+      open();
+      const dialog = await screen.findByRole('alertdialog');
+      await chooseSendNow();
+      fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+
+      const alert = await within(dialog).findByRole('alert');
+      expect(alert).toHaveTextContent(text);
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(screen.getByRole('alertdialog')).toBe(dialog);
+    },
+  );
+
+  it('H1: a repeated refusal is a NEW alert node (cleared at the start of each request), so it is announced again', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => refusal(429, 'broadcast_rate_limit_exceeded')));
+    renderAction({ status: 'approved', proposedSendAt: null });
+    open();
+    const dialog = await screen.findByRole('alertdialog');
+    await chooseSendNow();
+
+    fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+    const first = await within(dialog).findByRole('alert');
+    // The alert lands before the transition settles; a click while still
+    // `pending` is (correctly) refused, so wait for the button to come back.
+    await waitFor(() => expect(screen.getByTestId('schedule-confirm-submit')).toHaveAttribute('aria-disabled', 'false'));
+    fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+    await waitFor(() => expect(within(dialog).getByRole('alert')).not.toBe(first));
+  });
+
+  it('H1: a network failure is said inside the dialog too', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('offline');
+      }),
+    );
+    renderAction({ status: 'approved', proposedSendAt: null });
+    open();
+    const dialog = await screen.findByRole('alertdialog');
+    await chooseSendNow();
+    fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(tErrors.generic);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('M4: a 422 too_soon from the route moves focus to the time picker', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => refusal(422, 'broadcast_schedule_too_soon')));
+    renderAction({
+      status: 'member_approved',
+      proposedSendAt: new Date(Date.now() + 2 * HOUR_MS).toISOString(),
+    });
+    open();
+    await screen.findByRole('alertdialog');
+    const submit = screen.getByTestId('schedule-confirm-submit');
+    submit.focus();
+    fireEvent.click(submit);
+
+    const when = await screen.findByTestId('schedule-confirm-when');
+    await waitFor(() => expect(document.activeElement).toBe(when));
+    expect(when).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(tSchedule.tooSoon)).toBeInTheDocument();
   });
 
   it('focus returns to the trigger on close', async () => {

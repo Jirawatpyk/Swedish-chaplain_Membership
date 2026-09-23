@@ -3352,13 +3352,15 @@
           "detailsTitle": "Inskick",
           "turn": "Vems tur",
           "turnValue": {
-            "marketing": "Marknad",
+            "marketing": "Marketing",
             "member": "Medlem",
-            "none": "—"
+            "none": "Ingen"
           },
           "timeInStage": "Tid i steget",
           "round": "Runda",
           "roundNone": "Inte skickat till medlemmen än",
+          "roundNoRound": "Ingen godkännanderunda",
+          "notSet": "Inte angivet",
           "proposedSendAt": "Medlemmens föreslagna tid"
         },
         "warnings": {
@@ -3377,48 +3379,56 @@
           "originalHint": "Skrivskyddat — sparat exakt som medlemmen skickade in det.",
           "workingCopyTitle": "Formaterad version {version} (arbetskopia)",
           "sentVersionTitle": "Version {version} skickad till medlemmen",
-          "noteLabel": "Meddelande till medlemmen",
+          "noteLabel": "Anteckning till medlemmen",
           "threadUnavailableTitle": "Versionshistoriken kunde inte läsas in",
           "threadUnavailableBody": "Arbetskopian och medlemmens original visas inte, och ingen formatering är möjlig förrän sidan har läst in dem. Uppdatera sidan om en stund."
+        },
+        "feedback": {
+          "changesRequestedTitle": "Medlemmen begärde ändringar i version {version}",
+          "withdrawnTitle": "Medlemmen drog tillbaka sitt godkännande av version {version}"
         },
         "workspace": {
           "title": "Formaterad version {version}",
           "description": "Redigera ämnet och meddelandet. Mottagarna är de som medlemmen valde.",
           "subjectLabel": "Ämne",
           "bodyLabel": "Meddelande",
-          "noteLabel": "Meddelande till medlemmen (valfritt)",
+          "noteLabel": "Anteckning till medlemmen (valfritt)",
           "noteHelp": "Visas för medlemmen bredvid den här versionen. {count} / {max} tecken.",
           "save": "Spara",
           "saved": "Versionen har sparats.",
           "savedAt": "Sparad {time}",
           "conflictTitle": "Någon annan har ändrat den här versionen",
           "conflictBody": "En annan personalanvändare sparade versionen efter att du öppnade den. Dina ändringar har inte sparats. Ladda om för att se den aktuella versionen.",
-          "reload": "Ladda om"
+          "reload": "Ladda om (dina ändringar försvinner)"
         },
         "send": {
           "button": "Skicka till medlemmen",
           "title": "Skicka den här versionen till medlemmen?",
-          "body": "Medlemmen får ett e-postmeddelande och ombeds godkänna den. När versionen har skickats kan den inte längre redigeras.",
+          "body": "Medlemmen kommer att få ett e-postmeddelande och ombeds godkänna den. När versionen har skickats kan den inte längre redigeras.",
           "savesFirst": "Dina osparade ändringar sparas först.",
           "cancel": "Fortsätt redigera",
           "confirm": "Skicka till medlemmen",
           "sent": "Versionen har skickats till medlemmen för godkännande."
         },
         "testCopy": {
-          "button": "Skicka ett testexemplar till mig",
+          "button": "Skicka ett test till mig",
           "sent": "Testexemplaret har skickats till din e-postadress."
         },
         "start": {
-          "button": "Börja formatera version",
-          "voidTitle": "Börja en ny formaterad version?",
+          "button": "Starta en formaterad version",
+          "voidTitle": "Starta en ny formaterad version?",
           "voidBody": "Medlemmen godkände runda {round}. En ny version drar tillbaka det godkännandet och tar bort en bekräftad sändningstid. Medlemmen måste godkänna igen.",
           "voidCancel": "Behåll godkännandet",
-          "voidConfirm": "Börja ny version",
+          "voidConfirm": "Starta ny version",
+          "submittedTitle": "Starta en formaterad version?",
+          "submittedBody": "Du kan då inte längre godkänna det som inskickat; medlemmen måste godkänna den formaterade versionen.",
+          "submittedCancel": "Behåll som inskickat",
+          "submittedConfirm": "Starta en formaterad version",
           "started": "Formateringen har påbörjats."
         },
         "schedule": {
-          "button": "Bekräfta schemat",
-          "buttonChange": "Ändra schemat",
+          "button": "Bekräfta sändningstid",
+          "buttonChange": "Ändra sändningstid",
           "title": "Bekräfta sändningstiden",
           "titleChange": "Ändra sändningstiden",
           "description": "Medlemmen har godkänt det här E-Blast-utskicket. Välj när det skickas; medlemmen får veta den slutliga tiden.",
@@ -3433,15 +3443,15 @@
             "send_now": "Skicka nu",
             "cancel": "Avbryt den bekräftade tiden"
           },
-          "whenLabel": "Skicka (Bangkok-tid)",
-          "whenHelp": "Minst 5 minuter från nu. Tiderna anges i Bangkok-tid (UTC+7).",
-          "cancelHint": "Utskicket skickas inte. Det går tillbaka till marknad som \"Ändringar begärda av medlem\" tills en ny version har godkänts.",
+          "whenLabel": "Skickas kl. (Bangkoktid)",
+          "whenHelp": "Minst 5 minuter från nu. Tiderna anges i Bangkoktid (UTC+7).",
+          "cancelHint": "Utskicket skickas inte. Det går tillbaka till Marketing som ”{stage}” tills en ny version har godkänts.",
           "tooSoon": "Välj en tid minst 5 minuter från nu.",
           "differs": "Det här är inte medlemmens föreslagna tid ({time}). Medlemmen får veta om ändringen.",
           "close": "Stäng",
           "confirm": "Bekräfta",
           "confirmCancel": "Avbryt tiden",
-          "confirmed": "Sändningstiden är bekräftad. Medlemmen har meddelats.",
+          "confirmed": "Sändningstiden är bekräftad. Medlemmen kommer att meddelas.",
           "cancelled": "Den bekräftade sändningstiden har avbrutits."
         },
         "errors": {
@@ -3456,7 +3466,7 @@
           "broadcast_schedule_too_soon": "Välj en tid minst 5 minuter från nu.",
           "image_source_not_allowlisted": "En bild pekar på en värd som inte finns på listan över tillåtna bildkällor. Byt ut den och försök igen.",
           "unsafe_content": "Meddelandet innehåller innehåll som inte är tillåtet. Ta bort det och försök igen.",
-          "validation_error": "Kontrollera ämnet (högst 200 tecken), meddelandet (högst 200 KB) och meddelandet till medlemmen (högst 1 000 tecken).",
+          "validation_error": "Kontrollera ämnet (högst 200 tecken), meddelandet (högst 200 KB) och anteckningen till medlemmen (högst 1 000 tecken).",
           "cta_text_length": "Knapptexten måste vara 1–60 tecken.",
           "too_many_cta": "Ett meddelande kan ha högst 3 knappar.",
           "cta_link_scheme": "En knapp eller länk måste börja med http, https eller mailto.",

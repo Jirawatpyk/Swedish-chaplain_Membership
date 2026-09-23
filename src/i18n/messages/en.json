@@ -3354,11 +3354,13 @@
           "turnValue": {
             "marketing": "Marketing",
             "member": "Member",
-            "none": "—"
+            "none": "Nobody"
           },
           "timeInStage": "Time in stage",
           "round": "Round",
           "roundNone": "Not sent to the member yet",
+          "roundNoRound": "No approval round",
+          "notSet": "Not set",
           "proposedSendAt": "Member's proposed time"
         },
         "warnings": {
@@ -3381,6 +3383,10 @@
           "threadUnavailableTitle": "The version history could not be loaded",
           "threadUnavailableBody": "The working copy and the member's original are not shown, and no formatting action is available until the page loads them. Refresh the page in a moment."
         },
+        "feedback": {
+          "changesRequestedTitle": "The member asked for changes to version {version}",
+          "withdrawnTitle": "The member withdrew their approval of version {version}"
+        },
         "workspace": {
           "title": "Formatted version {version}",
           "description": "Edit the subject and the message. The audience stays the one the member chose.",
@@ -3393,12 +3399,12 @@
           "savedAt": "Saved at {time}",
           "conflictTitle": "Someone else changed this version",
           "conflictBody": "Another staff user saved this version after you opened it. Your edits were not saved. Reload to see the current version.",
-          "reload": "Reload"
+          "reload": "Reload (discards your edits)"
         },
         "send": {
           "button": "Send to member",
           "title": "Send this version to the member?",
-          "body": "The member is notified by email and asked to approve it. Once sent, this version can no longer be edited.",
+          "body": "The member will be notified by email and asked to approve it. Once sent, this version can no longer be edited.",
           "savesFirst": "Your unsaved changes are saved first.",
           "cancel": "Keep editing",
           "confirm": "Send to member",
@@ -3414,6 +3420,10 @@
           "voidBody": "The member approved round {round}. Starting a new version withdraws that approval and clears any confirmed send time. The member will have to approve again.",
           "voidCancel": "Keep the approval",
           "voidConfirm": "Start new version",
+          "submittedTitle": "Start a formatted version?",
+          "submittedBody": "You will no longer be able to approve it as submitted; the member must approve the formatted version.",
+          "submittedCancel": "Keep as submitted",
+          "submittedConfirm": "Start formatted version",
           "started": "Formatted version started."
         },
         "schedule": {
@@ -3435,13 +3445,13 @@
           },
           "whenLabel": "Send at (Bangkok time)",
           "whenHelp": "At least 5 minutes from now. Times are in Bangkok time (UTC+7).",
-          "cancelHint": "The E-Blast will not be sent. It returns to marketing as \"Changes requested by member\" until a new version is approved.",
+          "cancelHint": "The E-Blast will not be sent. It returns to marketing as “{stage}” until a new version is approved.",
           "tooSoon": "Choose a time at least 5 minutes from now.",
           "differs": "This is not the member's proposed time ({time}). The member will be told about the change.",
           "close": "Close",
           "confirm": "Confirm",
           "confirmCancel": "Cancel the time",
-          "confirmed": "Send time confirmed. The member has been notified.",
+          "confirmed": "Send time confirmed. The member will be notified.",
           "cancelled": "Confirmed send time cancelled."
         },
         "errors": {
