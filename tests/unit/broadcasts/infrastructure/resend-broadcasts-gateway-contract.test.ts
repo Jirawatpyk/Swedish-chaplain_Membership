@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { createResendContractFake } from '../../../support/broadcasts/resend-contract-fake';
 
 const fake = createResendContractFake();
@@ -34,7 +35,7 @@ describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
     await resendBroadcastsGateway.createBroadcast(
       input({
         htmlBody: '<p>hi</p><a data-eb="cta" href="https://x.example/">Go</a>',
-        brand: { primaryColor: '#b04a00', postalAddress: '1 Street', logoUrl: 'https://blob.example/l.png' },
+        brand: { primaryColor: '#b04a00' as BrandHexColor, postalAddress: '1 Street', logoUrl: 'https://blob.example/l.png' },
       }),
     );
     const html = fake.lastCreatedBroadcastHtml();

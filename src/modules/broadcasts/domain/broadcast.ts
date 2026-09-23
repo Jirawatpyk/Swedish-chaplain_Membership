@@ -13,11 +13,10 @@
 import { err, ok, type Result } from '@/lib/result';
 import type { BroadcastStatus } from './value-objects/broadcast-status';
 import type { BroadcastSegmentType } from './value-objects/segment-type';
+import { isUuid } from './value-objects/uuid';
 
 declare const BroadcastIdBrand: unique symbol;
 export type BroadcastId = string & { readonly [BroadcastIdBrand]: true };
-
-const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type BroadcastIdError = {
   readonly kind: 'invalid_broadcast_id';
@@ -42,7 +41,7 @@ export function asBroadcastId(raw: string): BroadcastId {
 export function parseBroadcastId(
   raw: string,
 ): Result<BroadcastId, BroadcastIdError> {
-  if (typeof raw !== 'string' || !RE_UUID.test(raw)) {
+  if (!isUuid(raw)) {
     return err({ kind: 'invalid_broadcast_id', raw });
   }
   return ok(raw as BroadcastId);

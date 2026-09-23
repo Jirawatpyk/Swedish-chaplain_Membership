@@ -143,7 +143,7 @@ export async function DELETE(
           // The session's role as held, never a literal stand-in
           // (`pnpm check:actor-role-truth`).
           actorRole: ctx.current.user.role ?? null,
-          relatedMemberId: ctx.memberId as unknown as string,
+          relatedMemberId: ctx.memberId,
         },
         tx,
       );

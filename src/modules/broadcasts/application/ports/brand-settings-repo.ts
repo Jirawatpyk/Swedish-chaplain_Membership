@@ -14,13 +14,14 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { TenantSlug } from '@/modules/tenants';
+import type { BrandHexColor } from '../../domain/brand/brand-settings';
 
 /** Opaque tx handle (see `ImageAllowlistTx` for why it stays `unknown`). */
 export type BrandSettingsTx = unknown;
 
 export interface BrandSettingsRecord {
   /** `#rrggbb` lower case, or null ⇒ the platform default applies at render. */
-  readonly primaryColor: string | null;
+  readonly primaryColor: BrandHexColor | null;
   /** ≤ 300 chars, LF line breaks; null ⇒ the footer shows the chamber name only. */
   readonly postalAddress: string | null;
   readonly updatedAt: Date | null;
@@ -28,7 +29,7 @@ export interface BrandSettingsRecord {
 }
 
 export interface BrandSettingsWrite {
-  readonly primaryColor: string | null;
+  readonly primaryColor: BrandHexColor | null;
   readonly postalAddress: string | null;
   readonly updatedByUserId: string;
 }

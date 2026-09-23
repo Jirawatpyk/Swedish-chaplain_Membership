@@ -13,6 +13,7 @@
  *   - p95 scan latency ≤500ms for ≤2 MB files (SC-005)
  */
 import { describe, expect, it } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
 import { makeClamavVirusScanner } from '@/modules/broadcasts/infrastructure/clamav-virus-scanner';
 import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo';
@@ -88,7 +89,7 @@ describe.skipIf(!hasClamAV)(
             actorUserId: 'user_test',
             actorEmail: 't@test.local',
             owner: { kind: 'broadcast', id: '11111111-1111-1111-1111-111111111111' },
-            actor: { role: 'member', memberId: '33333333-3333-3333-3333-333333333333' },
+            actor: { role: 'member', memberId: '33333333-3333-3333-3333-333333333333' as MemberId },
             requestId: 'req-eicar',
             fileBytes: Buffer.from(EICAR),
             filename: 'eicar.txt',
@@ -119,7 +120,7 @@ describe.skipIf(!hasClamAV)(
             actorUserId: 'user_test',
             actorEmail: 't@test.local',
             owner: { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' },
-            actor: { role: 'member', memberId: '33333333-3333-3333-3333-333333333333' },
+            actor: { role: 'member', memberId: '33333333-3333-3333-3333-333333333333' as MemberId },
             requestId: 'req-clean',
             fileBytes: PNG_HEADER,
             filename: 'pixel.png',

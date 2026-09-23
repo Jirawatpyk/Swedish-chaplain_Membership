@@ -15,6 +15,7 @@
 import { eq } from 'drizzle-orm';
 import { runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
+import type { BrandHexColor } from '../../domain/brand/brand-settings';
 import type {
   BrandSettingsRecord,
   BrandSettingsRepo,
@@ -37,7 +38,11 @@ function toRecord(row: {
   brandUpdatedByUserId: string | null;
 }): BrandSettingsRecord {
   return {
-    primaryColor: row.brandPrimaryColor,
+    // The ONE place a stored colour becomes a `BrandHexColor` without going
+    // through `parseBrandPrimaryColor`: the column's 0304 CHECK
+    // (`~ '^#[0-9a-fA-F]{6}$'`) guarantees the format of every row, and every
+    // write reaches it through `setBrandSettings`, which parses first.
+    primaryColor: row.brandPrimaryColor as BrandHexColor | null,
     postalAddress: row.brandPostalAddress,
     updatedAt: row.brandUpdatedAt,
     updatedByUserId: row.brandUpdatedByUserId,

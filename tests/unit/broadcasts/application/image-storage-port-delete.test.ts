@@ -94,7 +94,7 @@ describe('reclaimOrphanedImages', () => {
     expect(r.value).toEqual({ scanned: 1, blobsDeleted: 1, rowsRemoved: 1, retained: 0, rowsFailed: 0 });
     expect(deps.storage.delete).toHaveBeenCalledWith('broadcasts/images/tenant-swe/hash-a.png');
     expect(deps.imagesRepo.remove).toHaveBeenCalledWith(TENANT, 'img-a', 'tx-1');
-    const [, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(event).toMatchObject({
       eventType: 'broadcast_image_removed',
       tenantId: TENANT,
@@ -120,7 +120,7 @@ describe('reclaimOrphanedImages', () => {
     expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0, rowsFailed: 0 });
     expect(deps.storage.delete).not.toHaveBeenCalled();
     expect(deps.imagesRepo.remove).toHaveBeenCalledTimes(1);
-    const [, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(event).toMatchObject({
       summary: 'E-Blast image swept (blob kept — another live image row shares its content)',
       payload: { blob_deleted: false, blob_disposition: 'kept_shared_row' },
@@ -132,7 +132,7 @@ describe('reclaimOrphanedImages', () => {
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-2' });
     expect(r).toEqual({ ok: true, value: { scanned: 0, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 0 } });
     expect(deps.storage.delete).not.toHaveBeenCalled();
-    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.audit.emitTyped).not.toHaveBeenCalled();
   });
 
   it('the row is removed even when the blob delete throws (the blob is retried on the next tick, not the row twice)', async () => {
@@ -144,7 +144,7 @@ describe('reclaimOrphanedImages', () => {
     // The row stays so the sweep retries the delete tomorrow; nothing is audited yet.
     expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 1 });
     expect(deps.imagesRepo.remove).not.toHaveBeenCalled();
-    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.audit.emitTyped).not.toHaveBeenCalled();
   });
 
   it('F7-1: a row that throws is COUNTED and metered — an expired Blob token must not read as a clean tick', async () => {

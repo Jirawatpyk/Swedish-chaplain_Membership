@@ -58,9 +58,10 @@ import {
   type ImageStoragePort,
 } from '../ports/image-storage-port';
 import type { Hostname } from '../ports/image-allowlist-port';
-import type { AuditPort } from '../ports/audit-port';
+import type { AuditPort, F119ImageUploadMemberKey } from '../ports/audit-port';
 import type { BroadcastImageOwnerKind, BroadcastImagesRepo } from '../ports/broadcast-images-repo';
 import type { ImageReencoderPort } from '../ports/image-reencoder-port';
+import type { MemberId } from '@/modules/members';
 import type { TenantSlug } from '@/modules/tenants';
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -89,7 +90,7 @@ export interface UploadInlineImageDeps {
  * template) so it never refreshes the member's recency.
  */
 export type UploadInlineImageActor =
-  | { readonly role: 'member'; readonly memberId: string }
+  | { readonly role: 'member'; readonly memberId: MemberId }
   | { readonly role: string | null; readonly relatedMemberId: string | null };
 
 export interface UploadInlineImageInput {
@@ -572,11 +573,11 @@ async function recordImageInTx(
       },
       tx,
     );
-    const memberKey =
+    const memberKey: F119ImageUploadMemberKey =
       input.actor.role === 'member' && 'memberId' in input.actor
         ? { member_id: input.actor.memberId }
         : { related_member_id: 'relatedMemberId' in input.actor ? input.actor.relatedMemberId : null };
-    await deps.audit.emit(tx, {
+    await deps.audit.emitTyped(tx, {
       eventType: 'broadcast_image_uploaded',
       tenantId: input.tenantId,
       requestId: input.requestId,

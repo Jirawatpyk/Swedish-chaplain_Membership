@@ -55,8 +55,9 @@ import type { AudienceMode } from '../../domain/audience-mode';
 import { composeBroadcastFromName } from '../../domain/from-name';
 import {
   parseBlockMarkers,
+  hasBlockViolations,
   validateBlocks,
-  type BlockViolation,
+  type BlockViolations,
 } from '../../domain/design-blocks/block-markers';
 import {
   type EmailLower,
@@ -120,7 +121,7 @@ export type SubmitBroadcastError =
   // F119 FR-041 (security review F1-2) — the design-block bounds. Same kind
   // and shape as `SendTestCopyError` / `SaveDraftError` so all three surfaces
   // map through the one helper (`designBlockErrorResponse`).
-  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
+  | { readonly kind: 'content_rules'; readonly violations: BlockViolations }
   // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 + AS2 closure.
   // `validateImageSourceAllowlist` is invoked AFTER sanitizeHtml +
   // BEFORE persistence; non-allowlisted <img src> hosts surface here
@@ -572,7 +573,7 @@ export async function submitBroadcast(
   // and reusing `broadcast_body_unsafe_html` would state something untrue of
   // the body (audit-truth invariant). The submit-funnel counter carries it.
   const blockViolations = validateBlocks(parseBlockMarkers(sanitised.value.sanitisedHtml));
-  if (blockViolations.length > 0) {
+  if (hasBlockViolations(blockViolations)) {
     broadcastsMetrics.submitPreconditionBlocked(deps.tenant.slug, 'design_block_rules');
     return err({ kind: 'content_rules', violations: blockViolations });
   }

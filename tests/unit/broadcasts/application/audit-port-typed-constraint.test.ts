@@ -7,7 +7,7 @@
  * payload silently fell back to `Record<string, unknown>` for events
  * not in `F7AuditPayloadShapes`. Now the constraint forces a
  * deliberate choice: untyped events MUST go through `emit`; only the
- * 12 events with declared payload shapes are eligible for `emitTyped`.
+ * events with declared payload shapes (17 since F119) are eligible for `emitTyped`.
  *
  * This file does not run any runtime assertions — the `@ts-expect-error`
  * markers + the structural assignment tests are the lock. If a future
@@ -98,11 +98,13 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
     expect(true).toBe(true);
   });
 
-  it('F7AuditPayloadShapes still covers the 12 declared events', () => {
-    // Lock the documented count (audit-port.ts header line 31) so a
-    // future addition that bumps the count surfaces here for review.
+  it('F7AuditPayloadShapes covers exactly the 17 declared events', () => {
+    // Lock the documented count so a future addition surfaces here for
+    // review. The list used to be typed `ReadonlyArray<keyof …>`, which a
+    // SUBSET satisfies — it read 12 while the map held 13. `_allDeclared`
+    // below now fails `tsc` when a key is missing from this list.
     type _Keys = keyof F7AuditPayloadShapes;
-    const declared: ReadonlyArray<_Keys> = [
+    const declared = [
       'broadcast_submitted',
       'broadcast_cancelled',
       'broadcast_unsubscribed',
@@ -115,7 +117,14 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
       'broadcast_template_seed_skipped_existing_name',
       'broadcast_template_snapshot_refused_deleted',
       'broadcast_webhook_signature_rejected',
-    ];
-    expect(declared.length).toBe(12);
+      'broadcast_content_redacted',
+      'broadcast_test_copy_sent',
+      'broadcast_brand_settings_changed',
+      'broadcast_image_uploaded',
+      'broadcast_image_removed',
+    ] as const satisfies ReadonlyArray<_Keys>;
+    const _allDeclared: [Exclude<_Keys, (typeof declared)[number]>] extends [never] ? true : never = true;
+    void _allDeclared;
+    expect(declared.length).toBe(17);
   });
 });

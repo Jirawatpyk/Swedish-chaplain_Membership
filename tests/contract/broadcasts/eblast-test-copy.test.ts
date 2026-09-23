@@ -20,6 +20,7 @@
  * contract with the use case mocked at the barrel.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { NextRequest, NextResponse } from 'next/server';
 import { err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
@@ -40,7 +41,7 @@ function makeDeps(o?: {
     sanitize,
     deps: {
       sanitizer: { sanitize },
-      brand: { load: async () => ({ primaryColor: '#b04a00', postalAddress: '1 Street', logoUrl: null }) },
+      brand: { load: async () => ({ primaryColor: '#b04a00' as BrandHexColor, postalAddress: '1 Street', logoUrl: null }) },
       renderer: {
         render: (i: { subject: string; bodyHtml: string; brand: { primaryColor: string | null } }) =>
           `<!doctype html><title>${i.subject}</title>${i.bodyHtml}<!--${i.brand.primaryColor}-->`,
@@ -93,8 +94,8 @@ describe('sendTestCopy — use case', () => {
   it('audits broadcast_test_copy_sent with related_member_id (never member_id), a recipient hash and the session role — never the address', async () => {
     const { deps, audit } = makeDeps();
     await sendTestCopy(deps, { ...base, broadcastId: 'b-1', versionId: 'v-1' });
-    expect(audit.emit).toHaveBeenCalledTimes(1);
-    const [, event] = (audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(audit.emitTyped).toHaveBeenCalledTimes(1);
+    const [, event] = (audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     const e = event as { eventType: string; payload: Record<string, unknown> };
     expect(e.eventType).toBe('broadcast_test_copy_sent');
     expect(e.payload).toMatchObject({ related_member_id: 'm-1', broadcast_id: 'b-1', version_id: 'v-1', actor_role: 'member' });
@@ -112,7 +113,7 @@ describe('sendTestCopy — use case', () => {
     expect(r.error.kind).toBe('content_rules');
     if (r.error.kind === 'content_rules') expect(r.error.violations[0]?.code).toBe('too_many_cta');
     expect(send).not.toHaveBeenCalled();
-    expect(audit.emit).not.toHaveBeenCalled();
+    expect(audit.emitTyped).not.toHaveBeenCalled();
   });
 
   it('a 201-character subject → invalid_body; the mailer is never reached', async () => {
@@ -126,7 +127,7 @@ describe('sendTestCopy — use case', () => {
     const { deps, audit } = makeDeps({ mailerFails: 'upstream-unavailable' });
     const r = await sendTestCopy(deps, base);
     expect(r).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable', code: 'upstream-unavailable' } });
-    expect(audit.emit).not.toHaveBeenCalled();
+    expect(audit.emitTyped).not.toHaveBeenCalled();
   });
 
   // F7-5 — the port separates a bad address from a provider outage, and the
@@ -136,7 +137,7 @@ describe('sendTestCopy — use case', () => {
     const { deps, audit } = makeDeps({ mailerFails: 'invalid-recipient' });
     const r = await sendTestCopy(deps, base);
     expect(r).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable', code: 'invalid-recipient' } });
-    expect(audit.emit).not.toHaveBeenCalled();
+    expect(audit.emitTyped).not.toHaveBeenCalled();
   });
 
   // --- Senior-tester review H2 ------------------------------------------------
@@ -160,7 +161,7 @@ describe('sendTestCopy — use case', () => {
       expect(r.error.reason).toContain('DOMPurify');
     }
     expect(send).not.toHaveBeenCalled();
-    expect(audit.emit).not.toHaveBeenCalled();
+    expect(audit.emitTyped).not.toHaveBeenCalled();
   });
 
   it('a non-Error sanitiser throw still carries a reason (String(e), not "[object Object]")', async () => {
@@ -205,14 +206,14 @@ describe('sendTestCopy — use case', () => {
     // the pre-check above.
     expect(sanitize).toHaveBeenCalledTimes(1);
     expect(send).not.toHaveBeenCalled();
-    expect(audit.emit).not.toHaveBeenCalled();
+    expect(audit.emitTyped).not.toHaveBeenCalled();
   });
 
   it('a session carrying no role records actor_role: null — never a fabricated literal', async () => {
     const { deps, audit } = makeDeps();
     const r = await sendTestCopy(deps, { ...base, actorRole: null });
     expect(r.ok).toBe(true);
-    const [, event] = (audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, event] = (audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
     const payload = (event as { payload: Record<string, unknown> }).payload;
     // The audit-truth invariant: no row states a role its actor did not hold.
     expect(payload.actor_role).toBeNull();

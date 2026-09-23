@@ -34,7 +34,12 @@
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
-import { parseBlockMarkers, validateBlocks, type BlockViolation } from '../../domain/design-blocks/block-markers';
+import {
+  hasBlockViolations,
+  parseBlockMarkers,
+  validateBlocks,
+  type BlockViolations,
+} from '../../domain/design-blocks/block-markers';
 import type { AuditPort } from '../ports/audit-port';
 import type { BrandChromePort } from '../ports/brand-chrome-port';
 import type { BroadcastRenderLocale, EmailRendererPort } from '../ports/email-renderer-port';
@@ -84,7 +89,7 @@ export interface SendTestCopyInput {
 
 export type SendTestCopyError =
   | { readonly kind: 'invalid_body'; readonly reason: 'subject_too_long' | 'body_too_large' }
-  | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
+  | { readonly kind: 'content_rules'; readonly violations: BlockViolations }
   | { readonly kind: 'sanitizer_unavailable'; readonly reason: string }
   | {
       readonly kind: 'mailer_unavailable';
@@ -129,7 +134,7 @@ export async function sendTestCopy(
   }
   // The identical content rules a real send applies (FR-004 / FR-041).
   const violations = validateBlocks(parseBlockMarkers(sanitised));
-  if (violations.length > 0) {
+  if (hasBlockViolations(violations)) {
     return err({ kind: 'content_rules', violations });
   }
 
@@ -149,7 +154,7 @@ export async function sendTestCopy(
   }
 
   // No state change → no tenant tx; the adapter writes the row on autocommit.
-  await deps.audit.emit(null, {
+  await deps.audit.emitTyped(null, {
     eventType: 'broadcast_test_copy_sent',
     tenantId: input.tenantId,
     requestId: input.requestId,

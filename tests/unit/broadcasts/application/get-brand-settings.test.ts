@@ -6,6 +6,7 @@
  * `manageHref` that is non-null ONLY for a `settings.invoicing` holder.
  */
 import { describe, expect, it, vi } from 'vitest';
+import type { BrandHexColor } from '@/modules/broadcasts/domain/brand/brand-settings';
 import { getBrandSettings } from '@/modules/broadcasts/application/use-cases/get-brand-settings';
 
 const TENANT = 'tenant-swe' as never;
@@ -14,7 +15,7 @@ function makeDeps(record: { primaryColor: string | null; postalAddress: string |
   return {
     repo: {
       withTx: vi.fn(),
-      find: vi.fn(async () => ({ ...record, updatedByUserId: null })),
+      find: vi.fn(async () => ({ ...record, primaryColor: record.primaryColor as BrandHexColor | null, updatedByUserId: null })),
       findForUpdate: vi.fn(),
       save: vi.fn(),
     },

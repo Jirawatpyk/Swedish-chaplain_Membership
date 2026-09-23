@@ -39,6 +39,9 @@ import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/d
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 
+/** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
+const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
+
 /**
  * Stub `BroadcastsGatewayPort` that throws `retryable` on every send
  * to simulate an extended Resend outage. Slice D's 1h budget should
@@ -236,6 +239,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
         locale: 'en' as const,
         plansBridge,
         emailTransactional: emailTransactionalBridge,
+        brandChrome: NO_BRAND_CHROME,
       },
       { broadcastId: asBroadcastId(broadcastId) },
     );
@@ -355,6 +359,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
         locale: 'en' as const,
         plansBridge,
         emailTransactional: emailTransactionalBridge,
+        brandChrome: NO_BRAND_CHROME,
       },
       { broadcastId: asBroadcastId(broadcastId) },
     );

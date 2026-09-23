@@ -14,13 +14,12 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { BroadcastSegmentType } from './value-objects/segment-type';
+import { isUuid } from './value-objects/uuid';
 
 declare const BroadcastSegmentDefinitionIdBrand: unique symbol;
 export type BroadcastSegmentDefinitionId = string & {
   readonly [BroadcastSegmentDefinitionIdBrand]: true;
 };
-
-const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type BroadcastSegmentDefinitionIdError = {
   readonly kind: 'invalid_broadcast_segment_definition_id';
@@ -36,7 +35,7 @@ export function asBroadcastSegmentDefinitionId(
 export function parseBroadcastSegmentDefinitionId(
   raw: string,
 ): Result<BroadcastSegmentDefinitionId, BroadcastSegmentDefinitionIdError> {
-  if (typeof raw !== 'string' || !RE_UUID.test(raw)) {
+  if (!isUuid(raw)) {
     return err({ kind: 'invalid_broadcast_segment_definition_id', raw });
   }
   return ok(raw as BroadcastSegmentDefinitionId);

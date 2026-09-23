@@ -13,6 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
 import type {
   ImageAllowlistPort,
@@ -35,7 +36,7 @@ const DRAFT = '11111111-1111-1111-1111-111111111111';
 // F119 T033 — the use case now takes the OWNER (a draft is a `broadcasts`
 // row) and the ACTOR (a member upload carries `member_id` in the audit).
 const OWNER = { kind: 'broadcast', id: DRAFT } as const;
-const MEMBER_ACTOR = { role: 'member', memberId: '22222222-2222-2222-2222-222222222222' } as const;
+const MEMBER_ACTOR = { role: 'member', memberId: '22222222-2222-2222-2222-222222222222' as MemberId } as const;
 
 const PNG_4MB = Buffer.alloc(4 * 1024 * 1024, 0x42);
 const JPG_6MB = Buffer.alloc(6 * 1024 * 1024, 0x42);

@@ -148,6 +148,8 @@ function makeDeps(opts: {
       fromEmail: 'noreply@example.com',
       tenantDisplayName: 'Test Chamber',
       locale: 'en' as const,
+      // F119 — required port; no brand configured for these cases.
+      brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
       /**
        * Injected rather than composed here: the resolver's own dependency
        * graph (members bridge, unsubscribes, attendees, plans) is large, and

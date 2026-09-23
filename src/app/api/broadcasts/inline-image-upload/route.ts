@@ -67,7 +67,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       actor: {
         kind: 'member',
-        memberId: ctx.member.memberId as unknown as string,
+        memberId: ctx.member.memberId,
         userId: ctx.current.user.id,
         email: ctx.current.user.email,
         role: ctx.current.user.role ?? null,

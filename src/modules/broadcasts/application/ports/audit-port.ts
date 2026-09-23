@@ -50,6 +50,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { BroadcastImageOwnerKind } from './broadcast-images-repo';
 
 export const F7_AUDIT_EVENT_TYPES = [
   // --- Draft / submission (US1) — 16 events (R7 LOW-S1: was 15 pre-R6) -
@@ -451,6 +452,85 @@ export interface F7AuditPayloadShapes {
       | 'pdpa_deletion_request';
     readonly cascade: 'f3_member_erasure';
   };
+  // ── F119 — the four E-Blast events. Every emit site goes through
+  // `emitTyped` / `emitManyTyped`, so a payload that drifts from these shapes
+  // fails `tsc` at the site instead of landing a malformed PDPA evidence row.
+  // `actor_role` is the session role as held, `?? null` — never a literal
+  // stand-in (`check:actor-role-truth`).
+  //
+  // A test copy goes to the requester only: no body, subject or address — the
+  // recipient is a 16-hex-char sha256 prefix. Written on autocommit (tx null).
+  readonly broadcast_test_copy_sent: {
+    readonly related_member_id: string | null;
+    readonly broadcast_id: string | null;
+    readonly version_id: string | null;
+    readonly recipient_hash: string;
+    readonly locale: 'en' | 'th' | 'sv';
+    readonly actor_role: string | null;
+  };
+  // The one F119 payload that carries VALUES: a colour and a postal address
+  // are the chamber's configuration, not member-authored text.
+  readonly broadcast_brand_settings_changed: {
+    readonly previous: F119BrandSettingsSnapshot;
+    readonly next: F119BrandSettingsSnapshot;
+    readonly actor_role: string | null;
+  };
+  // Exactly ONE member key (#336/#337): a member's upload to their own draft IS
+  // member activity, so it carries snake_case `member_id` — the one key the
+  // 0009 `last_activity_at` trigger reads; a staff / template upload carries
+  // `related_member_id` (null for a template) so it never refreshes recency.
+  readonly broadcast_image_uploaded: F119ImageUploadMemberKey & {
+    readonly owner_kind: BroadcastImageOwnerKind;
+    readonly owner_id: string;
+    readonly image_id: string;
+    readonly byte_size: number;
+    readonly mime_type: string;
+    readonly content_hash: string;
+    readonly actor_role: string | null;
+  };
+  // Discriminated on `reason`: a MARK (discard / prune / erasure) stamps the
+  // row and never deletes bytes; only the daily SWEEP says what happened to
+  // the bytes (`blob_disposition`, F7-1). Never `member_id` — a deletion is
+  // not member activity.
+  readonly broadcast_image_removed: F119ImageRemovedCommon &
+    (
+      | {
+          readonly reason: 'draft_discarded' | 'draft_pruned' | 'member_erased';
+          readonly blob_deleted: false;
+          readonly blob_disposition?: never;
+          readonly actor_role: string | null;
+        }
+      | {
+          readonly reason: 'sweep' | 'sweep_orphaned';
+          readonly blob_deleted: boolean;
+          readonly blob_disposition: 'deleted' | 'kept_shared_row' | 'reclaimed_by_sibling';
+          readonly actor_role: 'system';
+        }
+    );
+}
+
+/** `broadcast_brand_settings_changed` — the two fields a brand save can change. */
+export interface F119BrandSettingsSnapshot {
+  readonly primaryColor: string | null;
+  readonly postalAddress: string | null;
+}
+
+/**
+ * `broadcast_image_uploaded` — `member_id` XOR `related_member_id`. The `?:
+ * never` arms are what make "both" and "neither" compile errors; a plain union
+ * of the two objects would accept both keys at once.
+ */
+export type F119ImageUploadMemberKey =
+  | { readonly member_id: string; readonly related_member_id?: never }
+  | { readonly related_member_id: string | null; readonly member_id?: never };
+
+/** `broadcast_image_removed` — the fields a mark row and a sweep row share. */
+export interface F119ImageRemovedCommon {
+  readonly related_member_id: string | null;
+  readonly owner_kind: BroadcastImageOwnerKind;
+  readonly owner_id: string;
+  readonly image_id: string;
+  readonly content_hash: string;
 }
 
 // R8.1 M-2 — the `F7AuditPayloadFor<E>` mapped type (Round 5 type-
@@ -556,7 +636,7 @@ export interface AuditPort {
    * same `vi.fn()` so behaviour mirrors).
    *
    * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
-   * (all 59 events) to `keyof F7AuditPayloadShapes` (12 typed events).
+   * (all 59 events) to `keyof F7AuditPayloadShapes` (17 typed events since F119).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
    * silently fell back to `Record<string, unknown>` via a now-retired
@@ -582,13 +662,25 @@ export interface AuditPort {
    *
    * OPTIONAL, deliberately. `AuditPort` is annotated at ~196 sites, mostly
    * test doubles; making this required would fail `tsc` in every one of them
-   * for a purely performance-shaped addition. Callers that want it use
-   * `audit.emitMany?.(…)` and fall back to a per-row loop — see
-   * `auditImagesRemoved`. Semantics are identical to N `emit` calls: all-or-
+   * for a purely performance-shaped addition. Callers that want it test for
+   * it and fall back to a per-row loop — `auditImagesRemoved` uses the typed
+   * twin, `emitManyTyped`, below. Semantics are identical to N `emit` calls: all-or-
    * nothing with the caller's transaction, same rows, same order. An empty
    * array is a no-op.
    */
   emitMany?(tx: unknown, events: readonly AuditEmitInput[]): Promise<void>;
+  /**
+   * F119 — `emitMany` for events with a declared `F7AuditPayloadShapes`
+   * entry, so a batched payload is compile-checked like `emitTyped`. OPTIONAL
+   * for the same reason `emitMany` is; a caller without it falls back to a
+   * per-row `emitTyped` loop (`auditImagesRemoved`). Same semantics: one
+   * statement, all-or-nothing with the caller's tx, rows in order, an empty
+   * array is a no-op.
+   */
+  emitManyTyped?<E extends keyof F7AuditPayloadShapes>(
+    tx: unknown,
+    events: readonly TypedAuditEmitInput<E>[],
+  ): Promise<void>;
 }
 
 /**

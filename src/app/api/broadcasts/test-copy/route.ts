@@ -28,7 +28,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       userId: ctx.current.user.id,
       email: ctx.current.user.email,
       role: ctx.current.user.role ?? null,
-      relatedMemberId: ctx.member.memberId as unknown as string,
+      relatedMemberId: ctx.member.memberId,
       surface: 'member',
     },
     correlationId,

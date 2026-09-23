@@ -46,6 +46,9 @@ import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/d
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 
+/** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
+const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
+
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 
 interface CallTracker {
@@ -216,6 +219,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       locale: 'en' as const,
       plansBridge,
       emailTransactional: emailTransactionalBridge,
+      brandChrome: NO_BRAND_CHROME,
     });
 
     // SERIAL invocations simulate the realistic dual-tick scenario.
@@ -322,6 +326,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       locale: 'en' as const,
       plansBridge,
       emailTransactional: emailTransactionalBridge,
+      brandChrome: NO_BRAND_CHROME,
     });
 
     const [resultA, resultB] = await Promise.all([

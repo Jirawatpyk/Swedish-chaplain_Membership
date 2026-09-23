@@ -31,6 +31,7 @@ import {
   BRAND_POSTAL_ADDRESS_MAX,
   parseBrandPostalAddress,
   parseBrandPrimaryColor,
+  type BrandHexColor,
 } from '../../domain/brand/brand-settings';
 import { AA_MIN_CONTRAST, contrastRatioOnWhite, meetsAaOnWhiteText } from '../../domain/brand/contrast';
 import type { AuditPort } from '../ports/audit-port';
@@ -70,7 +71,7 @@ export async function setBrandSettings(
 ): Promise<Result<BrandSettingsRecord, SetBrandSettingsError>> {
   // Every refusal is decided ABOVE the first write (a refusal inside the tx
   // would still commit whatever preceded it).
-  let nextColor: string | null | undefined;
+  let nextColor: BrandHexColor | null | undefined;
   if (input.primaryColor !== undefined) {
     const parsed = parseBrandPrimaryColor(input.primaryColor);
     if (!parsed.ok) return err({ kind: 'invalid_color_format' });
@@ -101,7 +102,7 @@ export async function setBrandSettings(
         { ...next, updatedByUserId: input.actorUserId },
         tx,
       );
-      await deps.audit.emit(tx, {
+      await deps.audit.emitTyped(tx, {
         eventType: 'broadcast_brand_settings_changed',
         tenantId: input.tenantId,
         requestId: input.requestId,

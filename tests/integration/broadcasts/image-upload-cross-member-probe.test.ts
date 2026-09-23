@@ -27,6 +27,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -57,7 +58,7 @@ describe('authorizeImageOwner — the cross-member probe row lands on live Neon'
   let tenant: TestTenant;
   let admin: TestUser;
 
-  const memberA = randomUUID();
+  const memberA = randomUUID() as MemberId;
   const memberB = randomUUID();
   const draftOfB = randomUUID();
   const requestId = `xmember-probe-${randomUUID()}`;

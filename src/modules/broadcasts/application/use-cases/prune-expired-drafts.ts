@@ -127,7 +127,7 @@ export async function pruneExpiredDrafts(
         return page;
       });
 
-      prunedCount += pruned.prunedCount;
+      prunedCount += pruned.prunedDrafts.length;
       batches += 1;
 
       // A short batch means the cutoff set is exhausted.

@@ -11,13 +11,12 @@ import { err, ok, type Result } from '@/lib/result';
 import type { BroadcastDeliveryStatus } from './value-objects/delivery-status';
 import type { EmailLower } from './value-objects/email-lower';
 import type { BroadcastId } from './broadcast';
+import { isUuid } from './value-objects/uuid';
 
 declare const BroadcastDeliveryIdBrand: unique symbol;
 export type BroadcastDeliveryId = string & {
   readonly [BroadcastDeliveryIdBrand]: true;
 };
-
-const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type BroadcastDeliveryIdError = {
   readonly kind: 'invalid_broadcast_delivery_id';
@@ -31,7 +30,7 @@ export function asBroadcastDeliveryId(raw: string): BroadcastDeliveryId {
 export function parseBroadcastDeliveryId(
   raw: string,
 ): Result<BroadcastDeliveryId, BroadcastDeliveryIdError> {
-  if (typeof raw !== 'string' || !RE_UUID.test(raw)) {
+  if (!isUuid(raw)) {
     return err({ kind: 'invalid_broadcast_delivery_id', raw });
   }
   return ok(raw as BroadcastDeliveryId);

@@ -18,6 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { MemberId } from '@/modules/members';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import { db, runInTenant } from '@/lib/db';
@@ -109,7 +110,7 @@ async function imageAudits(tenant: TestTenant, requestId: string): Promise<Array
 describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
   let tenant: TestTenant;
   const actorUserId = randomUUID();
-  const memberId = randomUUID();
+  const memberId = randomUUID() as MemberId;
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-swecham');
@@ -279,8 +280,8 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
     'F2-2: the erasure cascade stamps the ERASED member\'s images and leaves a peer member\'s alone',
     async () => {
       const storage = makeStorage();
-      const erasedMember = randomUUID();
-      const peerMember = randomUUID();
+      const erasedMember = randomUUID() as MemberId;
+      const peerMember = randomUUID() as MemberId;
       const erasedBroadcast = randomUUID();
       const peerBroadcast = randomUUID();
       await seedDraft(tenant, erasedBroadcast, erasedMember, '<p>mine</p>');

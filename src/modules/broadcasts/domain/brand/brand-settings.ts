@@ -15,9 +15,20 @@ import { err, ok, type Result } from '@/lib/result';
 export const DEFAULT_BRAND_PRIMARY_COLOR = '#10487a' as const;
 export const BRAND_POSTAL_ADDRESS_MAX = 300 as const;
 
+declare const BrandHexColorBrand: unique symbol;
+
+/**
+ * A validated `#rrggbb` colour — the one value brand chrome interpolates into
+ * `bgcolor` / inline styles. Minted ONLY by `parseBrandPrimaryColor` (which
+ * lower-cases it) and at the single repository boundary that reads
+ * `tenant_broadcast_settings.brand_primary_color`, whose 0304 CHECK
+ * (`~ '^#[0-9a-fA-F]{6}$'`) guarantees the format of every stored value.
+ */
+export type BrandHexColor = string & { readonly [BrandHexColorBrand]: true };
+
 export interface BrandSettings {
   /** `#rrggbb` (lower case) or null ⇒ the platform default applies. */
-  readonly primaryColor: string | null;
+  readonly primaryColor: BrandHexColor | null;
   /** Free text ≤ 300 chars, LF line breaks; null ⇒ footer shows the chamber name only. */
   readonly postalAddress: string | null;
   /** Public URL of the invoice logo on file; READ-only, null ⇒ chamber name in the header. */
@@ -31,10 +42,10 @@ export type BrandColorError = { readonly code: 'invalid_color_format' };
 /** `#RRGGBB` → normalised lower case; `null` clears the colour. */
 export function parseBrandPrimaryColor(
   input: string | null,
-): Result<string | null, BrandColorError> {
+): Result<BrandHexColor | null, BrandColorError> {
   if (input === null) return ok(null);
   if (!HEX6.test(input)) return err({ code: 'invalid_color_format' });
-  return ok(input.toLowerCase());
+  return ok(input.toLowerCase() as BrandHexColor);
 }
 
 export type BrandPostalAddressError = {

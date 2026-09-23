@@ -408,10 +408,14 @@ export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
  * route helpers (no per-tenant settings table for support email yet —
  * F12 scope). MVP: locale defaults to the static tenant default
  * resolved by `tenantDefaultLocaleFor(...)` below.
+ *
+ * `brandChrome` is NOT wired here: its adapter lives in `src/lib` (it reads
+ * the invoicing logo too), so the cron route adds it and the type makes that
+ * the route's obligation rather than an optional it can forget.
  */
 export async function makeDispatchScheduledBroadcastDeps(
   tenantId: string,
-): Promise<DispatchScheduledBroadcastDeps> {
+): Promise<Omit<DispatchScheduledBroadcastDeps, 'brandChrome'>> {
   const tenant = asTenantContext(tenantId);
   const { resolveTenantDisplayName } = await import(
     '@/lib/broadcasts-route-helpers'
@@ -989,12 +993,13 @@ export function makeCountTemplateStartDeps(
  *
  * The per-tick memo wrapper is applied by the CALLER (the cron builds one per
  * tick and shares it across broadcasts), so it is passed in rather than built
- * here — the same shape `makeDispatchScheduledBroadcastDeps` expects.
+ * here — the same shape `makeDispatchScheduledBroadcastDeps` expects, and
+ * `brandChrome` is left to the cron route for the same reason.
  */
 export async function makeBuildAudienceTickDeps(
   tenantId: string,
   bridge: MembersBridgePort,
-): Promise<BuildAudienceTickDeps> {
+): Promise<Omit<BuildAudienceTickDeps, 'brandChrome'>> {
   const tenant = asTenantContext(tenantId);
   const { resolveTenantDisplayName } = await import('@/lib/broadcasts-route-helpers');
   let tenantDisplayName: string;

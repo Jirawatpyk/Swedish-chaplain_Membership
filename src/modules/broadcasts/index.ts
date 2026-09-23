@@ -663,6 +663,7 @@ export {
   BRAND_POSTAL_ADDRESS_MAX,
   parseBrandPrimaryColor,
   parseBrandPostalAddress,
+  type BrandHexColor,
   type BrandSettings,
 } from './domain/brand/brand-settings';
 export {
@@ -676,9 +677,11 @@ export {
   CTA_MAX_PER_MESSAGE,
   CTA_TEXT_MAX,
   BANNER_ALT_MAX,
+  hasBlockViolations,
   parseBlockMarkers,
   validateBlocks,
   type BlockViolation,
+  type BlockViolations,
   type DesignBlock,
 } from './domain/design-blocks/block-markers';
 export { applyDesignBlocks } from './domain/design-blocks/render-blocks';
