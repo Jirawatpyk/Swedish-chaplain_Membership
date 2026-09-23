@@ -23,8 +23,10 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // U27 (portal live walk) — the form renders `<UnsavedChangesGuard>`, which
 // `router.push`es a confirmed in-app navigation. jsdom has no app router.
+const pushMock = vi.fn();
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: pushMock, refresh: vi.fn() }),
 }));
 
 /** A `fetch` double returning one scripted Response-shaped object. */
@@ -333,6 +335,22 @@ describe('BrandSettingsForm — U18: unsaved changes are guarded', () => {
     await user.click(saveButton());
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(fireBeforeUnload()).toBe(false);
+  });
+
+  it('with an edit pending, the in-app "Manage the logo" link asks before leaving', async () => {
+    // `beforeunload` never fires for an in-app `<Link>`, and this one sits in
+    // the form itself.
+    const user = userEvent.setup();
+    pushMock.mockClear();
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    await user.clear(field);
+    await user.type(field, '#0b5f3a');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Manage the logo' }));
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });
 

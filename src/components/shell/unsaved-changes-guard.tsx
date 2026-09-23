@@ -20,7 +20,9 @@
  * page in this tab: a modified click (cmd / ctrl / shift / alt, or any button
  * but the primary one), `target` other than the current tab, `download`,
  * `rel="external"`, another origin, a non-http(s) scheme such as `mailto:`,
- * and a link to the URL we are already on (a pure hash change).
+ * a link to the URL we are already on (a pure hash change), and a link inside
+ * a `contenteditable` region (the editor's own content, where a click only
+ * places the caret).
  *
  * The listener is CAPTURE-phase on `document`, so it decides before React's
  * root container sees the click: `stopPropagation` there is what keeps Next's
@@ -84,9 +86,10 @@ export function UnsavedChangesGuard({
   /**
    * The anchor that was clicked. It is still mounted — the navigation was
    * cancelled — so it is where focus belongs when the dialog closes either
-   * way. Held in a ref behind a STABLE callback because Base UI reads
-   * `finalFocus` at close time, by which point a value derived from nullable
-   * state has already evaporated (`reference_base_ui_finalfocus_read_live_at_close`).
+   * way. Held in a ref behind a STABLE callback because Base UI reads the
+   * `finalFocus` prop from the LATEST render when the dialog closes, not from
+   * the render that opened it, and on that closing render `pendingHref` is
+   * already `null`, so anything derived from it would be gone.
    */
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -109,6 +112,16 @@ export function UnsavedChangesGuard({
       if (!(target instanceof Element)) return;
       const anchor = target.closest('a[href]');
       if (!(anchor instanceof HTMLAnchorElement)) return;
+      // A link inside the rich-text editor is content being edited: the click
+      // places the caret, it leaves nothing. The CTA block renders a plain
+      // `<a data-eb="cta" href>` with no `target`, so a same-origin CTA would
+      // otherwise be read as an exit. Matched by attribute, not
+      // `isContentEditable`: jsdom does not implement that property, and an
+      // atom node that renders `contenteditable="false"` still sits inside an
+      // editable ancestor that this selector finds.
+      if (anchor.closest('[contenteditable]:not([contenteditable="false"])')) {
+        return;
+      }
       const href = guardedNavigationTarget(anchor);
       if (href === null) return;
       event.preventDefault();

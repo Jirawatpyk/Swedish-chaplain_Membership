@@ -16,15 +16,18 @@
  * Rendered under `NextIntlClientProvider` with the REAL `en.json`.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
+import Link from 'next/link';
 import enMessages from '@/i18n/messages/en.json';
 import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
 import type { ComposeTemplateOption } from '@/components/broadcast/compose/template-picker-field';
 
+const pushMock = vi.fn();
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: pushMock, refresh: vi.fn() }),
 }));
 
 vi.mock('sonner', () => ({
@@ -183,6 +186,25 @@ describe('T137 — the staff compose-on-behalf form offers what the member form 
     await user.type(screen.getByLabelText('Subject'), 'Spring mixer');
 
     expect(beforeUnloadWouldPrompt()).toBe(true);
+  });
+
+  it('the unsaved-changes guard also stops an in-app link, not only unload', async () => {
+    // The staff shell's sidebar links are `<Link>`s beside the form;
+    // `beforeunload` never fires for them.
+    const user = userEvent.setup();
+    pushMock.mockClear();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <Link href="/admin/broadcasts">Broadcasts</Link>
+        <ProxyComposeForm audienceCeiling={5000} templates={[TEMPLATE]} />
+      </NextIntlClientProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Subject'), 'Spring mixer');
+    fireEvent.click(screen.getByRole('link', { name: 'Broadcasts' }));
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it('offers draft save/resume — saves the named member against the STAFF draft route and clears the guard', async () => {

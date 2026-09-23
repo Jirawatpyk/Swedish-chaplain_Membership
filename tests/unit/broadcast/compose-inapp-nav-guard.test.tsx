@@ -181,12 +181,56 @@ describe('U27 — a dirty compose form guards IN-APP navigation, not only unload
     });
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }), {
+      shiftKey: true,
+    });
+    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }), {
+      altKey: true,
+    });
+    fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }), {
+      button: 1,
+    });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
     await user.click(
       screen.getByRole('link', { name: 'Dashboard in a new tab' }),
     );
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Somewhere else' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
+  it('a click on a same-origin CTA inside the editor places the cursor, it is not a navigation', async () => {
+    // The CTA block serialises as `<a data-eb="cta" href>` with NO `target`
+    // (unlike a Link mark, which renders `_blank`), so a CTA pointing back at
+    // the portal is a same-origin anchor. Inside the contenteditable the click
+    // only moves the caret; intercepting it offered "Leave" off the draft.
+    const user = userEvent.setup();
+    let seenDefaultPrevented: boolean | null = null;
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <div
+          contentEditable
+          suppressContentEditableWarning
+          onClick={(e) => {
+            seenDefaultPrevented = e.defaultPrevented;
+            e.preventDefault();
+          }}
+        >
+          <a data-eb="cta" href={`${window.location.origin}/portal/events`}>
+            Register now
+          </a>
+        </div>
+        <ComposeForm audienceCeiling={5000} audienceMode="primary_only" />
+      </NextIntlClientProvider>,
+    );
+
+    await user.type(subjectInput(), 'Half-written subject');
+    fireEvent.click(screen.getByText('Register now'));
+
+    // Reached the editor's own handler (not stopped), with default intact.
+    expect(seenDefaultPrevented).toBe(false);
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });
