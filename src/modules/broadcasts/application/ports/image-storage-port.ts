@@ -90,6 +90,25 @@ export interface ImageStoragePort {
 }
 
 /**
+ * F119 F7-2 — the storage backend is DOWN (access denied, token expired,
+ * store suspended, rate-limited, service unavailable), as opposed to a fault
+ * in this request. The adapter classifies its SDK's own error classes by
+ * `instanceof` and rethrows this, with the SDK error as `cause`, so the use
+ * case can answer `storage_unavailable` (503, retry) without importing the SDK.
+ *
+ * It replaces a regex over `e.message` for the SDK CLASS names — which the
+ * real `@vercel/blob@2.3.3` errors never carry (their messages read
+ * "Vercel Blob: This store has been suspended." and so on), so every real
+ * outage fell through to a 500.
+ */
+export class ImageStorageUnavailableError extends Error {
+  constructor(message: string, options?: { readonly cause?: unknown }) {
+    super(message, options);
+    this.name = 'ImageStorageUnavailableError';
+  }
+}
+
+/**
  * F119 — the stable public URL AND the storage key of one stored image.
  * The key is what `broadcast_images.blob_key` records and what `delete`
  * takes; the URL is what the HTML carries.

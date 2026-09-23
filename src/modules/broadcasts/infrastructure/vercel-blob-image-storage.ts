@@ -13,13 +13,24 @@
  * deter casual scraping (collisions require a SHA-256 preimage of
  * arbitrary tenant content).
  */
-import { BlobNotFoundError, put, head, del } from '@vercel/blob';
+import {
+  BlobAccessError,
+  BlobClientTokenExpiredError,
+  BlobNotFoundError,
+  BlobServiceNotAvailable,
+  BlobServiceRateLimited,
+  BlobStoreSuspendedError,
+  put,
+  head,
+  del,
+} from '@vercel/blob';
 import { logger } from '@/lib/logger';
-import type {
-  ImageMimeType,
-  ImageProbeResult,
-  ImageStoragePort,
-  StoredImageRef,
+import {
+  ImageStorageUnavailableError,
+  type ImageMimeType,
+  type ImageProbeResult,
+  type ImageStoragePort,
+  type StoredImageRef,
 } from '../application/ports/image-storage-port';
 import type { TenantSlug } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -34,6 +45,29 @@ import { env } from '@/lib/env';
  * against the real class, never a hand-written string. Auth / suspend /
  * rate-limit errors still surface to the logger (SF-H1).
  */
+
+/**
+ * F119 F7-2 — a storage OUTAGE is likewise classified by the SDK's own
+ * classes, here and only here, and handed to the use case as the port's
+ * `ImageStorageUnavailableError` (503, retry). The use case used to regex
+ * `e.message` for these CLASS names, which the real messages never contain
+ * ("Vercel Blob: This store has been suspended."), so a real outage 500'd.
+ *
+ * Deliberately the five subclasses, never their base `BlobError`: the
+ * already-exists refusal of `allowOverwrite: false` is a PLAIN `BlobError`
+ * (2.3.3 has no subclass for it) and must reach `isBlobAlreadyExists`
+ * unchanged. Pinned against the real classes by
+ * `tests/unit/broadcasts/infrastructure/vercel-blob-image-storage-put.test.ts`.
+ */
+function isStorageOutage(e: unknown): e is Error {
+  return (
+    e instanceof BlobAccessError ||
+    e instanceof BlobStoreSuspendedError ||
+    e instanceof BlobClientTokenExpiredError ||
+    e instanceof BlobServiceRateLimited ||
+    e instanceof BlobServiceNotAvailable
+  );
+}
 
 const MIME_EXT: Record<ImageMimeType, string> = {
   'image/png': 'png',
@@ -124,6 +158,13 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       // cache.md` only if the incident ever occurs (zero hits to date).
       addRandomSuffix: false,
       allowOverwrite: false,
+    }).catch((e: unknown) => {
+      // F7-2 — an outage becomes the port error; everything else (the
+      // already-exists `BlobError` included) propagates unchanged.
+      if (isStorageOutage(e)) {
+        throw new ImageStorageUnavailableError(e.message, { cause: e });
+      }
+      throw e;
     });
     return { blobUrl: result.url, blobKey: key, contentHash: input.contentHash };
   },

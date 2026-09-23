@@ -19,7 +19,11 @@ import type {
   Hostname,
 } from '@/modules/broadcasts/application/ports/image-allowlist-port';
 import type { VirusScannerPort } from '@/modules/broadcasts/application/ports/virus-scanner-port';
-import type { ImageMimeType, ImageStoragePort } from '@/modules/broadcasts/application/ports/image-storage-port';
+import {
+  ImageStorageUnavailableError,
+  type ImageMimeType,
+  type ImageStoragePort,
+} from '@/modules/broadcasts/application/ports/image-storage-port';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { BroadcastImagesRepo } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
 import type { ImageReencoderPort } from '@/modules/broadcasts/application/ports/image-reencoder-port';
@@ -321,25 +325,28 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     expect(deps.allowlistPort.seedDefaults).not.toHaveBeenCalled();
   });
 
-  // PR-review fix 2026-05-21 R4-M3 — pin SF-M4 storage_unavailable
-  // regex-narrowing. Without these tests, a future Vercel Blob SDK
-  // rename of error classes would silently route ALL storage failures
-  // through the `throw e` rethrow at upload-inline-image.ts:226 → 500
-  // instead of 503, regressing the SF-M4 fix unobserved.
+  // PR-review fix 2026-05-21 R4-M3 — pin SF-M4 storage_unavailable.
+  //
+  // F119 F7-2 — this used to throw `new Error('BlobAccessError: simulated
+  // outage')`, a hand-written string built to match a regex over SDK CLASS
+  // names, so it could never fail. The real SDK messages carry no class name
+  // (below, verbatim from @vercel/blob@2.3.3), and a real outage 500'd. The
+  // adapter now classifies by `instanceof` and throws the PORT error; this
+  // pins the use case's side of that contract. The adapter's side is pinned
+  // against the real SDK classes in
+  // `tests/unit/broadcasts/infrastructure/vercel-blob-image-storage-put.test.ts`.
   it.each([
-    'BlobAccessError',
-    'BlobStoreSuspendedError',
-    'BlobClientTokenExpiredError',
-    'BlobServiceRateLimited',
-    'BlobServiceNotAvailable',
+    'Vercel Blob: Access denied, please provide a valid token for this resource.',
+    'Vercel Blob: This store has been suspended.',
+    'Vercel Blob: Client token has expired.',
+    'Vercel Blob: Too many requests please lower the number of concurrent requests .',
+    'Vercel Blob: The blob service is currently not available. Please try again.',
   ])(
-    'storage.put rejects with %s → maps to storage_unavailable err (SF-M4 regression net)',
-    async (errName) => {
+    'storage.put rejects with ImageStorageUnavailableError (%s) → maps to storage_unavailable err (SF-M4 regression net)',
+    async (message) => {
       const deps = makeDeps();
       (deps.storage.put as ReturnType<typeof vi.fn>).mockRejectedValue(
-        Object.assign(new Error(`${errName}: simulated outage`), {
-          name: errName,
-        }),
+        new ImageStorageUnavailableError(message),
       );
       const r = await uploadInlineImage(deps, {
         tenantId: TENANT,
@@ -347,13 +354,13 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
         actorEmail: ACTOR_EMAIL,
         owner: OWNER,
         actor: MEMBER_ACTOR,
-        requestId: `req-blob-${errName}`,
+        requestId: 'req-blob-outage',
         fileBytes: PNG_4MB,
         filename: 'ok.png',
         mimeType: 'image/png',
       });
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error.kind).toBe('storage_unavailable');
+      if (!r.ok) expect(r.error).toEqual({ kind: 'storage_unavailable', reason: message });
     },
   );
 

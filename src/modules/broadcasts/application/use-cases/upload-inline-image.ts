@@ -52,6 +52,7 @@ import type {
 } from '../ports/image-allowlist-port';
 import type { VirusScannerPort } from '../ports/virus-scanner-port';
 import {
+  ImageStorageUnavailableError,
   isImageMimeType,
   type ImageMimeType,
   type ImageStoragePort,
@@ -355,8 +356,8 @@ export async function uploadInlineImage(
     }
   }
 
-  // PR-review fix 2026-05-20 SF-M4 — wrap storage.put + map Blob error
-  // classes to a typed `storage_unavailable` result so the route can
+  // PR-review fix 2026-05-20 SF-M4 — wrap storage.put + map the port's
+  // `ImageStorageUnavailableError` to a typed `storage_unavailable` result so the route can
   // return 503 (not generic 500) on token-expired / suspended /
   // rate-limited outages. Other exceptions still propagate.
   let blobUrl: string;
@@ -387,14 +388,16 @@ export async function uploadInlineImage(
       );
       return err({ kind: 'storage_unavailable', reason: msg });
     }
-    if (
-      /BlobAccessError|BlobStoreSuspendedError|BlobClientTokenExpiredError|BlobServiceRateLimited|BlobServiceNotAvailable/i.test(
-        msg,
-      )
-    ) {
+    // F119 F7-2 — the ADAPTER classifies an outage by the SDK's own classes
+    // and throws the port error. This used to be a regex over `msg` for the
+    // SDK CLASS names, which the real messages never contain, so every real
+    // outage fell through to `throw e` → 500.
+    if (e instanceof ImageStorageUnavailableError) {
       logger.error(
         {
           err: errKind(e),
+          // Which outage (rate-limited vs suspended vs token): the SDK class.
+          cause: errKind(e.cause),
           tenantId: input.tenantId,
           contentHash,
           mime,
@@ -605,8 +608,9 @@ async function ensureBlobHostAllowlisted(
  *
  * So a message regex is the only instrument available here, and both halves
  * are matched — the sentence and the flag it names — so a wording change on
- * one side still classifies. `tests/helpers/eblast-approval-fakes.ts` throws
- * that exact string, so the fake cannot drift from the API it models.
+ * one side still classifies. `tests/helpers/eblast-approval-fakes.ts` throws a
+ * verbatim copy of that string, measured 2026-09-22 against @vercel/blob
+ * 2.3.3; re-measure on an SDK bump.
  *
  * At a CONTENT-ADDRESSED key this is not a failure: whatever is at the key is
  * the bytes we were writing.
