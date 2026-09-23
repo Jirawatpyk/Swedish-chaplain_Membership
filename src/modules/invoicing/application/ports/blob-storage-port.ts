@@ -5,9 +5,10 @@
 
 /**
  * The port's own NOT-FOUND signal: `signDownloadUrl` / `downloadBytes` found
- * no object at the requested key. The adapter classifies the SDK's error CLASS
- * and hands this to the use cases, which map it to `blob_missing` (502) with
- * `instanceof` — never a regex on the message. `@vercel/blob@2.3.3` says "The
+ * no object at the requested key (for `downloadBytes`, also when the lookup
+ * succeeds and the byte fetch then answers 404). The adapter classifies the
+ * SDK's error CLASS and hands this to the use cases, which map it to
+ * `blob_missing` (502) with `instanceof` — never a regex on the message. `@vercel/blob@2.3.3` says "The
  * requested blob does not exist", which the old `/not found|404/` never
  * matched, so every genuine miss answered a generic 500.
  *

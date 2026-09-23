@@ -15,9 +15,10 @@
  *     `originalInvoiceMemberId` matches their own id; every denial is the
  *     OPAQUE `credit_note_not_found` (never `forbidden` — do not leak
  *     existence) + a `credit_note_cross_tenant_probe` audit row.
- *   - IM-4 blob-miss mapping: BlobNotFoundError / "404" / non-Error
- *     "not found" throws → typed `blob_missing` with the stored key;
- *     transient errors rethrow.
+ *   - IM-4 blob-miss mapping: only the port's `BlobKeyNotFoundError` (by
+ *     class) → typed `blob_missing` with the stored key; any other throw —
+ *     a message that merely says "404" / "not found", a non-Error string,
+ *     a transient error — rethrows unchanged.
  *
  * Constitution Principle II — the PDF-download use-case is a file ACL
  * gate (PII surface), so this file targets 100% line + branch.

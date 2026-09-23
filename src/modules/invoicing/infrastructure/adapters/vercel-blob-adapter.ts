@@ -121,6 +121,10 @@ export const vercelBlobAdapter: BlobStoragePort = {
     // PG-1 — `cache: 'no-store'` avoids serving stale bytes from a CDN
     // layer after the VOID overlay overwrite.
     const response = await fetch(blob.url, { cache: 'no-store' });
+    // `head()` found the object but the byte fetch 404s (deleted between the
+    // two calls, or a CDN miss on a removed object): the same missing object,
+    // so the same port class `head()`'s miss raises. No key in the error.
+    if (response.status === 404) throw new BlobKeyNotFoundError();
     if (!response.ok) {
       // PG-1 — DO NOT embed the Blob key in the thrown message: keys
       // contain tenant + invoice path segments that must not leak into

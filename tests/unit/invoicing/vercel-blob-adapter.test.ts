@@ -117,4 +117,42 @@ describe('vercelBlobAdapter — NOT-FOUND is the port class, everything else pas
     expect(Array.from(bytes)).toEqual([0x25, 0x50, 0x44, 0x46]);
     expect(fetchMock).toHaveBeenCalledWith('https://blob.example/abc.pdf', { cache: 'no-store' });
   });
+
+  // head() can succeed and the byte fetch still 404 (object deleted between
+  // the two calls, or a CDN miss on a removed object). That is the same
+  // missing object, so it is the same port class — not a plain Error.
+  it('downloadBytes: head hit but the byte fetch answers 404 → BlobKeyNotFoundError, key not in the message', async () => {
+    headMock.mockResolvedValueOnce({ url: 'https://blob.example/abc.pdf' });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+    const { vercelBlobAdapter, BlobKeyNotFoundError } = await loadAdapter();
+
+    const thrown = await vercelBlobAdapter.downloadBytes(KEY).then(
+      () => {
+        throw new Error('expected a rejection');
+      },
+      (e: unknown) => e,
+    );
+
+    expect(thrown).toBeInstanceOf(BlobKeyNotFoundError);
+    expect((thrown as Error).message).not.toContain(KEY);
+    expect((thrown as Error).message).not.toContain('tenant-a');
+  });
+
+  it('downloadBytes: any other non-OK fetch status stays a plain Error (not a miss), key not in the message', async () => {
+    headMock.mockResolvedValueOnce({ url: 'https://blob.example/abc.pdf' });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    const { vercelBlobAdapter, BlobKeyNotFoundError } = await loadAdapter();
+
+    const thrown = await vercelBlobAdapter.downloadBytes(KEY).then(
+      () => {
+        throw new Error('expected a rejection');
+      },
+      (e: unknown) => e,
+    );
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(BlobKeyNotFoundError);
+    expect((thrown as Error).message).toContain('HTTP 503');
+    expect((thrown as Error).message).not.toContain(KEY);
+  });
 });
