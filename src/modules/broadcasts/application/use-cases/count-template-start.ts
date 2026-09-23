@@ -24,10 +24,8 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastTemplatesPort } from '../ports/broadcast-templates-port';
+import { isUuid } from '../../domain/value-objects/uuid';
 import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface CountTemplateStartDeps {
   readonly templatesPort: BroadcastTemplatesPort;
@@ -59,7 +57,7 @@ export async function countTemplateStart(
   deps: CountTemplateStartDeps,
   input: CountTemplateStartInput,
 ): Promise<Result<CountTemplateStartOutput, CountTemplateStartError>> {
-  if (!UUID_RE.test(input.templateId)) {
+  if (!isUuid(input.templateId)) {
     return err({ kind: 'invalid_input', detail: 'templateId must be a UUID' });
   }
 

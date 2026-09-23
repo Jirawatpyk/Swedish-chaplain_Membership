@@ -8,6 +8,11 @@
  * (`broadcast_brand_settings_changed { previous, next, actor_role }`) share
  * one tenant tx — a failed audit emit rolls the write back.
  *
+ * The read is `findForUpdate` (create-then-lock), never `find`: the write
+ * merges the untouched field from it, so two admins saving DIFFERENT fields
+ * at once must serialise — otherwise the second write reverts the first and
+ * its audit `previous` names a state that no longer existed.
+ *
  * Voids NOTHING: brand chrome is not content (FR-012). This use case has no
  * port for versions, stages or `approved_version_id`, so it cannot touch
  * them by construction.
@@ -83,7 +88,7 @@ export async function setBrandSettings(
 
   try {
     return await deps.repo.withTx(input.tenantId, async (tx) => {
-      const previous = await deps.repo.find(input.tenantId, tx);
+      const previous = await deps.repo.findForUpdate(input.tenantId, tx);
       const next = {
         primaryColor: nextColor === undefined ? previous.primaryColor : nextColor,
         postalAddress: nextAddress === undefined ? previous.postalAddress : nextAddress,

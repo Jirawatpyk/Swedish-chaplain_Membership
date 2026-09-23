@@ -13,7 +13,7 @@
  *   - <progress aria-label> for upload-in-flight feedback
  *   - role="alert" on inline error so it's announced immediately
  */
-import { useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -43,6 +43,12 @@ interface Props {
    * pre-check, one error surface — never a second component.
    */
   readonly uploadUrl?: string;
+  /**
+   * The file picker was dismissed without a file (the input's `cancel`
+   * event), so a caller holding state for "the file about to arrive" — the
+   * editor's pending description — can drop it.
+   */
+  readonly onPickerCancel?: () => void;
   readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
 }
 
@@ -50,6 +56,7 @@ export function ComposeInlineImageUploader({
   draftId,
   onUploaded,
   uploadUrl = MEMBER_INLINE_IMAGE_UPLOAD_URL,
+  onPickerCancel,
   ref,
 }: Props): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.imageUpload');
@@ -58,6 +65,15 @@ export function ComposeInlineImageUploader({
   const [error, setError] = useState<string | null>(null);
 
   useImperativeHandle(ref, () => ({ openPicker: () => fileRef.current?.click() }), []);
+
+  // A native listener, not React's `onCancel` prop: React attaches `cancel`
+  // only to <dialog>, so the prop would never fire on an <input type="file">.
+  useEffect(() => {
+    const input = fileRef.current;
+    if (input === null || onPickerCancel === undefined) return;
+    input.addEventListener('cancel', onPickerCancel);
+    return () => input.removeEventListener('cancel', onPickerCancel);
+  }, [onPickerCancel]);
 
   const handlePick = (): void => {
     fileRef.current?.click();

@@ -34,6 +34,7 @@ function makeDeps(current: Partial<BrandSettingsRecord> = {}) {
   const repo: BrandSettingsRepo = {
     withTx: vi.fn(async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn('tx-1')),
     find: vi.fn(async () => record),
+    findForUpdate: vi.fn(async () => record),
     save: save as never,
   };
   const audit: AuditPort = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };

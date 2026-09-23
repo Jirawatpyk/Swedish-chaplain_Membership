@@ -88,7 +88,8 @@ afterEach(() => {
 describe('BrandSettingsForm — live contrast readout', () => {
   it('the stored navy shows a passing ratio and Save is enabled', () => {
     renderForm();
-    expect(screen.getByTestId('brand-contrast-readout')).toHaveTextContent('9.42');
+    // ≈ 9.417 raw — the readout FLOORS (never claims more than the raw ratio).
+    expect(screen.getByTestId('brand-contrast-readout')).toHaveTextContent('9.41');
     expect(saveButton()).not.toBeDisabled();
   });
 
@@ -103,6 +104,19 @@ describe('BrandSettingsForm — live contrast readout', () => {
     // The measured ratio, and the AA threshold the refusal names.
     expect(readout).toHaveTextContent('1.09');
     expect(readout).toHaveTextContent('4.5');
+    expect(saveButton()).toBeDisabled();
+  });
+
+  // #0080aa is ≈ 4.4986:1 raw — below AA, so the API refuses it. Its ROUNDED
+  // ratio is 4.5, which is how a Save gated on the display value used to
+  // enable and then earn a 422 "{ ratio: 4.5, required: 4.5 }".
+  it('typing `#0080aa` (just under AA) keeps Save disabled', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    await user.clear(field);
+    await user.type(field, '#0080aa');
+
     expect(saveButton()).toBeDisabled();
   });
 

@@ -129,7 +129,7 @@ const SESSION_ANY: Readonly<Record<string, string>> = {
   'GET /api/broadcasts/templates':
     'deliberately shared member+staff template picker (F7.1a T110 header) — anonymous 401, no role branch',
   'POST /api/broadcasts/templates/[id]/started':
-    'the SAME shared picker telling the server a template was used (F119 T108) — increments broadcast_templates.started_from_count and nothing else; anonymous 401, no role branch, bucketed 30/min per (tenant, user)',
+    'the SAME shared picker telling the server a template was used (F119 T108) — increments broadcast_templates.started_from_count and nothing else; anonymous 401, bucketed 30/min per (tenant, user). A member session always counts (so no role-matrix row can gate it); a staff session counts only with broadcasts.write (canPerform — a read-only manager is 403)',
   'GET /api/internal/exports/[jobId]/download':
     'dual-audience private-artefact proxy — the portal 303-redirects the SUBJECT MEMBER here for their own GDPR archive, so no staff key can gate it; real guards = single-use job-bound HMAC token + downloadExport subject-or-staff authorize() (T028 capture correction, see the baseline header note)',
 };

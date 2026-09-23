@@ -10,9 +10,11 @@
  *     before the round-trip. `PATCH` answers 422 `colour_contrast` when white
  *     text on the colour is below WCAG AA 4.5:1, so the readout states the
  *     measured ratio live and Save is disabled below the threshold: the
- *     refusal is never a surprise. The arithmetic is the Domain's own
- *     (`contrastRatioOnWhite`), reached through `@/lib/brand-settings-client`
- *     — a second copy would drift from what the server refuses with.
+ *     refusal is never a surprise. The arithmetic is the Domain's own,
+ *     reached through `@/lib/brand-settings-client` — a second copy would
+ *     drift from what the server refuses with. Save is gated on the SAME
+ *     predicate the server refuses with (`meetsAaOnWhiteText`, raw ratio),
+ *     never on the displayed ratio (`contrastRatioOnWhite`, two decimals).
  *   - **Postal address** — writable, free text, line breaks allowed, 300
  *     characters the only bound (FR-041c). Empty is a legitimate state of the
  *     world, so it reads as a `role="status"` NOTICE, never a field error, and
@@ -64,6 +66,7 @@ import {
   AA_MIN_CONTRAST,
   BRAND_POSTAL_ADDRESS_MAX,
   contrastRatioOnWhite,
+  meetsAaOnWhiteText,
   parseBrandPrimaryColor,
 } from '@/lib/brand-settings-client';
 import type { BrandSettingsView } from '@/modules/broadcasts';
@@ -113,7 +116,7 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
   const parsed = useMemo(() => parseBrandPrimaryColor(effective), [effective]);
   const normalisedColour = parsed.ok ? parsed.value : null;
   const ratio = normalisedColour === null ? null : contrastRatioOnWhite(normalisedColour);
-  const meetsAa = ratio !== null && ratio >= AA_MIN_CONTRAST;
+  const meetsAa = normalisedColour !== null && meetsAaOnWhiteText(normalisedColour);
 
   const normalisedAddress = normaliseAddress(address);
   const addressTooLong = normalisedAddress.length > BRAND_POSTAL_ADDRESS_MAX;

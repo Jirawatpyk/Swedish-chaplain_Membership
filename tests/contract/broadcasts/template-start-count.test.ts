@@ -183,7 +183,7 @@ function makeContext(id: string = TEMPLATE_ID): {
 describe('F119 T108 — POST /api/broadcasts/templates/[id]/started', () => {
   beforeEach(() => {
     isF71aUs7EnabledMock.mockReturnValue(true);
-    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1' } });
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1', role: 'member' } });
     checkLimitMock.mockResolvedValue({ ok: true });
     countTemplateStartMock.mockReset();
     countTemplateStartMock.mockResolvedValue(ok({ counted: true }));
@@ -256,6 +256,38 @@ describe('F119 T108 — POST /api/broadcasts/templates/[id]/started', () => {
       err({ kind: 'template_soft_deleted' }),
     );
     expect((await POST(makeRequest(), makeContext())).status).toBe(410);
+  });
+
+  // The picker is shared by member compose and staff compose-on-behalf, so a
+  // member session counts; a STAFF session counts only when it could have
+  // composed at all (`broadcasts.write`, the permission the staff
+  // compose-on-behalf draft route gates on). A read-only `manager` cannot
+  // compose, so its "start" is not an adoption signal — it is inflation.
+  it.each([
+    ['member', 200],
+    ['admin', 200],
+    ['marketing', 200],
+    ['super_admin', 200],
+    ['manager', 403],
+  ] as const)('%s session → %i', async (role, status) => {
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1', role } });
+    const { POST } = await import(
+      '@/app/api/broadcasts/templates/[id]/started/route'
+    );
+    const res = await POST(makeRequest(), makeContext());
+
+    expect(res.status).toBe(status);
+    expect(countTemplateStartMock).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+  });
+
+  it('a refused staff session consumes no rate-limit bucket', async () => {
+    getCurrentSessionMock.mockResolvedValue({ user: { id: 'usr-1', role: 'manager' } });
+    const { POST } = await import(
+      '@/app/api/broadcasts/templates/[id]/started/route'
+    );
+    await POST(makeRequest(), makeContext());
+
+    expect(checkLimitMock).not.toHaveBeenCalled();
   });
 });
 

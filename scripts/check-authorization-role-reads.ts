@@ -96,7 +96,9 @@ const COMPARISON = new RegExp(
  * when sites are legitimately removed; never lower it to make a run pass.
  *
  * Pinned to the MEASURED TOTAL — `marked + unmarked`, which is what `scanned`
- * counts — not to the `marked` counter. 67 as of the 018 clear-halt narrowing:
+ * counts — not to the `marked` counter. 68 as of F119's template-start
+ * member/staff split (the `/api/broadcasts/templates/[id]/started` route's
+ * `rbac-portal-identity-ok` site, 67 → 68). 67 as of the 018 clear-halt narrowing:
  * the 018 follow-ups ADDED one site (the refund-initiate route's attribution
  * ternary, 67 → 68) and then REMOVED one (the halt-clear route's `marketing`
  * arm, deleted when `broadcasts.clear_halt` narrowed clearing to the admin
@@ -119,7 +121,7 @@ const COMPARISON = new RegExp(
  * blind before tripping. The T065 gate reported "0 unmarked" while it could not
  * see 341 lines of src/config/nav.ts.
  */
-const MIN_EXPECTED_SITES = 67;
+const MIN_EXPECTED_SITES = 68;
 
 /**
  * Every accepted claim. Each says what the literal is doing INSTEAD of

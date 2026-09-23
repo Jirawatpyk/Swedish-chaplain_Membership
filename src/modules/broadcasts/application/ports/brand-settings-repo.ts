@@ -38,6 +38,13 @@ export interface BrandSettingsRepo {
   withTx<T>(tenantId: TenantSlug, fn: (tx: BrandSettingsTx) => Promise<T>): Promise<T>;
   /** All-null record when the tenant has no settings row yet. */
   find(tenantId: TenantSlug, tx?: BrandSettingsTx | null): Promise<BrandSettingsRecord>;
+  /**
+   * The read a read-merge-write MUST use: ensures the tenant's settings row
+   * exists (created lazily — a bare `FOR UPDATE` on a missing row locks
+   * nothing), then locks it for the rest of `tx`. A concurrent writer blocks
+   * here until this tx ends, so neither can merge onto a stale read.
+   */
+  findForUpdate(tenantId: TenantSlug, tx: BrandSettingsTx): Promise<BrandSettingsRecord>;
   /** Upsert the brand columns (the row may not exist yet — 0131 creates it lazily). */
   save(tenantId: TenantSlug, input: BrandSettingsWrite, tx: BrandSettingsTx): Promise<BrandSettingsRecord>;
 }

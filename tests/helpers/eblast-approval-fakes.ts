@@ -167,6 +167,7 @@ export function makeFakeBrandSettingsRepo(seed: Record<string, Partial<BrandSett
     records,
     withTx: vi.fn(async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(FAKE_TX)),
     find: vi.fn(async (tenantId: never) => records.get(tenantId as unknown as string) ?? empty),
+    findForUpdate: vi.fn(async (tenantId: never, _tx: unknown) => records.get(tenantId as unknown as string) ?? empty),
     save: vi.fn(async (tenantId: never, input: BrandSettingsWrite, _tx: unknown) => {
       const next: BrandSettingsRecord = {
         primaryColor: input.primaryColor,

@@ -15,6 +15,7 @@ function makeDeps(record: { primaryColor: string | null; postalAddress: string |
     repo: {
       withTx: vi.fn(),
       find: vi.fn(async () => ({ ...record, updatedByUserId: null })),
+      findForUpdate: vi.fn(),
       save: vi.fn(),
     },
     logoUrl: { resolve: vi.fn(async () => logoUrl) },

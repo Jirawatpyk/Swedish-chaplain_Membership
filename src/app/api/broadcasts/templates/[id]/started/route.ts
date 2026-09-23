@@ -9,11 +9,21 @@
  * (`…/draft/[id]/snapshot-template`) could not serve here: it needs a SAVED
  * draft, and the member picks a template before one exists.
  *
- * Auth follows its sibling `GET /api/broadcasts/templates` — the picker is
- * shared between member compose and staff compose-on-behalf (FR-039), so this
- * accepts EITHER session and branches on neither; anonymous is 401. It is
- * listed with that reason in `tests/contract/rbac/api-route-exhaustiveness.ts`'s
- * `SESSION_ANY` allow-list.
+ * Auth: the picker is shared between member compose and staff
+ * compose-on-behalf (FR-039), so this accepts EITHER session; anonymous is
+ * 401. A member session counts. A STAFF session counts only if it holds
+ * `broadcasts.write` — the permission the staff compose-on-behalf draft route
+ * (`/api/admin/broadcasts/draft`) gates on — asked of the evaluator through
+ * `canPerform`, never a role literal: a read-only `manager` cannot compose,
+ * so its "start" is inflation, not adoption (403, no bucket consumed, nothing
+ * counted). The route stays in `api-route-exhaustiveness.test.ts`'s
+ * `SESSION_ANY` allow-list because members must keep reaching it — a
+ * role-matrix row would refuse them.
+ *
+ * The staff refusal writes no `permission_denied` row (unlike
+ * `requireApiPermission`, which this route cannot use without a role-matrix
+ * baseline row): the same trade the hand-rolled member/staff splits on the
+ * credit-note routes make.
  *
  * A counter that anyone may increment is a counter anyone may inflate, so the
  * bucket is checked BEFORE the use case runs, atomically. The request carries
@@ -33,6 +43,7 @@ import {
 } from '@/modules/broadcasts';
 import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
 import { getCurrentSession } from '@/lib/auth-session';
+import { canPerform } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -73,6 +84,13 @@ export async function POST(
   const current = await getCurrentSession();
   if (!current) {
     return jsonError(401, 'no_session', correlationId);
+  }
+
+  // Refused ABOVE the bucket, so a refused call consumes nothing.
+  // rbac-portal-identity-ok: member-portal subject vs staff split; the staff arm is decided by canPerform, never a literal.
+  const isMemberSession = current.user.role === 'member';
+  if (!isMemberSession && !canPerform(current.user.role, 'broadcasts.write')) {
+    return jsonError(403, 'forbidden', correlationId);
   }
 
   const tenantCtx = resolveTenantFromRequest(request);

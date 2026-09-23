@@ -256,6 +256,18 @@ export default function TiptapEditor({
     }
   }, []);
 
+  /**
+   * The author dismissed the file picker the description opened. The pending
+   * `{ kind, alt }` would otherwise stay armed and be attached — without
+   * asking — to whatever the uploader's own button uploads next, carrying the
+   * abandoned description and kind (banner vs inline).
+   */
+  const handlePickerCancel = useCallback((): void => {
+    if (pendingImageRef.current?.alt !== undefined) {
+      pendingImageRef.current = null;
+    }
+  }, []);
+
   const handleUploaded = useCallback(
     (blobUrl: string): void => {
       const pending = pendingImageRef.current;
@@ -324,6 +336,7 @@ export default function TiptapEditor({
               draftId={draftId}
               {...(imageUploadUrl !== undefined ? { uploadUrl: imageUploadUrl } : {})}
               onUploaded={handleUploaded}
+              onPickerCancel={handlePickerCancel}
             />
           ) : (
             // PR-review fix 2026-05-20 UX-M3 — pair the hint with an
