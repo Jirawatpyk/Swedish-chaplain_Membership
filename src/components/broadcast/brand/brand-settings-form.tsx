@@ -62,6 +62,7 @@ import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-aler
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
 import {
   AA_MIN_CONTRAST,
   BRAND_POSTAL_ADDRESS_MAX,
@@ -350,11 +351,7 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
             <div
               data-testid="brand-logo-preview"
               className="inline-block rounded-md border bg-card p-2"
-              style={{
-                backgroundImage:
-                  'repeating-conic-gradient(var(--color-muted) 0% 25%, transparent 0% 50%)',
-                backgroundSize: '12px 12px',
-              }}
+              style={TRANSPARENCY_CHECKER_STYLE}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img

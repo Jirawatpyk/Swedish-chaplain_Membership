@@ -66,6 +66,21 @@ const MEMBER_REASON_LABEL = new RegExp(
   'i',
 );
 
+// U35 — cancelling is irreversible, so confirm is gated on a typed phrase.
+const ADMIN = en.admin.broadcasts.cancelDialog;
+const MEMBER = en.portal.broadcasts.detail.cancelDialog;
+
+function phraseInput(ns: { phrase: string; phraseLabel: string }): HTMLElement {
+  return screen.getByLabelText(ns.phraseLabel.replace('{phrase}', ns.phrase));
+}
+
+function typePhrase(
+  ns: { phrase: string; phraseLabel: string },
+  value: string = ns.phrase,
+): void {
+  fireEvent.change(phraseInput(ns), { target: { value } });
+}
+
 // ── timer + mock lifecycle ──────────────────────────────────────────────
 
 beforeEach(() => {
@@ -147,6 +162,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
       new RegExp(en.admin.broadcasts.cancelDialog.reasonLabel, 'i'),
     );
     fireEvent.change(textarea, { target: { value: 'duplicate send' } });
+    typePhrase(ADMIN);
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -172,6 +188,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
       ),
       { target: { value: 'x' } },
     );
+    typePhrase(ADMIN);
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -196,6 +213,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
       ),
       { target: { value: 'x' } },
     );
+    typePhrase(ADMIN);
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -220,6 +238,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
       ),
       { target: { value: 'y' } },
     );
+    typePhrase(ADMIN);
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -242,6 +261,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
       ),
       { target: { value: '  duplicate send  ' } },
     );
+    typePhrase(ADMIN);
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -266,6 +286,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
       ),
       { target: { value: 'x' } },
     );
+    typePhrase(ADMIN);
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -290,6 +311,7 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
       ),
       { target: { value: 'y' } },
     );
+    typePhrase(ADMIN);
     fireEvent.click(
       screen.getByRole('button', { name: en.admin.broadcasts.cancelDialog.confirm }),
     );
@@ -347,8 +369,9 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
     ).toBeInTheDocument();
   });
 
-  it('confirm enabled even with empty reason (optional)', () => {
+  it('confirm enabled with an empty reason (optional) once the phrase is typed', () => {
     renderMember();
+    typePhrase(MEMBER);
     expect(
       screen.getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -363,6 +386,7 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
     } as Response);
     const onOpenChange = vi.fn();
     renderMember({ onOpenChange });
+    typePhrase(MEMBER);
     fireEvent.click(
       screen.getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -402,6 +426,7 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
       json: async () => ({ error: { code: 'broadcast_cancel_too_late' } }),
     } as unknown as Response);
     renderMember();
+    typePhrase(MEMBER);
     fireEvent.click(
       screen.getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -421,6 +446,7 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
       json: async () => ({ error: { code: 'broadcast_concurrent_action_blocked' } }),
     } as unknown as Response);
     renderMember();
+    typePhrase(MEMBER);
     fireEvent.click(
       screen.getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -431,6 +457,72 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
         en.portal.broadcasts.detail.toast.concurrentRace,
       ),
     );
+  });
+});
+
+// ── Typed-phrase gate (U35) ─────────────────────────────────────────────
+
+describe('CancelBroadcastDialog — typed-phrase gate (U35)', () => {
+  const adminConfirm = () => screen.getByRole('button', { name: ADMIN.confirm });
+  const memberConfirm = () => screen.getByRole('button', { name: MEMBER.confirm });
+
+  it('admin: a valid reason alone does not enable confirm', () => {
+    renderAdmin();
+    fireEvent.change(screen.getByLabelText(new RegExp(ADMIN.reasonLabel, 'i')), {
+      target: { value: 'duplicate send' },
+    });
+    expect(adminConfirm()).toBeDisabled();
+    typePhrase(ADMIN);
+    expect(adminConfirm()).not.toBeDisabled();
+  });
+
+  it('member: confirm is disabled until the phrase matches', () => {
+    renderMember();
+    expect(memberConfirm()).toBeDisabled();
+    typePhrase(MEMBER);
+    expect(memberConfirm()).not.toBeDisabled();
+  });
+
+  it('shows the expected phrase as a copy target', () => {
+    renderMember();
+    expect(screen.getByText(MEMBER.phrase, { selector: 'code' })).toBeInTheDocument();
+  });
+
+  it('matches case-, whitespace- and punctuation-insensitively (same rule as clear-halt)', () => {
+    renderMember();
+    typePhrase(MEMBER, `  ${MEMBER.phrase.toLowerCase()}.  `);
+    expect(memberConfirm()).not.toBeDisabled();
+  });
+
+  it('a mismatch keeps confirm disabled, announces the error and does not fetch', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    renderMember();
+    typePhrase(MEMBER, 'cancle');
+    expect(memberConfirm()).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(MEMBER.phraseError);
+    expect(phraseInput(MEMBER)).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.click(memberConfirm());
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('a re-opened dialog starts with an empty phrase', () => {
+    const el = (open: boolean) => (
+      <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
+        <CancelBroadcastDialog
+          open={open}
+          onOpenChange={vi.fn()}
+          endpoint="/api/broadcasts/b1/cancel"
+          namespace="portal.broadcasts.detail.cancelDialog"
+          toastNamespace="portal.broadcasts.detail.toast"
+          reasonRequired={false}
+        />
+      </NextIntlClientProvider>
+    );
+    const { rerender } = render(el(true));
+    typePhrase(MEMBER);
+    rerender(el(false));
+    rerender(el(true));
+    expect(phraseInput(MEMBER)).toHaveValue('');
   });
 });
 

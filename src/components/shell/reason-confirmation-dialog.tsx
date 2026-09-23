@@ -51,6 +51,10 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import {
+  TypedPhraseField,
+  typedPhraseMatches,
+} from '@/components/shell/typed-phrase-field';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 
 /**
@@ -139,6 +143,14 @@ export interface ReasonConfirmationDialogProps {
   /** Focus-return target on close — build via {@link useDialogFinalFocus}. */
   /** `false` = "Base UI moves nothing" — the hook focuses the landmark itself. */
   readonly finalFocus: () => HTMLElement | false | null;
+  /**
+   * ux-standards § 6.3 — for an IRREVERSIBLE action, gate Confirm behind a
+   * typed phrase (the shared {@link TypedPhraseField}, same rule as
+   * clear-halt). Reads `phrase`, `phraseLabel` (`{phrase}` placeholder) and
+   * `phraseError` from `namespace`. Default false: reject / the F114 decision
+   * dialog are not irreversible and stay one step.
+   */
+  readonly requireTypedPhrase?: boolean;
 }
 
 export function ReasonConfirmationDialog({
@@ -151,11 +163,13 @@ export function ReasonConfirmationDialog({
   textareaRows,
   onConfirm,
   finalFocus,
+  requireTypedPhrase = false,
 }: ReasonConfirmationDialogProps): React.ReactElement {
   const t = useTranslations(namespace);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [reason, setReason] = useState('');
+  const [typedPhrase, setTypedPhrase] = useState('');
   const [pending, startTransition] = useTransition();
 
   // Reset on OPEN so every re-open starts fresh — covers the programmatic close
@@ -166,7 +180,10 @@ export function ReasonConfirmationDialog({
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (open) setReason('');
+    if (open) {
+      setReason('');
+      setTypedPhrase('');
+    }
   }
 
   // Required-reason dialogs auto-focus the textarea via chained double-RAF
@@ -188,9 +205,14 @@ export function ReasonConfirmationDialog({
   }, [open, reasonRequired]);
 
   const overCap = reason.length > maxLength;
-  const valid = reasonRequired
+  const reasonValid = reasonRequired
     ? reason.trim().length >= 1 && !overCap
     : !overCap;
+  // Only read when the gate is on — callers without it ship no phrase keys.
+  const expectedPhrase = requireTypedPhrase ? t('phrase') : '';
+  const phraseValid =
+    !requireTypedPhrase || typedPhraseMatches(typedPhrase, expectedPhrase);
+  const valid = reasonValid && phraseValid;
 
   function handleConfirm(): void {
     if (!valid || pending) return;
@@ -252,6 +274,18 @@ export function ReasonConfirmationDialog({
             </p>
           ) : null}
         </div>
+
+        {requireTypedPhrase ? (
+          <TypedPhraseField
+            id={`${fieldIdPrefix}-phrase`}
+            label={t('phraseLabel', { phrase: expectedPhrase })}
+            phrase={expectedPhrase}
+            value={typedPhrase}
+            onChange={setTypedPhrase}
+            errorMessage={t('phraseError')}
+            disabled={pending}
+          />
+        ) : null}
 
         <AlertDialogFooter>
           <AlertDialogCancel ref={cancelRef} disabled={pending}>

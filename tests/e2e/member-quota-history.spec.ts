@@ -22,6 +22,7 @@
  *
  * a11y CHK042: banner dismissal returns focus to the original trigger.
  */
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import {
@@ -32,6 +33,25 @@ import { signInAsMember as signIn } from './helpers/member-sign-in';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+
+/**
+ * F119 U37 — below `md` (768 px) the history renders as a card list and the
+ * table is `hidden`, so the mobile projects must look for the cards. Returns
+ * the visible history container and the locator for one of its rows.
+ */
+function historyView(page: Page): {
+  readonly container: ReturnType<Page['getByTestId']>;
+  readonly rows: ReturnType<Page['locator']>;
+} {
+  const isPhone = (page.viewportSize()?.width ?? 1280) < 768;
+  const container = page.getByTestId(
+    isPhone ? 'broadcast-history-card-list' : 'broadcast-history-table',
+  );
+  return {
+    container,
+    rows: container.locator(isPhone ? 'li' : 'tbody tr'),
+  };
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -81,8 +101,9 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     await signIn(page);
     await page.goto('/portal/benefits?tab=broadcasts');
 
-    // Implementation must expose the history region with this testid.
-    await expect(page.getByTestId('broadcast-history-table')).toBeVisible();
+    // Implementation must expose the history region with this testid (the
+    // card list below `md`, the table from `md` up — U37).
+    await expect(historyView(page).container).toBeVisible();
   });
 
   // ── AS1 pagination ────────────────────────────────────────────────
@@ -146,10 +167,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   }) => {
     await signIn(page);
     await page.goto('/portal/benefits?tab=broadcasts');
-    const firstRow = page
-      .getByTestId('broadcast-history-table')
-      .locator('tbody tr')
-      .first();
+    const firstRow = historyView(page).rows.first();
     if ((await firstRow.count()) === 0) {
       test.info().annotations.push({
         type: 'skip-reason',

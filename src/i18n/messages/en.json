@@ -3375,6 +3375,9 @@
         "reasonHelp": "1–500 characters.",
         "confirm": "Cancel broadcast",
         "cancel": "Keep",
+        "phrase": "CANCEL",
+        "phraseLabel": "Type {phrase} to confirm",
+        "phraseError": "Phrase does not match.",
         "errors": {
           "reasonTooLong": "Reason exceeds 500 characters."
         }
@@ -6203,6 +6206,9 @@
           "reasonHelp": "Up to 500 characters.",
           "confirm": "Cancel broadcast",
           "cancel": "Keep it",
+          "phrase": "CANCEL",
+          "phraseLabel": "Type {phrase} to confirm",
+          "phraseError": "Phrase does not match.",
           "errors": {
             "reasonTooLong": "Reason exceeds 500 characters."
           }

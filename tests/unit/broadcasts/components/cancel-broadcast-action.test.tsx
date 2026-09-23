@@ -48,6 +48,17 @@ function renderAction(surface: 'admin' | 'member', broadcastId = 'b1') {
   );
 }
 
+/** U35 — confirm is gated on typing the dialog's phrase. */
+function typePhrase(
+  dialog: HTMLElement,
+  ns: { readonly phrase: string; readonly phraseLabel: string },
+): void {
+  fireEvent.change(
+    within(dialog).getByLabelText(ns.phraseLabel.replace('{phrase}', ns.phrase)),
+    { target: { value: ns.phrase } },
+  );
+}
+
 // ── Admin surface (reason required) ─────────────────────────────────────
 
 describe('CancelBroadcastAction (admin surface)', () => {
@@ -95,6 +106,7 @@ describe('CancelBroadcastAction (admin surface)', () => {
       ),
       { target: { value: 'test cancellation reason' } },
     );
+    typePhrase(dialog, en.admin.broadcasts.cancelDialog);
     fireEvent.click(
       within(dialog).getByRole('button', {
         name: en.admin.broadcasts.cancelDialog.confirm,
@@ -135,11 +147,12 @@ describe('CancelBroadcastAction (member surface)', () => {
     ).toBeInTheDocument();
   });
 
-  it('dialog does NOT require a reason (confirm enabled without input)', async () => {
+  it('dialog does NOT require a reason (confirm enabled with only the typed phrase)', async () => {
     renderAction('member');
     fireEvent.click(screen.getByRole('button', { name: triggerName }));
     await screen.findByText(en.portal.broadcasts.detail.cancelDialog.title);
     const dialog = screen.getByRole('alertdialog');
+    typePhrase(dialog, en.portal.broadcasts.detail.cancelDialog);
     expect(
       within(dialog).getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -158,6 +171,7 @@ describe('CancelBroadcastAction (member surface)', () => {
     await screen.findByText(en.portal.broadcasts.detail.cancelDialog.title);
 
     const dialog = screen.getByRole('alertdialog');
+    typePhrase(dialog, en.portal.broadcasts.detail.cancelDialog);
     fireEvent.click(
       within(dialog).getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,
@@ -189,6 +203,7 @@ describe('CancelBroadcastAction (member surface)', () => {
     fireEvent.change(within(dialog).getByLabelText(memberReasonLabel), {
       target: { value: 'changing my mind' },
     });
+    typePhrase(dialog, en.portal.broadcasts.detail.cancelDialog);
     fireEvent.click(
       within(dialog).getByRole('button', {
         name: en.portal.broadcasts.detail.cancelDialog.confirm,

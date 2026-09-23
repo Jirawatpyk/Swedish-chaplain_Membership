@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
 import { readErrorCode } from './read-error-code';
 
 export function DirectoryLogoControl({
@@ -85,12 +86,20 @@ export function DirectoryLogoControl({
   return (
     <div className="space-y-3">
       {currentLogoUrl !== null ? (
-        // eslint-disable-next-line @next/next/no-img-element -- external Blob URL; next/image remotePatterns not configured for tenant logos
-        <img
-          src={currentLogoUrl}
-          alt={t('logoCurrent')}
-          className="h-20 w-auto rounded border bg-white object-contain p-1"
-        />
+        // Themed checker backing, not `bg-white` (which glared in dark mode) —
+        // the same swatch as the Brand settings logo preview (T155 U16).
+        <div
+          data-testid="directory-logo-preview"
+          className="inline-block rounded-md border bg-card p-1"
+          style={TRANSPARENCY_CHECKER_STYLE}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- external Blob URL; next/image remotePatterns not configured for tenant logos */}
+          <img
+            src={currentLogoUrl}
+            alt={t('logoCurrent')}
+            className="h-20 w-auto object-contain"
+          />
+        </div>
       ) : null}
       <p id="dir-logo-hint" className="text-sm text-muted-foreground">
         {t('logoHint')}

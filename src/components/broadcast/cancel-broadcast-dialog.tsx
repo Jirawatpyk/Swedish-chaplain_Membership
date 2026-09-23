@@ -7,6 +7,9 @@
  * dedup): this file owns only the cancel-specific fetch + toast mapping; the
  * shared component owns reason state, focus, validation, render, and pending.
  *
+ *   - F119 U35 — confirm also waits for the typed phrase (`phrase` /
+ *     `phraseLabel` / `phraseError` in `namespace`) on both surfaces: a
+ *     cancelled E-Blast cannot be re-sent (ux-standards § 6.3).
  *   - Cap 500 chars.
  *   - reasonRequired=true  (admin) → textarea auto-focus; reason required 1–500.
  *   - reasonRequired=false (member) → Cancel button initial focus; reason ≤500.
@@ -143,6 +146,9 @@ export function CancelBroadcastDialog({
       textareaRows={4}
       onConfirm={onConfirm}
       finalFocus={finalFocus}
+      // U35 — a cancelled E-Blast cannot be re-sent, so confirm waits for the
+      // typed phrase (ux-standards § 6.3), on the member AND staff surface.
+      requireTypedPhrase
     />
   );
 }

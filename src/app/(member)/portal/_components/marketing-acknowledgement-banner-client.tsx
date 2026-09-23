@@ -110,9 +110,13 @@ export function AcknowledgementBannerClient({
           >
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
             <div className="flex-1 space-y-2">
-              <h2 id="broadcasts-ack-banner-heading" className="text-sm font-semibold">
+              {/* U36 — a `<p>`, not an `<h2>`: the banner renders ABOVE the
+                  page `<h1>`, so a heading here made the outline read
+                  h2 → h1 → h2. The region is still named by this text via
+                  `aria-labelledby`. */}
+              <p id="broadcasts-ack-banner-heading" className="text-sm font-semibold">
                 {title}
-              </h2>
+              </p>
               <p className="text-sm text-muted-foreground">{body}</p>
               {privacyPolicyUrl && privacyPolicyLinkLabel ? (
                 <p className="text-sm">

@@ -14,24 +14,42 @@
  *
  * The health endpoint is a thin wrapper around
  * `VirusScannerPort.scan(emptyBuffer)`; the endpoint is OUT OF SCOPE
- * for Phase 4 in this commit — the component renders an empty fragment
- * when the endpoint 404s, keeping the surface inert. The endpoint will
- * be added by the Wave J observability gap-fill once the ClamAV runbook
- * (T124) lands.
+ * for Phase 4 in this commit. The endpoint will be added by the Wave J
+ * observability gap-fill once the ClamAV runbook (T124) lands.
+ *
+ * F119 walk U34 (2026-09-23) — the component used to poll the hard-coded
+ * `/api/internal/clamav/health` anyway, and that route does NOT exist, so
+ * every open compose tab logged a 404 on mount and every 30 s. It is now
+ * INERT unless a caller passes `healthEndpoint`: no request, no DOM (not
+ * even the live region). `tiptap-editor.tsx` passes none today.
+ * TODO(U34): when a real health route ships under `src/app/api/`, pass its
+ * path from `tiptap-editor.tsx` — the probe + persistent live region below
+ * come back unchanged.
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertCircle } from 'lucide-react';
 
-export function ClamavUnreachableBanner(): React.ReactElement | null {
+export interface ClamavUnreachableBannerProps {
+  /**
+   * The ClamAV health route to poll. Omitted → the banner renders nothing and
+   * makes no request (U34 — no such route exists yet).
+   */
+  readonly healthEndpoint?: string;
+}
+
+export function ClamavUnreachableBanner({
+  healthEndpoint,
+}: ClamavUnreachableBannerProps = {}): React.ReactElement | null {
   const t = useTranslations('portal.broadcasts.compose.clamavBanner');
   const [unreachable, setUnreachable] = useState(false);
 
   useEffect(() => {
+    if (healthEndpoint === undefined) return undefined;
     let cancelled = false;
     const probe = async (): Promise<void> => {
       try {
-        const res = await fetch('/api/internal/clamav/health', {
+        const res = await fetch(healthEndpoint, {
           cache: 'no-store',
         });
         if (cancelled) return;
@@ -69,7 +87,9 @@ export function ClamavUnreachableBanner(): React.ReactElement | null {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [healthEndpoint]);
+
+  if (healthEndpoint === undefined) return null;
 
   // PR-review fix 2026-05-20 UX-C2 — persistent live-region wrapper.
   // The outer <div role="status" aria-live="polite"> MUST be in the

@@ -3375,6 +3375,9 @@
         "reasonHelp": "1–500 tecken.",
         "confirm": "Avbryt utskick",
         "cancel": "Behåll utskick",
+        "phrase": "AVBRYT",
+        "phraseLabel": "Skriv {phrase} för att bekräfta",
+        "phraseError": "Texten matchar inte.",
         "errors": {
           "reasonTooLong": "Anledningen överskrider 500 tecken."
         }
@@ -6203,6 +6206,9 @@
           "reasonHelp": "Upp till 500 tecken.",
           "confirm": "Avbryt utskick",
           "cancel": "Behåll det",
+          "phrase": "AVBRYT",
+          "phraseLabel": "Skriv {phrase} för att bekräfta",
+          "phraseError": "Texten matchar inte.",
           "errors": {
             "reasonTooLong": "Anledningen överskrider 500 tecken."
           }

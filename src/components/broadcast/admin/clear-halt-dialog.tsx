@@ -32,8 +32,10 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import {
+  TypedPhraseField,
+  typedPhraseMatches,
+} from '@/components/shell/typed-phrase-field';
 import { useSurvivingTargetFinalFocus } from '@/components/broadcast/unmounting-trigger-final-focus';
 
 /**
@@ -67,22 +69,10 @@ export function ClearHaltDialog({
     closedViaSuccessRef,
   );
 
-  // Review UX-C3 + UX-R2-2 (round-3): typed-phrase confirmation
-  // matches when the human-visible content matches — case + leading/
-  // trailing space + internal whitespace runs + punctuation are
-  // normalized away. Thai/Swedish diacritics still matter (different
-  // base characters → not a match) so a misspelling still blocks
-  // the destructive action.
-  const normalize = (s: string): string =>
-    s
-      .trim()
-      // Round-4 HIGH-H — `\s` covers ASCII/Unicode whitespace; explicit
-      // \u escapes for zero-width chars (ZWSP / ZWNJ / ZWJ / BOM) so
-      // the regex source is unambiguous regardless of editor encoding.
-      .replace(/[\s​‌‍﻿]+/g, ' ')
-      .replace(/[.,;:!?'"()\-—]/g, '') // strip common punctuation
-      .toLowerCase();
-  const phraseValid = normalize(phrase) === normalize(memberDisplayName);
+  // Review UX-C3 + UX-R2-2 (round-3): case / whitespace / punctuation are
+  // normalised away — the rule now lives in the shared field (F119 U35 reuses
+  // it for the E-Blast cancel dialog).
+  const phraseValid = typedPhraseMatches(phrase, memberDisplayName);
 
   function onConfirm() {
     if (!phraseValid) return;
@@ -122,32 +112,15 @@ export function ClearHaltDialog({
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('body')}</AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="space-y-2">
-          <Label htmlFor="clear-halt-phrase">
-            {t('phraseLabel', { phrase: memberDisplayName })}
-          </Label>
-          {/* UX-C3: show the expected phrase as a copy-target so admins
-              don't have to retype while squinting between fields. */}
-          <code className="block rounded bg-muted px-2 py-1 text-xs font-mono">
-            {memberDisplayName}
-          </code>
-          <Input
-            id="clear-halt-phrase"
-            value={phrase}
-            onChange={(e) => setPhrase(e.target.value)}
-            disabled={pending}
-            autoComplete="off"
-            aria-invalid={phrase.length > 0 && !phraseValid}
-            aria-describedby={
-              phrase.length > 0 && !phraseValid ? 'phrase-error' : undefined
-            }
-          />
-          {phrase.length > 0 && !phraseValid ? (
-            <p id="phrase-error" className="text-xs text-destructive" role="alert">
-              {t('phraseError')}
-            </p>
-          ) : null}
-        </div>
+        <TypedPhraseField
+          id="clear-halt-phrase"
+          label={t('phraseLabel', { phrase: memberDisplayName })}
+          phrase={memberDisplayName}
+          value={phrase}
+          onChange={setPhrase}
+          errorMessage={t('phraseError')}
+          disabled={pending}
+        />
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>
             {t('cancel')}

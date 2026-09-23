@@ -3375,6 +3375,9 @@
         "reasonHelp": "1–500 ตัวอักษร",
         "confirm": "ยกเลิก E-Blast",
         "cancel": "ไม่ยกเลิก",
+        "phrase": "ยกเลิก",
+        "phraseLabel": "พิมพ์ {phrase} เพื่อยืนยัน",
+        "phraseError": "ข้อความไม่ตรงกัน",
         "errors": {
           "reasonTooLong": "เหตุผลต้องไม่เกิน 500 ตัวอักษร"
         }
@@ -6203,6 +6206,9 @@
           "reasonHelp": "ไม่เกิน 500 ตัวอักษร",
           "confirm": "ยกเลิก E-Blast",
           "cancel": "ไม่ยกเลิก",
+          "phrase": "ยกเลิก",
+          "phraseLabel": "พิมพ์ {phrase} เพื่อยืนยัน",
+          "phraseError": "ข้อความไม่ตรงกัน",
           "errors": {
             "reasonTooLong": "เหตุผลต้องไม่เกิน 500 ตัวอักษร"
           }

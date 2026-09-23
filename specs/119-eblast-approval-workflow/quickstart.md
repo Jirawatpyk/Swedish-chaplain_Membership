@@ -907,12 +907,12 @@ Severity is against the FR-051 gate, as above: **HIGH** blocks the flip, **MEDIU
 
 **LOW**
 
-- **U33 — the toolbar wraps to 2 rows at ≥ 1152 px but fits in 1 row at 768 px.** The container caps
+- **U33 — the toolbar wraps to 2 rows at ≥ 1152 px but fits in 1 row at 768 px.** *(DEFERRED — a deliberate design choice, maintainer 2026-09-23; not a defect.)* The container caps
   at 1152 px while the preview pane keeps its column, freezing the editor at 430 px — see the table
   above. Not a defect in any checklist sense; recorded because it is the opposite of what a
   "responsive" reading of the earlier admin-only numbers would predict, and because it makes 768 px,
   not desktop, the width at which this toolbar looks designed.
-- **U34 — the ClamAV health probe 404s forever, once on mount and then every 30 s.**
+- **U34 — the ClamAV health probe 404s forever, once on mount and then every 30 s.** *(CLOSED on `fix/119-pr1-followups` — see Status after U33–U37.)*
   `src/components/broadcast/clamav-unreachable-banner.tsx:34` polls
   `/api/internal/clamav/health`; **no such route exists under `src/app/api/`** — the component's own
   docblock says the endpoint is out of scope and `:42-44` deliberately treats 404 as "no signal", so
@@ -921,16 +921,16 @@ Severity is against the FR-051 gate, as above: **HIGH** blocks the flip, **MEDIU
   errors" useless as a smoke signal on this surface and buries anything real. Either ship the route
   or stop polling until it exists.
 - **U35 — the cancel-broadcast confirm has no typed-match while its own copy says the act is
-  final.** The dialog body reads "Once cancelled it cannot be re-sent" / *"เมื่อยกเลิกแล้วจะไม่สามารถส่งซ้ำได้"*.
+  final.** *(CLOSED on `fix/119-pr1-followups`.)* The dialog body reads "Once cancelled it cannot be re-sent" / *"เมื่อยกเลิกแล้วจะไม่สามารถส่งซ้ำได้"*.
   Everything else about it is right (see footnote ⁶). The inconsistency is that
   `clear-halt-dialog.tsx:132` gates a *less* final, staff-side action behind a normalised typed-match
   while the member's irreversible one is a single click. Pick one rule.
 - **U36 — the marketing-consent banner puts an `<h2>` above the page `<h1>` and owns the first three
-  tab stops**, on all three surfaces walked here and on `/portal` besides. The outline reads
+  tab stops** *(CLOSED on `fix/119-pr1-followups`)*, on all three surfaces walked here and on `/portal` besides. The outline reads
   h2 → h1 → h2 …, which axe permits (a level decrease is legal) but which no outline reader expects,
   and a keyboard member passes "Read the privacy policy / I acknowledge / Remind me later" before
   reaching the Subject field on every single visit until they acknowledge.
-- **U37 — the member history table does not collapse to cards below `md`.** `min-w-[640px]` inside
+- **U37 — the member history table does not collapse to cards below `md`.** *(CLOSED on `fix/119-pr1-followups`.)* `min-w-[640px]` inside
   the shared `overflow-x-auto` container: at a 320 px viewport the table is **729 px** wide in a
   **209 px** box, so Status / Audience / Submitted / Sent are reachable only by swiping a nested
   region. § 15 item 1 still PASSES — there is no *page* scroll — and the region is named and
@@ -971,6 +971,21 @@ renders in the locale’s own calendar; storage untouched) · **U31** (a visuall
 
 **STILL OPEN**, untouched by that round: **U33** · **U34** · **U35** · **U36** · **U37** — and
 the two measurement debts above (NVDA, and axe on these three screens) remain OWED.
+
+###### Status after U33–U37 — 2026-09-23
+
+**CLOSED** on `fix/119-pr1-followups` (each test RED before the fix; no commits): **U34** (the
+ClamAV banner is inert unless a caller passes `healthEndpoint` — no request, no DOM — and
+`tiptap-editor.tsx` passes none until a real health route exists) · **U35** (the cancel dialog, member
+AND staff, gates confirm behind a typed phrase — `CANCEL` / `ยกเลิก` / `AVBRYT` — through the
+`TypedPhraseField` extracted from `clear-halt-dialog.tsx`, same case/whitespace/punctuation rule) ·
+**U36** (the consent banner is mounted between `</header>` and `<main>`, so the skip link bypasses
+it, and its title is a `<p>` naming the `role="region"` instead of an `<h2>`) · **U37** (below `md`
+the history is a `<ul role="list">` card list; the table shows from `md` up; both consume one
+pre-formatted row model).
+
+**DEFERRED**: **U33** — a deliberate design choice (maintainer, 2026-09-23), not a defect.
+The two measurement debts (NVDA, and axe on these screens) remain OWED.
 
 ##### a11y e2e — the command, the result, and what a green run does NOT prove
 
