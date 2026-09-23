@@ -157,9 +157,11 @@ still being served.
 (`reclaimOrphanedImages`, in the `prune-expired-drafts` cron) deletes the blob
 under the LAST-REFERENCE rule — only when no live row of either owner_kind
 shares its `content_hash` AND no live `body_html` still embeds the URL. So the
-erasure evidence is “the reference is gone”; “the bytes are gone” follows within
-24 h. That is deliberate: a hash shared with a template image the chamber still
-uses must not be deleted out from under it.
+erasure evidence is “the reference is gone”; “the bytes are gone” follows on the
+next daily sweep tick (200 rows per arm per tenant); a backlog, or a row that
+fails, takes later ticks — watch `broadcasts_image_sweep_row_failed_total`
+(`docs/observability.md` § 22.12). That is deliberate: a hash shared with a
+template image the chamber still uses must not be deleted out from under it.
 
 ### Verifying it after an erasure
 
@@ -189,38 +191,54 @@ uses must not be deleted out from under it.
    which made the middle one look like the third.
 
    **(a) Reclaimed — the ordinary case.** `broadcast_image_removed
-   { reason: 'sweep', blob_deleted: true }`. The row is gone and so are the
-   bytes. Nothing further to record.
+   { reason: 'sweep', blob_deleted: true, blob_disposition: 'deleted' }` — or
+   `blob_disposition: 'reclaimed_by_sibling'` (`blob_deleted: false`) when an
+   earlier row of the same tick sharing the hash already deleted the bytes.
+   Either way the row is gone and so are the bytes. Nothing further to record.
 
    **(b) Row removed, bytes KEPT — a live row shares the hash.** Another
    `broadcast_images` row, of either `owner_kind`, still points at the same
    `content_hash`: another member uploaded the identical file, or it is a
    chamber template's image. You get `broadcast_image_removed
-   { reason: 'sweep', blob_deleted: false }` — the erased member's REFERENCE is
-   gone, which is what Art. 17 requires of us here, while the file stays for
-   the other holder. Record which holder, so the next erasure of THAT subject
-   is understood to be the one that frees the bytes.
+   { reason: 'sweep', blob_deleted: false, blob_disposition: 'kept_shared_row' }`
+   — the erased member's REFERENCE and ROW are gone, while the file stays for
+   the other holder. The identical bytes are still publicly served, so this
+   outcome is **disclosed on the DSR ticket** (decision (e), step 4 query ii).
+   Record which holder, so the next erasure of THAT subject is understood to be
+   the one that frees the bytes.
 
    **(c) Retained — no live row, but live CONTENT still embeds the URL.** NO
    audit row at all for that image and a non-zero `retained` in the tick
    summary. This is the pre-0304 backfill gap (or a draft started from a
    template, data-model § 4): some live `body_html` / `body_source` still
    carries the blob URL although no row proves it. ROUND-2 S-3 keeps the row
-   AND un-stamps it, so the image stays reachable by a later sweep or a later
-   erasure — nothing was removed, so nothing claims it was. Correct behaviour,
-   not an erasure failure, but record it and name the content that holds the
-   URL: until that content goes, the file is still served.
+   AND un-stamps it — nothing was removed, so nothing claims it was. Correct
+   behaviour, not an erasure failure, but record it and name the content that
+   holds the URL: until that content goes, the file is still served. **Nothing
+   re-examines this row automatically.** The sweep's orphan arm selects only
+   rows whose OWNER is gone, and an erasure REDACTS the member's broadcast — it
+   does not delete it — so the un-stamped row's owner survives and no later
+   tick reaches it. Step 4 query (i) surfaces it; it is reclaimed by hand once
+   the holding content goes (re-stamp the row — `deleted_at = now()` — and the
+   next tick applies the last-reference rule to it). (A retained row whose
+   owner was a DISCARDED or PRUNED draft is different: its owner is gone, so
+   the orphan arm re-examines it every tick.)
 
-4. **Enumerate what SURVIVED, for the DSR answer.** Outcome (c) leaves the row
-   live again with its `owner_id` still pointing at the erased member's (now
-   redacted) broadcast, and it writes **no audit row** — by design, because
-   nothing was removed. So the audit trail alone cannot answer "what is still
-   served?"; read the state instead. Run this **after** the first daily tick
-   that follows the cascade:
+4. **Enumerate what is STILL SERVED, for the DSR answer.** The audit trail
+   alone cannot answer "what is still served?": outcome (c) writes **no audit
+   row** (nothing was removed), and outcome (b) says the bytes were kept but
+   not who still holds them. Read the state instead, with the three queries
+   below. Run them **after** the daily tick that follows the cascade (and
+   again after later ticks while query (iii) is non-zero). Every join carries
+   `tenant_id` on BOTH sides — `broadcast_id` and `owner_id` are unique only
+   within a tenant, so a join on the id alone can pair rows across tenants and
+   quietly report the wrong count.
+
+   **(i) The member's own images, live again (outcome c).** The cascade stamped
+   them; the sweep un-stamped them (`restoreLive`) because live content embeds
+   the URL. Being un-stamped is exactly what makes this query see them:
 
    ```sql
-   -- Images of the erased member that are LIVE again (outcome c) — i.e. the
-   -- bytes are still served because live content elsewhere embeds the URL.
    SELECT bi.id, bi.content_hash, bi.blob_url, bi.created_at
      FROM broadcast_images bi
      JOIN broadcasts b
@@ -232,24 +250,85 @@ uses must not be deleted out from under it.
       AND bi.deleted_at IS NULL;          -- stamped by the cascade, then un-stamped
    ```
 
-   Zero rows ⇒ every image of theirs was reclaimed or its reference removed
-   (outcomes a/b) and the DSR answer needs no image caveat. One or more rows ⇒
-   **the answer must say so**: name how many files persist and why (live
-   content of another data subject, or a chamber template, still embeds them),
-   and that they are reclaimed on the first tick after that content goes. To
-   find the holder for each, reuse the `position()` shape the sweep itself
-   uses:
+   For each row, name the holder with the same two legs the sweep itself
+   checks (`isBlobReferencedByContent`) — live broadcasts AND templates:
 
    ```sql
-   SELECT broadcast_id, requested_by_member_id
+   SELECT 'broadcast' AS holder_kind, broadcast_id AS holder_id, requested_by_member_id
      FROM broadcasts
     WHERE tenant_id = '<tenant>'
       AND (position('<blob_url>' in body_html) > 0
-        OR position('<blob_url>' in body_source) > 0);
+        OR position('<blob_url>' in body_source) > 0)
+   UNION ALL
+   SELECT 'template', id, NULL
+     FROM broadcast_templates
+    WHERE tenant_id = '<tenant>'
+      AND position('<blob_url>' in body_html) > 0;
    ```
 
-   Record the count on the DSR ticket either way — "0 retained" is evidence,
-   not silence.
+   **(ii) The member's images whose identical bytes another owner still holds
+   (outcome b).** The member's rows are gone, so their hashes come from the
+   cascade's own audit rows (`payload.content_hash`, same `request_id` as
+   step 1), matched to LIVE rows of any OTHER owner in the same tenant:
+
+   ```sql
+   SELECT DISTINCT bi.id, bi.owner_kind, bi.owner_id, bi.content_hash
+     FROM audit_log al
+     JOIN broadcast_images bi
+       ON bi.tenant_id = al.tenant_id
+      AND bi.content_hash = al.payload->>'content_hash'
+    WHERE al.tenant_id = '<tenant>'
+      AND al.event_type = 'broadcast_image_removed'
+      AND al.request_id = '<erasure request_id>'
+      AND al.payload->>'reason' = 'member_erased'
+      AND bi.deleted_at IS NULL
+      AND NOT EXISTS (                    -- not the member's own row: that is (i)
+            SELECT 1 FROM broadcasts b
+             WHERE b.tenant_id = bi.tenant_id
+               AND b.broadcast_id = bi.owner_id
+               AND bi.owner_kind = 'broadcast'
+               AND b.requested_by_member_id = '<member>');
+   ```
+
+   (If the cascade ran without a request id its rows carry `request_id =
+   'erasure'`, which is not unique — narrow by `al.timestamp` around the
+   `member_erased` event instead.)
+
+   **(iii) The pending backlog.** Rows of the member's broadcasts the cascade
+   stamped that no tick has swept yet — non-zero after a bulk erasure (200 rows
+   per arm per tenant per tick) or while `broadcasts_image_sweep_row_failed_total`
+   is climbing. Their bytes are still served until a tick reaches them:
+
+   ```sql
+   SELECT count(*)
+     FROM broadcast_images bi
+     JOIN broadcasts b
+       ON b.tenant_id = bi.tenant_id
+      AND b.broadcast_id = bi.owner_id
+    WHERE bi.tenant_id = '<tenant>'
+      AND bi.owner_kind = 'broadcast'
+      AND b.requested_by_member_id = '<member>'
+      AND bi.deleted_at IS NOT NULL;
+   ```
+
+   **"0 retained" means ZERO in all three.** Then every image of theirs was
+   reclaimed (outcome a) and the DSR answer needs no image caveat. Otherwise
+   **the answer must say so** and record on the DSR ticket:
+
+   - the count from (i), and the holder of each (another data subject's live
+     content, or a chamber template, still embeds the file) — reclaimed by hand
+     once that content goes, per outcome (c) above;
+   - the count from (ii) — **decision (e), 2026-09-23** (delegated by the
+     maintainer to Claude as a conservative default; the DPO may revise): a file
+     whose identical bytes are still held by another owner's live row COUNTS as
+     still-served personal data of the erased member and MUST be disclosed,
+     exactly like a retained row — its bytes are freed when that holder's row
+     goes (the holder's own erasure, discard or prune);
+   - the count from (iii), and a re-run of this step after the ticks that clear
+     it.
+
+   Record all three counts on the DSR ticket either way, including zeros —
+   "0 retained" is evidence, not silence.
 
 **Known limitation, recorded not guessed.** `broadcast_images` was NOT
 backfilled by migration 0304. An image uploaded BEFORE 0304 has no row, so this

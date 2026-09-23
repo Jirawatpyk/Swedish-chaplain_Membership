@@ -11,9 +11,11 @@
  * TWO ARMS.
  *
  * 1. MARKED (`deleted_at IS NOT NULL`) — the primary mechanism. A row is
- *    stamped by erasure, a member withdrawal, a staff rejection, a draft
- *    discard or the draft prune, each inside the same transaction as the
- *    state change that removed the reference.
+ *    stamped by a member erasure, a draft discard or the draft prune (the
+ *    reasons today: `member_erased | draft_discarded | draft_pruned`), each
+ *    inside the same transaction as the state change that removed the
+ *    reference. A member withdrawal and a staff rejection arrive as stamping
+ *    paths with PR-2 (T081).
  *
  * 2. ORPHANED (`deleted_at IS NULL`, owner row gone) — F119 review finding
  *    F2-1, defence in depth. `owner_id` carries no FK (two possible parents),
@@ -29,7 +31,8 @@
  * kept) AND no live content still embeds the URL (F2-10(b) — the table was
  * not backfilled, so pre-0304 images are referenced by `body_html` with no
  * row to prove it). The row is then removed and `broadcast_image_removed` is
- * audited in the same tx.
+ * audited in the same tx, with a `blob_disposition` (F7-1) that states what
+ * happened to the BYTES — see `BlobDisposition`.
  *
  * RETAINED (ROUND-2 S-3). When live content DOES still embed the URL, the row
  * is NOT removed — it is un-stamped back into the live set. Removing it made
@@ -55,6 +58,12 @@
  * retries — and audits nothing; a row is never removed twice. One
  * transaction per row so one bad blob never blocks the batch. Bounded per
  * tick; a second run the same day is a no-op.
+ *
+ * F7-1 — a row that throws is COUNTED (`rowsFailed`) and metered
+ * (`broadcasts_image_sweep_row_failed_total{tenant}`). It used to be a `warn`
+ * line only, so a persistent fault — an expired Blob token fails every row
+ * every day — read as a clean tick while erased members' images stayed
+ * publicly served.
  */
 import { err, ok, type Result } from '@/lib/result';
 import { errKind } from '@/lib/log-id';
@@ -107,10 +116,15 @@ export interface ReclaimOrphanedImagesOutput {
   readonly rowsRemoved: number;
   /**
    * ROUND-2 S-3 — rows the sweep KEPT (and un-stamped) because live content
-   * still embeds their blob URL. `scanned = rowsRemoved + retained + rows that
-   * threw`; a row is never both.
+   * still embeds their blob URL. `scanned = rowsRemoved + retained +
+   * rowsFailed`; a row is in exactly one of the three.
    */
   readonly retained: number;
+  /**
+   * F7-1 — rows whose per-row transaction threw. Left for the next tick; the
+   * cron logs a non-zero count at `error` and the counter carries the alert.
+   */
+  readonly rowsFailed: number;
 }
 
 export type ReclaimOrphanedImagesError = {
@@ -127,8 +141,30 @@ export type ReclaimOrphanedImagesError = {
 type SweepReason = 'sweep' | 'sweep_orphaned';
 
 /**
- * What one per-row transaction did. `'retained'` is ROUND-2 S-3: the bytes
- * AND the row stayed, and the row went back in the live set.
+ * F7-1 (audit truth) — what happened to the BYTES of a REMOVED row. It is the
+ * audit's `blob_disposition` and the source of its summary, so the summary can
+ * never claim a different fact from the payload. `blob_deleted` stays in the
+ * payload for existing readers and is true only for `'deleted'`.
+ *
+ * - `'deleted'` — this row deleted the blob.
+ * - `'kept_shared_row'` — another LIVE image row (either `owner_kind`) shares
+ *   the `content_hash`, so the bytes stay for that holder.
+ * - `'reclaimed_by_sibling'` — an EARLIER row of this same batch, sharing the
+ *   hash, already deleted the bytes. This case used to be audited "blob kept
+ *   by reference" while the bytes were gone.
+ */
+type BlobDisposition = 'deleted' | 'kept_shared_row' | 'reclaimed_by_sibling';
+
+const DISPOSITION_SUMMARY: Readonly<Record<BlobDisposition, string>> = {
+  deleted: 'blob deleted',
+  kept_shared_row: 'blob kept — another live image row shares its content',
+  reclaimed_by_sibling: 'blob already deleted by an earlier row of this sweep',
+};
+
+/**
+ * What one per-row transaction did: a removed row's `BlobDisposition`, or
+ * `'retained'` (ROUND-2 S-3) — the bytes AND the row stayed, and the row went
+ * back in the live set.
  *
  * Accountability note (DPO decision, 2026-09-22 — option A, the last-reference
  * rule): when the retained row was stamped by an ERASURE, the audit trail ends
@@ -141,8 +177,19 @@ type SweepReason = 'sweep' | 'sweep_orphaned';
  * of the subject's images survived and which live content holds each, and the
  * RoPA (§ F119 Erasure row) requires that count — including zero — on the
  * ticket. Change this arm and those two documents change with it.
+ *
+ * Nothing re-examines such a row automatically. `restoreLive` un-stamps it
+ * and `listOrphaned` selects only rows whose OWNER is gone — and an erasure
+ * REDACTS the member's broadcast, it does not delete it. The runbook step
+ * surfaces the row; it is reclaimed by hand once the holding content goes.
+ *
+ * Decision (e), 2026-09-23 (conservative default; the DPO may revise): an
+ * erased member's row removed as `'kept_shared_row'` also leaves bytes
+ * served — identical bytes held by ANOTHER owner's live row — and counts as
+ * still-served personal data of that member. Step 4 enumerates those too, and
+ * the DSR ticket discloses their count, including zero.
  */
-type RowOutcome = 'removed_blob_deleted' | 'removed_blob_kept' | 'retained';
+type RowOutcome = BlobDisposition | 'retained';
 
 export async function reclaimOrphanedImages(
   deps: ReclaimOrphanedImagesDeps,
@@ -172,6 +219,7 @@ export async function reclaimOrphanedImages(
   let blobsDeleted = 0;
   let rowsRemoved = 0;
   let retained = 0;
+  let rowsFailed = 0;
 
   for (const { image, orphan } of batch) {
     try {
@@ -193,7 +241,7 @@ export async function reclaimOrphanedImages(
           orphan ? image.id : undefined,
         );
 
-        let blobDeleted = false;
+        let disposition: BlobDisposition = 'kept_shared_row';
         const reason: SweepReason = orphan ? 'sweep_orphaned' : 'sweep';
         if (live === 0) {
           // F2-10(b) — pre-0304 blobs have no row but ARE referenced by live
@@ -212,8 +260,14 @@ export async function reclaimOrphanedImages(
             //
             // So the row goes back in the LIVE set instead. That is the honest
             // state: live content still embeds this URL, so its reference is
-            // not gone. When that content goes, the next tick's orphan arm (or
-            // a fresh erasure stamp) reaches it again.
+            // not gone. Whether anything reaches it again depends on its
+            // OWNER. A draft-discard / prune row's owner is gone, so the next
+            // tick's orphan arm re-examines it. An ERASURE-stamped row's owner
+            // survives (erasure redacts the broadcast, it does not delete it),
+            // so `listOrphaned` never selects it and nothing re-examines it
+            // automatically: `docs/runbooks/member-erasure.md` § Verifying
+            // step 4 surfaces it, and it is reclaimed by hand once the holding
+            // content goes.
             //
             // No `broadcast_image_removed` audit — nothing was removed, and an
             // audit row claiming otherwise is exactly the audit-truth class
@@ -222,12 +276,14 @@ export async function reclaimOrphanedImages(
             await deps.imagesRepo.restoreLive(input.tenantId, image.id, tx);
             return 'retained';
           } else if (deletedBlobKeys.has(image.blobKey)) {
-            // An earlier row of THIS batch already reclaimed these bytes.
-            // Nothing to do: `blobDeleted` stays false so the count is honest.
+            // An earlier row of THIS batch already deleted these bytes. No
+            // second delete, no second count — and the audit must say the
+            // bytes are gone, not that they were kept (F7-1).
+            disposition = 'reclaimed_by_sibling';
           } else {
             // A throw here propagates: the row stays for the next tick.
             await deps.storage.delete(image.blobKey);
-            blobDeleted = true;
+            disposition = 'deleted';
           }
         }
 
@@ -237,19 +293,20 @@ export async function reclaimOrphanedImages(
           tenantId: input.tenantId,
           requestId: input.requestId,
           actorUserId: 'system',
-          summary: `E-Blast image swept (${blobDeleted ? 'blob deleted' : 'blob kept by reference'})`,
+          summary: `E-Blast image swept (${DISPOSITION_SUMMARY[disposition]})`,
           payload: {
             related_member_id: null,
             owner_kind: image.ownerKind,
             owner_id: image.ownerId,
             image_id: image.id,
             content_hash: image.contentHash,
-            blob_deleted: blobDeleted,
+            blob_deleted: disposition === 'deleted',
+            blob_disposition: disposition,
             reason,
             actor_role: 'system',
           },
         });
-        return blobDeleted ? 'removed_blob_deleted' : 'removed_blob_kept';
+        return disposition;
       });
       if (outcome === 'retained') {
         retained += 1;
@@ -267,16 +324,20 @@ export async function reclaimOrphanedImages(
         continue;
       }
       rowsRemoved += 1;
-      if (outcome === 'removed_blob_deleted') {
+      if (outcome === 'deleted') {
         deletedBlobKeys.add(image.blobKey);
         blobsDeleted += 1;
       }
     } catch (e) {
+      // F7-1 — counted and metered, not only logged: the cron reports
+      // `rowsFailed` and the counter carries the alert.
+      rowsFailed += 1;
+      broadcastsMetrics.imageSweepRowFailed(input.tenantId as unknown as string);
       logger.warn(
         { err: errKind(e), tenantId: input.tenantId, imageId: image.id, orphan, requestId: input.requestId },
         'broadcasts.image_sweep.row_retry_next_tick',
       );
     }
   }
-  return ok({ scanned: batch.length, blobsDeleted, rowsRemoved, retained });
+  return ok({ scanned: batch.length, blobsDeleted, rowsRemoved, retained, rowsFailed });
 }

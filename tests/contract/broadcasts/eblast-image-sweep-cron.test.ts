@@ -91,6 +91,29 @@ describe('prune-expired-drafts — image sweep block (T035)', () => {
     expect(body.imageSweep).toMatchObject({ ok: true, scanned: 3 });
   });
 
+  /**
+   * F7-1 — a per-row failure (e.g. an expired Blob token) used to leave only a
+   * `warn` line inside the use case while the tick reported ok. It stays a 200
+   * (a daily-cron 500 would hide the rows that DID succeed; the alert rides
+   * the `broadcasts_image_sweep_row_failed_total` counter), but it is now in the
+   * tick body and logged at `error` with its own errorId.
+   */
+  it('F7-1: rows that failed are reported and logged at error with an errorId — the tick stays 200', async () => {
+    reclaimMock.mockResolvedValueOnce(
+      ok({ scanned: 3, blobsDeleted: 0, rowsRemoved: 1, retained: 0, rowsFailed: 2 }),
+    );
+    const { POST } = await importRoute();
+    const { logger } = await import('@/lib/logger');
+    const res = await POST(req('POST'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.imageSweep).toMatchObject({ ok: true, rowsFailed: 2 });
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errorId: 'M119.cron.image_sweep.rows_failed', rowsFailed: 2 }),
+      'cron.broadcasts.image_sweep.rows_failed',
+    );
+  });
+
   it('the CRON_SECRET bearer guards the whole handler — no block runs without it', async () => {
     const { POST } = await importRoute();
     const res = await POST(req('POST', 'Bearer wrong'));

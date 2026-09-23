@@ -13,7 +13,18 @@
  * the use-case half of T035 share this suite; the cron ROUTE half of T035
  * is `tests/contract/broadcasts/eblast-image-sweep-cron.test.ts`.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// F7-1 — a row that throws must be ALERTABLE, not only a `warn` line.
+const { imageSweepRowFailedSpy } = vi.hoisted(() => ({ imageSweepRowFailedSpy: vi.fn() }));
+vi.mock('@/lib/metrics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/metrics')>('@/lib/metrics');
+  return {
+    ...actual,
+    broadcastsMetrics: { ...actual.broadcastsMetrics, imageSweepRowFailed: imageSweepRowFailedSpy },
+  };
+});
+
 import { reclaimOrphanedImages } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-images';
 import type { BroadcastImagesRepo, BroadcastImageRecord } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
@@ -70,12 +81,16 @@ function makeDeps(rows: BroadcastImageRecord[], liveCounts: Record<string, numbe
 }
 
 describe('reclaimOrphanedImages', () => {
+  beforeEach(() => {
+    imageSweepRowFailedSpy.mockClear();
+  });
+
   it('an unreferenced blob is deleted, its row removed, and the removal audited as system/sweep', async () => {
     const deps = makeDeps([marked('img-a', 'hash-a')], { 'hash-a': 0 });
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-1' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 1, rowsRemoved: 1, retained: 0 });
+    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 1, rowsRemoved: 1, retained: 0, rowsFailed: 0 });
     expect(deps.storage.delete).toHaveBeenCalledWith('broadcasts/images/tenant-swe/hash-a.png');
     expect(deps.imagesRepo.remove).toHaveBeenCalledWith(TENANT, 'img-a', 'tx-1');
     const [, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
@@ -88,10 +103,12 @@ describe('reclaimOrphanedImages', () => {
         owner_id: '11111111-1111-1111-1111-111111111111',
         image_id: 'img-a',
         blob_deleted: true,
+        blob_disposition: 'deleted',
         reason: 'sweep',
         actor_role: 'system',
       },
     });
+    expect((event as { summary: string }).summary).toBe('E-Blast image swept (blob deleted)');
   });
 
   it('a blob whose hash is still referenced by a live template row is KEPT (row removed, blob not deleted)', async () => {
@@ -99,17 +116,20 @@ describe('reclaimOrphanedImages', () => {
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-1' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0 });
+    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0, rowsFailed: 0 });
     expect(deps.storage.delete).not.toHaveBeenCalled();
     expect(deps.imagesRepo.remove).toHaveBeenCalledTimes(1);
     const [, event] = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    expect((event as { payload: { blob_deleted: boolean } }).payload.blob_deleted).toBe(false);
+    expect(event).toMatchObject({
+      summary: 'E-Blast image swept (blob kept — another live image row shares its content)',
+      payload: { blob_deleted: false, blob_disposition: 'kept_shared_row' },
+    });
   });
 
   it('a second run the same day is a no-op (nothing marked → nothing touched, nothing audited)', async () => {
     const deps = makeDeps([], {});
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-2' });
-    expect(r).toEqual({ ok: true, value: { scanned: 0, blobsDeleted: 0, rowsRemoved: 0, retained: 0 } });
+    expect(r).toEqual({ ok: true, value: { scanned: 0, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 0 } });
     expect(deps.storage.delete).not.toHaveBeenCalled();
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
@@ -121,9 +141,18 @@ describe('reclaimOrphanedImages', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     // The row stays so the sweep retries the delete tomorrow; nothing is audited yet.
-    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 0, retained: 0 });
+    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 1 });
     expect(deps.imagesRepo.remove).not.toHaveBeenCalled();
     expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('F7-1: a row that throws is COUNTED and metered — an expired Blob token must not read as a clean tick', async () => {
+    const deps = makeDeps([marked('img-e', 'hash-e'), marked('img-f', 'hash-f')], {});
+    (deps.storage.delete as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('blob token expired'));
+    const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-5' });
+    expect(r).toEqual({ ok: true, value: { scanned: 2, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 2 } });
+    expect(imageSweepRowFailedSpy).toHaveBeenCalledTimes(2);
+    expect(imageSweepRowFailedSpy).toHaveBeenCalledWith(TENANT);
   });
 
   it('the last-reference check counts LIVE rows of either owner_kind in the same tx as the removal', async () => {

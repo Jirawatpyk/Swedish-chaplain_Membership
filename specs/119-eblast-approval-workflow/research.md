@@ -863,7 +863,7 @@ earlier draft of this research said "reuse the existing `broadcast_image_*`", wh
 `broadcast_image_uploaded` is emitted by all three upload routes (member, staff E-Blast, template)
 with `{ owner_kind, owner_id, image_id, byte_size, mime_type, content_hash }`;
 `broadcast_image_removed` is emitted when a row is stamped `deleted_at` (erasure, withdrawal,
-rejection) with `{ owner_kind, owner_id, image_id, blob_deleted: bool }` — never the blob URL.
+rejection) with `{ owner_kind, owner_id, image_id, blob_deleted: bool }` — never the blob URL. (As built: sweep rows also carry `blob_disposition`, F7-1 — see `data-model.md` `deleted_at`.)
 **D (the five places, F7 flavour)**: (1) `F7_AUDIT_EVENT_TYPES` in
 `src/modules/broadcasts/application/ports/audit-port.ts:50-178` — **55 → 69**, and the static
 assert at `:234` (`extends 55`) updated in the same edit; (2) `DB_ONLY_AUDIT_EVENT_TYPES` in

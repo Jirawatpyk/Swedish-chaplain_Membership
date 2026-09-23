@@ -125,12 +125,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // flag in the body. T130 (PR-2) adds the reminder / expiry steps here.
   // ROUND-2 S-3 — `retained` is the fourth count: rows the sweep KEPT (and put
   // back in the live set) because live content still embeds their blob URL.
+  // F7-1 — `rowsFailed` is the fifth: rows whose per-row tx threw and were
+  // left for the next tick. A non-zero count is logged at `error` but the tick
+  // stays 200 — a daily-cron 500 would hide the rows that DID succeed, and the
+  // alert rides `broadcasts_image_sweep_row_failed_total` instead.
   let imageSweep: {
     ok: boolean;
     scanned?: number;
     blobsDeleted?: number;
     rowsRemoved?: number;
     retained?: number;
+    rowsFailed?: number;
   } = { ok: false };
   try {
     const result = await reclaimOrphanedImages(makeReclaimOrphanedImagesDeps(tenantCtx.slug), {
@@ -140,6 +145,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
     if (result.ok) {
       imageSweep = { ok: true, ...result.value };
+      if (result.value.rowsFailed > 0) {
+        logger.error(
+          {
+            tenantId: tenantCtx.slug,
+            rowsFailed: result.value.rowsFailed,
+            scanned: result.value.scanned,
+            errorId: 'M119.cron.image_sweep.rows_failed',
+          },
+          'cron.broadcasts.image_sweep.rows_failed',
+        );
+      }
     } else {
       logger.error(
         { tenantId: tenantCtx.slug, message: result.error.message, errorId: 'M119.cron.image_sweep' },

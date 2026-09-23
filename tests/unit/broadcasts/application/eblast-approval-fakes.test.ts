@@ -75,13 +75,13 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
     // The draft is withdrawn: its row is marked; the template's row stays live.
     await imagesRepo.markDeletedByOwner(TENANT, { kind: 'broadcast', id: '22222222-2222-2222-2222-222222222222' }, NOW, FAKE_TX);
     const sweep1 = await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: TENANT, now: NOW, requestId: 'c1' });
-    expect(sweep1).toEqual({ ok: true, value: { scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0 } });
+    expect(sweep1).toEqual({ ok: true, value: { scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0, rowsFailed: 0 } });
     expect(storage.deleted).toEqual([]);
 
     // The template goes too: now nothing references the hash — the blob is deleted.
     await imagesRepo.markDeletedByOwner(TENANT, { kind: 'template', id: '11111111-1111-1111-1111-111111111111' }, NOW, FAKE_TX);
     const sweep2 = await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: TENANT, now: NOW, requestId: 'c2' });
-    expect(sweep2).toEqual({ ok: true, value: { scanned: 1, blobsDeleted: 1, rowsRemoved: 1, retained: 0 } });
+    expect(sweep2).toEqual({ ok: true, value: { scanned: 1, blobsDeleted: 1, rowsRemoved: 1, retained: 0, rowsFailed: 0 } });
     expect(storage.deleted).toHaveLength(1);
     expect(imagesRepo.rows).toHaveLength(0);
   });

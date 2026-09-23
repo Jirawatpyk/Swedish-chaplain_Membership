@@ -512,10 +512,26 @@ logs, that is this guard firing — the upload succeeded and the bytes are
 back, but it means an upload and the sweep raced for the same hash.
 
 **Reading the outcome.** The tick body carries
-`imageSweep: { ok, scanned, blobsDeleted, rowsRemoved, retained }`.
+`imageSweep: { ok, scanned, blobsDeleted, rowsRemoved, retained, rowsFailed }`.
 `rowsRemoved` exceeding `blobsDeleted` is NORMAL: it means blobs were kept
-because another reference survives. The audit `reason` says which case —
-`sweep` (marked row, bytes gone) or `sweep_orphaned` (owner vanished).
+because another reference survives, or that two rows of one batch shared a
+hash and the first one deleted the bytes. The audit `reason` says which arm —
+`sweep` (marked row) or `sweep_orphaned` (owner vanished) — and
+`blob_disposition` (F7-1) says what happened to the bytes: `deleted` (this row
+deleted them), `kept_shared_row` (another live row shares the hash; bytes
+stay) or `reclaimed_by_sibling` (an earlier row of this tick already deleted
+them). `blob_deleted` is kept for older readers and is true only for
+`deleted`.
+
+`rowsFailed` (F7-1) counts rows whose per-row transaction threw; they are left
+for the next tick. The tick still returns 200 — a 500 would hide the rows that
+succeeded — but a non-zero count logs `cron.broadcasts.image_sweep.rows_failed`
+at `error` (`errorId: 'M119.cron.image_sweep.rows_failed'`) and increments
+`broadcasts_image_sweep_row_failed_total{tenant}` (alert: `docs/observability.md`
+§ 22.12). The per-row cause is on `broadcasts.image_sweep.row_retry_next_tick`
+(`err`). The same tenant failing on consecutive days is a fault that is not
+clearing — an expired `BLOB_READ_WRITE_TOKEN` fails every row — and while it
+lasts, erased members' images stay publicly served.
 
 `retained` (ROUND-2 S-3) is the case where live content still embeds the blob
 URL. Those rows keep their bytes AND their row: the row is un-stamped back

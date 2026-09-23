@@ -649,6 +649,32 @@ describe('reclaimOrphanedImages — F2-1 orphan arm + F2-10 races', () => {
     expect(audit.events.map((e) => e.payload['blob_deleted'])).toEqual([true, false]);
   });
 
+  /**
+   * F7-1 (audit truth). The second row of a shared-hash batch was audited
+   * "blob kept by reference" — but the bytes were GONE, deleted by the first
+   * row a moment earlier. Each audit row must state what happened to the
+   * bytes, and the three removed-row cases are three different facts.
+   */
+  it('F7-1: the second row of a shared-hash batch says the bytes were already deleted — never "kept"', async () => {
+    const a = imageRow({ id: 'img-1', deletedAt: NOW });
+    const b = imageRow({ id: 'img-2', ownerId: 'draft-2', deletedAt: NOW });
+    const imagesRepo = makeFakeBroadcastImagesRepo([a, b]);
+    vi.mocked(imagesRepo.countLiveByContentHash).mockResolvedValue(0);
+
+    await reclaimOrphanedImages(
+      { imagesRepo, storage: makeFakeImageStorage(), audit },
+      { tenantId: TENANT, now: NOW, requestId: 's' },
+    );
+
+    expect(audit.events.map((e) => e.payload['blob_disposition'])).toEqual(['deleted', 'reclaimed_by_sibling']);
+    const summaries = vi.mocked(audit.emit).mock.calls.map(([, e]) => e.summary);
+    expect(summaries).toEqual([
+      'E-Blast image swept (blob deleted)',
+      'E-Blast image swept (blob already deleted by an earlier row of this sweep)',
+    ]);
+    expect(summaries.join(' ')).not.toMatch(/kept/);
+  });
+
   it('the last-reference rule still holds: a live sibling row keeps the blob', async () => {
     const marked = imageRow({ id: 'img-1', deletedAt: NOW });
     const imagesRepo = makeFakeBroadcastImagesRepo([marked, imageRow({ id: 'img-live', ownerId: 'other' })]);

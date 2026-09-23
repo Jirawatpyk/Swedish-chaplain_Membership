@@ -2109,6 +2109,28 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_image_sweep_row_failed_total{tenant}` — F7-1. One per image
+   * row whose per-row transaction THREW in the daily blob sweep (a Blob delete
+   * that failed, a lock or content scan that hit the row's statement timeout).
+   * The row is left for the next tick, which is correct for a transient fault
+   * — but a persistent one (an expired `BLOB_READ_WRITE_TOKEN`) fails every
+   * row every day while the tick still returns 200, and an erased member's
+   * image stays publicly served indefinitely. Before this counter the only
+   * trace was a `warn` line inside the use case.
+   *
+   * Reading it: any increment is worth a look; the same tenant incrementing on
+   * two consecutive daily ticks is a fault that is not going away on its own.
+   */
+  imageSweepRowFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_image_sweep_row_failed_total',
+        'Image rows whose per-row sweep transaction threw and were left for the next tick',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts.cron.dispatched.count{tenant}` — scheduled-send cron
    * throughput.
    */

@@ -1502,6 +1502,21 @@ Extends § 22.1 with **1 metric**. Brand chrome (chamber name header, the postal
 
 Routes per § 22.8 (alarm → `#oncall-platform`).
 
+### 22.12 F119 E-Blast approval workflow (PR-1) — the daily image-blob sweep
+
+Extends § 22.1 with **2 metrics**, both emitted by `reclaimOrphanedImages` (the image block of the daily `prune-expired-drafts` cron, 04:30 UTC). The sweep deletes an inline image's bytes under the last-reference rule and is the step that makes a member erasure's "the reference is gone" become "the bytes are gone" — the images sit at PUBLIC, unauthenticated Vercel Blob URLs, so a sweep that silently stops working keeps an erased member's photograph served. `retained_total` predates this section and was undocumented until F7-1 added `row_failed_total` beside it.
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts_image_sweep_retained_total` | counter | `tenant` | ROUND-2 S-3 — one per row the sweep KEPT and put back in the live set, because live content (`broadcasts.body_html` / `body_source`, `broadcast_templates.body_html`) still embeds the blob URL. No audit row is written for it (nothing was removed). A small steady rate is normal for pre-0304 images; a climbing one means retained rows are eating the orphan arm's 200-row batch. |
+| `broadcasts_image_sweep_row_failed_total` | counter | `tenant` | F7-1 — one per row whose per-row transaction THREW (a Blob `del` that failed, a lock or content scan that hit the 5 s `SET LOCAL statement_timeout`). The row is left for the next tick and the tick still returns **200** (a 500 would hide the rows that did succeed); the tick body carries `imageSweep.rowsFailed` and the route logs `cron.broadcasts.image_sweep.rows_failed` at `error` with `errorId: 'M119.cron.image_sweep.rows_failed'`. Before this counter a persistent fault — an expired `BLOB_READ_WRITE_TOKEN` fails every row every day — was a `warn` line only. |
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts_image_sweep_row_failed_total` increments on **two consecutive daily ticks** for the same `tenant` | **alarm** | one tick's failure is usually transient and the next tick retries it; the same tenant failing again the next day is a fault that is not clearing (Blob token, Blob outage, a content scan that no longer fits the 5 s bound). Every day it stays up, erased members' images the sweep should have deleted stay publicly served, and the runbook's "bytes gone on the next tick" statement is false for them. Read the `broadcasts.image_sweep.row_retry_next_tick` log lines for `err` first. | `docs/runbooks/cron-jobs.md` § F7 — broadcasts/prune-expired-drafts, Block 2; `docs/runbooks/member-erasure.md` § Inline E-Blast images |
+
+Routes per § 22.8 (alarm → `#oncall-platform`).
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability
