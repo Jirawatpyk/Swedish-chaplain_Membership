@@ -265,6 +265,15 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     partialDeliveryAcceptedByUserId: row.partialDeliveryAcceptedByUserId,
     templateProvenance: deriveTemplateProvenance(row),
 
+    // F119 (0305) — approval-round bookkeeping; DB defaults cover every
+    // pre-0305 row (stage_entered_at backfilled, current_round 0, …).
+    proposedSendAt: row.proposedSendAt,
+    stageEnteredAt: row.stageEnteredAt,
+    currentRound: row.currentRound,
+    approvedVersionId: row.approvedVersionId,
+    memberReminderStage: row.memberReminderStage,
+    memberExpiryNotifiedAt: row.memberExpiryNotifiedAt,
+
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -727,6 +736,15 @@ export function makeDrizzleBroadcastsRepo(
         'quotaYearConsumed',
         'quotaConsumedAt',
         'estimatedRecipientCount',
+        // F119 (0305) — the approval-round bookkeeping a transition writes.
+        // Not in the immutability trigger's blocklist; `scheduledFor` above is
+        // the one that needs an exempt edge (E2). A key missing here is
+        // silently DROPPED, so every F119 transition field must be listed.
+        'stageEnteredAt',
+        'currentRound',
+        'approvedVersionId',
+        'memberReminderStage',
+        'memberExpiryNotifiedAt',
       ];
       for (const key of passthrough) {
         if (fields[key] !== undefined) {

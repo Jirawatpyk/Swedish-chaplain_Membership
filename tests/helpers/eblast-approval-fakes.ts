@@ -12,7 +12,8 @@
  *   - `BrandChromePort`, `EmailRendererPort` (T031/T032) — the render seam
  * PR-2 adds `BroadcastVersionsRepo`, `BroadcastDecisionsRepo`,
  * `MarketingDirectoryPort`, `BroadcastApprovalScrubPort` (T055/T066/T082),
- * each shipped with its port's RED.
+ * each shipped with its port's RED — plus `ActorNameDirectoryPort` (T061,
+ * staff display names for the version thread), which T159a's list omits.
  *
  * Every fake `satisfies` its port, so a method added to a port without a
  * fake here fails to COMPILE — an unstubbed port method is an unexercised
@@ -20,7 +21,7 @@
  * `portMethodStaleTestStub` lesson). Every method is a `vi.fn` so a test can
  * override one arm without re-stubbing the port.
  */
-import { vi } from 'vitest';
+import { vi, type Mocked } from 'vitest';
 import { err, ok } from '@/lib/result';
 import type { BrandSettings } from '@/modules/broadcasts/domain/brand/brand-settings';
 import type { BrandChromePort } from '@/modules/broadcasts/application/ports/brand-chrome-port';
@@ -39,6 +40,22 @@ import type { ImageMimeType, ImageStoragePort, StoredImageRef } from '@/modules/
 import type { ImageReencoderPort } from '@/modules/broadcasts/application/ports/image-reencoder-port';
 import type { TenantLogoUrlPort } from '@/modules/broadcasts/application/ports/tenant-logo-url-port';
 import type { TestCopyMailerPort, TestCopyMessage } from '@/modules/broadcasts/application/ports/test-copy-mailer-port';
+import { asBroadcastId, type Broadcast, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import type { BroadcastVersion } from '@/modules/broadcasts/domain/approval/broadcast-version';
+import type { MemberDecision } from '@/modules/broadcasts/domain/approval/member-decision';
+import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import type { ActorNameDirectoryPort } from '@/modules/broadcasts/application/ports/actor-name-directory-port';
+import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
+import type { BroadcastDecisionsRepo, NewMemberDecision } from '@/modules/broadcasts/application/ports/broadcast-decisions-repo';
+import type {
+  BroadcastVersionsRepo,
+  NewBroadcastVersion,
+  WorkingCopyWrite,
+} from '@/modules/broadcasts/application/ports/broadcast-versions-repo';
+import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import type { Hostname, ImageAllowlistPort } from '@/modules/broadcasts/application/ports/image-allowlist-port';
+import type { ApprovalBroadcastsRepo } from '@/modules/broadcasts/application/use-cases/approval/_approval-tx';
+import type { TenantSlug } from '@/modules/tenants';
 
 /** The sentinel tx the fakes hand to `withTx` callbacks — assert on it to prove a write shared the tx. */
 export const FAKE_TX = 'fake-tx' as const;
@@ -335,4 +352,332 @@ export function makeFakeImageReencoder(
       return { ok: true as const, value: { bytes: opts.output ?? bytes, mime } };
     }),
   };
+}
+
+// =============================================================================
+// F119 PR-2 — T159a, sequenced per port (round 5 A6): these land with T055's
+// RED. `BroadcastVersionsRepo` + `BroadcastDecisionsRepo` (T055) and the
+// `ActorNameDirectoryPort` T061 reads staff names through. `MarketingDirectoryPort`
+// (T066) and `BroadcastApprovalScrubPort` (T082) join with their own tasks.
+// =============================================================================
+
+/** The wall-clock the approval fakes stamp rows with (override per store). */
+export const APPROVAL_NOW = new Date('2026-09-24T09:00:00.000Z');
+
+const APPROVAL_TENANT = 'test-tenant';
+
+/** A complete `Broadcast` row for the approval round — `submitted`, round 0, with a proposal. */
+export function makeApprovalBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
+  return {
+    tenantId: APPROVAL_TENANT,
+    broadcastId: asBroadcastId('11111111-1111-4111-8111-111111111111'),
+    requestedByMemberId: '22222222-2222-4222-8222-222222222222',
+    requestedByMemberPlanIdSnapshot: 'plan-premium',
+    submittedByUserId: '33333333-3333-4333-8333-333333333333',
+    actorRole: 'member_self_service',
+    subject: 'Member original subject',
+    bodyHtml: '<p>Member original body</p>',
+    bodySource: '{"type":"doc","content":[]}',
+    fromName: 'Acme via SweCham',
+    replyToEmail: 'owner@acme.test',
+    segmentType: 'custom',
+    segmentParams: null,
+    customRecipientEmails: ['a@acme.test'],
+    estimatedRecipientCount: 1,
+    status: 'submitted',
+    submittedAt: new Date('2026-09-20T08:00:00.000Z'),
+    approvedAt: null,
+    approvedByUserId: null,
+    rejectedAt: null,
+    rejectedByUserId: null,
+    rejectionReason: null,
+    scheduledFor: new Date('2026-10-01T03:00:00.000Z'),
+    sendingStartedAt: null,
+    sentAt: null,
+    cancelledAt: null,
+    cancelledByUserId: null,
+    cancellationReason: null,
+    failedToDispatchAt: null,
+    failureReason: null,
+    quotaYearConsumed: null,
+    quotaConsumedAt: null,
+    resendAudienceId: null,
+    audienceImportId: null,
+    audienceImportSubmittedAt: null,
+    audienceImportCompletedAt: null,
+    resendBroadcastId: null,
+    retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    templateProvenance: null,
+    proposedSendAt: new Date('2026-10-01T03:00:00.000Z'),
+    stageEnteredAt: new Date('2026-09-20T08:00:00.000Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
+    createdAt: new Date('2026-09-20T07:00:00.000Z'),
+    updatedAt: new Date('2026-09-20T08:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+/** A `BroadcastVersion` row (defaults: v1, a working copy of the default broadcast). */
+export function makeApprovalVersion(overrides: Partial<BroadcastVersion> = {}): BroadcastVersion {
+  return {
+    id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    tenantId: APPROVAL_TENANT,
+    broadcastId: asBroadcastId('11111111-1111-4111-8111-111111111111'),
+    versionNo: 1,
+    subject: 'Formatted subject',
+    bodyHtml: '<p>Formatted body</p>',
+    bodySource: '{"type":"doc","content":[]}',
+    noteToMember: null,
+    authoredByUserId: '44444444-4444-4444-8444-444444444444',
+    authoredByRole: 'admin_proxy',
+    sentToMemberAt: null,
+    createdAt: APPROVAL_NOW,
+    updatedAt: APPROVAL_NOW,
+    ...overrides,
+  };
+}
+
+export interface ApprovalStoreState {
+  readonly broadcasts: Map<string, Broadcast>;
+  versions: BroadcastVersion[];
+  decisions: MemberDecision[];
+}
+
+/** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
+export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> & {
+  readonly rows: Map<string, Broadcast>;
+};
+
+export type FakeBroadcastVersionsRepo = Mocked<BroadcastVersionsRepo> & {
+  /** Live view of every version row, `version_no` insertion order. */
+  readonly rows: () => readonly BroadcastVersion[];
+};
+
+export type FakeBroadcastDecisionsRepo = Mocked<BroadcastDecisionsRepo> & {
+  readonly rows: () => readonly MemberDecision[];
+};
+
+export interface FakeApprovalStore {
+  readonly state: ApprovalStoreState;
+  readonly broadcastsRepo: FakeApprovalBroadcastsRepo;
+  readonly versionsRepo: FakeBroadcastVersionsRepo;
+  readonly decisionsRepo: FakeBroadcastDecisionsRepo;
+  /** The clock rows are stamped with; tests move it to model time passing. */
+  now: Date;
+}
+
+const keyOf = (tenantId: string, broadcastId: string) => `${tenantId}::${broadcastId}`;
+let approvalSeq = 0;
+const nextApprovalId = (prefix: string) => {
+  approvalSeq += 1;
+  return `${prefix}-0000-4000-8000-${String(approvalSeq).padStart(12, '0')}`;
+};
+
+/**
+ * One in-memory store behind the three approval-round repos, so a write
+ * through one is visible to the others inside the same "transaction".
+ *
+ * `withTx` is a REAL rollback boundary: it snapshots the store and restores
+ * it when the callback throws — the fake analogue of throw-to-rollback, so a
+ * test can prove a refused call left nothing behind. It also enforces the two
+ * `broadcast_versions` unique indexes (`(broadcast, version_no)` and ONE
+ * unsent row per E-Blast), because a version use case that violated them
+ * would pass against a fake that did not.
+ *
+ * Every method is a `vi.fn`; every repo `satisfies` its port, so a method
+ * added to a port without a fake here fails to COMPILE.
+ */
+export function makeFakeApprovalStore(
+  seed: {
+    readonly broadcasts?: readonly Broadcast[];
+    readonly versions?: readonly BroadcastVersion[];
+    readonly decisions?: readonly MemberDecision[];
+  } = {},
+): FakeApprovalStore {
+  const state: ApprovalStoreState = {
+    broadcasts: new Map((seed.broadcasts ?? []).map((b) => [keyOf(b.tenantId, b.broadcastId), b])),
+    versions: [...(seed.versions ?? [])],
+    decisions: [...(seed.decisions ?? [])],
+  };
+  const store = { state, now: APPROVAL_NOW } as FakeApprovalStore;
+
+  const broadcastsRepo = {
+    rows: state.broadcasts,
+    withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => {
+      const snapshot = {
+        broadcasts: new Map(state.broadcasts),
+        versions: [...state.versions],
+        decisions: [...state.decisions],
+      };
+      try {
+        return await fn(FAKE_TX);
+      } catch (e) {
+        state.broadcasts.clear();
+        for (const [k, v] of snapshot.broadcasts) state.broadcasts.set(k, v);
+        state.versions = snapshot.versions;
+        state.decisions = snapshot.decisions;
+        throw e;
+      }
+    }),
+    lockForUpdate: vi.fn(async (_tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId) =>
+      state.broadcasts.get(keyOf(tenantId as string, broadcastId))?.status ?? null,
+    ),
+    findByIdInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId) =>
+      state.broadcasts.get(keyOf(tenantId as string, broadcastId)) ?? null,
+    ),
+    applyTransition: vi.fn(
+      async (
+        _tx: unknown,
+        tenantId: TenantSlug,
+        broadcastId: BroadcastId,
+        target: BroadcastStatus,
+        fields: Partial<Broadcast>,
+        expectedFromStatus: BroadcastStatus,
+      ): Promise<Broadcast> => {
+        const key = keyOf(tenantId as string, broadcastId);
+        const row = state.broadcasts.get(key);
+        if (row === undefined || row.status !== expectedFromStatus) {
+          throw new BroadcastConcurrentMutationError(tenantId, broadcastId, expectedFromStatus);
+        }
+        const defined = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+        const next: Broadcast = { ...row, ...defined, status: target, updatedAt: store.now };
+        state.broadcasts.set(key, next);
+        return next;
+      },
+    ),
+    // `withTx` is generic on the port and a `vi.fn` cannot carry the type
+    // parameter, so it is checked by presence; every other method is checked
+    // against the port's signature.
+  } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> & Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
+
+  const versionsRepo = {
+    rows: () => state.versions,
+    listByBroadcast: vi.fn(async (tenantId: TenantSlug, broadcastId: BroadcastId, _tx: unknown) =>
+      state.versions
+        .filter((v) => v.tenantId === (tenantId as string) && v.broadcastId === broadcastId)
+        .sort((a, b) => a.versionNo - b.versionNo),
+    ),
+    insert: vi.fn(async (tenantId: TenantSlug, input: NewBroadcastVersion, _tx: unknown): Promise<BroadcastVersion> => {
+      const siblings = state.versions.filter((v) => v.tenantId === (tenantId as string) && v.broadcastId === input.broadcastId);
+      if (siblings.some((v) => v.versionNo === input.versionNo)) {
+        throw new Error('duplicate key value violates unique constraint "broadcast_versions_broadcast_version_no_uniq"');
+      }
+      if (input.sentToMemberAt === null && siblings.some((v) => v.sentToMemberAt === null)) {
+        throw new Error('duplicate key value violates unique constraint "broadcast_versions_one_unsent_idx"');
+      }
+      const row: BroadcastVersion = {
+        id: nextApprovalId('bbbbbbbb'),
+        tenantId: tenantId as string,
+        ...input,
+        createdAt: store.now,
+        updatedAt: store.now,
+      };
+      state.versions = [...state.versions, row];
+      return row;
+    }),
+    updateWorkingCopy: vi.fn(
+      async (tenantId: TenantSlug, versionId: string, write: WorkingCopyWrite, _tx: unknown): Promise<BroadcastVersion | null> => {
+        const i = state.versions.findIndex(
+          (v) => v.tenantId === (tenantId as string) && v.id === versionId && v.sentToMemberAt === null,
+        );
+        if (i < 0) return null;
+        const next: BroadcastVersion = { ...state.versions[i]!, ...write };
+        state.versions = state.versions.map((v, j) => (j === i ? next : v));
+        return next;
+      },
+    ),
+  } satisfies BroadcastVersionsRepo & { rows: () => readonly BroadcastVersion[] };
+
+  const decisionsRepo = {
+    rows: () => state.decisions,
+    insert: vi.fn(async (tenantId: TenantSlug, input: NewMemberDecision, _tx: unknown): Promise<MemberDecision> => {
+      const row: MemberDecision = {
+        id: nextApprovalId('cccccccc'),
+        tenantId: tenantId as string,
+        ...input,
+        decidedAt: store.now,
+      };
+      state.decisions = [...state.decisions, row];
+      return row;
+    }),
+    listByBroadcast: vi.fn(async (tenantId: TenantSlug, broadcastId: BroadcastId, _tx: unknown) =>
+      state.decisions
+        .filter((d) => d.tenantId === (tenantId as string) && d.broadcastId === broadcastId)
+        .sort((a, b) => a.decidedAt.getTime() - b.decidedAt.getTime()),
+    ),
+  } satisfies BroadcastDecisionsRepo & { rows: () => readonly MemberDecision[] };
+
+  return Object.assign(store, {
+    broadcastsRepo: broadcastsRepo as unknown as FakeApprovalBroadcastsRepo,
+    versionsRepo: versionsRepo as unknown as FakeBroadcastVersionsRepo,
+    decisionsRepo: decisionsRepo as unknown as FakeBroadcastDecisionsRepo,
+  });
+}
+
+/** `BroadcastVersionsRepo` alone (a store with no broadcasts behind it). */
+export function makeFakeBroadcastVersionsRepo(seed: readonly BroadcastVersion[] = []): FakeBroadcastVersionsRepo {
+  return makeFakeApprovalStore({ versions: seed }).versionsRepo;
+}
+
+/** `BroadcastDecisionsRepo` alone — append-only by construction (no update method exists). */
+export function makeFakeBroadcastDecisionsRepo(seed: readonly MemberDecision[] = []): FakeBroadcastDecisionsRepo {
+  return makeFakeApprovalStore({ decisions: seed }).decisionsRepo;
+}
+
+// --- ActorNameDirectoryPort (T061) ------------------------------------------
+
+export function makeFakeActorNameDirectory(names: Readonly<Record<string, string | null>> = {}): ActorNameDirectoryPort {
+  return {
+    resolveNames: vi.fn(async (ids: readonly string[]) => {
+      const out = new Map<string, string | null>();
+      for (const id of ids) if (Object.prototype.hasOwnProperty.call(names, id)) out.set(id, names[id] ?? null);
+      return out;
+    }),
+  } satisfies ActorNameDirectoryPort;
+}
+
+// --- AuditPort (recording) ---------------------------------------------------
+
+export interface RecordedAuditEvent {
+  readonly tx: unknown;
+  readonly eventType: string;
+  readonly actorUserId: string;
+  readonly payload: unknown;
+  readonly tenantId: string | null;
+}
+
+export interface RecordingF7Audit extends AuditPort {
+  readonly events: RecordedAuditEvent[];
+}
+
+/** An `AuditPort` that records every row (typed or not) with the tx it rode on. */
+export function makeRecordingF7Audit(): RecordingF7Audit {
+  const events: RecordedAuditEvent[] = [];
+  const record = async (tx: unknown, e: { eventType: string; actorUserId: string; payload: unknown; tenantId: string | null }) => {
+    events.push({ tx, eventType: e.eventType, actorUserId: e.actorUserId, payload: e.payload, tenantId: e.tenantId });
+  };
+  return {
+    events,
+    emit: vi.fn(record),
+    emitTyped: vi.fn(record) as AuditPort['emitTyped'],
+  };
+}
+
+// --- ImageAllowlistPort (the per-tenant image-source allow-list) ------------
+
+export function makeFakeImageAllowlist(hosts: readonly string[] = ['assets.swecham.zyncdata.app']): ImageAllowlistPort {
+  const entries = hosts.map((h) => ({ hostname: h as Hostname, isDefault: true }));
+  return {
+    withTx: vi.fn(async <T,>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(FAKE_TX)),
+    findByTenantId: vi.fn(async () => entries),
+    seedDefaults: vi.fn(async () => undefined),
+    add: vi.fn(async () => ok(undefined)),
+    remove: vi.fn(async () => ok(undefined)),
+  } satisfies ImageAllowlistPort;
 }

@@ -191,6 +191,19 @@ export interface Broadcast {
     | { readonly templateId: string; readonly templateNameSnapshot: string }
     | null;
 
+  // F119 (migration 0305, data-model § 3) — the approval-round bookkeeping.
+  // `proposedSendAt` is the member's proposal, frozen after submit (FR-016).
+  // `stageEnteredAt` drives time-in-stage and the reminder clock (FR-026).
+  // `currentRound` counts versions SENT to the member (0 = never formatted).
+  // `approvedVersionId` is SC-002's proof — the version the member approved.
+  // `memberReminderStage` 0 none · 1 day-3 · 2 day-7 · 3 day-23 warning.
+  readonly proposedSendAt: Date | null;
+  readonly stageEnteredAt: Date;
+  readonly currentRound: number;
+  readonly approvedVersionId: string | null;
+  readonly memberReminderStage: number;
+  readonly memberExpiryNotifiedAt: Date | null;
+
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

@@ -54,6 +54,7 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { BroadcastImageOwnerKind } from './broadcast-images-repo';
+import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 
 export const F7_AUDIT_EVENT_TYPES = [
   // --- Draft / submission (US1) — 16 events (R7 LOW-S1: was 15 pre-R6) -
@@ -529,6 +530,35 @@ export interface F7AuditPayloadShapes {
           readonly actor_role: 'system';
         }
     );
+  // ── F119 PR-2 — the approval round (contracts/dashboard-and-notifications.md
+  // § 2, the single source of truth for these field lists). Staff actions, so
+  // the member key is `related_member_id` — a staff edit is not member
+  // activity and must not fire the 0009 `last_activity_at` trigger. Ids,
+  // rounds and stages only: never the subject, body, note or reason text.
+  //
+  // T056 — marketing opened a working copy. `round` is the round the new
+  // working copy becomes when it is sent (its `version_no`); `from_stage` is
+  // the status the row left.
+  readonly broadcast_version_started: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly from_stage: BroadcastStatus;
+    readonly actor_role: string | null;
+  };
+  // T057 — opening a new working copy after the member approved voids that
+  // approval (FR-012): `approved_version_id` and `scheduled_for` are cleared
+  // in the same transaction. `round` is the round that was approved;
+  // `cancelled_schedule_at` the send time that no longer stands (ISO), if any.
+  readonly broadcast_member_approval_voided: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly voided_version_id: string | null;
+    readonly round: number;
+    readonly cancelled_schedule_at: string | null;
+    readonly actor_role: string | null;
+  };
 }
 
 /** `broadcast_brand_settings_changed` — the two fields a brand save can change. */
@@ -658,7 +688,7 @@ export interface AuditPort {
    * same `vi.fn()` so behaviour mirrors).
    *
    * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
-   * (all 59 events) to `keyof F7AuditPayloadShapes` (17 typed events since F119).
+   * (all 59 events) to `keyof F7AuditPayloadShapes` (19 typed events since F119 PR-2).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
    * silently fell back to `Record<string, unknown>` via a now-retired

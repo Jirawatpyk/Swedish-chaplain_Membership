@@ -65,6 +65,12 @@ const baseBroadcast: Broadcast = {
   partialDeliveryAcceptedAt: null,
   partialDeliveryAcceptedByUserId: null,
   templateProvenance: null,
+  proposedSendAt: null,
+  stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+  currentRound: 0,
+  approvedVersionId: null,
+  memberReminderStage: 0,
+  memberExpiryNotifiedAt: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };

@@ -781,3 +781,53 @@ export {
   type RenderBroadcastPreviewOutput,
 } from './application/use-cases/render-broadcast-preview';
 export { isEblastMemberApprovalEnabled } from './infrastructure/feature-flags';
+// ---------------------------------------------------------------------------
+// F119 PR-2 — the approval round (T055 / T056 / T057 / T058 / T061).
+// Ports + Drizzle repos for `broadcast_versions` and the append-only
+// `broadcast_member_decisions`; the three staff formatting use cases; the
+// composition root is `src/lib/broadcast-approval-deps.ts` (it crosses into
+// the auth barrel for staff display names).
+// ---------------------------------------------------------------------------
+export type { BroadcastVersion } from './domain/approval/broadcast-version';
+export { isVersionEditable } from './domain/approval/broadcast-version';
+export type { MemberDecision, MemberDecisionKind } from './domain/approval/member-decision';
+export { stageOf, type BroadcastStage } from './domain/stage/broadcast-stage';
+export type {
+  BroadcastVersionsRepo,
+  BroadcastVersionsTx,
+  NewBroadcastVersion,
+  WorkingCopyWrite,
+} from './application/ports/broadcast-versions-repo';
+export type {
+  BroadcastDecisionsRepo,
+  BroadcastDecisionsTx,
+  NewMemberDecision,
+} from './application/ports/broadcast-decisions-repo';
+export type { ActorNameDirectoryPort } from './application/ports/actor-name-directory-port';
+export type { ApprovalBroadcastsRepo } from './application/use-cases/approval/_approval-tx';
+export { drizzleBroadcastVersionsRepo } from './infrastructure/db/drizzle-broadcast-versions-repo';
+export { drizzleBroadcastDecisionsRepo } from './infrastructure/db/drizzle-broadcast-decisions-repo';
+export { makeValidateImageSourceAllowlistDeps } from './infrastructure/broadcasts-deps';
+export {
+  startFormattedVersion,
+  type StartFormattedVersionDeps,
+  type StartFormattedVersionError,
+  type StartFormattedVersionInput,
+  type StartFormattedVersionOutput,
+} from './application/use-cases/approval/start-formatted-version';
+export {
+  saveFormattedVersion,
+  FORMATTED_VERSION_SUBJECT_MAX,
+  type SaveFormattedVersionDeps,
+  type SaveFormattedVersionError,
+  type SaveFormattedVersionInput,
+  type SaveFormattedVersionOutput,
+} from './application/use-cases/approval/save-formatted-version';
+export {
+  listBroadcastVersions,
+  type BroadcastVersionThread,
+  type ListBroadcastVersionsDeps,
+  type ListBroadcastVersionsError,
+  type ListBroadcastVersionsInput,
+  type VersionThreadEntry,
+} from './application/use-cases/approval/list-broadcast-versions';

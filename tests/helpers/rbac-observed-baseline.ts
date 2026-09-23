@@ -107,6 +107,9 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'DELETE /api/plans/[year]/[planId]', kind: 'api', key: 'plans.write' },
   { surface: 'GET /api/admin/audit/export.csv', kind: 'api', key: 'audit.read' },
   { surface: 'GET /api/admin/broadcasts', kind: 'api', key: 'broadcasts.read' },
+  // F119 PR-2 T061 — the version thread (original, sent versions, decisions,
+  // working copy). A read, so a manager reads it (spec § Roles).
+  { surface: 'GET /api/admin/broadcasts/[id]/version', kind: 'api', key: 'broadcasts.read' },
   // F119 — chamber brand settings (FR-041b): admin tier, never marketing.
   { surface: 'GET /api/admin/broadcasts/brand', kind: 'api', key: 'settings.broadcasts' },
   // F119 T145 (FR-039) — the PROXIED member's E-Blast allowance, read by the
@@ -180,6 +183,8 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/plans/[year]/[planId]', kind: 'api', key: 'plans.read' },
   { surface: 'GET /api/plans/[year]/[planId]/affected-members', kind: 'api', key: 'members.read' },
   { surface: 'GET /api/tenant-invoice-settings', kind: 'api', key: 'settings.invoicing' },
+  // F119 PR-2 T058/T062 — save the working copy; marketing formats, a manager may not.
+  { surface: 'PATCH /api/admin/broadcasts/[id]/version', kind: 'api', key: 'broadcasts.write' },
   { surface: 'PATCH /api/admin/broadcasts/brand', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'PATCH /api/admin/broadcasts/templates/[id]', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/change-requests/[id]/decide', kind: 'api', key: 'members.write' },
@@ -199,6 +204,9 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/admin/broadcasts/[id]/approve', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/[id]/cancel', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/reject', kind: 'api', key: 'broadcasts.write' },
+  // F119 PR-2 T056/T062 — start a formatted version (the `submitted` arm is
+  // flag-gated inside the use case, T152 — not by this key).
+  { surface: 'POST /api/admin/broadcasts/[id]/version', kind: 'api', key: 'broadcasts.write' },
   // F119 T145 (FR-039) — the staff compose-on-behalf DRAFT. `broadcasts.write`,
   // NOT `proxy-submit`'s `broadcasts.send`: saving a draft is not sending.
   { surface: 'POST /api/admin/broadcasts/draft', kind: 'api', key: 'broadcasts.write' },

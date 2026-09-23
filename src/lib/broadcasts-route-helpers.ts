@@ -115,6 +115,21 @@ export type F7RouteErrorCode =
   // and only then violated the CHECK — a 500 for the member plus an orphan
   // blob with no row that the sweep could never reach.
   | 'broadcast_image_empty'
+  // F119 PR-2 — the staff formatting routes (`…/[id]/version`,
+  // contracts/admin-eblast-formatting-api.md). `stage_changed` (409): the
+  // re-read row is not in a stage the action accepts; `round_zero` (409): an
+  // approve-as-submitted E-Blast was never in a design round; `version_changed`
+  // (409): another save moved the working copy on (optimistic concurrency,
+  // carries `currentUpdatedAt` + the current content); `no_working_copy` (409);
+  // `unsafe_content` (422): the sanitiser left nothing of the body;
+  // `image_source_not_allowlisted` (422): names every image whose host is off
+  // the tenant allow-list.
+  | 'stage_changed'
+  | 'round_zero'
+  | 'version_changed'
+  | 'no_working_copy'
+  | 'unsafe_content'
+  | 'image_source_not_allowlisted'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -334,6 +349,30 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     messageThai:
       'ผู้ให้บริการอีเมลปฏิเสธการส่งสำเนาทดสอบนี้ (อาจเกิดจากอีเมลที่คุณใช้เข้าสู่ระบบ หรือการตั้งค่าการส่งอีเมลของหอการค้า) การลองส่งใหม่จะไม่ช่วยแก้ปัญหา กรุณาติดต่อผู้ดูแลระบบของหอการค้า',
   },
+  stage_changed: {
+    message: 'This E-Blast has moved to another stage. Reload to see where it is now.',
+    messageThai: 'E-Blast นี้เปลี่ยนไปอยู่ขั้นตอนอื่นแล้ว กรุณาโหลดหน้าใหม่เพื่อดูสถานะปัจจุบัน',
+  },
+  round_zero: {
+    message: 'This E-Blast was approved as submitted, without a formatting round, so there is no approved version to reopen.',
+    messageThai: 'E-Blast นี้ได้รับอนุมัติตามที่ส่งมาโดยไม่มีรอบจัดรูปแบบ จึงไม่มีฉบับที่อนุมัติให้เปิดแก้ไขใหม่',
+  },
+  version_changed: {
+    message: 'Someone else saved this version after you opened it. Review their changes before saving again.',
+    messageThai: 'มีผู้อื่นบันทึกฉบับนี้หลังจากที่คุณเปิด กรุณาตรวจสอบการเปลี่ยนแปลงก่อนบันทึกอีกครั้ง',
+  },
+  no_working_copy: {
+    message: 'There is no working copy to change. Start a formatted version first.',
+    messageThai: 'ไม่มีฉบับร่างสำหรับแก้ไข กรุณาเริ่มฉบับจัดรูปแบบก่อน',
+  },
+  unsafe_content: {
+    message: 'The message content was refused by the content-safety rules. Remove the unsupported content and try again.',
+    messageThai: 'เนื้อหาข้อความไม่ผ่านกฎความปลอดภัยของเนื้อหา กรุณาลบเนื้อหาที่ไม่รองรับแล้วลองใหม่',
+  },
+  image_source_not_allowlisted: {
+    message: 'One or more images are hosted on a site that is not on the allowed list. Replace those images and try again.',
+    messageThai: 'มีรูปภาพที่โฮสต์บนเว็บไซต์ที่ไม่อยู่ในรายการที่อนุญาต กรุณาเปลี่ยนรูปภาพเหล่านั้นแล้วลองใหม่',
+  },
   broadcast_image_empty: {
     message: 'That file is empty. Please choose an image file with content.',
     messageThai: 'ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล',
@@ -537,6 +576,12 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   test_copy_invalid_recipient: 422,
   // F2-6 — the member can fix this one; 400, not a 413 and not a 500.
   broadcast_image_empty: 400,
+  stage_changed: 409,
+  round_zero: 409,
+  version_changed: 409,
+  no_working_copy: 409,
+  unsafe_content: 422,
+  image_source_not_allowlisted: 422,
   internal_error: 500,
 };
 
