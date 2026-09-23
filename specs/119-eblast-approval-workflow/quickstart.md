@@ -361,7 +361,18 @@ no `FEATURE_EBLAST_*` flag over any of it. Each line is **code-revert-only** —
   where it used to save.
 - **The cron `prune-expired-drafts` gained block 2** (the image sweep) and `maxDuration = 300`.
   The route answers **500 when the sweep fails**, even though the draft prune succeeded — a
-  partial tick is a failed tick. Its daily 04:30 UTC schedule is unchanged.
+  partial tick is a failed tick. Its daily 04:30 UTC schedule is unchanged. (F7-1) A sweep that
+  RUNS but loses individual rows stays **200**: the tick body carries `imageSweep.rowsFailed`, the
+  cron logs `M119.cron.image_sweep.rows_failed` at error, and the counter
+  `broadcasts_image_sweep_row_failed_total{tenant}` carries the alert (`docs/observability.md`
+  § 22.12). Each swept row's `broadcast_image_removed` payload gains `blob_disposition`
+  (`deleted` · `kept_shared_row` · `reclaimed_by_sibling`).
+- **Blob outages answer 503, not 500** (F7-2/F7-6): the member inline-image upload classifies the
+  five `@vercel/blob` outage classes and answers `storage_unavailable` on both PUT legs. This was
+  broken on `main` before F119 (a regex that never matched); `BlobUnknownError` stays a 500.
+- **The test copy answers 422 `test_copy_invalid_recipient`** (F7-5) when the provider permanently
+  refuses it (Resend `validation_error` / `invalid_to_address`), instead of 503 "try again"
+  forever; a transient outage stays 503 `test_copy_unavailable`. No client calls the route in PR-1.
 - **Discard and prune now write `broadcast_image_removed` audit rows** (one per stamped image, in
   the same transaction as the delete). The draft's own lifecycle stays unaudited.
 - **The erasure cascade takes a REQUIRED `imagesRepo` port** and the completion attestation gains
