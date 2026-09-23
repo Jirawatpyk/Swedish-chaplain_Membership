@@ -337,13 +337,20 @@ describe('POST /api/broadcasts/test-copy (member)', () => {
     expect((await r3.json()).error.code).toBe('test_copy_unavailable');
   });
 
-  // F7-5 — a refused address is not an outage: "try again" would never work.
-  it('a refused recipient → 422 test_copy_invalid_recipient, not the 503 "try again"', async () => {
+  // F7-5 — a permanent refusal is not an outage: "try again" would never work.
+  // F7-6 — and it is not proof the ADDRESS is bad: the port code also carries
+  // Resend `validation_error` (an unverified from-domain, a test-mode key), so
+  // the copy names the refusal, not the member's address, as the fault.
+  it('a permanent provider refusal → 422 test_copy_invalid_recipient, not the 503 "try again"', async () => {
     const { POST } = await importMember();
     sendTestCopyMock.mockResolvedValueOnce(err({ kind: 'mailer_unavailable', code: 'invalid-recipient', reason: 'x' }));
     const res = await POST(req('/api/broadcasts/test-copy', VALID));
     expect(res.status).toBe(422);
-    expect((await res.json()).error.code).toBe('test_copy_invalid_recipient');
+    const { error } = await res.json();
+    expect(error.code).toBe('test_copy_invalid_recipient');
+    expect(error.message).toMatch(/refused/);
+    expect(error.message).not.toMatch(/could not receive/);
+    expect(error.messageThai).toMatch(/ปฏิเสธ/);
   });
 
   // F2-9 — `reason` is Resend's VERBATIM message and can echo the recipient

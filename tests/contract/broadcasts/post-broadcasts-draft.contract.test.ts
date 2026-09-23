@@ -50,6 +50,7 @@ vi.mock('@/modules/broadcasts', async () => {
   return {
     saveDraft: (...args: unknown[]) => saveDraftMock(...args),
     makeSaveDraftDeps: () => ({}),
+    CUSTOM_RECIPIENTS_MAX_ENTRIES: entries.CUSTOM_RECIPIENTS_MAX_ENTRIES,
     checkCustomRecipientEntries: entries.checkCustomRecipientEntries,
     rfc5321EmailValidator: validator.rfc5321EmailValidator,
   };

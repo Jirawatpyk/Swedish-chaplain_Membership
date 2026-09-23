@@ -104,7 +104,9 @@ export type F7RouteErrorCode =
   | 'banner_alt_required'
   // F119 — the synchronous test copy could not be handed to the mailer (503).
   | 'test_copy_unavailable'
-  // F119 F7-5 — the mailer refused the session user's own address (422): a
+  // F119 F7-5 — the mailer PERMANENTLY refused the test copy (422): Resend
+  // `validation_error` or `invalid_to_address`, so the session address OR the
+  // chamber's sending setup (F7-6 — the copy must not blame the address). A
   // retry cannot help, so it must not share the 503 "try again" copy.
   | 'test_copy_invalid_recipient'
   // F119 review finding F2-6 — a 0-byte file (400). The DB CHECK on
@@ -328,9 +330,9 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
   },
   test_copy_invalid_recipient: {
     message:
-      'The test copy goes to the address you sign in with, and that address could not receive it. Please check it can receive email, or contact your chamber administrator.',
+      "The email provider refused this test copy (for example because of the address you sign in with, or the chamber's email sending setup). Trying again will not help. Please contact your chamber administrator.",
     messageThai:
-      'สำเนาทดสอบจะถูกส่งไปยังอีเมลที่คุณใช้เข้าสู่ระบบ แต่ระบบส่งไปยังอีเมลนี้ไม่ได้ กรุณาตรวจสอบว่าอีเมลนี้ยังรับอีเมลได้ หรือติดต่อผู้ดูแลระบบของหอการค้า',
+      'ผู้ให้บริการอีเมลปฏิเสธการส่งสำเนาทดสอบนี้ (อาจเกิดจากอีเมลที่คุณใช้เข้าสู่ระบบ หรือการตั้งค่าการส่งอีเมลของหอการค้า) การลองส่งใหม่จะไม่ช่วยแก้ปัญหา กรุณาติดต่อผู้ดูแลระบบของหอการค้า',
   },
   broadcast_image_empty: {
     message: 'That file is empty. Please choose an image file with content.',

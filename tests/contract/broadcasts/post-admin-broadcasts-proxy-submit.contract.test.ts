@@ -37,7 +37,13 @@ vi.mock('@/lib/broadcasts-route-helpers', async () => {
       resolveTenantDisplayNameMock(...args),
   };
 });
-vi.mock('@/modules/broadcasts', () => ({
+vi.mock('@/modules/broadcasts', async () => ({
+  // F7-6 — the schema caps the custom list with the module's own constant.
+  CUSTOM_RECIPIENTS_MAX_ENTRIES: (
+    await vi.importActual<
+      typeof import('@/modules/broadcasts/application/use-cases/validate-custom-recipients')
+    >('@/modules/broadcasts/application/use-cases/validate-custom-recipients')
+  ).CUSTOM_RECIPIENTS_MAX_ENTRIES,
   proxySubmitBroadcast: (...args: unknown[]) => proxySubmitMock(...args),
   makeProxySubmitBroadcastDeps: () => ({}),
 }));

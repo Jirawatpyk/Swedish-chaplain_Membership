@@ -18,6 +18,7 @@ import {
   httpStatusForBroadcastError,
 } from '@/lib/broadcasts-route-helpers';
 import {
+  CUSTOM_RECIPIENTS_MAX_ENTRIES,
   checkCustomRecipientEntries,
   rfc5321EmailValidator,
   type SaveDraftError,
@@ -49,12 +50,15 @@ export function draftResponseBody(broadcast: {
 }
 
 /**
- * The subject / body limits both draft schemas apply. Both zod objects read
- * these constants, so the classifier below cannot drift from the schemas it
- * explains.
+ * The subject / body / custom-list limits both draft schemas apply. Both zod
+ * objects read these constants, so the classifier below cannot drift from the
+ * schemas it explains. The custom-list cap is the module's own
+ * `CUSTOM_RECIPIENTS_MAX_ENTRIES` — the number `checkCustomRecipientEntries`
+ * checks — re-exported here beside the other two (F7-6).
  */
 export const DRAFT_SUBJECT_MAX_LENGTH = 200;
 export const DRAFT_BODY_MAX_LENGTH = 200 * 1024;
+export { CUSTOM_RECIPIENTS_MAX_ENTRIES };
 
 /**
  * Portal live walk U28 (2026-09-22) — the CORRECTABLE half of a schema

@@ -338,7 +338,7 @@ export async function uploadInlineImage(
       // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
       // hostname is in the tenant allowlist BEFORE returning success.
       await ensureBlobHostAllowlisted(deps, input.tenantId, dedupHost);
-      const imageId = await recordImage(deps, input, {
+      const recorded = await recordImage(deps, input, {
         contentHash,
         blobUrl: existing.blobUrl,
         blobKey: existing.blobKey,
@@ -347,11 +347,12 @@ export async function uploadInlineImage(
         bytes: storedBytes,
         sanitisedFilename,
       });
+      if (!recorded.ok) return recorded;
       return ok({
         blobUrl: existing.blobUrl,
         allowlistedHostname: dedupHost,
         contentHash,
-        imageId,
+        imageId: recorded.value,
       });
     }
   }
@@ -417,7 +418,7 @@ export async function uploadInlineImage(
     await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
   }
 
-  const imageId = await recordImage(deps, input, {
+  const recorded = await recordImage(deps, input, {
     contentHash,
     blobUrl,
     blobKey,
@@ -426,7 +427,8 @@ export async function uploadInlineImage(
     bytes: storedBytes,
     sanitisedFilename,
   });
-  return ok({ blobUrl, allowlistedHostname: hostname, contentHash, imageId });
+  if (!recorded.ok) return recorded;
+  return ok({ blobUrl, allowlistedHostname: hostname, contentHash, imageId: recorded.value });
 }
 
 /**
@@ -437,8 +439,38 @@ export async function uploadInlineImage(
  * emit is RAW (not `safeAuditEmit`): it is the load-bearing record of a
  * write, so a failed emit rolls the row back and the route answers 500;
  * the bytes stay in Blob and the next upload of the same file dedups.
+ *
+ * F119 F7-6 — a storage OUTAGE on the re-PUT under the lock is the same
+ * 503 `storage_unavailable` the first PUT answers. It is mapped HERE, after
+ * the throw has left `withTx`: an `err()` returned inside the tenant tx would
+ * COMMIT it, whereas the throw rolls it back, so the row never outlives its
+ * blob. Only the adapter's `put` raises that class.
  */
 async function recordImage(
+  deps: UploadInlineImageDeps,
+  input: UploadInlineImageInput,
+  stored: Parameters<typeof recordImageInTx>[2],
+): Promise<Result<string, UploadInlineImageError>> {
+  try {
+    return ok(await recordImageInTx(deps, input, stored));
+  } catch (e) {
+    if (!(e instanceof ImageStorageUnavailableError)) throw e;
+    logger.error(
+      {
+        err: errKind(e),
+        cause: errKind(e.cause),
+        tenantId: input.tenantId,
+        contentHash: stored.contentHash,
+        mime: stored.mime,
+        requestId: input.requestId,
+      },
+      'broadcasts.uploadInlineImage.reput_storage_unavailable',
+    );
+    return err({ kind: 'storage_unavailable', reason: e.message });
+  }
+}
+
+async function recordImageInTx(
   deps: UploadInlineImageDeps,
   input: UploadInlineImageInput,
   stored: {
@@ -510,7 +542,9 @@ async function recordImage(
         // CONTENT-ADDRESSED key that refusal is the outcome the re-PUT wanted
         // — the bytes are there (another upload of the same file won the race
         // between the probe and here). Anything else is a real storage fault
-        // and still aborts the transaction, so the row never outlives its blob.
+        // and still aborts the transaction, so the row never outlives its blob;
+        // `recordImage` answers an `ImageStorageUnavailableError` with the
+        // first PUT's 503, once the throw has rolled this tx back (F7-6).
         const msg = e instanceof Error ? e.message : String(e);
         if (!isBlobAlreadyExists(msg)) throw e;
         logger.info(

@@ -173,7 +173,7 @@ honoured.
 | 404 `not_found` | `broadcastId` given and not the caller's |
 | 422 `unsafe_content` · `cta_text_length` · `too_many_cta` · `cta_link_scheme` · `banner_alt_required` | the block rules (FR-041) — a test copy is validated exactly like a save |
 | 429 `broadcast_rate_limit_exceeded` | > **10 / hour** per user (FR-037) |
-| 422 `test_copy_invalid_recipient` | the transactional sender refused the session user's own address (Resend `validation_error` / `invalid_to_address` → port code `invalid-recipient`); retrying cannot help, so it is not the 503. The log line carries the port code, never the provider message (F7-5) |
+| 422 `test_copy_invalid_recipient` | the transactional sender PERMANENTLY refused the test copy: Resend `validation_error` OR `invalid_to_address` (both → port code `invalid-recipient`). That is a permanent refusal, not a transient outage, so retrying cannot help and it is not the 503. It is **not** proof the session user's address is bad — `validation_error` also covers sender-side causes (an unverified from-domain, a test-mode key) — so the copy names the provider's refusal and points to the chamber administrator, never "your address could not receive it" (F7-6). The log line carries the port code, never the provider message (F7-5) |
 | 503 `test_copy_unavailable` | the transactional sender is down (port code `upstream-unavailable`); nothing is retried (research R23). Was documented as 502 `send_failed`, which the code never emitted |
 
 ## `POST /api/broadcasts/[id]/decision` — approve · request changes · withdraw approval

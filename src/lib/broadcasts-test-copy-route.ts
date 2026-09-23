@@ -11,8 +11,10 @@
  * consumed BEFORE the send (429 + `Retry-After`) → `sendTestCopy` → 202
  * `{ messageId }` (the mail was handed to the transactional sender; delivery
  * is the provider's). 422 carries the design-block violation code, or
- * `test_copy_invalid_recipient` when the sender refused the session address
- * (retrying cannot help); 503 `test_copy_unavailable` when the sender is down.
+ * `test_copy_invalid_recipient` when the sender refused the test copy
+ * permanently (Resend `validation_error` or `invalid_to_address` — the session
+ * address or the chamber's sending setup; retrying cannot help); 503
+ * `test_copy_unavailable` when the sender is down.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -110,8 +112,8 @@ export async function handleTestCopy(
         // is the provider's verbatim message and Resend echoes the recipient
         // address back in it ("Invalid `to` field: …@…"), which is forbidden
         // in logs. Same house rule as `broadcasts-content-scrub-adapter.ts`.
-        // F7-5 — the code (not the constant kind) is what tells a refused
-        // address from an outage, in the log and on the wire.
+        // F7-5 — the code (not the constant kind) is what tells a permanent
+        // refusal from an outage, in the log and on the wire.
         case 'mailer_unavailable':
           logger.warn(
             { err: result.error.code, correlationId, errorId: `M119.${actor.surface}.test_copy.mailer` },

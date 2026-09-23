@@ -18,6 +18,7 @@ import {
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import {
+  CUSTOM_RECIPIENTS_MAX_ENTRIES,
   DRAFT_BODY_MAX_LENGTH,
   DRAFT_SUBJECT_MAX_LENGTH,
   draftBodyRefusal,
@@ -41,7 +42,7 @@ const DraftBodySchema = z.object({
   bodySource: z.string().max(DRAFT_BODY_MAX_LENGTH),
   segmentType: SegmentTypeEnum,
   segmentParams: z.record(z.string(), z.unknown()).nullish(),
-  customRecipientEmails: z.array(z.string().email()).max(100).nullish(),
+  customRecipientEmails: z.array(z.string().email()).max(CUSTOM_RECIPIENTS_MAX_ENTRIES).nullish(),
   scheduledFor: z
     .string()
     .datetime({ offset: true })

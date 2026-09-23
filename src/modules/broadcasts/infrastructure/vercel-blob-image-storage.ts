@@ -56,7 +56,10 @@ import { env } from '@/lib/env';
  * Deliberately the five subclasses, never their base `BlobError`: the
  * already-exists refusal of `allowOverwrite: false` is a PLAIN `BlobError`
  * (2.3.3 has no subclass for it) and must reach `isBlobAlreadyExists`
- * unchanged. Pinned against the real classes by
+ * unchanged. `BlobUnknownError` (thrown after the SDK's own retries of an
+ * `internal_server_error` / `unknown_error`) is deliberately NOT one of them
+ * either (F7-6): an unclassified failure may be a real bug, so it propagates
+ * and the route answers an honest 500. Pinned against the real classes by
  * `tests/unit/broadcasts/infrastructure/vercel-blob-image-storage-put.test.ts`.
  */
 function isStorageOutage(e: unknown): e is Error {

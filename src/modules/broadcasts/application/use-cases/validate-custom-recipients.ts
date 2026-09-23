@@ -28,7 +28,12 @@ import {
 } from '../../domain/value-objects/email-lower';
 
 const MIN_ENTRIES = 1;
-const MAX_ENTRIES = 100;
+/**
+ * FR-015d — the one cap on a custom recipient list. Exported (F7-6) so the
+ * draft, submit and proxy-submit zod schemas cap the list with the SAME
+ * number this classifier checks, rather than a literal that could drift.
+ */
+export const CUSTOM_RECIPIENTS_MAX_ENTRIES = 100;
 
 export type ValidateCustomRecipientsError =
   | { readonly kind: 'broadcast_custom_recipient_empty' }
@@ -89,11 +94,11 @@ export function checkCustomRecipientEntries(
   if (raw.length < MIN_ENTRIES) {
     return err({ kind: 'broadcast_custom_recipient_empty' });
   }
-  if (raw.length > MAX_ENTRIES) {
+  if (raw.length > CUSTOM_RECIPIENTS_MAX_ENTRIES) {
     return err({
       kind: 'broadcast_custom_recipient_too_many',
       count: raw.length,
-      max: MAX_ENTRIES,
+      max: CUSTOM_RECIPIENTS_MAX_ENTRIES,
     });
   }
 
@@ -128,7 +133,7 @@ export async function validateCustomRecipients(
   const unresolved: string[] = [];
   try {
     // Round-4 MED-B — sequential per-entry lookups (3 sources × N up
-    // to 100). Cost is bounded by `MAX_ENTRIES`; parallelizing risks
+    // to 100). Cost is bounded by `CUSTOM_RECIPIENTS_MAX_ENTRIES`; parallelizing risks
     // saturating the per-tenant DB connection. Wrapped in try/catch
     // so transient infra errors return a typed envelope rather than
     // leaking raw SQL to the response body.

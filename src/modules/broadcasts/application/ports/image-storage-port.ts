@@ -90,11 +90,20 @@ export interface ImageStoragePort {
 }
 
 /**
- * F119 F7-2 — the storage backend is DOWN (access denied, token expired,
- * store suspended, rate-limited, service unavailable), as opposed to a fault
- * in this request. The adapter classifies its SDK's own error classes by
- * `instanceof` and rethrows this, with the SDK error as `cause`, so the use
- * case can answer `storage_unavailable` (503, retry) without importing the SDK.
+ * F119 F7-2 — the storage backend refused for one of exactly FIVE known
+ * outage reasons: access denied, client token expired, store suspended,
+ * rate-limited, service unavailable (`@vercel/blob@2.3.3` `BlobAccessError`,
+ * `BlobClientTokenExpiredError`, `BlobStoreSuspendedError`,
+ * `BlobServiceRateLimited`, `BlobServiceNotAvailable`). The adapter
+ * classifies those classes by `instanceof` and rethrows this, with the SDK
+ * error as `cause`, so the use case can answer `storage_unavailable` (503,
+ * retry) without importing the SDK.
+ *
+ * It is NOT "every way the backend can be down". `BlobUnknownError` (what the
+ * SDK throws after its own retries of an `internal_server_error` /
+ * `unknown_error`) deliberately stays out and surfaces as a 500 (F7-6): an
+ * error nobody has classified may be a real bug, and a 500 is the honest
+ * answer to it.
  *
  * It replaces a regex over `e.message` for the SDK CLASS names — which the
  * real `@vercel/blob@2.3.3` errors never carry (their messages read

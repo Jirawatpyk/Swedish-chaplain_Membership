@@ -89,9 +89,11 @@ export type SendTestCopyError =
   | {
       readonly kind: 'mailer_unavailable';
       /**
-       * The port's PII-free code (F7-5): `invalid-recipient` is the sender's
-       * to fix and must not answer "try again"; `upstream-unavailable` is an
-       * outage. `reason` is the provider's verbatim text and is never logged.
+       * The port's PII-free code (F7-5): `invalid-recipient` is a PERMANENT
+       * refusal (Resend `validation_error` or `invalid_to_address` — the
+       * address or the sending setup, F7-6) and must not answer "try again";
+       * `upstream-unavailable` is an outage. `reason` is the provider's
+       * verbatim text and is never logged.
        */
       readonly code: TestCopyMailerError['code'];
       readonly reason: string;

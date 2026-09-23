@@ -364,6 +364,43 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     },
   );
 
+  // F119 F7-6 — the re-PUT under the content-hash lock (the probe said
+  // `absent`) is the SAME storage call as the first PUT, so the same outage
+  // gets the same 503 answer, not a 500. The throw leaves the tenant tx, so
+  // it rolls back: no row outlives its blob.
+  it('re-PUT under the lock rejects with ImageStorageUnavailableError → storage_unavailable, no row recorded', async () => {
+    const deps = makeDeps();
+    const message = 'Vercel Blob: Too many requests please lower the number of concurrent requests .';
+    (deps.storage.put as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        blobUrl: 'https://assets.swecham.zyncdata.app/broadcasts/images/tenant_swe/abc.png',
+        blobKey: 'broadcasts/images/tenant_swe/abc.png',
+        contentHash: 'abc',
+      })
+      .mockRejectedValueOnce(new ImageStorageUnavailableError(message));
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      owner: OWNER,
+      actor: MEMBER_ACTOR,
+      requestId: 'req-reput-outage',
+      fileBytes: PNG_4MB,
+      filename: 'ok.png',
+      mimeType: 'image/png',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toEqual({ kind: 'storage_unavailable', reason: message });
+    // Both probes said `absent`: the first PUT, then the re-PUT under the lock.
+    expect(deps.storage.put).toHaveBeenCalledTimes(2);
+    expect(deps.imagesRepo.lockContentHash).toHaveBeenCalledTimes(1);
+    expect(deps.imagesRepo.record).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ eventType: 'broadcast_image_uploaded' }),
+    );
+  });
+
   it('storage.put rejects with non-Blob error → rethrows (does NOT mask as storage_unavailable)', async () => {
     const deps = makeDeps();
     (deps.storage.put as ReturnType<typeof vi.fn>).mockRejectedValue(

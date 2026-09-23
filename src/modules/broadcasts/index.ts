@@ -168,6 +168,7 @@ export {
   type SanitizeHtmlOutput,
 } from './application/use-cases/sanitize-html';
 export {
+  CUSTOM_RECIPIENTS_MAX_ENTRIES,
   checkCustomRecipientEntries,
   validateCustomRecipients,
   type ValidateCustomRecipientsError,

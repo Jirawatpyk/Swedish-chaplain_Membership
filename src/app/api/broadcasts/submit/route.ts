@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import {
+  CUSTOM_RECIPIENTS_MAX_ENTRIES,
   submitBroadcast,
   makeSubmitBroadcastDeps,
   type SubmitBroadcastError,
@@ -43,7 +44,7 @@ const SegmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('event_attendees_last_90d') }),
   z.object({
     kind: z.literal('custom'),
-    emails: z.array(z.string()).min(1).max(100),
+    emails: z.array(z.string()).min(1).max(CUSTOM_RECIPIENTS_MAX_ENTRIES),
   }),
 ]);
 
