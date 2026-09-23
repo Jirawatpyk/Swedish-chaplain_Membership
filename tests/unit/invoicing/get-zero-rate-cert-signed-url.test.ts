@@ -8,7 +8,7 @@
  *   cert_not_attached      → no `zeroRateCertBlobKey` pinned (cert NUMBER-only)
  *   cert_not_attached      → key present but NOT under this tenant/invoice's cert
  *                            namespace (IDOR / mispinned-row defence-in-depth)
- *   blob_missing           → key present but the Blob is gone (BlobNotFoundError)
+ *   blob_missing           → key present but the Blob is gone (BlobKeyNotFoundError)
  *   cross-tenant probe     → RLS-hidden foreign invoice (repo → null): emits
  *                            `invoice_cross_tenant_probe` + returns invoice_not_found
  *                            (Constitution Principle I clause 4)
@@ -23,6 +23,7 @@ import {
   type GetZeroRateCertSignedUrlDeps,
 } from '@/modules/invoicing/application/use-cases/get-zero-rate-cert-signed-url';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
+import { BlobKeyNotFoundError } from '@/modules/invoicing/application/ports/blob-storage-port';
 
 const TENANT = 't';
 const INVOICE_ID = 'i';
@@ -129,9 +130,9 @@ describe('getZeroRateCertSignedUrl — cert-view Result branches (V3)', () => {
     expect(signDownloadUrl).not.toHaveBeenCalled();
   });
 
-  it('blob_missing — cert key pinned but the Blob is gone (BlobNotFoundError) → typed blob_missing with key', async () => {
+  it('blob_missing — cert key pinned but the Blob is gone (BlobKeyNotFoundError) → typed blob_missing with key', async () => {
     const { deps, signDownloadUrl } = makeDeps(makeInvoice(), {
-      signThrows: new Error('BlobNotFoundError: 404 not found'),
+      signThrows: new BlobKeyNotFoundError(),
     });
 
     const r = await getZeroRateCertSignedUrl(deps, baseInput);
@@ -142,6 +143,13 @@ describe('getZeroRateCertSignedUrl — cert-view Result branches (V3)', () => {
     if (r.error.code === 'blob_missing') expect(r.error.key).toBe(CERT_KEY);
     // The sign WAS attempted (on the correct key) before the miss was mapped.
     expect(signDownloadUrl).toHaveBeenCalledWith(CERT_KEY);
+  });
+
+  it('a plain Error whose message says "404 not found" is NOT a miss → rethrows (route answers 500)', async () => {
+    const thrown = new Error('Upstream 404 not found');
+    const { deps } = makeDeps(makeInvoice(), { signThrows: thrown });
+
+    await expect(getZeroRateCertSignedUrl(deps, baseInput)).rejects.toBe(thrown);
   });
 
   it('cross-tenant probe — RLS-hidden foreign invoice (repo → null) → invoice_cross_tenant_probe audit + invoice_not_found', async () => {

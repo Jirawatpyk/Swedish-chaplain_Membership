@@ -18,10 +18,10 @@
  *     deterministic-re-upload contract (same key ⇒ same bytes).
  *   - `uploadPdf` with `allowOverwrite: true` replaces the bytes, which the
  *     VOID re-stamp path depends on.
- *   - `signDownloadUrl` / `downloadBytes` throw on a missing key, as a real
- *     store's `head()` does.
+ *   - `signDownloadUrl` / `downloadBytes` throw `BlobKeyNotFoundError` on a
+ *     missing key, as the adapter does for a real store's `head()` miss.
  */
-import type { BlobStoragePort } from '@/modules/invoicing';
+import { BlobKeyNotFoundError, type BlobStoragePort } from '@/modules/invoicing';
 
 export interface InMemoryBlobStorage extends BlobStoragePort {
   /** Keys currently held, sorted — for assertions like "exactly ONE blob". */
@@ -35,11 +35,9 @@ export function createInMemoryBlobStorage(): InMemoryBlobStorage {
 
   const requireBlob = (key: string) => {
     const blob = store.get(key);
-    if (blob === undefined) {
-      const err = new Error('in-memory blob storage: no such key');
-      err.name = 'BlobNotFoundError';
-      throw err;
-    }
+    // The port's own NOT-FOUND class — the one the adapter throws for the
+    // SDK's `BlobNotFoundError` and the use cases branch on (`blob_missing`).
+    if (blob === undefined) throw new BlobKeyNotFoundError();
     return blob;
   };
 

@@ -48,7 +48,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
-import type { BlobStoragePort } from '../ports/blob-storage-port';
+import { BlobKeyNotFoundError, type BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 import {
   asInvoiceId,
@@ -256,16 +256,16 @@ export async function getReceiptPdfSignedUrl(
   });
 
   // R9-E1 — wrap signDownloadUrl in try/catch parity with the CN +
-  // invoice siblings. BlobNotFoundError → typed `blob_missing` Result
-  // so the route handler can surface 502 + the operator-actionable
-  // key instead of letting the throw fall into the route-level catch
-  // and serve a generic 500 that obscures the root cause.
+  // invoice siblings. The port's `BlobKeyNotFoundError` (by class, never
+  // by message text) → typed `blob_missing` Result so the route handler
+  // can surface 502 + the operator-actionable key; anything else
+  // rethrows into the route-level catch (500).
   let url: string;
   try {
     url = await deps.blob.signDownloadUrl(blobKey);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const notFound = /not found|404|BlobNotFoundError/i.test(msg);
+    const notFound = e instanceof BlobKeyNotFoundError;
     logger.error(
       {
         err: msg,

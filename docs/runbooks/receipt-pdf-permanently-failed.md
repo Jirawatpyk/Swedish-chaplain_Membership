@@ -146,6 +146,54 @@ payments.
      subsequent ticks won't see the row in the `failed` filter, so the
      paging chain naturally subsides.
 
+## Missing PDF blob → 502 `blob_missing`
+
+A different failure from the one above: the document was rendered and its
+key is stored on the row, but the object is **gone from Vercel Blob**.
+
+**Symptom.** A PDF download answers **502** with body
+`{ "error": { "code": "blob_missing" } }` — the admin and portal invoice,
+receipt and credit-note PDF routes, and the admin zero-rate certificate view.
+Before 2026-09-23 (branch
+`fix/invoicing-pdf-blob-missing`) this case answered **500
+`internal_error`**: the use cases matched the Vercel SDK's message against
+`not found|404`, and `@vercel/blob@2.3.3` says "The requested blob does not
+exist". The adapter now classifies the SDK's `BlobNotFoundError` class and
+throws the port's `BlobKeyNotFoundError`. A 500 now means a real outage or a
+bug, never a missing object.
+
+**Log fields.**
+- Use case (`error`): `getInvoicePdfSignedUrl` / `getReceiptPdfSignedUrl` /
+  `getCreditNotePdfSignedUrl` / `getZeroRateCertSignedUrl: blob sign failed`,
+  with `blobKey`, `tenantId`, `invoiceId` or `creditNoteId`, and
+  **`notFound: true`**. `notFound: false` on the same line means the Blob
+  call failed for another reason (rate limit, access, outage) and the route
+  answered 500.
+- Route (`warn`): `GET /api/…/pdf failed` with `errorCode: 'blob_missing'`
+  and `blobKey` (the admin credit-note route logs no `blobKey`; use the
+  use-case line).
+
+**What to do.**
+1. Confirm the object is really absent (not a token or store problem):
+   run `scripts/blob-migration/check-invoice-keys-prod.mjs` (read-only) to
+   list every referenced key missing from the store. Many keys missing at once points at
+   the store or token, not at one document: stop and escalate.
+2. **Receipt PDF** (`receipt_pdf_blob_key`): re-render through the async
+   worker with **Path A** steps 3–5 above (reset `receipt_pdf_status` to
+   `pending`, re-enqueue `receipt_pdf_render`). The render reuses the pinned
+   `pdf_template_version`, and the receipt number is already allocated, so
+   §86/§87 numbering is untouched.
+3. **Invoice, credit note or zero-rate certificate**: there is no automatic
+   re-render yet (`TODO(F4-T113a)` in `get-invoice-pdf-signed-url.ts`). A
+   zero-rate certificate is an optional uploaded scan, pinned at issue, and
+   there is no way to attach it again after issue. The certificate NUMBER on
+   the invoice is the compliance record. Ask staff for the original
+   certificate and file it outside the app, then open a ticket. For an
+   invoice or credit note, escalate to Finance and follow
+   **Path B** (void and re-issue per `docs/runbooks/void-on-reissue.md`).
+   Never hand-edit `pdf_blob_key` / `pdf_sha256` to point at other bytes.
+   The stored sha256 is the tax document's integrity anchor.
+
 ## Related
 
 - `docs/runbooks/receipt-pdf-async-rollback.md`

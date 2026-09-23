@@ -527,6 +527,9 @@ export {
 // without a live Vercel Blob store. See `InvoicingAdapterOverrides`' docstring.
 export type { InvoicingAdapterOverrides } from './application/invoicing-deps';
 export type { BlobStoragePort } from './application/ports/blob-storage-port';
+// The port's NOT-FOUND class — test doubles of `BlobStoragePort` throw it so
+// they exercise the same `instanceof` the use cases branch on.
+export { BlobKeyNotFoundError } from './application/ports/blob-storage-port';
 
 // `makeUploadTenantLogoDeps` is intentionally NOT re-exported from this
 // barrel. It pulls in the Node-only `sharp` native dep (libvips →

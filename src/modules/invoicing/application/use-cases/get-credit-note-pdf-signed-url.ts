@@ -6,7 +6,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
-import type { BlobStoragePort } from '../ports/blob-storage-port';
+import { BlobKeyNotFoundError, type BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 import {
   asCreditNoteId,
@@ -119,17 +119,17 @@ export async function getCreditNotePdfSignedUrl(
   });
 
   // Review fix IM-4 (2026-04-20) — wrap the signed-URL issuance in
-  // try/catch. The Vercel Blob SDK throws `BlobNotFoundError` when the
-  // key is missing (e.g., deleted by an orphan sweeper, migrated away,
-  // never uploaded due to a half-committed past transaction). Map to
-  // the typed `blob_missing` error so the route handler can surface a
-  // 502 instead of leaking a raw 500.
+  // try/catch. The blob adapter throws the port's `BlobKeyNotFoundError`
+  // when the key is missing (e.g., deleted by an orphan sweeper, migrated
+  // away, never uploaded due to a half-committed past transaction). Map
+  // it — by class, never by message text — to the typed `blob_missing`
+  // error so the route handler can surface a 502; anything else rethrows.
   let url: string;
   try {
     url = await deps.blob.signDownloadUrl(cn.pdf.blobKey);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const notFound = /not found|404|BlobNotFoundError/i.test(msg);
+    const notFound = e instanceof BlobKeyNotFoundError;
     logger.error(
       {
         err: msg,

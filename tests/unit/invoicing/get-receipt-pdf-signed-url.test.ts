@@ -16,6 +16,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { getReceiptPdfSignedUrl } from '@/modules/invoicing/application/use-cases/get-receipt-pdf-signed-url';
+import { BlobKeyNotFoundError } from '@/modules/invoicing/application/ports/blob-storage-port';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 
@@ -736,9 +737,9 @@ describe('getReceiptPdfSignedUrl — async + failed states', () => {
 });
 
 // R10-T1 — blob_missing branch coverage (parity with invoice sibling).
-// R9 added a try/catch around signDownloadUrl mapping BlobNotFoundError
-// to typed Result. Required by Constitution Principle II "100% branch
-// on security-critical use-cases".
+// The try/catch around signDownloadUrl maps the port's BlobKeyNotFoundError
+// (by instanceof) to a typed Result; anything else rethrows. Required by
+// Constitution Principle II "100% branch on security-critical use-cases".
 describe('getReceiptPdfSignedUrl — blob_missing handling (R10-T1)', () => {
   function makeBlobThrowingDeps(invoice: Invoice, err: unknown) {
     const { deps } = makeDeps(invoice);
@@ -750,9 +751,9 @@ describe('getReceiptPdfSignedUrl — blob_missing handling (R10-T1)', () => {
     return { ...deps, blob: throwingBlob };
   }
 
-  it('BlobNotFoundError → returns blob_missing with key', async () => {
+  it('BlobKeyNotFoundError → returns blob_missing with key', async () => {
     const invoice = separateRenderedInvoice();
-    const err = new Error('BlobNotFoundError: blob not found');
+    const err = new BlobKeyNotFoundError();
     const deps = makeBlobThrowingDeps(invoice, err);
     const result = await getReceiptPdfSignedUrl(deps, {
       tenantId: 't',
@@ -769,18 +770,18 @@ describe('getReceiptPdfSignedUrl — blob_missing handling (R10-T1)', () => {
     }
   });
 
-  it('Error message containing "404" → returns blob_missing', async () => {
+  it('plain Error whose message says "404 Not Found" → rethrows (a string is not the class)', async () => {
     const invoice = separateRenderedInvoice();
     const err = new Error('Upstream 404 Not Found');
     const deps = makeBlobThrowingDeps(invoice, err);
-    const result = await getReceiptPdfSignedUrl(deps, {
-      tenantId: 't',
-      actorUserId: 'u-admin',
-      actorRole: 'admin',
-      invoiceId: 'i',
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('blob_missing');
+    await expect(
+      getReceiptPdfSignedUrl(deps, {
+        tenantId: 't',
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        invoiceId: 'i',
+      }),
+    ).rejects.toBe(err);
   });
 
   it('Generic Error (network) → rethrows (transient, not a miss)', async () => {
@@ -797,17 +798,18 @@ describe('getReceiptPdfSignedUrl — blob_missing handling (R10-T1)', () => {
     ).rejects.toThrow(/Connection refused/);
   });
 
-  it('Non-Error throw (string) → still resolves via String(e) regex', async () => {
+  it('Non-Error throw (string) → rethrows the same value (logged via String(e))', async () => {
     const invoice = separateRenderedInvoice();
-    const deps = makeBlobThrowingDeps(invoice, 'string-style not found error');
-    const result = await getReceiptPdfSignedUrl(deps, {
-      tenantId: 't',
-      actorUserId: 'u-admin',
-      actorRole: 'admin',
-      invoiceId: 'i',
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('blob_missing');
+    const thrown = 'string-style not found error';
+    const deps = makeBlobThrowingDeps(invoice, thrown);
+    await expect(
+      getReceiptPdfSignedUrl(deps, {
+        tenantId: 't',
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        invoiceId: 'i',
+      }),
+    ).rejects.toBe(thrown);
   });
 });
 

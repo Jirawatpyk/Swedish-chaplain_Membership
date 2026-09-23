@@ -7,7 +7,7 @@
  * member: probe = different `member_id`.
  *
  * Blob-miss handling: R9-E1 added try/catch around `signDownloadUrl`
- * that maps `BlobNotFoundError` to a typed `blob_missing` Result with
+ * that maps the port's `BlobKeyNotFoundError` to a typed `blob_missing` Result with
  * the stored key — route handler surfaces 502 + the key for operator
  * triage, instead of letting the throw fall to the route-level catch
  * and serving a generic 500. Auto-rerender on Blob-miss (re-render
@@ -17,7 +17,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
-import type { BlobStoragePort } from '../ports/blob-storage-port';
+import { BlobKeyNotFoundError, type BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 import {
   asInvoiceId,
@@ -154,18 +154,17 @@ export async function getInvoicePdfSignedUrl(
   });
 
   // R9-E1 — wrap signDownloadUrl in try/catch parity with the CN
-  // sibling (`get-credit-note-pdf-signed-url.ts:99-115`). Vercel Blob
-  // SDK throws `BlobNotFoundError` when the key is gone (orphan
-  // sweeper, deleted bucket, half-committed past tx). Map to the typed
+  // sibling. The blob adapter throws the port's `BlobKeyNotFoundError`
+  // when the key is gone (orphan sweeper, deleted bucket, half-committed
+  // past tx). Map it — by class, never by message text — to the typed
   // `blob_missing` Result so the route handler surfaces 502 with the
-  // operator-actionable key, instead of a generic 500 that buries the
-  // root cause beneath the route-level try/catch.
+  // operator-actionable key. Anything else rethrows (the route's 500).
   let url: string;
   try {
     url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const notFound = /not found|404|BlobNotFoundError/i.test(msg);
+    const notFound = e instanceof BlobKeyNotFoundError;
     logger.error(
       {
         err: msg,

@@ -5,7 +5,7 @@
 export type { ClockPort } from './clock-port';
 export type { AuditPort, F4AuditEventType, F4AuditEvent } from './audit-port';
 export type { SequenceAllocatorPort, DocumentTypeCode } from './sequence-allocator-port';
-export type { BlobStoragePort } from './blob-storage-port';
+export { BlobKeyNotFoundError, type BlobStoragePort } from './blob-storage-port';
 export type {
   PdfRenderPort,
   PdfRenderInput,
