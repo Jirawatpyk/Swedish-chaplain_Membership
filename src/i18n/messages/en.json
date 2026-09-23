@@ -3273,7 +3273,7 @@
         "status": {
           "draft": "Draft",
           "submitted": "Awaiting review",
-          "approved": "Approved",
+          "approved": "Scheduled",
           "sending": "Sending",
           "sent": "Sent",
           "rejected": "Rejected",
@@ -6156,7 +6156,7 @@
         "status": {
           "draft": "Draft",
           "submitted": "Awaiting review",
-          "approved": "Approved",
+          "approved": "Scheduled",
           "sending": "Sending",
           "sent": "Sent",
           "rejected": "Rejected",

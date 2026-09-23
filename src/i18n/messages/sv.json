@@ -3273,7 +3273,7 @@
         "status": {
           "draft": "Utkast",
           "submitted": "Inväntar granskning",
-          "approved": "Godkänd",
+          "approved": "Schemalagd",
           "sending": "Skickar",
           "sent": "Skickad",
           "rejected": "Avvisad",
@@ -6156,7 +6156,7 @@
         "status": {
           "draft": "Utkast",
           "submitted": "Inväntar granskning",
-          "approved": "Godkänd",
+          "approved": "Schemalagd",
           "sending": "Skickar",
           "sent": "Skickad",
           "rejected": "Avvisad",

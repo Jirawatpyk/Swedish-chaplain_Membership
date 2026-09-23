@@ -3273,7 +3273,7 @@
         "status": {
           "draft": "ฉบับร่าง",
           "submitted": "รอตรวจสอบ",
-          "approved": "อนุมัติแล้ว",
+          "approved": "กำหนดส่งแล้ว",
           "sending": "กำลังส่ง",
           "sent": "ส่งแล้ว",
           "rejected": "ปฏิเสธ",
@@ -6156,7 +6156,7 @@
         "status": {
           "draft": "ฉบับร่าง",
           "submitted": "รอตรวจสอบ",
-          "approved": "อนุมัติแล้ว",
+          "approved": "กำหนดส่งแล้ว",
           "sending": "กำลังส่ง",
           "sent": "ส่งแล้ว",
           "rejected": "ปฏิเสธ",
