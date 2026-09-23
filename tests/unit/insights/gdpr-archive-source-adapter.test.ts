@@ -57,9 +57,13 @@ vi.mock('@/modules/events', () => ({
   getEventAttendeesByMember: () => Promise.resolve([]),
   drizzleEventAttendeesQueryStrict: {},
 }));
+// F119 R17 — the member's E-Blast images (already projected by the broadcasts use case)
+const listMemberBroadcastImagesMock = vi.fn();
 vi.mock('@/modules/broadcasts', () => ({
   listMemberBroadcasts: () => Promise.resolve({ rows: [], total: 0, totalPages: 0, page: 1 }),
   makeListMemberBroadcastsDeps: () => ({}),
+  listMemberBroadcastImages: (...a: unknown[]) => listMemberBroadcastImagesMock(...a),
+  makeListMemberBroadcastImagesDeps: () => ({ deps: 'images' }),
 }));
 vi.mock('@/modules/auth', () => ({
   gdprAuditSubsetReadAdapter: { query: (...a: unknown[]) => auditQueryMock(...a) },
@@ -132,6 +136,62 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     auditQueryMock.mockResolvedValue([]);
     crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
     crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
+    listMemberBroadcastImagesMock.mockResolvedValue([]);
+  });
+
+  describe('broadcast images (F119 R17)', () => {
+    const image = (i: number, deleted: boolean) => ({
+      imageId: `img-${i}`,
+      broadcastId: 'b-1',
+      contentHash: `hash-${i}`,
+      mimeType: 'image/png',
+      byteSize: 1024,
+      createdAt: new Date('2026-09-20T10:00:00Z'),
+      deletedAt: deleted ? new Date('2026-09-21T10:00:00Z') : null,
+      ...(deleted ? {} : { blobUrl: `https://assets.example/${i}.png` }),
+    });
+
+    it('serialises each image with ISO dates, keeps the use case’s projection (no URL on a stamped row), and asks for one probe row past the cap', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      listMemberBroadcastImagesMock.mockResolvedValue([image(1, false), image(2, true)]);
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+      expect(listMemberBroadcastImagesMock).toHaveBeenCalledWith({ deps: 'images' }, { memberId: MEMBER, limit: 1001 });
+      expect(data!.broadcastImages).toEqual([
+        {
+          imageId: 'img-1',
+          broadcastId: 'b-1',
+          contentHash: 'hash-1',
+          mimeType: 'image/png',
+          byteSize: 1024,
+          createdAt: '2026-09-20T10:00:00.000Z',
+          deletedAt: null,
+          blobUrl: 'https://assets.example/1.png',
+        },
+        {
+          imageId: 'img-2',
+          broadcastId: 'b-1',
+          contentHash: 'hash-2',
+          mimeType: 'image/png',
+          byteSize: 1024,
+          createdAt: '2026-09-20T10:00:00.000Z',
+          deletedAt: '2026-09-21T10:00:00.000Z',
+        },
+      ]);
+      expect(data!.completeness!.truncatedCategories).not.toContain('broadcastImages');
+    });
+
+    it('caps at MAX_BROADCAST_IMAGES (1,000) and DISCLOSES the truncation only on a genuine overflow', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      listMemberBroadcastImagesMock.mockResolvedValue(Array.from({ length: 1001 }, (_, i) => image(i, false)));
+      const over = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+      expect(over!.broadcastImages).toHaveLength(1000);
+      expect(over!.completeness!.truncatedCategories).toContain('broadcastImages');
+
+      listMemberBroadcastImagesMock.mockResolvedValue(Array.from({ length: 1000 }, (_, i) => image(i, false)));
+      const exact = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+      expect(exact!.broadcastImages).toHaveLength(1000);
+      expect(exact!.completeness!.truncatedCategories).not.toContain('broadcastImages');
+    });
   });
 
   it('records the invoice without bytes when the PDF fetch throws (fail-soft)', async () => {

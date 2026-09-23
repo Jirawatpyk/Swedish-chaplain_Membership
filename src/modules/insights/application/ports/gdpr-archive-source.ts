@@ -36,7 +36,13 @@ export interface GdprInvoiceEntry {
 }
 
 /** A category whose export was capped at the most-recent N records. */
-export type GdprTruncatableCategory = 'invoices' | 'events' | 'broadcasts' | 'auditEvents' | 'changeRequests';
+export type GdprTruncatableCategory =
+  | 'invoices'
+  | 'events'
+  | 'broadcasts'
+  | 'broadcastImages'
+  | 'auditEvents'
+  | 'changeRequests';
 
 /**
  * F114 (FR-014 / FR-029 / FR-030) — one change request in the requester's
@@ -90,6 +96,12 @@ export interface GdprMemberData {
   readonly invoices: readonly GdprInvoiceEntry[];
   readonly events: readonly Record<string, unknown>[];
   readonly broadcasts: readonly Record<string, unknown>[];
+  /**
+   * F119 R17 — every image uploaded for the member's E-Blasts, live AND
+   * stamped; `blobUrl` only on a live image; no uploader (the archive never
+   * names a user).
+   */
+  readonly broadcastImages: readonly Record<string, unknown>[];
   readonly auditEvents: readonly GdprAuditEntry[];
   /** F114 — the requester's change-request history (FR-029-scoped when the requester is a linked contact). */
   readonly changeRequests: readonly GdprChangeRequestEntry[];

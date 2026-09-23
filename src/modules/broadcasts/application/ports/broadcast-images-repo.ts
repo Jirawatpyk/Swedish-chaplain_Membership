@@ -101,6 +101,19 @@ export interface BroadcastImagesRepo {
     at: Date,
     tx: BroadcastImagesTx,
   ): Promise<readonly BroadcastImageRecord[]>;
+  /**
+   * F119 R17 — every image row of every broadcast the member ORIGINATED, LIVE
+   * AND STAMPED (a stamped row is still the record of an upload), newest
+   * first, at most `limit` rows. The GDPR export's read: same join as
+   * `markDeletedForMember`, `tenant_id` on both sides; templates never match.
+   * The caller passes one past its cap to detect truncation.
+   */
+  listByMember(
+    tenantId: TenantSlug,
+    memberId: string,
+    limit: number,
+    tx: BroadcastImagesTx,
+  ): Promise<readonly BroadcastImageRecord[]>;
   /** Rows already marked (deleted_at IS NOT NULL), oldest first, bounded. */
   listMarked(tenantId: TenantSlug, limit: number, tx: BroadcastImagesTx): Promise<readonly BroadcastImageRecord[]>;
   /**

@@ -346,12 +346,19 @@ export {
   type ListMemberBroadcastsInput,
   type ListMemberBroadcastsOutput,
 } from './application/use-cases/list-member-broadcasts';
+// F119 R17 — the member's E-Blast images, for the F9 GDPR archive
+export {
+  listMemberBroadcastImages,
+  type ListMemberBroadcastImagesInput,
+  type MemberBroadcastImage,
+} from './application/use-cases/list-member-broadcast-images';
 
 // --- Composition root factories (Phase 5 US3) ----------------------------
 export {
   makeAcknowledgeBroadcastsTermsDeps,
   makeGetMemberBroadcastDeps,
   makeListMemberBroadcastsDeps,
+  makeListMemberBroadcastImagesDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 7 US5) ---------------------------------

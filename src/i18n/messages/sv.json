@@ -7368,6 +7368,7 @@
         "invoices": "invoices.json — dina fakturor (nummer, datum, belopp, status). PDF-dokumenten finns i mappen invoices/.",
         "events": "events.json — evenemang du har deltagit i.",
         "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
+        "broadcastImages": "broadcast-images.json — alla bilder som laddats upp för dina E-Blast-utskick, även bilder som redan markerats för radering. En markerad bild visas utan webbadress, eftersom filen håller på att raderas.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
         "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering. Ett arkiv som kammarens personal tagit fram för din räkning, eller som en kollega begärt, innehåller endast begäranden på företagsnivå och utan granskarens motivering. Kontakta kammaren om du behöver din personliga historik.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."

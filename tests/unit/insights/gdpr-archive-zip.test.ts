@@ -26,6 +26,8 @@ const data: GdprMemberData = {
   ],
   events: [{ eventId: 'e1', eventType: 'cultural', attendedAt: '2026-03-01T00:00:00.000Z' }],
   broadcasts: [{ id: 'b1', status: 'sent' }],
+  // F119 R17 — every image uploaded for the member's E-Blasts.
+  broadcastImages: [{ imageId: 'img-1', broadcastId: 'b1', contentHash: 'abc', deletedAt: null }],
   auditEvents: [
     { id: 'a1', eventType: 'member_self_update', occurredAt: '2026-05-01T10:00:00.000Z', summary: 'updated profile', payload: { member_id: MEMBER } },
   ],
@@ -61,6 +63,7 @@ describe('buildGdprArchiveBytes', () => {
       [
         'README.txt',
         'audit-events.json',
+        'broadcast-images.json',
         'broadcasts.json',
         'change-requests.json',
         'contacts.json',
@@ -133,6 +136,18 @@ describe('buildGdprArchiveBytes', () => {
     const readme = strFromU8(files['README.txt']!);
     expect(readme).toContain('PARTIAL EXPORT');
     expect(readme).toContain('events.json, audit-events.json');
+  });
+
+  it('F119 R17: broadcast-images.json carries the image records, the README names it, and a capped category is disclosed by its file name', () => {
+    const files = unzipSync(
+      buildGdprArchiveBytes({ ...data, completeness: { truncatedCategories: ['broadcastImages'] } }, meta).bytes,
+    );
+    expect(JSON.parse(strFromU8(files['broadcast-images.json']!))).toEqual(data.broadcastImages);
+    const manifest = JSON.parse(strFromU8(files['manifest.json']!));
+    expect(manifest.completeness.truncatedFiles).toEqual(['broadcast-images.json']);
+    const readme = strFromU8(files['README.txt']!);
+    expect(readme).toContain('- broadcast-images.json');
+    expect(readme).toContain('PARTIAL EXPORT');
   });
 
   it('manifest checksums validate against each archived file (SC-008)', () => {

@@ -61,6 +61,7 @@ import type { MarkOwnerImagesRemovedDeps } from '../application/use-cases/_mark-
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
+import type { ListMemberBroadcastImagesDeps } from '../application/use-cases/list-member-broadcast-images';
 // Two imports were removed here in 108 Phase 9 review round 1: the batch
 // deletion left `makeDrizzleBroadcastsRetryRepo` and `pgAdvisoryLockAdapter`
 // unused in this file.
@@ -602,6 +603,16 @@ export function makeListMemberBroadcastsDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+  };
+}
+
+/** F119 R17 — the member's E-Blast images for the F9 GDPR archive. */
+export function makeListMemberBroadcastImagesDeps(
+  tenantId: string,
+): ListMemberBroadcastImagesDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    imagesRepo: drizzleBroadcastImagesRepo,
   };
 }
 

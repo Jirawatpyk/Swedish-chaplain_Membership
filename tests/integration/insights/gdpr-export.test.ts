@@ -7,9 +7,13 @@
  * audit subset is scoped (member-performed ∪ member-targeted) + redacted
  * (third-party email payload fields + summary emails stripped; an unrelated
  * member's audit row is absent).
+ *
+ * F119 R17 — `broadcast-images.json` carries every image uploaded for the
+ * member's own E-Blasts, live AND stamped (the stamped row is the record); a
+ * stamped image has no `blobUrl`, and the uploader is never named.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { unzipSync, strFromU8 } from 'fflate';
@@ -30,6 +34,59 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { drizzleBroadcastImagesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-images-repo';
+
+const IMAGE_HOST = 'assets.swecham.zyncdata.app';
+
+/** One draft E-Blast originated by `memberId` (same raw shape as the image isolation suite). */
+async function seedDraftBroadcast(tenant: TestTenant, broadcastId: string, memberId: string): Promise<void> {
+  await runInTenant(tenant.ctx, (tx) =>
+    tx.execute(sql`
+      INSERT INTO broadcasts (
+        tenant_id, broadcast_id, requested_by_member_id,
+        requested_by_member_plan_id_snapshot, submitted_by_user_id,
+        actor_role, subject, body_html, body_source, from_name,
+        reply_to_email, segment_type, segment_params,
+        custom_recipient_emails, estimated_recipient_count, status,
+        retention_years, created_at, updated_at
+      ) VALUES (
+        ${tenant.ctx.slug}, ${broadcastId}::uuid, ${memberId}::uuid,
+        ${'plan-test'}, ${randomUUID()}::uuid,
+        ${'member_self_service'}, ${'GDPR image subject'}, ${'<p>body</p>'}, ${'plain'},
+        ${'Test Member via Test Chamber'}, ${'reply@example.com'},
+        ${'all_members'}, NULL, NULL, ${0}, ${'draft'}::broadcast_status,
+        ${5}, now(), now()
+      )
+    `),
+  );
+}
+
+/** One `broadcast_images` row on `ownerId`; returns its id. */
+async function seedBroadcastImage(
+  tenant: TestTenant,
+  ownerId: string,
+  contentHash: string,
+  uploadedByUserId: string,
+): Promise<string> {
+  const blobKey = `broadcasts/images/${tenant.ctx.slug}/${contentHash}.png`;
+  return runInTenant(tenant.ctx, async (tx) => {
+    const row = await drizzleBroadcastImagesRepo.record(
+      tenant.ctx.slug as never,
+      {
+        ownerKind: 'broadcast',
+        ownerId,
+        contentHash,
+        blobUrl: `https://${IMAGE_HOST}/${blobKey}`,
+        blobKey,
+        mimeType: 'image/png',
+        byteSize: 2048,
+        uploadedByUserId,
+      },
+      tx,
+    );
+    return row.id;
+  });
+}
 
 function makeStubBlob(): PrivateBlobPort & {
   store: Map<string, { body: Uint8Array; contentType: string }>;
@@ -65,6 +122,16 @@ describe('F9 GDPR archive — integration (T086)', () => {
   const subject = randomUUID();
   const otherMember = randomUUID();
   const stubBlob = makeStubBlob();
+  // F119 R17 — the subject's own E-Blast carries one live + one stamped image;
+  // a peer member's E-Blast in the SAME tenant carries one image that must not appear.
+  const subjectBroadcast = randomUUID();
+  const peerBroadcast = randomUUID();
+  const liveHash = `live${randomUUID().replace(/-/g, '')}`;
+  const stampedHash = `stamped${randomUUID().replace(/-/g, '')}`;
+  const peerHash = `peer${randomUUID().replace(/-/g, '')}`;
+  const uploaderIds = [randomUUID(), randomUUID(), randomUUID()] as const;
+  let liveImageId = '';
+  let stampedImageId = '';
 
   const workerDeps = () => ({ ...makeProcessExportJobDeps(tenant.ctx.slug), blob: stubBlob });
 
@@ -132,10 +199,24 @@ describe('F9 GDPR archive — integration (T086)', () => {
         payload: { member_id: otherMember },
       });
     });
+
+    await seedDraftBroadcast(tenant, subjectBroadcast, subject);
+    await seedDraftBroadcast(tenant, peerBroadcast, otherMember);
+    liveImageId = await seedBroadcastImage(tenant, subjectBroadcast, liveHash, uploaderIds[0]);
+    stampedImageId = await seedBroadcastImage(tenant, subjectBroadcast, stampedHash, uploaderIds[1]);
+    await seedBroadcastImage(tenant, peerBroadcast, peerHash, uploaderIds[2]);
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.execute(sql`
+        UPDATE broadcast_images SET deleted_at = now()
+         WHERE tenant_id = ${tenant.ctx.slug} AND id = ${stampedImageId}::uuid
+      `),
+    );
   }, 180_000);
 
   afterAll(async () => {
     const slug = tenant.ctx.slug;
+    // `createTestTenant`'s cleanup does not know about `broadcast_images`.
+    await db.execute(sql`DELETE FROM broadcast_images WHERE tenant_id = ${slug}`).catch(() => {});
     await db.delete(exportJobs).where(eq(exportJobs.tenantId, slug)).catch(() => {});
     await db.delete(auditLog).where(eq(auditLog.tenantId, slug)).catch(() => {});
     await tenant.cleanup().catch(() => {});
@@ -172,6 +253,7 @@ describe('F9 GDPR archive — integration (T086)', () => {
       [
         'README.txt',
         'audit-events.json',
+        'broadcast-images.json', // F119 R17 — every archive carries it
         'broadcasts.json',
         'change-requests.json', // F114 T079 — every archive carries it (empty when the member has no requests)
         'contacts.json',
@@ -224,5 +306,52 @@ describe('F9 GDPR archive — integration (T086)', () => {
     // The unrelated member's audit row is absent.
     const archiveText = JSON.stringify(auditEvents);
     expect(archiveText).not.toContain(otherMember);
+  }, 180_000);
+
+  it("F119 R17: broadcast-images.json holds the member's own images, live AND stamped — a stamped one without its URL, no uploader named, no peer's image", async () => {
+    const ref = await requestDataExport(
+      { subjectMemberId: subject },
+      {
+        actorUserId: admin.userId,
+        actorRole: 'admin',
+        actorMemberId: null,
+        requesterLocale: 'en',
+        requestId: `gdpr-img-${randomUUID()}`,
+      },
+      tenant.ctx,
+      makeRequestDataExportDeps(tenant.ctx.slug),
+    );
+    expect(ref.ok).toBe(true);
+    if (!ref.ok) return;
+    // Same-minute re-request dedupes onto the job the test above already built
+    // (from the same seed) — process only a freshly created one.
+    if (ref.value.created) {
+      expect((await processExportJob(ref.value.jobId, tenant.ctx, workerDeps())).ok).toBe(true);
+    }
+    const job = await makeDrizzleExportJobRepo(tenant.ctx.slug).findById(tenant.ctx, ref.value.jobId);
+    const files = unzipSync(stubBlob.store.get(job!.blobKey!)!.body);
+
+    const raw = strFromU8(files['broadcast-images.json']!);
+    const images = JSON.parse(raw) as Array<Record<string, unknown>>;
+    expect(images.map((i) => i.imageId).sort()).toEqual([liveImageId, stampedImageId].sort());
+
+    const live = images.find((i) => i.imageId === liveImageId)!;
+    expect(live).toMatchObject({
+      broadcastId: subjectBroadcast,
+      contentHash: liveHash,
+      mimeType: 'image/png',
+      byteSize: 2048,
+      deletedAt: null,
+      blobUrl: `https://${IMAGE_HOST}/broadcasts/images/${tenant.ctx.slug}/${liveHash}.png`,
+    });
+    const stamped = images.find((i) => i.imageId === stampedImageId)!;
+    expect(stamped.contentHash).toBe(stampedHash);
+    expect(typeof stamped.deletedAt).toBe('string');
+    expect(stamped).not.toHaveProperty('blobUrl');
+
+    // The archive never names a user — no uploader key, no uploader id.
+    for (const image of images) expect(image).not.toHaveProperty('uploadedByUserId');
+    for (const uploader of uploaderIds) expect(raw).not.toContain(uploader);
+    expect(raw).not.toContain(peerHash);
   }, 180_000);
 });

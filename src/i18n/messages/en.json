@@ -7368,6 +7368,7 @@
         "invoices": "invoices.json — your invoices (numbers, dates, amounts, status). The PDF documents are in the invoices/ folder.",
         "events": "events.json — events you attended.",
         "broadcasts": "broadcasts.json — E-Blast / broadcast records relevant to you.",
+        "broadcastImages": "broadcast-images.json — every image uploaded for your E-Blasts, including images already marked for deletion. A marked image is listed without its web address, because the file is being deleted.",
         "auditEvents": "audit-events.json — the activity-log events relating to you. Information about other people has been removed.",
         "changeRequests": "change-requests.json — the changes you proposed to your member record and the chamber's decision on each (with the reason given). Requests submitted by a colleague appear with their company-level fields only and without the reason. The reviewer is shown as the organisation. An archive produced by chamber staff on your behalf, or requested by a colleague, holds the company-level requests only, without the reviewer's reason; ask the chamber for your personal request history if you need it.",
         "manifest": "manifest.json — a machine-readable list of every file with its SHA-256 checksum so you can verify integrity."

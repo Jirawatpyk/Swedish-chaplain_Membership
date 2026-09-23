@@ -170,6 +170,32 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
     }));
   },
 
+  /**
+   * F119 R17 — the GDPR export's read: the `markDeletedForMember` join as a
+   * SELECT, with NO `deleted_at` filter (a stamped row is still the record).
+   * Only `owner_kind='broadcast'` can match — a template is the chamber's.
+   */
+  async listByMember(tenantId, memberId, limit, tx) {
+    const rows = await (tx as TenantTx)
+      .select()
+      .from(broadcastImages)
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.ownerKind, 'broadcast'),
+          sql`EXISTS (
+            SELECT 1 FROM broadcasts b
+             WHERE b.tenant_id = ${tenantId as string}
+               AND b.broadcast_id = ${broadcastImages.ownerId}
+               AND b.requested_by_member_id = ${memberId}
+          )`,
+        ),
+      )
+      .orderBy(desc(broadcastImages.createdAt), desc(broadcastImages.id))
+      .limit(limit);
+    return rows.map(toRecord);
+  },
+
   async listMarked(tenantId, limit, tx) {
     const rows = await (tx as TenantTx)
       .select()

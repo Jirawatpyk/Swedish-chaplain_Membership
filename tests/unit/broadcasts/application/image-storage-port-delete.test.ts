@@ -58,6 +58,7 @@ function makeDeps(rows: BroadcastImageRecord[], liveCounts: Record<string, numbe
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(async () => rows),
     markDeletedForMember: vi.fn(async () => []),
+    listByMember: vi.fn(async () => []),
     // ROUND-2 R-M1 / S-3 — the batched prune stamp and the sweep's
     // keep-the-row arm. Unstubbed, either is an unexercised branch.
     markDeletedByOwners: vi.fn(async () => []),

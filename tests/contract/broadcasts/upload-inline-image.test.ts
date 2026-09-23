@@ -104,6 +104,7 @@ const makeDeps = (
     markDeletedByOwner: vi.fn(),
     listMarked: vi.fn(),
     markDeletedForMember: vi.fn(async () => []),
+    listByMember: vi.fn(async () => []),
     // ROUND-2 R-M1 / S-3 — the batched prune stamp and the sweep's
     // keep-the-row arm. Unstubbed, either is an unexercised branch.
     markDeletedByOwners: vi.fn(async () => []),
