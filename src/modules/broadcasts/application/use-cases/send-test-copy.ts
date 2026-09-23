@@ -39,7 +39,7 @@ import type { AuditPort } from '../ports/audit-port';
 import type { BrandChromePort } from '../ports/brand-chrome-port';
 import type { BroadcastRenderLocale, EmailRendererPort } from '../ports/email-renderer-port';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
-import type { TestCopyMailerPort } from '../ports/test-copy-mailer-port';
+import type { TestCopyMailerError, TestCopyMailerPort } from '../ports/test-copy-mailer-port';
 
 /** Same caps as a real send (`broadcasts_subject_length` / `_body_html_size`). */
 export const TEST_COPY_SUBJECT_MAX = 200;
@@ -86,7 +86,16 @@ export type SendTestCopyError =
   | { readonly kind: 'invalid_body'; readonly reason: 'subject_too_long' | 'body_too_large' }
   | { readonly kind: 'content_rules'; readonly violations: readonly BlockViolation[] }
   | { readonly kind: 'sanitizer_unavailable'; readonly reason: string }
-  | { readonly kind: 'mailer_unavailable'; readonly reason: string };
+  | {
+      readonly kind: 'mailer_unavailable';
+      /**
+       * The port's PII-free code (F7-5): `invalid-recipient` is the sender's
+       * to fix and must not answer "try again"; `upstream-unavailable` is an
+       * outage. `reason` is the provider's verbatim text and is never logged.
+       */
+      readonly code: TestCopyMailerError['code'];
+      readonly reason: string;
+    };
 
 export interface SendTestCopyOutput {
   readonly messageId: string;
@@ -134,7 +143,7 @@ export async function sendTestCopy(
 
   const sent = await deps.mailer.send({ to: input.actorEmail, subject, html });
   if (!sent.ok) {
-    return err({ kind: 'mailer_unavailable', reason: sent.error.message });
+    return err({ kind: 'mailer_unavailable', code: sent.error.code, reason: sent.error.message });
   }
 
   // No state change → no tenant tx; the adapter writes the row on autocommit.

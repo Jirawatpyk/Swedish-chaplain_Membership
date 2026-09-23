@@ -207,11 +207,17 @@ describe('PATCH /api/admin/broadcasts/brand', () => {
   });
 
   // F2-9 — `detail` is the RAW Postgres error text, which can embed SQL param
-  // VALUES (the tenant's postal address). The log carries the typed KIND only.
-  it('the storage_error log line carries the typed kind, never the raw error text', async () => {
+  // VALUES (the tenant's postal address). The log carries the error CLASS
+  // (F7-5 — it used to carry the constant kind `storage_error`, which told
+  // on-call nothing), never the raw error text.
+  it('the storage_error log line carries the error class, never the raw error text', async () => {
     requireApiPermissionMock.mockResolvedValue(ctxFor('admin'));
     setBrandSettingsMock.mockResolvedValueOnce(
-      err({ kind: 'storage_error', detail: 'duplicate key value violates … postal_address=(12 Sukhumvit Rd)' }),
+      err({
+        kind: 'storage_error',
+        detail: 'duplicate key value violates … postal_address=(12 Sukhumvit Rd)',
+        errKind: 'NeonDbError',
+      }),
     );
     const { PATCH } = await importRoute();
     await PATCH(patchRequest({ primaryColor: '#b04a00' }));
@@ -219,7 +225,7 @@ describe('PATCH /api/admin/broadcasts/brand', () => {
       (c) => c[1] === 'broadcasts.brand.patch_failed',
     );
     expect(call, 'expected a broadcasts.brand.patch_failed log line').toBeDefined();
-    expect((call![0] as { err: unknown }).err).toBe('storage_error');
+    expect((call![0] as { err: unknown }).err).toBe('NeonDbError');
     expect(JSON.stringify(call![0])).not.toContain('Sukhumvit');
   });
 });

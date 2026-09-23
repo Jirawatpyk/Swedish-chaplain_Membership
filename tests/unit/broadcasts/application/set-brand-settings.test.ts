@@ -120,9 +120,19 @@ describe('setBrandSettings', () => {
 
   it('a repo throw inside the tx surfaces as storage_error (audit row rolled back with it)', async () => {
     const { repo, audit } = makeDeps();
-    (repo.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'));
+    (repo.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new TypeError('boom'));
     const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#b04a00', postalAddress: undefined });
-    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'boom' } });
+    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'boom', errKind: 'TypeError' } });
+  });
+
+  // F7-5 — `detail` is raw Postgres text (never logged), so the error CLASS is
+  // the only thing on-call can see; it must name the real class, not a constant.
+  it('a custom error class is carried as errKind, so the route can log WHICH fault it was', async () => {
+    class NeonDbError extends Error {}
+    const { repo, audit } = makeDeps();
+    (repo.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new NeonDbError('connection reset'));
+    const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#b04a00', postalAddress: undefined });
+    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'connection reset', errKind: 'NeonDbError' } });
   });
 });
 
@@ -131,6 +141,6 @@ describe('setBrandSettings — non-Error throw', () => {
     const { repo, audit } = makeDeps();
     (repo.withTx as ReturnType<typeof vi.fn>).mockRejectedValueOnce('pool exhausted');
     const r = await setBrandSettings({ repo, audit }, { ...base, primaryColor: '#b04a00', postalAddress: undefined });
-    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'pool exhausted' } });
+    expect(r).toEqual({ ok: false, error: { kind: 'storage_error', detail: 'pool exhausted', errKind: 'unknown' } });
   });
 });

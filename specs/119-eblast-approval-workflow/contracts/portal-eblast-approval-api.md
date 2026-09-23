@@ -148,7 +148,7 @@ honoured.
 // request
 { "subject": "Autumn mixer", "bodyHtml": "<p>…</p>", "broadcastId": "uuid" | null }
 // response
-200 { "sentTo": "j***@example.com" }     // masked in the response and hashed in the log
+202 { "messageId": "…" }     // handed to the transactional sender; delivery is not confirmed (as built — F7-5; this row said 200 { sentTo })
 ```
 
 - Subject is prefixed with the localised **`[Test]`** marker (FR-037).
@@ -173,7 +173,8 @@ honoured.
 | 404 `not_found` | `broadcastId` given and not the caller's |
 | 422 `unsafe_content` · `cta_text_length` · `too_many_cta` · `cta_link_scheme` · `banner_alt_required` | the block rules (FR-041) — a test copy is validated exactly like a save |
 | 429 `broadcast_rate_limit_exceeded` | > **10 / hour** per user (FR-037) |
-| 502 `send_failed` | the provider refused; nothing is retried (research R23) |
+| 422 `test_copy_invalid_recipient` | the transactional sender refused the session user's own address (Resend `validation_error` / `invalid_to_address` → port code `invalid-recipient`); retrying cannot help, so it is not the 503. The log line carries the port code, never the provider message (F7-5) |
+| 503 `test_copy_unavailable` | the transactional sender is down (port code `upstream-unavailable`); nothing is retried (research R23). Was documented as 502 `send_failed`, which the code never emitted |
 
 ## `POST /api/broadcasts/[id]/decision` — approve · request changes · withdraw approval
 

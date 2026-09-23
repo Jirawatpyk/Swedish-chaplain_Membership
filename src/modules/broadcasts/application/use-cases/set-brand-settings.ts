@@ -19,6 +19,7 @@
  *
  * 100 % branch pinned (T157). Pure Application — no framework imports.
  */
+import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 import {
@@ -51,7 +52,12 @@ export type SetBrandSettingsError =
   | { readonly kind: 'invalid_color_format' }
   | { readonly kind: 'colour_contrast'; readonly ratio: number; readonly required: typeof AA_MIN_CONTRAST }
   | { readonly kind: 'address_too_long'; readonly max: typeof BRAND_POSTAL_ADDRESS_MAX }
-  | { readonly kind: 'storage_error'; readonly detail: string };
+  /**
+   * `detail` is raw Postgres text that can embed SQL param VALUES (the postal
+   * address) — never logged. `errKind` is the error CLASS (F7-5), the one
+   * PII-free field on-call can read.
+   */
+  | { readonly kind: 'storage_error'; readonly detail: string; readonly errKind: string };
 
 export async function setBrandSettings(
   deps: SetBrandSettingsDeps,
@@ -105,6 +111,6 @@ export async function setBrandSettings(
       return ok(saved);
     });
   } catch (e) {
-    return err({ kind: 'storage_error', detail: e instanceof Error ? e.message : String(e) });
+    return err({ kind: 'storage_error', detail: e instanceof Error ? e.message : String(e), errKind: errKind(e) });
   }
 }

@@ -10,8 +10,9 @@
  * the session address, always) → 10 test copies / hour per (tenant, user),
  * consumed BEFORE the send (429 + `Retry-After`) → `sendTestCopy` → 202
  * `{ messageId }` (the mail was handed to the transactional sender; delivery
- * is the provider's). 422 carries the design-block violation code; 503
- * `test_copy_unavailable` when the sender is down.
+ * is the provider's). 422 carries the design-block violation code, or
+ * `test_copy_invalid_recipient` when the sender refused the session address
+ * (retrying cannot help); 503 `test_copy_unavailable` when the sender is down.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -105,16 +106,20 @@ export async function handleTestCopy(
           // and `submitBroadcast`; it lives in `broadcasts-route-helpers.ts`
           // so the five surfaces cannot drift.
           return designBlockErrorResponse(result.error.violations, correlationId);
-        // F2-9 — log the typed KIND, never `result.error.reason`: that is the
-        // provider's verbatim message and Resend echoes the recipient address
-        // back in it ("Invalid `to` field: …@…"), which is forbidden in logs.
-        // Same house rule as `broadcasts-content-scrub-adapter.ts`.
+        // F2-9 — log the port's typed CODE, never `result.error.reason`: that
+        // is the provider's verbatim message and Resend echoes the recipient
+        // address back in it ("Invalid `to` field: …@…"), which is forbidden
+        // in logs. Same house rule as `broadcasts-content-scrub-adapter.ts`.
+        // F7-5 — the code (not the constant kind) is what tells a refused
+        // address from an outage, in the log and on the wire.
         case 'mailer_unavailable':
           logger.warn(
-            { err: result.error.kind, correlationId, errorId: `M119.${actor.surface}.test_copy.mailer` },
+            { err: result.error.code, correlationId, errorId: `M119.${actor.surface}.test_copy.mailer` },
             'broadcasts.test_copy.mailer_unavailable',
           );
-          return errorResponse(503, 'test_copy_unavailable', correlationId);
+          return result.error.code === 'invalid-recipient'
+            ? errorResponse(422, 'test_copy_invalid_recipient', correlationId)
+            : errorResponse(503, 'test_copy_unavailable', correlationId);
         case 'sanitizer_unavailable':
           logger.error(
             { err: result.error.kind, correlationId, errorId: `M119.${actor.surface}.test_copy.sanitizer` },

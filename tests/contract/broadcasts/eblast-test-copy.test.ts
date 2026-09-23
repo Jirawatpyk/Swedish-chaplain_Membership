@@ -28,8 +28,11 @@ import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-por
 
 const TENANT = 'tenant-swe' as never;
 
-function makeDeps(o?: { mailerFails?: boolean; sanitize?: (html: string) => string }) {
-  const send = vi.fn(async () => (o?.mailerFails ? err({ code: 'upstream-unavailable' as const, message: 'x' }) : ok({ messageId: 'msg-1' })));
+function makeDeps(o?: {
+  mailerFails?: 'upstream-unavailable' | 'invalid-recipient';
+  sanitize?: (html: string) => string;
+}) {
+  const send = vi.fn(async () => (o?.mailerFails ? err({ code: o.mailerFails, message: 'x' }) : ok({ messageId: 'msg-1' })));
   const audit: AuditPort = { emit: vi.fn(async () => undefined), emitTyped: vi.fn(async () => undefined) };
   // A spy, so the size guards can be pinned as running BEFORE or AFTER it.
   const sanitize = vi.fn(o?.sanitize ?? ((html: string) => html.replace(/<script>.*?<\/script>/g, '')));
@@ -120,9 +123,19 @@ describe('sendTestCopy — use case', () => {
   });
 
   it('a mailer failure → mailer_unavailable and no audit row (nothing was sent)', async () => {
-    const { deps, audit } = makeDeps({ mailerFails: true });
+    const { deps, audit } = makeDeps({ mailerFails: 'upstream-unavailable' });
     const r = await sendTestCopy(deps, base);
-    expect(r).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable' } });
+    expect(r).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable', code: 'upstream-unavailable' } });
+    expect(audit.emit).not.toHaveBeenCalled();
+  });
+
+  // F7-5 — the port separates a bad address from a provider outage, and the
+  // code is PII-free; dropping it made a Resend `validation_error` answer
+  // "try again" forever and log exactly like an outage.
+  it('a refused recipient keeps the mailer code (invalid-recipient), so the route can tell it from an outage', async () => {
+    const { deps, audit } = makeDeps({ mailerFails: 'invalid-recipient' });
+    const r = await sendTestCopy(deps, base);
+    expect(r).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable', code: 'invalid-recipient' } });
     expect(audit.emit).not.toHaveBeenCalled();
   });
 
@@ -318,24 +331,48 @@ describe('POST /api/broadcasts/test-copy (member)', () => {
     expect(r1.status).toBe(422);
     expect((await r1.json()).error.code).toBe('too_many_cta');
     expect((await POST(req('/api/broadcasts/test-copy', { ...VALID, subject: 'x'.repeat(201) }))).status).toBe(400);
-    sendTestCopyMock.mockResolvedValueOnce(err({ kind: 'mailer_unavailable', reason: 'x' }));
-    expect((await POST(req('/api/broadcasts/test-copy', VALID))).status).toBe(503);
+    sendTestCopyMock.mockResolvedValueOnce(err({ kind: 'mailer_unavailable', code: 'upstream-unavailable', reason: 'x' }));
+    const r3 = await POST(req('/api/broadcasts/test-copy', VALID));
+    expect(r3.status).toBe(503);
+    expect((await r3.json()).error.code).toBe('test_copy_unavailable');
+  });
+
+  // F7-5 — a refused address is not an outage: "try again" would never work.
+  it('a refused recipient → 422 test_copy_invalid_recipient, not the 503 "try again"', async () => {
+    const { POST } = await importMember();
+    sendTestCopyMock.mockResolvedValueOnce(err({ kind: 'mailer_unavailable', code: 'invalid-recipient', reason: 'x' }));
+    const res = await POST(req('/api/broadcasts/test-copy', VALID));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe('test_copy_invalid_recipient');
   });
 
   // F2-9 — `reason` is Resend's VERBATIM message and can echo the recipient
-  // address ("Invalid `to` field: …@…"). The log carries the typed KIND only.
-  it('the mailer/sanitizer failure log lines carry the typed kind, never the provider message', async () => {
+  // address ("Invalid `to` field: …@…"). The log carries the PII-free mailer
+  // CODE (F7-5 — it used to carry the constant kind, so a bad address and an
+  // outage logged identically), never the provider message.
+  it('the mailer/sanitizer failure log lines carry the typed code, never the provider message', async () => {
     const { POST } = await importMember();
     sendTestCopyMock.mockResolvedValueOnce(
-      err({ kind: 'mailer_unavailable', reason: 'Invalid `to` field: member.secret@swecham.test is suppressed' }),
+      err({
+        kind: 'mailer_unavailable',
+        code: 'invalid-recipient',
+        reason: 'Invalid `to` field: member.secret@swecham.test is suppressed',
+      }),
     );
     await POST(req('/api/broadcasts/test-copy', VALID));
     const warned = vi.mocked(logger.warn).mock.calls.find(
       (c) => c[1] === 'broadcasts.test_copy.mailer_unavailable',
     );
     expect(warned, 'expected a broadcasts.test_copy.mailer_unavailable log line').toBeDefined();
-    expect((warned![0] as { err: unknown }).err).toBe('mailer_unavailable');
+    expect((warned![0] as { err: unknown }).err).toBe('invalid-recipient');
     expect(JSON.stringify(warned![0])).not.toContain('member.secret@swecham.test');
+
+    sendTestCopyMock.mockResolvedValueOnce(err({ kind: 'mailer_unavailable', code: 'upstream-unavailable', reason: 'x' }));
+    await POST(req('/api/broadcasts/test-copy', VALID));
+    const upstream = vi.mocked(logger.warn).mock.calls.filter(
+      (c) => c[1] === 'broadcasts.test_copy.mailer_unavailable',
+    );
+    expect((upstream.at(-1)![0] as { err: unknown }).err).toBe('upstream-unavailable');
 
     sendTestCopyMock.mockResolvedValueOnce(
       err({ kind: 'sanitizer_unavailable', reason: 'DOMPurify threw on <img src=member.secret@swecham.test>' }),
