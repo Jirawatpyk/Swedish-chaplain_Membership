@@ -559,6 +559,38 @@ export interface F7AuditPayloadShapes {
     readonly cancelled_schedule_at: string | null;
     readonly actor_role: string | null;
   };
+  // T059 — marketing sent a version to the member; a round starts. `round` is
+  // the new `current_round` (= the version's `version_no`); `note_length`
+  // is the covering note's length, never its text; `notified` says whether
+  // the member's outbox row was enqueued in the same transaction.
+  readonly broadcast_version_sent_to_member: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly note_length: number;
+    readonly notified: boolean;
+    readonly actor_role: string | null;
+  };
+  // T060 — marketing confirmed, changed or cancelled the send time.
+  // `version_id` is the approved version (the promoted one on the
+  // `member_approved → approved` edge — the SC-002 link). The member's
+  // proposal is quoted as it stands (frozen, FR-016); a `cancel` confirms no
+  // time, so it carries `confirmed_send_at: null` and `differs: false`.
+  readonly broadcast_schedule_confirmed: {
+    readonly related_member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly proposed_send_at: string | null;
+    readonly actor_role: string | null;
+  } & (
+    | {
+        readonly mode: 'keep_proposal' | 'schedule' | 'send_now';
+        readonly confirmed_send_at: string;
+        readonly differs: boolean;
+      }
+    | { readonly mode: 'cancel'; readonly confirmed_send_at: null; readonly differs: false }
+  );
 }
 
 /** `broadcast_brand_settings_changed` — the two fields a brand save can change. */

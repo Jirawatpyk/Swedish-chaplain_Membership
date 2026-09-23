@@ -294,6 +294,11 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/admin/broadcasts/[id]/version',
     'PATCH /api/admin/broadcasts/[id]/version',
     'POST /api/admin/broadcasts/[id]/version',
+    // F119 PR-2 (T059 / T060) — send the version to the member
+    // (`broadcasts.write`) and confirm the send time (`broadcasts.send`).
+    // Marketing holds both. The frozen set grows 63 -> 65.
+    'POST /api/admin/broadcasts/[id]/version/send',
+    'POST /api/admin/broadcasts/[id]/schedule',
     // F114 US2 — see the two pages above (`members.read`).
     'GET /api/admin/change-requests',
     'GET /api/admin/change-requests/[id]',
@@ -345,7 +350,8 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   // F119 T145 — 57 → 60: the staff compose-on-behalf draft (POST + PUT) and the
   // proxied member's quota read, the three routes FR-039's parity items need.
   // F119 PR-2 — 60 → 63: the three verbs of `…/[id]/version`.
-  it('reaches EXACTLY the frozen 63-surface set — nothing more, nothing less', () => {
+  // F119 PR-2 — 63 → 65: `…/[id]/version/send` and `…/[id]/schedule`.
+  it('reaches EXACTLY the frozen 65-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

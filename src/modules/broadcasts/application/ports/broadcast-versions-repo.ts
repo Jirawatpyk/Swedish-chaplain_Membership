@@ -10,8 +10,8 @@
  *
  * Deliberately small: ONE list read, from which the Application derives the
  * member's original, the latest sent version and the working copy (the
- * thread needs the whole list anyway), one insert and one working-copy
- * update. No delete path (the parent's ON DELETE CASCADE is the only one),
+ * thread needs the whole list anyway), one insert, one working-copy update
+ * and the send stamp (T059). No delete path (the parent's ON DELETE CASCADE is the only one),
  * and the erasure redaction is T082's, not this port's.
  *
  * Every method runs on the caller's `runInTenant` `tx` — REQUIRED, never
@@ -76,6 +76,21 @@ export interface BroadcastVersionsRepo {
     tenantId: TenantSlug,
     versionId: string,
     write: WorkingCopyWrite,
+    tx: BroadcastVersionsTx,
+  ): Promise<BroadcastVersion | null>;
+
+  /**
+   * F119 T059 — stamp `sent_to_member_at` on the working copy `versionId`,
+   * the moment it is sent to the member. From then on the version is
+   * read-only (`broadcast_versions_immutable_after_send_fn` freezes every
+   * stamped row). Matches only while `sent_to_member_at IS NULL`; returns
+   * `null` when no row matched — the caller treats that as an invariant
+   * breach under its broadcast row lock and throws.
+   */
+  markSent(
+    tenantId: TenantSlug,
+    versionId: string,
+    sentAt: Date,
     tx: BroadcastVersionsTx,
   ): Promise<BroadcastVersion | null>;
 }

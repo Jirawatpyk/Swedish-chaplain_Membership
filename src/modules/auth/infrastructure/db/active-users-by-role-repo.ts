@@ -29,3 +29,23 @@ export async function listActiveUsersByRole(roles: readonly Role[]): Promise<rea
     .where(and(eq(users.status, 'active'), inArray(users.role, [...roles])))
     .orderBy(users.email);
 }
+
+/**
+ * F119 T059 — which of `ids` are ACTIVE users holding `role`. The E-Blast
+ * send-to-member precondition asks it of the portal logins linked to a
+ * member's contacts (`role = 'member'`): a linked login that is still only
+ * invited, or disabled, cannot sign in to approve, so it does not count.
+ * Same cross-tenant plain-client read as `listActiveUsersByRole`, bounded by
+ * the caller's id list.
+ */
+export async function listActiveUserIdsWithRole(
+  ids: readonly string[],
+  role: Role,
+): Promise<ReadonlySet<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.status, 'active'), eq(users.role, role), inArray(users.id, [...ids])));
+  return new Set(rows.map((r) => r.id));
+}

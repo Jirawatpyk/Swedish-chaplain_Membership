@@ -12,9 +12,9 @@
  *
  * Every arm runs the REAL `startFormattedVersion` / `saveFormattedVersion`
  * through the route; `harness.flagOn` stands in for the composition root's
- * `isEblastMemberApprovalEnabled()` read. Arms that need later routes — "sent,
- * decided and scheduled" with the flag off (T059/T078/T060) and the drainer
- * skip (T149a/T152a) — join this file with those routes.
+ * `isEblastMemberApprovalEnabled()` read. The send (T059) and schedule (T060)
+ * arms run the REAL use cases through their routes; the "decided" arm (T078)
+ * and the drainer skip (T149a/T152a) join this file with those routes.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -23,8 +23,12 @@ import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { makeApprovalBroadcast, makeApprovalVersion } from '../../helpers/eblast-approval-fakes';
 import {
   harness,
+  importScheduleRoute,
+  importSendRoute,
   importVersionRoute,
   patchVersionRequest,
+  postScheduleRequest,
+  postSendRequest,
   postVersionRequest,
   resetVersionHarness,
   routeParams,
@@ -115,6 +119,31 @@ describe.each([
       routeParams(ID),
     );
     expect(res.status).toBe(200);
+  });
+
+  it('a broadcast already in in_design can still be SENT to the member (POST …/version/send → 200)', async () => {
+    const working = makeApprovalVersion({ id: 'aaaaaaaa-0000-4000-8000-000000000002', versionNo: 2 });
+    resetVersionHarness({
+      broadcasts: [makeApprovalBroadcast({ status: 'in_design', currentRound: 1 })],
+      versions: [V0, V1_SENT, working],
+    });
+    harness.flagOn = flagOn;
+    const { POST } = await importSendRoute();
+    const res = await POST(postSendRequest(ID), routeParams(ID));
+    expect(res.status).toBe(200);
+    expect(harness.store.state.broadcasts.get(`test-tenant::${ID}`)!).toMatchObject({ status: 'awaiting_member_approval', currentRound: 2 });
+  });
+
+  it('a broadcast already in member_approved can still be SCHEDULED (POST …/schedule → 200, promoted)', async () => {
+    resetVersionHarness({
+      broadcasts: [makeApprovalBroadcast({ status: 'member_approved', currentRound: 1, approvedVersionId: V1_SENT.id })],
+      versions: [V0, V1_SENT],
+    });
+    harness.flagOn = flagOn;
+    const { POST } = await importScheduleRoute();
+    const res = await POST(postScheduleRequest(ID, { mode: 'send_now' }), routeParams(ID));
+    expect(res.status).toBe(200);
+    expect(harness.store.state.broadcasts.get(`test-tenant::${ID}`)!).toMatchObject({ status: 'approved', subject: V1_SENT.subject });
   });
 });
 

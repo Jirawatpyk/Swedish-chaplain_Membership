@@ -12,6 +12,8 @@
  *     POST  /api/admin/broadcasts/templates/[id]/images (T107)
  *     POST  /api/admin/broadcasts/[id]/version          (T062a)
  *     PATCH /api/admin/broadcasts/[id]/version          (T062a)
+ *     POST  /api/admin/broadcasts/[id]/version/send     (T062a)
+ *     POST  /api/admin/broadcasts/[id]/schedule         (T062a)
  *   member 60 / minute per (tenant, user):
  *     POST  /api/broadcasts/inline-image-upload         (T146 wires it)
  *
@@ -226,8 +228,7 @@ describe('image uploads — write buckets (T026a)', () => {
   });
 });
 
-// --- T062a — the formatting routes (`…/[id]/version` POST + PATCH). The
-// `…/version/send` arm lands with the send route (T062's later half).
+// --- T062a — the formatting routes (`…/[id]/version` POST + PATCH).
 describe('POST | PATCH /api/admin/broadcasts/[id]/version — staff write bucket (T062a)', () => {
   const startMock = vi.fn();
   const saveMock = vi.fn();
@@ -299,5 +300,63 @@ describe('POST | PATCH /api/admin/broadcasts/[id]/version — staff write bucket
     );
     expect(res.status).toBe(400);
     expect(checkLimitMock).not.toHaveBeenCalled();
+  });
+});
+
+// --- T062a — the send and schedule routes (T059 / T060).
+describe('POST …/[id]/version/send and POST …/[id]/schedule — staff write bucket (T062a)', () => {
+  const sendMock = vi.fn();
+  const scheduleMock = vi.fn();
+  const UUID = '11111111-1111-4111-8111-111111111111';
+  const params = () => ({ params: Promise.resolve({ id: UUID }) });
+
+  beforeEach(() => {
+    vi.doMock('@/lib/broadcast-approval-deps', () => ({
+      makeSendVersionToMemberDeps: () => ({}),
+      makeConfirmScheduleDeps: () => ({}),
+    }));
+    vi.doMock('@/modules/broadcasts', () => ({
+      sendVersionToMember: (...args: unknown[]) => sendMock(...args),
+      confirmSchedule: (...args: unknown[]) => scheduleMock(...args),
+      broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => checkLimitMock(...args) },
+      parseBroadcastId: (id: string) => ({ ok: id === UUID, value: id, error: { kind: 'invalid_uuid' } }),
+      stageOf: () => 'in_design',
+    }));
+    sendMock.mockReset();
+    scheduleMock.mockReset();
+  });
+
+  it('the 31st …/version/send in a minute → 429 with Retry-After, with no version sent and no outbox row (the use case never runs)', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 17 }));
+    const { POST } = await import('@/app/api/admin/broadcasts/[id]/version/send/route');
+    const res = await POST(new NextRequest(`http://localhost/api/admin/broadcasts/${UUID}/version/send`, { method: 'POST' }), params());
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('17');
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_rate_limit_exceeded');
+    expect(body.error.details).toEqual({ retryAfterSeconds: 17 });
+    expect(checkLimitMock).toHaveBeenCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    // `sendVersionToMember` is the only writer of the send stamp and the outbox row.
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('…/schedule rides the same bucket: refused 429 before the use case; under the bucket the bucket is consumed first', async () => {
+    const { POST } = await import('@/app/api/admin/broadcasts/[id]/schedule/route');
+    const req = () =>
+      new NextRequest(`http://localhost/api/admin/broadcasts/${UUID}/schedule`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'send_now' }),
+      });
+    checkLimitMock.mockResolvedValueOnce(err({ retryAfterSeconds: 4 }));
+    const refused = await POST(req(), params());
+    expect(refused.status).toBe(429);
+    expect(scheduleMock).not.toHaveBeenCalled();
+
+    checkLimitMock.mockResolvedValueOnce(ok(true));
+    scheduleMock.mockResolvedValueOnce(err({ kind: 'no_proposal' }));
+    await POST(req(), params());
+    expect(checkLimitMock).toHaveBeenLastCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    expect(checkLimitMock.mock.invocationCallOrder.at(-1)!).toBeLessThan(scheduleMock.mock.invocationCallOrder[0]!);
   });
 });

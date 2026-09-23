@@ -40,16 +40,11 @@ import {
   makeStartFormattedVersionDeps,
 } from '@/lib/broadcast-approval-deps';
 import { baseHeaders, designBlockErrorResponse, errorResponse } from '@/lib/broadcasts-route-helpers';
-import {
-  STAFF_WRITE_RATE_MAX,
-  STAFF_WRITE_RATE_WINDOW_SECONDS,
-  staffWriteRateKey,
-} from '@/lib/broadcasts-write-rate-limit';
+import { consumeStaffWriteBucket } from '@/lib/broadcasts-staff-write-bucket';
 import { logger } from '@/lib/logger';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
-  broadcastsRateLimiter,
   listBroadcastVersions,
   parseBroadcastId,
   saveFormattedVersion,
@@ -205,23 +200,6 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 }
 
 // ---------------------------------------------------------------------------
-
-async function consumeStaffWriteBucket(
-  tenantSlug: string,
-  userId: string,
-  correlationId: string,
-): Promise<NextResponse | null> {
-  const limit = await broadcastsRateLimiter.checkLimit(
-    staffWriteRateKey(tenantSlug, userId),
-    STAFF_WRITE_RATE_MAX,
-    STAFF_WRITE_RATE_WINDOW_SECONDS,
-  );
-  if (limit.ok) return null;
-  return errorResponse(429, 'broadcast_rate_limit_exceeded', correlationId, {
-    retryAfterSeconds: limit.error.retryAfterSeconds,
-    details: { retryAfterSeconds: limit.error.retryAfterSeconds },
-  });
-}
 
 function serverError(kind: string, errorId: string, correlationId: string): NextResponse {
   logger.error({ err: kind, correlationId, errorId }, 'broadcasts.version.failed');

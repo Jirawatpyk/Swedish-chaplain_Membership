@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   asHostname,
+  evaluateImageSources,
   validateHostname,
   extractImgSources,
 } from '@/modules/broadcasts/domain/value-objects/image-source-allowlist';
@@ -160,5 +161,27 @@ describe('image-source-allowlist (Domain VO) — T067 (F7.1a US2)', () => {
       expect(out[0]?.src).toBe('http://one.evil/1.png');
       expect(out[1]?.src).toBe('https://two.example.com/2.png');
     });
+  });
+});
+
+describe('evaluateImageSources — F119 T059 / T060 (which image, which host, why)', () => {
+  const allowlist = [{ hostname: 'assets.swecham.zyncdata.app' as Hostname, isDefault: true }];
+
+  it('an allow-listed host passes; no image at all passes', () => {
+    expect(evaluateImageSources('<img src="https://assets.swecham.zyncdata.app/a.png" alt="a">', allowlist)).toEqual([]);
+    expect(evaluateImageSources('<p>no images</p>', allowlist)).toEqual([]);
+  });
+
+  it('names each refused image in document order with its lower-cased host and the reason', () => {
+    const html =
+      '<img src="https://Elsewhere.Example/p.png" alt="x">' +
+      '<img src="not a url" alt="y">' +
+      '<img src="https://assets.swecham.zyncdata.app/ok.png" alt="z">' +
+      '<img src="https://localhost/p.png" alt="w">';
+    expect(evaluateImageSources(html, allowlist)).toEqual([
+      { src: 'https://Elsewhere.Example/p.png', host: 'elsewhere.example', reason: 'not_allowlisted' },
+      { src: 'not a url', host: null, reason: 'invalid_url' },
+      { src: 'https://localhost/p.png', host: 'localhost', reason: 'invalid_hostname' },
+    ]);
   });
 });

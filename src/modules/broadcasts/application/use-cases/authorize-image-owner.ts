@@ -10,9 +10,11 @@
  *              unknown or other-tenant id (RLS makes them indistinguishable)
  *              → not_found + `broadcast_cross_tenant_probe`. Never 403: no
  *              existence leak. A closed broadcast → `closed`.
- *   staff    → a broadcast in the accepted stage set (PR-1:
- *              `IMAGE_UPLOAD_STAFF_STAGES` = draft, submitted; T106a adds
- *              in_design with migration 0305), same tenant. Returns the
+ *   staff    → a broadcast in the accepted stage set
+ *              (`IMAGE_UPLOAD_STAFF_STAGES` = draft, submitted, in_design —
+ *              T106a added in_design with migration 0305), same tenant. A
+ *              SENT version is read-only, so awaiting_member_approval and
+ *              every later stage are `closed`. Returns the
  *              owning member so the upload audit carries `related_member_id`.
  *   template → an existing template of the tenant (`owner_kind='template'`),
  *              staff only; a miss → not_found + the template probe.
@@ -33,11 +35,12 @@ import { emitCrossTenantProbe, emitTemplateCrossTenantProbeAudit } from './_emit
 import { safeAuditEmitTyped } from './_safe-audit-emit';
 
 /**
- * PR-1 stage set for a STAFF image upload to an E-Blast: the
- * compose-on-behalf draft and a member's submission the proxy author may
- * still illustrate. `in_design` joins in PR-2 (T106a) with migration 0305.
+ * The stage set for a STAFF image upload to an E-Blast: the
+ * compose-on-behalf draft, a member's submission the proxy author may still
+ * illustrate, and (T106a, PR-2) the formatted version marketing is working
+ * on — `in_design`, the only stage with an editable working copy.
  */
-export const IMAGE_UPLOAD_STAFF_STAGES: readonly BroadcastStatus[] = ['draft', 'submitted'];
+export const IMAGE_UPLOAD_STAFF_STAGES: readonly BroadcastStatus[] = ['draft', 'submitted', 'in_design'];
 
 /** A member may only illustrate their own unsent draft. */
 export const IMAGE_UPLOAD_MEMBER_STAGES: readonly BroadcastStatus[] = ['draft'];

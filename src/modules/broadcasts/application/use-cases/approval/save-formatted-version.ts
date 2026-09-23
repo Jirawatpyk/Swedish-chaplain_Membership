@@ -3,15 +3,11 @@
  * contracts/admin-eblast-formatting-api.md § `PATCH …/[id]/version`).
  *
  * Saves marketing's working copy. The body passes the SAME content rules as
- * a member's, on EVERY save (FR-004), through the SAME helpers the compose
- * path uses — never a re-implementation:
- *   - subject: trimmed, 1–200 characters (`save-draft.ts` rule);
- *   - `sanitizeHtml` — the shared sanitiser policy + the 200 KB post-sanitise
- *     cap (design-block markup included, since the markers are in the HTML);
- *   - `validateBlocks(parseBlockMarkers(…))` — the FR-041 block rules;
- *   - `validateImageSourceAllowlist` — the per-tenant image-source allow-list.
- * Every one of them runs ABOVE the transaction, so a refused save writes
- * nothing. The sanitised HTML is what is stored; the raw body never is.
+ * a member's, on EVERY save (FR-004), through `checkVersionContent`
+ * (`_version-content.ts`) — the one rule set the send re-applies (T059), built
+ * on the helpers the compose path uses, never a re-implementation. It runs
+ * ABOVE the transaction, so a refused save writes nothing. The sanitised HTML
+ * is what is stored; the raw body never is.
  *
  * Optimistic concurrency (FR-033, the "two marketing users" edge case): under
  * the broadcast row lock, the working copy's `updated_at` must equal
@@ -35,12 +31,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../../domain/broadcast';
 import type { BroadcastVersion } from '../../../domain/approval/broadcast-version';
-import {
-  hasBlockViolations,
-  parseBlockMarkers,
-  validateBlocks,
-  type BlockViolations,
-} from '../../../domain/design-blocks/block-markers';
+import type { BlockViolations } from '../../../domain/design-blocks/block-markers';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
@@ -48,12 +39,11 @@ import type { ClockPort } from '../../ports/clock-port';
 import type { HtmlSanitizerPort } from '../../ports/html-sanitizer-port';
 import type { ImageAllowlistPort } from '../../ports/image-allowlist-port';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
-import { sanitizeHtml } from '../sanitize-html';
-import { validateImageSourceAllowlist } from '../validate-image-source-allowlist';
+import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist';
 import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { checkVersionContent } from './_version-content';
 
-/** Mirrors `broadcast_versions_subject_length` and `save-draft.ts`. */
-export const FORMATTED_VERSION_SUBJECT_MAX = 200;
+export { FORMATTED_VERSION_SUBJECT_MAX } from './_version-content';
 
 export interface SaveFormattedVersionDeps {
   readonly tenant: TenantContext;
@@ -102,33 +92,23 @@ export async function saveFormattedVersion(
   const slug = deps.tenant.slug;
 
   // ---- Content rules, all ABOVE the tx (FR-004) --------------------------
-  const subject = input.subject.trim();
-  if (subject.length === 0) return err({ kind: 'subject_invalid', reason: 'empty' });
-  if (subject.length > FORMATTED_VERSION_SUBJECT_MAX) return err({ kind: 'subject_invalid', reason: 'too_long' });
-
-  const sanitised = sanitizeHtml({ sanitizer: deps.sanitizer }, { rawHtml: input.bodyHtml });
-  if (!sanitised.ok) {
-    switch (sanitised.error.kind) {
-      case 'broadcast_body_too_large':
-        return err({ kind: 'body_too_large', bytes: sanitised.error.bytes });
-      case 'broadcast_body_unsafe_html':
-        return err({ kind: 'unsafe_content', reason: sanitised.error.reason });
-      case 'sanitizer_unavailable':
-        return err({ kind: 'server_error', errKind: 'sanitizer_unavailable' });
-    }
-  }
-  const bodyHtml = sanitised.value.sanitisedHtml;
-
-  const violations = validateBlocks(parseBlockMarkers(bodyHtml));
-  if (hasBlockViolations(violations)) return err({ kind: 'content_rules', violations });
-
-  const images = await validateImageSourceAllowlist(
-    { allowlistPort: deps.imageAllowlist, audit: deps.audit },
-    { bodyHtml, tenantId: slug, actorUserId: input.actorUserId, requestId: input.requestId ?? 'save-formatted-version' },
+  const checked = checkVersionContent(
+    deps.sanitizer,
+    { subject: input.subject, bodyHtml: input.bodyHtml },
+    await deps.imageAllowlist.findByTenantId(slug),
   );
-  if (!images.ok) {
-    return err({ kind: 'image_source_not_allowlisted', unsafeImageSources: images.error.unsafeImageSources });
+  if (!checked.ok) {
+    if (checked.error.kind !== 'image_source_not_allowlisted') return err(checked.error);
+    const unsafeImageSources = checked.error.images.map((image) => image.src);
+    await emitUnsafeImageSourcesAudit(deps.audit, {
+      tenantId: slug,
+      actorUserId: input.actorUserId,
+      requestId: input.requestId ?? 'save-formatted-version',
+      unsafeImageSources,
+    });
+    return err({ kind: 'image_source_not_allowlisted', unsafeImageSources });
   }
+  const { subject, bodyHtml } = checked.value;
 
   const noteToMember = input.noteToMember === null || input.noteToMember.trim() === '' ? null : input.noteToMember;
 

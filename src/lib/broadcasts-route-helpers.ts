@@ -130,6 +130,14 @@ export type F7RouteErrorCode =
   | 'no_working_copy'
   | 'unsafe_content'
   | 'image_source_not_allowlisted'
+  // F119 PR-2 — `…/[id]/version/send` and `…/[id]/schedule`. `no_portal_user`
+  // (409): nobody at the member company can sign in to approve;
+  // `no_proposal` (409): `keep_proposal` on a row with no recorded proposal;
+  // `mode_not_allowed` (409): the schedule mode is not one the row's stage
+  // accepts (`keep_proposal` once scheduled, `cancel` before).
+  | 'no_portal_user'
+  | 'no_proposal'
+  | 'mode_not_allowed'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -373,6 +381,20 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'One or more images are hosted on a site that is not on the allowed list. Replace those images and try again.',
     messageThai: 'มีรูปภาพที่โฮสต์บนเว็บไซต์ที่ไม่อยู่ในรายการที่อนุญาต กรุณาเปลี่ยนรูปภาพเหล่านั้นแล้วลองใหม่',
   },
+  no_portal_user: {
+    message:
+      'Nobody at this member company can sign in to the portal to approve it. Approve it as submitted, or invite a portal user first.',
+    messageThai:
+      'ไม่มีผู้ใช้ของบริษัทสมาชิกนี้ที่เข้าสู่ระบบพอร์ทัลเพื่ออนุมัติได้ กรุณาอนุมัติตามที่ส่งมา หรือเชิญผู้ใช้พอร์ทัลก่อน',
+  },
+  no_proposal: {
+    message: 'The member did not propose a send time. Choose a time instead.',
+    messageThai: 'สมาชิกไม่ได้เสนอเวลาส่ง กรุณาเลือกเวลาแทน',
+  },
+  mode_not_allowed: {
+    message: 'That scheduling option is not available at this stage. Reload to see what can be done now.',
+    messageThai: 'ตัวเลือกการตั้งเวลานี้ใช้ไม่ได้ในขั้นตอนนี้ กรุณาโหลดหน้าใหม่เพื่อดูสิ่งที่ทำได้ในตอนนี้',
+  },
   broadcast_image_empty: {
     message: 'That file is empty. Please choose an image file with content.',
     messageThai: 'ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล',
@@ -582,6 +604,9 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   no_working_copy: 409,
   unsafe_content: 422,
   image_source_not_allowlisted: 422,
+  no_portal_user: 409,
+  no_proposal: 409,
+  mode_not_allowed: 409,
   internal_error: 500,
 };
 

@@ -1,0 +1,292 @@
+/**
+ * F119 T060 — `confirmSchedule` (FR-012, FR-012a, FR-016, FR-017, FR-018;
+ * contracts/admin-eblast-formatting-api.md § `POST …/[id]/schedule`,
+ * dashboard-and-notifications.md §§ 2–3, data-model §§ 8.2–8.3).
+ *
+ *   from `member_approved`, mode keep_proposal | schedule | send_now
+ *       → PROMOTES the approved version: `subject` / `body_html` /
+ *         `body_source` are copied from `approved_version_id` onto
+ *         `broadcasts` in the SAME statement as `member_approved → approved`
+ *         (trigger exemption E1 is on that edge alone, and it is the only
+ *         content write after submit), with `scheduled_for` (E2),
+ *         `approved_at` / `approved_by_user_id` and `stage_entered_at`;
+ *   from `approved`, mode schedule | send_now
+ *       → changes `scheduled_for` only (E2 admits `approved → approved`);
+ *   from `approved`, mode cancel
+ *       → clears `scheduled_for` AND `approved_version_id` in the same
+ *         UPDATE as `approved → changes_requested`, so the row leaves the
+ *         only dispatchable status (FR-017) and names no approval that no
+ *         longer governs it (see below).
+ *
+ * Every other (stage, mode) pair is refused — `keep_proposal` on an already
+ * scheduled row and `cancel` before anything is scheduled are not in the
+ * contract table (`mode_not_allowed`); a round-0 row (approved as submitted,
+ * never in a design round) is `round_zero` on every mode (data-model § 8.2:
+ * `approved → changes_requested` needs round ≥ 1, and this route re-times
+ * only rows the approval round produced).
+ *
+ * The confirmed time obeys the existing `now + 5 min` floor
+ * (`MIN_SCHEDULE_LEAD_MS`, `approve-broadcast.ts`): an explicit `schedule`
+ * time is checked before any read, `keep_proposal` once the frozen proposal
+ * is read — a proposal already in the past is refused the same way (the
+ * "proposed time already passed" edge case). `send_now` is now, as in
+ * `approveBroadcast`.
+ *
+ * The promotion re-checks every image of the approved version against the
+ * tenant allow-list (read before the tx, on its own connection): a host
+ * removed since the approval refuses it, naming the image, and the E-Blast
+ * stays at Member approved.
+ *
+ * Confirming or changing the time is not a content change and NEVER voids
+ * the member's approval (FR-012): those modes do not write
+ * `approved_version_id`. A `cancel` clears it: the row moves to
+ * `changes_requested`, marketing must send a new version and the member must
+ * approve that one, so the approval no longer governs the row — and the
+ * column is SC-002's proof, which must never name an approval that is not in
+ * force (a set `approved_version_id` is coherent only at `member_approved` /
+ * `approved`). That is not a content void, so no
+ * `broadcast_member_approval_voided` is emitted; the cancel's own
+ * `broadcast_schedule_confirmed` row still names the version it cancelled.
+ * Audit `broadcast_schedule_confirmed` (the proposal is
+ * quoted, never overwritten — FR-016). Enqueue one
+ * `eblast_schedule_confirmed_member` row when a time was confirmed, to the
+ * same contact rule the send uses; no active portal contact left means no
+ * row — a notification never blocks the send.
+ *
+ * One tenant tx with throw-to-rollback; the route owns the span. 100 %
+ * branch pinned (T158). Pure Application — no framework imports.
+ */
+import { errKind } from '@/lib/log-id';
+import { logger } from '@/lib/logger';
+import { err, ok, type Result } from '@/lib/result';
+import type { TenantContext } from '@/modules/tenants';
+import type { Broadcast, BroadcastId } from '../../../domain/broadcast';
+import { scheduleDiffers } from '../../../domain/approval/member-decision';
+import {
+  evaluateImageSources,
+  type UnsafeImageSource,
+} from '../../../domain/value-objects/image-source-allowlist';
+import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
+import type { AuditPort } from '../../ports/audit-port';
+import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
+import type { ClockPort } from '../../ports/clock-port';
+import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
+import type { ImageAllowlistPort } from '../../ports/image-allowlist-port';
+import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
+import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
+import { MIN_SCHEDULE_LEAD_MS } from '../approve-broadcast';
+import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist';
+import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { chooseApprovalRecipient } from './_approval-recipient';
+
+export type ScheduleMode =
+  | { readonly mode: 'keep_proposal' }
+  | { readonly mode: 'schedule'; readonly scheduledFor: Date }
+  | { readonly mode: 'send_now' }
+  | { readonly mode: 'cancel' };
+
+export interface ConfirmScheduleDeps {
+  readonly tenant: TenantContext;
+  readonly broadcastsRepo: ApprovalBroadcastsRepo;
+  readonly versionsRepo: BroadcastVersionsRepo;
+  readonly imageAllowlist: ImageAllowlistPort;
+  readonly portalRecipients: MemberPortalRecipientPort;
+  readonly outbox: EblastNotificationOutboxPort;
+  readonly audit: AuditPort;
+  readonly clock: ClockPort;
+}
+
+export interface ConfirmScheduleInput {
+  readonly broadcastId: BroadcastId;
+  readonly actorUserId: string;
+  /** The session role, recorded as-is (`?? null`), never a literal. */
+  readonly actorRole: string | null;
+  readonly requestId: string | null;
+  readonly mode: ScheduleMode;
+}
+
+export interface ConfirmScheduleOutput {
+  readonly stage: 'approved' | 'changes_requested';
+  /** null on `cancel`. */
+  readonly confirmedSendAt: Date | null;
+  /** The member's frozen proposal (FR-016); null when none was recorded. */
+  readonly proposedSendAt: Date | null;
+  readonly differs: boolean;
+  /** The row's `current_round` (unchanged by any mode) — for the span. */
+  readonly round: number;
+}
+
+export type ConfirmScheduleError =
+  | { readonly kind: 'not_found' }
+  | { readonly kind: 'stage_changed'; readonly status: BroadcastStatus }
+  | { readonly kind: 'mode_not_allowed'; readonly status: BroadcastStatus; readonly mode: ScheduleMode['mode'] }
+  | { readonly kind: 'round_zero' }
+  | { readonly kind: 'no_proposal' }
+  | { readonly kind: 'schedule_too_soon'; readonly scheduledFor: Date }
+  | { readonly kind: 'image_source_not_allowlisted'; readonly images: readonly UnsafeImageSource[] }
+  /** An infrastructure fault; `errKind` is the error CLASS only (never `e.message` — F7-5). */
+  | { readonly kind: 'server_error'; readonly errKind: string };
+
+export async function confirmSchedule(
+  deps: ConfirmScheduleDeps,
+  input: ConfirmScheduleInput,
+): Promise<Result<ConfirmScheduleOutput, ConfirmScheduleError>> {
+  const slug = deps.tenant.slug;
+  const mode = input.mode;
+  const floorOk = (at: Date) => at.getTime() >= deps.clock.now().getTime() + MIN_SCHEDULE_LEAD_MS;
+
+  // An explicit time is checked before any read, as `approveBroadcast` does.
+  if (mode.mode === 'schedule' && !floorOk(mode.scheduledFor)) {
+    return err({ kind: 'schedule_too_soon', scheduledFor: mode.scheduledFor });
+  }
+
+  try {
+    // Before the row lock, on its own connection (the promotion re-check).
+    const allowlist = await deps.imageAllowlist.findByTenantId(slug);
+
+    return ok(
+      await deps.broadcastsRepo.withTx(async (tx) => {
+        await deps.broadcastsRepo.lockForUpdate(tx, slug, input.broadcastId);
+        const broadcast = (await deps.broadcastsRepo.findByIdInTx(tx, slug, input.broadcastId)) ?? refuse({ kind: 'not_found' });
+        const promoting = admit(broadcast, mode.mode);
+        // A row the approval round produced always names the version the
+        // member approved (only a void / withdrawal clears it, and both leave
+        // these two stages). Missing ⇒ an invariant breach, not a refusal.
+        const versionId = broadcast.approvedVersionId;
+        if (versionId === null) throw new Error(`${broadcast.status} broadcast without an approved version`);
+
+        const now = deps.clock.now();
+        const timing = resolveTiming(mode, broadcast, now, floorOk);
+        const confirmed = timing.kind === 'cancel' ? null : timing.at;
+
+        let fields: Partial<Broadcast>;
+        if (promoting) {
+          const versions = await deps.versionsRepo.listByBroadcast(slug, input.broadcastId, tx);
+          const approved = versions.find((v) => v.id === versionId);
+          if (approved === undefined) throw new Error('approved version not found under the broadcast lock');
+          const unsafe = evaluateImageSources(approved.bodyHtml, allowlist);
+          if (unsafe.length > 0) refuse({ kind: 'image_source_not_allowlisted', images: unsafe });
+          fields = {
+            subject: approved.subject,
+            bodyHtml: approved.bodyHtml,
+            bodySource: approved.bodySource,
+            scheduledFor: confirmed,
+            approvedAt: now,
+            approvedByUserId: input.actorUserId,
+            stageEnteredAt: now,
+          };
+        } else {
+          // Re-time an already scheduled row: the time only. A cancel also
+          // clears the approval it takes out of force (docblock). The repo
+          // stamps `stage_entered_at` itself when the status changes.
+          fields = timing.kind === 'cancel' ? { scheduledFor: null, approvedVersionId: null } : { scheduledFor: confirmed };
+        }
+        const target = timing.kind === 'cancel' ? 'changes_requested' : 'approved';
+        await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, fields, broadcast.status);
+
+        const proposed = broadcast.proposedSendAt;
+        const common = {
+          related_member_id: broadcast.requestedByMemberId,
+          broadcast_id: input.broadcastId,
+          version_id: versionId,
+          proposed_send_at: proposed?.toISOString() ?? null,
+          actor_role: input.actorRole ?? null,
+        };
+        const differs = timing.kind === 'cancel' ? false : scheduleDiffers(proposed, timing.at);
+        await deps.audit.emitTyped(tx, {
+          eventType: 'broadcast_schedule_confirmed',
+          tenantId: slug,
+          requestId: input.requestId,
+          actorUserId: input.actorUserId,
+          summary: `E-Blast ${input.broadcastId} send time ${timing.kind === 'cancel' ? 'cancelled' : 'confirmed'} (${mode.mode})`,
+          payload:
+            timing.kind === 'cancel'
+              ? { ...common, mode: 'cancel', confirmed_send_at: null, differs: false }
+              : { ...common, mode: timing.mode, confirmed_send_at: timing.at.toISOString(), differs },
+        });
+
+        if (timing.kind === 'confirm') {
+          const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, broadcast.requestedByMemberId, tx);
+          const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId);
+          if (recipient === null) {
+            logger.warn(
+              { tenantId: slug, broadcastId: input.broadcastId, requestId: input.requestId, reason: 'no_portal_user' },
+              'broadcasts.schedule.member_notification_skipped',
+            );
+          } else {
+            await deps.outbox.enqueueInTx(tx, deps.tenant, {
+              type: 'eblast_schedule_confirmed_member',
+              toEmail: recipient.email,
+              locale: recipient.locale,
+              contextData: { tenantId: slug, broadcastId: input.broadcastId, versionId },
+            });
+          }
+        }
+
+        return { stage: target, confirmedSendAt: confirmed, proposedSendAt: proposed, differs, round: broadcast.currentRound };
+      }),
+    );
+  } catch (e) {
+    if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: errKind(e) });
+    const refusal = e.refusal as ConfirmScheduleError;
+    if (refusal.kind === 'not_found') {
+      await emitCrossTenantProbe({
+        audit: deps.audit,
+        tenantId: slug,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        surface: { kind: 'broadcast', broadcastId: input.broadcastId as string, useCase: 'confirm-schedule' },
+      });
+    }
+    if (refusal.kind === 'image_source_not_allowlisted') {
+      await emitUnsafeImageSourcesAudit(deps.audit, {
+        tenantId: slug,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId ?? 'confirm-schedule',
+        unsafeImageSources: refusal.images.map((image) => image.src),
+      });
+    }
+    return err(refusal);
+  }
+}
+
+/**
+ * The (stage, mode) gate, on the RE-READ row. Returns whether this call
+ * promotes the approved version; throws the refusal otherwise.
+ */
+function admit(broadcast: Broadcast, mode: ScheduleMode['mode']): boolean {
+  if (broadcast.status !== 'member_approved' && broadcast.status !== 'approved') {
+    return refuse({ kind: 'stage_changed', status: broadcast.status });
+  }
+  if (broadcast.currentRound < 1) refuse({ kind: 'round_zero' });
+  const promoting = broadcast.status === 'member_approved';
+  const allowed = promoting ? mode !== 'cancel' : mode !== 'keep_proposal';
+  if (!allowed) refuse({ kind: 'mode_not_allowed', status: broadcast.status, mode });
+  return promoting;
+}
+
+type Timing =
+  | { readonly kind: 'cancel' }
+  | { readonly kind: 'confirm'; readonly mode: Exclude<ScheduleMode['mode'], 'cancel'>; readonly at: Date };
+
+/** The time this call confirms, or the cancellation. */
+function resolveTiming(mode: ScheduleMode, broadcast: Broadcast, now: Date, floorOk: (at: Date) => boolean): Timing {
+  switch (mode.mode) {
+    case 'cancel':
+      return { kind: 'cancel' };
+    case 'send_now':
+      return { kind: 'confirm', mode: 'send_now', at: now };
+    case 'schedule':
+      return { kind: 'confirm', mode: 'schedule', at: mode.scheduledFor };
+    case 'keep_proposal': {
+      const proposal = broadcast.proposedSendAt ?? refuse({ kind: 'no_proposal' });
+      if (!floorOk(proposal)) refuse({ kind: 'schedule_too_soon', scheduledFor: proposal });
+      return { kind: 'confirm', mode: 'keep_proposal', at: proposal };
+    }
+  }
+}
+
+/** Throw-to-rollback: the refusal leaves the tx, which rolls back (`_approval-tx.ts`). */
+function refuse(refusal: ConfirmScheduleError): never {
+  throw new ApprovalRefusal<ConfirmScheduleError>(refusal);
+}

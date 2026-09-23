@@ -252,6 +252,7 @@ export { ALL_AUDIT_EVENT_TYPES } from './infrastructure/db/schema';
 // root never deep-imports the `users` table (auth-barrel baseline pin).
 export {
   listActiveUsersByRole,
+  listActiveUserIdsWithRole,
   type ActiveUserByRole,
 } from './infrastructure/db/active-users-by-role-repo';
 

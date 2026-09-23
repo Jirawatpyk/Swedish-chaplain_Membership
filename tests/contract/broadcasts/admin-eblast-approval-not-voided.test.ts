@@ -19,8 +19,10 @@ import { NextRequest } from 'next/server';
 import { makeApprovalBroadcast, makeApprovalVersion } from '../../helpers/eblast-approval-fakes';
 import {
   harness,
+  importScheduleRoute,
   importVersionRoute,
   patchVersionRequest,
+  postScheduleRequest,
   postVersionRequest,
   resetVersionHarness,
   routeParams,
@@ -131,7 +133,17 @@ describe('what voids a member approval (FR-012)', () => {
     expect(harness.audit.events.map((e) => e.eventType)).not.toContain('broadcast_member_approval_voided');
   });
 
-  it.todo(
-    'a non-cancel schedule PATCH leaves approved_version_id unchanged — needs T060 (`POST /api/admin/broadcasts/[id]/schedule`, confirmSchedule)',
-  );
+  it('a non-cancel schedule change leaves approved_version_id unchanged — confirming and re-timing are not content (FR-012)', async () => {
+    const { POST } = await importScheduleRoute();
+    const confirmed = new Date(harness.store.now.getTime() + 2 * 60 * 60 * 1000);
+    const first = await POST(postScheduleRequest(ID, { mode: 'schedule', scheduledFor: confirmed.toISOString() }), routeParams(ID));
+    expect(first.status).toBe(200);
+    expect(rowOf()).toMatchObject({ status: 'approved', approvedVersionId: APPROVED_VERSION.id, scheduledFor: confirmed });
+
+    // And re-timing the already-scheduled row: still the same approval.
+    const second = await POST(postScheduleRequest(ID, { mode: 'send_now' }), routeParams(ID));
+    expect(second.status).toBe(200);
+    expect(rowOf().approvedVersionId).toBe(APPROVED_VERSION.id);
+    expect(harness.audit.events.map((e) => e.eventType)).not.toContain('broadcast_member_approval_voided');
+  });
 });

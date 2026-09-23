@@ -20,6 +20,10 @@ import {
   validateDecisionReason,
 } from '@/modules/broadcasts/domain/approval/member-decision';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import {
+  MEMBER_APPROVAL_EXPIRY_DAYS,
+  memberApprovalExpiresAt,
+} from '@/modules/broadcasts/domain/approval/member-approval-expiry';
 
 const EMOJI = '\u{1F600}'; // one code point, two UTF-16 units
 
@@ -155,5 +159,12 @@ describe('scheduleDiffers (FR-018)', () => {
 
   it('no proposal at all differs — the confirmed time is not the proposal', () => {
     expect(scheduleDiffers(null, confirmed)).toBe(true);
+  });
+});
+
+describe('the member approval clock (FR-022a)', () => {
+  it('closes 30 days after the version reached the member', () => {
+    expect(MEMBER_APPROVAL_EXPIRY_DAYS).toBe(30);
+    expect(memberApprovalExpiresAt(new Date('2026-09-24T09:12:00.000Z')).toISOString()).toBe('2026-10-24T09:12:00.000Z');
   });
 });

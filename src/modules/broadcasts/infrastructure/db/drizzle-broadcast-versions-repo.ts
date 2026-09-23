@@ -108,4 +108,25 @@ export const drizzleBroadcastVersionsRepo: BroadcastVersionsRepo = {
     const row = rows[0];
     return row === undefined ? null : toVersion(row);
   },
+
+  async markSent(
+    tenantId: TenantSlug,
+    versionId: string,
+    sentAt: Date,
+    tx: BroadcastVersionsTx,
+  ): Promise<BroadcastVersion | null> {
+    const rows = await (tx as TenantTx)
+      .update(broadcastVersions)
+      .set({ sentToMemberAt: sentAt, updatedAt: sentAt })
+      .where(
+        and(
+          eq(broadcastVersions.tenantId, tenantId as string),
+          eq(broadcastVersions.id, versionId),
+          isNull(broadcastVersions.sentToMemberAt),
+        ),
+      )
+      .returning();
+    const row = rows[0];
+    return row === undefined ? null : toVersion(row);
+  },
 };

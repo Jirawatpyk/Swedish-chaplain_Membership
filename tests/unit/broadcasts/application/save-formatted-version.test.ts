@@ -82,6 +82,19 @@ describe('saveFormattedVersion — refusal arms', () => {
     expect([...sent.audit.events, ...bare.audit.events]).toHaveLength(0);
   });
 
+  it('an off-allow-list image → image_source_not_allowlisted naming the src, the refusal audited under the use case\'s id when the request has none', async () => {
+    const { audit, run } = setup();
+    const src = 'https://elsewhere.example/p.png';
+    expect(await run({ bodyHtml: `<img src="${src}" alt="p">` })).toEqual({
+      ok: false,
+      error: { kind: 'image_source_not_allowlisted', unsafeImageSources: [src] },
+    });
+    expect(audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ eventType: 'broadcast_body_image_source_unsafe', requestId: 'save-formatted-version' }),
+    );
+  });
+
   it('a whitespace-only note is stored as no note', async () => {
     const { store, run } = setup();
     expect((await run({ noteToMember: '  ' })).ok).toBe(true);

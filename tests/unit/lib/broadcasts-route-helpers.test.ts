@@ -86,6 +86,10 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   no_working_copy: 409,
   unsafe_content: 422,
   image_source_not_allowlisted: 422,
+  // F119 PR-2 — `…/version/send` and `…/schedule`.
+  no_portal_user: 409,
+  no_proposal: 409,
+  mode_not_allowed: 409,
   internal_error: 500,
 };
 

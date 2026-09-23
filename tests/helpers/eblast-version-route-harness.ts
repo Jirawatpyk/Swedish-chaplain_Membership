@@ -1,11 +1,15 @@
 /**
- * F119 PR-2 — shared harness for the `…/[id]/version` route contract tests
- * (T039 / T041 / T045 / T046 / T057 / T058 / T061 / T062a / T149 / T150).
+ * F119 PR-2 — shared harness for the approval-round route contract tests:
+ * `…/[id]/version` (T039 / T041 / T045 / T046 / T057 / T058 / T061 / T062a /
+ * T149 / T150), `…/[id]/version/send` (T040 / T043 / T044) and
+ * `…/[id]/schedule` (T042 / T044).
  *
- * The route runs against the REAL use cases (`startFormattedVersion`,
- * `saveFormattedVersion`, `listBroadcastVersions`) over the in-memory
- * approval store from `eblast-approval-fakes.ts`, the REAL shared sanitiser
- * (DOMPurify, the one content policy) and a fake image allow-list. Only the
+ * The routes run against the REAL use cases (`startFormattedVersion`,
+ * `saveFormattedVersion`, `listBroadcastVersions`, `sendVersionToMember`,
+ * `confirmSchedule`) over the in-memory approval store from
+ * `eblast-approval-fakes.ts` (whose outbox rows roll back with the store),
+ * the REAL shared sanitiser (DOMPurify, the one content policy), a fake image
+ * allow-list and a fake portal-contact directory. Only the
  * edges a unit cannot own are stubbed: the session gate, the tenant
  * resolver, the rate limiter, and the composition root (which is where the
  * feature flag is read — `harness.flagOn` stands in for it).
@@ -27,10 +31,13 @@ import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
 import type { BroadcastVersion } from '@/modules/broadcasts/domain/approval/broadcast-version';
 import type { MemberDecision } from '@/modules/broadcasts/domain/approval/member-decision';
+import type { PortalContact } from '@/modules/broadcasts/application/ports/member-portal-recipient-port';
 import {
   makeFakeActorNameDirectory,
   makeFakeApprovalStore,
   makeFakeImageAllowlist,
+  makeFakePortalRecipients,
+  makePortalContact,
   makeRecordingF7Audit,
   type FakeApprovalStore,
   type RecordingF7Audit,
@@ -42,11 +49,16 @@ export const ADMIN_USER_ID = '55555555-5555-4555-8555-555555555555';
 
 export type HarnessRole = 'marketing' | 'admin' | 'super_admin' | 'manager';
 
+/** The member the default `makeApprovalBroadcast()` row belongs to. */
+export const HARNESS_MEMBER_ID = '22222222-2222-4222-8222-222222222222';
+
 interface Harness {
   store: FakeApprovalStore;
   audit: RecordingF7Audit;
   names: Record<string, string | null>;
   allowlistHosts: string[];
+  /** Active portal contacts per member id (T059's `no_portal_user` precondition). */
+  portalContacts: Record<string, PortalContact[]>;
   flagOn: boolean;
   readonly requireApiPermission: ReturnType<typeof vi.fn>;
   readonly checkLimit: ReturnType<typeof vi.fn>;
@@ -57,6 +69,7 @@ export const harness: Harness = {
   audit: makeRecordingF7Audit(),
   names: {},
   allowlistHosts: ['assets.swecham.zyncdata.app'],
+  portalContacts: { [HARNESS_MEMBER_ID]: [makePortalContact()] },
   flagOn: true,
   requireApiPermission: vi.fn(),
   checkLimit: vi.fn(),
@@ -90,6 +103,7 @@ export function resetVersionHarness(
   harness.audit = makeRecordingF7Audit();
   harness.names = {};
   harness.allowlistHosts = ['assets.swecham.zyncdata.app'];
+  harness.portalContacts = { [HARNESS_MEMBER_ID]: [makePortalContact()] };
   harness.flagOn = true;
   harness.requireApiPermission.mockReset();
   harness.requireApiPermission.mockResolvedValue(staffCtx());
@@ -141,6 +155,27 @@ export function approvalDepsMock() {
       names: makeFakeActorNameDirectory(harness.names),
       audit: harness.audit,
     }),
+    makeSendVersionToMemberDeps: () => ({
+      tenant,
+      broadcastsRepo: harness.store.broadcastsRepo,
+      versionsRepo: harness.store.versionsRepo,
+      sanitizer: dompurifySanitizer,
+      imageAllowlist: makeFakeImageAllowlist(harness.allowlistHosts),
+      portalRecipients: makeFakePortalRecipients(harness.portalContacts),
+      outbox: harness.store.outbox,
+      audit: harness.audit,
+      clock,
+    }),
+    makeConfirmScheduleDeps: () => ({
+      tenant,
+      broadcastsRepo: harness.store.broadcastsRepo,
+      versionsRepo: harness.store.versionsRepo,
+      imageAllowlist: makeFakeImageAllowlist(harness.allowlistHosts),
+      portalRecipients: makeFakePortalRecipients(harness.portalContacts),
+      outbox: harness.store.outbox,
+      audit: harness.audit,
+      clock,
+    }),
   };
 }
 
@@ -153,12 +188,16 @@ export async function broadcastsBarrelMock() {
   const start = await import('@/modules/broadcasts/application/use-cases/approval/start-formatted-version');
   const save = await import('@/modules/broadcasts/application/use-cases/approval/save-formatted-version');
   const list = await import('@/modules/broadcasts/application/use-cases/approval/list-broadcast-versions');
+  const send = await import('@/modules/broadcasts/application/use-cases/approval/send-version-to-member');
+  const schedule = await import('@/modules/broadcasts/application/use-cases/approval/confirm-schedule');
   const broadcast = await import('@/modules/broadcasts/domain/broadcast');
   const stage = await import('@/modules/broadcasts/domain/stage/broadcast-stage');
   return {
     startFormattedVersion: start.startFormattedVersion,
     saveFormattedVersion: save.saveFormattedVersion,
     listBroadcastVersions: list.listBroadcastVersions,
+    sendVersionToMember: send.sendVersionToMember,
+    confirmSchedule: schedule.confirmSchedule,
     parseBroadcastId: broadcast.parseBroadcastId,
     stageOf: stage.stageOf,
     broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => harness.checkLimit(...args) },
@@ -187,3 +226,22 @@ export function getVersionRequest(id: string): NextRequest {
 }
 
 export const importVersionRoute = () => import('@/app/api/admin/broadcasts/[id]/version/route');
+
+/** `POST …/version/send` — the route reads no body; `body` is there to prove it ignores one (FR-005). */
+export function postSendRequest(id: string, body?: unknown): NextRequest {
+  return new NextRequest(`${url(id)}/send`, {
+    method: 'POST',
+    ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+}
+
+export function postScheduleRequest(id: string, body: unknown): NextRequest {
+  return new NextRequest(`http://localhost/api/admin/broadcasts/${id}/schedule`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+export const importSendRoute = () => import('@/app/api/admin/broadcasts/[id]/version/send/route');
+export const importScheduleRoute = () => import('@/app/api/admin/broadcasts/[id]/schedule/route');

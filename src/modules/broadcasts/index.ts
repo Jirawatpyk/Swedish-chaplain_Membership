@@ -831,3 +831,31 @@ export {
   type ListBroadcastVersionsInput,
   type VersionThreadEntry,
 } from './application/use-cases/approval/list-broadcast-versions';
+// T059 / T060 — send a version to the member; confirm, change or cancel the
+// send time (with the promotion). Two narrow ports composed in
+// `src/lib/broadcast-approval-deps.ts`: the member's portal contacts and the
+// ids-only approval-round outbox.
+export {
+  sendVersionToMember,
+  type SendVersionToMemberDeps,
+  type SendVersionToMemberError,
+  type SendVersionToMemberInput,
+  type SendVersionToMemberOutput,
+} from './application/use-cases/approval/send-version-to-member';
+export {
+  confirmSchedule,
+  type ConfirmScheduleDeps,
+  type ConfirmScheduleError,
+  type ConfirmScheduleInput,
+  type ConfirmScheduleOutput,
+  type ScheduleMode,
+} from './application/use-cases/approval/confirm-schedule';
+export type { MemberPortalRecipientPort, PortalContact } from './application/ports/member-portal-recipient-port';
+export {
+  F119_NOTIFICATION_TYPES,
+  type EblastNotificationEnqueue,
+  type EblastNotificationOutboxPort,
+  type F119NotificationType,
+} from './application/ports/eblast-notification-outbox-port';
+export { eblastNotificationOutbox } from './infrastructure/email-transactional-bridge';
+export type { UnsafeImageSource } from './domain/value-objects/image-source-allowlist';

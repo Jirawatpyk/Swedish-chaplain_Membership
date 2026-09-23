@@ -80,8 +80,6 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   // THIS BLOCK MUST BE EMPTY BEFORE PR-2 MERGES: each emitting task deletes
   // its line in the same commit that adds the emit site, and a line still
   // here at merge is a declared-but-never-emitted event shipping to prod.
-  'broadcast_version_sent_to_member', // F119 PR-2 in flight — emitter T059 send-version-to-member
-  'broadcast_schedule_confirmed', // F119 PR-2 in flight — emitter T060 confirm-schedule
   'broadcast_member_approved', // F119 PR-2 in flight — emitter T078 record-member-decision (approved arm)
   'broadcast_member_changes_requested', // F119 PR-2 in flight — emitter T078 record-member-decision (changes_requested arm)
   'broadcast_member_approval_withdrawn', // F119 PR-2 in flight — emitter T078 record-member-decision (approval_withdrawn arm)

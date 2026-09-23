@@ -98,7 +98,7 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
     expect(true).toBe(true);
   });
 
-  it('F7AuditPayloadShapes covers exactly the 19 declared events', () => {
+  it('F7AuditPayloadShapes covers exactly the 21 declared events', () => {
     // Lock the documented count so a future addition surfaces here for
     // review. The list used to be typed `ReadonlyArray<keyof …>`, which a
     // SUBSET satisfies — it read 12 while the map held 13. `_allDeclared`
@@ -125,9 +125,12 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
       // F119 PR-2 (T056 / T057)
       'broadcast_version_started',
       'broadcast_member_approval_voided',
+      // F119 PR-2 (T059 / T060)
+      'broadcast_version_sent_to_member',
+      'broadcast_schedule_confirmed',
     ] as const satisfies ReadonlyArray<_Keys>;
     const _allDeclared: [Exclude<_Keys, (typeof declared)[number]>] extends [never] ? true : never = true;
     void _allDeclared;
-    expect(declared.length).toBe(19);
+    expect(declared.length).toBe(21);
   });
 });

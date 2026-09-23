@@ -13,7 +13,10 @@
  * PR-2 adds `BroadcastVersionsRepo`, `BroadcastDecisionsRepo`,
  * `MarketingDirectoryPort`, `BroadcastApprovalScrubPort` (T055/T066/T082),
  * each shipped with its port's RED — plus `ActorNameDirectoryPort` (T061,
- * staff display names for the version thread), which T159a's list omits.
+ * staff display names for the version thread), which T159a's list omits,
+ * and the two T059 / T060 ports: `MemberPortalRecipientPort` (active portal
+ * contacts) and `EblastNotificationOutboxPort` (whose rows live in the
+ * approval store, so a rollback discards them — SC-004).
  *
  * Every fake `satisfies` its port, so a method added to a port without a
  * fake here fails to COMPILE — an unstubbed port method is an unexercised
@@ -55,7 +58,12 @@ import type {
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { Hostname, ImageAllowlistPort } from '@/modules/broadcasts/application/ports/image-allowlist-port';
 import type { ApprovalBroadcastsRepo } from '@/modules/broadcasts/application/use-cases/approval/_approval-tx';
-import type { TenantSlug } from '@/modules/tenants';
+import type {
+  EblastNotificationEnqueue,
+  EblastNotificationOutboxPort,
+} from '@/modules/broadcasts/application/ports/eblast-notification-outbox-port';
+import type { MemberPortalRecipientPort, PortalContact } from '@/modules/broadcasts/application/ports/member-portal-recipient-port';
+import type { TenantContext, TenantSlug } from '@/modules/tenants';
 
 /** The sentinel tx the fakes hand to `withTx` callbacks — assert on it to prove a write shared the tx. */
 export const FAKE_TX = 'fake-tx' as const;
@@ -443,10 +451,18 @@ export function makeApprovalVersion(overrides: Partial<BroadcastVersion> = {}): 
   };
 }
 
+/** One `notifications_outbox` row the approval round enqueued, with the tx it rode on. */
+export interface FakeOutboxRow extends EblastNotificationEnqueue {
+  readonly tx: unknown;
+  readonly tenantId: string;
+}
+
 export interface ApprovalStoreState {
   readonly broadcasts: Map<string, Broadcast>;
   versions: BroadcastVersion[];
   decisions: MemberDecision[];
+  /** Outbox rows live in the store so the `withTx` rollback discards them too (SC-004). */
+  outbox: FakeOutboxRow[];
 }
 
 /** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
@@ -463,11 +479,16 @@ export type FakeBroadcastDecisionsRepo = Mocked<BroadcastDecisionsRepo> & {
   readonly rows: () => readonly MemberDecision[];
 };
 
+export type FakeEblastOutbox = Mocked<EblastNotificationOutboxPort> & {
+  readonly rows: () => readonly FakeOutboxRow[];
+};
+
 export interface FakeApprovalStore {
   readonly state: ApprovalStoreState;
   readonly broadcastsRepo: FakeApprovalBroadcastsRepo;
   readonly versionsRepo: FakeBroadcastVersionsRepo;
   readonly decisionsRepo: FakeBroadcastDecisionsRepo;
+  readonly outbox: FakeEblastOutbox;
   /** The clock rows are stamped with; tests move it to model time passing. */
   now: Date;
 }
@@ -504,6 +525,7 @@ export function makeFakeApprovalStore(
     broadcasts: new Map((seed.broadcasts ?? []).map((b) => [keyOf(b.tenantId, b.broadcastId), b])),
     versions: [...(seed.versions ?? [])],
     decisions: [...(seed.decisions ?? [])],
+    outbox: [],
   };
   const store = { state, now: APPROVAL_NOW } as FakeApprovalStore;
 
@@ -514,6 +536,7 @@ export function makeFakeApprovalStore(
         broadcasts: new Map(state.broadcasts),
         versions: [...state.versions],
         decisions: [...state.decisions],
+        outbox: [...state.outbox],
       };
       try {
         return await fn(FAKE_TX);
@@ -522,6 +545,7 @@ export function makeFakeApprovalStore(
         for (const [k, v] of snapshot.broadcasts) state.broadcasts.set(k, v);
         state.versions = snapshot.versions;
         state.decisions = snapshot.decisions;
+        state.outbox = snapshot.outbox;
         throw e;
       }
     }),
@@ -546,7 +570,10 @@ export function makeFakeApprovalStore(
           throw new BroadcastConcurrentMutationError(tenantId, broadcastId, expectedFromStatus);
         }
         const defined = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
-        const next: Broadcast = { ...row, ...defined, status: target, updatedAt: store.now };
+        // Mirrors the Drizzle adapter: a real status change stamps the stage
+        // clock unless the caller passed one; a same-status write does not.
+        const stamp = target !== expectedFromStatus && fields.stageEnteredAt === undefined ? { stageEnteredAt: store.now } : {};
+        const next: Broadcast = { ...row, ...stamp, ...defined, status: target, updatedAt: store.now };
         state.broadcasts.set(key, next);
         return next;
       },
@@ -592,6 +619,18 @@ export function makeFakeApprovalStore(
         return next;
       },
     ),
+    // T059 — the send stamp; matches only an unsent row, like the SQL.
+    markSent: vi.fn(
+      async (tenantId: TenantSlug, versionId: string, sentAt: Date, _tx: unknown): Promise<BroadcastVersion | null> => {
+        const i = state.versions.findIndex(
+          (v) => v.tenantId === (tenantId as string) && v.id === versionId && v.sentToMemberAt === null,
+        );
+        if (i < 0) return null;
+        const next: BroadcastVersion = { ...state.versions[i]!, sentToMemberAt: sentAt, updatedAt: sentAt };
+        state.versions = state.versions.map((v, j) => (j === i ? next : v));
+        return next;
+      },
+    ),
   } satisfies BroadcastVersionsRepo & { rows: () => readonly BroadcastVersion[] };
 
   const decisionsRepo = {
@@ -613,11 +652,44 @@ export function makeFakeApprovalStore(
     ),
   } satisfies BroadcastDecisionsRepo & { rows: () => readonly MemberDecision[] };
 
+  // T059 / T060 — the approval-round outbox. The row lands in the store
+  // state, so a refusal thrown later in the same `withTx` rolls it back.
+  const outbox = {
+    rows: () => state.outbox,
+    enqueueInTx: vi.fn(async (tx: unknown, tenant: TenantContext, request: EblastNotificationEnqueue): Promise<void> => {
+      state.outbox = [...state.outbox, { ...request, tx, tenantId: tenant.slug as string }];
+    }),
+  } satisfies EblastNotificationOutboxPort & { rows: () => readonly FakeOutboxRow[] };
+
   return Object.assign(store, {
     broadcastsRepo: broadcastsRepo as unknown as FakeApprovalBroadcastsRepo,
     versionsRepo: versionsRepo as unknown as FakeBroadcastVersionsRepo,
     decisionsRepo: decisionsRepo as unknown as FakeBroadcastDecisionsRepo,
+    outbox: outbox as unknown as FakeEblastOutbox,
   });
+}
+
+// --- MemberPortalRecipientPort (T059 / T060) ---------------------------------
+
+/** A portal contact of the default approval broadcast's member. */
+export function makePortalContact(overrides: Partial<PortalContact> = {}): PortalContact {
+  return {
+    contactId: 'dddddddd-0000-4000-8000-000000000001',
+    email: 'owner@acme.test',
+    locale: 'th',
+    linkedUserId: '33333333-3333-4333-8333-333333333333',
+    isPrimary: true,
+    ...overrides,
+  };
+}
+
+/** Active portal contacts per member id; a member absent from the map has none. */
+export function makeFakePortalRecipients(
+  byMember: Readonly<Record<string, readonly PortalContact[]>> = {},
+): Mocked<MemberPortalRecipientPort> {
+  return {
+    listActivePortalContacts: vi.fn(async (_tenant: TenantContext, memberId: string, _tx: unknown) => byMember[memberId] ?? []),
+  } satisfies MemberPortalRecipientPort;
 }
 
 /** `BroadcastVersionsRepo` alone (a store with no broadcasts behind it). */

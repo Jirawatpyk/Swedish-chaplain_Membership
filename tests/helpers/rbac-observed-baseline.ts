@@ -207,6 +207,13 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   // F119 PR-2 T056/T062 — start a formatted version (the `submitted` arm is
   // flag-gated inside the use case, T152 — not by this key).
   { surface: 'POST /api/admin/broadcasts/[id]/version', kind: 'api', key: 'broadcasts.write' },
+  // F119 PR-2 T059/T062 — send the working copy to the member for approval.
+  // Formatting work, so `broadcasts.write` (marketing sends; a manager may not).
+  { surface: 'POST /api/admin/broadcasts/[id]/version/send', kind: 'api', key: 'broadcasts.write' },
+  // F119 PR-2 T060/T062 — confirm, change or cancel the send time (with the
+  // promotion of the approved version). A send decision, so `broadcasts.send`
+  // — the key `…/approve` names (contract § Permission map).
+  { surface: 'POST /api/admin/broadcasts/[id]/schedule', kind: 'api', key: 'broadcasts.send' },
   // F119 T145 (FR-039) — the staff compose-on-behalf DRAFT. `broadcasts.write`,
   // NOT `proxy-submit`'s `broadcasts.send`: saving a draft is not sending.
   { surface: 'POST /api/admin/broadcasts/draft', kind: 'api', key: 'broadcasts.write' },

@@ -745,11 +745,28 @@ export function makeDrizzleBroadcastsRepo(
         'approvedVersionId',
         'memberReminderStage',
         'memberExpiryNotifiedAt',
+        // F119 T060 — the PROMOTION of the member-approved version. It must
+        // ride the SAME statement as the `member_approved → approved` flip:
+        // that edge is the immutability trigger's only content exemption (E1),
+        // so on every other transition (or a separate UPDATE) the trigger
+        // still raises `broadcast_immutable_after_submit` — loud, not silent.
+        'subject',
+        'bodyHtml',
+        'bodySource',
       ];
       for (const key of passthrough) {
         if (fields[key] !== undefined) {
           setClause[key] = fields[key];
         }
+      }
+      // F119 — every status change moves the stage clock (data-model § 3:
+      // "stamped on every status change"; T117's time-in-stage badge and
+      // T121's gauges read it). The pre-F119 transitions (approve, reject,
+      // cancel, dispatch) pass no `stageEnteredAt`, so it is stamped here; a
+      // caller that owns the instant passes its own, and a same-status write
+      // (a reschedule `approved → approved`) leaves the clock alone.
+      if (target !== expectedFromStatus && fields.stageEnteredAt === undefined) {
+        setClause['stageEnteredAt'] = setClause['updatedAt'];
       }
 
       // Verify-fix R4 (Types-#5, 2026-05-02): expectedFromStatus is

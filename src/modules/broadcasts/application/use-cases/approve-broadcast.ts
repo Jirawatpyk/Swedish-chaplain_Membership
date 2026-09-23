@@ -35,7 +35,8 @@ import { enqueueBroadcastMemberNotification } from '../enqueue-member-notificati
 import type { Locale } from '@/i18n/config';
 export type NotificationLocale = Locale;
 
-const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
+/** The `now + 5 min` schedule floor — shared with F119 `confirmSchedule` (T060). */
+export const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
 
 export type ApproveDecision =
   | { readonly mode: 'send_now' }
