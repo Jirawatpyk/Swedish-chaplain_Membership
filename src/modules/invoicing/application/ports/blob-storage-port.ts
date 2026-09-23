@@ -2,6 +2,27 @@
  * T032 — Blob storage port (F4).
  * Backed by Vercel Blob (private). Deterministic content-addressed keys.
  */
+
+/**
+ * The port's own NOT-FOUND signal: `signDownloadUrl` / `downloadBytes` found
+ * no object at the requested key (for `downloadBytes`, also when the lookup
+ * succeeds and the byte fetch then answers 404). The adapter classifies the
+ * SDK's error CLASS and hands this to the use cases, which map it to
+ * `blob_missing` (502) with `instanceof` — never a regex on the message. `@vercel/blob@2.3.3` says "The
+ * requested blob does not exist", which the old `/not found|404/` never
+ * matched, so every genuine miss answered a generic 500.
+ *
+ * The message deliberately omits the key: keys carry tenant + document path
+ * segments, and a default error serialiser would leak them into logs. Callers
+ * that need the key for triage already hold it and log it explicitly.
+ */
+export class BlobKeyNotFoundError extends Error {
+  constructor(options?: { readonly cause?: unknown }) {
+    super('blob storage: no object at the requested key', options);
+    this.name = 'BlobKeyNotFoundError';
+  }
+}
+
 export interface BlobStoragePort {
   /**
    * Upload a PDF buffer. Returns the stable Blob URL / key.

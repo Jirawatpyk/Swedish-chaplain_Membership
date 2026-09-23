@@ -37,17 +37,32 @@ export async function GET(
   if ('response' in ctx) return ctx.response;
   const { creditNoteId } = await params;
 
-  const result = await getCreditNotePdfSignedUrl(
-    makeGetCreditNotePdfSignedUrlDeps(ctx.tenant.slug),
-    {
-      tenantId: ctx.tenant.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: 'member',
-      actorMemberId: ctx.memberId,
-      requestId: ctx.requestId,
-      creditNoteId,
-    },
-  );
+  // Parity with the portal invoice PDF route: a throw from the use case (a
+  // Blob outage, an audit-emit failure) answers a structured 500 instead of
+  // escaping the handler.
+  let result: Awaited<ReturnType<typeof getCreditNotePdfSignedUrl>>;
+  try {
+    result = await getCreditNotePdfSignedUrl(
+      makeGetCreditNotePdfSignedUrlDeps(ctx.tenant.slug),
+      {
+        tenantId: ctx.tenant.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: 'member',
+        actorMemberId: ctx.memberId,
+        requestId: ctx.requestId,
+        creditNoteId,
+      },
+    );
+  } catch (err) {
+    logger.error(
+      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, creditNoteId, err },
+      'GET /api/portal/credit-notes/[id]/pdf — getCreditNotePdfSignedUrl threw',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     logger.warn(
       {
@@ -55,6 +70,12 @@ export async function GET(
         tenantId: ctx.tenant.slug,
         creditNoteId,
         errorCode: result.error.code,
+        // The missing blob's key, so on-call can locate the orphaned object
+        // without joining back to the credit-note row (runbook:
+        // receipt-pdf-permanently-failed.md § Missing PDF blob).
+        ...(result.error.code === 'blob_missing'
+          ? { blobKey: result.error.key }
+          : {}),
       },
       'GET /api/portal/credit-notes/[id]/pdf failed',
     );

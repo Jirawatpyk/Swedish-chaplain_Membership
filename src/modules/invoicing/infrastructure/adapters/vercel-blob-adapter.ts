@@ -7,9 +7,31 @@
  *
  * Uses `@vercel/blob` SDK; BLOB_READ_WRITE_TOKEN from env.
  */
-import { put, head, del, list } from '@vercel/blob';
-import type { BlobStoragePort } from '../../application/ports/blob-storage-port';
+import { BlobNotFoundError, put, head, del, list } from '@vercel/blob';
+import {
+  BlobKeyNotFoundError,
+  type BlobStoragePort,
+} from '../../application/ports/blob-storage-port';
 import { env } from '@/lib/env';
+
+/**
+ * `head()` for a READ, with NOT-FOUND classified by the SDK's own class and
+ * handed on as the port's `BlobKeyNotFoundError` (the use cases map it to
+ * `blob_missing` -> 502 by `instanceof`). `@vercel/blob@2.3.3`'s message is
+ * "Vercel Blob: The requested blob does not exist" — the `not found|404`
+ * regex the use cases used to apply never matched it, so a missing tax
+ * document answered 500. Every other failure (rate limit, access, outage,
+ * network) is rethrown unchanged. Pinned against the real SDK classes by
+ * `tests/unit/invoicing/vercel-blob-adapter.test.ts`.
+ */
+async function headForRead(key: string): Promise<{ readonly url: string }> {
+  try {
+    return await head(key, { token: env.blob.readWriteToken });
+  } catch (e) {
+    if (e instanceof BlobNotFoundError) throw new BlobKeyNotFoundError({ cause: e });
+    throw e;
+  }
+}
 
 export const vercelBlobAdapter: BlobStoragePort = {
   async uploadPdf(input: {
@@ -85,7 +107,7 @@ export const vercelBlobAdapter: BlobStoragePort = {
     // where available, because the proxy path gives us one consistent
     // auth boundary + audit point regardless of Blob-SDK capability
     // drift. FR-005 T-05 mitigation is satisfied by the proxy.
-    const blob = await head(key, { token: env.blob.readWriteToken });
+    const blob = await headForRead(key);
     return blob.url;
   },
 
@@ -95,10 +117,14 @@ export const vercelBlobAdapter: BlobStoragePort = {
     // `fetch()` (not `get`, which the @vercel/blob SDK does not expose
     // for server-side reads at this version) to stay compatible with
     // the same access-mode the adapter uploads with (`public`).
-    const blob = await head(key, { token: env.blob.readWriteToken });
+    const blob = await headForRead(key);
     // PG-1 — `cache: 'no-store'` avoids serving stale bytes from a CDN
     // layer after the VOID overlay overwrite.
     const response = await fetch(blob.url, { cache: 'no-store' });
+    // `head()` found the object but the byte fetch 404s (deleted between the
+    // two calls, or a CDN miss on a removed object): the same missing object,
+    // so the same port class `head()`'s miss raises. No key in the error.
+    if (response.status === 404) throw new BlobKeyNotFoundError();
     if (!response.ok) {
       // PG-1 — DO NOT embed the Blob key in the thrown message: keys
       // contain tenant + invoice path segments that must not leak into

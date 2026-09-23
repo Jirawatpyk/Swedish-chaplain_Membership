@@ -55,7 +55,18 @@ export async function GET(
   }
   if (!result.ok) {
     logger.warn(
-      { requestId, tenantId: tenantCtx.slug, creditNoteId, errorCode: result.error.code },
+      {
+        requestId,
+        tenantId: tenantCtx.slug,
+        creditNoteId,
+        errorCode: result.error.code,
+        // The missing blob's key, so on-call can locate the orphaned object
+        // without joining back to the credit-note row (runbook:
+        // receipt-pdf-permanently-failed.md § Missing PDF blob).
+        ...(result.error.code === 'blob_missing'
+          ? { blobKey: result.error.key }
+          : {}),
+      },
       'GET /api/credit-notes/[id]/pdf failed',
     );
     return NextResponse.json(

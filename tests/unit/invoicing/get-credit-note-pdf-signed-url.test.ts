@@ -15,9 +15,10 @@
  *     `originalInvoiceMemberId` matches their own id; every denial is the
  *     OPAQUE `credit_note_not_found` (never `forbidden` — do not leak
  *     existence) + a `credit_note_cross_tenant_probe` audit row.
- *   - IM-4 blob-miss mapping: BlobNotFoundError / "404" / non-Error
- *     "not found" throws → typed `blob_missing` with the stored key;
- *     transient errors rethrow.
+ *   - IM-4 blob-miss mapping: only the port's `BlobKeyNotFoundError` (by
+ *     class) → typed `blob_missing` with the stored key; any other throw —
+ *     a message that merely says "404" / "not found", a non-Error string,
+ *     a transient error — rethrows unchanged.
  *
  * Constitution Principle II — the PDF-download use-case is a file ACL
  * gate (PII surface), so this file targets 100% line + branch.
@@ -25,6 +26,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getCreditNotePdfSignedUrl } from '@/modules/invoicing/application/use-cases/get-credit-note-pdf-signed-url';
 import type { CreditNoteRepo } from '@/modules/invoicing/application/ports/credit-note-repo';
+import { BlobKeyNotFoundError } from '@/modules/invoicing/application/ports/blob-storage-port';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId, type CreditNote } from '@/modules/invoicing/domain/credit-note';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -356,9 +358,9 @@ describe('getCreditNotePdfSignedUrl — blob_missing handling (IM-4)', () => {
     return { ...deps, blob: throwingBlob };
   }
 
-  it('BlobNotFoundError → returns blob_missing with the stored key', async () => {
+  it('BlobKeyNotFoundError → returns blob_missing with the stored key', async () => {
     const cn = creditNoteFixture();
-    const deps = makeBlobThrowingDeps(cn, new Error('BlobNotFoundError: blob not found'));
+    const deps = makeBlobThrowingDeps(cn, new BlobKeyNotFoundError());
     const result = await getCreditNotePdfSignedUrl(deps, {
       tenantId: TENANT,
       actorUserId: 'u-admin',
@@ -374,17 +376,18 @@ describe('getCreditNotePdfSignedUrl — blob_missing handling (IM-4)', () => {
     }
   });
 
-  it('Error message containing "404" → returns blob_missing', async () => {
+  it('plain Error whose message says "404 Not Found" → rethrows (a string is not the class)', async () => {
     const cn = creditNoteFixture();
-    const deps = makeBlobThrowingDeps(cn, new Error('Upstream 404 Not Found'));
-    const result = await getCreditNotePdfSignedUrl(deps, {
-      tenantId: TENANT,
-      actorUserId: 'u-admin',
-      actorRole: 'admin',
-      creditNoteId: CN_UUID,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('blob_missing');
+    const thrown = new Error('Upstream 404 Not Found');
+    const deps = makeBlobThrowingDeps(cn, thrown);
+    await expect(
+      getCreditNotePdfSignedUrl(deps, {
+        tenantId: TENANT,
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        creditNoteId: CN_UUID,
+      }),
+    ).rejects.toBe(thrown);
   });
 
   it('Generic Error (network) → rethrows (transient, not a miss)', async () => {
@@ -400,16 +403,17 @@ describe('getCreditNotePdfSignedUrl — blob_missing handling (IM-4)', () => {
     ).rejects.toThrow(/Connection refused/);
   });
 
-  it('Non-Error throw (string) → still resolves blob_missing via the String(e) arm', async () => {
+  it('Non-Error throw (string) → rethrows the same value (logged via the String(e) arm)', async () => {
     const cn = creditNoteFixture();
-    const deps = makeBlobThrowingDeps(cn, 'string-style not found error');
-    const result = await getCreditNotePdfSignedUrl(deps, {
-      tenantId: TENANT,
-      actorUserId: 'u-admin',
-      actorRole: 'admin',
-      creditNoteId: CN_UUID,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('blob_missing');
+    const thrown = 'string-style not found error';
+    const deps = makeBlobThrowingDeps(cn, thrown);
+    await expect(
+      getCreditNotePdfSignedUrl(deps, {
+        tenantId: TENANT,
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        creditNoteId: CN_UUID,
+      }),
+    ).rejects.toBe(thrown);
   });
 });

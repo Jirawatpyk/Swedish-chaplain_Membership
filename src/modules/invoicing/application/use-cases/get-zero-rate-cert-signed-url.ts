@@ -9,7 +9,8 @@
  *   - emits an `invoice_pdf_downloaded`-style audit BEFORE signing (durable
  *     forensic trail — the read fails if the audit fails);
  *   - `blob.signDownloadUrl` on the invoice's pinned `zeroRateCertBlobKey`,
- *     with `BlobNotFoundError` mapped to a typed `blob_missing` Result.
+ *     with the port's `BlobKeyNotFoundError` mapped (by class) to a typed
+ *     `blob_missing` Result; any other throw propagates (route → 500).
  *
  * AUDIT NOTE: reuses the existing `invoice_pdf_downloaded` event type (10y
  * retention, tax-document class) with a `document:'zero_rate_cert'` +
@@ -22,7 +23,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
-import type { BlobStoragePort } from '../ports/blob-storage-port';
+import { BlobKeyNotFoundError, type BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 import { asInvoiceId, type InvoiceId } from '@/modules/invoicing/domain/invoice';
 import type { Role } from '@/modules/auth';
@@ -125,7 +126,7 @@ export async function getZeroRateCertSignedUrl(
     url = await deps.blob.signDownloadUrl(invoice.zeroRateCertBlobKey);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const notFound = /not found|404|BlobNotFoundError/i.test(msg);
+    const notFound = e instanceof BlobKeyNotFoundError;
     logger.error(
       {
         err: msg,
