@@ -7250,6 +7250,97 @@
       "unsubscribeCta": "Unsubscribe",
       "unsubscribeSuffix": "from these broadcasts at any time.",
       "physicalAddress": "Sent by {tenantDisplayName}."
+    },
+    "eblastApproval": {
+      "common": {
+        "footer": "This is an automated message from the chamber's membership portal.",
+        "subjectLabel": "E-Blast",
+        "companyLabel": "Member",
+        "stageLabel": "Stage",
+        "staffCta": "Open the E-Blast",
+        "staffDetailsNote": "The content and any comments are on the E-Blast page."
+      },
+      "stage": {
+        "awaitingMarketingReview": "Awaiting marketing review",
+        "memberApproved": "Member approved — awaiting schedule",
+        "changesRequested": "Changes requested by member",
+        "withdrawn": "Withdrawn",
+        "awaitingMemberApproval": "Awaiting member approval",
+        "expired": "Expired — no member response"
+      },
+      "submittedMarketing": {
+        "subject": "New E-Blast to review: {subject}",
+        "heading": "A member submitted an E-Blast for review"
+      },
+      "memberDecidedMarketing": {
+        "subject": "E-Blast update: {subject}",
+        "heading": "A member responded to an E-Blast"
+      },
+      "versionSentMember": {
+        "subject": "Your E-Blast is ready for your approval",
+        "heading": "Round {round} is ready for your approval",
+        "intro": "The chamber has prepared a version of your E-Blast \"{subject}\" and asks you to review it.",
+        "noteHeading": "Note from the chamber",
+        "proposedSendAt": "Your proposed send time: {when}",
+        "noProposedSendAt": "You have not proposed a send time.",
+        "cta": "Review the E-Blast"
+      },
+      "scheduleConfirmedMember": {
+        "subject": "Your E-Blast is scheduled",
+        "heading": "Your E-Blast is scheduled",
+        "intro": "The chamber has confirmed the send time for your E-Blast \"{subject}\".",
+        "confirmedSendAt": "Confirmed send time: {when}",
+        "proposedSendAt": "Your proposed send time: {when}",
+        "notProposedTime": "This is not the time you proposed.",
+        "cta": "View your E-Blast"
+      },
+      "timeline": {
+        "heading": "What happens next",
+        "day3": "Day 3 ({date}): a reminder, if you have not responded",
+        "day7": "Day 7 ({date}): a final reminder",
+        "day23": "Day 23 ({date}): a warning that the request is about to close",
+        "day30": "Day 30 ({date}): the request closes automatically, and you would need to submit a new E-Blast"
+      },
+      "lifecycle": {
+        "member": {
+          "reminderDay3": {
+            "subject": "Reminder: your E-Blast is waiting for your approval",
+            "body": "The chamber sent you a version of your E-Blast \"{subject}\" on {sentDate}. It is still waiting for your approval."
+          },
+          "reminderDay7": {
+            "subject": "Final reminder: your E-Blast is waiting for your approval",
+            "body": "The chamber sent you a version of your E-Blast \"{subject}\" on {sentDate}. This is the final reminder."
+          },
+          "expiryWarningDay23": {
+            "subject": "Your E-Blast request closes in 7 days",
+            "body": "Your E-Blast \"{subject}\" has been waiting for your approval since {sentDate}. If you do not respond, the request closes automatically on {expiresDate}."
+          },
+          "expiredDay30": {
+            "subject": "Your E-Blast request has closed",
+            "body": "The chamber did not receive your response to your E-Blast \"{subject}\" within 30 days, so the request closed automatically on {expiresDate}. Your allowance place is free again — submit a new E-Blast whenever you are ready."
+          },
+          "ctaReview": "Review the E-Blast",
+          "ctaList": "Open your E-Blasts"
+        },
+        "staff": {
+          "reminderDay3": {
+            "subject": "E-Blast awaiting member approval (day 3): {subject}",
+            "heading": "The member has not yet responded to an E-Blast"
+          },
+          "reminderDay7": {
+            "subject": "E-Blast awaiting member approval (day 7): {subject}",
+            "heading": "The member has still not responded to an E-Blast"
+          },
+          "expiryWarningDay23": {
+            "subject": "E-Blast closes in 7 days: {subject}",
+            "heading": "An E-Blast will close in 7 days without a member response"
+          },
+          "expiredDay30": {
+            "subject": "E-Blast expired: {subject}",
+            "heading": "An E-Blast closed without a member response"
+          }
+        }
+      }
     }
   },
   "public": {

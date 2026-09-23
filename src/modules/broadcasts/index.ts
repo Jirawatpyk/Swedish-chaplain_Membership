@@ -858,4 +858,26 @@ export {
   type F119NotificationType,
 } from './application/ports/eblast-notification-outbox-port';
 export { eblastNotificationOutbox } from './infrastructure/email-transactional-bridge';
+// T129a — the five approval-round email builders, called from the outbox
+// dispatcher arms (T065 / T129 / T131) through `src/lib/broadcast-approval-notifications.ts`.
+export {
+  EBLAST_LIFECYCLE_KINDS,
+  EBLAST_MEMBER_DECIDED_KINDS,
+  buildEblastApprovalLifecycleEmail,
+  buildEblastMemberDecidedMarketingEmail,
+  buildEblastScheduleConfirmedMemberEmail,
+  buildEblastSubmittedMarketingEmail,
+  buildEblastVersionSentMemberEmail,
+  type BuiltEblastEmail,
+  type EblastApprovalLifecycleInput,
+  type EblastLifecycleKind,
+  type EblastMemberDecidedKind,
+  type EblastStaffHandoffInput,
+} from './infrastructure/email/broadcast-approval-emails';
+// T065 — the send-time recipient rule shared by the enqueue (T059 / T060) and
+// the dispatcher arm, so both pick the same contact.
+export { chooseApprovalRecipient } from './application/use-cases/approval/_approval-recipient';
+// T066 — who "marketing" is for a hand-off (FR-021a), composed in
+// `src/lib/broadcast-marketing-deps.ts`.
+export type { MarketingDirectoryPort, MarketingRecipient } from './application/ports/marketing-directory-port';
 export type { UnsafeImageSource } from './domain/value-objects/image-source-allowlist';

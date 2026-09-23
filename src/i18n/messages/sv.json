@@ -7250,6 +7250,97 @@
       "unsubscribeCta": "Avregistrera",
       "unsubscribeSuffix": "från dessa utskick när som helst.",
       "physicalAddress": "Skickat av {tenantDisplayName}."
+    },
+    "eblastApproval": {
+      "common": {
+        "footer": "Detta är ett automatiskt meddelande från handelskammarens medlemsportal.",
+        "subjectLabel": "E-Blast",
+        "companyLabel": "Medlem",
+        "stageLabel": "Steg",
+        "staffCta": "Öppna E-Blasten",
+        "staffDetailsNote": "Innehållet och eventuella kommentarer finns på E-Blast-sidan."
+      },
+      "stage": {
+        "awaitingMarketingReview": "Väntar på granskning av marknadsföring",
+        "memberApproved": "Godkänd av medlemmen — väntar på schemaläggning",
+        "changesRequested": "Medlemmen har begärt ändringar",
+        "withdrawn": "Återkallad",
+        "awaitingMemberApproval": "Väntar på medlemmens godkännande",
+        "expired": "Utgången — inget svar från medlemmen"
+      },
+      "submittedMarketing": {
+        "subject": "Ny E-Blast att granska: {subject}",
+        "heading": "En medlem har skickat in en E-Blast för granskning"
+      },
+      "memberDecidedMarketing": {
+        "subject": "Uppdatering om E-Blast: {subject}",
+        "heading": "En medlem har svarat på en E-Blast"
+      },
+      "versionSentMember": {
+        "subject": "Din E-Blast är redo för ditt godkännande",
+        "heading": "Omgång {round} är redo för ditt godkännande",
+        "intro": "Handelskammaren har förberett en version av din E-Blast \"{subject}\" och ber dig granska den.",
+        "noteHeading": "Meddelande från handelskammaren",
+        "proposedSendAt": "Din föreslagna sändningstid: {when}",
+        "noProposedSendAt": "Du har inte föreslagit någon sändningstid.",
+        "cta": "Granska E-Blasten"
+      },
+      "scheduleConfirmedMember": {
+        "subject": "Din E-Blast är schemalagd",
+        "heading": "Din E-Blast är schemalagd",
+        "intro": "Handelskammaren har bekräftat sändningstiden för din E-Blast \"{subject}\".",
+        "confirmedSendAt": "Bekräftad sändningstid: {when}",
+        "proposedSendAt": "Din föreslagna sändningstid: {when}",
+        "notProposedTime": "Detta är inte den tid du föreslog.",
+        "cta": "Visa din E-Blast"
+      },
+      "timeline": {
+        "heading": "Vad händer härnäst",
+        "day3": "Dag 3 ({date}): en påminnelse om du inte har svarat",
+        "day7": "Dag 7 ({date}): en sista påminnelse",
+        "day23": "Dag 23 ({date}): en varning om att begäran snart stängs",
+        "day30": "Dag 30 ({date}): begäran stängs automatiskt och du behöver skicka in en ny E-Blast"
+      },
+      "lifecycle": {
+        "member": {
+          "reminderDay3": {
+            "subject": "Påminnelse: din E-Blast väntar på ditt godkännande",
+            "body": "Handelskammaren skickade en version av din E-Blast \"{subject}\" till dig den {sentDate}. Den väntar fortfarande på ditt godkännande."
+          },
+          "reminderDay7": {
+            "subject": "Sista påminnelse: din E-Blast väntar på ditt godkännande",
+            "body": "Handelskammaren skickade en version av din E-Blast \"{subject}\" till dig den {sentDate}. Detta är den sista påminnelsen."
+          },
+          "expiryWarningDay23": {
+            "subject": "Din E-Blast-begäran stängs om 7 dagar",
+            "body": "Din E-Blast \"{subject}\" har väntat på ditt godkännande sedan {sentDate}. Om du inte svarar stängs begäran automatiskt den {expiresDate}."
+          },
+          "expiredDay30": {
+            "subject": "Din E-Blast-begäran har stängts",
+            "body": "Handelskammaren fick inget svar på din E-Blast \"{subject}\" inom 30 dagar, så begäran stängdes automatiskt den {expiresDate}. Din kvotplats är ledig igen — skicka in en ny E-Blast när du är redo."
+          },
+          "ctaReview": "Granska E-Blasten",
+          "ctaList": "Öppna dina E-Blasts"
+        },
+        "staff": {
+          "reminderDay3": {
+            "subject": "E-Blast väntar på medlemmens godkännande (dag 3): {subject}",
+            "heading": "Medlemmen har ännu inte svarat på en E-Blast"
+          },
+          "reminderDay7": {
+            "subject": "E-Blast väntar på medlemmens godkännande (dag 7): {subject}",
+            "heading": "Medlemmen har fortfarande inte svarat på en E-Blast"
+          },
+          "expiryWarningDay23": {
+            "subject": "E-Blast stängs om 7 dagar: {subject}",
+            "heading": "En E-Blast stängs om 7 dagar om medlemmen inte svarar"
+          },
+          "expiredDay30": {
+            "subject": "E-Blast har gått ut: {subject}",
+            "heading": "En E-Blast stängdes utan svar från medlemmen"
+          }
+        }
+      }
     }
   },
   "public": {

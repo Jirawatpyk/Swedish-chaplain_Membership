@@ -15,14 +15,54 @@
  *   - the promotion copies the approved version onto `broadcasts`
  *     byte-for-byte through the trigger's E1 exemption, in ONE statement with
  *     the status flip — and a direct content UPDATE afterwards is still
- *     refused.
+ *     refused;
+ *   - SC-004 (T065): the REAL outbox INSERT rides the REAL tenant tx — a
+ *     failure after it rolls the row back with the send;
+ *   - T149a / T152a: with FEATURE_EBLAST_MEMBER_APPROVAL off the real
+ *     dispatcher tick leaves an `eblast_*` row pending, attempts 0, no
+ *     `last_error`; after the flip the same row is SENT through the T065 arm,
+ *     rendered from the rows at send time.
  */
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+// The drainer reads FEATURE_EBLAST_MEMBER_APPROVAL through
+// `isEblastMemberApprovalEnabled()`; `.env.local` does not carry it, so the
+// suite drives it here (the F114 dispatch-suite precedent). Nothing else in
+// this file reads the flag.
+const flag = vi.hoisted(() => ({ eblastMemberApproval: false }));
+vi.mock('@/lib/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/env')>();
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      features: {
+        ...actual.env.features,
+        f7Broadcasts: true,
+        get eblastMemberApproval() {
+          return flag.eblastMemberApproval;
+        },
+      },
+    },
+  };
+});
+const sent = vi.hoisted(() => [] as Array<{ to: string; subject: string; html: string; text: string }>);
+vi.mock('@/modules/auth/infrastructure/email/resend-client', () => ({
+  emailSender: {
+    send: vi.fn(async (message: { to: string; subject: string; html: string; text: string }) => {
+      sent.push(message);
+      return { ok: true, value: { messageId: `msg-${sent.length}` } };
+    }),
+  },
+}));
 import { db, runInTenant } from '@/lib/db';
 import { errorChainMessage } from '@/lib/db-errors';
 import { makeConfirmScheduleDeps, makeSendVersionToMemberDeps } from '@/lib/broadcast-approval-deps';
+import { GET as outboxDispatch } from '@/app/api/cron/outbox-dispatch/route';
+import { eblastNotificationOutbox } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { approveBroadcast } from '@/modules/broadcasts/application/use-cases/approve-broadcast';
@@ -250,5 +290,106 @@ describe('F119 send + promotion + the stage clock — real composition on live P
 
     // One member email for the re-time; none for the cancel.
     expect((await readOutbox(row.broadcastId!)).map((o) => o.notificationType)).toEqual(['eblast_schedule_confirmed_member']);
+  });
+
+  it('SC-004: a failure AFTER the real outbox INSERT rolls the row back with the send — zero rows, the version unstamped, the stage unchanged', async () => {
+    const row = seed({ status: 'in_design' });
+    const v1Id = randomUUID();
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    await seedVersions(row.broadcastId!, { id: v1Id, sentToMemberAt: null });
+
+    let enqueued = 0;
+    const r = await sendVersionToMember(
+      {
+        ...makeSendVersionToMemberDeps(tenant.ctx.slug),
+        outbox: {
+          async enqueueInTx(tx, t, request) {
+            await eblastNotificationOutbox.enqueueInTx(tx, t, request); // the REAL insert, on the REAL tx
+            enqueued += 1;
+            throw new Error('fault after the outbox insert');
+          },
+        },
+      },
+      { broadcastId: asBroadcastId(row.broadcastId!), actorUserId: MARKETER, actorRole: 'marketing', requestId: null },
+    );
+    expect(r.ok ? null : r.error.kind).toBe('server_error');
+    expect(enqueued).toBe(1);
+    expect(await readOutbox(row.broadcastId!)).toHaveLength(0);
+    expect((await readRow(row.broadcastId!)).status).toBe('in_design');
+    const [v1] = await runInTenant(tenant.ctx, (tx) => tx.select().from(broadcastVersions).where(eq(broadcastVersions.id, v1Id)));
+    expect(v1!.sentToMemberAt).toBeNull();
+  });
+
+  describe('the outbox drainer and FEATURE_EBLAST_MEMBER_APPROVAL (T149a / T152a)', () => {
+    async function tick(): Promise<void> {
+      const res = await outboxDispatch(
+        new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+          headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+        }),
+      );
+      expect(res.status).toBe(200);
+    }
+    const outboxRow = (id: string) => db.select().from(notificationsOutbox).where(eq(notificationsOutbox.id, id)).then((rows) => rows[0]!);
+
+    it('flag off: the rows are enqueued and NOT delivered — pending, attempts 0, no last_error; after the flip the version-ready row is sent from the rows at send time', async () => {
+      const row = seed({ status: 'in_design', subject: 'Drainer E-Blast' });
+      const v1Id = randomUUID();
+      await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+      await seedVersions(row.broadcastId!, { id: v1Id, sentToMemberAt: null, subject: 'Drainer formatted subject' });
+      const r = await sendVersionToMember(makeSendVersionToMemberDeps(tenant.ctx.slug), {
+        broadcastId: asBroadcastId(row.broadcastId!),
+        actorUserId: MARKETER,
+        actorRole: 'marketing',
+        requestId: null,
+      });
+      expect(r.ok).toBe(true);
+      const [versionRow] = await readOutbox(row.broadcastId!);
+      // The submit-time type, whose arm is T129's: seeded straight into the
+      // outbox, as the unflagged submit will write it.
+      const [submittedRow] = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .insert(notificationsOutbox)
+          .values({
+            tenantId: tenant.ctx.slug,
+            notificationType: 'eblast_submitted_marketing',
+            toEmail: 'marketing-drainer@example.com',
+            locale: 'en',
+            contextData: { tenantId: tenant.ctx.slug, broadcastId: row.broadcastId, recipientUserId: MARKETER },
+            status: 'pending',
+            attempts: 0,
+            nextRetryAt: new Date(Date.now() - 1_000),
+          })
+          .returning(),
+      );
+
+      flag.eblastMemberApproval = false;
+      await tick();
+      await tick();
+      for (const id of [versionRow!.id, submittedRow!.id]) {
+        expect(await outboxRow(id)).toMatchObject({ status: 'pending', attempts: 0, lastError: null });
+      }
+      expect(sent.some((m) => m.text.includes(`/portal/broadcasts/${row.broadcastId}`))).toBe(false);
+
+      // The T129 row has no arm yet: take it out of the queue before the flip.
+      await runInTenant(tenant.ctx, (tx) => tx.delete(notificationsOutbox).where(eq(notificationsOutbox.id, submittedRow!.id)));
+
+      flag.eblastMemberApproval = true;
+      try {
+        let after = await outboxRow(versionRow!.id);
+        for (let i = 0; i < 8 && after.status === 'pending'; i += 1) {
+          await tick();
+          after = await outboxRow(versionRow!.id);
+        }
+        expect(after).toMatchObject({ status: 'sent', lastError: null });
+        const email = sent.find((m) => m.text.includes(`/portal/broadcasts/${row.broadcastId}`));
+        expect(email).toBeDefined();
+        expect(email!.to).toBe(versionRow!.toEmail);
+        expect(email!.html).toContain('lang="sv"');
+        expect(email!.text).toContain('Drainer formatted subject');
+        expect(email!.text).toContain('Please check the date.');
+      } finally {
+        flag.eblastMemberApproval = false;
+      }
+    });
   });
 });

@@ -34,7 +34,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { createHash } from 'node:crypto';
-import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
+import { and, count, eq, lt, lte, ne, notInArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
  
@@ -59,6 +59,7 @@ import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invita
 import { isRole } from '@/modules/auth/domain/role';
 import { listActiveUsersByRole } from '@/modules/auth';
 import { reviewerRoles } from '@/lib/members-change-request-deps';
+import { buildEblastNotificationPayload } from '@/lib/broadcast-approval-notifications';
 // F114 — the change-request staff email is rendered AT SEND TIME from the
 // request rows (research R8 / § V3): the outbox row carries ids + field keys
 // only. Read through the members barrel (Principle III).
@@ -89,6 +90,8 @@ import {
   buildBroadcastApprovedEmail,
   buildBroadcastRejectedEmail,
   buildBroadcastCancelledEmail,
+  F119_NOTIFICATION_TYPES,
+  isEblastMemberApprovalEnabled,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -540,6 +543,19 @@ async function buildPayload(
       });
       return { ...built, toEmail: contact.value.email };
     }
+    // F119 T065 (contracts/dashboard-and-notifications.md § 3, research R14) —
+    // the approval-round hand-offs, read at send time under the row's tenant
+    // from ids-only `context_data`. Staff renderings carry subject + member
+    // company + stage + link and nothing else (FR-021b). The composition never
+    // throws: a transient read is `null` (the ladder), a stale hand-off the
+    // silent `request_superseded`. `eblast_submitted_marketing` (T129) and
+    // `eblast_approval_lifecycle` (T131) get their arms with their enqueues;
+    // until then, and while FEATURE_EBLAST_MEMBER_APPROVAL is off, the drainer
+    // does not select them (T152a, `GET` below).
+    case 'eblast_version_sent_member':
+    case 'eblast_member_decided_marketing':
+    case 'eblast_schedule_confirmed_member':
+      return buildEblastNotificationPayload(row);
     default:
       return null;
   }
@@ -1369,6 +1385,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ne(notificationsOutbox.notificationType, 'member_change_request_submitted_staff'),
       ne(notificationsOutbox.notificationType, 'member_change_request_decided_member'),
     );
+  }
+  // F119 T152a — the drainer arm of FEATURE_EBLAST_MEMBER_APPROVAL (maintainer
+  // decision, round 4 H2; contracts/dashboard-and-notifications.md § 3). The
+  // five approval-round types are ENQUEUED unconditionally — no use case reads
+  // the flag inside its tx — and are simply not selected while it is off: no
+  // send, no attempt, no `last_error`, never the `no_template_handler` ladder.
+  // That is what keeps FR-034's "behave as today" true for
+  // `eblast_submitted_marketing`, which rides the existing unflagged submit.
+  // The rows wait and drain on the first tick after the flip.
+  if (!isEblastMemberApprovalEnabled()) {
+    baseReadyFilters.push(notInArray(notificationsOutbox.notificationType, [...F119_NOTIFICATION_TYPES]));
   }
   // R1-I3 — kill-switch parity for the T166 async render branch.
   // When `FEATURE_F5_ASYNC_RECEIPT_PDF` is off, the dispatcher must

@@ -7250,6 +7250,97 @@
       "unsubscribeCta": "ยกเลิกการรับข่าวสาร",
       "unsubscribeSuffix": "ได้ทุกเมื่อ",
       "physicalAddress": "ส่งโดย {tenantDisplayName}"
+    },
+    "eblastApproval": {
+      "common": {
+        "footer": "ข้อความนี้ส่งโดยอัตโนมัติจากพอร์ทัลสมาชิกของหอการค้า",
+        "subjectLabel": "หัวข้อ E-Blast",
+        "companyLabel": "สมาชิก",
+        "stageLabel": "สถานะ",
+        "staffCta": "เปิด E-Blast",
+        "staffDetailsNote": "เนื้อหาและความคิดเห็นทั้งหมดอยู่ในหน้า E-Blast"
+      },
+      "stage": {
+        "awaitingMarketingReview": "รอฝ่ายการตลาดตรวจสอบ",
+        "memberApproved": "สมาชิกอนุมัติแล้ว — รอกำหนดส่ง",
+        "changesRequested": "สมาชิกขอแก้ไข",
+        "withdrawn": "ถอนคำขอแล้ว",
+        "awaitingMemberApproval": "รอสมาชิกอนุมัติ",
+        "expired": "หมดอายุ — สมาชิกไม่ตอบกลับ"
+      },
+      "submittedMarketing": {
+        "subject": "มี E-Blast ใหม่รอตรวจสอบ: {subject}",
+        "heading": "สมาชิกส่ง E-Blast เข้ามาให้ตรวจสอบ"
+      },
+      "memberDecidedMarketing": {
+        "subject": "อัปเดต E-Blast: {subject}",
+        "heading": "สมาชิกตอบกลับเกี่ยวกับ E-Blast"
+      },
+      "versionSentMember": {
+        "subject": "E-Blast ของคุณพร้อมให้อนุมัติแล้ว",
+        "heading": "ฉบับรอบที่ {round} พร้อมให้คุณอนุมัติแล้ว",
+        "intro": "หอการค้าได้จัดทำ E-Blast \"{subject}\" ของคุณแล้ว และขอให้คุณตรวจสอบ",
+        "noteHeading": "ข้อความจากหอการค้า",
+        "proposedSendAt": "เวลาส่งที่คุณเสนอ: {when}",
+        "noProposedSendAt": "คุณยังไม่ได้เสนอเวลาส่ง",
+        "cta": "ตรวจสอบ E-Blast"
+      },
+      "scheduleConfirmedMember": {
+        "subject": "E-Blast ของคุณกำหนดเวลาส่งแล้ว",
+        "heading": "E-Blast ของคุณกำหนดเวลาส่งแล้ว",
+        "intro": "หอการค้าได้ยืนยันเวลาส่ง E-Blast \"{subject}\" ของคุณแล้ว",
+        "confirmedSendAt": "เวลาส่งที่ยืนยัน: {when}",
+        "proposedSendAt": "เวลาส่งที่คุณเสนอ: {when}",
+        "notProposedTime": "เวลานี้ไม่ใช่เวลาที่คุณเสนอไว้",
+        "cta": "ดู E-Blast ของคุณ"
+      },
+      "timeline": {
+        "heading": "ขั้นตอนถัดไป",
+        "day3": "วันที่ 3 ({date}): แจ้งเตือนหากคุณยังไม่ได้ตอบกลับ",
+        "day7": "วันที่ 7 ({date}): แจ้งเตือนครั้งสุดท้าย",
+        "day23": "วันที่ 23 ({date}): แจ้งเตือนว่าคำขอใกล้จะปิด",
+        "day30": "วันที่ 30 ({date}): คำขอจะปิดโดยอัตโนมัติ และคุณจะต้องส่ง E-Blast ใหม่"
+      },
+      "lifecycle": {
+        "member": {
+          "reminderDay3": {
+            "subject": "แจ้งเตือน: E-Blast ของคุณกำลังรอการอนุมัติ",
+            "body": "หอการค้าได้ส่ง E-Blast \"{subject}\" ให้คุณตรวจสอบเมื่อ {sentDate} และยังรอการอนุมัติจากคุณอยู่"
+          },
+          "reminderDay7": {
+            "subject": "แจ้งเตือนครั้งสุดท้าย: E-Blast ของคุณกำลังรอการอนุมัติ",
+            "body": "หอการค้าได้ส่ง E-Blast \"{subject}\" ให้คุณตรวจสอบเมื่อ {sentDate} นี่คือการแจ้งเตือนครั้งสุดท้าย"
+          },
+          "expiryWarningDay23": {
+            "subject": "คำขอ E-Blast ของคุณจะปิดในอีก 7 วัน",
+            "body": "E-Blast \"{subject}\" รอการอนุมัติจากคุณตั้งแต่ {sentDate} หากคุณไม่ตอบกลับ คำขอจะปิดโดยอัตโนมัติในวันที่ {expiresDate}"
+          },
+          "expiredDay30": {
+            "subject": "คำขอ E-Blast ของคุณปิดแล้ว",
+            "body": "หอการค้าไม่ได้รับคำตอบเกี่ยวกับ E-Blast \"{subject}\" ภายใน 30 วัน คำขอจึงปิดโดยอัตโนมัติเมื่อ {expiresDate} สิทธิ์ของคุณกลับมาใช้ได้อีกครั้ง ส่ง E-Blast ใหม่ได้ทุกเมื่อที่พร้อม"
+          },
+          "ctaReview": "ตรวจสอบ E-Blast",
+          "ctaList": "เปิดรายการ E-Blast ของคุณ"
+        },
+        "staff": {
+          "reminderDay3": {
+            "subject": "E-Blast รอสมาชิกอนุมัติ (วันที่ 3): {subject}",
+            "heading": "สมาชิกยังไม่ได้ตอบกลับ E-Blast"
+          },
+          "reminderDay7": {
+            "subject": "E-Blast รอสมาชิกอนุมัติ (วันที่ 7): {subject}",
+            "heading": "สมาชิกยังคงไม่ได้ตอบกลับ E-Blast"
+          },
+          "expiryWarningDay23": {
+            "subject": "E-Blast จะปิดในอีก 7 วัน: {subject}",
+            "heading": "E-Blast จะปิดในอีก 7 วันหากสมาชิกไม่ตอบกลับ"
+          },
+          "expiredDay30": {
+            "subject": "E-Blast หมดอายุ: {subject}",
+            "heading": "E-Blast ปิดโดยไม่มีคำตอบจากสมาชิก"
+          }
+        }
+      }
     }
   },
   "public": {

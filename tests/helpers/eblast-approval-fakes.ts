@@ -63,6 +63,7 @@ import type {
   EblastNotificationOutboxPort,
 } from '@/modules/broadcasts/application/ports/eblast-notification-outbox-port';
 import type { MemberPortalRecipientPort, PortalContact } from '@/modules/broadcasts/application/ports/member-portal-recipient-port';
+import type { MarketingDirectoryPort, MarketingRecipient } from '@/modules/broadcasts/application/ports/marketing-directory-port';
 import type { TenantContext, TenantSlug } from '@/modules/tenants';
 
 /** The sentinel tx the fakes hand to `withTx` callbacks — assert on it to prove a write shared the tx. */
@@ -491,6 +492,13 @@ export interface FakeApprovalStore {
   readonly outbox: FakeEblastOutbox;
   /** The clock rows are stamped with; tests move it to model time passing. */
   now: Date;
+  /**
+   * SC-004 — make the NEXT `withTx` fail at COMMIT: the callback runs to
+   * completion (every write, the outbox enqueue included), then the store is
+   * rolled back and the call throws. A throw before the enqueue would prove
+   * nothing about where the enqueue ran.
+   */
+  failNextCommit(): void;
 }
 
 const keyOf = (tenantId: string, broadcastId: string) => `${tenantId}::${broadcastId}`;
@@ -527,7 +535,14 @@ export function makeFakeApprovalStore(
     decisions: [...(seed.decisions ?? [])],
     outbox: [],
   };
-  const store = { state, now: APPROVAL_NOW } as FakeApprovalStore;
+  let failCommit = false;
+  const store = {
+    state,
+    now: APPROVAL_NOW,
+    failNextCommit: () => {
+      failCommit = true;
+    },
+  } as FakeApprovalStore;
 
   const broadcastsRepo = {
     rows: state.broadcasts,
@@ -539,7 +554,12 @@ export function makeFakeApprovalStore(
         outbox: [...state.outbox],
       };
       try {
-        return await fn(FAKE_TX);
+        const result = await fn(FAKE_TX);
+        if (failCommit) {
+          failCommit = false;
+          throw new Error('fake commit failure');
+        }
+        return result;
       } catch (e) {
         state.broadcasts.clear();
         for (const [k, v] of snapshot.broadcasts) state.broadcasts.set(k, v);
@@ -690,6 +710,20 @@ export function makeFakePortalRecipients(
   return {
     listActivePortalContacts: vi.fn(async (_tenant: TenantContext, memberId: string, _tx: unknown) => byMember[memberId] ?? []),
   } satisfies MemberPortalRecipientPort;
+}
+
+// --- MarketingDirectoryPort (T066) -------------------------------------------
+
+/** A marketing recipient as the roster returns one (platform-default locale). */
+export function makeMarketingRecipient(overrides: Partial<MarketingRecipient> = {}): MarketingRecipient {
+  return { userId: '44444444-4444-4444-8444-444444444444', email: 'marketing@swecham.test', locale: 'en', ...overrides };
+}
+
+/** The hand-off roster, fixed; an empty roster is `[]` (the real adapter counts it). */
+export function makeFakeMarketingDirectory(recipients: readonly MarketingRecipient[] = [makeMarketingRecipient()]): Mocked<MarketingDirectoryPort> {
+  return {
+    listRecipients: vi.fn(async () => recipients),
+  } satisfies MarketingDirectoryPort;
 }
 
 /** `BroadcastVersionsRepo` alone (a store with no broadcasts behind it). */

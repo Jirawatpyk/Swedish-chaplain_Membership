@@ -14,11 +14,22 @@
  * through the route; `harness.flagOn` stands in for the composition root's
  * `isEblastMemberApprovalEnabled()` read. The send (T059) and schedule (T060)
  * arms run the REAL use cases through their routes; the "decided" arm (T078)
- * and the drainer skip (T149a/T152a) join this file with those routes.
+ * joins this file with its route.
+ *
+ * T149a / T152a — the drainer arm of the flag: the REAL outbox-dispatch `GET`
+ * runs over a `@/lib/db` that captures the candidate SELECT's WHERE, rendered
+ * through drizzle's `PgDialect`, so the test reads the exclusions the route
+ * actually expressed in SQL. The row-state half (pending, attempts 0, no
+ * `last_error`, then sent after the flip) runs on live Neon in
+ * `tests/integration/broadcasts/eblast-send-and-promote.test.ts`.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { notificationTypeEnum } from '@/modules/auth/infrastructure/db/schema';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { makeApprovalBroadcast, makeApprovalVersion } from '../../helpers/eblast-approval-fakes';
 import {
@@ -40,9 +51,44 @@ vi.mock('@/lib/logger', async () => (await import('../../helpers/eblast-version-
 vi.mock('@/lib/broadcast-approval-deps', async () =>
   (await import('../../helpers/eblast-version-route-harness')).approvalDepsMock(),
 );
-vi.mock('@/modules/broadcasts', async () =>
-  (await import('../../helpers/eblast-version-route-harness')).broadcastsBarrelMock(),
-);
+/**
+ * The drainer's view of the barrel: the flag helper is `harness.flagOn`, and
+ * the skip set is a COPY of the port's `F119_NOTIFICATION_TYPES` the positive
+ * control can drop a value from.
+ */
+const drainer = vi.hoisted(() => ({ wheres: [] as unknown[], skipTypes: [] as string[] }));
+vi.mock('@/modules/broadcasts', async () => {
+  const h = await import('../../helpers/eblast-version-route-harness');
+  const port = await import('@/modules/broadcasts/application/ports/eblast-notification-outbox-port');
+  drainer.skipTypes.push(...port.F119_NOTIFICATION_TYPES);
+  return {
+    ...(await h.broadcastsBarrelMock()),
+    isEblastMemberApprovalEnabled: () => h.harness.flagOn,
+    F119_NOTIFICATION_TYPES: drainer.skipTypes,
+  };
+});
+/**
+ * `db` for the outbox-dispatch `GET`: the lock-less candidate SELECT
+ * (`{ id }`) records its WHERE and finds nothing ready; the stuck-rows count
+ * reads 0. No other query runs when nothing is ready.
+ */
+vi.mock('@/lib/db', () => {
+  const select = (fields?: Record<string, unknown>) => {
+    const query = {
+      from: () => query,
+      where: (cond: unknown) => {
+        if (fields !== undefined && Object.keys(fields).join() === 'id') drainer.wheres.push(cond);
+        return query;
+      },
+      limit: async () => [],
+      then: (resolve: (rows: unknown) => unknown) => resolve([{ stuckCount: 0 }]),
+    };
+    return query;
+  };
+  return { db: { select }, runInTenant: vi.fn() };
+});
+// The route imports the invoicing barrel for its F4 arms; none runs here.
+vi.mock('@/modules/invoicing', () => ({}));
 
 const V0 = makeApprovalVersion({ id: 'aaaaaaaa-0000-4000-8000-000000000000', versionNo: 0, sentToMemberAt: new Date('2026-09-20T08:00:00Z') });
 const V1_SENT = makeApprovalVersion({ versionNo: 1, sentToMemberAt: new Date('2026-09-21T08:00:00Z') });
@@ -156,9 +202,10 @@ describe.each([
  *      `.env.local`, and `tests/setup.ts` does not force the variable on
  *      (checked here in both the `FLAG=` and `process.env['FLAG'] =` forms).
  *   2. Nothing those tests exercise can observe the flag: the helper is read
- *      only by the composition root of the `…/[id]/version` routes, which no
- *      pre-F119 test reaches. A new reader must be added to the allow-list
- *      below on purpose (T152a's outbox drainer, T063's detail page).
+ *      only by the composition root of the `…/[id]/version` routes and by the
+ *      outbox drainer's selection (T152a); no pre-F119 test reaches either with
+ *      an F119 row. A new reader must be added to the allow-list below on
+ *      purpose (T063's detail page next).
  *
  * It does NOT re-run the suite under both flag states.
  */
@@ -200,11 +247,16 @@ describe('the existing E-Blast suite runs flag-off, and nothing it exercises rea
     expect(setup).not.toMatch(/process\.env\[\s*['"]FEATURE_EBLAST_MEMBER_APPROVAL['"]\s*\]\s*=/);
   });
 
-  it('the flag is read only by its definition, the barrel re-export and the version routes\' composition root', () => {
+  it('the flag is read only by its definition, the barrel re-export, the version routes\' composition root and the outbox drainer', () => {
     const helperReaders = readersOf(/\bisEblastMemberApprovalEnabled\b/);
     // Positive control: a scan that found nothing would pass the next line vacuously.
     expect(helperReaders).toContain('src/modules/broadcasts/infrastructure/feature-flags.ts');
     expect(helperReaders).toEqual([
+      // T152a — the drainer's SELECTION skips the five eblast_* types while the
+      // flag is off. No pre-F119 test reaches that branch with an F119 row: the
+      // F7 / F114 dispatch suites seed none of those types, so their rows are
+      // selected in either flag state.
+      'src/app/api/cron/outbox-dispatch/route.ts',
       'src/lib/broadcast-approval-deps.ts',
       'src/modules/broadcasts/index.ts',
       'src/modules/broadcasts/infrastructure/feature-flags.ts',
@@ -214,4 +266,63 @@ describe('the existing E-Blast suite runs flag-off, and nothing it exercises rea
       'src/modules/broadcasts/infrastructure/feature-flags.ts',
     ]);
   });
+});
+
+// ---------------------------------------------------------------------------
+// T149a (the RED for T152a) — with the flag off, no F119 hand-off is delivered
+// ---------------------------------------------------------------------------
+
+/** The `notification_type` values the candidate SELECT's WHERE excludes, read from the rendered SQL. */
+function excludedTypes(where: unknown): Set<string> {
+  const { sql, params } = new PgDialect().sqlToQuery(where as SQL);
+  const out = new Set<string>();
+  for (const m of sql.matchAll(/"notification_type" <> \$(\d+)/g)) out.add(String(params[Number(m[1]) - 1]));
+  for (const m of sql.matchAll(/"notification_type" not in \(([^)]*)\)/g)) {
+    for (const p of m[1]!.matchAll(/\$(\d+)/g)) out.add(String(params[Number(p[1]) - 1]));
+  }
+  return out;
+}
+
+describe('T149a — the outbox drainer skips the five eblast_* notification types while the flag is off', () => {
+  /** Enumerated from the ENUM, not from the skip set — a sixth value would have to be added here on purpose. */
+  const EBLAST_TYPES = notificationTypeEnum.enumValues.filter((v) => v.startsWith('eblast_'));
+
+  async function tick(flagOn: boolean): Promise<Set<string>> {
+    drainer.wheres.length = 0;
+    harness.flagOn = flagOn;
+    vi.stubEnv('CRON_SECRET', 'cron-secret-flag-matrix-0123456789');
+    const { GET } = await import('@/app/api/cron/outbox-dispatch/route');
+    const res = await GET(
+      new NextRequest('http://localhost/api/cron/outbox-dispatch', {
+        headers: { authorization: 'Bearer cron-secret-flag-matrix-0123456789' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, dispatched: 0 });
+    expect(drainer.wheres).toHaveLength(1);
+    return excludedTypes(drainer.wheres[0]);
+  }
+
+  it('flag off: all five are excluded from the candidate SELECT — never selected, so never sent, never attempted, never on the no_template_handler ladder', async () => {
+    expect(EBLAST_TYPES).toHaveLength(5); // positive control on the enumeration
+    const excluded = await tick(false);
+    expect(EBLAST_TYPES.filter((t) => !excluded.has(t))).toEqual([]);
+  });
+
+  it('flag on: none of the five is excluded — the waiting rows drain on the first tick after the flip', async () => {
+    const excluded = await tick(true);
+    expect(EBLAST_TYPES.filter((t) => excluded.has(t))).toEqual([]);
+  });
+
+  it('positive control: a type dropped from the skip set is reported (the check reads the SQL the route built)', async () => {
+    const dropped = drainer.skipTypes.pop()!;
+    try {
+      const excluded = await tick(false);
+      expect(EBLAST_TYPES.filter((t) => !excluded.has(t))).toEqual([dropped]);
+    } finally {
+      drainer.skipTypes.push(dropped);
+    }
+  });
+
+  it.todo('with the flag off, a SUBMIT writes its eblast_submitted_marketing outbox row (owner T129 — the enqueue half; the skip half is above, the row-state half is live in eblast-send-and-promote)');
 });
