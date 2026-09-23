@@ -56,6 +56,10 @@ const ROOTS_TO_GREP = [
  * template library) = Phase 5. Both phases deferred to F7.1a-Phase-2
  * follow-up branch per Staff Review W-1 (2026-05-19). Removing these
  * from KNOWN_NOT_YET_EMITTED when Phase 4 + Phase 5 ship.
+ *
+ * F119 PR-2 (2026-09-23): the ten 0305 approval-round events are listed
+ * below, each naming its emitting task. The list MUST hold no F119 value
+ * when PR-2 merges.
  */
 const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   // F71A US2 (Phase 4 — not implemented on this branch)
@@ -71,6 +75,21 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   // Application-layer `reseedStarterTemplates` use-case will become
   // the primary emit caller. No emit site in src/ today.
   'broadcast_template_seed_skipped_existing_name',
+  // F119 PR-2 (migration 0305, T050) — declared ahead of their emitters
+  // because the enum values, the tuple and the migration are one unit.
+  // THIS BLOCK MUST BE EMPTY BEFORE PR-2 MERGES: each emitting task deletes
+  // its line in the same commit that adds the emit site, and a line still
+  // here at merge is a declared-but-never-emitted event shipping to prod.
+  'broadcast_version_started', // F119 PR-2 in flight — emitter T056 start-formatted-version
+  'broadcast_member_approval_voided', // F119 PR-2 in flight — emitter T057 (voiding arm of start-formatted-version)
+  'broadcast_version_sent_to_member', // F119 PR-2 in flight — emitter T059 send-version-to-member
+  'broadcast_schedule_confirmed', // F119 PR-2 in flight — emitter T060 confirm-schedule
+  'broadcast_member_approved', // F119 PR-2 in flight — emitter T078 record-member-decision (approved arm)
+  'broadcast_member_changes_requested', // F119 PR-2 in flight — emitter T078 record-member-decision (changes_requested arm)
+  'broadcast_member_approval_withdrawn', // F119 PR-2 in flight — emitter T078 record-member-decision (approval_withdrawn arm)
+  'broadcast_approval_reminder_sent', // F119 PR-2 in flight — emitter T130 expire-stale-member-approvals (day 3 / 7)
+  'broadcast_approval_expiry_warned', // F119 PR-2 in flight — emitter T130 expire-stale-member-approvals (day 23)
+  'broadcast_approval_expired', // F119 PR-2 in flight — emitter T130 expire-stale-member-approvals (day 30)
 ];
 
 function listTsFiles(root: string): string[] {

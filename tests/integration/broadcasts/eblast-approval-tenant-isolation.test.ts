@@ -19,10 +19,16 @@ import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, runInTenant } from '@/lib/db';
+import { errorChainMessage } from '@/lib/db-errors';
 import {
   broadcastImages,
+  broadcastMemberDecisions,
+  broadcasts,
+  broadcastVersions,
   tenantBroadcastSettings,
   type NewBroadcastImageRow,
+  type NewBroadcastMemberDecisionRow,
+  type NewBroadcastVersionRow,
 } from '@/modules/broadcasts/infrastructure/schema';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
@@ -186,6 +192,161 @@ describe('F119 tenant isolation — broadcast_images + tenant_broadcast_settings
       const e = thrown as Error & { cause?: { message?: string } };
       const text = `${e.message}\n${e.cause?.message ?? ''}`;
       expect(text).toMatch(/tenant_broadcast_settings_brand_primary_color_check/);
+    });
+  });
+
+  // --- T047 (PR-2, migration 0305) -----------------------------------------
+  describe('tenant B cannot read or write tenant A\'s versions or decisions', () => {
+    // One E-Blast per tenant, awaiting the member, with one sent version and
+    // one decision on it. The rows are the FK chain the tables require.
+    const seeded = {
+      a: { broadcastId: randomUUID(), versionId: randomUUID(), decisionId: randomUUID() },
+      b: { broadcastId: randomUUID(), versionId: randomUUID(), decisionId: randomUUID() },
+    };
+    const versionRow = (tenantId: string, s: typeof seeded.a): NewBroadcastVersionRow => ({
+      tenantId,
+      id: s.versionId,
+      broadcastId: s.broadcastId,
+      versionNo: 1,
+      subject: `v1 ${tenantId}`,
+      bodyHtml: '<p>v1</p>',
+      bodySource: 'v1',
+      authoredByUserId: randomUUID(),
+      authoredByRole: 'admin_proxy',
+      sentToMemberAt: new Date(),
+    });
+    const decisionRow = (tenantId: string, s: typeof seeded.a): NewBroadcastMemberDecisionRow => ({
+      tenantId,
+      id: s.decisionId,
+      broadcastId: s.broadcastId,
+      versionId: s.versionId,
+      round: 1,
+      decision: 'changes_requested',
+      reason: `reason ${tenantId}`,
+      decidedByUserId: randomUUID(),
+      decidedByContactId: randomUUID(),
+    });
+
+    beforeAll(async () => {
+      for (const [tenant, s] of [
+        [tenantA, seeded.a],
+        [tenantB, seeded.b],
+      ] as const) {
+        await db.insert(broadcasts).values({
+          tenantId: tenant.ctx.slug,
+          broadcastId: s.broadcastId,
+          requestedByMemberId: randomUUID(),
+          requestedByMemberPlanIdSnapshot: 'plan-t047',
+          submittedByUserId: randomUUID(),
+          actorRole: 'member_self_service',
+          subject: 'T047',
+          bodyHtml: '<p>b</p>',
+          bodySource: 'b',
+          fromName: 'Chamber',
+          replyToEmail: 'reply@example.com',
+          segmentType: 'all_members',
+          estimatedRecipientCount: 10,
+          status: 'awaiting_member_approval',
+          submittedAt: new Date(),
+          currentRound: 1,
+        });
+        await db.insert(broadcastVersions).values(versionRow(tenant.ctx.slug, s));
+        await db.insert(broadcastMemberDecisions).values(decisionRow(tenant.ctx.slug, s));
+      }
+    });
+
+    // Tenant ids a SELECT by id returns, per table, under one tenant's context.
+    const readTenants = (self: TestTenant, s: typeof seeded.a) =>
+      runInTenant(self.ctx, async (tx) => ({
+        version: (await tx.select().from(broadcastVersions).where(eq(broadcastVersions.id, s.versionId))).map(
+          (r) => r.tenantId,
+        ),
+        decision: (
+          await tx.select().from(broadcastMemberDecisions).where(eq(broadcastMemberDecisions.id, s.decisionId))
+        ).map((r) => r.tenantId),
+        unfiltered: [
+          ...(await tx.select().from(broadcastVersions)).map((r) => r.tenantId),
+          ...(await tx.select().from(broadcastMemberDecisions)).map((r) => r.tenantId),
+        ],
+      }));
+
+    it('each tenant reads its own version and decision, never the other\'s (both directions)', async () => {
+      for (const [self, own, foreign] of [
+        [tenantA, seeded.a, seeded.b],
+        [tenantB, seeded.b, seeded.a],
+      ] as const) {
+        // positive control — separates RLS from a missing GRANT
+        const mine = await readTenants(self, own);
+        expect(mine.version).toEqual([self.ctx.slug]);
+        expect(mine.decision).toEqual([self.ctx.slug]);
+        const theirs = await readTenants(self, foreign);
+        expect({ version: theirs.version, decision: theirs.decision }).toEqual({ version: [], decision: [] });
+        expect(theirs.unfiltered.length).toBeGreaterThanOrEqual(2);
+        expect(theirs.unfiltered.every((t) => t === self.ctx.slug)).toBe(true);
+      }
+    });
+
+    it('broadcast_versions — a cross-tenant UPDATE touches 0 rows in both directions', async () => {
+      for (const [self, foreign] of [
+        [tenantA, seeded.b],
+        [tenantB, seeded.a],
+      ] as const) {
+        const updated = await runInTenant(self.ctx, (tx) =>
+          tx
+            .update(broadcastVersions)
+            .set({ noteToMember: 'hijacked' })
+            .where(eq(broadcastVersions.id, foreign.versionId))
+            .returning(),
+        );
+        expect(updated).toEqual([]);
+        const row = await db.select().from(broadcastVersions).where(eq(broadcastVersions.id, foreign.versionId));
+        expect(row[0]?.noteToMember).toBeNull();
+      }
+    });
+
+    it('broadcast_member_decisions — a cross-tenant UPDATE touches 0 rows in both directions (RLS filters before the append-only trigger)', async () => {
+      for (const [self, other, foreign] of [
+        [tenantA, tenantB, seeded.b],
+        [tenantB, tenantA, seeded.a],
+      ] as const) {
+        const updated = await runInTenant(self.ctx, (tx) =>
+          tx
+            .update(broadcastMemberDecisions)
+            .set({ reason: 'hijacked' })
+            .where(eq(broadcastMemberDecisions.id, foreign.decisionId))
+            .returning(),
+        );
+        expect(updated).toEqual([]);
+        const row = await db
+          .select()
+          .from(broadcastMemberDecisions)
+          .where(eq(broadcastMemberDecisions.id, foreign.decisionId));
+        expect(row[0]?.reason).toBe(`reason ${other.ctx.slug}`);
+      }
+    });
+
+    it('an INSERT carrying the other tenant\'s tenant_id is refused by WITH CHECK, both tables, both directions', async () => {
+      for (const [self, other, foreign] of [
+        [tenantA, tenantB, seeded.b],
+        [tenantB, tenantA, seeded.a],
+      ] as const) {
+        // fresh ids on the other tenant's real E-Blast, so a key collision can
+        // never be the refusal that is observed
+        const fresh = { ...foreign, versionId: randomUUID(), decisionId: randomUUID() };
+        for (const insert of [
+          () => runInTenant(self.ctx, (tx) => tx.insert(broadcastVersions).values({ ...versionRow(other.ctx.slug, fresh), versionNo: 2 })),
+          () => runInTenant(self.ctx, (tx) => tx.insert(broadcastMemberDecisions).values(decisionRow(other.ctx.slug, fresh))),
+        ]) {
+          let thrown: unknown = null;
+          try {
+            await insert();
+          } catch (e) {
+            thrown = e;
+          }
+          expect(thrown).not.toBeNull();
+          expect(errorChainMessage(thrown)).toMatch(/row-level security/);
+        }
+      }
     });
   });
 });

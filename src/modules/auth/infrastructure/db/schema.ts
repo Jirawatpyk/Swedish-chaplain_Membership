@@ -442,12 +442,26 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     sent, brand settings changed (values, not member text), image
   //     uploaded / removed (ids, hash, size, reason — never the blob URL).
   //     5y retention. Keep in lockstep with F7_AUDIT_EVENT_TYPES — the F7
-  //     parity test's `broadcast_` prefix covers them. The ten PR-2 workflow
-  //     events ship with 0305. ---
+  //     parity test's `broadcast_` prefix covers them. ---
   'broadcast_test_copy_sent',
   'broadcast_brand_settings_changed',
   'broadcast_image_uploaded',
   'broadcast_image_removed',
+  // --- F119 PR-2 (migration 0305) — the two-sided approval round: version
+  //     started / sent to member, the member's approve / request changes /
+  //     withdraw approval, approval voided by a staff edit, schedule
+  //     confirmed, and the daily tick's reminder / expiry warning / expiry.
+  //     5y retention. Same lockstep + parity coverage as the block above. ---
+  'broadcast_version_started',
+  'broadcast_version_sent_to_member',
+  'broadcast_member_approved',
+  'broadcast_member_changes_requested',
+  'broadcast_member_approval_withdrawn',
+  'broadcast_member_approval_voided',
+  'broadcast_schedule_confirmed',
+  'broadcast_approval_reminder_sent',
+  'broadcast_approval_expiry_warned',
+  'broadcast_approval_expired',
   // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
   //     `InvoiceDueBridge` credit-window guard. Emitted by
   //     `lapseCyclesOnGraceExpiry` when a member past the grace window
@@ -716,6 +730,17 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   // tenant tx (research R8 / § V3). ---
   'member_change_request_submitted_staff',
   'member_change_request_decided_member',
+  // --- F119 migration 0305: E-Blast approval hand-offs (data-model § 7.3).
+  // Enqueued unconditionally; T152a makes the outbox drainer skip all five
+  // while FEATURE_EBLAST_MEMBER_APPROVAL is off. Each needs its
+  // `buildPayload` case arm before PR-2 merges (T065 / T129 / T131) — the
+  // `default:` arm returns null, which retries ~16 h and then fails
+  // permanently. ---
+  'eblast_submitted_marketing',
+  'eblast_member_decided_marketing',
+  'eblast_version_sent_member',
+  'eblast_schedule_confirmed_member',
+  'eblast_approval_lifecycle',
   // --- F4 migration 0023: invoice auto-email (issue / pay / void /
   // credit note + PDF resend variants). The physical column accepts
   // all F4 auto-email variants; the notification dispatcher routes

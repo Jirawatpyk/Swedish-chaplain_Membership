@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 59 live audit event types (55 before F119) as a const tuple + discriminated union for
+ * 69 live audit event types (55 before F119) as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -40,11 +40,14 @@
  *   - 059-membership-suspension Task 8: 1 event
  *     (`broadcast_membership_suspended_blocked`, migration 0246)
  *   - F119 PR-1 (migration 0304): 4 events — test copy, brand settings
- *     changed, image uploaded, image removed. The ten PR-2 workflow events
- *     ship with 0305.
- *   = 65 declared, minus the 6 RETIRED batch events kept only in
- *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **59 live** (this tuple). Static-assert
- *   below (`extends 59`) is the source of truth; the header summary is
+ *     changed, image uploaded, image removed.
+ *   - F119 PR-2 (migration 0305): 10 events — the two-sided approval round
+ *     (version started / sent to member, member approved / changes requested
+ *     / approval withdrawn, approval voided, schedule confirmed, reminder
+ *     sent, expiry warned, expired).
+ *   = 75 declared, minus the 6 RETIRED batch events kept only in
+ *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **69 live** (this tuple). Static-assert
+ *   below (`extends 69`) is the source of truth; the header summary is
  *   informational only and should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
@@ -192,15 +195,34 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_brand_settings_changed',
   'broadcast_image_uploaded',
   'broadcast_image_removed',
+
+  // --- F119 PR-2 (migration 0305) — the two-sided approval round — 10 events
+  // Actor, member key and payload per event are fixed by the table in
+  // specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md
+  // (its single source of truth): the member's own three decisions carry
+  // snake_case `member_id` (the 0009 `last_activity_at` trigger key —
+  // #336/#337 rule), staff and daily-tick acts `related_member_id`. Payloads
+  // carry ids, rounds and lengths — never the subject, the body or a
+  // reason's text. Emitters: T056–T060, T078, T130.
+  'broadcast_version_started',
+  'broadcast_version_sent_to_member',
+  'broadcast_member_approved',
+  'broadcast_member_changes_requested',
+  'broadcast_member_approval_withdrawn',
+  'broadcast_member_approval_voided',
+  'broadcast_schedule_confirmed',
+  'broadcast_approval_reminder_sent',
+  'broadcast_approval_expiry_warned',
+  'broadcast_approval_expired',
 ] as const;
 
 /**
- * Static assertion: the tuple length is 59. The authoritative per-category
- * breakdown is the file-header taxonomy above (it nets to 59 live); this
+ * Static assertion: the tuple length is 69. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it nets to 69 live); this
  * assert is the enforced source of truth. If a spec amendment adds/removes
  * an event, update the tuple, this literal, and the header taxonomy —
- * TypeScript errors here ("Type '60' is not assignable to type '59'") if
- * the count drifts. (F119 T022: 55 → 59; T050 takes it 59 → 69.)
+ * TypeScript errors here ("Type '70' is not assignable to type '69'") if
+ * the count drifts. (F119 T022: 55 → 59; T050: 59 → 69.)
  *
  * (The previous inline arithmetic here was dropped — it double-counted
  * `broadcast_image_unsafe`, which is already inside the "11 F7.1a
@@ -248,7 +270,7 @@ export const RETIRED_F7_AUDIT_EVENT_TYPES = [
 export type RetiredF7AuditEventType =
   (typeof RETIRED_F7_AUDIT_EVENT_TYPES)[number];
 
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 59
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 69
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;

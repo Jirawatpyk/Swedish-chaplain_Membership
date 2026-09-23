@@ -158,10 +158,38 @@ describe('findMissingEnumValues', () => {
           'broadcast_brand_settings_changed',
           'broadcast_image_uploaded',
           'broadcast_image_removed',
+          // 0305 (F119 eblast-approval-workflow PR-2):
+          'broadcast_version_started',
+          'broadcast_version_sent_to_member',
+          'broadcast_member_approved',
+          'broadcast_member_changes_requested',
+          'broadcast_member_approval_withdrawn',
+          'broadcast_member_approval_voided',
+          'broadcast_schedule_confirmed',
+          'broadcast_approval_reminder_sent',
+          'broadcast_approval_expiry_warned',
+          'broadcast_approval_expired',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
-      ['notification_type', new Set(['member_change_request_submitted_staff', 'member_change_request_decided_member'])],
+      [
+        'notification_type',
+        new Set([
+          'member_change_request_submitted_staff',
+          'member_change_request_decided_member',
+          // 0305 (F119 PR-2): the five eblast_* hand-off rows.
+          'eblast_submitted_marketing',
+          'eblast_member_decided_marketing',
+          'eblast_version_sent_member',
+          'eblast_schedule_confirmed_member',
+          'eblast_approval_lifecycle',
+        ]),
+      ],
+      // 0305 (F119 PR-2): the five approval-round statuses.
+      [
+        'broadcast_status',
+        new Set(['in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved', 'expired_no_member_response']),
+      ],
     ]);
     expect(findMissingEnumValues(present)).toEqual([]);
   });
@@ -216,10 +244,38 @@ describe('findMissingEnumValues', () => {
           'broadcast_brand_settings_changed',
           'broadcast_image_uploaded',
           'broadcast_image_removed',
+          // 0305 (F119 eblast-approval-workflow PR-2):
+          'broadcast_version_started',
+          'broadcast_version_sent_to_member',
+          'broadcast_member_approved',
+          'broadcast_member_changes_requested',
+          'broadcast_member_approval_withdrawn',
+          'broadcast_member_approval_voided',
+          'broadcast_schedule_confirmed',
+          'broadcast_approval_reminder_sent',
+          'broadcast_approval_expiry_warned',
+          'broadcast_approval_expired',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
-      ['notification_type', new Set(['member_change_request_submitted_staff', 'member_change_request_decided_member'])],
+      [
+        'notification_type',
+        new Set([
+          'member_change_request_submitted_staff',
+          'member_change_request_decided_member',
+          // 0305 (F119 PR-2): the five eblast_* hand-off rows.
+          'eblast_submitted_marketing',
+          'eblast_member_decided_marketing',
+          'eblast_version_sent_member',
+          'eblast_schedule_confirmed_member',
+          'eblast_approval_lifecycle',
+        ]),
+      ],
+      // 0305 (F119 PR-2): the five approval-round statuses.
+      [
+        'broadcast_status',
+        new Set(['in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved', 'expired_no_member_response']),
+      ],
     ]);
     expect(findMissingEnumValues(present)).toEqual<MissingEnumValues[]>([
       { enumType: 'document_type', typeExists: true, missing: ['bill', 'receipt_105'] },
@@ -232,7 +288,24 @@ describe('findMissingEnumValues', () => {
       // 016: role fully present so this test isolates audit_event_type absence.
       ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
       // 0301 (F114): the two outbox row types the use cases INSERT.
-      ['notification_type', new Set(['member_change_request_submitted_staff', 'member_change_request_decided_member'])],
+      [
+        'notification_type',
+        new Set([
+          'member_change_request_submitted_staff',
+          'member_change_request_decided_member',
+          // 0305 (F119 PR-2): the five eblast_* hand-off rows.
+          'eblast_submitted_marketing',
+          'eblast_member_decided_marketing',
+          'eblast_version_sent_member',
+          'eblast_schedule_confirmed_member',
+          'eblast_approval_lifecycle',
+        ]),
+      ],
+      // 0305 (F119 PR-2): the five approval-round statuses.
+      [
+        'broadcast_status',
+        new Set(['in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved', 'expired_no_member_response']),
+      ],
     ]);
     expect(findMissingEnumValues(present)).toEqual<MissingEnumValues[]>([
       {
@@ -284,6 +357,17 @@ describe('findMissingEnumValues', () => {
           'broadcast_brand_settings_changed',
           'broadcast_image_uploaded',
           'broadcast_image_removed',
+          // 0305 (F119 eblast-approval-workflow PR-2):
+          'broadcast_version_started',
+          'broadcast_version_sent_to_member',
+          'broadcast_member_approved',
+          'broadcast_member_changes_requested',
+          'broadcast_member_approval_withdrawn',
+          'broadcast_member_approval_voided',
+          'broadcast_schedule_confirmed',
+          'broadcast_approval_reminder_sent',
+          'broadcast_approval_expiry_warned',
+          'broadcast_approval_expired',
         ],
       },
     ]);
@@ -318,6 +402,10 @@ describe('findMissingEnumValues', () => {
     // staff switch and the portal self-toggle in prod.
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_out');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_in');
+    // F119 PR-2 (mig 0305): a new KEY, not an append — every hand-off UPDATEs
+    // broadcasts.status to one of these (R-9).
+    expect(REQUIRED_ENUM_VALUES['broadcast_status']).toContain('awaiting_member_approval');
+    expect(REQUIRED_ENUM_VALUES['notification_type']).toContain('eblast_version_sent_member');
   });
 });
 
