@@ -205,7 +205,8 @@ describe.each([
  *      only by the composition root of the `…/[id]/version` routes and by the
  *      outbox drainer's selection (T152a); no pre-F119 test reaches either with
  *      an F119 row. A new reader must be added to the allow-list below on
- *      purpose (T063's detail page next).
+ *      purpose — T063's staff detail page is one, and it reads the flag for
+ *      an AFFORDANCE only (see its entry).
  *
  * It does NOT re-run the suite under both flag states.
  */
@@ -247,11 +248,17 @@ describe('the existing E-Blast suite runs flag-off, and nothing it exercises rea
     expect(setup).not.toMatch(/process\.env\[\s*['"]FEATURE_EBLAST_MEMBER_APPROVAL['"]\s*\]\s*=/);
   });
 
-  it('the flag is read only by its definition, the barrel re-export, the version routes\' composition root and the outbox drainer', () => {
+  it('the flag is read only by its definition, the barrel re-export, the version routes\' composition root, the outbox drainer and the staff detail page (affordance only)', () => {
     const helperReaders = readersOf(/\bisEblastMemberApprovalEnabled\b/);
     // Positive control: a scan that found nothing would pass the next line vacuously.
     expect(helperReaders).toContain('src/modules/broadcasts/infrastructure/feature-flags.ts');
     expect(helperReaders).toEqual([
+      // T063 / T152 — the staff detail page hides "Start formatted version" on
+      // a `submitted` E-Blast while the flag is off. A UI affordance, never the
+      // gate (the use case refuses the `submitted → in_design` edge itself);
+      // on `submitted` the only remaining path is approve-as-submitted, which
+      // the page renders in both flag states (FR-007, FR-034).
+      'src/app/(staff)/admin/broadcasts/[id]/page.tsx',
       // T152a — the drainer's SELECTION skips the five eblast_* types while the
       // flag is off. No pre-F119 test reaches that branch with an F119 row: the
       // F7 / F114 dispatch suites seed none of those types, so their rows are

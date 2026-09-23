@@ -39,6 +39,7 @@ import {
   type ActorNameDirectoryPort,
   type ConfirmScheduleDeps,
   type ListBroadcastVersionsDeps,
+  type ReadFormattingWarningsDeps,
   type MemberPortalRecipientPort,
   type SaveFormattedVersionDeps,
   type SendVersionToMemberDeps,
@@ -142,5 +143,15 @@ export function makeConfirmScheduleDeps(tenantId: string): ConfirmScheduleDeps {
     outbox: eblastNotificationOutbox,
     audit: f7AuditAdapter,
     clock: systemClock,
+  };
+}
+
+/** T063 — the staff detail page's two standing warnings (read-only). */
+export function makeReadFormattingWarningsDeps(tenantId: string): ReadFormattingWarningsDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    portalRecipients: memberPortalRecipients,
+    imageAllowlist: makeValidateImageSourceAllowlistDeps(tenantId).allowlistPort,
   };
 }

@@ -3346,6 +3346,129 @@
           "actorUnknown": "okänd användare"
         }
       },
+      "approval": {
+        "header": {
+          "title": "Godkännanderunda",
+          "detailsTitle": "Inskick",
+          "turn": "Vems tur",
+          "turnValue": {
+            "marketing": "Marknad",
+            "member": "Medlem",
+            "none": "—"
+          },
+          "timeInStage": "Tid i steget",
+          "round": "Runda",
+          "roundNone": "Inte skickat till medlemmen än",
+          "proposedSendAt": "Medlemmens föreslagna tid"
+        },
+        "warnings": {
+          "noPortalUserTitle": "Medlemsföretaget har ingen portalanvändare",
+          "noPortalUserBody": "Ingen på {company} kan logga in i portalen, så en formaterad version kan inte skickas till dem för godkännande. Bjud in en portalanvändare först — eller, medan utskicket fortfarande väntar på granskning, godkänn det som inskickat.",
+          "unsafeImagesTitle": "En bild är inte längre tillåten",
+          "unsafeImagesBody": "De här bilderna pekar på en värd som inte finns på listan över tillåtna bildkällor. Byt ut dem innan versionen skickas till medlemmen eller schemaläggs.",
+          "reason": {
+            "not_allowlisted": "värden finns inte på listan över tillåtna källor",
+            "invalid_url": "ingen giltig webbadress",
+            "invalid_hostname": "inget giltigt värdnamn"
+          }
+        },
+        "content": {
+          "originalTitle": "Medlemmens original",
+          "originalHint": "Skrivskyddat — sparat exakt som medlemmen skickade in det.",
+          "workingCopyTitle": "Formaterad version {version} (arbetskopia)",
+          "sentVersionTitle": "Version {version} skickad till medlemmen",
+          "noteLabel": "Meddelande till medlemmen",
+          "threadUnavailableTitle": "Versionshistoriken kunde inte läsas in",
+          "threadUnavailableBody": "Arbetskopian och medlemmens original visas inte, och ingen formatering är möjlig förrän sidan har läst in dem. Uppdatera sidan om en stund."
+        },
+        "workspace": {
+          "title": "Formaterad version {version}",
+          "description": "Redigera ämnet och meddelandet. Mottagarna är de som medlemmen valde.",
+          "subjectLabel": "Ämne",
+          "bodyLabel": "Meddelande",
+          "noteLabel": "Meddelande till medlemmen (valfritt)",
+          "noteHelp": "Visas för medlemmen bredvid den här versionen. {count} / {max} tecken.",
+          "save": "Spara",
+          "saved": "Versionen har sparats.",
+          "savedAt": "Sparad {time}",
+          "conflictTitle": "Någon annan har ändrat den här versionen",
+          "conflictBody": "En annan personalanvändare sparade versionen efter att du öppnade den. Dina ändringar har inte sparats. Ladda om för att se den aktuella versionen.",
+          "reload": "Ladda om"
+        },
+        "send": {
+          "button": "Skicka till medlemmen",
+          "title": "Skicka den här versionen till medlemmen?",
+          "body": "Medlemmen får ett e-postmeddelande och ombeds godkänna den. När versionen har skickats kan den inte längre redigeras.",
+          "savesFirst": "Dina osparade ändringar sparas först.",
+          "cancel": "Fortsätt redigera",
+          "confirm": "Skicka till medlemmen",
+          "sent": "Versionen har skickats till medlemmen för godkännande."
+        },
+        "testCopy": {
+          "button": "Skicka ett testexemplar till mig",
+          "sent": "Testexemplaret har skickats till din e-postadress."
+        },
+        "start": {
+          "button": "Börja formatera version",
+          "voidTitle": "Börja en ny formaterad version?",
+          "voidBody": "Medlemmen godkände runda {round}. En ny version drar tillbaka det godkännandet och tar bort en bekräftad sändningstid. Medlemmen måste godkänna igen.",
+          "voidCancel": "Behåll godkännandet",
+          "voidConfirm": "Börja ny version",
+          "started": "Formateringen har påbörjats."
+        },
+        "schedule": {
+          "button": "Bekräfta schemat",
+          "buttonChange": "Ändra schemat",
+          "title": "Bekräfta sändningstiden",
+          "titleChange": "Ändra sändningstiden",
+          "description": "Medlemmen har godkänt det här E-Blast-utskicket. Välj när det skickas; medlemmen får veta den slutliga tiden.",
+          "descriptionChange": "Det här E-Blast-utskicket är schemalagt. Ändra tiden, skicka nu eller avbryt den bekräftade tiden.",
+          "proposal": "Medlemmens föreslagna tid: {time}",
+          "proposalNone": "Medlemmen föreslog ingen tid.",
+          "proposalPassed": "Medlemmens föreslagna tid ({time}) är för nära eller har passerat — välj en ny tid.",
+          "modeLegend": "När det ska skickas",
+          "mode": {
+            "keep_proposal": "Behåll medlemmens föreslagna tid",
+            "schedule": "Välj en annan tid",
+            "send_now": "Skicka nu",
+            "cancel": "Avbryt den bekräftade tiden"
+          },
+          "whenLabel": "Skicka (Bangkok-tid)",
+          "whenHelp": "Minst 5 minuter från nu. Tiderna anges i Bangkok-tid (UTC+7).",
+          "cancelHint": "Utskicket skickas inte. Det går tillbaka till marknad som \"Ändringar begärda av medlem\" tills en ny version har godkänts.",
+          "tooSoon": "Välj en tid minst 5 minuter från nu.",
+          "differs": "Det här är inte medlemmens föreslagna tid ({time}). Medlemmen får veta om ändringen.",
+          "close": "Stäng",
+          "confirm": "Bekräfta",
+          "confirmCancel": "Avbryt tiden",
+          "confirmed": "Sändningstiden är bekräftad. Medlemmen har meddelats.",
+          "cancelled": "Den bekräftade sändningstiden har avbrutits."
+        },
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "stage_changed": "Det här E-Blast-utskicket har flyttats till ett annat steg under tiden. Sidan har uppdaterats.",
+          "version_changed": "Någon annan har ändrat den här versionen. Ladda om för att se den aktuella versionen.",
+          "no_working_copy": "Det finns ingen arbetskopia att skicka. Börja formatera en version först.",
+          "no_portal_user": "Medlemsföretaget har ingen portalanvändare, så versionen kan inte skickas för godkännande.",
+          "round_zero": "Det här utskicket godkändes som inskickat, så det finns inget medlemsgodkännande att öppna igen.",
+          "mode_not_allowed": "Det alternativet är inte tillgängligt i det här steget.",
+          "no_proposal": "Medlemmen föreslog ingen sändningstid. Välj en tid i stället.",
+          "broadcast_schedule_too_soon": "Välj en tid minst 5 minuter från nu.",
+          "image_source_not_allowlisted": "En bild pekar på en värd som inte finns på listan över tillåtna bildkällor. Byt ut den och försök igen.",
+          "unsafe_content": "Meddelandet innehåller innehåll som inte är tillåtet. Ta bort det och försök igen.",
+          "validation_error": "Kontrollera ämnet (högst 200 tecken), meddelandet (högst 200 KB) och meddelandet till medlemmen (högst 1 000 tecken).",
+          "cta_text_length": "Knapptexten måste vara 1–60 tecken.",
+          "too_many_cta": "Ett meddelande kan ha högst 3 knappar.",
+          "cta_link_scheme": "En knapp eller länk måste börja med http, https eller mailto.",
+          "banner_alt_required": "Varje banner och bild behöver en beskrivning på 1–125 tecken.",
+          "broadcast_rate_limit_exceeded": "För många förfrågningar på kort tid. Vänta en stund och försök igen.",
+          "broadcast_not_found": "Det här E-Blast-utskicket hittades inte.",
+          "permission_denied": "Du har inte behörighet att göra detta.",
+          "test_copy_invalid_recipient": "Testexemplaret kunde inte levereras till din e-postadress.",
+          "test_copy_unavailable": "E-posttjänsten är inte tillgänglig. Försök skicka testexemplaret igen om en stund.",
+          "internal_error": "Något gick fel hos oss. Försök igen."
+        }
+      },
       "approveDialog": {
         "title": "Godkänna detta utskick?",
         "description": "Välj att skicka omedelbart eller schemalägga. Mottagarna ser din kammares varumärke som avsändare.",

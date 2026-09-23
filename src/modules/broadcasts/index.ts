@@ -850,6 +850,16 @@ export {
   type ConfirmScheduleOutput,
   type ScheduleMode,
 } from './application/use-cases/approval/confirm-schedule';
+// T063 — the staff detail page's stage header ("whose turn", FR-026) and its
+// two standing warnings (no portal user; an image off the allow-list).
+export { turnOf, type WhoseTurn } from './domain/stage/whose-turn';
+export {
+  readFormattingWarnings,
+  type FormattingWarnings,
+  type ReadFormattingWarningsDeps,
+  type ReadFormattingWarningsError,
+  type ReadFormattingWarningsInput,
+} from './application/use-cases/approval/read-formatting-warnings';
 export type { MemberPortalRecipientPort, PortalContact } from './application/ports/member-portal-recipient-port';
 export {
   F119_NOTIFICATION_TYPES,

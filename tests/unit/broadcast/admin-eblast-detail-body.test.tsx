@@ -76,6 +76,23 @@ vi.mock('@/components/broadcast/admin/status-badge', () => ({
 vi.mock('@/components/broadcast/admin/manager-readonly-banner', () => ({
   ManagerReadonlyBanner: () => null,
 }));
+// F119 T063 — the page now reads the version thread and the standing
+// warnings, and mounts the approval islands; none of them is what this file
+// measures (`admin-eblast-detail-actions.test.tsx` owns the controls).
+vi.mock('@/lib/broadcast-approval-deps', () => ({
+  makeListBroadcastVersionsDeps: () => ({}),
+  makeReadFormattingWarningsDeps: () => ({}),
+}));
+vi.mock('@/components/ui/relative-time', () => ({ RelativeTime: () => null }));
+vi.mock('@/components/broadcast/approval/start-formatted-version-action', () => ({
+  StartFormattedVersionAction: () => null,
+}));
+vi.mock('@/components/broadcast/approval/schedule-confirm-dialog', () => ({
+  ScheduleConfirmAction: () => null,
+}));
+vi.mock('@/components/broadcast/approval/formatted-version-workspace', () => ({
+  FormattedVersionWorkspace: () => null,
+}));
 
 const findByIdMock = vi.fn();
 const renderBroadcastPreviewMock = vi.fn();
@@ -90,6 +107,14 @@ vi.mock('@/modules/broadcasts', async () => ({
   makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
   parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
   renderBroadcastPreview: (...args: unknown[]) => renderBroadcastPreviewMock(...args),
+  // F119 T063 — no version rows on these fixtures, so the page shows the
+  // record's own body (the surface this file pins).
+  stageOf: (status: string) => status,
+  turnOf: () => null,
+  isEblastMemberApprovalEnabled: () => false,
+  isF71aUs2Enabled: () => false,
+  listBroadcastVersions: vi.fn(async () => ({ ok: false, error: { kind: 'not_found' } })),
+  readFormattingWarnings: vi.fn(async () => ({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } })),
 }));
 vi.mock('@/lib/broadcast-brand-deps', () => ({
   makeRenderBroadcastPreviewDeps: vi
@@ -123,6 +148,10 @@ function makeBroadcast(over: Record<string, unknown> = {}) {
     requestedByMemberId: 'member-1',
     submittedAt: new Date('2026-09-01T03:00:00.000Z'),
     scheduledFor: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-09-01T03:00:00.000Z'),
+    currentRound: 0,
+    approvedVersionId: null,
     ...over,
   };
 }

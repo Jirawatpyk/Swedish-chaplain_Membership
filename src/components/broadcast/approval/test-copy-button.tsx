@@ -1,0 +1,85 @@
+'use client';
+
+/**
+ * F119 T063 (FR-037) — "Send me a test copy" on the staff format surface.
+ *
+ * Posts the CURRENT working copy (subject + body, unsaved edits included —
+ * a test copy is how you check an edit before saving it) to
+ * `POST /api/admin/broadcasts/test-copy`. The recipient is always the staff
+ * session's own address: the route has no `to` field, so there is nothing
+ * here to choose. `broadcastId` / `versionId` only reference the audit row.
+ * The route allows 10 per user per hour; a 429 reads as the localised
+ * rate-limit line, never a raw code.
+ */
+import { useTransition } from 'react';
+import { Loader2Icon, MailCheck } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { isLocale } from '@/i18n/config';
+import { approvalErrorMessage, readErrorCode } from './approval-error';
+
+export interface TestCopyButtonProps {
+  readonly broadcastId: string;
+  readonly versionId: string;
+  readonly subject: string;
+  readonly bodyHtml: string;
+  readonly disabled?: boolean;
+}
+
+export function TestCopyButton({
+  broadcastId,
+  versionId,
+  subject,
+  bodyHtml,
+  disabled = false,
+}: TestCopyButtonProps): React.ReactElement {
+  const t = useTranslations('admin.broadcasts.approval.testCopy');
+  const tErrors = useTranslations('admin.broadcasts.approval.errors');
+  const locale = useLocale();
+  const [pending, startTransition] = useTransition();
+
+  function send(): void {
+    startTransition(async () => {
+      try {
+        const res = await fetch('/api/admin/broadcasts/test-copy', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject,
+            bodyHtml,
+            locale: isLocale(locale) ? locale : 'en',
+            broadcastId,
+            versionId,
+          }),
+        });
+        if (res.ok) {
+          toast.success(t('sent'));
+          return;
+        }
+        toast.error(approvalErrorMessage(tErrors, await readErrorCode(res)));
+      } catch {
+        toast.error(approvalErrorMessage(tErrors, null));
+      }
+    });
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      data-testid="eblast-test-copy"
+      onClick={send}
+      disabled={disabled || pending}
+      aria-busy={pending || undefined}
+    >
+      {pending ? (
+        <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+      ) : (
+        <MailCheck className="size-4" aria-hidden="true" />
+      )}
+      {t('button')}
+    </Button>
+  );
+}

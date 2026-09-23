@@ -3346,6 +3346,129 @@
           "actorUnknown": "unknown user"
         }
       },
+      "approval": {
+        "header": {
+          "title": "Approval round",
+          "detailsTitle": "Submission",
+          "turn": "Whose turn",
+          "turnValue": {
+            "marketing": "Marketing",
+            "member": "Member",
+            "none": "—"
+          },
+          "timeInStage": "Time in stage",
+          "round": "Round",
+          "roundNone": "Not sent to the member yet",
+          "proposedSendAt": "Member's proposed time"
+        },
+        "warnings": {
+          "noPortalUserTitle": "The member company has no portal user",
+          "noPortalUserBody": "Nobody at {company} can sign in to the portal, so a formatted version cannot be sent to them for approval. Invite a portal user first — or, while it still awaits review, approve it as submitted.",
+          "unsafeImagesTitle": "An image is no longer allowed",
+          "unsafeImagesBody": "These images point to a host that is not on the image allow-list. Replace them before the version is sent to the member or scheduled.",
+          "reason": {
+            "not_allowlisted": "host not on the allow-list",
+            "invalid_url": "not a valid web address",
+            "invalid_hostname": "not a valid host name"
+          }
+        },
+        "content": {
+          "originalTitle": "Member's original",
+          "originalHint": "Read-only — kept exactly as the member submitted it.",
+          "workingCopyTitle": "Formatted version {version} (working copy)",
+          "sentVersionTitle": "Version {version} sent to the member",
+          "noteLabel": "Note to the member",
+          "threadUnavailableTitle": "The version history could not be loaded",
+          "threadUnavailableBody": "The working copy and the member's original are not shown, and no formatting action is available until the page loads them. Refresh the page in a moment."
+        },
+        "workspace": {
+          "title": "Formatted version {version}",
+          "description": "Edit the subject and the message. The audience stays the one the member chose.",
+          "subjectLabel": "Subject",
+          "bodyLabel": "Message",
+          "noteLabel": "Note to the member (optional)",
+          "noteHelp": "Shown to the member beside this version. {count} / {max} characters.",
+          "save": "Save",
+          "saved": "Version saved.",
+          "savedAt": "Saved at {time}",
+          "conflictTitle": "Someone else changed this version",
+          "conflictBody": "Another staff user saved this version after you opened it. Your edits were not saved. Reload to see the current version.",
+          "reload": "Reload"
+        },
+        "send": {
+          "button": "Send to member",
+          "title": "Send this version to the member?",
+          "body": "The member is notified by email and asked to approve it. Once sent, this version can no longer be edited.",
+          "savesFirst": "Your unsaved changes are saved first.",
+          "cancel": "Keep editing",
+          "confirm": "Send to member",
+          "sent": "Version sent to the member for approval."
+        },
+        "testCopy": {
+          "button": "Send me a test copy",
+          "sent": "Test copy sent to your email address."
+        },
+        "start": {
+          "button": "Start formatted version",
+          "voidTitle": "Start a new formatted version?",
+          "voidBody": "The member approved round {round}. Starting a new version withdraws that approval and clears any confirmed send time. The member will have to approve again.",
+          "voidCancel": "Keep the approval",
+          "voidConfirm": "Start new version",
+          "started": "Formatted version started."
+        },
+        "schedule": {
+          "button": "Confirm schedule",
+          "buttonChange": "Change schedule",
+          "title": "Confirm the send time",
+          "titleChange": "Change the send time",
+          "description": "The member approved this E-Blast. Choose when it is sent; the member is told the final time.",
+          "descriptionChange": "This E-Blast is scheduled. Change the time, send it now, or cancel the confirmed time.",
+          "proposal": "Member's proposed time: {time}",
+          "proposalNone": "The member did not propose a time.",
+          "proposalPassed": "The member's proposed time ({time}) is too soon or has passed — choose a new time.",
+          "modeLegend": "When to send",
+          "mode": {
+            "keep_proposal": "Keep the member's proposed time",
+            "schedule": "Choose another time",
+            "send_now": "Send now",
+            "cancel": "Cancel the confirmed time"
+          },
+          "whenLabel": "Send at (Bangkok time)",
+          "whenHelp": "At least 5 minutes from now. Times are in Bangkok time (UTC+7).",
+          "cancelHint": "The E-Blast will not be sent. It returns to marketing as \"Changes requested by member\" until a new version is approved.",
+          "tooSoon": "Choose a time at least 5 minutes from now.",
+          "differs": "This is not the member's proposed time ({time}). The member will be told about the change.",
+          "close": "Close",
+          "confirm": "Confirm",
+          "confirmCancel": "Cancel the time",
+          "confirmed": "Send time confirmed. The member has been notified.",
+          "cancelled": "Confirmed send time cancelled."
+        },
+        "errors": {
+          "generic": "Something went wrong. Please try again.",
+          "stage_changed": "This E-Blast moved to another stage in the meantime. The page has been refreshed.",
+          "version_changed": "Someone else changed this version. Reload to see the current version.",
+          "no_working_copy": "There is no working copy to send. Start a formatted version first.",
+          "no_portal_user": "The member company has no portal user, so the version cannot be sent for approval.",
+          "round_zero": "This E-Blast was approved as submitted, so there is no member approval to reopen.",
+          "mode_not_allowed": "That option is not available at this stage.",
+          "no_proposal": "The member did not propose a send time. Choose a time instead.",
+          "broadcast_schedule_too_soon": "Choose a time at least 5 minutes from now.",
+          "image_source_not_allowlisted": "An image points to a host that is not on the image allow-list. Replace it and try again.",
+          "unsafe_content": "The message contains content that is not allowed. Remove it and try again.",
+          "validation_error": "Check the subject (up to 200 characters), the message (up to 200 KB) and the note (up to 1,000 characters).",
+          "cta_text_length": "Button text must be between 1 and 60 characters.",
+          "too_many_cta": "A message can carry at most 3 buttons.",
+          "cta_link_scheme": "A button or link must start with http, https or mailto.",
+          "banner_alt_required": "Every banner and image needs a description of 1–125 characters.",
+          "broadcast_rate_limit_exceeded": "Too many requests in a short time. Wait a moment and try again.",
+          "broadcast_not_found": "This E-Blast could not be found.",
+          "permission_denied": "You do not have permission to do this.",
+          "test_copy_invalid_recipient": "The test copy could not be delivered to your email address.",
+          "test_copy_unavailable": "The email service is unavailable. Try the test copy again in a moment.",
+          "internal_error": "Something went wrong on our side. Please try again."
+        }
+      },
       "approveDialog": {
         "title": "Approve this broadcast?",
         "description": "Choose to send immediately or schedule for later. Recipients receive your chamber's branding as the sender.",
