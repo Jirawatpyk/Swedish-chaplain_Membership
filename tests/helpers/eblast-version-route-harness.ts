@@ -293,6 +293,20 @@ export function approvalDepsMock() {
       audit: harness.audit,
       clock,
     }),
+    // T087 — the member's version thread.
+    makeGetMemberVersionThreadDeps: () => ({
+      tenant,
+      broadcastsRepo: harness.store.broadcastsRepo,
+      versionsRepo: harness.store.versionsRepo,
+      decisionsRepo: harness.store.decisionsRepo,
+      audit: harness.audit,
+    }),
+    // T141a — the workflow half of the member detail.
+    makeReadMemberEblastViewDeps: () => ({
+      tenant,
+      broadcastsRepo: harness.store.broadcastsRepo,
+      versionsRepo: harness.store.versionsRepo,
+    }),
   };
 }
 
@@ -308,6 +322,8 @@ export async function broadcastsBarrelMock() {
   const send = await import('@/modules/broadcasts/application/use-cases/approval/send-version-to-member');
   const schedule = await import('@/modules/broadcasts/application/use-cases/approval/confirm-schedule');
   const decide = await import('@/modules/broadcasts/application/use-cases/approval/record-member-decision');
+  const thread = await import('@/modules/broadcasts/application/use-cases/approval/get-member-version-thread');
+  const view = await import('@/modules/broadcasts/application/use-cases/approval/read-member-eblast-view');
   const cancel = await import('@/modules/broadcasts/application/use-cases/cancel-broadcast');
   const reject = await import('@/modules/broadcasts/application/use-cases/reject-broadcast');
   const broadcast = await import('@/modules/broadcasts/domain/broadcast');
@@ -322,6 +338,8 @@ export async function broadcastsBarrelMock() {
     sendVersionToMember: send.sendVersionToMember,
     confirmSchedule: schedule.confirmSchedule,
     recordMemberDecision: decide.recordMemberDecision,
+    getMemberVersionThread: thread.getMemberVersionThread,
+    readMemberEblastView: view.readMemberEblastView,
     // T081 — the widened withdrawal / rejection, over the same store, with
     // the image rows in `harness.images`.
     cancelBroadcast: cancel.cancelBroadcast,
@@ -343,6 +361,15 @@ export async function broadcastsBarrelMock() {
       clock,
     }),
     tenantDefaultLocaleFor: () => 'en',
+    // T141a — the member detail route's own read + tenant gate, over the store.
+    makeGetBroadcastDeps: () => ({
+      broadcastsRepo: {
+        findById: async (tenantId: string, id: string) => harness.store.state.broadcasts.get(`${tenantId}::${id}`) ?? null,
+      },
+    }),
+    makeEnforceTenantContextDeps: () => ({}),
+    enforceTenantContext: async (_deps: unknown, input: { observedTenantId: string }) =>
+      input.observedTenantId === HARNESS_TENANT ? ok(undefined) : { ok: false as const, error: { kind: 'cross_tenant' } },
     parseBroadcastId: broadcast.parseBroadcastId,
     stageOf: stage.stageOf,
     turnOf: turn.turnOf,
@@ -418,6 +445,11 @@ export function postStaffRequest(id: string, verb: 'reject' | 'cancel', body: un
   });
 }
 
+export function getMemberVersionsRequest(id: string): NextRequest {
+  return new NextRequest(`http://localhost/api/broadcasts/${id}/versions`, { method: 'GET' });
+}
+
+export const importMemberVersionsRoute = () => import('@/app/api/broadcasts/[id]/versions/route');
 export const importDecisionRoute = () => import('@/app/api/broadcasts/[id]/decision/route');
 export const importMemberCancelRoute = () => import('@/app/api/broadcasts/[id]/cancel/route');
 export const importStaffRejectRoute = () => import('@/app/api/admin/broadcasts/[id]/reject/route');

@@ -352,6 +352,13 @@ export {
   type ListMemberBroadcastImagesInput,
   type MemberBroadcastImage,
 } from './application/use-cases/list-member-broadcast-images';
+// F119 T083 — the member's E-Blast approval rounds, for the F9 GDPR archive
+export {
+  listMemberBroadcastVersions,
+  type ListMemberBroadcastVersionsInput,
+  type ListMemberBroadcastVersionsOutput,
+  type MemberBroadcastVersionThread,
+} from './application/use-cases/list-member-broadcast-versions';
 
 // --- Composition root factories (Phase 5 US3) ----------------------------
 export {
@@ -359,6 +366,7 @@ export {
   makeGetMemberBroadcastDeps,
   makeListMemberBroadcastsDeps,
   makeListMemberBroadcastImagesDeps,
+  makeListMemberBroadcastVersionsDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 7 US5) ---------------------------------
@@ -860,6 +868,30 @@ export {
   type RecordMemberDecisionInput,
   type RecordMemberDecisionOutput,
 } from './application/use-cases/approval/record-member-decision';
+// T087 — the member's version thread; T141a — the workflow half of the member
+// detail. One member projection behind both (`_member-view.ts`), composed in
+// `src/lib/broadcast-approval-deps.ts`.
+export {
+  getMemberVersionThread,
+  type GetMemberVersionThreadDeps,
+  type GetMemberVersionThreadError,
+  type GetMemberVersionThreadInput,
+  type MemberThreadDecision,
+  type MemberVersionThread,
+} from './application/use-cases/approval/get-member-version-thread';
+export {
+  readMemberEblastView,
+  type MemberEblastView,
+  type ReadMemberEblastViewDeps,
+} from './application/use-cases/approval/read-member-eblast-view';
+export type {
+  MemberVisibleAuthor,
+  MemberVisibleDecision,
+  MemberVisibleVersion,
+  MemberWorkflowSummary,
+} from './application/use-cases/approval/_member-view';
+// T082 — the erasure reach into the approval round (versions, reasons, pending hand-offs).
+export type { BroadcastApprovalScrubPort } from './application/ports/broadcast-approval-scrub-port';
 // T063 — the staff detail page's stage header ("whose turn", FR-026) and its
 // two standing warnings (no portal user; an image off the allow-list).
 export { turnOf, type WhoseTurn } from './domain/stage/whose-turn';

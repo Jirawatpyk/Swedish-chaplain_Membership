@@ -18,6 +18,14 @@
  *      `SET LOCAL app.allow_broadcast_redaction = 'on'` internally so
  *      the immutability trigger permits the PII columns to change on
  *      post-`draft` rows (migration 0224).
+ *   1a. F119 T082 — `BroadcastApprovalScrubPort`, in the SAME tx: every
+ *      approval-round version (`subject`/`body_html`/`body_source`, and
+ *      `note_to_member` where one was written) and every decision `reason`
+ *      → `'[redacted]'` (rows KEPT — SC-002's proof), and every PENDING
+ *      `eblast_*` notification about the member's E-Blasts removed (the
+ *      marketing hand-offs go to staff addresses the atomic step's
+ *      email-keyed leg cannot find). The inline images were already stamped
+ *      here by F2-2 (`markDeletedForMember`, `reason: 'member_erased'`).
  *   2. emit `broadcast_content_redacted` audit (5y retention) with the
  *      content-scrub count + the delivery-tombstone count + reason. The
  *      opaque member id is the only identifier in the payload/summary —
@@ -62,6 +70,7 @@ import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { FullMarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import type { BroadcastApprovalScrubPort } from '../ports/broadcast-approval-scrub-port';
 import { auditImagesRemoved } from './_mark-owner-images-removed';
 
 export type ScrubBroadcastContentForMemberError = {
@@ -128,6 +137,12 @@ export interface ScrubBroadcastContentForMemberOutput {
    * references are gone.
    */
   readonly imagesMarked: number;
+  /** F119 T082 — approval-round versions whose content / note was redacted here. */
+  readonly versionsRedacted: number;
+  /** F119 T082 — member decisions whose reason was redacted here (rows kept). */
+  readonly decisionReasonsRedacted: number;
+  /** F119 T082 — pending `eblast_*` notifications about the member's E-Blasts removed here. */
+  readonly notificationsCancelled: number;
 }
 
 export interface ScrubBroadcastContentForMemberDeps {
@@ -147,6 +162,13 @@ export interface ScrubBroadcastContentForMemberDeps {
    * `tsc`, not inside a GDPR erasure transaction.
    */
   readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedForMember'>;
+  /**
+   * F119 T082 — REQUIRED for the same reason as `imagesRepo`: the approval
+   * round keeps every version, note and reason in two child tables the
+   * parent redaction never touches, so an erasure composed without this
+   * port would certify complete while the member's words survived there.
+   */
+  readonly approvalScrub: BroadcastApprovalScrubPort;
 }
 
 const SYSTEM_ACTOR_USER_ID = 'system';
@@ -168,7 +190,7 @@ export async function scrubBroadcastContentForMember(
   const tombstonedCount = input.tombstonedCount ?? 0;
 
   try {
-    const { scrubbedCount, suppressionRefsSevered, imagesMarked } = await deps.broadcastsRepo.withTx(async (tx) => {
+    const work = await deps.broadcastsRepo.withTx(async (tx) => {
       // Order: scrub authored content → sever suppression back-references →
       // emit audit. All co-commit in this single tx. (The delivery tombstone
       // is no longer here — it ran in the caller's atomic members-scrub tx;
@@ -178,6 +200,13 @@ export async function scrubBroadcastContentForMember(
         tenantSlug,
         input.memberId,
       );
+
+      // F119 T082 — the approval round's child tables and pending hand-offs,
+      // in this same tx so they co-commit with the parent redaction.
+      const memberKey = input.memberId as unknown as string;
+      const versions = await deps.approvalScrub.redactVersionsForMemberInTx(tx, tenantSlug, memberKey);
+      const reasons = await deps.approvalScrub.redactDecisionReasonsForMemberInTx(tx, tenantSlug, memberKey);
+      const notifications = await deps.approvalScrub.cancelPendingNotificationsForMemberInTx(tx, tenantSlug, memberKey);
 
       // 108 PR-C T104 (FR-056): null `member_id` + `contact_id` on the
       // member's suppression rows; the email-keyed rows survive. Review
@@ -228,13 +257,17 @@ export async function scrubBroadcastContentForMember(
       // caller's delivery tombstone), the audit still fires so both counts
       // are recorded.
       // 108 PR-C T104: severed back-references are a THIRD axis of work.
-      if (
-        scrub.scrubbedCount === 0 &&
-        tombstonedCount === 0 &&
-        sever.affected === 0 &&
-        stampedImages.length === 0
-      ) {
-        return { scrubbedCount: 0, suppressionRefsSevered: 0, imagesMarked: 0 };
+      // F119 T082: the approval round's three counts are further axes.
+      const counts = {
+        scrubbedCount: scrub.scrubbedCount,
+        suppressionRefsSevered: sever.affected,
+        imagesMarked: stampedImages.length,
+        versionsRedacted: versions.redactedCount,
+        decisionReasonsRedacted: reasons.redactedCount,
+        notificationsCancelled: notifications.cancelledCount,
+      };
+      if (tombstonedCount === 0 && Object.values(counts).every((n) => n === 0)) {
+        return counts;
       }
 
       // S1 type-design: emit via the COMPILE-CHECKED `emitTyped` path
@@ -263,6 +296,11 @@ export async function scrubBroadcastContentForMember(
           // bytes go on the next daily sweep; this count is the evidence that
           // the references are gone.
           images_marked: stampedImages.length,
+          // F119 T082 — the approval round's reach, in the same attestation.
+          // Counts only; never a subject, a note or a reason.
+          versions_redacted: versions.redactedCount,
+          decision_reasons_redacted: reasons.redactedCount,
+          notifications_cancelled: notifications.cancelledCount,
           reason,
           // Forensic join key: same `cascade` tag the completion/
           // failure logs carry, so the audit row correlates with the
@@ -272,32 +310,26 @@ export async function scrubBroadcastContentForMember(
         requestId: input.requestId,
       });
 
-      return {
-        scrubbedCount: scrub.scrubbedCount,
-        suppressionRefsSevered: sever.affected,
-        imagesMarked: stampedImages.length,
-      };
+      return counts;
     });
 
     // Only count an audit emit when one actually happened — a zero-work run
     // skips the emit (above), so it must not bump the audit-emit metric.
-    if (scrubbedCount > 0 || tombstonedCount > 0 || suppressionRefsSevered > 0 || imagesMarked > 0) {
+    if (tombstonedCount > 0 || Object.values(work).some((n) => n > 0)) {
       broadcastsMetrics.auditEmitCount(tenantSlug, 'broadcast_content_redacted');
     }
     logger.info(
       {
         tenantId: tenantSlug,
         memberId: input.memberId as unknown as string,
-        scrubbedCount,
+        ...work,
         tombstonedCount,
-        suppressionRefsSevered,
-        imagesMarked,
         cascade: 'f3_member_erasure',
       },
       'broadcasts.content_scrub.completed',
     );
 
-    return ok({ scrubbedCount, tombstonedCount, suppressionRefsSevered, imagesMarked });
+    return ok({ ...work, tombstonedCount });
   } catch (e) {
     // Fail-loud: the repo methods + audit emit propagate DB errors so
     // the caller's tx rolls back. We translate the throw to a typed

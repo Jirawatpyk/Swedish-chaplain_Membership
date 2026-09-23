@@ -41,6 +41,8 @@ import {
   systemClock,
   type ActorNameDirectoryPort,
   type ConfirmScheduleDeps,
+  type GetMemberVersionThreadDeps,
+  type ReadMemberEblastViewDeps,
   type ListBroadcastVersionsDeps,
   type ReadFormattingWarningsDeps,
   type RecordMemberDecisionDeps,
@@ -161,6 +163,26 @@ export function makeRecordMemberDecisionDeps(tenantId: string): RecordMemberDeci
     outbox: eblastNotificationOutbox,
     audit: f7AuditAdapter,
     clock: systemClock,
+  };
+}
+
+/** T087 — the member's version thread (read-only; the owning-member rule is the use case's). */
+export function makeGetMemberVersionThreadDeps(tenantId: string): GetMemberVersionThreadDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    versionsRepo: drizzleBroadcastVersionsRepo,
+    decisionsRepo: drizzleBroadcastDecisionsRepo,
+    audit: f7AuditAdapter,
+  };
+}
+
+/** T141a — the workflow half of the member detail (read-only; the caller owner-checks first). */
+export function makeReadMemberEblastViewDeps(tenantId: string): ReadMemberEblastViewDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    versionsRepo: drizzleBroadcastVersionsRepo,
   };
 }
 

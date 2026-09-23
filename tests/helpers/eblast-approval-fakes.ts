@@ -64,6 +64,7 @@ import type {
 } from '@/modules/broadcasts/application/ports/eblast-notification-outbox-port';
 import type { MemberPortalRecipientPort, PortalContact } from '@/modules/broadcasts/application/ports/member-portal-recipient-port';
 import type { MarketingDirectoryPort, MarketingRecipient } from '@/modules/broadcasts/application/ports/marketing-directory-port';
+import type { BroadcastApprovalScrubPort } from '@/modules/broadcasts/application/ports/broadcast-approval-scrub-port';
 import type { TenantContext, TenantSlug } from '@/modules/tenants';
 
 /** The sentinel tx the fakes hand to `withTx` callbacks — assert on it to prove a write shared the tx. */
@@ -603,8 +604,23 @@ export function makeFakeApprovalStore(
     // against the port's signature.
   } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> & Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
 
+  // T083 — the member's own E-Blasts, for the two DSAR reads.
+  const ownedBy = (tenantId: string, memberId: string) =>
+    new Set(
+      [...state.broadcasts.values()]
+        .filter((b) => b.tenantId === tenantId && b.requestedByMemberId === memberId)
+        .map((b) => b.broadcastId as string),
+    );
+
   const versionsRepo = {
     rows: () => state.versions,
+    listSentByMember: vi.fn(async (tenantId: TenantSlug, memberId: string, limit: number, _tx: unknown) => {
+      const owned = ownedBy(tenantId as string, memberId);
+      return state.versions
+        .filter((v) => v.tenantId === (tenantId as string) && owned.has(v.broadcastId as string) && v.sentToMemberAt !== null)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.versionNo - a.versionNo)
+        .slice(0, limit);
+    }),
     listByBroadcast: vi.fn(async (tenantId: TenantSlug, broadcastId: BroadcastId, _tx: unknown) =>
       state.versions
         .filter((v) => v.tenantId === (tenantId as string) && v.broadcastId === broadcastId)
@@ -655,6 +671,13 @@ export function makeFakeApprovalStore(
 
   const decisionsRepo = {
     rows: () => state.decisions,
+    listByMember: vi.fn(async (tenantId: TenantSlug, memberId: string, limit: number, _tx: unknown) => {
+      const owned = ownedBy(tenantId as string, memberId);
+      return state.decisions
+        .filter((d) => d.tenantId === (tenantId as string) && owned.has(d.broadcastId as string))
+        .sort((a, b) => b.decidedAt.getTime() - a.decidedAt.getTime())
+        .slice(0, limit);
+    }),
     insert: vi.fn(async (tenantId: TenantSlug, input: NewMemberDecision, _tx: unknown): Promise<MemberDecision> => {
       const row: MemberDecision = {
         id: nextApprovalId('cccccccc'),
@@ -734,6 +757,64 @@ export function makeFakeBroadcastVersionsRepo(seed: readonly BroadcastVersion[] 
 /** `BroadcastDecisionsRepo` alone — append-only by construction (no update method exists). */
 export function makeFakeBroadcastDecisionsRepo(seed: readonly MemberDecision[] = []): FakeBroadcastDecisionsRepo {
   return makeFakeApprovalStore({ decisions: seed }).decisionsRepo;
+}
+
+// --- BroadcastApprovalScrubPort (T082) ---------------------------------------
+
+export type FakeBroadcastApprovalScrub = Mocked<BroadcastApprovalScrubPort>;
+
+const SENTINEL = '[redacted]';
+
+/**
+ * The erasure reach over an approval store: redacts the versions and the
+ * decision reasons of every E-Blast the member originated and drops their
+ * pending outbox rows — the SQL's rules, including "a NULL note / an
+ * approval without a note stays NULL" and changed-rows counts (0 on a
+ * re-drive). With no store it changes nothing and reports zeros.
+ */
+export function makeFakeBroadcastApprovalScrub(store?: FakeApprovalStore): FakeBroadcastApprovalScrub {
+  const ownedBy = (tenantId: string, memberId: string) =>
+    new Set(
+      [...(store?.state.broadcasts.values() ?? [])]
+        .filter((b) => b.tenantId === tenantId && b.requestedByMemberId === memberId)
+        .map((b) => b.broadcastId as string),
+    );
+  return {
+    redactVersionsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: string) => {
+      if (store === undefined) return { redactedCount: 0 };
+      const owned = ownedBy(tenantId as string, memberId);
+      let redactedCount = 0;
+      store.state.versions = store.state.versions.map((v) => {
+        const note = v.noteToMember === null ? null : SENTINEL;
+        const done = v.subject === SENTINEL && v.bodyHtml === SENTINEL && v.bodySource === SENTINEL && v.noteToMember === note;
+        if (v.tenantId !== (tenantId as string) || !owned.has(v.broadcastId as string) || done) return v;
+        redactedCount += 1;
+        return { ...v, subject: SENTINEL, bodyHtml: SENTINEL, bodySource: SENTINEL, noteToMember: note };
+      });
+      return { redactedCount };
+    }),
+    redactDecisionReasonsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: string) => {
+      if (store === undefined) return { redactedCount: 0 };
+      const owned = ownedBy(tenantId as string, memberId);
+      let redactedCount = 0;
+      store.state.decisions = store.state.decisions.map((d) => {
+        if (d.tenantId !== (tenantId as string) || !owned.has(d.broadcastId as string) || d.reason === null || d.reason === SENTINEL) return d;
+        redactedCount += 1;
+        return { ...d, reason: SENTINEL };
+      });
+      return { redactedCount };
+    }),
+    cancelPendingNotificationsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: string) => {
+      if (store === undefined) return { cancelledCount: 0 };
+      const owned = ownedBy(tenantId as string, memberId);
+      const keep = store.state.outbox.filter(
+        (r) => r.tenantId !== (tenantId as string) || !owned.has(String(r.contextData.broadcastId)),
+      );
+      const cancelledCount = store.state.outbox.length - keep.length;
+      store.state.outbox = keep;
+      return { cancelledCount };
+    }),
+  } satisfies BroadcastApprovalScrubPort;
 }
 
 // --- ActorNameDirectoryPort (T061) ------------------------------------------

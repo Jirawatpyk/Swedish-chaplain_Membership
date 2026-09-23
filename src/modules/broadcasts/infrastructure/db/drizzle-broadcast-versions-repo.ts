@@ -7,7 +7,7 @@
  * `tenant_id`, so the application layer scopes the row even before RLS does.
  * Drizzle-inferred row types stay inside this file.
  */
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { TenantTx } from '@/lib/db';
 import type { TenantSlug } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
@@ -54,6 +54,33 @@ export const drizzleBroadcastVersionsRepo: BroadcastVersionsRepo = {
         ),
       )
       .orderBy(asc(broadcastVersions.versionNo));
+    return rows.map(toVersion);
+  },
+
+  // T083 — the DSAR read; `tenant_id` on both sides of the member join.
+  async listSentByMember(
+    tenantId: TenantSlug,
+    memberId: string,
+    limit: number,
+    tx: BroadcastVersionsTx,
+  ): Promise<readonly BroadcastVersion[]> {
+    const rows = await (tx as TenantTx)
+      .select()
+      .from(broadcastVersions)
+      .where(
+        and(
+          eq(broadcastVersions.tenantId, tenantId as string),
+          isNotNull(broadcastVersions.sentToMemberAt),
+          sql`EXISTS (
+            SELECT 1 FROM broadcasts b
+             WHERE b.tenant_id = ${tenantId as string}
+               AND b.broadcast_id = ${broadcastVersions.broadcastId}
+               AND b.requested_by_member_id = ${memberId}
+          )`,
+        ),
+      )
+      .orderBy(desc(broadcastVersions.createdAt), desc(broadcastVersions.versionNo))
+      .limit(limit);
     return rows.map(toVersion);
   },
 

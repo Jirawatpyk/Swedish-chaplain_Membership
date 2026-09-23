@@ -394,7 +394,7 @@ export interface F7AuditPayloadShapes {
      * groups on it. The comment is now the type. A new surface adds its member
      * here.
      */
-    readonly operation?: 'image_upload' | 'snapshot_template' | 'member_decision';
+    readonly operation?: 'image_upload' | 'snapshot_template' | 'member_decision' | 'version_thread';
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;
@@ -469,6 +469,15 @@ export interface F7AuditPayloadShapes {
      * count out of it made that axis invisible in the evidence.
      */
     readonly images_marked: number;
+    /**
+     * F119 T082 — the approval round's reach (research R17): versions whose
+     * content / note was redacted, decisions whose reason was redacted (rows
+     * kept — SC-002's proof), and pending `eblast_*` hand-offs removed. Counts
+     * only; never a subject, a note or a reason.
+     */
+    readonly versions_redacted: number;
+    readonly decision_reasons_redacted: number;
+    readonly notifications_cancelled: number;
     readonly reason:
       | 'originator_member_deleted'
       | 'gdpr_erasure_request'

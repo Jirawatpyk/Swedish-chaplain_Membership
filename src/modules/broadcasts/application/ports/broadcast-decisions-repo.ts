@@ -38,6 +38,18 @@ export interface BroadcastDecisionsRepo {
     tx: BroadcastDecisionsTx,
   ): Promise<MemberDecision>;
 
+  /**
+   * F119 T083 — the member DSAR read: every decision on every E-Blast the
+   * member originated, newest first, at most `limit` rows (cap + 1 to detect
+   * truncation).
+   */
+  listByMember(
+    tenantId: TenantSlug,
+    memberId: string,
+    limit: number,
+    tx: BroadcastDecisionsTx,
+  ): Promise<readonly MemberDecision[]>;
+
   /** Every decision on one E-Blast, oldest first — the history thread (FR-032). */
   listByBroadcast(
     tenantId: TenantSlug,

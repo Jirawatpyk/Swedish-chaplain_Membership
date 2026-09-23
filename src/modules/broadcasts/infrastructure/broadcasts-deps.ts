@@ -63,6 +63,9 @@ import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/ac
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
 import type { ListMemberBroadcastImagesDeps } from '../application/use-cases/list-member-broadcast-images';
+import type { ListMemberBroadcastVersionsDeps } from '../application/use-cases/list-member-broadcast-versions';
+import { drizzleBroadcastVersionsRepo } from './db/drizzle-broadcast-versions-repo';
+import { drizzleBroadcastDecisionsRepo } from './db/drizzle-broadcast-decisions-repo';
 // Two imports were removed here in 108 Phase 9 review round 1: the batch
 // deletion left `makeDrizzleBroadcastsRetryRepo` and `pgAdvisoryLockAdapter`
 // unused in this file.
@@ -83,6 +86,7 @@ import type { UploadInlineImageDeps } from '../application/use-cases/upload-inli
 import type { ReclaimOrphanedImagesDeps } from '../application/use-cases/reclaim-orphaned-images';
 import type { AuthorizeImageOwnerDeps } from '../application/use-cases/authorize-image-owner';
 import { drizzleBroadcastImagesRepo } from './db/drizzle-broadcast-images-repo';
+import { drizzleBroadcastApprovalScrub } from './db/drizzle-broadcast-approval-scrub';
 import { sharpImageReencoder } from './sharp-image-reencoder';
 import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
@@ -584,6 +588,9 @@ export function makeScrubBroadcastContentForMemberDeps(tenantId: string) {
     // F119 review finding F2-2 — the erasure cascade's reach into the member's
     // UPLOADED IMAGES. Redacting body_html removes the pointer, not the file.
     imagesRepo: drizzleBroadcastImagesRepo,
+    // F119 T082 — the approval round's versions, reasons and pending
+    // hand-offs, redacted / removed inside the same content-scrub tx.
+    approvalScrub: drizzleBroadcastApprovalScrub,
   };
 }
 
@@ -625,6 +632,18 @@ export function makeListMemberBroadcastsDeps(
 }
 
 /** F119 R17 — the member's E-Blast images for the F9 GDPR archive. */
+/** F119 T083 — the member's E-Blast approval rounds for the F9 GDPR archive. */
+export function makeListMemberBroadcastVersionsDeps(
+  tenantId: string,
+): ListMemberBroadcastVersionsDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    versionsRepo: drizzleBroadcastVersionsRepo,
+    decisionsRepo: drizzleBroadcastDecisionsRepo,
+  };
+}
+
 export function makeListMemberBroadcastImagesDeps(
   tenantId: string,
 ): ListMemberBroadcastImagesDeps {

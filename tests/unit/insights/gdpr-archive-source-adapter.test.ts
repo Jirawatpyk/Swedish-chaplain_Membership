@@ -59,11 +59,15 @@ vi.mock('@/modules/events', () => ({
 }));
 // F119 R17 — the member's E-Blast images (already projected by the broadcasts use case)
 const listMemberBroadcastImagesMock = vi.fn();
+// F119 T083 — the member's E-Blast approval rounds (already projected by the broadcasts use case)
+const listMemberBroadcastVersionsMock = vi.fn();
 vi.mock('@/modules/broadcasts', () => ({
   listMemberBroadcasts: () => Promise.resolve({ rows: [], total: 0, totalPages: 0, page: 1 }),
   makeListMemberBroadcastsDeps: () => ({}),
   listMemberBroadcastImages: (...a: unknown[]) => listMemberBroadcastImagesMock(...a),
   makeListMemberBroadcastImagesDeps: () => ({ deps: 'images' }),
+  listMemberBroadcastVersions: (...a: unknown[]) => listMemberBroadcastVersionsMock(...a),
+  makeListMemberBroadcastVersionsDeps: () => ({ deps: 'versions' }),
 }));
 vi.mock('@/modules/auth', () => ({
   gdprAuditSubsetReadAdapter: { query: (...a: unknown[]) => auditQueryMock(...a) },
@@ -137,6 +141,75 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     crListVisibleToUserMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
     crListByMemberMock.mockResolvedValue({ ok: true, value: { items: [], nextCursor: null } });
     listMemberBroadcastImagesMock.mockResolvedValue([]);
+    listMemberBroadcastVersionsMock.mockResolvedValue({ threads: [], truncated: false });
+  });
+
+  describe('broadcast versions (F119 T083)', () => {
+    it('serialises each E-Blast round with ISO dates and the member projection, and discloses a capped list', async () => {
+      listInvoicesByMemberMock.mockResolvedValue({ ok: true, value: { rows: [], total: 0 } });
+      listMemberBroadcastVersionsMock.mockResolvedValue({
+        threads: [
+          {
+            broadcastId: 'b-1',
+            versions: [
+              {
+                id: 'v-0',
+                broadcastId: 'b-1',
+                versionNo: 0,
+                authoredBy: 'member',
+                subject: 'Original',
+                bodyHtml: '<p>original</p>',
+                noteToMember: null,
+                sentToMemberAt: null,
+                createdAt: new Date('2026-09-20T10:00:00Z'),
+              },
+            ],
+            decisions: [
+              {
+                id: 'd-1',
+                broadcastId: 'b-1',
+                versionId: 'v-1',
+                round: 1,
+                decision: 'changes_requested',
+                reason: 'Fix the date',
+                decidedAt: new Date('2026-09-21T10:00:00Z'),
+              },
+            ],
+          },
+        ],
+        truncated: true,
+      });
+      const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+      expect(listMemberBroadcastVersionsMock).toHaveBeenCalledWith({ deps: 'versions' }, { memberId: MEMBER, limit: 1000 });
+      expect(data!.broadcastVersions).toEqual([
+        {
+          broadcastId: 'b-1',
+          versions: [
+            {
+              versionId: 'v-0',
+              versionNo: 0,
+              authoredBy: 'member',
+              subject: 'Original',
+              bodyHtml: '<p>original</p>',
+              noteToMember: null,
+              sentToMemberAt: null,
+              createdAt: '2026-09-20T10:00:00.000Z',
+            },
+          ],
+          decisions: [
+            {
+              decisionId: 'd-1',
+              versionId: 'v-1',
+              round: 1,
+              decision: 'changes_requested',
+              reason: 'Fix the date',
+              decidedAt: '2026-09-21T10:00:00.000Z',
+            },
+          ],
+        },
+      ]);
+      expect(data!.completeness!.truncatedCategories).toContain('broadcastVersions');
+    });
   });
 
   describe('broadcast images (F119 R17)', () => {

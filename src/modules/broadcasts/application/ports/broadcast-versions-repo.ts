@@ -58,6 +58,21 @@ export interface BroadcastVersionsRepo {
     tx: BroadcastVersionsTx,
   ): Promise<readonly BroadcastVersion[]>;
 
+  /**
+   * F119 T083 — the member DSAR read (research R17): every version SENT to the
+   * member (v0, the member's original, is stamped at materialisation, so it is
+   * included) of every E-Blast the member originated, newest first, at most
+   * `limit` rows (the caller passes cap + 1 to detect truncation). An unsent
+   * working copy is marketing's work in progress and is never returned — the
+   * same rule as the portal thread (FR-003's read side).
+   */
+  listSentByMember(
+    tenantId: TenantSlug,
+    memberId: string,
+    limit: number,
+    tx: BroadcastVersionsTx,
+  ): Promise<readonly BroadcastVersion[]>;
+
   /** Insert one version; returns it with its generated id and timestamps. */
   insert(
     tenantId: TenantSlug,

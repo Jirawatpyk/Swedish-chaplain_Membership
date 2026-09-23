@@ -130,7 +130,7 @@ export function reduceDeliveryAggregateRows(
  * For defence-in-depth security, the chamber_app role + RLS+FORCE
  * policies on the underlying tables are the actual enforcement layer.
  */
-async function assertTenantBoundTx(
+export async function assertTenantBoundTx(
   tx: TenantTx,
   expectedTenantId: string,
   callerName: string,

@@ -1,12 +1,12 @@
 /**
  * F119 T055 — Drizzle adapter for `BroadcastDecisionsRepo` (migration 0305).
  *
- * Append-only: `insert` and `listByBroadcast`, nothing else — no UPDATE and
+ * Append-only: `insert` and the two reads, nothing else — no UPDATE and
  * no DELETE statement exists in this file, and the table's trigger refuses
  * both anyway. Every query runs on the caller's `runInTenant` `tx` (never the
  * pool-global `db`) and names `tenant_id` in its WHERE.
  */
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { TenantTx } from '@/lib/db';
 import type { TenantSlug } from '@/modules/tenants';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
@@ -55,6 +55,32 @@ export const drizzleBroadcastDecisionsRepo: BroadcastDecisionsRepo = {
     const row = rows[0];
     if (row === undefined) throw new Error('broadcast_member_decisions_insert_returned_no_row');
     return toDecision(row);
+  },
+
+  // T083 — the DSAR read; `tenant_id` on both sides of the member join.
+  async listByMember(
+    tenantId: TenantSlug,
+    memberId: string,
+    limit: number,
+    tx: BroadcastDecisionsTx,
+  ): Promise<readonly MemberDecision[]> {
+    const rows = await (tx as TenantTx)
+      .select()
+      .from(broadcastMemberDecisions)
+      .where(
+        and(
+          eq(broadcastMemberDecisions.tenantId, tenantId as string),
+          sql`EXISTS (
+            SELECT 1 FROM broadcasts b
+             WHERE b.tenant_id = ${tenantId as string}
+               AND b.broadcast_id = ${broadcastMemberDecisions.broadcastId}
+               AND b.requested_by_member_id = ${memberId}
+          )`,
+        ),
+      )
+      .orderBy(desc(broadcastMemberDecisions.decidedAt), desc(broadcastMemberDecisions.id))
+      .limit(limit);
+    return rows.map(toDecision);
   },
 
   async listByBroadcast(

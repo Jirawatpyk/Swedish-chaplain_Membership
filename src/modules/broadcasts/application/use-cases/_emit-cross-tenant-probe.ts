@@ -68,7 +68,9 @@ export type BroadcastProbeUseCase =
   | 'list-broadcast-versions'
   | 'send-version-to-member'
   | 'confirm-schedule'
-  | 'record-member-decision';
+  | 'record-member-decision'
+  // F119 T087 — the member's version thread (`GET /api/broadcasts/[id]/versions`).
+  | 'get-member-version-thread';
 
 export type CrossTenantProbeSurface =
   | {
