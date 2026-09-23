@@ -5,8 +5,18 @@
  *   - VERBATIM to member email (notification context_data)
  *   - sha256 hash to audit log (NOT raw)
  *
- * State-check: status must be `submitted` (rejected from any other
- * state with `broadcast_invalid_state_transition`).
+ * State-check (widened by F119 T081, FR-015): marketing may reject at any
+ * in-progress stage the state machine gives a `rejected` exit
+ * (`canTransition(status, 'rejected')` — the Domain map the DB trigger mirrors,
+ * so `approved` is NOT one: a scheduled E-Blast is cancelled, not rejected,
+ * data-model § 8.2). From `sending` onward → `sending_started` (409): the send
+ * completes. Anything else → `broadcast_invalid_state_transition`.
+ *
+ * F119 T081, in the same tx: every live `broadcast_images` row of the E-Blast
+ * is stamped and audited `broadcast_image_removed { reason: 'rejected' }`; the
+ * bytes go on the sweep's next tick, under the last-reference rule. The
+ * `broadcast_rejected` audit and the member notification gain the stage it
+ * was rejected from.
  *
  * Atomic: applyTransition('rejected') + audit emit + member-notification
  * outbox enqueue inside single tx; failure rolls all back.
@@ -16,6 +26,10 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
+import { canTransition } from '../../domain/policies/broadcast-status-transitions';
+import { hasSendingStarted } from '../../domain/stage/in-progress-statuses';
+import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import { markOwnerImagesRemoved } from './_mark-owner-images-removed';
 import type { AuditPort } from '../ports/audit-port';
 import {
   BroadcastConcurrentMutationError,
@@ -41,6 +55,8 @@ export type RejectBroadcastError =
       readonly kind: 'broadcast_concurrent_action_blocked';
       readonly observedStatus: string;
     }
+  /** F119 T081 — from `sending` onward: the send completes (FR-015). */
+  | { readonly kind: 'sending_started'; readonly observedStatus: string }
   | { readonly kind: 'broadcast_rejection_reason_required' }
   | {
       readonly kind: 'broadcast_rejection_reason_too_long';
@@ -50,7 +66,9 @@ export type RejectBroadcastError =
 
 export interface RejectBroadcastDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: BroadcastsRepo;
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'lockForUpdate' | 'findByIdInTx' | 'applyTransition'>;
+  /** F119 T081 — the E-Blast's image rows, stamped in the rejection's tx. */
+  readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /** G2 closure (verify-fix 2026-05-02) — best-effort post-rejection email. */
@@ -62,6 +80,11 @@ export interface RejectBroadcastDeps {
 export interface RejectBroadcastInput {
   readonly broadcastId: BroadcastId;
   readonly actorUserId: string;
+  /**
+   * F119 T081 — the SESSION role, recorded as-is on the image-removal audit
+   * rows (`check:actor-role-truth`: never a literal stand-in).
+   */
+  readonly actorRole: string | null;
   readonly rejectionReason: string;
   readonly requestId: string | null;
   /** E1 closure (verify-fix 2026-05-02) — locale for notification email. */
@@ -108,7 +131,11 @@ export async function rejectBroadcast(
           broadcastId: input.broadcastId as string,
         });
       }
-      if (lockedStatus !== 'submitted') {
+      // F119 T081 — checked before any write, so these returns commit nothing.
+      if (hasSendingStarted(lockedStatus)) {
+        return err({ kind: 'sending_started', observedStatus: lockedStatus });
+      }
+      if (!canTransition(lockedStatus, 'rejected')) {
         return err({
           kind: 'broadcast_invalid_state_transition',
           observedStatus: lockedStatus,
@@ -127,7 +154,7 @@ export async function rejectBroadcast(
             rejectedByUserId: input.actorUserId,
             rejectionReason: input.rejectionReason,
           },
-          'submitted', // R4 Types-#5 — race-guard against concurrent action
+          lockedStatus, // R4 Types-#5 — race-guard against concurrent action
         );
       } catch (e) {
         // S1-P1-21: narrow to the concurrency sentinel only (mirrors
@@ -160,9 +187,27 @@ export async function rejectBroadcast(
           rejectionReasonHash: reasonHash,
           rejectionReasonLength: input.rejectionReason.length,
           rejectedAt: now.toISOString(),
+          // F119 T081 — the stage it was rejected from.
+          previousStatus: lockedStatus,
         },
         requestId: input.requestId,
       });
+
+      // F119 T081 — the images stop being reachable in the same tx.
+      await markOwnerImagesRemoved(
+        { imagesRepo: deps.imagesRepo, audit: deps.audit },
+        {
+          tenantId: deps.tenant.slug,
+          owner: { kind: 'broadcast', id: input.broadcastId as string },
+          reason: 'rejected',
+          at: now,
+          requestId: input.requestId ?? `reject-${input.broadcastId as string}`,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          relatedMemberId: rejected.requestedByMemberId,
+        },
+        tx,
+      );
 
       // G2 closure (verify-fix 2026-05-02) — VERBATIM rejection reason
       // travels in the email payload (FR-012). Audit retains hash only.
@@ -196,6 +241,7 @@ export async function rejectBroadcast(
           variant: {
             templateKey: 'broadcast_rejected',
             rejectionReason: input.rejectionReason,
+            fromStatus: lockedStatus,
           },
           locale: memberPreferred ?? input.notificationLocale ?? 'en',
           tx,

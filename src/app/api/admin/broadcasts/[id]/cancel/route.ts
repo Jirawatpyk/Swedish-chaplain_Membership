@@ -3,8 +3,13 @@
  *
  * Wraps shared `cancelBroadcast` use-case with `actor.kind='admin'`.
  * FR-004a: admin-cancel REQUIRES a reason (≤500 chars).
- * State-cutoff: only `submitted` / `approved` cancellable (else 409
- * `broadcast_cancel_too_late`).
+ * Authz: `broadcasts.write` (named on the gate — `check:api-route-guard`).
+ *
+ * F119 T081 — cancellable at every in-progress stage; 409 `sending_started`
+ * from `sending` onward; 409 `broadcast_cancel_too_late` for a closed E-Blast
+ * that never started sending. The E-Blast's images are stamped in the same tx,
+ * and the 30 / 60 s per-(tenant, actor) staff write bucket is consumed after
+ * the id parse and BEFORE the body is read or anything is written.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -21,6 +26,8 @@ import {
   httpStatusForBroadcastError,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
+import { consumeStaffWriteBucket } from '@/lib/broadcasts-staff-write-bucket';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -43,6 +50,10 @@ export async function POST(
     return errorResponse(404, 'broadcast_not_found', correlationId);
   }
 
+  const tenantCtx = resolveTenantFromRequest(request);
+  const limited = await consumeStaffWriteBucket(tenantCtx.slug, ctx.current.user.id, correlationId);
+  if (limited !== null) return limited;
+
   let raw: unknown;
   try {
     raw = await request.json();
@@ -56,13 +67,13 @@ export async function POST(
     });
   }
 
-  const tenantCtx = resolveTenantFromRequest(request);
-  const deps = makeCancelBroadcastDeps(tenantCtx.slug);
+  const deps = makeCancelBroadcastDeps(tenantCtx.slug, makeMarketingDirectory(tenantCtx.slug));
 
   try {
     const result = await cancelBroadcast(deps, {
       broadcastId: parsedId.value,
       actor: { kind: 'admin', userId: ctx.current.user.id },
+      actorRole: ctx.current.user.role ?? null,
       cancellationReason: parsed.data.cancellationReason,
       requestId: ctx.requestId,
       // E1 closure (verify-fix 2026-05-02) — single-source-of-truth
@@ -105,7 +116,7 @@ function mapCancelError(
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);
   const details: Record<string, unknown> = {};
-  if (error.kind === 'broadcast_cancel_too_late') {
+  if (error.kind === 'broadcast_cancel_too_late' || error.kind === 'sending_started') {
     details['observedStatus'] = error.observedStatus;
   } else if (error.kind === 'broadcast_concurrent_action_blocked') {
     details['observedStatus'] = error.observedStatus;

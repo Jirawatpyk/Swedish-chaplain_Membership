@@ -394,7 +394,7 @@ export interface F7AuditPayloadShapes {
      * groups on it. The comment is now the type. A new surface adds its member
      * here.
      */
-    readonly operation?: 'image_upload' | 'snapshot_template';
+    readonly operation?: 'image_upload' | 'snapshot_template' | 'member_decision';
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;
@@ -518,7 +518,9 @@ export interface F7AuditPayloadShapes {
   readonly broadcast_image_removed: F119ImageRemovedCommon &
     (
       | {
-          readonly reason: 'draft_discarded' | 'draft_pruned' | 'member_erased';
+          // F119 T081 — `withdrawn` (member withdrawal / staff cancel) and
+          // `rejected` (staff rejection) stamp in the same tx as the state change.
+          readonly reason: 'draft_discarded' | 'draft_pruned' | 'member_erased' | 'withdrawn' | 'rejected';
           readonly blob_deleted: false;
           readonly blob_disposition?: never;
           readonly actor_role: string | null;
@@ -570,6 +572,39 @@ export interface F7AuditPayloadShapes {
     readonly round: number;
     readonly note_length: number;
     readonly notified: boolean;
+    readonly actor_role: string | null;
+  };
+  // T078 — the member's decision on the version they were shown. A MEMBER
+  // action, so the key is snake_case `member_id`: the 0009 `last_activity_at`
+  // trigger reads that key and no other (#336/#337). An approval carries its
+  // optional note's LENGTH (`note_length`, 0 when none); a change request and
+  // a withdrawn approval carry their mandatory reason's LENGTH — never the
+  // text. `actor_role` is the session role (`?? null`), never a literal.
+  readonly broadcast_member_approved: {
+    readonly member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly note_length: number;
+    readonly actor_role: string | null;
+  };
+  readonly broadcast_member_changes_requested: {
+    readonly member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly reason_length: number;
+    readonly actor_role: string | null;
+  };
+  // `cancelled_schedule_at` — the send time the withdrawal cleared (ISO), if
+  // any (FR-015a: "a confirmed schedule is cancelled").
+  readonly broadcast_member_approval_withdrawn: {
+    readonly member_id: string;
+    readonly broadcast_id: string;
+    readonly version_id: string;
+    readonly round: number;
+    readonly reason_length: number;
+    readonly cancelled_schedule_at: string | null;
     readonly actor_role: string | null;
   };
   // T060 — marketing confirmed, changed or cancelled the send time.

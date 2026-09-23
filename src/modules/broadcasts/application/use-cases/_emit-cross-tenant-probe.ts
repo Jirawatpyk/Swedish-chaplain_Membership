@@ -67,7 +67,8 @@ export type BroadcastProbeUseCase =
   | 'save-formatted-version'
   | 'list-broadcast-versions'
   | 'send-version-to-member'
-  | 'confirm-schedule';
+  | 'confirm-schedule'
+  | 'record-member-decision';
 
 export type CrossTenantProbeSurface =
   | {

@@ -90,6 +90,9 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   no_portal_user: 409,
   no_proposal: 409,
   mode_not_allowed: 409,
+  reason_required: 422,
+  stale_version: 409,
+  sending_started: 409,
   internal_error: 500,
 };
 

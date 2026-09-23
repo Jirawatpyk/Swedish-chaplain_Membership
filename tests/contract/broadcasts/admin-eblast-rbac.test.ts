@@ -8,6 +8,8 @@
  *   POST  /api/admin/broadcasts/[id]/version/send   broadcasts.write
  *   POST  /api/admin/broadcasts/[id]/schedule       broadcasts.send
  *   POST  /api/admin/broadcasts/test-copy           broadcasts.write (PR-1 route)
+ *   POST  /api/admin/broadcasts/[id]/reject         broadcasts.write (widened by T081)
+ *   POST  /api/admin/broadcasts/[id]/cancel         broadcasts.write (widened by T081)
  *
  * Two halves, both real: the permission EVALUATOR decides who holds each key
  * (manager holds `broadcasts.read` only; member holds neither), and each
@@ -29,11 +31,14 @@ import {
   getVersionRequest,
   harness,
   importScheduleRoute,
+  importStaffCancelRoute,
+  importStaffRejectRoute,
   importSendRoute,
   importVersionRoute,
   patchVersionRequest,
   postScheduleRequest,
   postSendRequest,
+  postStaffRequest,
   postVersionRequest,
   resetVersionHarness,
   routeParams,
@@ -54,6 +59,9 @@ vi.mock('@/modules/broadcasts', async () => ({
   TEST_COPY_SUBJECT_MAX: 200,
   TEST_COPY_BODY_MAX_BYTES: 200 * 1024,
 }));
+vi.mock('@/lib/broadcast-marketing-deps', async () =>
+  (await import('../../helpers/eblast-version-route-harness')).marketingDepsMock(),
+);
 vi.mock('@/lib/broadcast-test-copy-deps', () => ({
   makeSendTestCopyDeps: async () => ({ sanitizer: {}, brand: {}, renderer: {}, mailer: {}, audit: {}, tenantDisplayName: 'T' }),
 }));
@@ -180,6 +188,42 @@ describe('…/[id]/version/send (broadcasts.write) and …/[id]/schedule (broadc
     expect((await send.POST(postSendRequest(ID), routeParams(ID))).status).toBe(403);
     expect((await schedule.POST(postScheduleRequest(ID, { mode: 'send_now' }), routeParams(ID))).status).toBe(403);
     expect(harness.store.broadcastsRepo.findByIdInTx).not.toHaveBeenCalled();
+  });
+});
+
+describe('…/[id]/reject and …/[id]/cancel (broadcasts.write) — the two routes T081 widens', () => {
+  const IN_DESIGN = { ...SUBMITTED, status: 'in_design' as const, currentRound: 1 };
+  const reject = async () =>
+    (await importStaffRejectRoute()).POST(postStaffRequest(ID, 'reject', { rejectionReason: 'No' }), routeParams(ID));
+  const cancel = async () =>
+    (await importStaffCancelRoute()).POST(postStaffRequest(ID, 'cancel', { cancellationReason: 'No' }), routeParams(ID));
+
+  it('`marketing` → 200 on each; each names broadcasts.write', async () => {
+    resetVersionHarness({ broadcasts: [IN_DESIGN] });
+    expect((await reject()).status).toBe(200);
+    expect(harness.requireApiPermission.mock.calls[0]![1]).toBe('broadcasts.write');
+    resetVersionHarness({ broadcasts: [IN_DESIGN] });
+    expect((await cancel()).status).toBe(200);
+    expect(harness.requireApiPermission.mock.calls[0]![1]).toBe('broadcasts.write');
+  });
+
+  it('`manager` → 403 on each: nothing rejected, nothing cancelled, no bucket consumed', async () => {
+    resetVersionHarness({ broadcasts: [IN_DESIGN] });
+    harness.requireApiPermission.mockImplementation(async (_req: unknown, key: string) =>
+      key === 'broadcasts.read' ? staffCtx('manager', '66666666-6666-4666-8666-666666666666') : deniedResponse(),
+    );
+    expect((await reject()).status).toBe(403);
+    expect((await cancel()).status).toBe(403);
+    expect(harness.store.state.broadcasts.get(`test-tenant::${ID}`)!.status).toBe('in_design');
+    expect(harness.checkLimit).not.toHaveBeenCalled();
+  });
+
+  it('a member session → 403 on each, even for a person who also holds a portal account of the owning member', async () => {
+    resetVersionHarness({ broadcasts: [IN_DESIGN] });
+    harness.requireApiPermission.mockResolvedValue(deniedResponse());
+    expect((await reject()).status).toBe(403);
+    expect((await cancel()).status).toBe(403);
+    expect(harness.store.broadcastsRepo.withTx).not.toHaveBeenCalled();
   });
 });
 

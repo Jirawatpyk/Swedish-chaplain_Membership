@@ -138,6 +138,16 @@ export type F7RouteErrorCode =
   | 'no_portal_user'
   | 'no_proposal'
   | 'mode_not_allowed'
+  // F119 PR-2 — the member decision (`POST /api/broadcasts/[id]/decision`)
+  // and the widened withdraw / reject / cancel. `reason_required` (422): a
+  // change request or a withdrawn approval without a reason (FR-010);
+  // `stale_version` (409): the member decided on an older round than the one
+  // now awaiting them (carries the current version); `sending_started` (409):
+  // the E-Blast has been handed to the delivery provider — the send
+  // completes (FR-015).
+  | 'reason_required'
+  | 'stale_version'
+  | 'sending_started'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -395,6 +405,18 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'That scheduling option is not available at this stage. Reload to see what can be done now.',
     messageThai: 'ตัวเลือกการตั้งเวลานี้ใช้ไม่ได้ในขั้นตอนนี้ กรุณาโหลดหน้าใหม่เพื่อดูสิ่งที่ทำได้ในตอนนี้',
   },
+  reason_required: {
+    message: 'Please tell the chamber what should change.',
+    messageThai: 'กรุณาระบุสิ่งที่ต้องการให้หอการค้าแก้ไข',
+  },
+  stale_version: {
+    message: 'A newer version of this E-Blast is waiting for you. Review it before deciding.',
+    messageThai: 'มีฉบับใหม่กว่าของ E-Blast นี้รอคุณอยู่ กรุณาตรวจสอบก่อนตัดสินใจ',
+  },
+  sending_started: {
+    message: 'This E-Blast is already being sent and can no longer be withdrawn or stopped.',
+    messageThai: 'E-Blast นี้กำลังถูกส่งแล้ว จึงไม่สามารถถอนหรือหยุดได้อีก',
+  },
   broadcast_image_empty: {
     message: 'That file is empty. Please choose an image file with content.',
     messageThai: 'ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล',
@@ -607,6 +629,9 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   no_portal_user: 409,
   no_proposal: 409,
   mode_not_allowed: 409,
+  reason_required: 422,
+  stale_version: 409,
+  sending_started: 409,
   internal_error: 500,
 };
 

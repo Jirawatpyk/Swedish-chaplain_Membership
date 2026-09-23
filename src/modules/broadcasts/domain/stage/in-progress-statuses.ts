@@ -28,3 +28,37 @@ export const IN_PROGRESS_BROADCAST_STATUSES = [
   'changes_requested',
   'member_approved',
 ] as const satisfies readonly BroadcastStatus[];
+
+
+/**
+ * F119 T081 — the statuses from which "sending has begun" (FR-015: the
+ * hand-over to the delivery provider, i.e. entry into `sending`, and every
+ * status only reachable THROUGH `sending`). A withdrawal, a rejection or a
+ * withdrawn approval is answered `sending_started` here, and the send
+ * completes.
+ *
+ * `failed_to_dispatch` is deliberately NOT in the set: it is also reached
+ * from `approved` directly (a dispatch that never handed anything over), so
+ * "the send is under way" would be false there. It keeps the refusal of a
+ * closed E-Blast. Disjoint from `IN_PROGRESS_BROADCAST_STATUSES` by
+ * construction (pinned by `cancel-cutoff-policy.test.ts`).
+ */
+export const SENDING_STARTED_BROADCAST_STATUSES = [
+  'sending',
+  'sent',
+  'partially_sent',
+  'partial_delivery_accepted',
+] as const satisfies readonly BroadcastStatus[];
+
+const SENDING_STARTED_SET: ReadonlySet<BroadcastStatus> = new Set(SENDING_STARTED_BROADCAST_STATUSES);
+
+export function hasSendingStarted(status: BroadcastStatus): boolean {
+  return SENDING_STARTED_SET.has(status);
+}
+
+const IN_PROGRESS_SET: ReadonlySet<BroadcastStatus> = new Set(IN_PROGRESS_BROADCAST_STATUSES);
+
+/** Is the E-Blast in progress — reserving its allowance place, withdrawable, cascade-cancellable? */
+export function isInProgress(status: BroadcastStatus): boolean {
+  return IN_PROGRESS_SET.has(status);
+}

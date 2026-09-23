@@ -17,15 +17,23 @@
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast } from '../domain/broadcast';
+import type { BroadcastStatus } from '../domain/value-objects/broadcast-status';
 import type { EmailTransactionalPort } from './ports/email-transactional-port';
 import type { Locale } from '@/i18n/config';
 
 export type BroadcastMemberNotificationVariant =
   | { readonly templateKey: 'broadcast_approved'; readonly scheduledForIso: string }
-  | { readonly templateKey: 'broadcast_rejected'; readonly rejectionReason: string }
+  | {
+      readonly templateKey: 'broadcast_rejected';
+      readonly rejectionReason: string;
+      /** F119 T081 — the status the E-Blast was rejected from (any in-progress stage now). */
+      readonly fromStatus?: BroadcastStatus;
+    }
   | {
       readonly templateKey: 'broadcast_cancelled';
       readonly cancellationReason: string | null;
+      /** F119 T081 — the status the E-Blast was withdrawn / cancelled from. */
+      readonly fromStatus?: BroadcastStatus;
     };
 
 export interface EnqueueBroadcastMemberNotificationArgs {
@@ -51,10 +59,10 @@ export async function enqueueBroadcastMemberNotification(
       extraPayload = { scheduledForIso: variant.scheduledForIso };
       break;
     case 'broadcast_rejected':
-      extraPayload = { rejectionReason: variant.rejectionReason };
+      extraPayload = { rejectionReason: variant.rejectionReason, ...(variant.fromStatus ? { fromStatus: variant.fromStatus } : {}) };
       break;
     case 'broadcast_cancelled':
-      extraPayload = { cancellationReason: variant.cancellationReason };
+      extraPayload = { cancellationReason: variant.cancellationReason, ...(variant.fromStatus ? { fromStatus: variant.fromStatus } : {}) };
       break;
   }
 

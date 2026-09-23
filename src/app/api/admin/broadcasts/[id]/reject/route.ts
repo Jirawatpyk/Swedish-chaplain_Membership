@@ -4,7 +4,13 @@
  * Wraps `rejectBroadcast` use-case. FR-012: rejectionReason verbatim
  * to member email; sha256(reason) to audit log.
  *
- * Authz: admin only (manager 403).
+ * Authz: `broadcasts.write` (manager 403).
+ *
+ * F119 T081 — widened to every in-progress stage with a `rejected` exit
+ * (409 `sending_started` from `sending` onward), the E-Blast's images stamped
+ * in the same tx, and the 30 / 60 s per-(tenant, actor) staff write bucket —
+ * an atomic check consumed after the id parse and BEFORE the body is read or
+ * anything is written.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -21,6 +27,7 @@ import {
   httpStatusForBroadcastError,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
+import { consumeStaffWriteBucket } from '@/lib/broadcasts-staff-write-bucket';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -43,6 +50,10 @@ export async function POST(
     return errorResponse(404, 'broadcast_not_found', correlationId);
   }
 
+  const tenantCtx = resolveTenantFromRequest(request);
+  const limited = await consumeStaffWriteBucket(tenantCtx.slug, ctx.current.user.id, correlationId);
+  if (limited !== null) return limited;
+
   let raw: unknown;
   try {
     raw = await request.json();
@@ -56,13 +67,13 @@ export async function POST(
     });
   }
 
-  const tenantCtx = resolveTenantFromRequest(request);
   const deps = makeRejectBroadcastDeps(tenantCtx.slug);
 
   try {
     const result = await rejectBroadcast(deps, {
       broadcastId: parsedId.value,
       actorUserId: ctx.current.user.id,
+      actorRole: ctx.current.user.role ?? null,
       rejectionReason: parsed.data.rejectionReason,
       requestId: ctx.requestId,
       // E1 closure (verify-fix 2026-05-02) — single-source-of-truth
@@ -106,7 +117,7 @@ function mapRejectError(
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);
   const details: Record<string, unknown> = {};
-  if (error.kind === 'broadcast_invalid_state_transition') {
+  if (error.kind === 'broadcast_invalid_state_transition' || error.kind === 'sending_started') {
     details['observedStatus'] = error.observedStatus;
   } else if (error.kind === 'broadcast_concurrent_action_blocked') {
     details['observedStatus'] = error.observedStatus;

@@ -850,6 +850,16 @@ export {
   type ConfirmScheduleOutput,
   type ScheduleMode,
 } from './application/use-cases/approval/confirm-schedule';
+// T078 — the member's decision (approve · request changes · withdraw an
+// approval), composed in `src/lib/broadcast-approval-deps.ts` with the
+// marketing hand-off roster (`src/lib/broadcast-marketing-deps.ts`).
+export {
+  recordMemberDecision,
+  type RecordMemberDecisionDeps,
+  type RecordMemberDecisionError,
+  type RecordMemberDecisionInput,
+  type RecordMemberDecisionOutput,
+} from './application/use-cases/approval/record-member-decision';
 // T063 — the staff detail page's stage header ("whose turn", FR-026) and its
 // two standing warnings (no portal user; an image off the allow-list).
 export { turnOf, type WhoseTurn } from './domain/stage/whose-turn';

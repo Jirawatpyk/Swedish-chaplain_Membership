@@ -13,7 +13,9 @@
  *     caller's tenant tx (contacts are RLS-scoped), then the auth barrel's
  *     `listActiveUserIdsWithRole` for the linked logins (`users` is
  *     cross-tenant, read on the plain client), adapted to
- *     `MemberPortalRecipientPort`.
+ *     `MemberPortalRecipientPort`;
+ *   - the marketing hand-off roster for the member's decision (T078) —
+ *     `src/lib/broadcast-marketing-deps.ts` (auth barrel, evaluator-derived).
  *
  * The feature flag is read HERE, per request, and handed to the use case as a
  * boolean (T152): Application never reads `env`. The use case — not the
@@ -25,6 +27,7 @@
  * the pool-global `db`.
  */
 import type { TenantTx } from '@/lib/db';
+import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { listActiveUserIdsWithRole, resolveActorIdentities } from '@/modules/auth';
 import {
   dompurifySanitizer,
@@ -40,6 +43,7 @@ import {
   type ConfirmScheduleDeps,
   type ListBroadcastVersionsDeps,
   type ReadFormattingWarningsDeps,
+  type RecordMemberDecisionDeps,
   type MemberPortalRecipientPort,
   type SaveFormattedVersionDeps,
   type SendVersionToMemberDeps,
@@ -140,6 +144,20 @@ export function makeConfirmScheduleDeps(tenantId: string): ConfirmScheduleDeps {
     versionsRepo: drizzleBroadcastVersionsRepo,
     imageAllowlist: makeValidateImageSourceAllowlistDeps(tenantId).allowlistPort,
     portalRecipients: memberPortalRecipients,
+    outbox: eblastNotificationOutbox,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/** T078 — the member's decision; the hand-off roster is the tenant's marketing users. */
+export function makeRecordMemberDecisionDeps(tenantId: string): RecordMemberDecisionDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    versionsRepo: drizzleBroadcastVersionsRepo,
+    decisionsRepo: drizzleBroadcastDecisionsRepo,
+    marketingDirectory: makeMarketingDirectory(tenantId),
     outbox: eblastNotificationOutbox,
     audit: f7AuditAdapter,
     clock: systemClock,

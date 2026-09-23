@@ -128,9 +128,13 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
       // F119 PR-2 (T059 / T060)
       'broadcast_version_sent_to_member',
       'broadcast_schedule_confirmed',
+      // F119 PR-2 (T078)
+      'broadcast_member_approved',
+      'broadcast_member_changes_requested',
+      'broadcast_member_approval_withdrawn',
     ] as const satisfies ReadonlyArray<_Keys>;
     const _allDeclared: [Exclude<_Keys, (typeof declared)[number]>] extends [never] ? true : never = true;
     void _allDeclared;
-    expect(declared.length).toBe(21);
+    expect(declared.length).toBe(24);
   });
 });

@@ -3,10 +3,25 @@
  *
  * Shared between member-self + admin paths per FR-004a / Q10.
  *
- * State-check via Domain `authorizeCancel` policy:
- *   - cancellable iff status IN ('submitted', 'approved')
- *   - REJECTS sending/sent/rejected/cancelled/failed_to_dispatch with
- *     `broadcast_cancel_too_late` (409 + audit)
+ * State-check via Domain `authorizeCancel` policy (widened by F119 T081):
+ *   - cancellable at every in-progress stage (`IN_PROGRESS_BROADCAST_STATUSES`
+ *     — FR-015: withdrawable at ANY stage before sending begins)
+ *   - from `sending` onward → `sending_started` (409): the send completes
+ *   - a closed E-Blast that never started sending (rejected / cancelled /
+ *     expired / a failed dispatch) → `broadcast_cancel_too_late` (409)
+ *   Both refusals audit `broadcast_cancel_too_late` (the forensic event).
+ *
+ * F119 T081, in the SAME transaction as the transition:
+ *   - every live `broadcast_images` row of the E-Blast is stamped and audited
+ *     `broadcast_image_removed { reason: 'withdrawn' }` (the bytes go on the
+ *     sweep's next tick, under the last-reference rule — spec § Personal data);
+ *   - a MEMBER withdrawal tells the other party (FR-021 "withdrawn → the other
+ *     party"): one `eblast_member_decided_marketing { decision: 'withdrawn' }`
+ *     row per marketing recipient (FR-021a), ids only. `versionId` is null —
+ *     a whole-E-Blast withdrawal concerns no one version — and `round` is the
+ *     current round, or null before any round (the arm renders from the
+ *     broadcast alone). The enqueue is unconditional; the flag lives at the
+ *     drainer (T152a).
  *
  * Authorisation:
  *   - `member` actor: only the originating member
@@ -24,6 +39,10 @@ import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
+import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import type { EblastNotificationOutboxPort } from '../ports/eblast-notification-outbox-port';
+import type { MarketingDirectoryPort } from '../ports/marketing-directory-port';
+import { markOwnerImagesRemoved } from './_mark-owner-images-removed';
 
 import type { AuditPort } from '../ports/audit-port';
 import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
@@ -62,6 +81,8 @@ export type CancelActor =
 export type CancelBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
   | { readonly kind: 'broadcast_cancel_too_late'; readonly observedStatus: string }
+  /** F119 T081 — from `sending` onward: the send completes (FR-015). */
+  | { readonly kind: 'sending_started'; readonly observedStatus: string }
   | {
       readonly kind: 'broadcast_concurrent_action_blocked';
       readonly observedStatus: string;
@@ -74,7 +95,13 @@ export type CancelBroadcastError =
 
 export interface CancelBroadcastDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: BroadcastsRepo;
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'findByIdInTx' | 'applyTransition'>;
+  /** F119 T081 — the E-Blast's image rows, stamped in the cancel's tx. */
+  readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
+  /** F119 T081 — who "marketing" is for the member-withdrawal hand-off (FR-021a). */
+  readonly marketingDirectory: MarketingDirectoryPort;
+  /** F119 T081 — the ids-only approval-round outbox, on the cancel's tx. */
+  readonly eblastOutbox: EblastNotificationOutboxPort;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /** G2 closure (verify-fix 2026-05-02) — best-effort post-cancel email. */
@@ -86,6 +113,11 @@ export interface CancelBroadcastDeps {
 export interface CancelBroadcastInput {
   readonly broadcastId: BroadcastId;
   readonly actor: CancelActor;
+  /**
+   * F119 T081 — the SESSION role, recorded as-is on the image-removal audit
+   * rows (`check:actor-role-truth`: never a literal stand-in).
+   */
+  readonly actorRole: string | null;
   readonly cancellationReason: string | null;
   readonly requestId: string | null;
   /** E1 closure (verify-fix 2026-05-02) — locale for notification email. */
@@ -215,7 +247,7 @@ export async function cancelBroadcast(
           );
         }
         return err({
-          kind: 'broadcast_cancel_too_late',
+          kind: policyResult.error.code,
           observedStatus: existing.status,
         });
       }
@@ -290,9 +322,46 @@ export async function cancelBroadcast(
           actorRole,
           cancellationReason: input.cancellationReason,
           cancelledAt: now.toISOString(),
+          // F119 T081 — the stage it was withdrawn / cancelled from.
+          previousStatus: existing.status,
         },
         requestId: input.requestId,
       });
+
+      // F119 T081 — the images stop being reachable in the same tx.
+      await markOwnerImagesRemoved(
+        { imagesRepo: deps.imagesRepo, audit: deps.audit },
+        {
+          tenantId: deps.tenant.slug,
+          owner: { kind: 'broadcast', id: input.broadcastId as string },
+          reason: 'withdrawn',
+          at: now,
+          requestId: input.requestId ?? `cancel-${input.broadcastId as string}`,
+          actorUserId,
+          actorRole: input.actorRole,
+          relatedMemberId: cancelled.requestedByMemberId,
+        },
+        tx,
+      );
+
+      // F119 T081 — a member withdrawal is a hand-off to marketing (FR-021).
+      if (input.actor.kind === 'member') {
+        for (const recipient of await deps.marketingDirectory.listRecipients()) {
+          await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
+            type: 'eblast_member_decided_marketing',
+            toEmail: recipient.email,
+            locale: recipient.locale,
+            contextData: {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              versionId: null,
+              round: existing.currentRound >= 1 ? existing.currentRound : null,
+              decision: 'withdrawn',
+              recipientUserId: recipient.userId,
+            },
+          });
+        }
+      }
 
       // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — notify the
       // originating member. For self-cancel: confirmation. For
@@ -328,6 +397,7 @@ export async function cancelBroadcast(
           variant: {
             templateKey: 'broadcast_cancelled',
             cancellationReason: input.cancellationReason,
+            fromStatus: existing.status,
           },
           locale: memberPreferred ?? input.notificationLocale ?? 'en',
           tx,

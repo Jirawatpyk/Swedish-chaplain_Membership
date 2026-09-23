@@ -23,6 +23,7 @@ vi.mock('@/lib/rbac', () => ({
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
 }));
+vi.mock('@/lib/broadcast-marketing-deps', () => ({ makeMarketingDirectory: () => ({ listRecipients: async () => [] }) }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -35,6 +36,8 @@ vi.mock('@/modules/broadcasts', () => ({
       ? { ok: true, value: id }
       : { ok: false, error: { kind: 'invalid_uuid' } },
   tenantDefaultLocaleFor: () => 'en',
+  // F119 T081 — the widened route consumes the write bucket first.
+  broadcastsRateLimiter: { checkLimit: async () => ({ ok: true, value: true }) },
 }));
 
 const VALID_ID = '22222222-2222-2222-2222-222222222222';

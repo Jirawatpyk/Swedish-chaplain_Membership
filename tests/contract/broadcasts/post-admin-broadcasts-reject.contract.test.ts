@@ -34,6 +34,8 @@ vi.mock('@/modules/broadcasts', () => ({
       ? { ok: true, value: id }
       : { ok: false, error: { kind: 'invalid_uuid' } },
   tenantDefaultLocaleFor: () => 'en',
+  // F119 T081 — the widened route consumes the write bucket first.
+  broadcastsRateLimiter: { checkLimit: async () => ({ ok: true, value: true }) },
   emailTransactionalBridge: {
     sendMemberEmail: (...args: unknown[]) => sendMemberEmailMock(...args),
   },

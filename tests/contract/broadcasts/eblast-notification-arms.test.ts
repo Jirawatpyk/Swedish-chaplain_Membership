@@ -37,6 +37,7 @@ import { formatEblastEmailDate } from '@/modules/broadcasts/infrastructure/email
 import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
 import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/approval/send-version-to-member';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
+import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import {
   buildEblastNotificationPayload,
   type EblastNotificationReads,
@@ -48,6 +49,7 @@ import {
   makeApprovalVersion,
   makeFakeApprovalStore,
   makeFakeImageAllowlist,
+  makeFakeMarketingDirectory,
   makeFakePortalRecipients,
   makeMarketingRecipient,
   makePortalContact,
@@ -407,5 +409,62 @@ describe('SC-004 — every hand-off enqueues its outbox row inside the state-cha
     expect(store.state.broadcasts).toEqual(before);
   });
 
-  it.todo('record a member decision (T078): commit → one eblast_member_decided_marketing row per marketing recipient; rollback → zero');
+  describe('record a member decision (T078) — one eblast_member_decided_marketing row PER marketing recipient', () => {
+    const roster = [makeMarketingRecipient(), makeMarketingRecipient({ userId: '88888888-8888-4888-8888-888888888888', email: 'marketing-2@swecham.test' })];
+    const seedAwaiting = () =>
+      makeFakeApprovalStore({
+        broadcasts: [makeApprovalBroadcast({ status: 'awaiting_member_approval', currentRound: 1 })],
+        versions: [makeApprovalVersion({ sentToMemberAt: SENT_AT })],
+      });
+    const decide = () =>
+      recordMemberDecision(
+        {
+          tenant,
+          broadcastsRepo: store.broadcastsRepo,
+          versionsRepo: store.versionsRepo,
+          decisionsRepo: store.decisionsRepo,
+          marketingDirectory: makeFakeMarketingDirectory(roster),
+          outbox: store.outbox,
+          audit: makeRecordingF7Audit(),
+          clock: { now: () => store.now },
+        },
+        {
+          broadcastId: makeApprovalBroadcast().broadcastId,
+          memberId: MEMBER_ID,
+          actorUserId: '33333333-3333-4333-8333-333333333333',
+          actorRole: 'member',
+          contactId: 'dddddddd-0000-4000-8000-000000000001',
+          versionId: V1,
+          decision: 'changes_requested',
+          reason: REASON,
+          requestId: 'req-sc004-decide',
+        },
+      );
+
+    it('commit → exactly one row per recipient, on the tx withTx handed out, ids only (the reason is not among them)', async () => {
+      store = seedAwaiting();
+      const result = await decide();
+      expect(result.ok).toBe(true);
+      const rows = store.outbox.rows();
+      expect(rows.map((r) => r.toEmail)).toEqual(roster.map((r) => r.email));
+      for (const r of rows) {
+        expect(r.type).toBe('eblast_member_decided_marketing');
+        expect(r.tx).toBe(FAKE_TX);
+        expect(Object.keys(r.contextData).filter((k) => !ID_ONLY_KEYS.has(k))).toEqual([]);
+      }
+      expect(JSON.stringify(rows)).not.toContain('SECRET-REASON');
+    });
+
+    it('a commit failure AFTER the enqueue → zero rows, no decision row, the stage unchanged', async () => {
+      store = seedAwaiting();
+      const before = new Map(store.state.broadcasts);
+      store.failNextCommit();
+      const result = await decide();
+      expect(result.ok).toBe(false);
+      expect(store.outbox.enqueueInTx).toHaveBeenCalledTimes(roster.length); // the enqueues DID run inside the tx…
+      expect(store.outbox.rows()).toHaveLength(0); // …and rolled back with it
+      expect(store.decisionsRepo.rows()).toHaveLength(0);
+      expect(store.state.broadcasts).toEqual(before);
+    });
+  });
 });

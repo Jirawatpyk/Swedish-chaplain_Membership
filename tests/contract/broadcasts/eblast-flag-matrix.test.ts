@@ -13,8 +13,9 @@
  * Every arm runs the REAL `startFormattedVersion` / `saveFormattedVersion`
  * through the route; `harness.flagOn` stands in for the composition root's
  * `isEblastMemberApprovalEnabled()` read. The send (T059) and schedule (T060)
- * arms run the REAL use cases through their routes; the "decided" arm (T078)
- * joins this file with its route.
+ * arms run the REAL use cases through their routes; so does the "decided" arm
+ * (T078, `POST /api/broadcasts/[id]/decision` — a member route, so the
+ * portal session is `memberCtx()`).
  *
  * T149a / T152a — the drainer arm of the flag: the REAL outbox-dispatch `GET`
  * runs over a `@/lib/db` that captures the candidate SELECT's WHERE, rendered
@@ -34,10 +35,12 @@ import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { makeApprovalBroadcast, makeApprovalVersion } from '../../helpers/eblast-approval-fakes';
 import {
   harness,
+  importDecisionRoute,
   importScheduleRoute,
   importSendRoute,
   importVersionRoute,
   patchVersionRequest,
+  postDecisionRequest,
   postScheduleRequest,
   postSendRequest,
   postVersionRequest,
@@ -48,6 +51,10 @@ import {
 vi.mock('@/lib/rbac', async () => (await import('../../helpers/eblast-version-route-harness')).rbacMock());
 vi.mock('@/lib/tenant-context', async () => (await import('../../helpers/eblast-version-route-harness')).tenantContextMock());
 vi.mock('@/lib/logger', async () => (await import('../../helpers/eblast-version-route-harness')).loggerMock());
+vi.mock('@/lib/member-context', async () => {
+  const h = await import('../../helpers/eblast-version-route-harness');
+  return { requireMemberContext: async () => h.memberCtx() };
+});
 vi.mock('@/lib/broadcast-approval-deps', async () =>
   (await import('../../helpers/eblast-version-route-harness')).approvalDepsMock(),
 );
@@ -178,6 +185,18 @@ describe.each([
     const res = await POST(postSendRequest(ID), routeParams(ID));
     expect(res.status).toBe(200);
     expect(harness.store.state.broadcasts.get(`test-tenant::${ID}`)!).toMatchObject({ status: 'awaiting_member_approval', currentRound: 2 });
+  });
+
+  it('a broadcast already in awaiting_member_approval can still be DECIDED (POST …/decision → 200)', async () => {
+    resetVersionHarness({
+      broadcasts: [makeApprovalBroadcast({ status: 'awaiting_member_approval', currentRound: 1 })],
+      versions: [V0, V1_SENT],
+    });
+    harness.flagOn = flagOn;
+    const { POST } = await importDecisionRoute();
+    const res = await POST(postDecisionRequest(ID, { versionId: V1_SENT.id, decision: 'approved' }), routeParams(ID));
+    expect(res.status).toBe(200);
+    expect(harness.store.state.broadcasts.get(`test-tenant::${ID}`)!).toMatchObject({ status: 'member_approved', approvedVersionId: V1_SENT.id });
   });
 
   it('a broadcast already in member_approved can still be SCHEDULED (POST …/schedule → 200, promoted)', async () => {

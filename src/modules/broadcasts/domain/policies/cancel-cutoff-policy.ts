@@ -1,23 +1,26 @@
 /**
- * T026 — Cancellation cutoff policy (F7).
+ * T026 — Cancellation cutoff policy (F7) · widened by F119 T081.
  *
- * Encodes Clarifications Q10 + FR-004a: a broadcast is cancellable only
- * while in `submitted` or `approved` state. Once dispatch has begun
- * (`sending`) the point of no return is the Resend Broadcasts API
- * acknowledgement — the email has left the building, so to speak.
+ * A broadcast is cancellable (withdrawn by the member, cancelled by staff)
+ * at ANY in-progress stage — `IN_PROGRESS_BROADCAST_STATUSES`, the one Domain
+ * constant that also defines the allowance bucket and the erasure cascade
+ * (FR-015, FR-020, data-model § 9). The cut-off is entry into `sending`: the
+ * delivery provider has the E-Blast, so from `sending` onward the refusal is
+ * `sending_started` and the send completes. A closed E-Blast that never
+ * started sending (rejected, cancelled, expired, a failed dispatch) and a
+ * draft keep the pre-existing `broadcast_cancel_too_late`.
  *
- * Cancel attempts on terminal states return HTTP 409 with audit code
- * `broadcast_cancel_too_late`. This policy is the Domain-layer source
- * of truth for that decision; Application + DB enforce the same rule
- * (defence in depth).
+ * The F7.1a `sending`-with-batches arm is the operator path; it is kept as
+ * it was and never extended to the member.
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { hasSendingStarted, isInProgress } from '../stage/in-progress-statuses';
 import type { BroadcastStatus } from '../value-objects/broadcast-status';
 
 export type CancelCutoffError = {
-  readonly code: 'broadcast_cancel_too_late';
+  readonly code: 'broadcast_cancel_too_late' | 'sending_started';
   readonly status: BroadcastStatus;
 };
 
@@ -37,14 +40,14 @@ export type CancelCutoffError = {
  * ≥1 batch_manifest row — Phase 3 F71A US1 path). When false (F7 MVP
  * single-audience path), the original cutoff applies.
  *
- * Returns `true` for `submitted` | `approved` (unchanged) PLUS
+ * Returns `true` for every in-progress status (F119 T081) PLUS
  * `sending && hasBatches` (NEW). Returns `false` for everything else.
  */
 export function canCancel(
   status: BroadcastStatus,
   hasBatches: boolean = false,
 ): boolean {
-  if (status === 'submitted' || status === 'approved') return true;
+  if (isInProgress(status)) return true;
   // F7.1a US1 widening — sending+batches is cancellable
   if (status === 'sending' && hasBatches) return true;
   return false;
@@ -69,5 +72,6 @@ export function authorizeCancel(
   hasBatches: boolean = false,
 ): Result<true, CancelCutoffError> {
   if (canCancel(status, hasBatches)) return ok(true);
+  if (hasSendingStarted(status)) return err({ code: 'sending_started', status });
   return err({ code: 'broadcast_cancel_too_late', status });
 }

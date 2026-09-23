@@ -13,7 +13,7 @@ import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
-import { emailTransactionalBridge } from './email-transactional-bridge';
+import { eblastNotificationOutbox, emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
 import { membershipAccessBridge } from './membership-access-bridge';
 import { plansBridge } from './plans-bridge';
@@ -53,6 +53,7 @@ import type { EnforceTenantContextDeps } from '../application/use-cases/enforce-
 import type { ApproveBroadcastDeps } from '../application/use-cases/approve-broadcast';
 import type { RejectBroadcastDeps } from '../application/use-cases/reject-broadcast';
 import type { CancelBroadcastDeps } from '../application/use-cases/cancel-broadcast';
+import type { MarketingDirectoryPort } from '../application/ports/marketing-directory-port';
 import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-submit-broadcast';
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
 import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
@@ -350,6 +351,8 @@ export function makeRejectBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // F119 T081 — the rejection stamps the E-Blast's image rows in its tx.
+    imagesRepo: drizzleBroadcastImagesRepo,
     audit: f7AuditAdapter,
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
@@ -360,13 +363,24 @@ export function makeRejectBroadcastDeps(
   };
 }
 
+/**
+ * F119 T081 — `marketingDirectory` is a parameter because the roster crosses
+ * into the auth barrel (`src/lib/broadcast-marketing-deps.ts`
+ * `makeMarketingDirectory`), which this module cannot import.
+ */
 export function makeCancelBroadcastDeps(
   tenantId: string,
+  marketingDirectory: MarketingDirectoryPort,
 ): CancelBroadcastDeps {
   const tenant = asTenantContext(tenantId);
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // F119 T081 — the withdrawal stamps the E-Blast's image rows in its tx and
+    // hands a member withdrawal to marketing, ids only, on the same tx.
+    imagesRepo: drizzleBroadcastImagesRepo,
+    marketingDirectory,
+    eblastOutbox: eblastNotificationOutbox,
     audit: f7AuditAdapter,
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).

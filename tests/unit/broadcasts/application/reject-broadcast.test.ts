@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { rejectBroadcast } from '@/modules/broadcasts/application/use-cases/reject-broadcast';
+import { makeFakeBroadcastImagesRepo } from '../../../helpers/eblast-approval-fakes';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type {
@@ -238,6 +239,7 @@ function makeBroadcast(status: BroadcastStatus, fields: unknown): Broadcast {
 const baseInput = {
   broadcastId,
   actorUserId: 'admin-7',
+  actorRole: 'admin',
   rejectionReason: 'Off-topic for chamber audience.',
   requestId: 'req-1',
 } as const;
@@ -258,6 +260,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -285,6 +288,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -302,6 +306,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -320,7 +325,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(true);
@@ -336,19 +341,34 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     expect(fields.rejectionReason).toBe(baseInput.rejectionReason);
   });
 
+  // F119 T081 — from `sending` onward the refusal is `sending_started`.
+  it.each<BroadcastStatus>(['sending', 'sent', 'partially_sent', 'partial_delivery_accepted'])(
+    'rejects when status=%s → sending_started, nothing transitioned',
+    async (s) => {
+      const audit = makeAudit();
+      const repo = makeRepo({ lockedStatus: s });
+      const result = await rejectBroadcast(
+        { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
+        baseInput,
+      );
+      expect(result.ok ? null : result.error).toEqual({ kind: 'sending_started', observedStatus: s });
+      expect(repo.transitions).toHaveLength(0);
+    },
+  );
+
+  // `approved` has no `rejected` exit in the state machine (data-model § 8.2).
   it.each<BroadcastStatus>([
     'draft',
     'approved',
-    'sending',
-    'sent',
     'cancelled',
     'rejected',
     'failed_to_dispatch',
+    'expired_no_member_response',
   ])('rejects when status=%s โ’ broadcast_invalid_state_transition', async (s) => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: s });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -365,7 +385,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: null });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -386,6 +406,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -407,6 +428,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -428,6 +450,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -451,6 +474,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -468,7 +492,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       { ...baseInput, rejectionReason: '' },
     );
     expect(result.ok).toBe(false);
@@ -482,7 +506,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       { ...baseInput, rejectionReason: '   \t\n  ' },
     );
     expect(result.ok).toBe(false);
@@ -496,7 +520,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const tooLong = 'x'.repeat(2001);
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       { ...baseInput, rejectionReason: tooLong },
     );
     expect(result.ok).toBe(false);
@@ -513,7 +537,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const reason = 'y'.repeat(2000);
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       { ...baseInput, rejectionReason: reason },
     );
     expect(result.ok).toBe(true);
@@ -525,7 +549,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     const evt = audit.emits.find((e) => e.eventType === 'broadcast_rejected');
@@ -546,11 +570,11 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const audit2 = makeAudit();
     const repo2 = makeRepo({ lockedStatus: 'submitted' });
     await rejectBroadcast(
-      { tenant, broadcastsRepo: repo1.port, audit: audit1.port, clock },
+      { tenant, broadcastsRepo: repo1.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit1.port, clock },
       baseInput,
     );
     await rejectBroadcast(
-      { tenant, broadcastsRepo: repo2.port, audit: audit2.port, clock },
+      { tenant, broadcastsRepo: repo2.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit2.port, clock },
       baseInput,
     );
     const h1 = (audit1.emits[0]?.payload as { rejectionReasonHash: string })
@@ -571,7 +595,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       findByIdInTxResult: makeBroadcast('cancelled', {}),
     });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -591,7 +615,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       findByIdInTxResult: null,
     });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     if (!result.ok && result.error.kind === 'broadcast_concurrent_action_blocked') {
@@ -605,7 +629,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: true });
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -626,7 +650,7 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       },
     };
     const result = await rejectBroadcast(
-      { tenant, broadcastsRepo: repo, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
     if (!result.ok && result.error.kind === 'reject.server_error') {

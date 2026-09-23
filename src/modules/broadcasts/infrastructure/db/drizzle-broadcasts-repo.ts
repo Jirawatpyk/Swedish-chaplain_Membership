@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
@@ -26,6 +26,7 @@ import {
 } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
+import { IN_PROGRESS_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
@@ -375,8 +376,23 @@ function decodeCursor(
 }
 
 /**
+ * F119 T080 — "in progress" as SQL, derived from the ONE Domain constant
+ * (`IN_PROGRESS_BROADCAST_STATUSES`, research R7) with the Finding-G pattern
+ * of `TERMINAL_BROADCAST_STATUSES` below. It is the reserved allowance bucket
+ * (FR-020) AND the erasure / cancel cascade set — definitionally the same set,
+ * so both sites call this and neither carries a literal list.
+ */
+function inProgressStatusPredicate(): SQL {
+  const list = sql.join(
+    IN_PROGRESS_BROADCAST_STATUSES.map((s) => sql`${s}`),
+    sql`, `,
+  );
+  return sql`${broadcasts.status}::text IN (${list})`;
+}
+
+/**
  * Shared two-bucket member-quota count, run on a caller-supplied tx. Reserved
- * = `submitted` ∪ `approved`; consumed (`sent`) = `sent` ∪
+ * = `IN_PROGRESS_BROADCAST_STATUSES` (F119 T080; was `submitted` ∪ `approved`); consumed (`sent`) = `sent` ∪
  * `partial_delivery_accepted`, year-fenced on `quota_year_consumed` (Design D1
  * / FR-008c). Extracted (code-review) so `countForMemberQuota` (own runInTenant)
  * and `recheckMemberQuotaUnderLock` (bug #4 under-lock recheck) read via ONE
@@ -397,7 +413,7 @@ async function countMemberQuotaBucketsOnTx(
         and(
           eq(broadcasts.tenantId, tenantIdArg),
           eq(broadcasts.requestedByMemberId, memberId),
-          sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+          inProgressStatusPredicate(),
         ),
       ),
     tx
@@ -1368,9 +1384,9 @@ export function makeDrizzleBroadcastsRepo(
 
     /**
      * F7 Phase 9 / T178a — list in-flight broadcasts owned by a member.
-     * Used by the F3 archival/erasure cascade. Status filter narrow:
-     * only `submitted` + `approved` are cancellable per FR-004a / Q10
-     * (the cancellation cutoff is at Resend dispatch).
+     * Used by the F3 archival/erasure cascade. F119 T080: the in-progress
+     * set (`IN_PROGRESS_BROADCAST_STATUSES`) — every stage before the
+     * `sending` cut-off, the same set that holds an allowance place.
      */
     async listInFlightOwnedByMember(tenantIdArg, memberId) {
       return runInTenant(ctx, async (tx) => {
@@ -1381,7 +1397,7 @@ export function makeDrizzleBroadcastsRepo(
             and(
               eq(broadcasts.tenantId, tenantIdArg),
               eq(broadcasts.requestedByMemberId, memberId),
-              sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+              inProgressStatusPredicate(),
             ),
           )
           .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId));
