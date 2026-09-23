@@ -1763,6 +1763,15 @@ export const paymentsMetrics = {
 type PreviewMetricSurface = 'member' | 'staff' | 'detail';
 
 /**
+ * F119 T122 — the `decision` label of `broadcasts_member_decision_total`
+ * (`contracts/dashboard-and-notifications.md` § 4.2). Declared here for the
+ * same Principle III reason as `PreviewMetricSurface`: the member-decide use
+ * case (T078) passes its own decision union, and a widening there stops
+ * typechecking at the emit site until this list follows.
+ */
+type MemberDecisionMetricOutcome = 'approved' | 'changes_requested' | 'approval_withdrawn';
+
+/**
  * Swallow OTel emission failures. The `@opentelemetry/api` calls usually
  * no-op when no SDK is registered, but `@vercel/otel` exporter init can
  * throw on first record under transient pipeline misconfiguration. The
@@ -1915,6 +1924,93 @@ export const broadcastsMetrics = {
         'E-Blast preview render duration, p95 target 400 ms (F119)',
         'ms',
       ).record(ms, { tenant: tenantId ?? 'unknown', surface });
+    });
+  },
+
+  /**
+   * `broadcasts_version_sent_total{tenant,round}` — F119 T122; emitted by
+   * T059, once per version marketing sends to the member for approval.
+   * `round` is the approval round number (1, 2, …) — bounded in practice by
+   * how many revise cycles one E-Blast goes through, never an id.
+   */
+  versionSent(tenantId: string | null, round: number): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_version_sent_total',
+        'E-Blast versions sent to the member for approval (F119) — paired with `round` label',
+      ).add(1, { tenant: tenantId ?? 'unknown', round });
+    });
+  },
+
+  /**
+   * `broadcasts_member_decision_total{tenant,decision}` — F119 T122; emitted
+   * by T078, once per member decision on a sent version: `approved`,
+   * `changes_requested`, or `approval_withdrawn`.
+   */
+  memberDecision(tenantId: string | null, decision: MemberDecisionMetricOutcome): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_member_decision_total',
+        'Member decisions on an E-Blast version (F119) — paired with `decision` label',
+      ).add(1, { tenant: tenantId ?? 'unknown', decision });
+    });
+  },
+
+  /**
+   * `broadcasts_approval_expired_total{tenant}` — F119 T122; emitted by
+   * T130, once per E-Blast the approval lifecycle sweep expires after the
+   * 30-day clock runs out with no member decision.
+   */
+  approvalExpired(tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_approval_expired_total',
+        'E-Blasts expired awaiting member approval (F119)',
+      ).add(1, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `broadcasts_no_marketing_recipient_total{tenant}` — F119 T122; emitted by
+   * T066, once per hand-off to the marketing team that found nobody to
+   * notify. Alert: any non-zero count pages (§ 4.3 — a hand-off notified
+   * nobody).
+   */
+  noMarketingRecipient(tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_no_marketing_recipient_total',
+        'E-Blast hand-offs with no marketing recipient to notify (F119) — pages on any non-zero',
+      ).add(1, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `broadcasts_version_saved_total{tenant}` — F119 T122; emitted by T058's
+   * save path (`PATCH /api/admin/broadcasts/[id]/version`). A save is not a
+   * hand-off, so it is counted rather than audited (§ 4.2, analyze M2).
+   */
+  versionSaved(tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_version_saved_total',
+        'E-Blast version saves by marketing (F119) — counted, not audited',
+      ).add(1, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `broadcasts_member_decide_ms{tenant}` — F119 T122; recorded by T078,
+   * server duration of one member decision (approve / request changes /
+   * withdraw).
+   */
+  memberDecideMs(tenantId: string | null, ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_member_decide_ms',
+        'E-Blast member decision duration (F119)',
+        'ms',
+      ).record(ms, { tenant: tenantId ?? 'unknown' });
     });
   },
 
@@ -2350,6 +2446,69 @@ export const broadcastsMetrics = {
       observeGauge(
         'broadcasts_queue_pending',
         'Pending broadcasts (submitted + approved-with-scheduled)',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  // --- F119 T121 — E-Blast approval-stage gauges -------------------------
+  // `contracts/dashboard-and-notifications.md` § 4.1. Emitted by the existing
+  // `/api/internal/metrics/broadcasts-gauges` tick, zero-filled over its
+  // `observed` tenant set (a count reads 0, never its last value). They sit
+  // BESIDE `queue_pending`, which stays on ('submitted','approved') — its
+  // § 22.3 alert threshold is calibrated to that set.
+
+  /** `broadcasts_awaiting_member_approval_count{tenant}` — `status = 'awaiting_member_approval'`. */
+  awaitingMemberApprovalCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_awaiting_member_approval_count',
+        'E-Blasts awaiting member approval (F119)',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts_awaiting_member_oldest_age_seconds{tenant}` — age of the
+   * longest-waiting `awaiting_member_approval` row, from `stage_entered_at`.
+   * 0 when nothing is waiting (a level, like the F114 members age gauge).
+   * Alerts § 4.3: > 7 d warning, > 14 d page.
+   */
+  awaitingMemberOldestAgeSeconds(tenantId: string, seconds: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_awaiting_member_oldest_age_seconds',
+        'Age of the oldest E-Blast awaiting member approval, seconds (F119) — warn 7d, page 14d',
+        { tenant: tenantId },
+        seconds,
+      );
+    });
+  },
+
+  /** `broadcasts_changes_requested_count{tenant}` — `status = 'changes_requested'`. */
+  changesRequestedCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_changes_requested_count',
+        'E-Blasts with changes requested by the member (F119)',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts_marketing_turn_count{tenant}` — E-Blasts waiting on the
+   * marketing team: `status IN ('submitted','in_design','changes_requested','member_approved')`.
+   */
+  marketingTurnCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_marketing_turn_count',
+        'E-Blasts on the marketing team\'s turn (F119)',
         { tenant: tenantId },
         count,
       );
