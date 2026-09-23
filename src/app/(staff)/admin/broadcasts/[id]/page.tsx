@@ -11,7 +11,7 @@ import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-read
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { PreviewSurface } from '@/components/broadcast/use-preview-html';
-import { makeGetBroadcastDeps, parseBroadcastId } from '@/modules/broadcasts';
+import { canCancel, makeGetBroadcastDeps, parseBroadcastId } from '@/modules/broadcasts';
 import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
 import { runInTenant } from '@/lib/db';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
@@ -102,8 +102,13 @@ export default async function AdminBroadcastDetailPage({
   // Cancel (pre-send) is the whole story again.
   // Pre-send Cancel vs mid-send Halt are mutually exclusive (disjoint statuses);
   // both, plus Approve/Reject, share one right-aligned action row.
-  const isCancellable =
-    broadcast.status === 'submitted' || broadcast.status === 'approved';
+  //
+  // F119 T051 — read the Domain cut-off rather than a hand-listed pair, so the
+  // button and the `/cancel` use case (`authorizeCancel`) cannot disagree. Today
+  // that is still `submitted | approved`; T081 widens the policy to the
+  // in-progress set and this CTA follows without a second edit. (A hand-widened
+  // list here would show Cancel on the new stages and 409 on click.)
+  const isCancellable = canCancel(broadcast.status);
   const showAdminActionRow = !isReadOnlyManager && isCancellable;
 
   return (

@@ -30,6 +30,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
 import { emailTemplateRenderer } from '@/modules/broadcasts/infrastructure/resend/email-template-renderer';
 import { renderBroadcastPreview } from '@/modules/broadcasts/application/use-cases/render-broadcast-preview';
+import { canCancel } from '@/modules/broadcasts/domain/policies/cancel-cutoff-policy';
 
 vi.mock('next/link', () => ({
   default: ({ children }: { children?: ReactNode }) => children as ReactElement,
@@ -59,7 +60,7 @@ vi.mock('@/lib/db', () => ({
   runInTenant: vi.fn(async () => [{ company_name: 'Northern Lights Co' }]),
 }));
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
-  CancelBroadcastAction: () => null,
+  CancelBroadcastAction: () => <div data-testid="cancel-action" />,
 }));
 vi.mock('@/components/broadcast/admin/review-actions', () => ({
   ReviewActions: () => <div data-testid="review-actions" />,
@@ -78,7 +79,14 @@ vi.mock('@/components/broadcast/admin/manager-readonly-banner', () => ({
 
 const findByIdMock = vi.fn();
 const renderBroadcastPreviewMock = vi.fn();
-vi.mock('@/modules/broadcasts', () => ({
+// F119 T051 — the page gates Cancel on the Domain `canCancel`; the real
+// policy, not a copy of its rule.
+vi.mock('@/modules/broadcasts', async () => ({
+  canCancel: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/policies/cancel-cutoff-policy')>(
+      '@/modules/broadcasts/domain/policies/cancel-cutoff-policy',
+    )
+  ).canCancel,
   makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
   parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
   renderBroadcastPreview: (...args: unknown[]) => renderBroadcastPreviewMock(...args),
@@ -179,6 +187,29 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
   it('a submitted broadcast that renders keeps its Approve / Reject actions', async () => {
     const html = await renderPage();
     expect(html).toContain('data-testid="review-actions"');
+    // Positive control for the case below: the Cancel slot does render.
+    expect(html).toContain('data-testid="cancel-action"');
+  });
+
+  /**
+   * F119 T051 — the five 0305 stages must not inherit today's CTAs. Approve /
+   * Reject stay `submitted`-only (the approval-round actions are their own
+   * tasks), and Cancel follows the Domain `canCancel` — the same policy the
+   * `/cancel` use case enforces — so the button can never offer what the
+   * server would refuse. Derived, not hard-coded: T081 widens the policy and
+   * this keeps holding.
+   */
+  it.each([
+    'in_design',
+    'awaiting_member_approval',
+    'changes_requested',
+    'member_approved',
+    'expired_no_member_response',
+  ] as const)('%s shows no Approve / Reject, and Cancel only if canCancel admits it', async (status) => {
+    findByIdMock.mockResolvedValue(makeBroadcast({ status }));
+    const html = await renderPage();
+    expect(html).not.toContain('data-testid="review-actions"');
+    expect(html.includes('data-testid="cancel-action"')).toBe(canCancel(status));
   });
 
   /**

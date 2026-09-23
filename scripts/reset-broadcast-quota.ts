@@ -72,6 +72,25 @@ const SEND_STAGE_STATUSES = [
   'partial_delivery_accepted',
 ] as const;
 
+/**
+ * F119 T051 — the statuses that RESERVE a quota slot: data-model § 9's
+ * `IN_PROGRESS_BROADCAST_STATUSES` (hand-mirrored — this script imports nothing
+ * from `src/` and runs on bare `postgres`). The four approval-round stages hold
+ * the allowance exactly like `submitted` / `approved`, so a report that left
+ * them out would print "reserved=0" for a member who cannot submit. None of
+ * them is in `SEND_STAGE_STATUSES`, so the DELETE below already removes them
+ * (their `broadcast_versions` / `broadcast_member_decisions` rows go with the
+ * CASCADE, which 0305's append-only trigger permits at trigger depth > 1).
+ */
+const RESERVING_STATUSES: ReadonlyArray<string> = [
+  'submitted',
+  'approved',
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+];
+
 function loadDatabaseUrl(): string {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
   try {
@@ -141,7 +160,7 @@ async function main(): Promise<void> {
       GROUP BY status ORDER BY n DESC
     `;
     const reserved = before
-      .filter((r) => ['submitted', 'approved'].includes(r.status))
+      .filter((r) => RESERVING_STATUSES.includes(r.status))
       .reduce((s, r) => s + r.n, 0);
     const used = before
       .filter((r) => ['sent', 'partial_delivery_accepted'].includes(r.status))
@@ -197,7 +216,7 @@ async function main(): Promise<void> {
       );
       // `used` counts send-stage broadcasts, which are NOT deleted, so it is
       // unchanged; reserved goes to 0 because every in-flight reserved row
-      // (submitted/approved) is a pre-send status deleted by this script.
+      // (RESERVING_STATUSES) is a pre-send status deleted by this script.
       console.log(`[dry-run] quota after → reserved=0 used=${used}`);
       return;
     }

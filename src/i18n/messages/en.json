@@ -3280,6 +3280,11 @@
           "cancelled": "Cancelled",
           "failed_to_dispatch": "Failed",
           "partially_sent": "Partially sent",
+          "in_design": "In design",
+          "awaiting_member_approval": "Awaiting member approval",
+          "changes_requested": "Changes requested by member",
+          "member_approved": "Member approved — awaiting schedule",
+          "expired_no_member_response": "Expired — no member response",
           "partial_delivery_accepted": "Partial delivery accepted"
         },
         "statusGroup": {
@@ -6163,6 +6168,11 @@
           "cancelled": "Cancelled",
           "failed_to_dispatch": "Failed",
           "partially_sent": "Partially sent",
+          "in_design": "In design",
+          "awaiting_member_approval": "Awaiting member approval",
+          "changes_requested": "Changes requested by member",
+          "member_approved": "Member approved — awaiting schedule",
+          "expired_no_member_response": "Expired — no member response",
           "partial_delivery_accepted": "Partial delivery accepted"
         },
         "pagination": {

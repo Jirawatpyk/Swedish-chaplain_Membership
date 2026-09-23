@@ -39,6 +39,26 @@ interface FieldRule {
 }
 
 /**
+ * F119 (0305) — the approval-round statuses (`in_design`,
+ * `awaiting_member_approval`, `changes_requested`, `member_approved`) and the
+ * closed `expired_no_member_response` are all entered after submission and
+ * never reach a send stage, so they share one rule set. `approvedAt` /
+ * `approvedByUserId` are deliberately UNCONSTRAINED: the
+ * `approved → in_design | changes_requested` edges (data-model § 8.2) leave a
+ * row that was once scheduled, and nothing in the spec clears `approved_at`.
+ */
+const APPROVAL_ROUND_RULES: ReadonlyArray<FieldRule> = [
+  { field: 'submittedAt', mustBeNull: false },
+  { field: 'rejectedAt', mustBeNull: true },
+  { field: 'sendingStartedAt', mustBeNull: true },
+  { field: 'sentAt', mustBeNull: true },
+  { field: 'cancelledAt', mustBeNull: true },
+  { field: 'failedToDispatchAt', mustBeNull: true },
+  { field: 'quotaYearConsumed', mustBeNull: true },
+  { field: 'quotaConsumedAt', mustBeNull: true },
+];
+
+/**
  * Per-status expected nullability of lifecycle fields. `true` in
  * `mustBeNull` means the field MUST be null in this status; `false`
  * means it MUST be non-null. Fields not listed for a status are
@@ -171,6 +191,11 @@ const RULES: Readonly<Record<Broadcast['status'], ReadonlyArray<FieldRule>>> = {
     { field: 'quotaYearConsumed', mustBeNull: false },
     { field: 'quotaConsumedAt', mustBeNull: false },
   ],
+  in_design: APPROVAL_ROUND_RULES,
+  awaiting_member_approval: APPROVAL_ROUND_RULES,
+  changes_requested: APPROVAL_ROUND_RULES,
+  member_approved: APPROVAL_ROUND_RULES,
+  expired_no_member_response: APPROVAL_ROUND_RULES,
 };
 
 export function enforceOneActiveBroadcastState(

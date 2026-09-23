@@ -64,6 +64,24 @@ import { asTenantContext } from '@/modules/tenants';
 // Round 4 F12 — the ENFORCED ceiling, read from the same function the send path
 // reads, not the raw constant. See the `bound` assignment below.
 import { currentAudienceCeiling } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
+import { IN_PROGRESS_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
+
+/**
+ * F119 T051 — "in flight" is the Domain's in-progress set (which now carries
+ * the four approval-round stages) plus the two send stages. Derived rather
+ * than hand-listed: a report that silently hides five stages is worse than no
+ * report. Every in-progress row can still reach `approved` and a dispatch tick,
+ * so every one of them is ACTIONABLE below; the send stages are not.
+ */
+const IN_FLIGHT_STATUSES: ReadonlyArray<string> = [
+  ...IN_PROGRESS_BROADCAST_STATUSES,
+  'sending',
+  'partially_sent',
+];
+const inFlightSql = sql.join(
+  IN_FLIGHT_STATUSES.map((s) => sql`${s}`),
+  sql`, `,
+);
 
 /** One row per in-flight status; counts only. */
 interface StatusRow {
@@ -112,7 +130,7 @@ async function main(): Promise<void> {
              )::int                                                AS over_bound
         FROM broadcasts b
        WHERE b.tenant_id = ${tenantId}
-         AND b.status IN ('submitted', 'approved', 'sending', 'partially_sent')
+         AND b.status IN (${inFlightSql})
        GROUP BY b.status
        ORDER BY b.status
     `)) as unknown as StatusRow[];
@@ -123,7 +141,7 @@ async function main(): Promise<void> {
              b.estimated_recipient_count::int           AS estimated_recipient_count
         FROM broadcasts b
        WHERE b.tenant_id = ${tenantId}
-         AND b.status IN ('submitted', 'approved', 'sending', 'partially_sent')
+         AND b.status IN (${inFlightSql})
          AND b.estimated_recipient_count > ${bound}
        ORDER BY b.estimated_recipient_count DESC
        LIMIT 50
@@ -133,11 +151,11 @@ async function main(): Promise<void> {
   });
 
   if (rows.length === 0) {
-    console.log('in flight (submitted / approved / sending / partially_sent): NONE');
+    console.log(`in flight (${IN_FLIGHT_STATUSES.join(' / ')}): NONE`);
   } else {
     for (const r of rows) {
       console.log(
-        `${r.status.padEnd(10)} n=${String(r.n).padStart(4)}  max_estimated_recipients=${String(r.max_est).padStart(6)}  over_bound=${r.over_bound}`,
+        `${r.status.padEnd(24)} n=${String(r.n).padStart(4)}  max_estimated_recipients=${String(r.max_est).padStart(6)}  over_bound=${r.over_bound}`,
       );
     }
   }
@@ -153,7 +171,7 @@ async function main(): Promise<void> {
   // those would be a wrong instruction on a pre-merge checklist — and it is what
   // this script printed, because the ACTION REQUIRED text was written against a
   // query that inventories four statuses.
-  const ACTIONABLE = new Set(['submitted', 'approved']);
+  const ACTIONABLE: ReadonlySet<string> = new Set(IN_PROGRESS_BROADCAST_STATUSES);
   const actionable = over.filter((r) => ACTIONABLE.has(r.status));
   const informational = over.filter((r) => !ACTIONABLE.has(r.status));
 

@@ -3280,6 +3280,11 @@
           "cancelled": "Avbruten",
           "failed_to_dispatch": "Misslyckades",
           "partially_sent": "Delvis skickad",
+          "in_design": "Under utformning",
+          "awaiting_member_approval": "Inväntar medlemmens godkännande",
+          "changes_requested": "Medlemmen begär ändringar",
+          "member_approved": "Godkänd av medlem — inväntar schemaläggning",
+          "expired_no_member_response": "Utgången — inget svar från medlem",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "statusGroup": {
@@ -6163,6 +6168,11 @@
           "cancelled": "Avbruten",
           "failed_to_dispatch": "Misslyckades",
           "partially_sent": "Delvis skickad",
+          "in_design": "Under utformning",
+          "awaiting_member_approval": "Inväntar medlemmens godkännande",
+          "changes_requested": "Medlemmen begär ändringar",
+          "member_approved": "Godkänd av medlem — inväntar schemaläggning",
+          "expired_no_member_response": "Utgången — inget svar från medlem",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "pagination": {

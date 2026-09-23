@@ -103,7 +103,12 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
 
     // Positive controls: the count alone passes if the strip renders the wrong
     // eight, and it also passes if a live status were retired by mistake.
-    expect(offered).toHaveLength(8);
+    // F119 (0305): 8 → 13 — the five approval-round statuses are live, so
+    // each is offered. Which GROUP they sit in is T116's (queue-filters
+    // `IN_REVIEW_STATUSES`); until then they derive into "Closed".
+    expect(offered).toHaveLength(13);
+    expect(offered).toContain('awaiting_member_approval');
+    expect(offered).toContain('expired_no_member_response');
     expect(offered).toContain('sent');
     expect(offered).toContain('failed_to_dispatch');
     expect(offered).not.toContain('partially_sent');

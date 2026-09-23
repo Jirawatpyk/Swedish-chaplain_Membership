@@ -3280,6 +3280,11 @@
           "cancelled": "ยกเลิก",
           "failed_to_dispatch": "ส่งไม่สำเร็จ",
           "partially_sent": "ส่งสำเร็จบางส่วน",
+          "in_design": "กำลังออกแบบ",
+          "awaiting_member_approval": "รอสมาชิกอนุมัติ",
+          "changes_requested": "สมาชิกขอแก้ไข",
+          "member_approved": "สมาชิกอนุมัติแล้ว — รอกำหนดส่ง",
+          "expired_no_member_response": "หมดอายุ — สมาชิกไม่ตอบกลับ",
           "partial_delivery_accepted": "ยอมรับการส่งบางส่วนแล้ว"
         },
         "statusGroup": {
@@ -6163,6 +6168,11 @@
           "cancelled": "ยกเลิก",
           "failed_to_dispatch": "ส่งไม่สำเร็จ",
           "partially_sent": "ส่งสำเร็จบางส่วน",
+          "in_design": "กำลังออกแบบ",
+          "awaiting_member_approval": "รอสมาชิกอนุมัติ",
+          "changes_requested": "สมาชิกขอแก้ไข",
+          "member_approved": "สมาชิกอนุมัติแล้ว — รอกำหนดส่ง",
+          "expired_no_member_response": "หมดอายุ — สมาชิกไม่ตอบกลับ",
           "partial_delivery_accepted": "ยอมรับการส่งบางส่วนแล้ว"
         },
         "pagination": {

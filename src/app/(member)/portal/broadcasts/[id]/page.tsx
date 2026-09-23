@@ -34,6 +34,7 @@ import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
+  canCancel,
   getMemberBroadcast,
   makeGetMemberBroadcastDeps,
   parseBroadcastId,
@@ -314,8 +315,12 @@ export default async function BroadcastDetailPage(props: {
           Scope note (review #4): the domain canCancel policy also permits
           cancelling a `sending` broadcast with pending split batch_manifests
           (F7.1a US1) — intentionally not surfaced here (dormant for <10k
-          recipients; tracked as F7.1a follow-up). */}
-      {(broadcast.status === 'submitted' || broadcast.status === 'approved') ? (
+          recipients; tracked as F7.1a follow-up) — `hasBatches` stays false.
+
+          F119 T051 — gated on the Domain `canCancel` rather than a hand-listed
+          pair, so the member's Withdraw and the `/cancel` use case cannot
+          disagree; T081 widens the policy to the in-progress set. */}
+      {canCancel(broadcast.status) ? (
         <div className="flex justify-end">
           <CancelBroadcastAction
             broadcastId={broadcast.broadcastId as string}

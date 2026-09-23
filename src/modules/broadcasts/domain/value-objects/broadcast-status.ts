@@ -2,9 +2,9 @@
  * T024 — `BroadcastStatus` Domain value object (F7) + F7.1a Phase 3 B0
  * extension (2026-05-19).
  *
- * 10-state lifecycle constant tuple (FR-004 + FR-004a + FR-008a/b).
- * Mirrors the `broadcastStatusEnum` in Infrastructure schema + DB
- * pgEnum (migrations 0064 + 0169) verbatim. The Domain owns the
+ * 15-state lifecycle constant tuple (FR-004 + FR-004a + FR-008a/b, and the
+ * five F119 approval-round statuses). Mirrors the `broadcastStatusEnum` in
+ * Infrastructure schema + DB pgEnum (migrations 0064 + 0169 + 0305) verbatim. The Domain owns the
  * **transition policy** (`broadcast-status-transitions.ts`);
  * Infrastructure owns the **DB enum + state-machine trigger**
  * (data-model § 4.2).
@@ -24,6 +24,13 @@ export const BROADCAST_STATUSES = [
   // F7.1a US1 — Phase 3 B0 extension
   'partially_sent',
   'partial_delivery_accepted',
+  // F119 (migration 0305, data-model § 7.1) — the two-sided approval round.
+  // Same order as the `broadcast_status` pgEnum and `broadcastStatusEnum`.
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+  'expired_no_member_response',
 ] as const;
 
 export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number];
@@ -96,6 +103,9 @@ export const TERMINAL_BROADCAST_STATUSES = [
   'cancelled',
   'failed_to_dispatch',
   'partial_delivery_accepted',
+  // F119 — the day-30 close of an unanswered version (FR-022a). Frees the
+  // allowance: it is in neither the reserved nor the consumed set (§ 9).
+  'expired_no_member_response',
 ] as const satisfies readonly BroadcastStatus[];
 
 const TERMINAL_BROADCAST_STATUS_SET: ReadonlySet<BroadcastStatus> = new Set(

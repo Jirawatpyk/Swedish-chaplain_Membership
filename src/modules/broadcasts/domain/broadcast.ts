@@ -269,6 +269,21 @@ export type BroadcastPhase =
       readonly partialDeliveryAcceptedByUserId: string;
       readonly quotaYearConsumed: number;
       readonly quotaConsumedAt: Date;
+    }
+  // F119 (0305) — the approval round and its day-30 close. All five are
+  // entered after submission and never reach a send stage, so submission is
+  // the only lifecycle guarantee they share; `approvedAt` may or may not
+  // survive (`approved → in_design | changes_requested`), so it is not
+  // narrowed here.
+  | {
+      readonly kind:
+        | 'in_design'
+        | 'awaiting_member_approval'
+        | 'changes_requested'
+        | 'member_approved'
+        | 'expired_no_member_response';
+      readonly submittedAt: Date;
+      readonly submittedByUserId: string;
     };
 
 /**
@@ -397,6 +412,21 @@ export function phaseOf(b: Broadcast): BroadcastPhase {
         partialDeliveryAcceptedByUserId: b.partialDeliveryAcceptedByUserId,
         quotaYearConsumed: b.quotaYearConsumed,
         quotaConsumedAt: b.quotaConsumedAt,
+      };
+    case 'in_design':
+    case 'awaiting_member_approval':
+    case 'changes_requested':
+    case 'member_approved':
+    case 'expired_no_member_response':
+      if (b.submittedAt === null) {
+        throw new Error(
+          `BroadcastPhaseInvariantViolation: status='${b.status}' but submittedAt is null (broadcastId=${b.broadcastId})`,
+        );
+      }
+      return {
+        kind: b.status,
+        submittedAt: b.submittedAt,
+        submittedByUserId: b.submittedByUserId,
       };
   }
 }

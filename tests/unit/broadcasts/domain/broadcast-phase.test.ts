@@ -227,4 +227,31 @@ describe('phaseOf', () => {
       }),
     ).toThrow(/BroadcastPhaseInvariantViolation/);
   });
+
+  // F119 T051 — the five 0305 statuses. Every one of them is entered after
+  // submission, so each needs `submittedAt`; nothing else is guaranteed
+  // (`approvedAt` survives an `approved → in_design | changes_requested` edge).
+  const approvalRoundStatuses = [
+    'in_design',
+    'awaiting_member_approval',
+    'changes_requested',
+    'member_approved',
+    'expired_no_member_response',
+  ] as const;
+
+  it.each(approvalRoundStatuses)('%s with submittedAt → kind is the status', (status) => {
+    const submittedAt = new Date('2026-09-01T00:00:00Z');
+    const phase = phaseOf({ ...baseBroadcast, status, submittedAt });
+    expect(phase).toEqual({
+      kind: status,
+      submittedAt,
+      submittedByUserId: baseBroadcast.submittedByUserId,
+    });
+  });
+
+  it.each(approvalRoundStatuses)('%s with null submittedAt → throws invariant violation', (status) => {
+    expect(() => phaseOf({ ...baseBroadcast, status, submittedAt: null })).toThrow(
+      new RegExp(`BroadcastPhaseInvariantViolation: status='${status}'`),
+    );
+  });
 });

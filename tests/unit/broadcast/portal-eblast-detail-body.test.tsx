@@ -63,7 +63,14 @@ vi.mock('@/modules/members/members-deps', () => ({
 
 const getMemberBroadcastMock = vi.fn();
 const renderBroadcastPreviewMock = vi.fn();
-vi.mock('@/modules/broadcasts', () => ({
+// F119 T051 — the page gates Cancel on the Domain `canCancel`; the real
+// policy, not a copy of its rule.
+vi.mock('@/modules/broadcasts', async () => ({
+  canCancel: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/policies/cancel-cutoff-policy')>(
+      '@/modules/broadcasts/domain/policies/cancel-cutoff-policy',
+    )
+  ).canCancel,
   getMemberBroadcast: (...args: unknown[]) => getMemberBroadcastMock(...args),
   makeGetMemberBroadcastDeps: () => ({}),
   parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),

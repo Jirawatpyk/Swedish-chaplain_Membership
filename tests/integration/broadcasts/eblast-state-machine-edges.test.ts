@@ -30,7 +30,6 @@ import {
   BROADCAST_TRANSITIONS,
   canTransition,
 } from '@/modules/broadcasts/domain/policies/broadcast-status-transitions';
-import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import {
   broadcasts,
   type NewBroadcastRow,
@@ -167,9 +166,7 @@ describe('F119 T037 — § 8.2 state-machine edges (DB trigger ↔ Domain map)',
             out.push(`${from}→${to}: DB probe failed — ${db}`);
             continue;
           }
-          // T051 widens BroadcastStatus to the 15 DB values; the assertions
-          // below are the runtime check, the casts only bridge the gap until then.
-          const domain = canTransition(from as BroadcastStatus, to as BroadcastStatus)
+          const domain = canTransition(from, to)
             ? 'permitted'
             : 'refused';
           if (domain !== db) out.push(`${from}→${to}: DB ${db}, Domain ${domain}`);
