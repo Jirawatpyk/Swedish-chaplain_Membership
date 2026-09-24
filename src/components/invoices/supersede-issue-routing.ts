@@ -1,12 +1,13 @@
 /**
- * 106-void-on-reissue follow-up — `/issue-auto-drafted`'s `supersede_issues`
- * → i18n routing (pure).
+ * 106-void-on-reissue follow-up — `supersede_issues` → i18n routing (pure).
  *
- * The route reports each best-effort supersede-void failure as a structured
- * `{ kind, invoice_id?, bill_document_number?, error_code? }` entry; this
- * leaf turns them into message keys under
- * `admin.invoices.autoRenewalQueue.actions.supersedeWarning.` so the toast
- * never shows a server string or an internal UUID.
+ * Every route that issues a membership bill through the renewal bridge
+ * (`/issue-auto-drafted`, `/admin/members/[id]/renew`) reports each
+ * best-effort supersede-void failure as a structured
+ * `{ kind, invoice_id?, bill_document_number?, error_code? }` entry
+ * (`src/lib/supersede-issues-wire.ts`); this leaf turns them into message
+ * keys under `admin.invoices.supersedeWarning.` so the toast never shows a
+ * server string or an internal UUID.
  *
  * Fail-closed: the body is untrusted JSON, so a malformed entry, an unknown
  * `kind`, or a response carrying only the deprecated `supersede_warnings`
