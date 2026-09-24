@@ -112,7 +112,11 @@ export type InvoicesTableRow = {
   readonly buyerSubtitle: string | null;
   readonly issueDate: string | null;
   readonly dueDate: string | null;
-  readonly totalSatang: string;
+  /**
+   * Stringified satang, or null for a draft — a draft has no total until it
+   * is issued, so it renders "—" rather than a misleading "0.00 THB".
+   */
+  readonly totalSatang: string | null;
   readonly hasPdf: boolean;
   /**
    * Count of credit notes issued against this invoice. Zero on 99%
@@ -714,8 +718,15 @@ export function InvoicesTable({
               <TableCell className="align-middle whitespace-nowrap">
                 {r.dueDate ? formatLocalisedDate(r.dueDate, locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'}
               </TableCell>
-              <TableCell className="align-middle whitespace-nowrap text-right tabular-nums">
-                {formatSatang(r.totalSatang)} THB
+              <TableCell
+                className="align-middle whitespace-nowrap text-right tabular-nums"
+                data-testid="invoice-total"
+              >
+                {r.totalSatang === null ? (
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  <>{formatSatang(r.totalSatang)} THB</>
+                )}
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap text-right">
                 {/* Action mix mirrors the invoice-detail "⋯" menu
