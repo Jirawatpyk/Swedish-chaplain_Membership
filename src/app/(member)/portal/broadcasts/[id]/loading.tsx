@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 
@@ -42,9 +43,11 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        {/* L8 — the settled page's Back link is `self-start`; so is this one, or
+            its label would sit centred full-width and jump left on settle. */}
         <Link
           href="/portal/benefits?tab=broadcasts"
-          className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'self-start')}
         >
           <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
           {t('back')}

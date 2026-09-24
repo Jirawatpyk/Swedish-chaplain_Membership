@@ -3401,7 +3401,10 @@
           "reasonLabel": "Reason",
           "approvalNoteLabel": "Member's note",
           "approvedAsSubmitted": "Approved as submitted",
-          "approvedAsSubmittedBy": "Approved as submitted by {name}"
+          "approvedAsSubmittedBy": "Approved as submitted by {name}",
+          "approvedBy": "{name} (member) approved version {version}",
+          "changesRequestedBy": "{name} (member) asked for changes to version {version}",
+          "withdrawnBy": "{name} (member) withdrew the approval of version {version}"
         },
         "workspace": {
           "title": "Formatted version {version}",
@@ -6319,9 +6322,9 @@
           "failed_to_dispatch": "Failed",
           "partially_sent": "Partially sent",
           "in_design": "In design",
-          "awaiting_member_approval": "Awaiting member approval",
-          "changes_requested": "Changes requested by member",
-          "member_approved": "Member approved — awaiting schedule",
+          "awaiting_member_approval": "Awaiting your approval",
+          "changes_requested": "Changes requested",
+          "member_approved": "Approved — awaiting schedule",
           "expired_no_member_response": "Expired — no member response",
           "partial_delivery_accepted": "Partial delivery accepted"
         },
@@ -6362,14 +6365,15 @@
           "total": "Total"
         },
         "back": "Back to broadcasts",
-        "cancelButton": "Cancel broadcast",
+        "backToDashboard": "Back to dashboard",
+        "cancelButton": "Cancel E-Blast",
         "cancelDialog": {
           "title": "Cancel this broadcast?",
           "description": "Once cancelled it cannot be re-sent. You can still view it in your history.",
           "reasonLabel": "Reason (optional)",
           "reasonPlaceholder": "Optional — why are you cancelling…",
           "reasonHelp": "Up to 500 characters.",
-          "confirm": "Cancel broadcast",
+          "confirm": "Cancel E-Blast",
           "cancel": "Keep it",
           "phrase": "CANCEL",
           "phraseLabel": "Type {phrase} to confirm",
@@ -6396,7 +6400,7 @@
             "member": "It's your turn: review version {version} below, then approve it or request changes.",
             "marketing": "It's the chamber's turn — nothing is needed from you right now."
           },
-          "expires": "Please respond by {date}. If there is no response by then, this E-Blast expires and is not sent."
+          "expires": "Please respond by {date}. If there is no response by then, this broadcast expires and is not sent."
         },
         "fields": {
           "proposedSendAt": "Your proposed send time",
@@ -6412,12 +6416,13 @@
         },
         "threadUnavailable": {
           "title": "The version history could not be loaded",
-          "body": "Approving and requesting changes are unavailable until it loads. Refresh the page in a moment."
+          "body": "Approving and requesting changes are unavailable until it loads. Refresh the page in a moment.",
+          "refresh": "Refresh"
         },
         "actions": {
           "title": "Your decision",
           "decideDescription": "Approve version {version}, or tell the chamber what should change.",
-          "withdrawDescription": "You approved version {version}. You can withdraw your approval until sending begins.",
+          "withdrawDescription": "Version {version} is approved. You can withdraw the approval until sending begins.",
           "approve": "Approve",
           "requestChanges": "Request changes",
           "withdrawApproval": "Withdraw approval"
@@ -6434,7 +6439,7 @@
         },
         "requestChanges": {
           "title": "Request changes?",
-          "description": "The E-Blast goes back to the chamber with your reason, and they will send you a new version to approve.",
+          "description": "This broadcast goes back to the chamber with your reason, and they will send you a new version to approve.",
           "reasonLabel": "What should change?",
           "reasonPlaceholder": "For example: the date in the heading is wrong.",
           "reasonHelp": "Required — up to 2,000 characters.",
@@ -6446,30 +6451,25 @@
           }
         },
         "withdrawApproval": {
-          "title": "Withdraw your approval?",
-          "description": "The E-Blast goes back to the chamber and any confirmed send time is cancelled. It is not sent until you approve a version again.",
-          "reasonLabel": "Why are you withdrawing your approval?",
+          "title": "Withdraw the approval?",
+          "description": "This broadcast goes back to the chamber and any confirmed send time is cancelled. It is not sent until you approve a version again.",
+          "reasonLabel": "Why are you withdrawing the approval?",
           "reasonPlaceholder": "For example: the price in the offer has changed.",
           "reasonHelp": "Required — up to 2,000 characters.",
           "confirm": "Withdraw approval",
-          "cancel": "Keep my approval",
+          "cancel": "Keep the approval",
           "errors": {
-            "reasonRequired": "Give a reason for withdrawing your approval.",
+            "reasonRequired": "Give a reason for withdrawing the approval.",
             "reasonTooLong": "The reason is longer than 2,000 characters."
           }
-        },
-        "toast": {
-          "approved": "Version approved. The chamber will now confirm the send time.",
-          "changesRequested": "Your request for changes was sent to the chamber.",
-          "approvalWithdrawn": "Your approval was withdrawn."
         },
         "errors": {
           "reason_required": "Give a reason — it cannot be empty.",
           "validation_error": "The text is too long. Shorten it and try again.",
           "stale_version": "The chamber has sent a newer version. The page has been refreshed — review the latest one.",
-          "stage_changed": "This E-Blast has already moved on. The page has been refreshed.",
+          "stage_changed": "This broadcast has already moved on. The page has been refreshed.",
           "sending_started": "Sending has already begun, so this can no longer be changed.",
-          "broadcast_not_found": "This E-Blast is no longer available.",
+          "broadcast_not_found": "This broadcast is no longer available.",
           "broadcast_rate_limit_exceeded": "Too many attempts in a short time. Wait a minute and try again.",
           "generic": "Something went wrong. Please try again."
         },
@@ -6478,7 +6478,7 @@
           "description": "Every version the chamber sent you and every decision, oldest first.",
           "original": "Your original",
           "round": "Round {round}",
-          "submittedByYou": "Submitted by you",
+          "submittedByYourCompany": "Submitted by your company",
           "submittedByChamber": "Submitted by the chamber on your behalf",
           "versionSent": "Version {version} — sent to you by the chamber",
           "noteLabel": "Note from the chamber",
@@ -6490,7 +6490,7 @@
           "changesRequestedByColleague": "A colleague at your company asked for changes",
           "withdrawnByYou": "You withdrew your approval",
           "withdrawnByColleague": "A colleague at your company withdrew the approval",
-          "approvedAsSubmitted": "The chamber approved your E-Blast as you submitted it"
+          "approvedAsSubmitted": "The chamber approved your broadcast as you submitted it"
         }
       }
     },

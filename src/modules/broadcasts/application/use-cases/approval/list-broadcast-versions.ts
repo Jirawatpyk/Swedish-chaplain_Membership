@@ -11,9 +11,12 @@
  * byUserName }`. It is its OWN record: the audit trail is never read to
  * build it (FR-032).
  *
- * Read-only: one tenant tx for the three reads, then the staff display names
- * through `ActorNameDirectoryPort` (users are owned by auth). `broadcasts.read`
- * at the route, so a manager reads the full thread.
+ * Read-only: one tenant tx for the three reads, then the display names —
+ * the version authors, the approve-as-submitted staff user and (UX review M7,
+ * FR-032 "who") each decision's member user — in ONE `ActorNameDirectoryPort`
+ * call (users are owned by auth; display name only, never an email).
+ * `broadcasts.read` at the route, so a manager reads the full thread. The
+ * member-side read never carries a decider (`_member-view.ts`).
  *
  * Pure Application — no framework imports.
  */
@@ -53,6 +56,12 @@ export interface VersionThreadEntry {
   readonly authoredByName: string | null;
 }
 
+/** A member decision on the staff thread, with who recorded it (FR-032). */
+export interface StaffThreadDecision extends MemberDecision {
+  /** The deciding member user's display name; null when unknown or unnamed. */
+  readonly decidedByName: string | null;
+}
+
 export interface BroadcastVersionThread {
   readonly broadcastId: BroadcastId;
   readonly status: BroadcastStatus;
@@ -65,8 +74,8 @@ export interface BroadcastVersionThread {
   readonly sentVersions: readonly VersionThreadEntry[];
   /** The unsent working copy, if one is open. */
   readonly workingCopy: VersionThreadEntry | null;
-  /** Every member decision, oldest first. */
-  readonly decisions: readonly MemberDecision[];
+  /** Every member decision, oldest first, with the decider's name. */
+  readonly decisions: readonly StaffThreadDecision[];
   /** FR-007 — set only when no version row exists and the E-Blast was approved. */
   readonly approvedAsSubmitted: {
     readonly at: Date;
@@ -113,6 +122,7 @@ export async function listBroadcastVersions(
         : null;
 
     const ids = new Set(versions.map((v) => v.authoredByUserId));
+    for (const d of decisions) ids.add(d.decidedByUserId);
     if (approvedAsSubmittedBy !== null) ids.add(approvedAsSubmittedBy.byUserId);
     const names = await deps.names.resolveNames([...ids]);
     const entry = (version: BroadcastVersion): VersionThreadEntry => ({
@@ -131,7 +141,7 @@ export async function listBroadcastVersions(
       memberOriginal: original === undefined ? null : entry(original),
       sentVersions: versions.filter((v) => v.versionNo > 0 && v.sentToMemberAt !== null).map(entry),
       workingCopy: workingCopy === undefined ? null : entry(workingCopy),
-      decisions,
+      decisions: decisions.map((d) => ({ ...d, decidedByName: names.get(d.decidedByUserId) ?? null })),
       approvedAsSubmitted:
         approvedAsSubmittedBy === null
           ? null

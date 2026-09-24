@@ -27,6 +27,8 @@ import {
 afterEach(cleanup);
 
 const STAFF_NAME = 'Karin Lindqvist';
+/** The member user who decided — named on the staff side only (UX review M7, FR-032 "who"). */
+const DECIDER_NAME = 'Anna Andersson';
 const at = (iso: string) => ({ iso, label: `L:${iso}` });
 
 /** Two rounds: v1 (changes requested), v2 (approved). Authored by a NAMED staff user. */
@@ -56,6 +58,7 @@ const MODEL: VersionThreadModel = {
           decision: 'changes_requested',
           reason: 'The date is wrong.',
           byMe: true,
+          byName: DECIDER_NAME,
           at: at('2026-09-03T03:00:00.000Z'),
         },
       ],
@@ -71,7 +74,7 @@ const MODEL: VersionThreadModel = {
         at: at('2026-09-04T03:00:00.000Z'),
       },
       decisions: [
-        { id: 'd2', decision: 'approved', reason: null, byMe: true, at: at('2026-09-05T03:00:00.000Z') },
+        { id: 'd2', decision: 'approved', reason: null, byMe: true, byName: null, at: at('2026-09-05T03:00:00.000Z') },
       ],
     },
   ],
@@ -93,15 +96,29 @@ describe('F119 T085 — the version thread', () => {
     renderThread('member');
     const region = screen.getByRole('region', { name: tPortal.title });
     expect(region).not.toHaveTextContent(STAFF_NAME);
-    // The chamber is named as the chamber, the member as "you".
+    expect(region).not.toHaveTextContent(DECIDER_NAME);
+    // The chamber is named as the chamber, the member's side as "your
+    // company" (the original may have been a colleague's — UX review M3).
     expect(region).toHaveTextContent(tPortal.versionSent.replace('{version}', '1'));
-    expect(region).toHaveTextContent(tPortal.submittedByYou);
+    expect(region).toHaveTextContent(tPortal.submittedByYourCompany);
   });
 
   it('the staff rendering of the same thread does name the staff author (positive control)', () => {
     renderThread('staff');
     expect(screen.getByRole('region', { name: enMessages.admin.broadcasts.approval.thread.title })).toHaveTextContent(
       STAFF_NAME,
+    );
+  });
+
+  it('the staff rendering names WHO decided, and falls back to "the member" when the name is unknown (M7)', () => {
+    renderThread('staff');
+    const tStaff = enMessages.admin.broadcasts.approval.thread;
+    const region = screen.getByRole('region', { name: tStaff.title });
+    expect(region).toHaveTextContent(
+      tStaff.changesRequestedBy.replace('{name}', DECIDER_NAME).replace('{version}', '1'),
+    );
+    expect(region).toHaveTextContent(
+      enMessages.admin.broadcasts.approval.feedback.approvedTitle.replace('{version}', '2'),
     );
   });
 

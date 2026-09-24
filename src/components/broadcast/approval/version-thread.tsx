@@ -13,11 +13,13 @@
  * history is never blank (FR-007). Marketing's unsent working copy is never
  * part of it on either side.
  *
- * Authors: the portal names only "you" and "the chamber", never a staff user
- * (the F114 `organisation` precedent). That rule is enforced HERE, on render:
- * in `audience="member"` a staff name is never read, even if one reaches the
- * model — the member projection already drops it (`_member-view.ts`); this
- * is the second layer. Staff see the author's name where it is known.
+ * Authors: the portal names only "your company" / "you" / "a colleague" and
+ * "the chamber", never a staff user (the F114 `organisation` precedent), and
+ * never the name of the member user who decided. That rule is enforced HERE,
+ * on render: in `audience="member"` no name is ever read, even if one reaches
+ * the model — the member projection already drops it (`_member-view.ts`);
+ * this is the second layer. Staff see the author's name, and (UX review M7,
+ * FR-032 "who") the deciding member user's name, where it is known.
  *
  * A sync Server Component (`useTranslations`, no async boundary — the
  * `overdue-banner.tsx` pattern), so both server pages compose it directly.
@@ -57,6 +59,8 @@ export interface ThreadDecision {
   readonly reason: string | null;
   /** Portal only: the caller's own login recorded it (else a colleague at the same company). */
   readonly byMe: boolean;
+  /** Staff only: the deciding member user's display name; null when unknown (never read in the portal). */
+  readonly byName: string | null;
   readonly at: ThreadTime;
 }
 
@@ -91,6 +95,7 @@ interface RawDecision {
   readonly decision: MemberDecisionKind;
   readonly reason: string | null;
   readonly byMe: boolean;
+  readonly byName: string | null;
   readonly at: Date;
 }
 
@@ -119,7 +124,14 @@ function buildModel(
         version: toVersion(v),
         decisions: decisions
           .filter((d) => d.versionId === v.id)
-          .map((d) => ({ id: d.id, decision: d.decision, reason: d.reason, byMe: d.byMe, at: time(d.at, format) })),
+          .map((d) => ({
+            id: d.id,
+            decision: d.decision,
+            reason: d.reason,
+            byMe: d.byMe,
+            byName: d.byName,
+            at: time(d.at, format),
+          })),
       })),
     approvedAsSubmitted,
   };
@@ -145,6 +157,7 @@ export function memberThreadModel(thread: MemberVersionThread, format: FormatThr
       decision: d.decision,
       reason: d.reason,
       byMe: d.decidedByMe,
+      byName: null,
       at: d.decidedAt,
     })),
     thread.approvedAsSubmitted === null
@@ -176,6 +189,7 @@ export function staffThreadModel(thread: BroadcastVersionThread, format: FormatT
       decision: d.decision,
       reason: d.reason,
       byMe: false,
+      byName: d.decidedByName ?? null,
       at: d.decidedAt,
     })),
     thread.approvedAsSubmitted === null
@@ -215,7 +229,8 @@ export function VersionThread({ audience, model }: VersionThreadProps): React.Re
   // The author line of a version. In the portal a name is NEVER read.
   const versionLine = (v: ThreadVersion): string => {
     if (v.versionNo === 0) {
-      if (member) return v.author.side === 'member' ? tPortal('submittedByYou') : tPortal('submittedByChamber');
+      // "your company", not "you": the original may be a colleague's.
+      if (member) return v.author.side === 'member' ? tPortal('submittedByYourCompany') : tPortal('submittedByChamber');
       if (v.author.side === 'member') return tStaff('submittedByMember');
       return v.author.name !== null
         ? tStaff('submittedOnBehalfBy', { name: v.author.name })
@@ -229,6 +244,13 @@ export function VersionThread({ audience, model }: VersionThreadProps): React.Re
 
   const decisionLine = (d: ThreadDecision, versionNo: number): string => {
     if (!member) {
+      // FR-032 — who decided, where the name is known; "the member" otherwise.
+      if (d.byName !== null) {
+        const values = { name: d.byName, version: versionNo };
+        if (d.decision === 'approved') return tStaff('approvedBy', values);
+        if (d.decision === 'changes_requested') return tStaff('changesRequestedBy', values);
+        return tStaff('withdrawnBy', values);
+      }
       if (d.decision === 'approved') return tFeedback('approvedTitle', { version: versionNo });
       if (d.decision === 'changes_requested') return tFeedback('changesRequestedTitle', { version: versionNo });
       return tFeedback('withdrawnTitle', { version: versionNo });

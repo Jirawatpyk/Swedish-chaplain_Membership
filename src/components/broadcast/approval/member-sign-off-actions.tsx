@@ -14,9 +14,11 @@
  *     that marketing now confirms the send time and that the content cannot
  *     change without a new approval (FR-009). Not destructive: primary tier.
  *   - Request changes — a required reason (1–2,000) in the shared
- *     `ReasonConfirmationDialog`, destructive tier (FR-010); a reason left
- *     blank is an announced field error.
- *   - Withdraw approval — the same dialog, reason required (FR-015a).
+ *     `ReasonConfirmationDialog` (FR-010); a reason left blank is an
+ *     announced field error. A normal, reversible step, not a destructive
+ *     one: an outline trigger and a primary Confirm (UX review M2).
+ *   - Withdraw approval — the same dialog, reason required (FR-015a),
+ *     destructive tier.
  *   - Withdraw E-Blast — the EXISTING member cancel (`CancelBroadcastAction`,
  *     typed subject, #376), reused as is rather than duplicated.
  *
@@ -24,19 +26,23 @@
  * the one the route compares against for `stale_version`.
  *
  * Refusals: a 409 (`stage_changed`, `stale_version`, `sending_started`) or a
- * 404 means the page is stale — the dialog closes, a toast says why and the
- * page refreshes into the stage the E-Blast is really at. Everything else
- * (422, 429, 5xx, a network failure) keeps the dialog open and is said INSIDE
- * it (`role="alert"`); a 422 on the reason marks that field. On success the
- * page refreshes: the stage banner — the page's one live region — announces
- * the new stage, and the page's Back link is the way to the E-Blast list.
+ * 404 means the page is stale — the dialog closes FIRST, then a toast says
+ * why (so it is not born under the modal's aria-hidden outside) and the page
+ * refreshes into the stage the E-Blast is really at. Everything else (422,
+ * 429, 5xx, a network failure) keeps the dialog open and is said INSIDE it
+ * (`role="alert"`, focused — ux-standards § 6.4); a 422 on the reason marks
+ * and focuses that field. Each refusal carries a `seq`, so a repeat is a new
+ * node and is announced again. On success the dialog closes and the page
+ * refreshes: the stage banner — the page's one live region — announces the
+ * new stage, with no toast on top (the same news said twice).
  *
  * Focus: every dialog returns focus to its trigger on Cancel / Escape; on a
  * close that refreshes the page the trigger may unmount, so the shared
  * resolver lands on `#main-content` instead (WCAG 2.4.3). Busy controls are
- * `focusableWhenDisabled` — they turn unavailable while they hold focus.
+ * `focusableWhenDisabled` — they turn unavailable while they hold focus — and
+ * the fields turn read-only, never `disabled`, for the same reason.
  */
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { CircleCheck, Loader2Icon, MessageSquareWarning, Undo2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -86,15 +92,15 @@ export interface MemberSignOffActionsProps {
 }
 
 /** What a refused decision shows: a message, and whether it belongs to the reason/note field. */
-type Refusal = { readonly message: string; readonly field: 'reason' | null } | null;
+interface RouteRefusal {
+  readonly message: string;
+  readonly field: 'reason' | null;
+}
 
-type Outcome = { readonly kind: 'done' } | { readonly kind: 'stale' } | { readonly kind: 'refused'; readonly refusal: Refusal };
+/** A refusal on screen; `seq` makes a repeat a new node, announced again. */
+type Refusal = (RouteRefusal & { readonly seq: number }) | null;
 
-const TOAST_KEY: Record<Decision, 'approved' | 'changesRequested' | 'approvalWithdrawn'> = {
-  approved: 'approved',
-  changes_requested: 'changesRequested',
-  approval_withdrawn: 'approvalWithdrawn',
-};
+type Outcome = { readonly kind: 'closed' } | { readonly kind: 'refused'; readonly refusal: RouteRefusal };
 
 export function MemberSignOffActions({
   broadcastId,
@@ -105,7 +111,6 @@ export function MemberSignOffActions({
   canWithdrawEblast,
 }: MemberSignOffActionsProps): React.ReactElement | null {
   const t = useTranslations('portal.broadcasts.approval.actions');
-  const tToast = useTranslations('portal.broadcasts.approval.toast');
   const tErrors = useTranslations('portal.broadcasts.approval.errors');
   const router = useRouter();
 
@@ -113,11 +118,15 @@ export function MemberSignOffActions({
   const withdraw = version !== null && canWithdrawApproval;
 
   /**
-   * One POST, one mapping. The caller owns its dialog; this returns what
-   * happened so each dialog closes or keeps its own refusal.
+   * One POST, one mapping. The caller owns its dialog and hands over how to
+   * close it: on success and on a stale page this closes it (before any
+   * toast), otherwise it returns the refusal for the dialog to keep.
    */
-  async function post(decision: Decision, reason: string | null): Promise<Outcome> {
-    if (version === null) return { kind: 'stale' };
+  async function post(decision: Decision, reason: string | null, close: () => void): Promise<Outcome> {
+    if (version === null) {
+      close();
+      return { kind: 'closed' };
+    }
     try {
       const res = await fetch(`/api/broadcasts/${broadcastId}/decision`, {
         method: 'POST',
@@ -126,18 +135,20 @@ export function MemberSignOffActions({
         body: JSON.stringify({ versionId: version.id, decision, reason }),
       });
       if (res.ok) {
-        toast.success(tToast(TOAST_KEY[decision]));
+        // The refreshed stage banner announces the new stage (L2: no toast).
+        close();
         router.refresh();
-        return { kind: 'done' };
+        return { kind: 'closed' };
       }
       const { code, fields } = await readRouteError(res);
       const message = approvalErrorMessage(tErrors, code);
       if (res.status === 409 || res.status === 404) {
         // The page is stale — the stage moved, a newer version exists, or
-        // sending began. Say so and re-render the real stage.
+        // sending began. Close first (L1), say so, re-render the real stage.
+        close();
         toast.error(message);
         router.refresh();
-        return { kind: 'stale' };
+        return { kind: 'closed' };
       }
       return { kind: 'refused', refusal: { message, field: fields.includes('reason') ? 'reason' : null } };
     } catch {
@@ -167,7 +178,9 @@ export function MemberSignOffActions({
               : t('withdrawDescription', { version: version?.versionNo ?? 0 })}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
+        {/* L10 — one full-width button per row on a phone (320 px leaves
+            ~224 px of card content), a wrapping row from `sm`. */}
+        <CardContent className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
           {decide ? (
             <>
               <ApproveAction versionNo={version?.versionNo ?? 0} post={post} />
@@ -177,6 +190,7 @@ export function MemberSignOffActions({
                 namespace="portal.broadcasts.approval.requestChanges"
                 label={t('requestChanges')}
                 icon={<MessageSquareWarning className="size-4" aria-hidden="true" />}
+                tone="primary"
                 post={post}
               />
             </>
@@ -188,11 +202,12 @@ export function MemberSignOffActions({
               namespace="portal.broadcasts.approval.withdrawApproval"
               label={t('withdrawApproval')}
               icon={<Undo2 className="size-4" aria-hidden="true" />}
+              tone="destructive"
               post={post}
             />
           ) : null}
           {canWithdrawEblast ? (
-            <div className="sm:ml-auto">
+            <div className="grid sm:ml-auto sm:block">
               <CancelBroadcastAction broadcastId={broadcastId} surface="member" subject={subject} />
             </div>
           ) : null}
@@ -202,7 +217,23 @@ export function MemberSignOffActions({
   );
 }
 
-type Post = (decision: Decision, reason: string | null) => Promise<Outcome>;
+type Post = (decision: Decision, reason: string | null, close: () => void) => Promise<Outcome>;
+
+/**
+ * ux-standards § 6.4 — a refusal is focused: the field it names, else the
+ * form-level line (an `InlineError`, focusable via `tabIndex={-1}`).
+ */
+function useFocusRefusal(
+  refusal: Refusal,
+  field: React.RefObject<HTMLTextAreaElement | null>,
+  formErrorId: string,
+): void {
+  useEffect(() => {
+    if (refusal === null) return;
+    if (refusal.field === 'reason') field.current?.focus();
+    else document.getElementById(formErrorId)?.focus();
+  }, [refusal, field, formErrorId]);
+}
 
 function ApproveAction({ versionNo, post }: { readonly versionNo: number; readonly post: Post }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.approval.approveDialog');
@@ -213,8 +244,11 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const seqRef = useRef(0);
   const closedViaSuccessRef = useRef(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
+  useFocusRefusal(refusal, noteRef, 'eblast-approve-error');
 
   const overCap = note.length > NOTE_MAX;
   const noteError = overCap ? t('noteTooLong') : refusal?.field === 'reason' ? refusal.message : null;
@@ -225,13 +259,11 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
     setRefusal(null);
     startTransition(async () => {
       const trimmed = note.trim();
-      const outcome = await post('approved', trimmed === '' ? null : trimmed);
-      if (outcome.kind === 'refused') {
-        setRefusal(outcome.refusal);
-        return;
-      }
-      closedViaSuccessRef.current = true;
-      setOpen(false);
+      const outcome = await post('approved', trimmed === '' ? null : trimmed, () => {
+        closedViaSuccessRef.current = true;
+        setOpen(false);
+      });
+      if (outcome.kind === 'refused') setRefusal({ ...outcome.refusal, seq: ++seqRef.current });
     });
   }
 
@@ -240,6 +272,7 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
       <Button
         ref={triggerRef}
         type="button"
+        className="w-full sm:w-auto"
         data-testid="eblast-approve"
         onClick={() => {
           closedViaSuccessRef.current = false;
@@ -257,7 +290,7 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
           if (!pending) setOpen(next);
         }}
       >
-        <AlertDialogContent className="max-w-lg" finalFocus={finalFocus} initialFocus={cancelRef}>
+        <AlertDialogContent finalFocus={finalFocus} initialFocus={cancelRef}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('title', { version: versionNo })}</AlertDialogTitle>
             <AlertDialogDescription>{t('description')}</AlertDialogDescription>
@@ -266,18 +299,27 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
             <Label htmlFor="eblast-approve-note">{t('noteLabel')}</Label>
             <Textarea
               id="eblast-approve-note"
+              ref={noteRef}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder={t('notePlaceholder')}
               rows={3}
-              disabled={pending}
+              readOnly={pending}
               aria-invalid={noteError !== null || undefined}
               aria-describedby={
                 noteError !== null
-                  ? 'eblast-approve-note-help eblast-approve-note-counter eblast-approve-note-error'
+                  ? 'eblast-approve-note-error eblast-approve-note-help eblast-approve-note-counter'
                   : 'eblast-approve-note-help eblast-approve-note-counter'
               }
             />
+            {/* L4 — the error sits immediately under the field it describes. */}
+            {noteError !== null ? (
+              <InlineError
+                key={overCap ? 'too-long' : `refusal-${refusal?.seq ?? 0}`}
+                id="eblast-approve-note-error"
+                message={noteError}
+              />
+            ) : null}
             <p id="eblast-approve-note-help" className="text-xs text-muted-foreground">
               {t('noteHelp')}
             </p>
@@ -287,9 +329,10 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
             >
               {note.length} / {NOTE_MAX}
             </p>
-            {noteError !== null ? <InlineError id="eblast-approve-note-error" message={noteError} /> : null}
           </div>
-          {formError !== null ? <InlineError id="eblast-approve-error" message={formError} /> : null}
+          {formError !== null ? (
+            <InlineError key={`refusal-${refusal?.seq ?? 0}`} id="eblast-approve-error" message={formError} />
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel ref={cancelRef} disabled={pending}>
               {t('cancel')}
@@ -320,6 +363,7 @@ function ReasonAction({
   namespace,
   label,
   icon,
+  tone,
   post,
 }: {
   readonly testId: string;
@@ -327,23 +371,27 @@ function ReasonAction({
   readonly namespace: string;
   readonly label: string;
   readonly icon: React.ReactNode;
+  /** `primary` — a normal, reversible step (outline trigger, primary Confirm); `destructive` — the red tier. */
+  readonly tone: 'primary' | 'destructive';
   readonly post: Post;
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
   const [refusal, setRefusal] = useState<Refusal>(null);
+  const seqRef = useRef(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
 
   async function onConfirm(reason: string): Promise<void> {
+    // Runs inside the shared dialog's transition: this clear does not commit
+    // before the next refusal lands, so the refusal's `seq` (the dialog keys
+    // its error node on it) is what makes a repeat announce again (M1).
     setRefusal(null);
-    const outcome = await post(decision, reason.trim());
-    if (outcome.kind === 'refused') {
-      setRefusal(outcome.refusal);
-      return;
-    }
-    closedViaSuccessRef.current = true;
-    setOpen(false);
+    const outcome = await post(decision, reason.trim(), () => {
+      closedViaSuccessRef.current = true;
+      setOpen(false);
+    });
+    if (outcome.kind === 'refused') setRefusal({ ...outcome.refusal, seq: ++seqRef.current });
   }
 
   return (
@@ -351,7 +399,8 @@ function ReasonAction({
       <Button
         ref={triggerRef}
         type="button"
-        variant="destructive-outline"
+        variant={tone === 'primary' ? 'outline' : 'destructive-outline'}
+        className="w-full sm:w-auto"
         data-testid={testId}
         onClick={() => {
           closedViaSuccessRef.current = false;
@@ -374,6 +423,7 @@ function ReasonAction({
         finalFocus={finalFocus}
         announceBlankReason
         refusal={refusal}
+        confirmTone={tone}
       />
     </>
   );

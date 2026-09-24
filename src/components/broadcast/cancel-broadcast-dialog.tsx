@@ -20,9 +20,13 @@
  *       anything else                         → ${toastNamespace}.cancelError
  *   - 404 / 403 (broadcast gone / not permitted) → close + refresh; retrying a
  *     permanent error is futile and leaving the dialog open invites a loop.
- *   - Other non-409 (5xx / network throw) keep the dialog open for retry.
+ *     Every closing path closes FIRST and toasts after, so the toast is not
+ *     born under the modal's aria-hidden outside.
+ *   - Other non-409 (5xx / network throw) keep the dialog open for retry and
+ *     say so INSIDE it (the shared dialog's `refusal`, `role="alert"`,
+ *     focused — ux-standards § 6.4): a toast would render behind the modal.
  */
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -86,8 +90,15 @@ export function CancelBroadcastDialog({
   // reset needed: those paths unmount this wrapper, so the ref is discarded.
   const closedViaSuccessRef = useRef<boolean>(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
+  // A transient failure, said inside the open dialog. `seq` makes a repeat a
+  // new node (announced again) — this runs inside the shared dialog's
+  // transition, so the clear below never commits on its own.
+  const [refusal, setRefusal] = useState<{ message: string; field: null; seq: number } | null>(null);
+  const refuse = (): void =>
+    setRefusal((prev) => ({ message: tToast('cancelError'), field: null, seq: (prev?.seq ?? 0) + 1 }));
 
   async function onConfirm(reason: string): Promise<void> {
+    setRefusal(null);
     try {
       const trimmed = reason.trim();
       const body = trimmed
@@ -101,8 +112,8 @@ export function CancelBroadcastDialog({
       });
       if (res.ok) {
         closedViaSuccessRef.current = true;
-        toast.success(tToast(successToastKey));
         onOpenChange(false);
+        toast.success(tToast(successToastKey));
         router.refresh();
         return;
       }
@@ -110,6 +121,8 @@ export function CancelBroadcastDialog({
         error?: { code?: string };
       };
       if (res.status === 409) {
+        closedViaSuccessRef.current = true;
+        onOpenChange(false);
         if (json.error?.code === 'broadcast_cancel_too_late') {
           toast.error(tToast('cancelTooLate'));
         } else if (json.error?.code === 'broadcast_concurrent_action_blocked') {
@@ -117,8 +130,6 @@ export function CancelBroadcastDialog({
         } else {
           toast.error(tToast('cancelError'));
         }
-        closedViaSuccessRef.current = true;
-        onOpenChange(false);
         router.refresh();
       } else if (res.status === 404 || res.status === 403) {
         // Permanent: the broadcast is gone (404 — incl. a cross-member /
@@ -126,16 +137,16 @@ export function CancelBroadcastDialog({
         // futile, so close + refresh to update the stale view instead of
         // leaving the dialog open over a doomed request.
         closedViaSuccessRef.current = true;
-        toast.error(tToast('cancelError'));
         onOpenChange(false);
+        toast.error(tToast('cancelError'));
         router.refresh();
       } else {
         // Transient (5xx / unexpected): keep the dialog open for retry.
-        toast.error(tToast('cancelError'));
+        refuse();
       }
     } catch {
       // Network throw: keep the dialog open for retry.
-      toast.error(tToast('cancelError'));
+      refuse();
     }
   }
 
@@ -153,6 +164,7 @@ export function CancelBroadcastDialog({
       // U35 — a cancelled E-Blast cannot be re-sent, so confirm waits for its
       // typed subject (ux-standards § 6.3), on the member AND staff surface.
       typedPhrase={subject}
+      refusal={refusal}
     />
   );
 }

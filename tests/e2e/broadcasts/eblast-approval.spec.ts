@@ -148,10 +148,64 @@ test.describe('F119 T086 — the member sign-off view', () => {
 
       // After the decision: the new stage in the banner, the way back to the list.
       const banner = member.locator('[data-testid="eblast-stage-banner"]:visible');
-      await expect(banner).toContainText(/Member approved/, { timeout: 30_000 });
+      // The member's own banner speaks to them (UX review M4).
+      await expect(banner).toContainText(/Approved — awaiting schedule/, { timeout: 30_000 });
       await expect(banner).toContainText(/chamber's turn/);
       await expect(member.locator('[data-testid="eblast-approve"]:visible')).toHaveCount(0);
       await expect(member.getByRole('link', { name: /back to/i })).toBeVisible();
+    } finally {
+      await phone.close();
+    }
+  });
+});
+
+/**
+ * F119 UX review H3 — the stage banner at the narrowest phone (320 px) in the
+ * longest locale (SV). A Badge is `whitespace-nowrap`, and the SV
+ * `member_approved` stage label was wider than the ~246 px the banner leaves
+ * at 320 px; the 375 px case above never saw it. Checked at the member's turn
+ * and again after approving (the longest stage label), with nothing scrolling
+ * sideways and the banner inside the viewport.
+ */
+test.describe('F119 UX review H3 — the sign-off page at 320 px in Swedish', () => {
+  test('@eblast the SV stage banner fits a 320 px viewport, before and after approving', async ({ page, browser }) => {
+    expect(MEMBER_PASSWORD, 'E2E_MEMBER_PASSWORD_EMPTY is required to sign in as the owning member').toBeTruthy();
+    await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
+    const broadcastId = await seedMemberDetailBroadcast(MEMBER_EMAIL);
+    expect(broadcastId, 'DATABASE_URL + E2E_MEMBER_EMAIL_EMPTY are required to seed the E-Blast').not.toBeNull();
+    await formatAndSendAsMarketing(page, broadcastId!, '[E2E] Swedish at 320 px');
+
+    const phone = await browser.newContext({ viewport: { width: 320, height: 700 } });
+    try {
+      // The locale cookie before sign-in, so every page renders in Swedish.
+      await phone.addCookies([{ name: 'NEXT_LOCALE', value: 'sv', url: 'http://localhost:3100' }]);
+      const member = await phone.newPage();
+      await member.goto('/portal/sign-in');
+      await member.locator('input#email').fill(MEMBER_EMAIL!);
+      await member.locator('input#password').fill(MEMBER_PASSWORD!);
+      await member.locator('button[type="submit"]').click();
+      await member.waitForURL((u) => /^\/portal(\/|$)/.test(u.pathname) && !u.pathname.startsWith('/portal/sign-in'), {
+        timeout: 120_000,
+      });
+      await member.goto(`/portal/broadcasts/${broadcastId}`);
+
+      const banner = member.locator('[data-testid="eblast-stage-banner"]:visible');
+      const fits = async (): Promise<void> => {
+        expect(await member.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+        const box = await banner.boundingBox();
+        expect(box, 'the stage banner has no box').not.toBeNull();
+        expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+      };
+
+      // The member's turn: "Inväntar ditt godkännande".
+      await expect(banner).toContainText('Inväntar ditt godkännande', { timeout: 60_000 });
+      await fits();
+
+      // After approving: the longest stage label, "Godkänd — inväntar schemaläggning".
+      await member.locator('[data-testid="eblast-approve"]:visible').click();
+      await member.getByRole('alertdialog').locator('[data-testid="eblast-approve-confirm"]').click();
+      await expect(banner).toContainText('Godkänd — inväntar schemaläggning', { timeout: 30_000 });
+      await fits();
     } finally {
       await phone.close();
     }

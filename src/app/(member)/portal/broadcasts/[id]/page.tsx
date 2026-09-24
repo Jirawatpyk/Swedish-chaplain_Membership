@@ -31,9 +31,11 @@
  *   - the decision controls the stage allows (`MemberSignOffActions`), then
  *     the version thread (`VersionThread`, "you" / "the chamber" only).
  *
- * Membership standing is NOT consulted: reading and deciding are not benefit
- * actions, and `lapsed-portal-scope.ts` exempts this exact path so a lapsed
- * member can still sign off or withdraw (spec § Edge Cases).
+ * Membership standing does not gate this page: reading and deciding are not
+ * benefit actions, and `lapsed-portal-scope.ts` exempts this exact path so a
+ * lapsed member can still sign off or withdraw (spec § Edge Cases). It is
+ * read once, for the Back link only: a terminated member's benefits page is
+ * blocked, so their Back leads to the dashboard instead (UX review M5).
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -46,6 +48,7 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
@@ -56,6 +59,8 @@ import {
   memberThreadModel,
 } from '@/components/broadcast/approval/version-thread';
 import { makeGetMemberVersionThreadDeps } from '@/lib/broadcast-approval-deps';
+import { isPortalPathAllowed } from '@/lib/lapsed-portal-scope';
+import { loadMembershipAccess } from '@/lib/load-membership-access';
 import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
@@ -67,6 +72,7 @@ import {
   getMemberVersionThread,
   makeGetMemberBroadcastDeps,
   parseBroadcastId,
+  type BroadcastStatus,
   type MemberVersionThread,
   type MemberVisibleVersion,
 } from '@/modules/broadcasts';
@@ -77,6 +83,22 @@ import { randomUUID } from 'node:crypto';
 
 /** `CardTitle`'s type on a real `<h2>` — the shadcn `CardTitle` is a `<div>`, outside the heading tree. */
 const CARD_HEADING = 'font-heading text-base font-medium leading-snug';
+
+/** Where the E-Blast list lives (the benefits page's broadcasts tab). */
+const BENEFITS_PATH = '/portal/benefits';
+
+/**
+ * UX review L7 — the statuses at which a send has begun, so the delivery
+ * breakdown means something. Before them it is all zeros (awaiting the
+ * member, in design, scheduled …) and is not shown.
+ */
+const DELIVERY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
+  'sending',
+  'sent',
+  'partially_sent',
+  'partial_delivery_accepted',
+  'failed_to_dispatch',
+]);
 
 /* The detail page is per-(tenant, member, broadcastId) — caching across
  * users doesn't apply, and the route depends on the member-scoped
@@ -172,6 +194,12 @@ export default async function BroadcastDetailPage(props: {
   const { broadcast, delivery } = result.value;
   const status = broadcast.status;
 
+  // UX review M5 — the same request-cached, audit-free access read the
+  // benefits page gates on; a terminated member cannot open the E-Blast list,
+  // so their Back leads to the dashboard. Fails open to `full`.
+  const access = await loadMembershipAccess(tenant.slug, memberId);
+  const backToList = isPortalPathAllowed(access.access, BENEFITS_PATH);
+
   // F119 T086 — the approval round, from the member projection (sent
   // versions only). Owner already proven above, so this read cannot probe.
   const thread = await readMemberThread(tenant.slug, parsed.value, memberId, session.user.id, requestId);
@@ -232,11 +260,12 @@ export default async function BroadcastDetailPage(props: {
   // value degrades gracefully.
   const statusKey = status as Parameters<typeof tStatus>[0];
   const statusLabel = tStatus.has(statusKey) ? tStatus(statusKey) : status;
+  // L6 — muted is the empty sentinel's colour only; a real value is not.
   const notSet = (
-    <>
+    <span className="text-muted-foreground">
       <span aria-hidden="true">—</span>
       <span className="sr-only">{tApproval('fields.notSet')}</span>
-    </>
+    </span>
   );
 
   return (
@@ -244,11 +273,11 @@ export default async function BroadcastDetailPage(props: {
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       <Link
-        href="/portal/benefits?tab=broadcasts"
-        className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+        href={backToList ? `${BENEFITS_PATH}?tab=broadcasts` : '/portal'}
+        className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'self-start')}
       >
         <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-        {t('back')}
+        {backToList ? t('back') : t('backToDashboard')}
       </Link>
 
       {/* F119 T086 — the stage banner: the page's ONE live region. It names
@@ -259,8 +288,14 @@ export default async function BroadcastDetailPage(props: {
         <InlineAlertTitle className="flex flex-wrap items-center gap-2 text-foreground">
           <span>{t('fields.status')}</span>
           {/* F1 UX hardening — the shared `getBroadcastStatusBadgeProps` (H4)
-              keeps the colour signal: rejected is destructive, sending pulses. */}
-          <Badge variant={statusBadge.variant} className={cn(statusBadge.className)}>
+              keeps the colour signal: rejected is destructive, sending pulses.
+              UX review H3 — a Badge is `h-5 whitespace-nowrap` by default; the
+              longest stage (SV `member_approved`, ~282 px) overflows the
+              banner's ~246 px at 320 px, so here it may wrap. */}
+          <Badge
+            variant={statusBadge.variant}
+            className={cn(statusBadge.className, 'h-auto max-w-full whitespace-normal text-left')}
+          >
             {statusLabel}
           </Badge>
         </InlineAlertTitle>
@@ -283,7 +318,12 @@ export default async function BroadcastDetailPage(props: {
       {thread === null ? (
         <InlineAlert tone="destructive" data-testid="eblast-thread-unavailable">
           <InlineAlertTitle>{tApproval('threadUnavailable.title')}</InlineAlertTitle>
-          <InlineAlertDescription>{tApproval('threadUnavailable.body')}</InlineAlertDescription>
+          <InlineAlertDescription>
+            <span className="block">{tApproval('threadUnavailable.body')}</span>
+            <span className="mt-2 block">
+              <RefreshPageButton label={tApproval('threadUnavailable.refresh')} />
+            </span>
+          </InlineAlertDescription>
         </InlineAlert>
       ) : null}
 
@@ -319,29 +359,29 @@ export default async function BroadcastDetailPage(props: {
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">{t('fields.submittedAt')}</dt>
-              <dd className="mt-1 text-muted-foreground">
+              <dd className="mt-1">
                 {broadcast.submittedAt !== null
                   ? dateFormatter.format(new Date(broadcast.submittedAt))
-                  : '—'}
+                  : notSet}
               </dd>
             </div>
             <div>
               <dt className="text-xs text-muted-foreground">{t('fields.sentAt')}</dt>
-              <dd className="mt-1 text-muted-foreground">
-                {broadcast.sentAt !== null ? dateFormatter.format(new Date(broadcast.sentAt)) : '—'}
+              <dd className="mt-1">
+                {broadcast.sentAt !== null ? dateFormatter.format(new Date(broadcast.sentAt)) : notSet}
               </dd>
             </div>
             {summary !== null ? (
               <>
                 <div>
                   <dt className="text-xs text-muted-foreground">{tApproval('fields.proposedSendAt')}</dt>
-                  <dd className="mt-1 text-muted-foreground" data-testid="eblast-proposed-send-at">
+                  <dd className="mt-1" data-testid="eblast-proposed-send-at">
                     {summary.proposedSendAt !== null ? dateFormatter.format(summary.proposedSendAt) : notSet}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">{tApproval('fields.confirmedSendAt')}</dt>
-                  <dd className="mt-1 text-muted-foreground">
+                  <dd className="mt-1">
                     {summary.confirmedSendAt !== null ? dateFormatter.format(summary.confirmedSendAt) : notSet}
                   </dd>
                 </div>
@@ -439,53 +479,59 @@ export default async function BroadcastDetailPage(props: {
         <VersionThread audience="member" model={threadModel} />
       ) : null}
 
-
       {/* AS3 — Delivery breakdown (delivered / bounced / complained /
           soft-bounced / sent / total). Exposes testids for T129; uses
           aria-labelledby (not aria-label) so the visible h2 is the
           single accessible name (avoids SR double-announce — WCAG
-          1.3.1 + 4.1.2). */}
-      <Card
-        role="region"
-        data-testid="delivery-breakdown"
-        aria-labelledby="delivery-breakdown-heading"
-      >
-        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <h2 id="delivery-breakdown-heading" className="col-span-full text-h4">
-            {t('delivery.title')}
-          </h2>
-          <DeliveryStat
-            label={t('delivery.delivered')}
-            value={delivery.delivered}
-            testId="delivery-delivered-count"
-          />
-          <DeliveryStat
-            label={t('delivery.bounced')}
-            value={delivery.bounced}
-            testId="delivery-bounced-count"
-          />
-          <DeliveryStat
-            label={t('delivery.complained')}
-            value={delivery.complained}
-            testId="delivery-complained-count"
-          />
-          <DeliveryStat
-            label={t('delivery.softBounced')}
-            value={delivery.softBounced}
-            testId="delivery-soft-bounced-count"
-          />
-          <DeliveryStat
-            label={t('delivery.sent')}
-            value={delivery.sent}
-            testId="delivery-sent-count"
-          />
-          <DeliveryStat
-            label={t('delivery.total')}
-            value={delivery.total}
-            testId="delivery-total-count"
-          />
-        </CardContent>
-      </Card>
+          1.3.1 + 4.1.2). UX review L7 — shown once a send has begun
+          (before it every count is zero), with its heading in the
+          `CardHeader` in the page's card-heading type, like every other
+          card here. */}
+      {DELIVERY_STATUSES.has(status) ? (
+        <Card
+          role="region"
+          data-testid="delivery-breakdown"
+          aria-labelledby="delivery-breakdown-heading"
+        >
+          <CardHeader>
+            <h2 id="delivery-breakdown-heading" className={CARD_HEADING}>
+              {t('delivery.title')}
+            </h2>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <DeliveryStat
+              label={t('delivery.delivered')}
+              value={delivery.delivered}
+              testId="delivery-delivered-count"
+            />
+            <DeliveryStat
+              label={t('delivery.bounced')}
+              value={delivery.bounced}
+              testId="delivery-bounced-count"
+            />
+            <DeliveryStat
+              label={t('delivery.complained')}
+              value={delivery.complained}
+              testId="delivery-complained-count"
+            />
+            <DeliveryStat
+              label={t('delivery.softBounced')}
+              value={delivery.softBounced}
+              testId="delivery-soft-bounced-count"
+            />
+            <DeliveryStat
+              label={t('delivery.sent')}
+              value={delivery.sent}
+              testId="delivery-sent-count"
+            />
+            <DeliveryStat
+              label={t('delivery.total')}
+              value={delivery.total}
+              testId="delivery-total-count"
+            />
+          </CardContent>
+        </Card>
+      ) : null}
     </DetailContainer>
   );
 }

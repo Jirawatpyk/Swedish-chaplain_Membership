@@ -32,6 +32,7 @@ import {
   type BroadcastStatus,
   type BroadcastVersion,
   type BroadcastVersionThread,
+  type StaffThreadDecision,
   type FormattingWarnings,
 } from '@/modules/broadcasts';
 import {
@@ -83,6 +84,8 @@ export default async function AdminBroadcastDetailPage({
   const tHeader = await getTranslations('admin.broadcasts.approval.header');
   const tWarnings = await getTranslations('admin.broadcasts.approval.warnings');
   const tContent = await getTranslations('admin.broadcasts.approval.content');
+  const tFeedback = await getTranslations('admin.broadcasts.approval.feedback');
+  const tThread = await getTranslations('admin.broadcasts.approval.thread');
   const session = await requirePagePermission('broadcasts.read');
   // 016 re-review D — evaluator-derived, never ROLE_BUNDLES: a `manager` holds
   // `broadcasts.read` only, so every action control below is ABSENT for them
@@ -227,10 +230,30 @@ export default async function AdminBroadcastDetailPage({
         : <EmptyValue label={tHeader('roundNoRound')} />;
   // F119 T085 (FR-011, FR-032) — the history: every version sent to the
   // member and every decision with its reason, attached to the version it
-  // concerns, so marketing formats the next version with the member's
-  // feedback in view. It replaced the interim latest-reason note. The unsent
-  // working copy is not part of it (it is the workspace below).
+  // concerns. It sits BELOW the workspace (UX review M6), so a long thread
+  // never pushes the editor below the fold. The unsent working copy is not
+  // part of it (it is the workspace).
   const threadModel = thread === null ? null : staffThreadModel(thread, (d) => fmt.format(d));
+  // FR-011 + UX review M6 — marketing formats the next version with the
+  // member's LATEST request in view, above the workspace. Only a request for
+  // changes or a withdrawn approval carries one; an approval leaves nothing
+  // to act on.
+  const memberFeedback =
+    status === 'changes_requested' || status === 'in_design' ? latestChangeRequest(thread) : null;
+  const feedbackVersion =
+    memberFeedback === null
+      ? null
+      : (thread?.sentVersions.find((e) => e.version.id === memberFeedback.versionId)?.version.versionNo ??
+        memberFeedback.round);
+  // Who asked (FR-032), where the name is known; "the member" otherwise.
+  const feedbackWithdrawn = memberFeedback?.decision === 'approval_withdrawn';
+  const feedbackName = memberFeedback?.decidedByName ?? null;
+  const feedbackTitle =
+    memberFeedback === null || feedbackVersion === null
+      ? null
+      : feedbackName !== null
+        ? tThread(feedbackWithdrawn ? 'withdrawnBy' : 'changesRequestedBy', { version: feedbackVersion, name: feedbackName })
+        : tFeedback(feedbackWithdrawn ? 'withdrawnTitle' : 'changesRequestedTitle', { version: feedbackVersion });
 
   return (
     <DetailContainer>
@@ -337,8 +360,13 @@ export default async function AdminBroadcastDetailPage({
         </Card>
       </section>
 
-      {threadModel !== null && hasThreadHistory(threadModel) ? (
-        <VersionThread audience="staff" model={threadModel} />
+      {memberFeedback !== null && feedbackTitle !== null ? (
+        <InlineAlert tone="info" role="note" data-testid="eblast-member-feedback">
+          <InlineAlertTitle>{feedbackTitle}</InlineAlertTitle>
+          <InlineAlertDescription>
+            <span className="block whitespace-pre-line break-words text-foreground">{memberFeedback.reason}</span>
+          </InlineAlertDescription>
+        </InlineAlert>
       ) : null}
 
       {showWorkspace && workingCopy !== null && original !== null && originalPreview !== null ? (
@@ -406,6 +434,10 @@ export default async function AdminBroadcastDetailPage({
         </section>
       )}
 
+      {threadModel !== null && hasThreadHistory(threadModel) ? (
+        <VersionThread audience="staff" model={threadModel} />
+      ) : null}
+
       <AuditTimeline tenantId={tenant.slug} broadcastId={broadcastId} />
 
       {/* One right-aligned action row for the stage's staff actions. Every
@@ -452,6 +484,13 @@ async function readThread(
     'broadcasts.detail_page.thread_read_failed',
   );
   return null;
+}
+
+/** The member's latest decision when it asked for changes (or withdrew an approval) with a reason. */
+function latestChangeRequest(thread: BroadcastVersionThread | null): StaffThreadDecision | null {
+  const latest = thread?.decisions.at(-1) ?? null;
+  if (latest === null || latest.decision === 'approved' || latest.reason === null) return null;
+  return latest;
 }
 
 /** The version the member approved, else the latest one sent to them. */

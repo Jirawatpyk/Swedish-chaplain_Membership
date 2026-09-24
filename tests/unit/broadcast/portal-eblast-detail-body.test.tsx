@@ -66,6 +66,10 @@ vi.mock('@/components/broadcast/approval/version-thread', () => ({
   hasThreadHistory: () => false,
 }));
 vi.mock('@/lib/broadcast-approval-deps', () => ({ makeGetMemberVersionThreadDeps: () => ({}) }));
+// UX review M5 — the Back link's access read (pinned by the sign-off page test).
+vi.mock('@/lib/load-membership-access', () => ({
+  loadMembershipAccess: async () => ({ access: 'full', reason: 'in_good_standing' }),
+}));
 
 const findByLinkedUserId = vi.fn();
 vi.mock('@/modules/members/members-deps', () => ({

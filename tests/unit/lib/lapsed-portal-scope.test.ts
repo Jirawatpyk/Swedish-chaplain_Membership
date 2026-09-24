@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   checkPortalAccess,
+  isPortalPathAllowed,
   isTerminatedAllowedRoute,
   LAPSED_PORTAL_ALLOWED_PREFIXES,
 } from '@/lib/lapsed-portal-scope';
@@ -381,5 +382,39 @@ describe('isTerminatedAllowedRoute — the F119 E-Blast sign-off exemption (T074
       type: 'lapsed_member_action_blocked',
       payload: { blocked_route: '/api/broadcasts/submit' },
     });
+  });
+});
+
+/**
+ * F119 UX review M5 — the audit-free twin of `checkPortalAccess`'s route
+ * decision, for a page that only needs to know where a link may point (the
+ * sign-off page's Back link). Same two policies, no audit row: asking is not
+ * a blocked action.
+ */
+describe('isPortalPathAllowed (the route decision without the audit)', () => {
+  it.each([
+    ['full', '/portal/benefits', true],
+    ['full', '/portal/broadcasts/new', true],
+    ['suspended', '/portal/benefits', true],
+    ['suspended', '/portal/broadcasts/new', false],
+    ['terminated', '/portal/benefits', false],
+    ['terminated', '/portal', true],
+    ['terminated', '/portal/invoices', true],
+  ] as const)('%s member → %s allowed: %s', (access, pathname, allowed) => {
+    expect(isPortalPathAllowed(access, pathname)).toBe(allowed);
+  });
+
+  it('agrees with checkPortalAccess for a terminated member', async () => {
+    const { deps } = fakeDeps({ cycle: buildCycle() });
+    for (const pathname of ['/portal/benefits', '/portal', '/portal/renewal/x']) {
+      const decision = await checkPortalAccess(deps, {
+        tenantId: TENANT_ID,
+        memberId: MEMBER_ID,
+        pathname,
+        actorUserId: 'u1',
+        correlationId: 'c1',
+      });
+      expect(isPortalPathAllowed('terminated', pathname)).toBe(decision.allowed);
+    }
   });
 });

@@ -3401,7 +3401,10 @@
           "reasonLabel": "Motivering",
           "approvalNoteLabel": "Medlemmens meddelande",
           "approvedAsSubmitted": "Godkänt som inskickat",
-          "approvedAsSubmittedBy": "Godkänt som inskickat av {name}"
+          "approvedAsSubmittedBy": "Godkänt som inskickat av {name}",
+          "approvedBy": "{name} (medlem) godkände version {version}",
+          "changesRequestedBy": "{name} (medlem) begärde ändringar i version {version}",
+          "withdrawnBy": "{name} (medlem) drog tillbaka godkännandet av version {version}"
         },
         "workspace": {
           "title": "Formaterad version {version}",
@@ -6319,9 +6322,9 @@
           "failed_to_dispatch": "Misslyckades",
           "partially_sent": "Delvis skickad",
           "in_design": "Under utformning",
-          "awaiting_member_approval": "Inväntar medlemmens godkännande",
-          "changes_requested": "Medlemmen begär ändringar",
-          "member_approved": "Godkänd av medlem — inväntar schemaläggning",
+          "awaiting_member_approval": "Inväntar ditt godkännande",
+          "changes_requested": "Ändringar begärda",
+          "member_approved": "Godkänd — inväntar schemaläggning",
           "expired_no_member_response": "Utgången — inget svar från medlem",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
@@ -6362,6 +6365,7 @@
           "total": "Totalt"
         },
         "back": "Tillbaka till utskick",
+        "backToDashboard": "Tillbaka till instrumentpanelen",
         "cancelButton": "Avbryt utskick",
         "cancelDialog": {
           "title": "Avbryta detta utskick?",
@@ -6412,15 +6416,16 @@
         },
         "threadUnavailable": {
           "title": "Versionshistoriken kunde inte läsas in",
-          "body": "Du kan inte godkänna eller begära ändringar förrän den har lästs in. Uppdatera sidan om en stund."
+          "body": "Du kan inte godkänna eller begära ändringar förrän den har lästs in. Uppdatera sidan om en stund.",
+          "refresh": "Uppdatera"
         },
         "actions": {
           "title": "Ditt beslut",
           "decideDescription": "Godkänn version {version} eller berätta för handelskammaren vad som ska ändras.",
-          "withdrawDescription": "Du har godkänt version {version}. Du kan dra tillbaka ditt godkännande tills utskicket börjar skickas.",
+          "withdrawDescription": "Version {version} är godkänd. Du kan dra tillbaka godkännandet tills utskicket börjar skickas.",
           "approve": "Godkänn",
           "requestChanges": "Begär ändringar",
-          "withdrawApproval": "Dra tillbaka godkännande"
+          "withdrawApproval": "Dra tillbaka godkännandet"
         },
         "approveDialog": {
           "title": "Godkänna version {version}?",
@@ -6446,22 +6451,17 @@
           }
         },
         "withdrawApproval": {
-          "title": "Dra tillbaka ditt godkännande?",
+          "title": "Dra tillbaka godkännandet?",
           "description": "Utskicket går tillbaka till handelskammaren och en bekräftad sändningstid ställs in. Det skickas inte förrän du godkänner en version igen.",
-          "reasonLabel": "Varför drar du tillbaka ditt godkännande?",
+          "reasonLabel": "Varför drar du tillbaka godkännandet?",
           "reasonPlaceholder": "Till exempel: priset i erbjudandet har ändrats.",
           "reasonHelp": "Obligatoriskt — högst 2 000 tecken.",
-          "confirm": "Dra tillbaka godkännande",
-          "cancel": "Behåll mitt godkännande",
+          "confirm": "Dra tillbaka godkännandet",
+          "cancel": "Behåll godkännandet",
           "errors": {
-            "reasonRequired": "Ange varför du drar tillbaka ditt godkännande.",
+            "reasonRequired": "Ange varför du drar tillbaka godkännandet.",
             "reasonTooLong": "Motiveringen är längre än 2 000 tecken."
           }
-        },
-        "toast": {
-          "approved": "Versionen är godkänd. Handelskammaren bekräftar nu sändningstiden.",
-          "changesRequested": "Din begäran om ändringar har skickats till handelskammaren.",
-          "approvalWithdrawn": "Ditt godkännande har dragits tillbaka."
         },
         "errors": {
           "reason_required": "Ange en motivering — fältet får inte vara tomt.",
@@ -6478,7 +6478,7 @@
           "description": "Varje version som handelskammaren har skickat dig och varje beslut, äldst först.",
           "original": "Ditt original",
           "round": "Omgång {round}",
-          "submittedByYou": "Inskickat av dig",
+          "submittedByYourCompany": "Inskickat av ditt företag",
           "submittedByChamber": "Inskickat av handelskammaren för din räkning",
           "versionSent": "Version {version} — skickad till dig av handelskammaren",
           "noteLabel": "Meddelande från handelskammaren",
@@ -6490,7 +6490,7 @@
           "changesRequestedByColleague": "En kollega på ditt företag begärde ändringar",
           "withdrawnByYou": "Du drog tillbaka ditt godkännande",
           "withdrawnByColleague": "En kollega på ditt företag drog tillbaka godkännandet",
-          "approvedAsSubmitted": "Handelskammaren godkände ditt utskick som du skickade in det"
+          "approvedAsSubmitted": "Handelskammaren godkände ditt utskick utan ändringar"
         }
       }
     },

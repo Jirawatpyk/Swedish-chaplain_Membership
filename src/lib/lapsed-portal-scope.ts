@@ -315,6 +315,23 @@ export function isTerminatedAllowedRoute(pathname: string): boolean {
   );
 }
 
+/**
+ * F119 UX review M5 — the route half of {@link checkPortalAccess}, without
+ * the cycle read and WITHOUT the audit: whether a member whose access is
+ * `access` may open `pathname`. For a page choosing where a link points (the
+ * E-Blast sign-off page's Back link), where asking is not a blocked action and
+ * must not write a `lapsed_member_action_blocked` row. Pair it with the
+ * request-cached `loadMembershipAccess`; `checkPortalAccess` stays the gate.
+ */
+export function isPortalPathAllowed(
+  access: 'full' | 'suspended' | 'terminated',
+  pathname: string,
+): boolean {
+  if (access === 'full') return true;
+  if (access === 'terminated') return isTerminatedAllowedRoute(pathname);
+  return !isSuspendedDeniedRoute(pathname);
+}
+
 /** Whether `pathname` is on the `suspended`-member denylist. */
 export function isSuspendedDeniedRoute(pathname: string): boolean {
   return SUSPENDED_DENYLIST_PREFIXES.some((prefix) =>

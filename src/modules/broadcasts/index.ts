@@ -837,6 +837,7 @@ export {
   type ListBroadcastVersionsDeps,
   type ListBroadcastVersionsError,
   type ListBroadcastVersionsInput,
+  type StaffThreadDecision,
   type VersionThreadEntry,
 } from './application/use-cases/approval/list-broadcast-versions';
 // T059 / T060 — send a version to the member; confirm, change or cancel the

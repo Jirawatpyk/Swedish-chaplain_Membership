@@ -394,15 +394,15 @@ describe('F119 T063 — the staff detail page action controls', () => {
   });
 
   /**
-   * F119 T085 — the version thread REPLACES the interim latest-reason note
-   * (FR-011, FR-032): every decision and its reason, attached to the version
-   * it concerns, on every stage that carries a round — for a manager too.
+   * F119 T085 — the version thread (FR-011, FR-032): every decision and its
+   * reason, attached to the version it concerns, on every stage that carries
+   * a round — for a manager too.
    */
   it.each([
     ['changes_requested', 1],
     ['in_design', 1],
     ['member_approved', 1],
-  ] as const)('%s (round %s) → the version thread, with every reason, and no interim note', async (status, round) => {
+  ] as const)('%s (round %s) → the version thread, with every reason', async (status, round) => {
     decisions = [
       { id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: 'Looks good', decidedAt: new Date('2026-09-21T08:00:00Z') },
       { id: 'd1', versionId: V1.id, round: 1, decision: 'approval_withdrawn', reason: 'The date in the heading is wrong', decidedAt: new Date('2026-09-22T08:00:00Z') },
@@ -410,11 +410,56 @@ describe('F119 T063 — the staff detail page action controls', () => {
     role = 'manager';
     const html = await renderPage(status, round);
     expect(has(html, 'version-thread')).toBe(true);
-    expect(has(html, 'eblast-member-feedback')).toBe(false);
     // Both reasons, on version 1 — the thread keeps the whole history, not the latest line.
     expect(html).toContain('v1:Looks good|The date in the heading is wrong');
     // The unsent working copy is never a round of the thread.
     expect(html).not.toContain('v2:');
+  });
+
+  /**
+   * UX review M6 — the member's LATEST request stays in view ABOVE what
+   * marketing works on, as a note; the full thread sits BELOW it, so a long
+   * history never pushes the editor below the fold.
+   */
+  it.each([
+    ['changes_requested', 'admin', 'eblast-version-comparison'],
+    ['in_design', 'admin', 'format-workspace'],
+    ['in_design', 'manager', 'eblast-version-comparison'],
+  ] as const)('%s as %s → the latest request above the %s, the thread below it', async (status, who, workTestId) => {
+    decisions = [
+      { id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: 'Looks good', decidedAt: new Date('2026-09-21T08:00:00Z') },
+      { id: 'd1', versionId: V1.id, round: 1, decision: 'changes_requested', reason: 'The date in the heading is wrong', decidedAt: new Date('2026-09-22T08:00:00Z') },
+    ];
+    role = who;
+    const html = await renderPage(status, 1);
+    const note = html.indexOf('data-testid="eblast-member-feedback"');
+    const work = html.indexOf(`data-testid="${workTestId}"`);
+    const thread = html.indexOf('data-testid="version-thread"');
+    expect(note).toBeGreaterThan(-1);
+    expect(html.slice(html.lastIndexOf('<div', note), note)).toContain('role="note"');
+    expect(html.slice(note, work)).toContain('The date in the heading is wrong');
+    expect(work).toBeGreaterThan(note);
+    expect(thread).toBeGreaterThan(work);
+  });
+
+  it('the latest-request note names who asked when the name is known (FR-032), else "the member"', async () => {
+    decisions = [{ id: 'd1', versionId: V1.id, round: 1, decision: 'changes_requested', reason: 'x', decidedByName: 'Anna Andersson', decidedAt: new Date('2026-09-22T08:00:00Z') }];
+    const named = await renderPage('changes_requested', 1);
+    const at = named.indexOf('data-testid="eblast-member-feedback"');
+    expect(named.slice(at, named.indexOf('</div>', at))).toContain('changesRequestedBy');
+    decisions = [{ id: 'd1', versionId: V1.id, round: 1, decision: 'changes_requested', reason: 'x', decidedAt: new Date('2026-09-22T08:00:00Z') }];
+    const unnamed = await renderPage('changes_requested', 1);
+    const at2 = unnamed.indexOf('data-testid="eblast-member-feedback"');
+    expect(unnamed.slice(at2, unnamed.indexOf('</div>', at2))).toContain('changesRequestedTitle');
+  });
+
+  it('no latest-request note when the latest decision is an approval, when there is none, or once the member approved', async () => {
+    decisions = [{ id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: 'Looks good', decidedAt: new Date('2026-09-21T08:00:00Z') }];
+    expect(has(await renderPage('changes_requested', 1), 'eblast-member-feedback')).toBe(false);
+    decisions = [];
+    expect(has(await renderPage('changes_requested', 1), 'eblast-member-feedback')).toBe(false);
+    decisions = [{ id: 'd1', versionId: V1.id, round: 1, decision: 'changes_requested', reason: 'x', decidedAt: new Date('2026-09-22T08:00:00Z') }];
+    expect(has(await renderPage('member_approved', 1), 'eblast-member-feedback')).toBe(false);
   });
 
   it('approved as submitted (round 0) → the single "approved as submitted" entry, with the staff name (FR-007)', async () => {

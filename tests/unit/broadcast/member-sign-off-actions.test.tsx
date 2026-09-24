@@ -150,8 +150,11 @@ describe('F119 T084 — the member sign-off controls', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`/api/broadcasts/${ID}/decision`);
     expect(JSON.parse(init.body as string)).toEqual({ versionId: VERSION.id, decision: 'approved', reason: 'Looks great' });
-    // The page re-renders into the new stage; its banner announces it.
+    // The page re-renders into the new stage; its banner — the page's one
+    // live region — announces it. No success toast on top (UX review L2:
+    // the same news said twice).
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it('a 429 while withdrawing an approval is said inside the open dialog, not by a toast', async () => {
@@ -180,5 +183,70 @@ describe('F119 T084 — the member sign-off controls', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(refresh).toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith(t.errors.stage_changed);
+  });
+});
+
+describe('F119 UX review — sign-off dialogs while busy and after a refusal', () => {
+  it('an identical refusal repeated is a NEW alert node, so it is announced again (M1)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(429, { error: { code: 'broadcast_rate_limit_exceeded' } })));
+    renderActions({ canDecide: false, canWithdrawApproval: true });
+    fireEvent.click(screen.getByTestId('eblast-withdraw-approval'));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.change(within(dialog).getByLabelText(t.withdrawApproval.reasonLabel), {
+      target: { value: 'We found a typo in the date.' },
+    });
+    const confirm = within(dialog).getByRole('button', { name: t.withdrawApproval.confirm });
+    fireEvent.click(confirm);
+    const first = await within(dialog).findByRole('alert');
+    await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
+
+    fireEvent.click(confirm);
+    await waitFor(() => expect(within(dialog).getByRole('alert')).not.toBe(first));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(t.errors.broadcast_rate_limit_exceeded);
+  });
+
+  it('Request changes is a normal step: an outline trigger and a primary Confirm; Withdraw approval stays destructive (M2)', async () => {
+    renderActions();
+    expect(screen.getByTestId('eblast-request-changes').className.split(' ')).not.toContain('text-destructive');
+    fireEvent.click(screen.getByTestId('eblast-request-changes'));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('button', { name: t.requestChanges.confirm }).className).not.toContain('bg-destructive');
+    fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.cancel }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    cleanup();
+
+    renderActions({ canDecide: false, canWithdrawApproval: true });
+    // Positive control: the destructive tier really paints the trigger red.
+    expect(screen.getByTestId('eblast-withdraw-approval').className.split(' ')).toContain('text-destructive');
+    fireEvent.click(screen.getByTestId('eblast-withdraw-approval'));
+    const withdraw = await screen.findByRole('alertdialog');
+    expect(within(withdraw).getByRole('button', { name: t.withdrawApproval.confirm }).className).toContain('bg-destructive');
+  });
+
+  it('Approve: the note stays focusable (read-only) while busy, and a refusal is focused', async () => {
+    let answer: (r: Response) => void = () => undefined;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { answer = r; })));
+    renderActions();
+    fireEvent.click(screen.getByTestId('eblast-approve'));
+    const dialog = await screen.findByRole('alertdialog');
+    const note = within(dialog).getByLabelText(t.approveDialog.noteLabel);
+    fireEvent.click(within(dialog).getByTestId('eblast-approve-confirm'));
+
+    await waitFor(() => expect(within(dialog).getByTestId('eblast-approve-confirm')).toHaveAttribute('aria-busy', 'true'));
+    expect(note).not.toBeDisabled();
+    expect(note).toHaveAttribute('readonly');
+
+    answer(json(429, { error: { code: 'broadcast_rate_limit_exceeded' } }));
+    const alert = await within(dialog).findByRole('alert');
+    await waitFor(() => expect(document.activeElement).toBe(alert));
+  });
+
+  it('Approve: the too-long note error sits immediately under the note (L4)', async () => {
+    renderActions();
+    fireEvent.click(screen.getByTestId('eblast-approve'));
+    const dialog = await screen.findByRole('alertdialog');
+    const note = within(dialog).getByLabelText(t.approveDialog.noteLabel);
+    fireEvent.change(note, { target: { value: 'x'.repeat(501) } });
+    expect(note.nextElementSibling).toHaveTextContent(t.approveDialog.noteTooLong);
   });
 });

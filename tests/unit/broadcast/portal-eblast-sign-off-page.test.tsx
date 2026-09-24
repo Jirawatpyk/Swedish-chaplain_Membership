@@ -51,6 +51,15 @@ vi.mock('@/components/broadcast/approval/version-thread', () => ({
   memberThreadModel: () => ({ original: null, rounds: [], approvedAsSubmitted: null }),
   hasThreadHistory: () => true,
 }));
+// UX review M5 — the Back link asks the SAME membership-access read the
+// benefits page gates on (request-cached, audit-free, fail-open to `full`).
+const loadMembershipAccessMock = vi.fn();
+vi.mock('@/lib/load-membership-access', () => ({
+  loadMembershipAccess: (...args: unknown[]) => loadMembershipAccessMock(...args),
+}));
+vi.mock('@/components/shell/refresh-page-button', () => ({
+  RefreshPageButton: ({ label }: { label: string }) => <button data-testid="refresh-page-button">{label}</button>,
+}));
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
   CancelBroadcastAction: () => <div data-testid="cancel-action" />,
 }));
@@ -140,7 +149,7 @@ function setUp({ status, round, approvedVersionId = null }: Case): void {
         status,
         estimatedRecipientCount: 42,
         submittedAt: new Date('2026-09-01T03:00:00Z'),
-        sentAt: null,
+        sentAt: status === 'sent' ? new Date('2026-10-01T03:00:00Z') : null,
       },
       delivery: { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0, total: 0 },
     },
@@ -182,6 +191,7 @@ describe('F119 T086 — the member sign-off compare view', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'member-1' } });
+    loadMembershipAccessMock.mockResolvedValue({ access: 'full', reason: 'in_good_standing' });
   });
 
   it('the formatted version comes first and the original below it, in one two-column grid', async () => {
@@ -253,5 +263,63 @@ describe('F119 T086 — the member sign-off compare view', () => {
     const html = renderToStaticMarkup((await Page({ params: Promise.resolve({ id: ID }) })) as ReactElement);
     expect(html).toContain('data-testid="eblast-thread-unavailable"');
     expect(attr(html, 'data-decide')).not.toBe('true');
+  });
+});
+
+const backLink = (html: string): { href: string; text: string } | null => {
+  const m = /<a href="([^"]*)"[^>]*>(?:<svg[\s\S]*?<\/svg>)?([^<]*)<\/a>/.exec(html);
+  return m === null ? null : { href: m[1] ?? '', text: m[2] ?? '' };
+};
+
+describe('F119 UX review — the member sign-off page around the decision', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'member-1' } });
+    loadMembershipAccessMock.mockResolvedValue({ access: 'full', reason: 'in_good_standing' });
+  });
+
+  it.each([
+    ['full', '/portal/benefits?tab=broadcasts', 'back'],
+    ['suspended', '/portal/benefits?tab=broadcasts', 'back'],
+    ['terminated', '/portal', 'backToDashboard'],
+  ] as const)(
+    'M5 — a %s member: Back leads where the portal lets them go (%s)',
+    async (access, href, label) => {
+      loadMembershipAccessMock.mockResolvedValue({ access, reason: 'x' });
+      const html = await renderPage({ status: 'awaiting_member_approval', round: 1 });
+      expect(backLink(html)).toEqual({ href, text: label });
+      expect(loadMembershipAccessMock).toHaveBeenCalledWith('tenant-a', 'member-1');
+    },
+  );
+
+  it('L7 — before the first send there is no delivery breakdown (it would be all zeros)', async () => {
+    const html = await renderPage({ status: 'awaiting_member_approval', round: 1 });
+    expect(html).not.toContain('data-testid="delivery-breakdown"');
+  });
+
+  it('L7 — once sent, the delivery breakdown has its heading in the card header, like the other cards', async () => {
+    const html = await renderPage({ status: 'sent', round: 1, approvedVersionId: 'v1-id' });
+    const card = html.indexOf('data-testid="delivery-breakdown"');
+    expect(card).toBeGreaterThan(-1);
+    const heading = /<h2 id="delivery-breakdown-heading" class="([^"]*)"/.exec(html.slice(card));
+    expect(heading?.[1]).toBe('font-heading text-base font-medium leading-snug');
+    const header = html.slice(card, html.indexOf('id="delivery-breakdown-heading"', card));
+    expect(header).toContain('data-slot="card-header"');
+  });
+
+  it('L6 — a real value is not muted; only the empty sentinel is', async () => {
+    const html = await renderPage({ status: 'awaiting_member_approval', round: 1 });
+    const at = html.indexOf('data-testid="eblast-proposed-send-at"');
+    const dd = html.slice(html.lastIndexOf('<dd', at), at);
+    expect(dd).not.toContain('text-muted-foreground');
+  });
+
+  it('L12 — the thread-unavailable alert offers a Refresh button', async () => {
+    setUp({ status: 'awaiting_member_approval', round: 1 });
+    getThreadMock.mockResolvedValue({ ok: false, error: { kind: 'server_error', errKind: 'TypeError' } });
+    const Page = (await import('@/app/(member)/portal/broadcasts/[id]/page')).default;
+    const html = renderToStaticMarkup((await Page({ params: Promise.resolve({ id: ID }) })) as ReactElement);
+    const alert = html.indexOf('data-testid="eblast-thread-unavailable"');
+    expect(html.indexOf('data-testid="refresh-page-button"', alert)).toBeGreaterThan(alert);
   });
 });
