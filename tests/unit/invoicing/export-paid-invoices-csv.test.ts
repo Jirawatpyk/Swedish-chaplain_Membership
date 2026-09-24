@@ -211,7 +211,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,manual,2026-05-16\r?\n?$/);
+    expect(result.value.csv).toMatch(/,manual,2026-05-15\r?\n?$/);
   });
 
   it('labels F5-paid rows by their PaymentMethod', async () => {
@@ -227,7 +227,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,promptpay,2026-05-16\r?\n?$/);
+    expect(result.value.csv).toMatch(/,promptpay,2026-05-15\r?\n?$/);
   });
 
   it('includes an AS-PAID event invoice with its paidAt + payment date rendered (064 T15 pin)', async () => {
@@ -273,6 +273,7 @@ describe('exportPaidInvoicesCsv', () => {
     // a back-dated payment has a paidAt outside the period it belongs to.
     const backDated = makeInvoice({
       invoiceId: asInvoiceId('i-back-dated'),
+      receiptDocumentNumberRaw: 'RC-2026-000031',
       paymentDate: '2026-05-31',
       paidAt: '2026-06-02T03:00:00Z', // Bangkok 2026-06-02 — outside May
     });

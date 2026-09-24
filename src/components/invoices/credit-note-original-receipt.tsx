@@ -1,10 +1,11 @@
 /**
- * The "Original receipt" cell shared by the admin credit-note list, the admin
- * credit-note detail and the portal credit-note detail.
+ * The "Original tax invoice" cell shared by the admin credit-note list, the
+ * admin credit-note detail and the portal credit-note detail.
  *
- * A credit note (§86/10) reduces a tax RECEIPT, so that is the number shown
- * first — the payment-time RC (or a legacy INV that was itself the receipt),
- * the same number the credit-note PDF prints. The second line names the
+ * A §86/10 credit note references the original §86/4 tax invoice
+ * (ใบกำกับภาษีเดิม), so that is the number shown first — the payment-time RC
+ * tax receipt (or a legacy combined INV), the same number the credit-note PDF
+ * prints. The second line names the
  * document behind it (the 088 SC bill, a legacy INV invoice, or "combined")
  * and links to the invoice page in-app.
  */

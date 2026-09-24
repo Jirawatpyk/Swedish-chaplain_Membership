@@ -69,11 +69,12 @@ export interface PeriodOutputVatSummary {
    */
   readonly creditNoteVatSatang: string;
   /**
-   * Non-void COMBINED-mode receipts with a tax point in the period — rows paid
-   * under their §87 invoice number with no RC/RE (`receipt_document_number_raw`
-   * NULL): before the tax-at-payment switch, or on a tenant with it off. They
-   * are outside both register streams, so a non-zero count means the net
-   * figure is not the whole period (the CSV export does include them).
+   * COMBINED-mode tax invoices ISSUED in the period — rows whose §87 INV number
+   * is the §86/4 tax invoice (no RC/RE, no SC bill): before the tax-at-payment
+   * switch, or on a tenant with it off. Every non-void, non-draft one counts,
+   * paid or not — a tax invoice issued before payment has its §78/1(1)(ก) tax
+   * point at issue. They are outside both register streams, so a non-zero
+   * count means the net figure is not the whole period.
    */
   readonly legacyCombinedCount: number;
 }
@@ -133,12 +134,13 @@ export interface TaxRegisterRepo {
    *     §86/4 RC and §105 RE streams, whatever the status (`credited` /
    *     `partially_credited` included: their reduction is a §86/10 credit
    *     note in the month the note is issued, not a missing sale);
-   *   - plus combined-mode rows (paid under the §87 invoice number,
-   *     `receipt_document_number_raw` NULL — before the tax-at-payment switch,
-   *     or on a tenant with `FEATURE_088_TAX_AT_PAYMENT` off) that the
-   *     registers never list, so the export does not silently lose them;
-   *     `sumPeriodOutputVat.legacyCombinedCount` counts the same rows.
-   * Ordered by tax point, then receipt / invoice number. Rows carry
+   *   - plus PAID combined-mode tax invoices (the §87 INV number is the
+   *     §86/4 tax invoice; no RC/RE — before the tax-at-payment switch, or on
+   *     a tenant with `FEATURE_088_TAX_AT_PAYMENT` off) ISSUED in the period:
+   *     their tax point is the issue date (§78/1(1)(ก)). The registers never
+   *     list them; `sumPeriodOutputVat.legacyCombinedCount` counts them (plus
+   *     any still unpaid).
+   * Ordered by each row's tax point, then receipt / invoice number. Rows carry
    * `lines: []`. RLS-scoped via `runInTenant`.
    */
   listForExport(

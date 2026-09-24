@@ -2379,7 +2379,7 @@
           "reason": "Orsak",
           "total": "Totalt",
           "actions": "Åtgärder",
-          "originalReceipt": "Ursprungligt kvitto"
+          "originalReceipt": "Ursprunglig skattefaktura"
         },
         "filters": {
           "search": "Sök dokumentnummer",
@@ -2423,7 +2423,7 @@
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
           "total": "Totalt krediterat (inkl. moms)",
-          "originalReceipt": "Ursprungligt kvitto"
+          "originalReceipt": "Ursprunglig skattefaktura"
         },
         "reason": {
           "heading": "Anledning"
@@ -2692,10 +2692,10 @@
           "creditNote": "§86/10-kreditnotor",
           "note": "Netto standardbeskattad utgående moms för perioden: §86/4-skattekvitton + §105-kvitton (annullerade kvitton exkluderade), minus §86/10-kreditnotor utfärdade denna period. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret.",
           "status": {
-            "closedMonth": "Beloppet som ska rapporteras i ภ.พ.30 för denna månad, per i dag.",
+            "closedMonth": "Utgående moms att rapportera i ภ.พ.30 för vald månad, per i dag.",
             "monthToDate": "Månaden hittills — perioden är inte stängd.",
             "notAMonth": "Inte en enskild kalendermånad — ภ.พ.30 lämnas per kalendermånad.",
-            "closedMonthIncomplete": "Inte hela månaden — {count, plural, one {# kombinerad skattefaktura/kvitto} other {# kombinerade skattefakturor/kvitton}} (utan RC/RE-nummer) i perioden ingår inte i beloppet. Kontrollera CSV-exporten innan ภ.พ.30 lämnas."
+            "closedMonthIncomplete": "Ofullständigt belopp — {count, plural, one {# kombinerad faktura + kvitto} other {# kombinerade fakturor + kvitton}} (INV-nummer, utan RC/RE) utfärdade denna månad ingår inte i beloppet. Ta med {count, plural, one {den} other {dem}} innan ภ.พ.30 lämnas."
           },
           "less": "minus"
         },
@@ -6052,7 +6052,7 @@
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
           "total": "Totalt kredit (inkl. moms)",
-          "originalReceipt": "Ursprungligt kvitto"
+          "originalReceipt": "Ursprunglig skattefaktura"
         },
         "reason": {
           "heading": "Anledning"

@@ -2,7 +2,7 @@
  * Phase 3 of the F4 receipt-surface plan — CSV export of paid invoices
  * for the Thai VAT monthly-filing workflow.
  *
- * Pulls every receipt whose §78/1 tax point falls inside `[from, to]`
+ * Pulls every paid receipt whose §78/1 tax point falls inside `[from, to]`
  * (both inclusive, ISO-date `YYYY-MM-DD` interpreted as Bangkok-local
  * day) and renders the bookkeeper-facing CSV per the plan's column
  * schema (13 columns, UTF-8 BOM, RFC-4180 escaping).
@@ -14,8 +14,8 @@
  * `paidAt` in memory, so a back-dated payment landed in a different
  * month from the register and a receipt credited later dropped out
  * entirely — the CSV's VAT no longer matched the register's
- * `rcVat + reVat`. Pre-088 combined-mode rows (no RC/RE number) are
- * still exported on the same tax point; see the port doc.
+ * `rcVat + reVat`. Combined-mode INV rows (no RC/RE number) are also
+ * exported, on their ISSUE date — see the port doc.
  *
  * --- Cross-module port for F5 payment methods --------------------
  * `paymentMethodLookup` is a F4-owned port; the composition root
@@ -111,10 +111,10 @@ const CSV_HEADERS: readonly string[] = [
   'Currency',
   'Paid At',
   'Payment Method',
-  // The §78/1 tax point the row is bucketed by (`payment_date`, else the
-  // Bangkok date of `paid_at`). Appended last so existing column positions
-  // stay put; it explains why a back-dated row sits in this month.
-  'Payment Date',
+  // The §78/1 tax point the row is bucketed by — see `taxPointDate`.
+  // Appended last so existing column positions stay put; it explains why a
+  // back-dated row sits in this month.
+  'Tax Point Date',
 ];
 
 // --- Public use-case ---------------------------------------------------
@@ -247,9 +247,21 @@ function buildRow(
     inv.currency,
     paidIso,
     method,
-    inv.paymentDate ?? (inv.paidAt !== null ? bangkokLocalDate(inv.paidAt) : ''),
+    taxPointDate(inv),
   ];
   return cells.map(escapeCsv).join(',');
+}
+
+/**
+ * The date that puts a row in its period, mirroring `listForExport`:
+ *   - an RC/RE receipt — the payment date (`payment_date`, else the Bangkok
+ *     date of `paid_at`): the tax invoice is issued at payment;
+ *   - a combined-mode INV (no RC/RE) — its issue date: it was a §86/4 tax
+ *     invoice at issue, which fixes the §78/1(1)(ก) tax point there.
+ */
+function taxPointDate(inv: Invoice): string {
+  if (inv.receiptDocumentNumberRaw === null) return inv.issueDate ?? '';
+  return inv.paymentDate ?? (inv.paidAt !== null ? bangkokLocalDate(inv.paidAt) : '');
 }
 
 /**

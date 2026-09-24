@@ -1,5 +1,5 @@
 /**
- * The "Original receipt" cell on the credit-note list and detail pages.
+ * The "Original tax invoice" cell on the credit-note list and detail pages.
  */
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';

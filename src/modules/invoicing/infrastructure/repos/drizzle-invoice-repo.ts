@@ -1791,18 +1791,28 @@ function taxPointBetween(from: string, to: string) {
 }
 
 /**
- * Combined-mode receipts on {@link TAX_POINT}: paid under the §87 invoice
- * number with no RC/RE (`receipt_document_number_raw` NULL) — before the
- * tax-at-payment switch or with `FEATURE_088_TAX_AT_PAYMENT` off. Paid-family
- * statuses only (never an issued bill, never void). Outside both registers.
+ * Combined-mode tax invoices dated in `[from, to]`: rows whose §87 invoice
+ * number IS the §86/4 tax invoice (`document_number` set, no RC/RE and no SC
+ * bill) — issued before the tax-at-payment switch or with
+ * `FEATURE_088_TAX_AT_PAYMENT` off. Outside both registers.
+ *
+ * Their tax point is the ISSUE date, not the payment: a tax invoice issued
+ * before payment fixes the §78/1(1)(ก) tax point at issue. Callers add the
+ * status filter (the export wants paid-family rows; the register's count also
+ * wants issued-unpaid ones, which are already tax invoices).
  */
-function legacyCombinedInPeriod(from: string, to: string) {
+function combinedTaxInvoicesIssuedBetween(from: string, to: string) {
   return [
     isNull(invoices.receiptDocumentNumberRaw),
-    sql`${invoices.status} IN ('paid', 'credited', 'partially_credited')`,
-    ...taxPointBetween(from, to),
+    isNull(invoices.billDocumentNumberRaw),
+    isNotNull(invoices.documentNumber),
+    sql`${invoices.issueDate} >= ${from}`,
+    sql`${invoices.issueDate} <= ${to}`,
   ];
 }
+
+/** Per-row tax point for ordering the export: issue date for combined rows. */
+const ROW_TAX_POINT = sql`CASE WHEN ${invoices.receiptDocumentNumberRaw} IS NULL THEN ${invoices.issueDate} ELSE ${TAX_POINT} END`;
 
 export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
   const ctx = asTenantContext(tenantId);
@@ -1892,12 +1902,19 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
             ),
           );
 
-        // (3) Combined-mode receipts in the period (outside both streams) —
-        // the same predicate as the legacy arm of `listForExport`.
+        // (3) Combined-mode tax invoices issued in the period (outside both
+        // streams) — every non-void, non-draft one, paid or not: each is
+        // already a §86/4 tax invoice with its tax point at issue.
         const [legacyAgg] = await tx
           .select({ n: sql<number>`COUNT(*)::int` })
           .from(invoices)
-          .where(and(eq(invoices.tenantId, tenantIdArg), ...legacyCombinedInPeriod(opts.from, opts.to)));
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              sql`${invoices.status} IN ('issued', 'paid', 'credited', 'partially_credited')`,
+              ...combinedTaxInvoicesIssuedBetween(opts.from, opts.to),
+            ),
+          );
 
         return {
           rcVatSatang: agg?.rcVat ?? '0',
@@ -1916,20 +1933,26 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
           .where(
             and(
               eq(invoices.tenantId, tenantIdArg),
-              // The rows `sumPeriodOutputVat` counts: same tax point, same
-              // void exclusion, every other status.
               ne(invoices.status, 'void'),
-              ...taxPointBetween(opts.from, opts.to),
               or(
-                // §86/4 RC + §105 RE receipts (the two register streams).
-                isNotNull(invoices.receiptDocumentNumberRaw),
-                // Combined mode: the §87 invoice number IS the receipt.
-                and(...legacyCombinedInPeriod(opts.from, opts.to)),
+                // §86/4 RC + §105 RE receipts — exactly the rows
+                // `sumPeriodOutputVat` counts: same tax point, every non-void
+                // status.
+                and(
+                  isNotNull(invoices.receiptDocumentNumberRaw),
+                  ...taxPointBetween(opts.from, opts.to),
+                ),
+                // Combined mode: the paid INV tax invoices issued in the
+                // period (tax point = issue date).
+                and(
+                  sql`${invoices.status} IN ('paid', 'credited', 'partially_credited')`,
+                  ...combinedTaxInvoicesIssuedBetween(opts.from, opts.to),
+                ),
               ),
             ),
           )
           .orderBy(
-            asc(TAX_POINT),
+            asc(ROW_TAX_POINT),
             asc(invoices.receiptDocumentNumberRaw),
             asc(invoices.sequenceNumber),
           )) as InvoiceRow[];
