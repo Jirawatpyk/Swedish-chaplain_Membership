@@ -263,7 +263,6 @@ export function AutoRenewalQueueActions({
     const body = (await res.json().catch(() => ({}))) as {
       invoice_number?: string;
       supersede_issues?: unknown;
-      supersede_warnings?: unknown;
     };
     toast.success(
       sendEmail
