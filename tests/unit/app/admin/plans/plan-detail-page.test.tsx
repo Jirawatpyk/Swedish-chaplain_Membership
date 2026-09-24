@@ -125,7 +125,7 @@ describe('Plan detail page', () => {
     await renderPage();
     expect(countActivePlanMembers).toHaveBeenCalledWith({ slug: 'swecham' }, 'diamond', 2026);
     const link = screen.getByRole('link', { name: /12 members/ });
-    expect(link).toHaveAttribute('href', '/admin/members?plan_id=diamond');
+    expect(link).toHaveAttribute('href', '/admin/members?plan_id=diamond&plan_year=2026');
   });
 
   it('gives plans.write holders Edit and the actions menu', async () => {
