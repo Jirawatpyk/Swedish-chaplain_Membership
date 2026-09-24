@@ -38,9 +38,12 @@ import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitize
 import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/approval/send-version-to-member';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
+import { ApprovalDependencyError } from '@/modules/broadcasts';
+import { drizzleMemberRepo } from '@/modules/members';
 import {
   EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS,
   buildEblastNotificationPayload,
+  makeEblastNotificationReads,
   type EblastNotificationReads,
   type EblastOutboxRow,
 } from '@/lib/broadcast-approval-notifications';
@@ -277,6 +280,24 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({}).reads)).toEqual({ miss: 'request_gone' });
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { company: null }).reads)).toEqual({ miss: 'request_gone' });
     await expect(buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { roster: 'throws' }).reads)).resolves.toBeNull();
+  });
+
+  // F119 round-4 B3 — the member-company read threw a plain `Error`, so the
+  // read_failed line said `err: 'Error'` whatever failed. It names the read now.
+  it('a member-company read that fails → null (the retry ladder) and the read_failed line names the dependency and the repo code', async () => {
+    vi.spyOn(drizzleMemberRepo, 'findById').mockResolvedValueOnce({ ok: false, error: { code: 'repo.unexpected' } } as never);
+    await expect(makeEblastNotificationReads(TENANT).companyName(MEMBER_ID)).rejects.toBeInstanceOf(ApprovalDependencyError);
+
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.warn).mockClear();
+    const failing = fixture({ broadcasts: [loaded()] });
+    vi.mocked(failing.reads.companyName).mockRejectedValueOnce(new ApprovalDependencyError('member_company', 'repo.unexpected'));
+    const ctx = { versionId: V1, round: 1, decision: 'approved', recipientUserId: MARKETER_ID };
+    expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => failing.reads)).toBeNull();
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ err: 'ApprovalDependencyError:member_company:repo.unexpected' }),
+      'M119.outbox_dispatch.eblast.read_failed',
+    );
   });
 
   describe('stale rows are superseded — held while the flag was off, drained on the re-flip', () => {

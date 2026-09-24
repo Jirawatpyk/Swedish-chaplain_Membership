@@ -21,7 +21,6 @@
  *
  * Pure Application — no framework imports.
  */
-import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -30,6 +29,7 @@ import {
 } from '../../../domain/value-objects/image-source-allowlist';
 import type { ImageAllowlistPort } from '../../ports/image-allowlist-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
+import { approvalErrKind } from '../../approval-dependency-error';
 import type { ApprovalBroadcastsRepo } from './_approval-tx';
 
 export interface ReadFormattingWarningsDeps {
@@ -68,6 +68,6 @@ export async function readFormattingWarnings(
       unsafeImages: evaluateImageSources(input.bodyHtml, allowlist),
     });
   } catch (e) {
-    return err({ kind: 'server_error', errKind: errKind(e) });
+    return err({ kind: 'server_error', errKind: approvalErrKind(e) });
   }
 }

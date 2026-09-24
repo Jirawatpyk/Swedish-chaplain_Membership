@@ -27,13 +27,14 @@
  * `attempts`. Never logs an address, a subject, a body, a note or a reason.
  */
 import type { Locale } from '@/i18n/config';
-import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { memberPortalRecipients } from '@/lib/broadcast-approval-deps';
 import { resolveMarketingRoster } from '@/lib/broadcast-marketing-deps';
 import {
+  ApprovalDependencyError,
   EBLAST_LIFECYCLE_KINDS,
   EBLAST_MEMBER_DECIDED_KINDS,
+  approvalErrKind,
   buildEblastApprovalLifecycleEmail,
   buildEblastMemberDecidedMarketingEmail,
   buildEblastScheduleConfirmedMemberEmail,
@@ -98,7 +99,7 @@ export function makeEblastNotificationReads(tenantId: string): EblastNotificatio
       const member = await drizzleMemberRepo.findById(tenant, asMemberId(memberId));
       if (member.ok) return member.value.companyName;
       if (member.error.code === 'repo.not_found') return null;
-      throw new Error(`member read failed: ${member.error.code}`);
+      throw new ApprovalDependencyError('member_company', member.error.code);
     },
     marketingRoster: resolveMarketingRoster,
   };
@@ -163,7 +164,8 @@ export async function buildEblastNotificationPayload(
     }
   } catch (e) {
     logger.warn(
-      { outboxRowId: row.id, tenantId: row.tenantId, notificationType: row.notificationType, err: errKind(e) },
+      // Round-4 B3 — a failed dependency read keeps its cause here.
+      { outboxRowId: row.id, tenantId: row.tenantId, notificationType: row.notificationType, err: approvalErrKind(e) },
       'M119.outbox_dispatch.eblast.read_failed',
     );
     return null;

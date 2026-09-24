@@ -8,7 +8,11 @@
  * with throw-to-rollback (`_approval-tx.ts`):
  *
  *   1. Re-read the broadcast `FOR UPDATE` and re-check the stage from THAT
- *      read: it must be `in_design` with a working copy.
+ *      read: it must be `in_design` with a working copy — and, when the
+ *      caller names the `updatedAt` it last saw (FR-033, round-4 B1), the
+ *      working copy must still carry it, else `version_changed` with the
+ *      current copy: the save's own check, so a clean-but-stale screen cannot
+ *      send content another marketing user saved unseen.
  *   2. At least one member contact who can sign in to approve (an ACTIVE
  *      portal login) — else `no_portal_user` (spec § Edge Cases).
  *   3. The content rules AGAIN, on the working copy as it stands under the
@@ -36,10 +40,10 @@
  * branch pinned (T158). Pure Application — no framework imports.
  */
 import { broadcastsMetrics } from '@/lib/metrics';
-import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../../domain/broadcast';
+import type { BroadcastVersion } from '../../../domain/approval/broadcast-version';
 import { memberApprovalExpiresAt } from '../../../domain/approval/member-approval-expiry';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
@@ -49,6 +53,7 @@ import type { EblastNotificationOutboxPort } from '../../ports/eblast-notificati
 import type { HtmlSanitizerPort } from '../../ports/html-sanitizer-port';
 import type { ImageAllowlistPort } from '../../ports/image-allowlist-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
+import { approvalErrKind } from '../../approval-dependency-error';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
 import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist';
 import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
@@ -73,6 +78,12 @@ export interface SendVersionToMemberInput {
   /** The session role, recorded as-is (`?? null`), never a literal. */
   readonly actorRole: string | null;
   readonly requestId: string | null;
+  /**
+   * FR-033 (round-4 B1) — the working copy's `updatedAt` the caller last saw,
+   * the save's concurrency token. Optional: absent, the copy under the lock is
+   * sent (a caller that sends no body keeps the old behaviour).
+   */
+  readonly expectedUpdatedAt?: Date;
 }
 
 export interface SendVersionToMemberOutput {
@@ -89,6 +100,8 @@ export type SendVersionToMemberError =
   | { readonly kind: 'not_found' }
   | { readonly kind: 'stage_changed'; readonly status: BroadcastStatus }
   | { readonly kind: 'no_working_copy' }
+  /** FR-033 (round-4 B1) — the working copy changed since the caller read it; nothing was sent. */
+  | { readonly kind: 'version_changed'; readonly current: BroadcastVersion }
   | { readonly kind: 'no_portal_user' }
   | VersionContentError
   /** An infrastructure fault; `errKind` is the error CLASS only (never `e.message` — F7-5). */
@@ -111,6 +124,11 @@ export async function sendVersionToMember(
 
       const versions = await deps.versionsRepo.listByBroadcast(slug, input.broadcastId, tx);
       const workingCopy = versions.find((v) => v.sentToMemberAt === null) ?? refuse({ kind: 'no_working_copy' });
+      // FR-033 (round-4 B1) — compared exactly as the save compares it: in JS
+      // on the ms-precision `Date` (the column is µs; the client echoes ms).
+      if (input.expectedUpdatedAt !== undefined && workingCopy.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
+        refuse({ kind: 'version_changed', current: workingCopy });
+      }
 
       const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, broadcast.requestedByMemberId, tx);
       const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId) ?? refuse({ kind: 'no_portal_user' });
@@ -166,7 +184,7 @@ export async function sendVersionToMember(
       };
     });
   } catch (e) {
-    if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: errKind(e) });
+    if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
     const refusal = e.refusal as SendVersionToMemberError;
     if (refusal.kind === 'not_found') {
       await emitCrossTenantProbe({

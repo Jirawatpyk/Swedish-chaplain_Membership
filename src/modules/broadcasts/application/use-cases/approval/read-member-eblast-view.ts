@@ -18,9 +18,17 @@
  * The versions are read only while awaiting the member: every other stage
  * shows the record, so no other stage pays for the read.
  *
+ * Awaiting the member with NO version sent to them is an invariant breach
+ * (the send stamps the version and moves the stage in one tx; the lifecycle
+ * cron treats the same state as one). Round-4 B9: it is logged under
+ * `M119.portal.detail.missing_sent_version` (ids only) and THROWS — never a
+ * fallback to the record's own content, which is the member's ORIGINAL and
+ * would be presented as what they are being asked to sign off.
+ *
  * Throws on an infrastructure fault (the route answers 500). Pure
  * Application — no framework imports.
  */
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast } from '../../../domain/broadcast';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
@@ -50,7 +58,18 @@ export async function readMemberEblastView(deps: ReadMemberEblastViewDeps, broad
     deps.versionsRepo.listByBroadcast(deps.tenant.slug, broadcast.broadcastId, tx),
   );
   const shown = latestSentVersion(versions);
-  if (shown === null) return { summary, content: own, shownVersionId: null };
+  if (shown === null) {
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+        round: broadcast.currentRound,
+        errorId: 'M119.portal.detail.missing_sent_version',
+      },
+      'broadcasts.member_view.missing_sent_version',
+    );
+    throw new Error('awaiting_member_approval broadcast has no version sent to the member');
+  }
   return {
     summary,
     content: { subject: shown.subject, bodyHtml: shown.bodyHtml, bodySource: shown.bodySource },

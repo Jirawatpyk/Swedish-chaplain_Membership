@@ -32,6 +32,7 @@ import type { TenantTx } from '@/lib/db';
 import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { listActiveUserIdsWithRole, resolveActorIdentities } from '@/modules/auth';
 import {
+  ApprovalDependencyError,
   dompurifySanitizer,
   drizzleApprovalLifecycleScan,
   drizzleBroadcastDecisionsRepo,
@@ -77,7 +78,9 @@ export const actorNameDirectory: ActorNameDirectoryPort = {
 export const memberPortalRecipients: MemberPortalRecipientPort = {
   async listActivePortalContacts(_tenant, memberId, tx) {
     const listed = await drizzleContactRepo.listByMemberInTx(tx as TenantTx, asMemberId(memberId));
-    if (!listed.ok) throw new Error(`portal contact read failed: ${listed.error.code}`);
+    // Round-4 B3 — the read and its repo code travel as fields, so a caller's
+    // log says which dependency failed rather than a bare `Error`.
+    if (!listed.ok) throw new ApprovalDependencyError('portal_contacts', listed.error.code);
     const linked = listed.value.flatMap((c) =>
       c.removedAt === null && c.linkedUserId !== null ? [{ contact: c, userId: c.linkedUserId as string }] : [],
     );

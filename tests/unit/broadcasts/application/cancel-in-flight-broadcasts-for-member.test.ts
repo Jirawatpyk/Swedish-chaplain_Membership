@@ -68,9 +68,22 @@ function makeDeps(overrides: {
   findByIdImpl?: (broadcastId: string) => Promise<{ status: string } | null>;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
+  // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
+  // one that throws ROLLS BACK (and the throw leaves withTx). Recorded per tx,
+  // so a test can prove what each attempt left behind.
+  const txOutcomes: Array<'committed' | 'rolled_back'> = [];
   const broadcastsRepo = {
     listInFlightOwnedByMember: vi.fn(async () => rows),
-    withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+    withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      try {
+        const r = await fn({});
+        txOutcomes.push('committed');
+        return r;
+      } catch (e) {
+        txOutcomes.push('rolled_back');
+        throw e;
+      }
+    }),
     applyTransition: vi.fn(async (_tx, _t, broadcastId, _to, _fields, expectedFrom) => {
       if (overrides.applyTransitionImpl) {
         return overrides.applyTransitionImpl({ broadcastId, expectedFrom });
@@ -93,6 +106,7 @@ function makeDeps(overrides: {
     broadcastsRepo,
     audit,
     clock,
+    txOutcomes,
   } as never;
 }
 
@@ -204,9 +218,15 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
           return { broadcastId };
         },
         findByIdImpl: async () => ({ status: 'in_design' }),
-      }) as { broadcastsRepo: { applyTransition: ReturnType<typeof vi.fn> }; audit: { emit: ReturnType<typeof vi.fn> } };
+      }) as {
+        broadcastsRepo: { applyTransition: ReturnType<typeof vi.fn> };
+        audit: { emit: ReturnType<typeof vi.fn> };
+        txOutcomes: string[];
+      };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
       expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0 } });
+      // Round-4 B6 — the lost attempt leaves its tx (rolled back); the retry commits.
+      expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
       expect(deps.broadcastsRepo.applyTransition.mock.calls.map((c) => c[5])).toEqual(['approved', 'in_design']);
       expect(deps.audit.emit).toHaveBeenCalledWith(
         expect.anything(),
@@ -221,10 +241,12 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
           throw lostTo('awaiting_member_approval');
         },
         findByIdImpl: async () => ({ status: 'awaiting_member_approval' }),
-      }) as { broadcastsRepo: { applyTransition: ReturnType<typeof vi.fn> } };
+      }) as { broadcastsRepo: { applyTransition: ReturnType<typeof vi.fn> }; txOutcomes: string[] };
       const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1 } });
       expect(deps.broadcastsRepo.applyTransition).toHaveBeenCalledTimes(1 + CASCADE_CAS_RETRIES);
+      // Round-4 B6 — every lost attempt rolls its tx back; none commits.
+      expect(deps.txOutcomes).toEqual(Array.from({ length: 1 + CASCADE_CAS_RETRIES }, () => 'rolled_back'));
       expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error']);
     });
 
@@ -253,6 +275,34 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const result = await cancelInFlightBroadcastsForMember(deps, { tenant, memberId, requestId: 'req-1' });
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0 } });
     });
+  });
+
+  // F119 round-4 B6 — `cancelOnce` caught inside `withTx` and returned
+  // normally, so an audit emit that threw AFTER `applyTransition` COMMITTED the
+  // cancel with no `broadcast_cancelled` row. The throw now leaves the tx: the
+  // cancel rolls back with its missing audit, the row stays in flight, it is
+  // counted unexpected (the adapter reports cascade_partial_failure and the US2
+  // reconciler re-drives it).
+  it('round-4 B6: an audit emit that throws after the transition rolls the cancel back — never a cancel without its audit row', async () => {
+    const deps = makeDeps({
+      inFlightRows: [
+        { broadcastId: broadcastIdA, status: 'approved' },
+        { broadcastId: broadcastIdB, status: 'submitted' },
+      ],
+      auditEmitImpl: (() => {
+        let calls = 0;
+        return async () => {
+          calls += 1;
+          if (calls === 1) throw new TypeError('audit payload rejected');
+        };
+      })(),
+    }) as { txOutcomes: string[]; broadcastsRepo: { applyTransition: ReturnType<typeof vi.fn> } };
+    const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+    expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 1 } });
+    expect(deps.broadcastsRepo.applyTransition).toHaveBeenCalledTimes(2);
+    expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
+    expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error', 'cancelled']);
+    expect(auditEmitCountSpy).toHaveBeenCalledTimes(1);
   });
 
   it('non-concurrent throw: emits cascadeOutcome="unexpected_error" + cascade continues', async () => {

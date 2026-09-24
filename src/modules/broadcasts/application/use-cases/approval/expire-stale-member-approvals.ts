@@ -67,6 +67,7 @@ import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
 import type { MarketingDirectoryPort, MarketingRecipient } from '../../ports/marketing-directory-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
+import { ApprovalDependencyError, approvalErrKind } from '../../approval-dependency-error';
 import type { ApprovalBroadcastsRepo } from './_approval-tx';
 import { chooseApprovalRecipient } from './_approval-recipient';
 
@@ -181,8 +182,13 @@ export async function expireStaleMemberApprovals(
       }
     } catch (e) {
       counts.rowsFailed += 1;
+      // Round-4 B8 — metered, as the image sweep's failed rows are: the tick
+      // still answers 200, so a persistent fault was a `warn` line only.
+      broadcastsMetrics.approvalLifecycleRowFailed(slug);
       logger.warn(
-        { tenantId: slug, broadcastId: candidate.broadcastId, requestId: input.requestId, err: errKind(e) },
+        // Round-4 B3 — `approvalErrKind` keeps a failed roster read's cause
+        // (`ApprovalDependencyError:marketing_roster:<class>`), not a bare `Error`.
+        { tenantId: slug, broadcastId: candidate.broadcastId, requestId: input.requestId, err: approvalErrKind(e) },
         'M119.cron.approval_lifecycle.row_failed',
       );
     }
@@ -248,7 +254,15 @@ async function processRow(
         summary: `E-Blast ${candidate.broadcastId as string} closed after ${waited} days without a member response`,
         payload: { ...common, days_waiting: waited, allowance_released: true },
       });
-      await notify(deps, tx, broadcast, version.id, 'expire', { member: true, staff: staffOf(roster) });
+      const notified = await notify(deps, tx, broadcast, version.id, 'expire', { member: true, staff: staffOf(roster) });
+      // Round-4 B8 — the closure reached nobody (no member contact and an
+      // empty roster): it still closes, and says so, as day 3 / 7 / 23 do.
+      if (notified === 0) {
+        logger.warn(
+          { tenantId: slug, broadcastId: candidate.broadcastId, reminder: step, requestId },
+          'M119.cron.approval_lifecycle.no_member_recipient',
+        );
+      }
       return step;
     }
 
@@ -307,7 +321,7 @@ async function processRow(
  * member-only reminders of the same tick are unaffected.
  */
 function staffOf(roster: Roster): readonly MarketingRecipient[] {
-  if (!roster.ok) throw new Error(`marketing roster unavailable: ${roster.errKind}`);
+  if (!roster.ok) throw new ApprovalDependencyError('marketing_roster', roster.errKind);
   return roster.recipients;
 }
 

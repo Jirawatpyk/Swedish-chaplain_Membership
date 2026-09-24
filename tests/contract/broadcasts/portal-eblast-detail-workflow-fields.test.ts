@@ -107,10 +107,27 @@ describe('GET /api/broadcasts/[id] — the workflow fields (T141a, FR-049)', () 
     expect(submitted).toMatchObject({ stage: 'awaiting_marketing_review', whoseTurn: 'marketing', confirmedSendAt: null });
   });
 
-  it('awaiting the member with no version recorded as sent (defensive) → the record\'s own content', async () => {
+  // F119 round-4 B9 — this state is an invariant breach (the send stamps the
+  // version and moves the stage in ONE tx; the lifecycle cron treats it as
+  // one). The read used to fall back to the record's own content — the
+  // member's ORIGINAL, presented as what they are being asked to sign off.
+  // It is now an error: logged under its own errorId (ids only), 500, and no
+  // content to approve.
+  it('awaiting the member with no version recorded as sent → 500, logged as missing_sent_version, no content to sign off', async () => {
     seed(makeApprovalBroadcast({ status: 'awaiting_member_approval', currentRound: 1, stageEnteredAt: SENT_1 }), [V0]);
-    const body = await (await get()).json();
-    expect(body).toMatchObject({ whoseTurn: 'member', subject: 'Member original subject', bodyHtml: '<p>Member original body</p>' });
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.error).mockClear();
+    const res = await get();
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toMatchObject({ error: { code: 'internal_error' } });
+    expect(JSON.stringify(body)).not.toContain('Member original');
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+      expect.objectContaining({ errorId: 'M119.portal.detail.missing_sent_version', broadcastId: ID, round: 1 }),
+      'broadcasts.member_view.missing_sent_version',
+    );
+    // Ids only — never the subject or the body.
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('Member original');
   });
 
   it('marketing\'s turn with an unsent working copy → the record\'s own content, never the working copy', async () => {

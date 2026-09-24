@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
+import { ApprovalDependencyError } from '@/modules/broadcasts/application/approval-dependency-error';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { HtmlSanitizerPort } from '@/modules/broadcasts/application/ports/html-sanitizer-port';
 import { chooseApprovalRecipient } from '@/modules/broadcasts/application/use-cases/approval/_approval-recipient';
@@ -93,11 +94,53 @@ describe('sendVersionToMember — the arms the route suites do not reach', () =>
     expect(audit.emit).toHaveBeenCalledWith(null, expect.objectContaining({ requestId: 'send-version-to-member' }));
   });
 
+  // F119 round-4 B3 — the route logs this errKind; a failed portal-contact read
+  // names the dependency and its repo code rather than a bare `Error`.
+  it('a portal-contact read that fails → server_error naming the dependency, nothing sent', async () => {
+    const { deps, store, run } = setup();
+    vi.mocked(deps.portalRecipients.listActivePortalContacts).mockRejectedValueOnce(
+      new ApprovalDependencyError('portal_contacts', 'repo.unexpected'),
+    );
+    expect(await run()).toEqual({
+      ok: false,
+      error: { kind: 'server_error', errKind: 'ApprovalDependencyError:portal_contacts:repo.unexpected' },
+    });
+    expect(store.outbox.rows()).toHaveLength(0);
+  });
+
   it('the allow-list read failing → server_error before any lock is taken', async () => {
     const { deps, store, run } = setup();
     vi.mocked(deps.imageAllowlist.findByTenantId).mockRejectedValueOnce(new TypeError('pool exhausted'));
     expect(await run()).toEqual({ ok: false, error: { kind: 'server_error', errKind: 'TypeError' } });
     expect(store.broadcastsRepo.withTx).not.toHaveBeenCalled();
+  });
+});
+
+// F119 round-4 B1 (FR-033) — the send carries the save's concurrency token.
+// A marketing user whose screen was clean but stale sent the content another
+// user had just saved without ever seeing it; the check is the save's own.
+describe('sendVersionToMember — expectedUpdatedAt (FR-033, round-4 B1)', () => {
+  it('a stale token → version_changed carrying the current working copy; nothing sent, nothing audited or enqueued', async () => {
+    const { store, audit, run } = setup();
+    const r = await run({ expectedUpdatedAt: new Date(WORKING.updatedAt.getTime() - 60_000) });
+    expect(r).toEqual({ ok: false, error: { kind: 'version_changed', current: WORKING } });
+    expect(store.versionsRepo.markSent).not.toHaveBeenCalled();
+    expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+    expect(store.outbox.rows()).toHaveLength(0);
+    expect(audit.events).toHaveLength(0);
+  });
+
+  it('the token the client holds → sent', async () => {
+    const { store, run } = setup();
+    const r = await run({ expectedUpdatedAt: new Date(WORKING.updatedAt.getTime()) });
+    expect(r.ok ? r.value.round : r.error).toBe(1);
+    expect(store.outbox.rows()).toHaveLength(1);
+  });
+
+  it('no token (a caller that sends no body) → sent, as before', async () => {
+    const { store, run } = setup();
+    expect((await run()).ok).toBe(true);
+    expect(store.versionsRepo.markSent).toHaveBeenCalledTimes(1);
   });
 });
 

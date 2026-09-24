@@ -26,6 +26,7 @@ import {
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 
 export async function GET(
@@ -131,7 +132,9 @@ export async function GET(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Round-4 B9 — the error CLASS only (F7-5): a message can carry a
+        // Neon error's bound parameters.
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,

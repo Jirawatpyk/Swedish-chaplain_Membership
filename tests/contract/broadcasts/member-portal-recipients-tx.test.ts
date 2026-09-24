@@ -17,6 +17,7 @@ vi.mock('@/modules/auth/infrastructure/db/active-users-by-role-repo', () => ({
 }));
 
 import { memberPortalRecipients } from '@/lib/broadcast-approval-deps';
+import { ApprovalDependencyError, approvalErrKind } from '@/modules/broadcasts';
 import { drizzleContactRepo } from '@/modules/members';
 import { asTenantContext } from '@/modules/tenants';
 
@@ -43,5 +44,22 @@ describe('memberPortalRecipients.listActivePortalContacts — one connection', (
     expect(contacts.mock.calls[0]![0]).toBe(TX);
     expect(activeIds).toHaveBeenCalledWith(['u-1'], 'member', TX);
     expect(listed.map((c) => c.contactId)).toEqual(['c-1']);
+  });
+
+  // F119 round-4 B3 — a failed contact read used to throw a plain `Error`, so
+  // every caller logged `err: 'Error'`. It now names the read and the repo code.
+  it('a failed contact read throws ApprovalDependencyError(portal_contacts, <repo code>) — approvalErrKind keeps the cause', async () => {
+    vi.spyOn(drizzleContactRepo, 'listByMemberInTx').mockResolvedValue({
+      ok: false,
+      error: { code: 'repo.unexpected' },
+    } as never);
+
+    const thrown = await memberPortalRecipients.listActivePortalContacts(asTenantContext('test-tenant'), 'm-1', TX).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(thrown).toBeInstanceOf(ApprovalDependencyError);
+    expect(approvalErrKind(thrown)).toBe('ApprovalDependencyError:portal_contacts:repo.unexpected');
   });
 });

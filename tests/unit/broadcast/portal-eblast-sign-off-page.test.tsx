@@ -264,6 +264,21 @@ describe('F119 T086 — the member sign-off compare view', () => {
     expect(html).toContain('data-testid="eblast-thread-unavailable"');
     expect(attr(html, 'data-decide')).not.toBe('true');
   });
+
+  // F119 round-4 B10 — the failed thread read logged only `reason: kind`; a
+  // server_error carries its error class, and the line now does too.
+  it('a thread read that fails with a server_error logs its error class, as the warnings read does', async () => {
+    setUp({ status: 'awaiting_member_approval', round: 1 });
+    getThreadMock.mockResolvedValue({ ok: false, error: { kind: 'server_error', errKind: 'TypeError' } });
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.warn).mockClear();
+    const Page = (await import('@/app/(member)/portal/broadcasts/[id]/page')).default;
+    renderToStaticMarkup((await Page({ params: Promise.resolve({ id: ID }) })) as ReactElement);
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'server_error', err: 'TypeError', errorId: 'M119.portal.detail.thread' }),
+      'broadcasts.detail_page.thread_read_failed',
+    );
+  });
 });
 
 const backLink = (html: string): { href: string; text: string } | null => {

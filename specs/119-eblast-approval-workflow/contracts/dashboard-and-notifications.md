@@ -22,7 +22,7 @@ FR-030 says so in as many words. What changes:
 | Chip visibility when the flag is off | n/a | a new-stage chip is offered only when the tenant has ≥ 1 row in it (research R18 — never offer a filter that can only return zero rows) |
 | Member | existing `memberId` dropdown | unchanged (FR-030) |
 | Date range | existing `fromDate` / `toDate` — rendered and written to the URL, but never passed to the list query (every range returned every row) | wired (FR-030): bounds **`submitted_at`**, as whole calendar days in the tenant's timezone — `[00:00 of fromDate, 00:00 of the day after toDate)` (`tenantDayRangeUtc`, half-open so no sub-millisecond gap at the end of the `to` day). A never-submitted row (a draft) is outside any range. It combines by AND with every other filter, the Upcoming preset's `from=now` bound on `scheduled_for` included ("sends scheduled from now on that were submitted in this range"). The list API refuses a day that is not a real calendar day (400); the page ignores it. The stage chip counts stay per stage for the whole tenant — they do **not** honour the range, the member filter or the Upcoming bound (FR-025's backlog; R18 offers a chip by them) — so with any of those on, the view's announced total falls back to the page's own rows (`queueViewNarrowed`) and the Stage group shows a note, which is also its accessible description, that its counts cover every E-Blast in each stage (`chipCountsScope`) |
-| **Upcoming sends** | — | a preset: `?status=approved&sort=scheduled_for&from=now` — scheduled E-Blasts in send-time order, so same-day clashes are obvious (FR-028) |
+| **Upcoming sends** | — | a preset: `?status=approved&sort=scheduled_for&from=now` — scheduled E-Blasts in send-time order, so same-day clashes are obvious (FR-028). `sort=scheduled_for` exists **only** with `from=now` (round-4 B7): the list pages by keyset on (`scheduled_for`, id), and unbounded the view holds rows with no send time, whose NULL cursor key dropped every unscheduled row after page 1. The list API refuses `sort=scheduled_for` without `from=now` with **400 `invalid_body`** (`fieldErrors.sort`); the page ignores it and uses the view's own order (`isUpcomingPreset`) |
 
 URL remains the source of truth (every view is a link); `status_all=1` sentinel semantics unchanged.
 
@@ -278,6 +278,7 @@ an alert nobody re-tuned.
 | `broadcasts_preview_rendered_total` | counter | `tenant, surface` (`inline`\|`dialog`\|`compare`) |
 | `broadcasts_no_marketing_recipient_total` | counter | `tenant` |
 | `broadcasts_version_saved_total` | counter | `tenant` |
+| `broadcasts_approval_lifecycle_row_failed_total` | counter | `tenant` |
 | `broadcasts_member_decide_ms` | histogram | `tenant` |
 | `broadcasts_preview_render_ms` | histogram | `tenant` |
 
@@ -290,8 +291,11 @@ a broken build (`/speckit.analyze` round 3 C1). `broadcasts_version_saved_total`
 `PATCH /api/admin/broadcasts/[id]/version` (a save is not a hand-off, so it is counted rather than
 audited) and was previously named only in `admin-eblast-formatting-api.md`, i.e. absent from this
 inventory, from `src/lib/metrics.ts` and from `docs/observability.md` § 29 — it would have shipped
-unregistered (`/speckit.analyze` M2). This table is the registration list; a metric not on it does
-not exist.
+unregistered (`/speckit.analyze` M2). `broadcasts_approval_lifecycle_row_failed_total` (round-4 B8,
+the seventh counter) is emitted by `expireStaleMemberApprovals` once per awaiting row whose per-row
+transaction threw — the lifecycle twin of `broadcasts_image_sweep_row_failed_total`, since the tick
+still answers 200 and a persistent fault was otherwise a `warn` line only. This table is the
+registration list; a metric not on it does not exist.
 
 ### 4.3 Alerts (`docs/observability.md` § 29 — F119's section, after `main`'s § 28 on the `0306` membership-coverage end)
 
@@ -300,6 +304,7 @@ not exist.
 | `broadcasts_awaiting_member_oldest_age_seconds > 7 d` | warning | the second reminder has been sent and nothing moved |
 | `broadcasts_awaiting_member_oldest_age_seconds > 14 d` | page | well inside the 30-day expiry clock and **nine days ahead of the day-23 warning**, so a human sees it before either automatic step fires (the earlier note said "halfway to the 30-day expiry" — 14 is not half of 30, and the warning falls after it, not before) |
 | `broadcasts_no_marketing_recipient_total > 0` | page | a hand-off notified nobody |
+| `broadcasts_approval_lifecycle_row_failed_total` increments on two consecutive daily ticks for one tenant | warning | a lifecycle fault that is not clearing: those rows' reminders, warnings and expiries are not happening (round-4 B8) |
 
 ### 4.4 Logs and traces
 

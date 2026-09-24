@@ -8,10 +8,14 @@
  *
  * Order of checks is the contract: gate → id (a malformed id is a 404 before
  * any read) → the 30 / 60 s per-(tenant, actor) staff write bucket, an
- * ATOMIC check consumed BEFORE the use case → `sendVersionToMember` inside
- * the `broadcasts.version.send` span. The route reads NO body: the version
- * sent is the working copy under the row lock, and an audience key in a body
- * (`segmentType`, …) has nowhere to go (FR-005).
+ * ATOMIC check consumed BEFORE the body is read → the optional body
+ * `{ expectedUpdatedAt? }` → `sendVersionToMember` inside the
+ * `broadcasts.version.send` span. The body carries ONLY the save's
+ * concurrency token (FR-033, round-4 B1): with it, a working copy another
+ * marketing user saved since this screen loaded is refused `version_changed`
+ * and nothing is sent. Every other key is ignored — an audience key
+ * (`segmentType`, …) has nowhere to go (FR-005). A body that is not JSON, or a
+ * token that is not an ISO date-time, is 400 `invalid_body`.
  *
  * The state change is ONE `runInTenant` inside the use case, with
  * throw-to-rollback. No `Idempotency-Key` (research R19): once sent, the row
@@ -25,10 +29,11 @@
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
+import { z } from 'zod';
 import { assertNever } from '@/lib/assert-never';
 import { makeSendVersionToMemberDeps } from '@/lib/broadcast-approval-deps';
 import { inApprovalSpan } from '@/lib/broadcasts-approval-span';
-import { baseHeaders, designBlockErrorResponse, errorResponse } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders, designBlockErrorResponse, errorResponse, versionChangedResponse } from '@/lib/broadcasts-route-helpers';
 import { consumeStaffWriteBucket } from '@/lib/broadcasts-staff-write-bucket';
 import { logger } from '@/lib/logger';
 import { F119_BROADCASTS_SPANS } from '@/lib/otel-tracer';
@@ -58,6 +63,12 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   const limited = await consumeStaffWriteBucket(tenantCtx.slug, ctx.current.user.id, correlationId);
   if (limited !== null) return limited;
 
+  const body = await readSendBody(request);
+  if (!body.ok) {
+    return errorResponse(400, 'invalid_body', correlationId, body.fieldErrors === null ? undefined : { fieldErrors: body.fieldErrors });
+  }
+  const expected = body.expectedUpdatedAt;
+
   const result = await inApprovalSpan(
     F119_BROADCASTS_SPANS.versionSend,
     { tenantSlug: tenantCtx.slug, broadcastId: parsedId.value as string },
@@ -67,6 +78,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         actorUserId: ctx.current.user.id,
         actorRole: ctx.current.user.role ?? null,
         requestId: ctx.requestId ?? correlationId,
+        ...(expected !== undefined && { expectedUpdatedAt: new Date(expected) }),
       }),
     (sent) => ({ stage: stageOf(sent.stage), round: sent.round }),
   );
@@ -83,6 +95,32 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   );
 }
 
+/**
+ * The send body — the save's concurrency token and nothing else. Non-strict:
+ * unknown keys (an audience key included) are stripped, never an error.
+ */
+const SendSchema = z.object({ expectedUpdatedAt: z.string().datetime({ offset: true }).optional() });
+
+type SendBody =
+  | { readonly ok: true; readonly expectedUpdatedAt: string | undefined }
+  /** `fieldErrors` null = the body is not JSON at all. */
+  | { readonly ok: false; readonly fieldErrors: Record<string, string[]> | null };
+
+/** An absent or empty body is "no token"; anything present must parse. */
+async function readSendBody(request: NextRequest): Promise<SendBody> {
+  const text = await request.text();
+  if (text.trim() === '') return { ok: true, expectedUpdatedAt: undefined };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, fieldErrors: null };
+  }
+  const parsed = SendSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> };
+  return { ok: true, expectedUpdatedAt: parsed.data.expectedUpdatedAt };
+}
+
 function sendErrorResponse(error: SendVersionToMemberError, correlationId: string): NextResponse {
   switch (error.kind) {
     case 'not_found':
@@ -93,6 +131,8 @@ function sendErrorResponse(error: SendVersionToMemberError, correlationId: strin
       });
     case 'no_working_copy':
       return errorResponse(409, 'no_working_copy', correlationId);
+    case 'version_changed':
+      return versionChangedResponse(error.current, correlationId);
     case 'no_portal_user':
       return errorResponse(409, 'no_portal_user', correlationId);
     case 'subject_invalid':

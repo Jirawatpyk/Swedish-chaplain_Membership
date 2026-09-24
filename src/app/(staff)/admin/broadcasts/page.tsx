@@ -24,7 +24,7 @@ import {
   membersBridge,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
+import { isUpcomingPreset, loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -184,7 +184,10 @@ export default async function AdminBroadcastsPage({
     typeof params.toDate === 'string' && isYmd(params.toDate) ? params.toDate : undefined,
     env.tenant.timezone,
   );
-  const sort = queueSortFor(status, params.sort === 'scheduled_for');
+  // Round-4 B7 — the send-time order only WITH its `from=now` bound (a keyset
+  // over the nullable `scheduled_for` loses the unscheduled rows otherwise);
+  // an unbounded `sort=scheduled_for` falls back to the view's own order.
+  const sort = queueSortFor(status, isUpcomingPreset(params.sort, params.from));
   const [listResult, stageChips] = await Promise.all([
     loadAdminBroadcastQueue(tenant, {
       statusFilter: status,

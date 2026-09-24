@@ -694,12 +694,20 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     expect(sendStanding.membershipAccess.getMembershipAccess.mock.calls.every((c) => c[1] === 'm-1')).toBe(true);
   });
 
-  it.each([{ haltReadThrows: true }, { access: 'lookup_error' as const }])(
-    'T166 S-H1: a standing read that cannot be answered (%o) fails CLOSED → approve.server_error, no transition, no refusal audit',
-    async (standing) => {
+  // F119 round-4 B3 — the route logs `errKind`; it carries WHICH read failed
+  // and its cause, not the bare `Error` every dependency fault used to read as.
+  it.each([
+    { standing: { haltReadThrows: true }, errKind: 'ApprovalDependencyError:member_halt_flag:Error' },
+    {
+      standing: { access: 'lookup_error' as const },
+      errKind: 'ApprovalDependencyError:membership_access:membership_access.lookup_error',
+    },
+  ])(
+    'T166 S-H1: a standing read that cannot be answered ($standing) fails CLOSED → approve.server_error naming the cause, no transition, no refusal audit',
+    async ({ standing, errKind }) => {
       const { repo, audit, result } = approveWith(standing);
       const r = await result;
-      expect(r.ok ? null : r.error.kind).toBe('approve.server_error');
+      expect(r).toEqual({ ok: false, error: { kind: 'approve.server_error', errKind } });
       expect(repo.transitions).toHaveLength(0);
       // The gate was never decided — recording a refusal would be a false row.
       expect(audit.emits).toEqual([]);
@@ -765,6 +773,48 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const r = await approveBroadcast({ tenant, broadcastsRepo: repo.port, sendStanding, audit: makeAudit().port, clock }, baseInput);
     expect(r.ok).toBe(true);
     expect(seen).toEqual([false, false]);
+  });
+
+  // F119 round-4 B5 — the member's preferred locale is a members-bridge read
+  // on its OWN pool connection too; made inside the tx it held a second
+  // connection while the row lock sat on the first (the R-L3 class).
+  it('round-4 B5: the preferred locale is read with NO transaction open, for the owning member, and still used', async () => {
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    let open = false;
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) =>
+      inner(async (tx) => {
+        open = true;
+        try {
+          return await fn(tx);
+        } finally {
+          open = false;
+        }
+      })) as BroadcastsRepo['withTx'];
+    const seen: boolean[] = [];
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(async () => {
+        seen.push(open);
+        return 'th' as const;
+      }),
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    const email = makeEmail();
+    const r = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
+        audit: makeAudit().port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput,
+    );
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([false]);
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(email.memberCalls[0]?.locale).toBe('th');
   });
 
   it('T166 follow-up: a row that reached submitted after the non-locking pre-read → approve.server_error (fail closed), nothing written', async () => {

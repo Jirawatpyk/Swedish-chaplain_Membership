@@ -195,6 +195,56 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     const reload = await screen.findByRole('button', { name: t.workspace.reload });
     await waitFor(() => expect(document.activeElement).toBe(reload));
   });
+  // F119 round-4 B1 (FR-033) — Send carries the concurrency token, so a stale
+  // screen cannot send content another marketing user saved unseen. When Send
+  // saved first it is the token THAT save returned — the page-load token would
+  // make the happy path answer 409 to itself.
+  describe('round-4 B1 — the send carries expectedUpdatedAt', () => {
+    const sendBody = (): Record<string, unknown> => {
+      const call = fetchMock.mock.calls.find(([url]) => url === `/api/admin/broadcasts/${ID}/version/send`) as
+        | [string, RequestInit]
+        | undefined;
+      expect(call).toBeDefined();
+      expect(call![1].method).toBe('POST');
+      return JSON.parse(String(call![1].body)) as Record<string, unknown>;
+    };
+
+    it('dirty: the save runs first and the send carries the updatedAt that save returned', async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(200, { version: { updatedAt: '2026-09-20T09:30:00.000Z' } }))
+        .mockResolvedValueOnce(jsonResponse(200, { stage: 'awaiting_member_approval' }));
+      renderWorkspace();
+      fireEvent.change(screen.getByLabelText(t.workspace.subjectLabel), { target: { value: 'Edited' } });
+      await sendAndConfirm();
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t.send.sent));
+      expect((fetchMock.mock.calls[0] as [string, RequestInit])[1].method).toBe('PATCH');
+      expect(sendBody()).toEqual({ expectedUpdatedAt: '2026-09-20T09:30:00.000Z' });
+    });
+
+    it('clean: the send carries the updatedAt the screen loaded', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { stage: 'awaiting_member_approval' }));
+      renderWorkspace();
+      await sendAndConfirm();
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t.send.sent));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(sendBody()).toEqual({ expectedUpdatedAt: '2026-09-20T08:00:00.000Z' });
+    });
+
+    it('saved earlier, then sent clean: the send carries the token of that earlier save', async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(200, { version: { updatedAt: '2026-09-20T10:00:00.000Z' } }))
+        .mockResolvedValueOnce(jsonResponse(200, { stage: 'awaiting_member_approval' }));
+      renderWorkspace();
+      fireEvent.change(screen.getByLabelText(t.workspace.subjectLabel), { target: { value: 'Edited' } });
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t.workspace.saved));
+      await sendAndConfirm();
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t.send.sent));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(sendBody()).toEqual({ expectedUpdatedAt: '2026-09-20T10:00:00.000Z' });
+    });
+  });
+
   it('V8: Enter in the subject field saves the version, as the Save button does', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { version: { updatedAt: '2026-09-20T09:00:00.000Z' } }));
     const user = userEvent.setup();

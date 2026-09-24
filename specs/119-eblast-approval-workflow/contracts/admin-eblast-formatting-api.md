@@ -172,6 +172,25 @@ Permission `broadcasts.write`. Stage must be `in_design`; a working copy must ex
 content rules **again** at this moment (FR-004 — "cannot be sent to the member until it passes"),
 including the allow-list re-check below.
 
+```jsonc
+// request — optional; an empty body sends whatever working copy is under the lock (round-4 B1)
+{ "expectedUpdatedAt": "2026-09-24T09:10:00.000Z" }
+```
+
+- **Optimistic concurrency** (FR-033, round-4 B1): the **same field and the same check as the
+  save** (`PATCH`). `expectedUpdatedAt`, when present, must equal the working copy's `updated_at`,
+  compared under the broadcast row lock → otherwise **409 `version_changed`** with the same
+  `details` as the save's (`currentUpdatedAt` + the current content), and **nothing is sent**: no
+  send stamp, no round, no stage change, no audit row, no outbox row. Without it, a marketing user
+  whose screen was clean but stale sent content another user had just saved, which they had never
+  seen — FR-033 says the loser is told the E-Blast changed. The workspace always sends it: the
+  `updatedAt` its own save just returned when Send saved first, otherwise the one it loaded or last
+  saved. It stays optional so a caller that sends no body keeps today's behaviour.
+- The body is read only for that field: unknown keys — an audience key included — are ignored
+  (FR-005). A body that is not JSON, or an `expectedUpdatedAt` that is not an ISO date-time, is
+  **400 `invalid_body`**. The staff write bucket is consumed **before** the body is read, as the
+  save's is.
+
 **Preconditions checked here, not assumed:**
 
 | precondition | refusal |
@@ -201,7 +220,9 @@ language (FR-024).
 
 | code | when |
 |---|---|
+| 400 `invalid_body` | the body is not JSON, or `expectedUpdatedAt` is not an ISO date-time |
 | 409 `stage_changed` · `no_working_copy` · `content_unsafe` · **`no_portal_user`** | as above |
+| 409 `version_changed` | `expectedUpdatedAt` differs from the working copy's `updated_at` (round-4 B1) — nothing sent |
 | 422 `validation_error` · the block codes · **`image_source_not_allowlisted`** | subject/body limits, FR-041 block rules, a de-allow-listed image |
 
 `current_round` is incremented **here and only here** — a round is a version sent to the member
@@ -553,7 +574,9 @@ forgotten.
   `round_zero` in both states); every other route behaves identically in both states, and a broadcast
   already in `in_design` can still be saved, sent, decided and scheduled with the flag off (FR-034).
 - **Concurrency**: two `PATCH`es with the same `expectedUpdatedAt` → the second is
-  409 `version_changed`; `PATCH` after `send` → 409 `stage_changed`.
+  409 `version_changed`; `PATCH` after `send` → 409 `stage_changed`; a `send` carrying an
+  `expectedUpdatedAt` older than another user's save → 409 `version_changed` and nothing sent
+  (round-4 B1).
 - **Schedule**: `keep_proposal` with a past proposal → 422 `broadcast_schedule_too_soon`;
   `keep_proposal` with no proposal → 409 `no_proposal`; the audit row carries
   `differs: true` when the confirmed time is not the proposal.

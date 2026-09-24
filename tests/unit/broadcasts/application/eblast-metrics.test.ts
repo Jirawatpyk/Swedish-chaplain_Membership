@@ -166,13 +166,16 @@ describe('T122 — workflow metrics registration (PR-2)', () => {
     ]);
   });
 
-  it('the three tenant-only counters record under their exact names with `{tenant}` alone', () => {
+  it('the four tenant-only counters record under their exact names with `{tenant}` alone', () => {
     broadcastsMetrics.approvalExpired(TENANT);
     broadcastsMetrics.noMarketingRecipient(TENANT);
     broadcastsMetrics.versionSaved(TENANT);
+    // F119 round-4 B8 — the lifecycle tick's failed rows (observability § 29.2).
+    broadcastsMetrics.approvalLifecycleRowFailed(TENANT);
     expect(counterAdds.get('broadcasts_approval_expired_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
     expect(counterAdds.get('broadcasts_no_marketing_recipient_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
     expect(counterAdds.get('broadcasts_version_saved_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
+    expect(counterAdds.get('broadcasts_approval_lifecycle_row_failed_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
   });
 
   it('memberDecideMs records `broadcasts_member_decide_ms{tenant}` in ms', () => {

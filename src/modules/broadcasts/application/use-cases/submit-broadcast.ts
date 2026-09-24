@@ -42,6 +42,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { assertNever } from '@/lib/assert-never';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -411,6 +412,10 @@ export async function submitBroadcast(
       });
     case 'ok':
       break;
+    default:
+      // F119 round-4 B2 — an unknown kind is never read as "may send": it
+      // throws before any write (the route answers 500).
+      return assertNever(standing);
   }
 
   // ---- Precondition (d, FR-002d): rate limit -----------------------

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
+import { ApprovalDependencyError } from '@/modules/broadcasts/application/approval-dependency-error';
 import {
   readFormattingWarnings,
   type ReadFormattingWarningsDeps,
@@ -60,5 +61,19 @@ describe('readFormattingWarnings', () => {
     vi.mocked(d.imageAllowlist.findByTenantId).mockRejectedValueOnce(new TypeError('pool exhausted'));
     const r = await readFormattingWarnings(d, { memberId: MEMBER, bodyHtml: '<p>x</p>' });
     expect(r).toEqual({ ok: false, error: { kind: 'server_error', errKind: 'TypeError' } });
+  });
+
+  // F119 round-4 B3 — the staff page logs this errKind; a failed portal-contact
+  // read names the dependency and its repo code rather than a bare `Error`.
+  it('a failed portal-contact read keeps its cause in errKind', async () => {
+    const d = deps();
+    vi.mocked(d.portalRecipients.listActivePortalContacts).mockRejectedValueOnce(
+      new ApprovalDependencyError('portal_contacts', 'repo.unexpected'),
+    );
+    const r = await readFormattingWarnings(d, { memberId: MEMBER, bodyHtml: '<p>x</p>' });
+    expect(r).toEqual({
+      ok: false,
+      error: { kind: 'server_error', errKind: 'ApprovalDependencyError:portal_contacts:repo.unexpected' },
+    });
   });
 });

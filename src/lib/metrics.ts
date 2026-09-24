@@ -1971,6 +1971,29 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_approval_lifecycle_row_failed_total{tenant}` — F119 round-4
+   * B8, the approval-lifecycle twin of `broadcasts_image_sweep_row_failed_total`.
+   * One per awaiting row whose per-row transaction THREW in the daily
+   * lifecycle tick (a marketing roster that could not be read for a day-23 /
+   * day-30 notice, an audit or outbox insert that failed, a lock that hit the
+   * row's statement timeout). The row rolls back and is retried on the next
+   * tick, and the tick still returns 200 — so a persistent fault (the roster
+   * read failing every day) left reminders and expiries undone with only a
+   * `warn` line (`M119.cron.approval_lifecycle.row_failed`) as its trace.
+   *
+   * Reading it: any increment is worth a look; the same tenant incrementing on
+   * two consecutive daily ticks is a fault that is not going away on its own.
+   */
+  approvalLifecycleRowFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_approval_lifecycle_row_failed_total',
+        'Awaiting-approval rows whose per-row lifecycle transaction threw and were left for the next tick',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts_no_marketing_recipient_total{tenant}` — F119 T122; emitted by
    * T066, once per hand-off to the marketing team that found nobody to
    * notify. Alert: any non-zero count pages (§ 4.3 — a hand-off notified

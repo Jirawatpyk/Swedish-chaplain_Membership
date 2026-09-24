@@ -227,6 +227,20 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
     expect(html).toContain('data-testid="reject-action"');
   });
 
+  // F119 round-4 B10 — the failed thread read logged only `reason: kind`; a
+  // server_error carries its error class, and the line now does too.
+  it('a thread read that fails with a server_error logs its error class, as the warnings read does', async () => {
+    findByIdMock.mockResolvedValue(makeBroadcast({ status: 'in_design', currentRound: 1 }));
+    const { listBroadcastVersions } = await import('@/modules/broadcasts');
+    vi.mocked(listBroadcastVersions).mockResolvedValueOnce({ ok: false, error: { kind: 'server_error', errKind: 'TypeError' } } as never);
+    const { logger } = await import('@/lib/logger');
+    await renderPage();
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'server_error', err: 'TypeError', errorId: 'M119.admin.detail.thread' }),
+      'broadcasts.detail_page.thread_read_failed',
+    );
+  });
+
   it('a submitted broadcast that renders keeps its Approve / Reject actions', async () => {
     const html = await renderPage();
     expect(html).toContain('data-testid="approve-action"');

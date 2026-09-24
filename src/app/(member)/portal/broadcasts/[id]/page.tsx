@@ -556,7 +556,15 @@ async function readMemberThread(
   });
   if (result.ok) return result.value;
   logger.warn(
-    { tenantId: tenantSlug, broadcastId, reason: result.error.kind, errorId: 'M119.portal.detail.thread' },
+    {
+      tenantId: tenantSlug,
+      broadcastId,
+      reason: result.error.kind,
+      // Round-4 B10 — a server_error carries its error class; log it, as
+      // `readWarnings` does (pino drops the undefined of a not_found).
+      err: result.error.kind === 'server_error' ? result.error.errKind : undefined,
+      errorId: 'M119.portal.detail.thread',
+    },
     'broadcasts.detail_page.thread_read_failed',
   );
   return null;

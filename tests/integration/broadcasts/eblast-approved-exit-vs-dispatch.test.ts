@@ -302,4 +302,53 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       expect(await readRow(id)).toMatchObject({ status: 'changes_requested', resendBroadcastId: null, approvedVersionId: null });
     });
   });
+
+  // F119 round-4 B4 — the whole-E-Blast cancel read the row WITHOUT a lock and
+  // its CAS compares the status only. An attach (which leaves the status at
+  // `approved`) committing between that read and the UPDATE slipped through:
+  // the UPDATE waited on the attach's row lock, re-checked `status =
+  // 'approved'`, matched, and the row ended `cancelled` WITH a Resend id — the
+  // email went out while the allowance was freed. The cancel now locks before
+  // it reads, so it waits for the attach and then sees it.
+  describe('(c) a staff cancel racing an in-flight attach', () => {
+    it('the attach commits while the cancel is waiting → sending_started; the row stays approved with its id', async () => {
+      const { id } = await seedApprovedRound();
+      const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+      const bid = asBroadcastId(id);
+      const resendId = `rb-cancel-race-${randomUUID().slice(0, 8)}`;
+
+      let attached!: () => void;
+      const attachedP = new Promise<void>((resolve) => (attached = resolve));
+      let release!: () => void;
+      const releaseP = new Promise<void>((resolve) => (release = resolve));
+      // The dispatcher's attach: its UPDATE runs (holding the row lock), then
+      // the tx stays open until the cancel below has started.
+      const attach = repo.withTx(async (tx) => {
+        await repo.attachBroadcastId(tx, tenant.ctx.slug, bid, resendId);
+        attached();
+        await releaseP;
+      });
+      await attachedP;
+
+      const cancelP = cancelBroadcast(makeCancelBroadcastDeps(tenant.ctx.slug, roster), {
+        broadcastId: bid,
+        actor: { kind: 'admin', userId: MARKETER },
+        actorRole: 'marketing',
+        cancellationReason: null,
+        requestId: null,
+      });
+      // Long enough for the cancel to have read (unfixed) or to be waiting on
+      // the lock (fixed) before the attach commits.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      release();
+      await attach;
+
+      const cancelled = await cancelP;
+      expect(cancelled.ok ? cancelled.value.broadcast.status : cancelled.error).toEqual({
+        kind: 'sending_started',
+        observedStatus: 'approved',
+      });
+      expect(await readRow(id)).toMatchObject({ status: 'approved', resendBroadcastId: resendId, cancelledAt: null });
+    }, 60_000);
+  });
 });

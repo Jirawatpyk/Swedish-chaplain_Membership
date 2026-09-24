@@ -116,6 +116,12 @@ export {
 // per Constitution III boundary; the ERROR CLASS is a value-level
 // API surface analogous to `BroadcastTransitionError` above.
 export { BroadcastConcurrentMutationError } from './application/ports/broadcasts-repo';
+// F119 round-4 B3 — an approval dependency failure that keeps its cause for the log.
+export {
+  ApprovalDependencyError,
+  approvalErrKind,
+  type ApprovalDependency,
+} from './application/approval-dependency-error';
 
 // --- Application audit-event types (T028) --------------------------------
 // Exported for F1+F2+F3 audit-log consumers + observability dashboards.

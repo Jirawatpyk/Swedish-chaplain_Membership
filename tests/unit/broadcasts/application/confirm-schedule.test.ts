@@ -130,9 +130,13 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
     });
 
     it.each([
-      { standing: { haltReadThrows: true }, errKind: 'Error' },
-      { standing: { access: 'lookup_error' as const }, errKind: 'Error' },
-    ])('a standing read that cannot be answered ($standing) fails CLOSED → server_error, nothing written, no refusal audit', async ({ standing, errKind }) => {
+      // F119 round-4 B3 — the cause survives into the route's log line.
+      { standing: { haltReadThrows: true }, errKind: 'ApprovalDependencyError:member_halt_flag:Error' },
+      {
+        standing: { access: 'lookup_error' as const },
+        errKind: 'ApprovalDependencyError:membership_access:membership_access.lookup_error',
+      },
+    ])('a standing read that cannot be answered ($standing) fails CLOSED → server_error naming the cause, nothing written, no refusal audit', async ({ standing, errKind }) => {
       const { store, audit, run } = setup(promotable(), standing);
       expect(await run()).toEqual({ ok: false, error: { kind: 'server_error', errKind } });
       expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
@@ -181,7 +185,10 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
       store.broadcastsRepo.findById.mockResolvedValueOnce(
         makeApprovalBroadcast({ status: 'awaiting_member_approval', currentRound: 1 }),
       );
-      expect(await run()).toEqual({ ok: false, error: { kind: 'server_error', errKind: 'Error' } });
+      expect(await run()).toEqual({
+        ok: false,
+        error: { kind: 'server_error', errKind: 'ApprovalDependencyError:member_send_standing:not_read_before_lock' },
+      });
       expect(sendStanding.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
       expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
       expect(audit.events).toEqual([]);

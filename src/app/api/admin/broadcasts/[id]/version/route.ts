@@ -40,7 +40,7 @@ import {
   makeSaveFormattedVersionDeps,
   makeStartFormattedVersionDeps,
 } from '@/lib/broadcast-approval-deps';
-import { baseHeaders, designBlockErrorResponse, errorResponse } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders, designBlockErrorResponse, errorResponse, versionChangedResponse } from '@/lib/broadcasts-route-helpers';
 import { consumeStaffWriteBucket } from '@/lib/broadcasts-staff-write-bucket';
 import { logger } from '@/lib/logger';
 import { requireApiPermission } from '@/lib/rbac';
@@ -244,17 +244,7 @@ function saveErrorResponse(error: SaveFormattedVersionError, correlationId: stri
     case 'no_working_copy':
       return errorResponse(409, 'no_working_copy', correlationId);
     case 'version_changed':
-      return errorResponse(409, 'version_changed', correlationId, {
-        details: {
-          currentUpdatedAt: error.current.updatedAt.toISOString(),
-          current: {
-            subject: error.current.subject,
-            bodyHtml: error.current.bodyHtml,
-            bodySource: error.current.bodySource,
-            noteToMember: error.current.noteToMember,
-          },
-        },
-      });
+      return versionChangedResponse(error.current, correlationId);
     case 'subject_invalid':
       return errorResponse(422, 'validation_error', correlationId, { fieldErrors: { subject: [error.reason] } });
     case 'body_too_large':

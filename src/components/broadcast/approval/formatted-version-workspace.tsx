@@ -17,9 +17,10 @@
  * `expectedUpdatedAt` (FR-033): a second marketing user's save loses with 409
  * `version_changed`, which is shown as "someone else changed this" with a
  * reload that says it discards the edits — never a silent overwrite. "Send to
- * member" saves pending edits first, then `POST …/version/send`, behind a
- * confirmation because the version becomes read-only the moment it is sent
- * (FR-003).
+ * member" saves pending edits first, then `POST …/version/send` carrying the
+ * same token (round-4 B1 — the one that save returned, else the one loaded or
+ * last saved), behind a confirmation because the version becomes read-only the
+ * moment it is sent (FR-003).
  *
  * Focus (UX review H2): Save, Send and the test copy turn unavailable while
  * they hold focus, so they are `focusableWhenDisabled` (`aria-disabled`), never
@@ -111,7 +112,10 @@ type ErrorField = 'subject' | 'body' | 'note' | null;
 /** Where focus goes when a send fails: the refused field, or Reload on a conflict. */
 type FailFocus = ErrorField | 'conflict';
 type SaveOutcome =
-  | { readonly kind: 'saved' | 'conflict' | 'stale' }
+  /** `updatedAt` — the concurrency token the save returned (round-4 B1: the send that follows carries it). */
+  | { readonly kind: 'saved'; readonly updatedAt: string }
+  | { readonly kind: 'conflict' }
+  | { readonly kind: 'stale' }
   | { readonly kind: 'refused'; readonly field: ErrorField };
 
 const BODY_CODES: ReadonlySet<string> = new Set([
@@ -234,10 +238,11 @@ export function FormattedVersionWorkspace({
     });
     if (res.ok) {
       const body = (await res.json()) as { version?: { updatedAt?: unknown } };
-      if (typeof body.version?.updatedAt === 'string') setToken(body.version.updatedAt);
+      const updatedAt = typeof body.version?.updatedAt === 'string' ? body.version.updatedAt : token;
+      setToken(updatedAt);
       guard.markSaved(snapshot);
       setSavedNote(note);
-      return { kind: 'saved' };
+      return { kind: 'saved', updatedAt };
     }
     const refusal = await readRouteError(res);
     if (refusal.code === 'version_changed') {
@@ -278,6 +283,12 @@ export function FormattedVersionWorkspace({
     setSending(true);
     setError(null);
     try {
+      // FR-033 (round-4 B1) — the send carries the concurrency token, so a
+      // copy another marketing user saved since this screen loaded is refused
+      // `version_changed`, never sent unseen. When Send saves first it is the
+      // token THAT save returned (`token` in this closure is still the old one
+      // — sending it would make the happy path answer 409 to itself).
+      let expectedUpdatedAt = token;
       if (dirty) {
         const outcome = await save();
         if (outcome.kind === 'stale') {
@@ -293,10 +304,13 @@ export function FormattedVersionWorkspace({
           closeSendOnto(outcome.field);
           return;
         }
+        expectedUpdatedAt = outcome.updatedAt;
       }
       const res = await fetch(`/api/admin/broadcasts/${broadcastId}/version/send`, {
         method: 'POST',
         credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedUpdatedAt }),
       });
       if (res.ok) {
         closedViaSuccessRef.current = true;

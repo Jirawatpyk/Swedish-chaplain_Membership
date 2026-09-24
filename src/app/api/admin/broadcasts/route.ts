@@ -40,7 +40,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
 import { isYmd, tenantDayRangeUtc } from '@/lib/tenant-day-range';
-import { loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
+import { isUpcomingPreset, loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 
 /** URL sort tokens → the repo's orders. `scheduled_for` is the Upcoming sends preset's token. */
@@ -82,7 +82,15 @@ const ListQuerySchema = z.object({
   from: z.literal('now').optional(),
   fromDate: z.string().refine(isYmd).optional(),
   toDate: z.string().refine(isYmd).optional(),
-});
+})
+  // F119 round-4 B7 — the send-time order is the Upcoming preset's, bounded by
+  // `from=now` (`isUpcomingPreset`): unbounded, the keyset over the nullable
+  // `scheduled_for` drops every unscheduled row after page 1. Refused, never
+  // served incomplete.
+  .refine((q) => q.sort !== 'scheduled_for' || isUpcomingPreset(q.sort, q.from), {
+    path: ['sort'],
+    message: 'sort=scheduled_for requires from=now',
+  });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();

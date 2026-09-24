@@ -189,8 +189,9 @@ function makeRepo(opts: RepoOpts): {
       async updateDraftFromTemplate() {
         throw new Error('not used in cancel-broadcast fixture');
       },
+      // Round-4 B5 — the non-locking pre-read the locale read keys on.
       async findById() {
-        return null;
+        return opts.existing ?? null;
       },
       async findByIdInTx() {
         findCallCount += 1;
@@ -442,6 +443,86 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     expect((evt?.payload as { actorRole: string }).actorRole).toBe(
       'member_self_service',
     );
+  });
+
+  // ===== F119 round-4 B4 / B5 — the row lock and the pool reads ==========
+
+  // B4 — a dispatcher attach that commits between an UNLOCKED read and the
+  // status-only CAS let the row end `cancelled` with a Resend id set. The row
+  // is locked before it is read, so `hasDispatchBegun` sees the attach.
+  it('round-4 B4: the row is locked (lockForUpdate) inside the tx BEFORE it is read', async () => {
+    const order: string[] = [];
+    const repo = makeRepo({ existing: makeBroadcast('approved') });
+    const lock = repo.port.lockForUpdate.bind(repo.port);
+    const read = repo.port.findByIdInTx.bind(repo.port);
+    repo.port.lockForUpdate = (async (...args: Parameters<BroadcastsRepo['lockForUpdate']>) => {
+      order.push('lock');
+      return lock(...args);
+    }) as BroadcastsRepo['lockForUpdate'];
+    repo.port.findByIdInTx = (async (...args: Parameters<BroadcastsRepo['findByIdInTx']>) => {
+      order.push('read');
+      return read(...args);
+    }) as BroadcastsRepo['findByIdInTx'];
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: makeAudit().port, clock },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(['lock', 'read']);
+  });
+
+  // B5 — the member's preferred locale is a members-bridge read on its OWN
+  // pool connection; made inside the tx it held a second connection while
+  // the row lock sat on the first (the R-L3 class).
+  it('round-4 B5: the preferred locale is read with NO transaction open, for the owning member, and still used', async () => {
+    let open = false;
+    const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-1') });
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) =>
+      inner(async (tx) => {
+        open = true;
+        try {
+          return await fn(tx);
+        } finally {
+          open = false;
+        }
+      })) as BroadcastsRepo['withTx'];
+    const seen: boolean[] = [];
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(async () => {
+        seen.push(open);
+        return 'sv' as const;
+      }),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    const email = makeEmail();
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: makeAudit().port, clock, emailTransactional: email.port, membersBridge },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual([false]);
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(email.memberCalls[0]?.locale).toBe('sv');
+  });
+
+  it("round-4 B5: a member cancelling another member's E-Blast reads no locale for it (and still sees not found)", async () => {
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(async () => 'sv' as const),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    const result = await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: makeRepo({ existing: makeBroadcast('submitted', 'm-other') }).port,
+        ...t081Deps(),
+        audit: makeAudit().port,
+        clock,
+        emailTransactional: makeEmail().port,
+        membersBridge,
+      },
+      { ...baseInput, actor: memberActor, cancellationReason: null },
+    );
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_not_found', broadcastId } });
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).not.toHaveBeenCalled();
   });
 
   // ===== R5 verify-fix Tests-H5 (2026-05-02) โ€” locale chain =====

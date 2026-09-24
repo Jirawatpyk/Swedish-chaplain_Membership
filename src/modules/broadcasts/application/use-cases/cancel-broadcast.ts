@@ -103,7 +103,11 @@ export type CancelBroadcastError =
 
 export interface CancelBroadcastDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'findByIdInTx' | 'applyTransition'>;
+  /**
+   * `lockForUpdate` (round-4 B4) takes the row lock before the row is read;
+   * `findById` (round-4 B5) is the non-locking pre-read the locale read keys on.
+   */
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'findById' | 'lockForUpdate' | 'findByIdInTx' | 'applyTransition'>;
   /** F119 T081 — the E-Blast's image rows, stamped in the cancel's tx. */
   readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
   /** F119 T081 — who "marketing" is for the member-withdrawal hand-off (FR-021a). */
@@ -161,7 +165,23 @@ export async function cancelBroadcast(
     // pool-global read and is made BEFORE the tx, never while it holds the row
     // lock. Its empty-roster count is paid only once the withdrawal committed.
     const roster = input.actor.kind === 'member' ? await deps.marketingDirectory.readRoster() : [];
+    // F119 round-4 B5 — the member's preferred locale (for the cancellation
+    // email) is a members-bridge read on its own pool connection, so it is
+    // made here too, before the lock. `requested_by_member_id` is immutable
+    // after submit, so a non-locking pre-read names the member the locked row
+    // will. A member is never read for another member's E-Blast (that cancel
+    // answers not-found below).
+    const memberPreferred = await readPreferredLocaleBeforeTx(deps, input);
     const withdrawn = await deps.broadcastsRepo.withTx<Result<CancelBroadcastOutput, CancelBroadcastError>>(async (tx) => {
+      // F119 round-4 B4 — lock the row BEFORE reading it. The dispatch leg
+      // commits its own lock before calling Resend and attaches the id in a
+      // later tx; read unlocked, an attach committing between this read and
+      // the status-only CAS below let the row end `cancelled` WITH a Resend id
+      // (the email went out, the allowance was freed). Under the lock the read
+      // sees the attach, and `hasDispatchBegun` refuses `sending_started`.
+      // The decision stays on the re-read row (not the lock's status), exactly
+      // as the approval use cases do.
+      await deps.broadcastsRepo.lockForUpdate(tx, deps.tenant.slug, input.broadcastId);
       const existing = await deps.broadcastsRepo.findByIdInTx(
         tx,
         deps.tenant.slug,
@@ -390,27 +410,9 @@ export async function cancelBroadcast(
       // + the (admin-supplied) cancellation reason.
       // Recipient = `replyToEmail` (immutable submit-time snapshot).
       // Verify-fix R4 (Simplify-#2 + Types-#6): shared helper +
-      // member-preferred-locale chain.
+      // member-preferred-locale chain (the locale was read before the tx —
+      // round-4 B5).
       if (deps.emailTransactional) {
-        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
-        if (deps.membersBridge) {
-          try {
-            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
-              deps.tenant,
-              cancelled.requestedByMemberId,
-            );
-          } catch (e) {
-            logger.warn(
-              {
-                err: errKind(e),
-                tenantId: deps.tenant.slug,
-                memberId: cancelled.requestedByMemberId,
-                useCase: 'cancel-broadcast',
-              },
-              'broadcasts.locale_resolve_failed',
-            );
-          }
-        }
         await enqueueBroadcastMemberNotification({
           tenant: deps.tenant,
           emailTransactional: deps.emailTransactional,
@@ -441,6 +443,32 @@ export async function cancelBroadcast(
       });
     }
     return err({ kind: 'cancel.server_error', errKind: errKind(e) });
+  }
+}
+
+/**
+ * Round-4 B5 — the owning member's preferred locale, read before the tx and
+ * best-effort: a bridge throw is logged (R5 verify-fix Errors-H3, the error
+ * CLASS only) and answers null, so the chain falls through. Nothing is read
+ * when no email will be sent, for a row that is gone, or for a member actor
+ * who does not own the row.
+ */
+async function readPreferredLocaleBeforeTx(
+  deps: CancelBroadcastDeps,
+  input: CancelBroadcastInput,
+): Promise<'en' | 'th' | 'sv' | null> {
+  if (!deps.emailTransactional || !deps.membersBridge) return null;
+  const preRead = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  if (preRead === null) return null;
+  if (input.actor.kind === 'member' && preRead.requestedByMemberId !== input.actor.memberId) return null;
+  try {
+    return await deps.membersBridge.getMemberPreferredLocale(deps.tenant, preRead.requestedByMemberId);
+  } catch (e) {
+    logger.warn(
+      { err: errKind(e), tenantId: deps.tenant.slug, memberId: preRead.requestedByMemberId, useCase: 'cancel-broadcast' },
+      'broadcasts.locale_resolve_failed',
+    );
+    return null;
   }
 }
 

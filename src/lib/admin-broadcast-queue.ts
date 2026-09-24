@@ -104,6 +104,19 @@ export function queueSortFor(
   return isWaitingView(statusFilter) ? 'stage_entered_at_asc' : 'stage_entered_at_desc';
 }
 
+/**
+ * F119 round-4 B7 — the send-time order belongs to the Upcoming sends preset
+ * and ONLY with its `from=now` bound. The list pages by keyset on
+ * (`scheduled_for`, id); unbounded, the view holds rows with no send time,
+ * whose NULL cursor key makes `(NULL, id) > (…)` never true — every
+ * unscheduled row after page 1 vanished. `scheduled_for >= now` excludes the
+ * NULLs, so the bounded keyset is whole. The page falls back to the view's
+ * order; the list API refuses the unbounded sort (400).
+ */
+export function isUpcomingPreset(sort: string | undefined, from: string | undefined): boolean {
+  return sort === 'scheduled_for' && from === 'now';
+}
+
 /** The Upcoming sends preset's `from` token: `now` is the only one (anything else is not a bound). */
 export function upcomingFrom(token: string | undefined): Date | undefined {
   return token === 'now' ? new Date() : undefined;

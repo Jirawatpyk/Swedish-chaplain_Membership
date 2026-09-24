@@ -71,7 +71,7 @@
  * One tenant tx with throw-to-rollback; the route owns the span. 100 %
  * branch pinned (T158). Pure Application — no framework imports.
  */
-import { errKind } from '@/lib/log-id';
+import { assertNever } from '@/lib/assert-never';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
@@ -91,6 +91,7 @@ import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
 import type { ImageAllowlistPort } from '../../ports/image-allowlist-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
+import { ApprovalDependencyError, approvalErrKind, standingUnavailableError } from '../../approval-dependency-error';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
 import { safeAuditEmit } from '../_safe-audit-emit';
 import { MIN_SCHEDULE_LEAD_MS } from '../approve-broadcast';
@@ -288,7 +289,7 @@ export async function confirmSchedule(
       }),
     );
   } catch (e) {
-    if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: errKind(e) });
+    if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
     const refusal = e.refusal as ConfirmScheduleError;
     if (refusal.kind === 'not_found') {
       await emitCrossTenantProbe({
@@ -335,7 +336,7 @@ export async function confirmSchedule(
  * was read for it — fail closed the same way rather than promote unchecked.
  */
 function assertMemberMaySend(standing: MemberSendStanding | null, memberId: string): void {
-  if (standing === null) throw new Error('member send standing not read before the lock');
+  if (standing === null) throw new ApprovalDependencyError('member_send_standing', 'not_read_before_lock');
   switch (standing.kind) {
     case 'ok':
       return;
@@ -345,7 +346,11 @@ function assertMemberMaySend(standing: MemberSendStanding | null, memberId: stri
       return refuse({ kind: 'member_not_in_good_standing', memberId });
     case 'halt_read_failed':
     case 'access_unavailable':
-      throw new Error(`member send standing unavailable: ${standing.kind}`);
+      // Round-4 B3 — naming WHICH read failed and why, for the route's log.
+      throw standingUnavailableError(standing);
+    default:
+      // Round-4 B2 — an unknown kind is never read as "may send".
+      return assertNever(standing);
   }
 }
 

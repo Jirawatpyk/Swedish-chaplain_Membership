@@ -49,11 +49,16 @@ describe('the Upcoming sends preset (T112, FR-028)', () => {
     expect((from as Date).getTime()).toBeLessThanOrEqual(after);
   });
 
-  it('without `from=now` there is no lower bound — the sort alone does not hide past sends', async () => {
-    await getQueue('?status=approved&sort=scheduled_for');
-    const opts = dash.listCalls.at(-1)!.opts;
-    expect(opts['sort']).toBe('scheduled_for_asc');
-    expect(opts['scheduledFrom']).toBeUndefined();
+  // F119 round-4 B7 — the keyset pages on (`scheduled_for`, id), and without
+  // the `from=now` bound a row with NO send time is in the list: its cursor key
+  // is NULL, `(NULL, id) > (…)` is never true, so every unscheduled row after
+  // page 1 silently vanished. The sort is the Upcoming preset's and nothing
+  // else's — alone it is refused, before any read.
+  it('`sort=scheduled_for` without `from=now` → 400 naming `sort`, nothing read', async () => {
+    const { status, body } = await getQueue('?status=approved&sort=scheduled_for');
+    expect(status).toBe(400);
+    expect(body).toMatchObject({ error: { code: 'invalid_body', fieldErrors: { sort: [expect.any(String)] } } });
+    expect(dash.listCalls).toHaveLength(0);
   });
 
   it('an unknown `from` value is refused, never read as "no bound"', async () => {

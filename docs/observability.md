@@ -2354,7 +2354,8 @@ page threshold while the real age crosses it. The § 27.3 warning on `broadcasts
 
 ### 29.2 Counters and histograms
 
-**Six counters and two histograms**, exactly the contract § 4.2 list, all `safeMetric`-wrapped on
+**Seven counters and two histograms** — the contract § 4.2 list plus round-4 B8's
+`broadcasts_approval_lifecycle_row_failed_total` — all `safeMetric`-wrapped on
 `broadcastsMetrics` (`src/lib/metrics.ts`). Labels are `tenant` plus one bounded discriminator —
 never an id, an address, a subject, a note or a reason.
 
@@ -2363,6 +2364,7 @@ never an id, an address, a subject, a note or a reason.
 | `broadcasts_version_sent_total` | counter | `tenant`, `round` | `sendVersionToMember` (T059), after the commit | One per version sent to the member. `round` is the approval round (1, 2, …) — bounded in practice by how many revise cycles one E-Blast takes. |
 | `broadcasts_member_decision_total` | counter | `tenant`, `decision` | `recordMemberDecision` (T078), after the commit | `decision ∈ {approved, changes_requested, approval_withdrawn}`. A withdrawal of the **whole E-Blast** (the portal cancel) is not a decision and is not counted here. |
 | `broadcasts_approval_expired_total` | counter | `tenant` | `expireStaleMemberApprovals` (T130), per expired row | One per E-Blast closed as `expired_no_member_response` on day 30. |
+| `broadcasts_approval_lifecycle_row_failed_total` | counter | `tenant` | `expireStaleMemberApprovals` (round-4 B8), per failed row | The lifecycle twin of `broadcasts_image_sweep_row_failed_total`: one per awaiting row whose per-row transaction **threw** (a marketing roster that could not be read for the day-23 / day-30 notice, an audit or outbox insert that failed, the row's statement timeout). The row rolls back and is retried on the next tick, and the tick still answers **200**; the `M119.cron.approval_lifecycle.row_failed` line carries `err` — for a dependency, `ApprovalDependencyError:<dependency>:<cause>`. Before this counter a persistent fault left reminders and expiries undone behind a `warn` line only. |
 | `broadcasts_preview_rendered_total` | counter | `tenant`, `surface` | `renderBroadcastPreview` (PR-1, T122a) | **Code differs from the contract**: `surface ∈ {member, staff, detail}` (`PreviewMetricSurface`), not the contract's `inline \| dialog \| compare`. `detail` is the two E-Blast detail pages reading a stored broadcast back through the renderer (ROUND-3 #11). |
 | `broadcasts_no_marketing_recipient_total` | counter | `tenant` | `makeMarketingDirectory(…).reportEmptyRoster()` (T066, T166 R-L3) | One per hand-off whose roster resolved to nobody: no ACTIVE `marketing`-role user **and** no ACTIVE `broadcasts.write` holder of the admin tiers to fall back to. The roster is read **before** the state-changing transaction (R-L3) and the count is taken by `reportEmptyRoster()` only **after that transaction commits**, so it moves on submit (every submit enqueues `eblast_submitted_marketing`), on a member decision or whole-E-Blast withdrawal, and on the day-23 warning and day-30 closure — **with the flag off as well**, because the enqueue is unconditional. A refused or rolled-back hand-off is **not** counted. |
 | `broadcasts_version_saved_total` | counter | `tenant` | `saveFormattedVersion` (T058) | One per successful working-copy save (`PATCH …/[id]/version`). A save is not a hand-off: counted, not audited. |
@@ -2398,6 +2400,7 @@ the status UNSET; only a `server_error` result or a throw marks the span `ERROR`
 |---|---|---|---|
 | **Page** | `broadcasts_awaiting_member_oldest_age_seconds` | > 14 d (1,209,600 s), any tenant | An E-Blast has waited on the member for two weeks: both reminders went out and nothing moved. This is well inside the 30-day expiry and **nine days ahead of the day-23 warning**, so a human sees it before either automatic step fires. Runbook § Stuck stage — `awaiting_member_approval`. |
 | Warning | `broadcasts_awaiting_member_oldest_age_seconds` | > 7 d (604,800 s), any tenant | The second reminder has been sent and nothing moved. Check the member was actually emailed (the flag is on; the `eblast_version_sent_member` / `eblast_approval_lifecycle` outbox rows are `sent`), then contact the member. |
+| Warning | `broadcasts_approval_lifecycle_row_failed_total` | increments on **two consecutive daily ticks** for the same `tenant` | One tick's failure is usually transient and the next tick retries it; the same tenant failing again the next day is a fault that is not clearing, and the reminders, warnings and expiries of those rows are not happening. Read the `M119.cron.approval_lifecycle.row_failed` lines for `err` first. |
 | **Page** | `broadcasts_no_marketing_recipient_total` | `increase > 0` | A hand-off notified nobody: the tenant has no active `marketing` user and no active admin to fall back to, so the E-Blast will sit unseen. Re-enable a staff user; the waiting rows are not re-sent (the enqueue already happened with an empty roster). Runbook § No marketing recipient. |
 
 Routing per § 22.8 — **page** → PagerDuty; **warning** routes as § 22.8's alarm tier
@@ -2414,7 +2417,9 @@ divergence means the two are reading different predicates); and the share of
 ### 29.5 Logs and the `M119.*` errorId taxonomy
 
 pino, with `correlationId` / `requestId`, `tenantId`, `broadcastId`, and where they exist
-`versionId`, `round`, `stage`; faults carry `err: errKind(e)`. **Never** a subject, a body, a
+`versionId`, `round`, `stage`; faults carry `err: errKind(e)` — or `approvalErrKind(e)` for a
+failed approval dependency, which reads `ApprovalDependencyError:<dependency>:<cause>` (round-4 B3:
+which read failed and its class or repo code, never data). **Never** a subject, a body, a
 note, a reason or an address. Deterministic 4xx refusals are audited or counted by the use case,
 not logged as faults.
 
@@ -2437,9 +2442,10 @@ match both the field and the message. Alert rules on the 500 class key on the pr
 | `M119.admin.broadcasts.stage_counts_failed` · `M119.api.admin_broadcasts.stage_counts_failed` | `/admin/broadcasts` page · `GET /api/admin/broadcasts` (`readEblastStageChips`) | the stage-chip counts could not be read; the queue renders without counts |
 | `M119.admin.detail.thread` · `M119.admin.detail.warnings` | `/admin/broadcasts/[id]` page | the thread / the standing warnings could not be read; the page renders without them |
 | `M119.portal.detail.thread` | `/portal/broadcasts/[id]` page | the thread could not be read; approve / request changes are withheld until it loads |
+| `M119.portal.detail.missing_sent_version` | `GET /api/broadcasts/[id]` (`readMemberEblastView`) | an E-Blast awaiting the member has no version sent to them — an invariant breach (the send stamps the version and moves the stage in one tx). Logged at `error` with ids and the round only; the route answers 500 and shows no content, never the member's original as the thing to sign off (round-4 B9) |
 | `M119.cron.approval_lifecycle` · `.uncaught` · `.rows_failed` | `prune-expired-drafts` Block 3 | the scan failed / threw (the tick answers 500 at the end) / one or more rows failed (the tick stays 200) |
-| `M119.cron.approval_lifecycle.row_failed` *(msg)* | `expireStaleMemberApprovals` | one row's transaction threw; retried tomorrow |
-| `M119.cron.approval_lifecycle.no_member_recipient` *(msg)* | `expireStaleMemberApprovals` | a day-3/7 reminder was due but the member company has no active portal contact; the counter still moved, no "reminder sent" audit row |
+| `M119.cron.approval_lifecycle.row_failed` *(msg)* | `expireStaleMemberApprovals` | one row's transaction threw; retried tomorrow; counted `broadcasts_approval_lifecycle_row_failed_total` (round-4 B8) |
+| `M119.cron.approval_lifecycle.no_member_recipient` *(msg)* | `expireStaleMemberApprovals` | a notice reached nobody — a day-3/7 reminder with no active member portal contact, or a day-23 warning / day-30 closure with no member contact **and** an empty roster (the closure since round-4 B8); the counter / the closure still moved, and no "reminder sent" / "expiry warned" audit row is written for a notice that reached nobody |
 | `M119.outbox_dispatch.eblast.read_failed` *(msg)* | `buildEblastNotificationPayload` | a transient read failed; the row stays on the retry ladder — this is what distinguishes it from a missing arm, which ends under the same `no_template_handler` label |
 | `M119.outbox_dispatch.eblast.malformed_context` *(msg)* | `buildEblastNotificationPayload` | a row's ids-only `context_data` is missing a field |
 | `M119.nav.eblast_badge_failed` · `M119.nav.eblast_badge_timed_out` | `src/lib/eblast-waiting-count.ts` | the staff nav badge read failed or exceeded its deadline; the badge is omitted |

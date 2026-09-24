@@ -219,6 +219,29 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
     );
   });
 
+  // F119 round-4 B8 — the closure ignored its notify count: a day-30 expiry
+  // that reached nobody said nothing, unlike the day-3 / 7 / 23 steps.
+  it('round-4 B8: a day-30 closure that reaches nobody (no member contact, empty roster) still closes, and says so in the same warn', async () => {
+    const h = harness({ broadcasts: [awaitingRow({ memberReminderStage: 3 })] }, { contacts: false });
+    vi.mocked(h.deps.marketingDirectory.readRoster).mockResolvedValue([]);
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.warn).mockClear();
+    expect(await h.tick(30)).toMatchObject({ expired: 1 });
+    expect(h.store.outbox.rows()).toEqual([]);
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ reminder: 'expire', tenantId: TENANT }),
+      'M119.cron.approval_lifecycle.no_member_recipient',
+    );
+  });
+
+  it('round-4 B8: a day-30 closure that reaches someone logs no no_member_recipient warn', async () => {
+    const h = harness({ broadcasts: [awaitingRow({ memberReminderStage: 3 })] });
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.warn).mockClear();
+    expect(await h.tick(30)).toMatchObject({ expired: 1 });
+    expect(vi.mocked(logger.warn).mock.calls.map((c) => c[1])).not.toContain('M119.cron.approval_lifecycle.no_member_recipient');
+  });
+
   // T166 follow-up (the R-L3 class) — the roster is a pool-global read (`users`
   // has no tenant). Read inside each row tx it held a second connection while
   // the row lock was held, once per staff notice. It is now read ONCE per tick,
@@ -280,8 +303,16 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
       // Row 1 is at day 3 (a member reminder); row 2 entered 20 days earlier, so day 23 (needs staff).
       const secondRow = h.store.state.broadcasts.get(`${TENANT}::${SECOND}`)!;
       h.store.state.broadcasts.set(`${TENANT}::${SECOND}`, { ...secondRow, stageEnteredAt: at(-20) });
+      const { logger } = await import('@/lib/logger');
+      vi.mocked(logger.warn).mockClear();
       expect(await h.tick(3)).toMatchObject({ remindersSent: 1, warningsSent: 0, rowsFailed: 1 });
       expect(h.store.outbox.rows().map((r) => r.contextData.kind)).toEqual(['reminder_day3']);
+      // F119 round-4 B3 — the failed row's log names the roster and its cause,
+      // not the bare `Error` the staff step used to throw.
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+        expect.objectContaining({ broadcastId: SECOND, err: 'ApprovalDependencyError:marketing_roster:TypeError' }),
+        'M119.cron.approval_lifecycle.row_failed',
+      );
     });
   });
 
@@ -366,8 +397,13 @@ describe('T130 — bounds, failure isolation', () => {
       ...h.audit,
       emitTyped: vi.fn().mockRejectedValueOnce(new Error('audit insert failed')).mockImplementation(original) as AuditPort['emitTyped'],
     };
+    // F119 round-4 B8 — a failed row is metered, as the image sweep's are: the
+    // tick still returns 200, so a persistent fault was a `warn` line only.
+    const rowFailed = vi.spyOn(broadcastsMetrics, 'approvalLifecycleRowFailed');
     const result = await h.tick(0);
     expect(result).toMatchObject({ scanned: 2, expired: 1, rowsFailed: 1 });
+    expect(rowFailed).toHaveBeenCalledTimes(1);
+    expect(rowFailed).toHaveBeenCalledWith(TENANT);
     const statuses = [...h.store.state.broadcasts.values()].map((b) => b.status);
     expect(statuses.sort()).toEqual(['awaiting_member_approval', 'expired_no_member_response']);
     expect(h.store.outbox.rows().every((r) => r.contextData.broadcastId === rows[1]!.broadcastId)).toBe(true);

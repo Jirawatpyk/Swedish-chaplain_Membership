@@ -407,7 +407,10 @@ export function getVersionRequest(id: string): NextRequest {
 
 export const importVersionRoute = () => import('@/app/api/admin/broadcasts/[id]/version/route');
 
-/** `POST …/version/send` — the route reads no body; `body` is there to prove it ignores one (FR-005). */
+/**
+ * `POST …/version/send` — the route reads only `expectedUpdatedAt` from a body (FR-033, round-4 B1);
+ * every other key is ignored, which `body` is also there to prove (FR-005).
+ */
 export function postSendRequest(id: string, body?: unknown): NextRequest {
   return new NextRequest(`${url(id)}/send`, {
     method: 'POST',

@@ -14,6 +14,7 @@
  * approval store (whose outbox rows roll back with it).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 import { makeApprovalBroadcast, makeApprovalVersion, makePortalContact, FAKE_TX } from '../../helpers/eblast-approval-fakes';
 import {
   HARNESS_MEMBER_ID,
@@ -134,6 +135,73 @@ describe('POST …/version/send — the version goes to the member (T040, US1-AS
     };
     expect((await send()).status).toBe(200);
     expect(harness.store.outbox.rows().map((r) => [r.toEmail, r.locale])).toEqual([['submitter@acme.test', 'sv']]);
+  });
+});
+
+// F119 round-4 B1 (FR-033, the "two marketing users" edge case) — the send
+// takes the save's concurrency token. Marketing user B, with a clean but stale
+// screen, used to send the content user A had just saved — content B never
+// saw. B is now told the E-Blast changed, exactly as a stale save is.
+describe('round-4 B1 — the send checks expectedUpdatedAt under the lock', () => {
+  const sendWith = async (body: unknown) => {
+    const { POST } = await importSendRoute();
+    return POST(postSendRequest(ID, body), routeParams(ID));
+  };
+
+  it('A saves, then B sends with the token B loaded → 409 version_changed with the current copy; nothing is sent', async () => {
+    const loaded = WORKING.updatedAt.toISOString();
+    const { PATCH } = await importVersionRoute();
+    const saved = await PATCH(
+      patchVersionRequest(ID, { subject: 'Anna rewrote it', bodyHtml: '<p>Anna</p>', bodySource: '<p>Anna</p>', noteToMember: null, expectedUpdatedAt: loaded }),
+      routeParams(ID),
+    );
+    expect(saved.status).toBe(200);
+    const annaToken = (await saved.json()).version.updatedAt as string;
+
+    const res = await sendWith({ expectedUpdatedAt: loaded });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('version_changed');
+    expect(body.error.details).toEqual({
+      currentUpdatedAt: annaToken,
+      current: { subject: 'Anna rewrote it', bodyHtml: '<p>Anna</p>', bodySource: '<p>Anna</p>', noteToMember: null },
+    });
+    expect(versionOf(1).sentToMemberAt).toBeNull();
+    expect(rowOf().status).toBe('in_design');
+    expect(harness.store.outbox.rows()).toHaveLength(0);
+    expect(harness.audit.events.filter((e) => e.eventType === 'broadcast_version_sent_to_member')).toHaveLength(0);
+
+    // With the token A's save returned, the send goes through.
+    const retry = await sendWith({ expectedUpdatedAt: annaToken });
+    expect(retry.status).toBe(200);
+    expect(versionOf(1).sentToMemberAt).toEqual(harness.store.now);
+  });
+
+  it('the token of the copy under the lock → 200', async () => {
+    expect((await sendWith({ expectedUpdatedAt: WORKING.updatedAt.toISOString() })).status).toBe(200);
+  });
+
+  it.each([
+    ['not an ISO date-time', { expectedUpdatedAt: 'yesterday' }],
+    ['not a string', { expectedUpdatedAt: 42 }],
+  ])('an expectedUpdatedAt that is %s → 400 invalid_body, nothing sent', async (_label, body) => {
+    const res = await sendWith(body);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_body');
+    expect(versionOf(1).sentToMemberAt).toBeNull();
+  });
+
+  it('a body that is not JSON → 400 invalid_body, nothing sent', async () => {
+    const { POST } = await importSendRoute();
+    const req = new NextRequest(`http://localhost/api/admin/broadcasts/${ID}/version/send`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{not json',
+    });
+    const res = await POST(req, routeParams(ID));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_body');
+    expect(versionOf(1).sentToMemberAt).toBeNull();
   });
 });
 

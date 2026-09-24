@@ -22,7 +22,7 @@
 import { NextResponse } from 'next/server';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
-import type { BlockViolations } from '@/modules/broadcasts';
+import type { BlockViolations, BroadcastVersion } from '@/modules/broadcasts';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -539,6 +539,27 @@ export function designBlockErrorResponse(
   correlationId: string,
 ): NextResponse {
   return errorResponse(422, violations[0].code, correlationId, { details: { violations } });
+}
+
+/**
+ * F119 FR-033 — the 409 `version_changed` body: the working copy's current
+ * concurrency token and content, so the client can say "someone else changed
+ * this" instead of overwriting. ONE shape for the save (`PATCH …/version`) and
+ * the send (`POST …/version/send`, round-4 B1), so the workspace reads both
+ * refusals the same way.
+ */
+export function versionChangedResponse(current: BroadcastVersion, correlationId: string): NextResponse {
+  return errorResponse(409, 'version_changed', correlationId, {
+    details: {
+      currentUpdatedAt: current.updatedAt.toISOString(),
+      current: {
+        subject: current.subject,
+        bodyHtml: current.bodyHtml,
+        bodySource: current.bodySource,
+        noteToMember: current.noteToMember,
+      },
+    },
+  });
 }
 
 /**

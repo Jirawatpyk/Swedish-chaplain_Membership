@@ -271,7 +271,10 @@ no field here — it renders the stored body through the same server-side render
 inside the sandboxed preview surface, and pins the two fields with
 `tests/contract/broadcasts/get-broadcast-detail.contract.test.ts` so PR-2's T141a cannot drop them.
 While the broadcast is awaiting the member, the body shown is the latest **sent** version;
-otherwise it is the record's own content.
+otherwise it is the record's own content. **Awaiting the member with no version sent** is an invariant breach, not a
+fallback (round-4 B9): the route logs `M119.portal.detail.missing_sent_version` (ids only) and answers
+**500 `internal_error`** with no content — the record's own content is the member's original, and
+showing it as the thing to sign off would invite an approval of something marketing never sent.
 
 **This widening lands in two PRs** (plan Amendment 5), because only half of it can be built in PR-1:
 

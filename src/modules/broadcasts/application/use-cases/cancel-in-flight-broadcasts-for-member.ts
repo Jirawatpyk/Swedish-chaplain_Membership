@@ -189,13 +189,18 @@ export async function cancelInFlightBroadcastsForMember(
     /**
      * One cancel attempt in its own tx. `lost` = the CAS matched nothing (the
      * caller re-reads); every other outcome is final and already counted.
+     *
+     * F119 round-4 B6 — every throw LEAVES the tx, so the tx rolls back. The
+     * attempt used to catch inside `withTx` and return normally, which
+     * COMMITTED a cancel whose `broadcast_cancelled` audit emit had thrown: a
+     * cancel with no audit row. The counters move only once the tx committed.
      */
     const cancelOnce = async (
       broadcast: Broadcast,
       fromStatus: BroadcastStatus,
-    ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'unexpected' }> =>
-      deps.broadcastsRepo.withTx(async (tx) => {
-        try {
+    ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'unexpected' }> => {
+      try {
+        await deps.broadcastsRepo.withTx(async (tx) => {
           const cancelled = await deps.broadcastsRepo.applyTransition(
             tx,
             input.tenant.slug,
@@ -233,42 +238,43 @@ export async function cancelInFlightBroadcastsForMember(
             },
             requestId: input.requestId,
           });
-          broadcastsMetrics.auditEmitCount(
-            input.tenant.slug,
-            'broadcast_cancelled',
-          );
-          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'cancelled');
-          cancelledCount += 1;
-          return { kind: 'cancelled' as const };
-        } catch (e) {
-          // The CAS matched nothing: another writer moved the row. Where to
-          // is the caller's re-read, not this error's `observedStatus`.
-          if (e instanceof BroadcastConcurrentMutationError) return { kind: 'lost' as const };
-          // Unexpected: tx error, audit emit error, or any non-concurrent
-          // throw. Broadcast remains in flight. Stop-the-line metric +
-          // structured error log; cascade continues to next broadcast
-          // (best-effort) so a single bad row does not block the rest
-          // of the member's archival.
-          unexpectedErrorCount += 1;
-          broadcastsMetrics.cascadeOutcome(
-            input.tenant.slug,
-            'unexpected_error',
-          );
-          logger.error(
-            {
-              err: e instanceof Error ? e.message : String(e),
-              errName: e instanceof Error ? e.name : undefined,
-              tenantId: input.tenant.slug,
-              broadcastId: broadcast.broadcastId as string,
-              memberId: input.memberId as string,
-              previousStatus: fromStatus,
-              useCase: 'cancel-in-flight-broadcasts-for-member',
-            },
-            'broadcasts.cascade.tx_or_audit_failed',
-          );
-          return { kind: 'unexpected' as const };
-        }
-      });
+        });
+      } catch (e) {
+        // The CAS matched nothing: another writer moved the row. Where to
+        // is the caller's re-read, not this error's `observedStatus`.
+        if (e instanceof BroadcastConcurrentMutationError) return { kind: 'lost' as const };
+        // Unexpected: tx error, audit emit error, or any non-concurrent
+        // throw — rolled back, so the broadcast remains in flight.
+        // Stop-the-line metric + structured error log (the error CLASS
+        // only, never its message); cascade continues to next broadcast
+        // (best-effort) so a single bad row does not block the rest of the
+        // member's archival.
+        unexpectedErrorCount += 1;
+        broadcastsMetrics.cascadeOutcome(
+          input.tenant.slug,
+          'unexpected_error',
+        );
+        logger.error(
+          {
+            err: errKind(e),
+            tenantId: input.tenant.slug,
+            broadcastId: broadcast.broadcastId as string,
+            memberId: input.memberId as string,
+            previousStatus: fromStatus,
+            useCase: 'cancel-in-flight-broadcasts-for-member',
+          },
+          'broadcasts.cascade.tx_or_audit_failed',
+        );
+        return { kind: 'unexpected' as const };
+      }
+      broadcastsMetrics.auditEmitCount(
+        input.tenant.slug,
+        'broadcast_cancelled',
+      );
+      broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'cancelled');
+      cancelledCount += 1;
+      return { kind: 'cancelled' as const };
+    };
 
     /**
      * The row left the in-progress set under us (or is gone): it delivers or
