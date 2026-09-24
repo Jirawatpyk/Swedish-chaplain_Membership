@@ -833,13 +833,16 @@ export function makeDrizzleInvoiceRepo(
             ),
           )
           .orderBy(invoices.createdAt, invoices.invoiceId);
-        // `isNotNull(billDocumentNumberRaw)` above makes a NULL unreachable;
-        // the flatMap only narrows the column's nullable Drizzle type.
-        return rows.flatMap((r) =>
-          r.billDocumentNumberRaw === null
-            ? []
-            : [{ invoiceId: r.invoiceId, billDocumentNumberRaw: r.billDocumentNumberRaw }],
-        );
+        // `isNotNull(billDocumentNumberRaw)` above makes a NULL unreachable.
+        // Should that filter ever regress, fail LOUD rather than drop the row:
+        // the throw lands in `issueMembershipBill`'s list catch → `list_failed`
+        // warning + metric, instead of an outstanding bill silently skipped.
+        return rows.map((r) => {
+          if (r.billDocumentNumberRaw === null) {
+            throw new Error('invariant: supersedable membership bill without a bill number');
+          }
+          return { invoiceId: r.invoiceId, billDocumentNumberRaw: r.billDocumentNumberRaw };
+        });
       });
     },
 

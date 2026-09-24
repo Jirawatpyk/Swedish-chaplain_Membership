@@ -236,6 +236,35 @@ describe('issueMembershipBill', () => {
       ]);
     }
     expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('several failed voids → one typed warning and one metric per bill, in list order', async () => {
+    const deps = makeDeps({
+      enabled: true,
+      issued: OK_ISSUED,
+      olderBills: ['old-1', 'old-2'],
+      voidError: { code: 'refund_in_progress' },
+    });
+    const res = await issueMembershipBill(deps, ISSUE_INPUT);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.supersedeWarnings).toEqual([
+        {
+          kind: 'void_failed',
+          invoiceId: 'old-1',
+          billDocumentNumber: 'SC-old-1',
+          errorCode: 'refund_in_progress',
+        },
+        {
+          kind: 'void_failed',
+          invoiceId: 'old-2',
+          billDocumentNumber: 'SC-old-2',
+          errorCode: 'refund_in_progress',
+        },
+      ]);
+    }
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(2);
   });
 
   it('invalid_status void (already void / raced to paid) is swallowed as no-op, no warning', async () => {
@@ -262,6 +291,7 @@ describe('issueMembershipBill', () => {
       ]);
     }
     expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(1);
   });
 
   it('a THROWN list error is non-fatal: issue still returns ok + a typed list_failed warning + metric (symmetric with the void-throw case)', async () => {
@@ -270,6 +300,7 @@ describe('issueMembershipBill', () => {
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.supersedeWarnings).toEqual([{ kind: 'list_failed' }]);
     expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(1);
     // list threw before any void was attempted
     expect(voidInvoiceMock).not.toHaveBeenCalled();
   });
