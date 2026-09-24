@@ -44,7 +44,7 @@ const NO_DELIVERIES = { integrationConfigured: true, everReceivedDelivery: false
 
 describe('EventsEmptyState × settings.integrations — no integration configured', () => {
   it.each<Role>(['manager', 'marketing'])(
-    '%s: no "Set up EventCreate integration" link — shows the admin-only hint',
+    '%s: no "Set up EventCreate integration" link — the admin-only hint replaces the body',
     (role) => {
       renderAs(role, NO_INTEGRATION);
       expect(
@@ -53,6 +53,7 @@ describe('EventsEmptyState × settings.integrations — no integration configure
       expect(
         screen.getByText(copy.noIntegration.adminOnlyHint),
       ).toBeInTheDocument();
+      expect(screen.queryByText(copy.noIntegration.body)).toBeNull();
     },
   );
 
@@ -62,12 +63,13 @@ describe('EventsEmptyState × settings.integrations — no integration configure
       screen.getByRole('link', { name: copy.noIntegration.cta }),
     ).toHaveAttribute('href', '/admin/settings/integrations/eventcreate');
     expect(screen.queryByText(copy.noIntegration.adminOnlyHint)).toBeNull();
+    expect(screen.getByText(copy.noIntegration.body)).toBeInTheDocument();
   });
 });
 
 describe('EventsEmptyState × settings.integrations — waiting for first delivery', () => {
   it.each<Role>(['manager', 'marketing'])(
-    '%s: neither integration link renders — shows the admin-only hint',
+    '%s: neither integration link renders — the admin-only hint replaces the body',
     (role) => {
       renderAs(role, NO_DELIVERIES);
       expect(
@@ -79,6 +81,8 @@ describe('EventsEmptyState × settings.integrations — waiting for first delive
       expect(
         screen.getByText(copy.noDeliveries.adminOnlyHint),
       ).toBeInTheDocument();
+      // The body tells the viewer to send a test webhook themselves.
+      expect(screen.queryByText(copy.noDeliveries.body)).toBeNull();
     },
   );
 
@@ -91,5 +95,6 @@ describe('EventsEmptyState × settings.integrations — waiting for first delive
       screen.getByRole('link', { name: copy.noDeliveries.cta }),
     ).toHaveAttribute('href', '/admin/settings/integrations/eventcreate');
     expect(screen.queryByText(copy.noDeliveries.adminOnlyHint)).toBeNull();
+    expect(screen.getByText(copy.noDeliveries.body)).toBeInTheDocument();
   });
 });

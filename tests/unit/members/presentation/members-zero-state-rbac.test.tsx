@@ -31,10 +31,12 @@ function renderAs(role: 'manager' | 'admin') {
 }
 
 describe('MembersZeroState × members.write', () => {
-  it('manager: no "Add your first member" link — shows the admin-only hint instead', () => {
+  it('manager: no "Add your first member" link — the admin-only hint replaces the description', () => {
     renderAs('manager');
     expect(screen.queryByRole('link', { name: copy.cta })).toBeNull();
     expect(screen.getByText(copy.adminOnlyHint)).toBeInTheDocument();
+    // The description tells the viewer to add a member themselves.
+    expect(screen.queryByText(copy.description)).toBeNull();
   });
 
   it('admin: the CTA links to /admin/members/new and no hint is shown', () => {
@@ -44,5 +46,6 @@ describe('MembersZeroState × members.write', () => {
       '/admin/members/new',
     );
     expect(screen.queryByText(copy.adminOnlyHint)).toBeNull();
+    expect(screen.getByText(copy.description)).toBeInTheDocument();
   });
 });
