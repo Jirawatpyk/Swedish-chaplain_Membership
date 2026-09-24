@@ -52,6 +52,7 @@ export default async function NewPlanPage() {
           <NewPlanClient
             currentYear={currentYear}
             currencyPrefix={currencyPrefix}
+            currencyCode={currencyCode}
             vatRatePercent={taxPolicy ? vatRatePercent(taxPolicy.vatRateRaw) : null}
           />
         </CardContent>

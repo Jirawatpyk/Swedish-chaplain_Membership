@@ -931,6 +931,24 @@
         },
         "errors": {
           "stepValidation": "Granska föregående steg — några obligatoriska fält saknas eller är ogiltiga."
+        },
+        "fieldErrors": {
+          "planId": "Använd 1–63 gemener, siffror eller bindestreck.",
+          "planYear": "Ange ett år från 2000 till 2100.",
+          "planName": "Ange det engelska namnet (högst 120 tecken).",
+          "description": "Ange den engelska beskrivningen (högst 2 000 tecken).",
+          "sortOrder": "Ange ett heltal från 0 till 10 000.",
+          "invalidOption": "Välj ett av alternativen.",
+          "annualFee": "Ange en avgift från 0 till 100 000 000 baht.",
+          "amount": "Ange ett belopp från 0 till 100 000 000 baht.",
+          "turnoverOrder": "Högsta omsättning måste vara större än lägsta omsättning.",
+          "maxDurationYears": "Ange ett helt antal år, 1 eller fler.",
+          "maxMemberAge": "Ange en ålder från 1 till 199.",
+          "bundleRequired": "Partnerpaket måste inkludera ett företagspaket.",
+          "bundleNotAllowed": "Företagspaket kan inte inkludera ett annat paket.",
+          "bundleInvalid": "Ange paket-ID för ett företagspaket (gemener, siffror eller bindestreck).",
+          "partnershipBenefits": "Partnerpaket behöver partnerförmånerna ifyllda.",
+          "benefitMatrix": "Kontrollera förmånerna — vissa värden saknas eller är ogiltiga."
         }
       },
       "edit": {
