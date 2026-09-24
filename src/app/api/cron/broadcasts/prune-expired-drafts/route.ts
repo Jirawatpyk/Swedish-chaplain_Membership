@@ -22,6 +22,17 @@
  * as the DELETE. That is deliberate: the bytes are a member's personal data
  * and their removal is the reachable record of it.
  *
+ * F119 T130 — a THIRD block, the E-Blast approval lifecycle
+ * (`expireStaleMemberApprovals`): the day-3 / day-7 reminders, the day-23
+ * warning to both sides and the day-30 `→ expired_no_member_response`, for
+ * rows in `awaiting_member_approval` only (contracts/dashboard-and-
+ * notifications.md § 5). Its own transactions and statement timeouts (inside
+ * the use case), its own try/catch, its own `approvalLifecycleOk` flag; a 500
+ * only at the END, so a fault in one block never drops another. It runs
+ * whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says — the flag gates ENTRY into
+ * the round, and a row already awaiting the member must still be reminded and
+ * closed (research R18); the flag holds the emails at the drainer instead.
+ *
  * Auth: Bearer token via `CRON_SECRET` (shared with F4 outbox-dispatch
  * + F5 stale-pending-count + F7 dispatch-scheduled + F7
  * reconcile-stuck-sending).
@@ -32,11 +43,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import {
+  expireStaleMemberApprovals,
   makePruneExpiredDraftsDeps,
   makeReclaimOrphanedImagesDeps,
   pruneExpiredDrafts,
   reclaimOrphanedImages,
 } from '@/modules/broadcasts';
+import { makeExpireStaleMemberApprovalsDeps } from '@/lib/broadcast-approval-deps';
 import { errKind } from '@/lib/log-id';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -122,7 +135,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // --- Block 2: the F119 image-blob sweep (T035) ----------------------------
   // Independently transacted (one tx per row inside the use case), its own
-  // flag in the body. T130 (PR-2) adds the reminder / expiry steps here.
+  // flag in the body. The reminder / expiry steps are Block 3 below (T130).
   // ROUND-2 S-3 — `retained` is the fourth count: rows the sweep KEPT (and put
   // back in the live set) because live content still embeds their blob URL.
   // F7-1 — `rowsFailed` is the fifth: rows whose per-row tx threw and were
@@ -169,6 +182,45 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // --- Block 3: the F119 approval lifecycle (T130) ---------------------------
+  // Reminders, the day-23 warning, the day-30 expiry. One scan tx + one tx per
+  // row, each with its own statement timeout (inside the use case). A row that
+  // throws is counted (`approvalLifecycleRowsFailed`), logged at `error` and
+  // retried tomorrow — the tick stays 200 for it, as the image sweep does; a
+  // failed SCAN (or a throw) is the block failing.
+  let approvalLifecycleOk = false;
+  let lifecycle = { scanned: 0, remindersSent: 0, warningsSent: 0, expired: 0, rowsFailed: 0 };
+  try {
+    const result = await expireStaleMemberApprovals(makeExpireStaleMemberApprovalsDeps(tenantCtx.slug), {
+      requestId: `cron-approval-lifecycle-${startedAt}`,
+    });
+    if (result.ok) {
+      approvalLifecycleOk = true;
+      lifecycle = result.value;
+      if (result.value.rowsFailed > 0) {
+        logger.error(
+          {
+            tenantId: tenantCtx.slug,
+            rowsFailed: result.value.rowsFailed,
+            scanned: result.value.scanned,
+            errorId: 'M119.cron.approval_lifecycle.rows_failed',
+          },
+          'cron.broadcasts.approval_lifecycle.rows_failed',
+        );
+      }
+    } else {
+      logger.error(
+        { tenantId: tenantCtx.slug, err: result.error.errKind, errorId: 'M119.cron.approval_lifecycle' },
+        'cron.broadcasts.approval_lifecycle.server_error',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      { err: errKind(e), tenantId: tenantCtx.slug, errorId: 'M119.cron.approval_lifecycle.uncaught' },
+      'cron.broadcasts.approval_lifecycle.uncaught_error',
+    );
+  }
+
   const durationMs = Date.now() - startedAt;
   const summary = {
     tenantId: tenantCtx.slug,
@@ -176,10 +228,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     prunedCount,
     cutoff,
     imageSweep,
+    approvalLifecycleOk,
+    remindersSent: lifecycle.remindersSent,
+    warningsSent: lifecycle.warningsSent,
+    expired: lifecycle.expired,
+    approvalLifecycleRowsFailed: lifecycle.rowsFailed,
     durationMs,
   };
 
-  if (!pruneOk || !imageSweep.ok) {
+  if (!pruneOk || !imageSweep.ok || !approvalLifecycleOk) {
     logger.error(summary, 'cron.broadcasts.prune_drafts.tick_partial_failure');
     return NextResponse.json({ ...summary, error: { code: 'internal_error' } }, { status: 500 });
   }

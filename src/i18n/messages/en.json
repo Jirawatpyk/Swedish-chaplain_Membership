@@ -5682,6 +5682,7 @@
       "dashboard": "Dashboard",
       "changeRequests": "Change requests",
       "changeRequestsBadge": "pending",
+      "broadcastsBadge": "waiting",
       "badgeTooltip": "{title} ({count})",
       "plans": "Plans",
       "users": "Users",

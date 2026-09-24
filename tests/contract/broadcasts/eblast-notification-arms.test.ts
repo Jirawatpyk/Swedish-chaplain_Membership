@@ -86,8 +86,8 @@ const NOTE = 'SECRET-NOTE-44de check the date';
  * list MUST BE EMPTY BEFORE PR-2 MERGES (the KNOWN_NOT_YET_EMITTED pattern).
  */
 const ARM_NOT_YET_BUILT: Readonly<Record<string, string>> = {
-  eblast_submitted_marketing: 'T129 — its arm lands with the submit-time enqueue',
-  eblast_approval_lifecycle: 'T131 — its arm lands with the lifecycle cron block (T130)',
+  // Empty since T129 (eblast_submitted_marketing) and T131
+  // (eblast_approval_lifecycle) landed their arms — keep it that way.
 };
 
 /** Types routed BEFORE `buildPayload` — they are not emails. */
@@ -274,6 +274,131 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({}).reads)).toEqual({ miss: 'request_gone' });
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { company: null }).reads)).toEqual({ miss: 'request_gone' });
     await expect(buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { roster: 'throws' }).reads)).resolves.toBeNull();
+  });
+});
+
+describe('eblast_submitted_marketing — FR-021b staff containment (T129)', () => {
+  const submitted = () => loaded({ status: 'submitted', currentRound: 0, scheduledFor: PROPOSED });
+
+  it('subject + company + "Awaiting marketing review" + link, to the roster member at their CURRENT address, and none of the body or the proposed time', async () => {
+    const roster = [makeMarketingRecipient({ userId: 'u-1', email: 'moved@swecham.test' })];
+    const { reads } = fixture({ broadcasts: [submitted()] }, { roster });
+    const email = rendered(await buildEblastNotificationPayload(row('eblast_submitted_marketing', { recipientUserId: 'u-1' }), () => reads));
+    expect(staffLeaks(email)).toEqual([]);
+    expect(email.subject).toContain('Member original subject');
+    expect(email.text).toContain(COMPANY);
+    expect(email.text).toContain('Awaiting marketing review');
+    expect(email.text).toContain(`/admin/broadcasts/${BROADCAST_ID}`);
+    expect(email.toEmail).toBe('moved@swecham.test');
+  });
+
+  it('marketing already acted (approved, formatting, rejected, cancelled) → request_superseded, never a stale "to review"', async () => {
+    for (const status of ['approved', 'in_design', 'rejected', 'cancelled'] as const) {
+      const { reads } = fixture({ broadcasts: [loaded({ status })] });
+      expect(await buildEblastNotificationPayload(row('eblast_submitted_marketing', { recipientUserId: MARKETER_ID }), () => reads)).toEqual({ miss: 'request_superseded' });
+    }
+  });
+
+  it('misses: broadcast or member gone → request_gone; a recipient off the roster → recipient_gone; a roster fault → null', async () => {
+    const run = (f: ReadsFixture, ctx: Record<string, unknown> = { recipientUserId: MARKETER_ID }) =>
+      buildEblastNotificationPayload(row('eblast_submitted_marketing', ctx), () => f.reads);
+    expect(await run(fixture({}))).toEqual({ miss: 'request_gone' });
+    expect(await run(fixture({ broadcasts: [submitted()] }, { company: null }))).toEqual({ miss: 'request_gone' });
+    expect(await run(fixture({ broadcasts: [submitted()] }, { roster: [] }))).toEqual({ miss: 'recipient_gone' });
+    expect(await run(fixture({ broadcasts: [submitted()] }, { roster: 'throws' }))).toBeNull();
+  });
+});
+
+describe('eblast_approval_lifecycle — both audiences (T131)', () => {
+  const awaiting = (overrides: Partial<Broadcast> = {}) =>
+    loaded({ status: 'awaiting_member_approval', currentRound: 1, stageEnteredAt: SENT_AT, ...overrides });
+  const lifecycle = (kind: string, audience: string, extra: Record<string, unknown> = {}) =>
+    row('eblast_approval_lifecycle', { versionId: V1, round: 1, kind, audience, ...extra });
+  const dayOf = (day: number, locale: 'en' | 'th' | 'sv') =>
+    formatEblastEmailDate(new Date(SENT_AT.getTime() + day * 86_400_000), locale);
+
+  it.each([
+    ['expiry_warning_day23', 'awaiting_member_approval', 'Awaiting member approval'],
+    ['expired_day30', 'expired_no_member_response', 'Expired'],
+  ] as const)('staff %s: subject + company + stage + link, and none of the body, note or times', async (kind, status, stage) => {
+    const { reads } = fixture({ broadcasts: [awaiting({ status })], versions: [sentV1] });
+    const email = rendered(await buildEblastNotificationPayload(lifecycle(kind, 'staff', { recipientUserId: MARKETER_ID }), () => reads));
+    expect(staffLeaks(email)).toEqual([]);
+    expect(email.subject).toContain('Member original subject');
+    expect(email.text).toContain(COMPANY);
+    expect(email.text).toContain(stage);
+    expect(email.text).toContain(`/admin/broadcasts/${BROADCAST_ID}`);
+    expect(email.toEmail).toBe('marketing@swecham.test');
+  });
+
+  it('positive control: the staff leak matcher fails when the note is spliced into a lifecycle email', async () => {
+    const { reads } = fixture({ broadcasts: [awaiting()], versions: [sentV1] });
+    const email = rendered(await buildEblastNotificationPayload(lifecycle('expiry_warning_day23', 'staff', { recipientUserId: MARKETER_ID }), () => reads));
+    expect(staffLeaks({ ...email, text: `${email.text}\n${NOTE}` })).toEqual(['SECRET-NOTE-44de']);
+  });
+
+  it('member day-3 reminder: to the approval contact NOW, in their language, restating the REMAINING timeline (7 / 23 / 30, not 3)', async () => {
+    const { reads } = fixture({ broadcasts: [awaiting()], versions: [sentV1] });
+    const email = rendered(await buildEblastNotificationPayload(lifecycle('reminder_day3', 'member'), () => reads));
+    expect(email.toEmail).toBe('owner-now@acme.test');
+    expect(email.html).toContain('lang="sv"');
+    expect(email.text).toContain('Formatted subject');
+    for (const day of [7, 23, 30]) expect(email.text).toContain(dayOf(day, 'sv'));
+    expect(email.text).not.toContain(dayOf(3, 'sv'));
+    expect(email.text).toContain(`/portal/broadcasts/${BROADCAST_ID}`);
+  });
+
+  it('member day-23 warning restates day 30 only; the day-30 closure restates nothing and links to the list', async () => {
+    const warn = fixture({ broadcasts: [awaiting()], versions: [sentV1] });
+    const warning = rendered(await buildEblastNotificationPayload(lifecycle('expiry_warning_day23', 'member'), () => warn.reads));
+    expect(warning.text).toContain(dayOf(30, 'sv'));
+    for (const day of [3, 7, 23]) expect(warning.text).not.toContain(dayOf(day, 'sv'));
+
+    const closed = fixture({ broadcasts: [awaiting({ status: 'expired_no_member_response' })], versions: [sentV1] });
+    const closure = rendered(await buildEblastNotificationPayload(lifecycle('expired_day30', 'member'), () => closed.reads));
+    for (const day of [3, 7, 23]) expect(closure.text).not.toContain(dayOf(day, 'sv'));
+    expect(closure.text).toMatch(/\/portal\/broadcasts$/m);
+  });
+
+  it('stale rows are superseded: the member decided, a later round was sent, or a closure the row never reached', async () => {
+    const run = (b: Broadcast, kind: string, audience = 'member') =>
+      buildEblastNotificationPayload(lifecycle(kind, audience, { recipientUserId: MARKETER_ID }), () => fixture({ broadcasts: [b], versions: [sentV1] }).reads);
+    expect(await run(awaiting({ status: 'member_approved' }), 'reminder_day7')).toEqual({ miss: 'request_superseded' });
+    expect(await run(awaiting({ currentRound: 2 }), 'reminder_day3')).toEqual({ miss: 'request_superseded' });
+    expect(await run(awaiting({ status: 'changes_requested' }), 'expiry_warning_day23', 'staff')).toEqual({ miss: 'request_superseded' });
+    expect(await run(awaiting(), 'expired_day30')).toEqual({ miss: 'request_superseded' });
+  });
+
+  it('misses and malformed rows: gone → request_gone; nobody to send to → recipient_gone; an unknown kind or audience → null, never a throw', async () => {
+    const good = () => fixture({ broadcasts: [awaiting()], versions: [sentV1] });
+    const run = (f: ReadsFixture, r: EblastOutboxRow) => buildEblastNotificationPayload(r, () => f.reads);
+    const staffRow = lifecycle('expiry_warning_day23', 'staff', { recipientUserId: MARKETER_ID });
+    expect(await run(fixture({}), lifecycle('reminder_day3', 'member'))).toEqual({ miss: 'request_gone' });
+    expect(await run(fixture({ broadcasts: [awaiting()] }), lifecycle('reminder_day3', 'member'))).toEqual({ miss: 'request_gone' });
+    expect(await run(fixture({ broadcasts: [awaiting()], versions: [sentV1] }, { contacts: [] }), lifecycle('reminder_day3', 'member'))).toEqual({ miss: 'recipient_gone' });
+    expect(await run(fixture({ broadcasts: [awaiting()], versions: [sentV1] }, { roster: [] }), staffRow)).toEqual({ miss: 'recipient_gone' });
+    expect(await run(fixture({ broadcasts: [awaiting()], versions: [sentV1] }, { company: null }), staffRow)).toEqual({ miss: 'request_gone' });
+    await expect(run(good(), lifecycle('reminder_day99', 'member'))).resolves.toBeNull();
+    await expect(run(good(), lifecycle('reminder_day3', 'robot'))).resolves.toBeNull();
+    await expect(run(good(), row('eblast_approval_lifecycle', { versionId: V1, kind: 'reminder_day3', audience: 'member' }))).resolves.toBeNull();
+  });
+});
+
+describe('eblast_version_sent_member — the full timeline at the moment the clock starts (T131, FR-021b)', () => {
+  it('the member "version ready" rendering states day 3, day 7, day 23 and day 30 — each with its own date, in every locale', async () => {
+    for (const locale of ['en', 'th', 'sv'] as const) {
+      const { reads } = fixture(
+        { broadcasts: [loaded({ status: 'awaiting_member_approval', currentRound: 1 })], versions: [sentV1] },
+        { contacts: [makePortalContact({ locale })] },
+      );
+      const email = rendered(await buildEblastNotificationPayload(row('eblast_version_sent_member', { versionId: V1, round: 1 }), () => reads));
+      for (const day of [3, 7, 23, 30]) {
+        expect(email.text, `${locale} day ${day}`).toContain(formatEblastEmailDate(new Date(SENT_AT.getTime() + day * 86_400_000), locale));
+      }
+      if (locale === 'en') {
+        for (const label of ['Day 3 (', 'Day 7 (', 'Day 23 (', 'Day 30 (']) expect(email.text).toContain(label);
+      }
+    }
   });
 });
 

@@ -14,7 +14,8 @@
  *     `listActiveUserIdsWithRole` for the linked logins (`users` is
  *     cross-tenant, read on the plain client), adapted to
  *     `MemberPortalRecipientPort`;
- *   - the marketing hand-off roster for the member's decision (T078) —
+ *   - the marketing hand-off roster for the member's decision (T078) and the
+ *     day-23 / day-30 lifecycle notices (T130) —
  *     `src/lib/broadcast-marketing-deps.ts` (auth barrel, evaluator-derived).
  *
  * The feature flag is read HERE, per request, and handed to the use case as a
@@ -31,6 +32,7 @@ import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { listActiveUserIdsWithRole, resolveActorIdentities } from '@/modules/auth';
 import {
   dompurifySanitizer,
+  drizzleApprovalLifecycleScan,
   drizzleBroadcastDecisionsRepo,
   drizzleBroadcastVersionsRepo,
   eblastNotificationOutbox,
@@ -41,6 +43,7 @@ import {
   systemClock,
   type ActorNameDirectoryPort,
   type ConfirmScheduleDeps,
+  type ExpireStaleMemberApprovalsDeps,
   type GetMemberVersionThreadDeps,
   type ReadMemberEblastViewDeps,
   type ListBroadcastVersionsDeps,
@@ -193,5 +196,24 @@ export function makeReadFormattingWarningsDeps(tenantId: string): ReadFormatting
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     portalRecipients: memberPortalRecipients,
     imageAllowlist: makeValidateImageSourceAllowlistDeps(tenantId).allowlistPort,
+  };
+}
+
+/**
+ * T130 — the daily approval-lifecycle tick (the `prune-expired-drafts` cron's
+ * third block): the member's portal contacts for the reminders, the marketing
+ * roster for the warning and the closure, the ids-only outbox on each row's tx.
+ */
+export function makeExpireStaleMemberApprovalsDeps(tenantId: string): ExpireStaleMemberApprovalsDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    versionsRepo: drizzleBroadcastVersionsRepo,
+    lifecycleScan: drizzleApprovalLifecycleScan,
+    portalRecipients: memberPortalRecipients,
+    marketingDirectory: makeMarketingDirectory(tenantId),
+    outbox: eblastNotificationOutbox,
+    audit: f7AuditAdapter,
+    clock: systemClock,
   };
 }

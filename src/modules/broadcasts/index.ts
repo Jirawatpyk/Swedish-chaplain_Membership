@@ -297,7 +297,7 @@ export {
   audienceCeiling,
   DELIVERABLE_RECIPIENTS_PER_TICK,
 } from './domain/audience-ceiling';
-export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
+export type { BroadcastApprovalCounter, MarketingQueueCounts } from './application/ports/broadcast-approval-counter';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------
 export {
@@ -850,6 +850,24 @@ export {
   type SendVersionToMemberInput,
   type SendVersionToMemberOutput,
 } from './application/use-cases/approval/send-version-to-member';
+// T130 — the daily approval-lifecycle tick (reminders, the day-23 warning, the
+// day-30 expiry), a block of the `prune-expired-drafts` cron. Composed in
+// `src/lib/broadcast-approval-deps.ts` (the member's contacts + the marketing
+// roster cross module boundaries).
+export {
+  expireStaleMemberApprovals,
+  APPROVAL_LIFECYCLE_BATCH,
+  type ExpireStaleMemberApprovalsDeps,
+  type ExpireStaleMemberApprovalsError,
+  type ExpireStaleMemberApprovalsInput,
+  type ExpireStaleMemberApprovalsOutput,
+} from './application/use-cases/approval/expire-stale-member-approvals';
+export { drizzleApprovalLifecycleScan } from './infrastructure/db/drizzle-approval-lifecycle-scan';
+export type {
+  ApprovalLifecycleScanPort,
+  AwaitingApprovalCandidate,
+  AwaitingApprovalScanQuery,
+} from './application/ports/approval-lifecycle-scan-port';
 export {
   confirmSchedule,
   type ConfirmScheduleDeps,
@@ -894,7 +912,7 @@ export type {
 export type { BroadcastApprovalScrubPort } from './application/ports/broadcast-approval-scrub-port';
 // T063 — the staff detail page's stage header ("whose turn", FR-026) and its
 // two standing warnings (no portal user; an image off the allow-list).
-export { turnOf, type WhoseTurn } from './domain/stage/whose-turn';
+export { turnOf, MARKETING_TURN_STATUSES, type WhoseTurn } from './domain/stage/whose-turn';
 export {
   readFormattingWarnings,
   type FormattingWarnings,

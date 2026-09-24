@@ -32,9 +32,12 @@ import { logger } from '@/lib/logger';
 import { memberPortalRecipients } from '@/lib/broadcast-approval-deps';
 import { resolveMarketingRoster } from '@/lib/broadcast-marketing-deps';
 import {
+  EBLAST_LIFECYCLE_KINDS,
   EBLAST_MEMBER_DECIDED_KINDS,
+  buildEblastApprovalLifecycleEmail,
   buildEblastMemberDecidedMarketingEmail,
   buildEblastScheduleConfirmedMemberEmail,
+  buildEblastSubmittedMarketingEmail,
   buildEblastVersionSentMemberEmail,
   chooseApprovalRecipient,
   drizzleBroadcastVersionsRepo,
@@ -43,7 +46,9 @@ import {
   type ApprovalBroadcastsRepo,
   type BroadcastId,
   type BroadcastVersionsRepo,
+  type Broadcast,
   type BuiltEblastEmail,
+  type EblastLifecycleKind,
   type EblastMemberDecidedKind,
   type MarketingRecipient,
   type MemberPortalRecipientPort,
@@ -100,6 +105,8 @@ const int = (v: unknown): number | null => (typeof v === 'number' && Number.isIn
 const isLocale = (v: unknown): v is Locale => v === 'en' || v === 'th' || v === 'sv';
 const isDecidedKind = (v: unknown): v is EblastMemberDecidedKind =>
   (EBLAST_MEMBER_DECIDED_KINDS as readonly unknown[]).includes(v);
+const isLifecycleKind = (v: unknown): v is EblastLifecycleKind =>
+  (EBLAST_LIFECYCLE_KINDS as readonly unknown[]).includes(v);
 
 const GONE: EblastPayloadMiss = { miss: 'request_gone' };
 const RECIPIENT_GONE: EblastPayloadMiss = { miss: 'recipient_gone' };
@@ -128,6 +135,10 @@ export async function buildEblastNotificationPayload(
         return await scheduleConfirmedMember(reads, tenant, broadcastId, ctx, row);
       case 'eblast_member_decided_marketing':
         return await memberDecidedMarketing(reads, tenant, broadcastId, ctx, row, locale);
+      case 'eblast_submitted_marketing':
+        return await submittedMarketing(reads, tenant, broadcastId, ctx, row, locale);
+      case 'eblast_approval_lifecycle':
+        return await approvalLifecycle(reads, tenant, broadcastId, ctx, row, locale);
       default:
         return malformed(row, 'type');
     }
@@ -244,6 +255,31 @@ async function memberDecidedMarketing(
   if (!isDecidedKind(decision)) return malformed(row, 'decision');
   const broadcast = await reads.broadcastsRepo.withTx((tx) => reads.broadcastsRepo.findByIdInTx(tx, tenant.slug, broadcastId));
   if (broadcast === null) return GONE;
+  return staffHandoff(reads, broadcast, ctx, row, (companyName) =>
+    buildEblastMemberDecidedMarketingEmail({
+      locale,
+      broadcastId,
+      broadcastSubject: broadcast.subject,
+      companyName,
+      decision,
+    }),
+  );
+}
+
+/**
+ * The staff half every marketing-bound arm shares: the member company (gone →
+ * `request_gone`), then the recipient re-checked against the LIVE roster
+ * (F114: a user disabled between enqueue and send gets nothing) — by user id
+ * when the row carries it, else by the address frozen at enqueue — and reached
+ * at the CURRENT address. The builder sees the four FR-021b facts only.
+ */
+async function staffHandoff(
+  reads: EblastNotificationReads,
+  broadcast: Broadcast,
+  ctx: Record<string, unknown>,
+  row: EblastOutboxRow,
+  build: (companyName: string) => BuiltEblastEmail,
+): Promise<EblastPayload> {
   const companyName = await reads.companyName(broadcast.requestedByMemberId);
   if (companyName === null) return GONE;
   const roster = await reads.marketingRoster();
@@ -253,12 +289,96 @@ async function memberDecidedMarketing(
       ? roster.find((r) => r.userId === recipientUserId)
       : roster.find((r) => r.email.toLowerCase() === row.toEmail.toLowerCase());
   if (recipient === undefined) return RECIPIENT_GONE;
-  const email = buildEblastMemberDecidedMarketingEmail({
-    locale,
+  return { ...build(companyName), toEmail: recipient.email };
+}
+
+/**
+ * T129 — a member (or staff on their behalf) submitted: "Awaiting marketing
+ * review" to one roster recipient. Stale once marketing has acted — with the
+ * flag off these rows wait in the outbox and drain on the flip, so a row for
+ * an E-Blast already approved, formatted or closed must not arrive as "to
+ * review" (the silent `request_superseded`).
+ */
+async function submittedMarketing(
+  reads: EblastNotificationReads,
+  tenant: TenantContext,
+  broadcastId: BroadcastId,
+  ctx: Record<string, unknown>,
+  row: EblastOutboxRow,
+  locale: Locale,
+): Promise<EblastPayload> {
+  const broadcast = await reads.broadcastsRepo.withTx((tx) => reads.broadcastsRepo.findByIdInTx(tx, tenant.slug, broadcastId));
+  if (broadcast === null) return GONE;
+  if (broadcast.status !== 'submitted') return SUPERSEDED;
+  return staffHandoff(reads, broadcast, ctx, row, (companyName) =>
+    buildEblastSubmittedMarketingEmail({ locale, broadcastId, broadcastSubject: broadcast.subject, companyName }),
+  );
+}
+
+/**
+ * T131 — the approval clock (FR-022, FR-022a): `kind` ∈ reminder_day3 |
+ * reminder_day7 | expiry_warning_day23 | expired_day30, `audience` ∈ member |
+ * staff. The row is stale unless the E-Blast is still where the tick found it:
+ * awaiting the member in the SAME round (a decision or a new version since
+ * makes a reminder wrong), or — for the closure — expired in that round.
+ *
+ * STAFF: the four-field rule (FR-021b), via `staffHandoff`. MEMBER: to the
+ * approval contact at their CURRENT address in their language, with the
+ * version they were shown and the REMAINING timeline, counted from the day
+ * that version was sent.
+ */
+async function approvalLifecycle(
+  reads: EblastNotificationReads,
+  tenant: TenantContext,
+  broadcastId: BroadcastId,
+  ctx: Record<string, unknown>,
+  row: EblastOutboxRow,
+  locale: Locale,
+): Promise<EblastPayload> {
+  const kind = ctx.kind;
+  const audience = ctx.audience;
+  const versionId = str(ctx.versionId);
+  const round = int(ctx.round);
+  if (!isLifecycleKind(kind)) return malformed(row, 'kind');
+  if (audience !== 'member' && audience !== 'staff') return malformed(row, 'audience');
+  if (versionId === null || round === null) return malformed(row, 'version_or_round');
+  const read = await reads.broadcastsRepo.withTx(async (tx) => {
+    const broadcast = await reads.broadcastsRepo.findByIdInTx(tx, tenant.slug, broadcastId);
+    if (broadcast === null) return null;
+    const versions = await reads.versionsRepo.listByBroadcast(tenant.slug, broadcastId, tx);
+    const version = versions.find((v) => v.id === versionId);
+    if (version === undefined) return null;
+    const contacts =
+      audience === 'member' ? await reads.portalRecipients.listActivePortalContacts(tenant, broadcast.requestedByMemberId, tx) : [];
+    return { broadcast, version, contacts };
+  });
+  if (read === null) return GONE;
+  const { broadcast, version, contacts } = read;
+  const expectedStatus = kind === 'expired_day30' ? 'expired_no_member_response' : 'awaiting_member_approval';
+  if (broadcast.status !== expectedStatus || broadcast.currentRound !== round || version.sentToMemberAt === null) {
+    return SUPERSEDED;
+  }
+  if (audience === 'staff') {
+    return staffHandoff(reads, broadcast, ctx, row, (companyName) =>
+      buildEblastApprovalLifecycleEmail({
+        audience: 'staff',
+        kind,
+        locale,
+        broadcastId,
+        broadcastSubject: broadcast.subject,
+        companyName,
+      }),
+    );
+  }
+  const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId);
+  if (recipient === null) return RECIPIENT_GONE;
+  const email = buildEblastApprovalLifecycleEmail({
+    audience: 'member',
+    kind,
+    locale: recipient.locale,
     broadcastId,
-    broadcastSubject: broadcast.subject,
-    companyName,
-    decision,
+    broadcastSubject: version.subject,
+    sentAt: version.sentToMemberAt,
   });
   return { ...email, toEmail: recipient.email };
 }

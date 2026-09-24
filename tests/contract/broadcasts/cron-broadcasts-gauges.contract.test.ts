@@ -50,6 +50,12 @@ const envMock = {
 vi.mock('@/lib/env', () => ({
   env: envMock,
 }));
+// F119 T132 — the route derives the marketing-turn set from the broadcasts
+// barrel's Domain constant; the barrel itself (db, env, adapters) is not what
+// this wire contract is about, so only the constant is provided — the REAL one.
+vi.mock('@/modules/broadcasts', async () => ({
+  MARKETING_TURN_STATUSES: (await import('@/modules/broadcasts/domain/stage/whose-turn')).MARKETING_TURN_STATUSES,
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: (...a: unknown[]) => loggerErrorSpy(...a), debug: vi.fn() },
 }));

@@ -635,6 +635,33 @@ export interface F7AuditPayloadShapes {
       }
     | { readonly mode: 'cancel'; readonly confirmed_send_at: null; readonly differs: false }
   );
+  // T130 — the daily approval-lifecycle tick (contracts § 2, § 5). SYSTEM
+  // rows: `actor_role` is the literal `'system'` (the cron holds no session
+  // role — the image sweep's precedent), and the member key is
+  // `related_member_id`, because a cron step is not member activity and must
+  // not refresh the 0009 `last_activity_at` clock. `version_id` / `round` name
+  // the version whose clock ran; `days_waiting` is whole days since it was
+  // sent. Emitted once per E-Blast per step, on the row's own transaction.
+  readonly broadcast_approval_reminder_sent: F119LifecycleCommon & {
+    readonly reminder: 'day3' | 'day7';
+  };
+  readonly broadcast_approval_expiry_warned: F119LifecycleCommon & {
+    readonly days_waiting: number;
+  };
+  readonly broadcast_approval_expired: F119LifecycleCommon & {
+    readonly days_waiting: number;
+    /** Always true: `expired_no_member_response` is in neither the reserved nor the consumed set. */
+    readonly allowance_released: true;
+  };
+}
+
+/** The fields the three approval-lifecycle rows share (T130). */
+export interface F119LifecycleCommon {
+  readonly related_member_id: string;
+  readonly broadcast_id: string;
+  readonly version_id: string;
+  readonly round: number;
+  readonly actor_role: 'system';
 }
 
 /** `broadcast_brand_settings_changed` — the two fields a brand save can change. */

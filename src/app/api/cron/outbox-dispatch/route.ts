@@ -543,18 +543,19 @@ async function buildPayload(
       });
       return { ...built, toEmail: contact.value.email };
     }
-    // F119 T065 (contracts/dashboard-and-notifications.md § 3, research R14) —
-    // the approval-round hand-offs, read at send time under the row's tenant
-    // from ids-only `context_data`. Staff renderings carry subject + member
-    // company + stage + link and nothing else (FR-021b). The composition never
-    // throws: a transient read is `null` (the ladder), a stale hand-off the
-    // silent `request_superseded`. `eblast_submitted_marketing` (T129) and
-    // `eblast_approval_lifecycle` (T131) get their arms with their enqueues;
-    // until then, and while FEATURE_EBLAST_MEMBER_APPROVAL is off, the drainer
-    // does not select them (T152a, `GET` below).
+    // F119 T065 / T129 / T131 (contracts/dashboard-and-notifications.md § 3,
+    // research R14) — the five approval-round hand-offs, read at send time
+    // under the row's tenant from ids-only `context_data`. Staff renderings
+    // carry subject + member company + stage + link and nothing else
+    // (FR-021b). The composition never throws: a transient read is `null` (the
+    // ladder), a stale hand-off the silent `request_superseded`. While
+    // FEATURE_EBLAST_MEMBER_APPROVAL is off the drainer does not select any of
+    // the five (T152a, `GET` below).
+    case 'eblast_submitted_marketing':
     case 'eblast_version_sent_member':
     case 'eblast_member_decided_marketing':
     case 'eblast_schedule_confirmed_member':
+    case 'eblast_approval_lifecycle':
       return buildEblastNotificationPayload(row);
     default:
       return null;

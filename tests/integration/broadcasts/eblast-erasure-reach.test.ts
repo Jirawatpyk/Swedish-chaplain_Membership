@@ -139,7 +139,7 @@ describe('F119 T076 — a member erased at Awaiting member approval: nothing the
 
   /** submit → start → save → send: the E-Blast is awaiting its member in round 1. */
   async function driveToRoundOne(forMember: string, submitter: TestUser, company: string): Promise<{ id: BroadcastId; versionId: string }> {
-    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug), {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
       memberId: forMember,
       submittedByUserId: submitter.userId,
       actorRole: 'member_self_service',

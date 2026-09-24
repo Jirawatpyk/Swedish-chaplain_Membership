@@ -56,6 +56,23 @@ export function hasSendingStarted(status: BroadcastStatus): boolean {
   return SENDING_STARTED_SET.has(status);
 }
 
+/**
+ * F119 T132 — the in-progress stages that exist ONLY inside the
+ * member-approval round (migration 0305): a row in one of them is in flight
+ * whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says. Research R18's "flag ON or
+ * rows exist" rule reads this set — with the flag off, a surface that would
+ * otherwise stay dark (the nav's waiting count) still shows while any row is
+ * here, so an in-flight E-Blast is never invisible to the people who must act
+ * on it. `expired_no_member_response` is not in it: it is closed, and nobody
+ * acts on a closed row.
+ */
+export const APPROVAL_ROUND_STATUSES = [
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+] as const satisfies readonly (typeof IN_PROGRESS_BROADCAST_STATUSES)[number][];
+
 const IN_PROGRESS_SET: ReadonlySet<BroadcastStatus> = new Set(IN_PROGRESS_BROADCAST_STATUSES);
 
 /** Is the E-Blast in progress — reserving its allowance place, withdrawable, cascade-cancellable? */

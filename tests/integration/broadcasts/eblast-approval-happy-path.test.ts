@@ -77,7 +77,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
 
   it('the delivered content equals the version the member approved', async () => {
     // 1. The member submits (the real submit: membership access, quota, rate limit, audience).
-    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug), {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
       memberId,
       submittedByUserId: portalUser.userId,
       actorRole: 'member_self_service',

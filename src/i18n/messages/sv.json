@@ -5682,6 +5682,7 @@
       "dashboard": "Instrumentpanel",
       "changeRequests": "Ändringsbegäranden",
       "changeRequestsBadge": "som väntar",
+      "broadcastsBadge": "som väntar",
       "badgeTooltip": "{title} ({count})",
       "plans": "Paket",
       "users": "Användare",

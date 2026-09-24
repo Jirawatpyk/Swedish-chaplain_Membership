@@ -57,9 +57,9 @@ const ROOTS_TO_GREP = [
  * follow-up branch per Staff Review W-1 (2026-05-19). Removing these
  * from KNOWN_NOT_YET_EMITTED when Phase 4 + Phase 5 ship.
  *
- * F119 PR-2 (2026-09-23): the ten 0305 approval-round events are listed
- * below, each naming its emitting task. The list MUST hold no F119 value
- * when PR-2 merges.
+ * F119 PR-2 (2026-09-23): the ten 0305 approval-round events were listed
+ * here, each naming its emitting task, and each left with its emitter; since
+ * T130 (2026-09-24) the list holds no F119 value, and it must stay that way.
  */
 const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   // F71A US2 (Phase 4 — not implemented on this branch)
@@ -75,14 +75,9 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   // Application-layer `reseedStarterTemplates` use-case will become
   // the primary emit caller. No emit site in src/ today.
   'broadcast_template_seed_skipped_existing_name',
-  // F119 PR-2 (migration 0305, T050) — declared ahead of their emitters
-  // because the enum values, the tuple and the migration are one unit.
-  // THIS BLOCK MUST BE EMPTY BEFORE PR-2 MERGES: each emitting task deletes
-  // its line in the same commit that adds the emit site, and a line still
-  // here at merge is a declared-but-never-emitted event shipping to prod.
-  'broadcast_approval_reminder_sent', // F119 PR-2 in flight — emitter T130 expire-stale-member-approvals (day 3 / 7)
-  'broadcast_approval_expiry_warned', // F119 PR-2 in flight — emitter T130 expire-stale-member-approvals (day 23)
-  'broadcast_approval_expired', // F119 PR-2 in flight — emitter T130 expire-stale-member-approvals (day 30)
+  // F119 PR-2 (migration 0305, T050): no F119 value may appear here — every
+  // one of the fourteen has its emit site (the last three, the approval
+  // lifecycle's, since T130 `expire-stale-member-approvals`).
 ];
 
 function listTsFiles(root: string): string[] {

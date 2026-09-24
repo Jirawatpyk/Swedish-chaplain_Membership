@@ -226,7 +226,7 @@ describe('F7 admin_proxy submit does NOT bump the proxied member recency', () =>
   });
 
   it('a SUCCESSFUL admin proxy-submit leaves the member last_activity_at untouched', async () => {
-    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug);
+    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] });
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: memberId,
       adminUserId: admin.userId,

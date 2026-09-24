@@ -32,7 +32,9 @@
  *
  * Atomic insert + transition + audit in `runInTenant + withTx`. Failure
  * rolls back the row insert AND the audit row (Constitution Principle I
- * clause 3).
+ * clause 3) — and, since F119 T129, the marketing hand-off rows
+ * (`eblast_submitted_marketing`, one per roster recipient) enqueued on the
+ * same tx.
  *
  * Each precondition rejection emits the corresponding audit event via a
  * standalone tx (`tx=null`) so the rejection trail is visible even when
@@ -73,6 +75,8 @@ import type { EmailValidatorPort } from '../ports/email-validator-port';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { RateLimiterPort } from '../ports/rate-limiter-port';
+import type { MarketingDirectoryPort } from '../ports/marketing-directory-port';
+import type { EblastNotificationOutboxPort } from '../ports/eblast-notification-outbox-port';
 import { sanitizeHtml } from './sanitize-html';
 import { validateImageSourceAllowlist } from './validate-image-source-allowlist';
 import { validateCustomRecipients } from './validate-custom-recipients';
@@ -206,6 +210,14 @@ export interface SubmitBroadcastDeps {
   readonly rateLimiter: RateLimiterPort;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
+  /**
+   * F119 T129 — who "marketing" is for the submit hand-off (FR-021a). The
+   * roster crosses into the auth barrel, so the composition root takes it as
+   * a parameter (`makeSubmitBroadcastDeps(tenantId, marketingDirectory)`).
+   */
+  readonly marketingDirectory: MarketingDirectoryPort;
+  /** F119 T129 — the ids-only approval-round outbox, on the submit's tx. */
+  readonly eblastOutbox: EblastNotificationOutboxPort;
 }
 
 export interface SubmitBroadcastInput {
@@ -928,6 +940,25 @@ export async function submitBroadcast(
         },
         requestId: input.requestId,
       });
+
+      // F119 T129 — "new submission → marketing" (FR-021): one ids-only
+      // `eblast_submitted_marketing` row per roster recipient (FR-021a), on
+      // THIS tx, so a rollback leaves none (SC-004). Unconditional — the flag
+      // lives at the drainer (T152a), which holds the rows while it is off
+      // (FR-034: today nobody is emailed on submit, and with the flag off
+      // nobody is). An empty roster is counted by the directory, not here.
+      for (const recipient of await deps.marketingDirectory.listRecipients()) {
+        await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
+          type: 'eblast_submitted_marketing',
+          toEmail: recipient.email,
+          locale: recipient.locale,
+          contextData: {
+            tenantId: deps.tenant.slug,
+            broadcastId: broadcastId as string,
+            recipientUserId: recipient.userId,
+          },
+        });
+      }
 
       // T172 — emit-site wiring (Phase 9). Counter + audit-volume per
       // SC-010 / SLO-F7-002 dashboards. Duration histogram emitted by

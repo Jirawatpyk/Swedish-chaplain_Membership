@@ -305,6 +305,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: { listRecipients: async () => [] },
+        eblastOutbox: { enqueueInTx: async () => undefined },
       },
       baseInput,
     );
@@ -332,6 +335,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: { listRecipients: async () => [] },
+        eblastOutbox: { enqueueInTx: async () => undefined },
       },
       baseInput,
     );
@@ -356,6 +362,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: { listRecipients: async () => [] },
+        eblastOutbox: { enqueueInTx: async () => undefined },
       },
       baseInput,
     );
@@ -400,6 +409,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: { listRecipients: async () => [] },
+        eblastOutbox: { enqueueInTx: async () => undefined },
       },
       baseInput,
     );
@@ -455,6 +467,9 @@ describe('halt-flag precondition (T051)', () => {
         rateLimiter,
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
+        // F119 T129 — the submit's marketing hand-off (no roster here).
+        marketingDirectory: { listRecipients: async () => [] },
+        eblastOutbox: { enqueueInTx: async () => undefined },
       },
       baseInput,
     );

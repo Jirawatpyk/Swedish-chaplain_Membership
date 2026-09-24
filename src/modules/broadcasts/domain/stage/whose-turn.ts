@@ -12,7 +12,7 @@
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */
-import type { BroadcastStatus } from '../value-objects/broadcast-status';
+import { BROADCAST_STATUSES, type BroadcastStatus } from '../value-objects/broadcast-status';
 
 export type WhoseTurn = 'marketing' | 'member' | null;
 
@@ -37,3 +37,14 @@ const TURN_OF: Readonly<Record<BroadcastStatus, WhoseTurn>> = {
 export function turnOf(status: BroadcastStatus): WhoseTurn {
   return TURN_OF[status];
 }
+
+/**
+ * F119 T132 — the E-Blasts waiting on MARKETING: every status whose turn is
+ * `'marketing'`, derived from the map above so it cannot drift from it. The
+ * ONE set behind both the `broadcasts_marketing_turn_count` gauge and the
+ * staff nav's live waiting count (FR-023, contracts § 1.3 / § 4.1). Raw SQL
+ * that needs it in an `IN (...)` derives it from here.
+ */
+export const MARKETING_TURN_STATUSES: readonly BroadcastStatus[] = BROADCAST_STATUSES.filter(
+  (status) => TURN_OF[status] === 'marketing',
+);

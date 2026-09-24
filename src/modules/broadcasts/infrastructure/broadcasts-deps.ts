@@ -246,8 +246,16 @@ export function makeResolveSegmentDeps(tenantId: string): ResolveSegmentDeps {
   };
 }
 
+/**
+ * F119 T129 — `marketingDirectory` is a parameter for the reason
+ * `makeCancelBroadcastDeps` takes one: the roster crosses into the auth barrel
+ * (`src/lib/broadcast-marketing-deps.ts` `makeMarketingDirectory`), which this
+ * module cannot import. The submit enqueues one `eblast_submitted_marketing`
+ * row per recipient on its own tx.
+ */
 export function makeSubmitBroadcastDeps(
   tenantId: string,
+  marketingDirectory: MarketingDirectoryPort,
 ): SubmitBroadcastDeps {
   const tenant = asTenantContext(tenantId);
   return {
@@ -272,6 +280,8 @@ export function makeSubmitBroadcastDeps(
     rateLimiter: broadcastsRateLimiter,
     audit: f7AuditAdapter,
     clock: systemClock,
+    marketingDirectory,
+    eblastOutbox: eblastNotificationOutbox,
   };
 }
 
@@ -398,10 +408,12 @@ export function makeCancelBroadcastDeps(
 
 export function makeProxySubmitBroadcastDeps(
   tenantId: string,
+  marketingDirectory: MarketingDirectoryPort,
 ): ProxySubmitBroadcastDeps {
   // Same shape as submit-broadcast deps; use case delegates to
-  // submitBroadcast under the hood.
-  return makeSubmitBroadcastDeps(tenantId);
+  // submitBroadcast under the hood (so a proxy submit hands off to marketing
+  // exactly as a member's does — F119 T129).
+  return makeSubmitBroadcastDeps(tenantId, marketingDirectory);
 }
 
 export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {

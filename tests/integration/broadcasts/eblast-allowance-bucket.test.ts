@@ -24,10 +24,12 @@ import { IN_PROGRESS_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/stag
 import { cancelBroadcast } from '@/modules/broadcasts/application/use-cases/cancel-broadcast';
 import { computeQuotaCounter, currentQuotaYear } from '@/modules/broadcasts/application/use-cases/compute-quota-counter';
 import { rejectBroadcast } from '@/modules/broadcasts/application/use-cases/reject-broadcast';
+import { expireStaleMemberApprovals } from '@/modules/broadcasts/application/use-cases/approval/expire-stale-member-approvals';
+import { makeExpireStaleMemberApprovalsDeps } from '@/lib/broadcast-approval-deps';
 import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/plans-bridge-port';
 import { makeCancelBroadcastDeps, makeRejectBroadcastDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
-import { broadcasts, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
+import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { asMemberId } from '@/modules/members';
 import { env } from '@/lib/env';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -132,5 +134,81 @@ describe('F119 T075 — one allowance place per in-progress E-Blast, whatever th
     expect(await counter()).toMatchObject({ reserved: CAP - 2, remaining: 2 });
   });
 
-  it.todo('expiry (`expired_no_member_response`) frees its place with quota_year_consumed still NULL — owner T126 / T130 (the day-30 lifecycle cron)');
+  /**
+   * F119 T126 (FR-022a, SC-007) — the REAL day-30 tick (`expireStaleMemberApprovals`
+   * over the REAL composition, its REAL scan SQL) closes a row that has
+   * awaited the member 31 days: the place is freed with `quota_year_consumed`
+   * still NULL, so the member may submit again. The same tick leaves a
+   * `member_approved` row that is 400 days old alone — the scan's predicate is
+   * `awaiting_member_approval` and nothing else (FR-022a). The empty marketing
+   * roster is disclosed: `users` is cross-tenant on the shared dev branch.
+   * "No outgoing edge" from the closed status is pinned, per target, in
+   * `eblast-state-machine-edges.test.ts`.
+   */
+  it('expiry (`expired_no_member_response`) frees its place with quota_year_consumed still NULL, and the member may submit again (T126)', async () => {
+    const day = 86_400_000;
+    const staleId = randomUUID();
+    const parkedId = randomUUID();
+    const base = (broadcastId: string, status: NewBroadcastRow['status'], stageEnteredAt: Date): NewBroadcastRow => ({
+      tenantId: tenant.ctx.slug,
+      broadcastId,
+      requestedByMemberId: memberId,
+      requestedByMemberPlanIdSnapshot: 'plan-t075',
+      submittedByUserId: randomUUID(),
+      actorRole: 'member_self_service',
+      subject: `T126 ${status}`,
+      bodyHtml: '<p>b</p>',
+      bodySource: 'b',
+      fromName: 'Chamber',
+      replyToEmail: 'reply@example.com',
+      segmentType: 'all_members',
+      estimatedRecipientCount: 10,
+      status,
+      submittedAt: new Date(stageEnteredAt.getTime() - day),
+      stageEnteredAt,
+      currentRound: 1,
+    });
+    const staleAt = new Date(Date.now() - 31 * day);
+    const parkedAt = new Date(Date.now() - 400 * day);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(broadcasts).values([base(staleId, 'awaiting_member_approval', staleAt), base(parkedId, 'member_approved', parkedAt)]);
+      await tx.insert(broadcastVersions).values(
+        [staleId, parkedId].map((broadcastId) => ({
+          tenantId: tenant.ctx.slug,
+          broadcastId,
+          versionNo: 1,
+          subject: 'Formatted',
+          bodyHtml: '<p>f</p>',
+          bodySource: 'f',
+          authoredByUserId: MARKETER,
+          authoredByRole: 'admin_proxy' as const,
+          sentToMemberAt: broadcastId === staleId ? staleAt : parkedAt,
+        })),
+      );
+    });
+    const held = await counter();
+
+    const r = await expireStaleMemberApprovals(
+      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: { listRecipients: async () => [] } },
+      { requestId: 't126' },
+    );
+    expect(r.ok ? r.value : r.error).toMatchObject({ scanned: 1, expired: 1, rowsFailed: 0 });
+
+    const stale = await readRow(staleId);
+    expect(stale).toMatchObject({ status: 'expired_no_member_response', quotaYearConsumed: null });
+    expect(stale.memberExpiryNotifiedAt).not.toBeNull();
+    expect(await readRow(parkedId)).toMatchObject({ status: 'member_approved', stageEnteredAt: parkedAt });
+    // The expired row released its place; the member can submit again.
+    const freed = await counter();
+    expect(freed.reserved).toBe(held.reserved - 1);
+    expect(freed.remaining).toBe(held.remaining + 1);
+    expect(freed.remaining).toBeGreaterThan(0);
+
+    // A second tick the same day is a no-op.
+    const again = await expireStaleMemberApprovals(
+      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: { listRecipients: async () => [] } },
+      { requestId: 't126-again' },
+    );
+    expect(again.ok ? again.value : again.error).toMatchObject({ scanned: 0, expired: 0 });
+  });
 });

@@ -52,6 +52,11 @@ import type { MembershipAccessPort } from '@/modules/broadcasts/application/port
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { SubmitBroadcastInput } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
+import type { MarketingDirectoryPort, MarketingRecipient } from '@/modules/broadcasts/application/ports/marketing-directory-port';
+import type {
+  EblastNotificationEnqueue,
+  EblastNotificationOutboxPort,
+} from '@/modules/broadcasts/application/ports/eblast-notification-outbox-port';
 
 const useCasePath = resolve(
   __dirname,
@@ -84,6 +89,8 @@ interface FixtureOpts {
     startedFromTemplateId?: string | null;
     templateNameSnapshot?: string | null;
   };
+  /** F119 T129 — the marketing hand-off roster the submit enqueues to (default: nobody). */
+  readonly roster?: ReadonlyArray<MarketingRecipient>;
 }
 
 function makeAuditEmits(): {
@@ -414,12 +421,40 @@ function makeMarketingUnsubscribes(): MarketingUnsubscribesRepo {
   };
 }
 
+/** F119 T129 — the ids-only approval-round outbox, recording the tx each row rode on. */
+function makeEblastOutbox(): EblastNotificationOutboxPort & {
+  readonly rows: Array<EblastNotificationEnqueue & { readonly tx: unknown }>;
+} {
+  const rows: Array<EblastNotificationEnqueue & { readonly tx: unknown }> = [];
+  return {
+    rows,
+    async enqueueInTx(tx, _tenant, request) {
+      rows.push({ ...request, tx });
+    },
+  };
+}
+
+function makeMarketingDirectory(opts: FixtureOpts): MarketingDirectoryPort & { readonly calls: { n: number } } {
+  const calls = { n: 0 };
+  return {
+    calls,
+    async listRecipients() {
+      calls.n += 1;
+      return opts.roster ?? [];
+    },
+  };
+}
+
 function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
   const audit = makeAuditEmits();
   const broadcastsRepo = makeBroadcastsRepo(opts);
+  const eblastOutbox = makeEblastOutbox();
+  const marketingDirectory = makeMarketingDirectory(opts);
   return {
     audit,
     broadcastsRepo,
+    eblastOutbox,
+    marketingDirectory,
     deps: {
       tenant,
       broadcastsRepo,
@@ -438,6 +473,8 @@ function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
       }),
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
+      marketingDirectory,
+      eblastOutbox,
     },
   };
 }
@@ -2049,5 +2086,79 @@ describe('submitBroadcast — orphan reasons decide the audit (review 2026-09-07
 
     expect(result.ok).toBe(true);
     expect(broadcastsRepo.inserted).toHaveLength(1);
+  });
+});
+
+// ---- F119 T129 — the submit hands off to marketing, inside its own tx -------
+//
+// FR-021 "new submission → marketing": ONE `eblast_submitted_marketing` row
+// per roster recipient (FR-021a), enqueued on the SAME transaction as the
+// `draft → submitted` flip (SC-004), ids only (FR-021b), and unconditionally —
+// the flag lives at the drainer (T152a), never on this path.
+describe('submitBroadcast — F119 T129 marketing hand-off on submit', () => {
+  const MARKETERS: ReadonlyArray<MarketingRecipient> = [
+    { userId: 'mk-1', email: 'marketing-1@swecham.test', locale: 'en' },
+    { userId: 'mk-2', email: 'marketing-2@swecham.test', locale: 'en' },
+  ];
+  const TX = { tx: 'submit-tx' };
+  const ready = (roster: ReadonlyArray<MarketingRecipient>) => {
+    const made = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-2', primaryContactEmail: 'r@example.com' }],
+      roster,
+    });
+    const repo = made.deps.broadcastsRepo as { withTx: BroadcastsRepo['withTx'] };
+    repo.withTx = async <T,>(fn: (tx: unknown) => Promise<T>) => fn(TX);
+    return made;
+  };
+
+  it('one row per marketing recipient, on the submit tx, ids only — nothing a staff email must not show', async () => {
+    const { deps, eblastOutbox } = ready(MARKETERS);
+    const result = await submitBroadcast(deps, { ...baseInput, subject: 'SECRET-SUBJECT', bodyHtml: '<p>SECRET-BODY</p>' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(eblastOutbox.rows.map((r) => r.toEmail)).toEqual(MARKETERS.map((m) => m.email));
+    for (const [i, row] of eblastOutbox.rows.entries()) {
+      expect(row.type).toBe('eblast_submitted_marketing');
+      expect(row.tx).toBe(TX);
+      expect(row.locale).toBe('en');
+      expect(row.contextData).toEqual({
+        tenantId: 'test-tenant',
+        broadcastId: result.value.broadcastId,
+        recipientUserId: MARKETERS[i]!.userId,
+      });
+    }
+    expect(JSON.stringify(eblastOutbox.rows)).not.toMatch(/SECRET/);
+  });
+
+  it('an admin_proxy submit hands off the same way', async () => {
+    const { deps, eblastOutbox } = ready(MARKETERS);
+    const result = await submitBroadcast(deps, { ...baseInput, submittedByUserId: 'admin-99', actorRole: 'admin_proxy' });
+    expect(result.ok).toBe(true);
+    expect(eblastOutbox.rows).toHaveLength(2);
+  });
+
+  it('an empty roster enqueues nothing and the submit still succeeds (the roster counts the page, not this use case)', async () => {
+    const { deps, eblastOutbox, marketingDirectory } = ready([]);
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    expect(marketingDirectory.calls.n).toBe(1);
+    expect(eblastOutbox.rows).toHaveLength(0);
+  });
+
+  it('a refused submit reads no roster and enqueues nothing', async () => {
+    const { deps, eblastOutbox, marketingDirectory } = makeDeps({ primaryContact: 'me@example.com', roster: MARKETERS, rateLimit: { allow: false } });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    expect(marketingDirectory.calls.n).toBe(0);
+    expect(eblastOutbox.rows).toHaveLength(0);
+  });
+
+  it('an enqueue that throws fails the submit (the tx rolls back with it) — never a submit without its hand-off', async () => {
+    const { deps } = ready(MARKETERS);
+    const failing = { ...deps, eblastOutbox: { enqueueInTx: async () => { throw new Error('outbox insert failed'); } } };
+    const result = await submitBroadcast(failing, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('submit.server_error');
   });
 });

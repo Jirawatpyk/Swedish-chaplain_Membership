@@ -26,6 +26,12 @@ const awaitingOldestAgeSpy = vi.fn();
 const changesRequestedCountSpy = vi.fn();
 const marketingTurnCountSpy = vi.fn();
 
+// F119 T132 — the route derives the marketing-turn set from the broadcasts
+// barrel's Domain constant; the barrel itself (db, env, adapters) is not what
+// this wire contract is about, so only the constant is provided — the REAL one.
+vi.mock('@/modules/broadcasts', async () => ({
+  MARKETING_TURN_STATUSES: (await import('@/modules/broadcasts/domain/stage/whose-turn')).MARKETING_TURN_STATUSES,
+}));
 vi.mock('@/lib/env', () => ({
   env: { isDevelopment: false, features: { memberChangeApproval: true } },
 }));

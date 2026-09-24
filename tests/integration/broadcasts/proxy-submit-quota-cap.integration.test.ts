@@ -157,7 +157,7 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
   });
 
   it('admin_proxy at the member cap is blocked (no free broadcast)', async () => {
-    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug);
+    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] });
 
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: memberId,
@@ -304,7 +304,7 @@ describe('DV-4 / T-10 — admin_proxy honours member quota cap (live Neon)', () 
       } satisfies NewBroadcastRow),
     );
 
-    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug);
+    const deps = makeProxySubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] });
     const result = await proxySubmitBroadcast(deps, {
       proxiedMemberId: partialMemberId,
       adminUserId: admin.userId,

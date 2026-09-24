@@ -289,6 +289,9 @@ function makeDeps(counters: CallCounters, membershipAccess: MembershipAccessPort
       membershipAccess,
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
+      // F119 T129 — the submit's marketing hand-off (no roster here).
+      marketingDirectory: { listRecipients: async () => [] },
+      eblastOutbox: { enqueueInTx: async () => undefined },
     },
   };
 }

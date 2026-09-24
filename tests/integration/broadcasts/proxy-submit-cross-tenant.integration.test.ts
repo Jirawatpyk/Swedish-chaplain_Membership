@@ -143,7 +143,7 @@ describe('DV-4 / Principle I — proxy-submit cross-tenant isolation (live Neon)
     }
 
     // Deps scoped to tenant A; target member id lives in tenant B.
-    const depsTenantA = makeProxySubmitBroadcastDeps(tenantA.ctx.slug);
+    const depsTenantA = makeProxySubmitBroadcastDeps(tenantA.ctx.slug, { listRecipients: async () => [] });
 
     const result = await proxySubmitBroadcast(depsTenantA, {
       proxiedMemberId: bMemberId,

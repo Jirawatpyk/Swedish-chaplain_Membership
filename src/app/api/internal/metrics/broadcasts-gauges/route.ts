@@ -62,11 +62,23 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics, membersMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const STUCK_SENDING_HOURS = 24;
+
+/**
+ * F119 T132 — the marketing-turn set as SQL bind values, derived from the
+ * Domain (`turnOf(status) === 'marketing'`), so this gauge and the staff nav's
+ * live waiting count (`drizzle-broadcast-approval-counter.ts`) count ONE set.
+ * It was a hand-listed literal here.
+ */
+const MARKETING_TURN_IN = sql.join(
+  MARKETING_TURN_STATUSES.map((status) => sql`${status}`),
+  sql`, `,
+);
 
 interface TenantRow extends Record<string, unknown> {
   tenant_id: string;
@@ -268,10 +280,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           )::int AS awaiting_oldest_age_seconds,
           COUNT(*) FILTER (WHERE status::text = 'changes_requested')::int AS changes_requested_count,
           COUNT(*) FILTER (
-            WHERE status::text IN ('submitted', 'in_design', 'changes_requested', 'member_approved')
+            WHERE status::text IN (${MARKETING_TURN_IN})
           )::int AS marketing_turn_count
         FROM broadcasts
-        WHERE status::text IN ('submitted', 'in_design', 'changes_requested', 'member_approved', 'awaiting_member_approval')
+        WHERE status::text IN (${MARKETING_TURN_IN}, 'awaiting_member_approval')
         GROUP BY tenant_id
       `);
       const tenantRows = await tx.execute<TenantRow>(sql`

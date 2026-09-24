@@ -284,6 +284,10 @@ describe('the existing E-Blast suite runs flag-off, and nothing it exercises rea
       // selected in either flag state.
       'src/app/api/cron/outbox-dispatch/route.ts',
       'src/lib/broadcast-approval-deps.ts',
+      // T132 — the staff nav's E-Blast waiting count stays hidden while the
+      // flag is off AND no row is in an approval-round stage (R18). Display
+      // only: it gates no write and no email.
+      'src/lib/eblast-waiting-count.ts',
       'src/modules/broadcasts/index.ts',
       'src/modules/broadcasts/infrastructure/feature-flags.ts',
     ]);
@@ -350,5 +354,80 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
     }
   });
 
-  it.todo('with the flag off, a SUBMIT writes its eblast_submitted_marketing outbox row (owner T129 — the enqueue half; the skip half is above, the row-state half is live in eblast-send-and-promote)');
+  /**
+   * T129 — the enqueue half. The REAL `submitBroadcast` runs with the flag OFF
+   * (`harness.flagOn = false` is what the barrel's `isEblastMemberApprovalEnabled`
+   * answers here) and still writes one `eblast_submitted_marketing` row per
+   * roster recipient: nothing on the submit path reads the flag (the reader
+   * allow-list above pins that), so the row waits for the drainer's flip. The
+   * ports are the minimum a submit touches; an unexpected call throws and the
+   * submit would come back `submit.server_error`, failing the first assertion.
+   */
+  it('with the flag off, a SUBMIT writes its eblast_submitted_marketing outbox row — one per roster recipient, pending the flip (owner T129)', async () => {
+    harness.flagOn = false;
+    const { submitBroadcast } = await import('@/modules/broadcasts/application/use-cases/submit-broadcast');
+    const { dompurifySanitizer } = await import('@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer');
+    const { rfc5321EmailValidator } = await import('@/modules/broadcasts/infrastructure/email-validator/rfc5321-email-validator');
+    const { unsafeBrandEmailLower } = await import('@/modules/broadcasts/domain/value-objects/email-lower');
+    const { asTenantContext } = await import('@/modules/tenants');
+    const { ok } = await import('@/lib/result');
+    const enqueued: Array<{ type: string; toEmail: string }> = [];
+    const deps = {
+      tenant: asTenantContext('test-tenant'),
+      broadcastsRepo: {
+        withTx: async <T,>(fn: (tx: unknown) => Promise<T>) => fn('submit-tx'),
+        countForMemberQuota: async () => ({ submittedOrApproved: 0, sent: 0 }),
+        insertDraft: async (_tx: unknown, input: Record<string, unknown>) => ({ ...makeApprovalBroadcast(), ...input, status: 'draft' }),
+        applyTransition: async (_tx: unknown, _t: unknown, broadcastId: string, status: string) => ({ ...makeApprovalBroadcast(), broadcastId, status }),
+      },
+      sanitizer: dompurifySanitizer,
+      membersBridge: {
+        getMembersHaltedInTenant: async () => [],
+        getMemberPrimaryContact: async () => unsafeBrandEmailLower('owner@acme.test'),
+        getMembersBySegment: async () => [
+          { memberId: 'm-2', displayName: 'Recipient Co', primaryContactEmail: unsafeBrandEmailLower('r@example.com'), tierCode: null, broadcastsHaltedUntilAdminReview: false },
+        ],
+        filterMarketingOptedOut: async () => new Set(),
+      },
+      membershipAccess: { getMembershipAccess: async () => ok({ access: 'full', reason: 'in_good_standing' }) },
+      plansBridge: { getPlanForMember: async () => ok({ planId: 'p', planCode: 'corporate', eblastPerYear: 6 }) },
+      emailValidator: rfc5321EmailValidator,
+      eventAttendees: { getLastNinetyDayAttendees: async () => [], lookupAttendeeEmailInTenant: async () => null },
+      marketingUnsubscribes: { lookupBatch: async () => new Set() },
+      audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
+      rateLimiter: { checkLimit: async () => ok(true as const) },
+      audit: { emit: async () => undefined, emitTyped: async () => undefined },
+      clock: { now: () => new Date('2026-09-24T09:00:00Z') },
+      marketingDirectory: {
+        listRecipients: async () => [
+          { userId: 'mk-1', email: 'marketing-1@swecham.test', locale: 'en' as const },
+          { userId: 'mk-2', email: 'marketing-2@swecham.test', locale: 'en' as const },
+        ],
+      },
+      eblastOutbox: {
+        enqueueInTx: async (_tx: unknown, _t: unknown, r: { type: string; toEmail: string }) => {
+          enqueued.push({ type: r.type, toEmail: r.toEmail });
+        },
+      },
+    } as unknown as Parameters<typeof submitBroadcast>[0];
+    const result = await submitBroadcast(deps, {
+      memberId: 'm-1',
+      submittedByUserId: 'u-1',
+      actorRole: 'member_self_service',
+      tenantDisplayName: 'Test Chamber',
+      memberDisplayName: 'Acme Co',
+      subject: 'Autumn mixer',
+      bodySource: 'plain',
+      bodyHtml: '<p>Join us</p>',
+      segment: { kind: 'all_members' },
+      scheduledFor: null,
+      requestId: 'req-flag-off',
+    });
+    expect(result.ok ? 'submitted' : result.error).toBe('submitted');
+    expect(enqueued).toEqual([
+      { type: 'eblast_submitted_marketing', toEmail: 'marketing-1@swecham.test' },
+      { type: 'eblast_submitted_marketing', toEmail: 'marketing-2@swecham.test' },
+    ]);
+  });
 });

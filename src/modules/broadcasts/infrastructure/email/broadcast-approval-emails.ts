@@ -31,6 +31,10 @@ import { env } from '@/lib/env';
 import { escapeHtml } from '@/lib/html-escape';
 import { EMAIL_BRAND_PRIMARY } from '@/lib/email-brand';
 import { MEMBER_APPROVAL_EXPIRY_DAYS } from '../../domain/approval/member-approval-expiry';
+import {
+  MEMBER_APPROVAL_REMINDER_DAYS,
+  MEMBER_APPROVAL_TIMELINE_DAYS,
+} from '../../domain/approval/approval-schedule-policy';
 import { scheduleDiffers } from '../../domain/approval/member-decision';
 
 export interface BuiltEblastEmail {
@@ -130,15 +134,19 @@ const COPY: Record<Locale, EblastApprovalCopy> = {
   sv: copyOf(svMessages),
 };
 
-/** The day marks of the member's approval clock, in order (FR-022, FR-022a). */
-const TIMELINE_DAYS = [3, 7, 23, MEMBER_APPROVAL_EXPIRY_DAYS] as const;
+/**
+ * The day marks of the member's approval clock, in order (FR-022, FR-022a) —
+ * the Domain schedule policy's own thresholds, so the timeline an email states
+ * and the day the cron acts cannot drift apart.
+ */
+const TIMELINE_DAYS = MEMBER_APPROVAL_TIMELINE_DAYS;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The lifecycle kinds' own day mark — the timeline a reminder restates starts after it. */
 const LIFECYCLE_DAY: Record<EblastLifecycleKind, number> = {
-  reminder_day3: 3,
-  reminder_day7: 7,
-  expiry_warning_day23: 23,
+  reminder_day3: MEMBER_APPROVAL_REMINDER_DAYS.day3,
+  reminder_day7: MEMBER_APPROVAL_REMINDER_DAYS.day7,
+  expiry_warning_day23: MEMBER_APPROVAL_REMINDER_DAYS.day23,
   expired_day30: MEMBER_APPROVAL_EXPIRY_DAYS,
 };
 

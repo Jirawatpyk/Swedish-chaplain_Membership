@@ -65,6 +65,11 @@ import type {
 import type { MemberPortalRecipientPort, PortalContact } from '@/modules/broadcasts/application/ports/member-portal-recipient-port';
 import type { MarketingDirectoryPort, MarketingRecipient } from '@/modules/broadcasts/application/ports/marketing-directory-port';
 import type { BroadcastApprovalScrubPort } from '@/modules/broadcasts/application/ports/broadcast-approval-scrub-port';
+import type {
+  ApprovalLifecycleScanPort,
+  AwaitingApprovalCandidate,
+  AwaitingApprovalScanQuery,
+} from '@/modules/broadcasts/application/ports/approval-lifecycle-scan-port';
 import type { TenantContext, TenantSlug } from '@/modules/tenants';
 
 /** The sentinel tx the fakes hand to `withTx` callbacks — assert on it to prove a write shared the tx. */
@@ -733,6 +738,36 @@ export function makeFakePortalRecipients(
   return {
     listActivePortalContacts: vi.fn(async (_tenant: TenantContext, memberId: string, _tx: unknown) => byMember[memberId] ?? []),
   } satisfies MemberPortalRecipientPort;
+}
+
+// --- ApprovalLifecycleScanPort (T130) ----------------------------------------
+
+export type FakeApprovalLifecycleScan = Mocked<ApprovalLifecycleScanPort>;
+
+/**
+ * The daily lifecycle scan over the approval store: `awaiting_member_approval`
+ * rows of the tenant inside the window, OLDEST FIRST, at most `limit` — the
+ * same predicate the Drizzle adapter expresses in SQL (pinned against live
+ * Postgres in `eblast-allowance-bucket.test.ts`).
+ */
+export function makeFakeApprovalLifecycleScan(store: FakeApprovalStore): FakeApprovalLifecycleScan {
+  return {
+    listAwaitingMemberApprovalInTx: vi.fn(
+      async (_tx: unknown, tenantId: TenantSlug, query: AwaitingApprovalScanQuery): Promise<readonly AwaitingApprovalCandidate[]> =>
+        [...store.state.broadcasts.values()]
+          .filter(
+            (b) =>
+              b.tenantId === (tenantId as string) &&
+              b.status === 'awaiting_member_approval' &&
+              b.stageEnteredAt.getTime() <= query.enteredAtOrBefore.getTime() &&
+              (query.enteredAfter === undefined || b.stageEnteredAt.getTime() > query.enteredAfter.getTime()),
+          )
+          .sort((a, b) => a.stageEnteredAt.getTime() - b.stageEnteredAt.getTime())
+          .slice(0, query.limit)
+          .map((b) => ({ broadcastId: b.broadcastId, stageEnteredAt: b.stageEnteredAt })),
+    ),
+    setStatementTimeoutInTx: vi.fn(async (_tx: unknown, _ms: number) => undefined),
+  } satisfies ApprovalLifecycleScanPort;
 }
 
 // --- MarketingDirectoryPort (T066) -------------------------------------------

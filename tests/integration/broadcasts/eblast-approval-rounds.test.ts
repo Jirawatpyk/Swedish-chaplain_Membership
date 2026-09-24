@@ -121,7 +121,7 @@ describe('F119 T069 — two rounds, both visible to both sides in order, a hand-
   }, 120_000);
 
   it('after a change request and a second version, the thread shows both versions, both notes and the feedback attached to round 1, oldest first', async () => {
-    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug), {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
       memberId,
       submittedByUserId: portalUser.userId,
       actorRole: 'member_self_service',

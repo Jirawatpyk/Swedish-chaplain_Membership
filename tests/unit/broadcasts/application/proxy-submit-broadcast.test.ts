@@ -348,6 +348,9 @@ function makeDeps(opts: FixtureOpts) {
       rateLimiter: makeRateLimiter(opts.rateLimitAllow ?? true),
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
+      // F119 T129 — the submit's marketing hand-off (no roster here).
+      marketingDirectory: { listRecipients: async () => [] },
+      eblastOutbox: { enqueueInTx: async () => undefined },
     },
   };
 }

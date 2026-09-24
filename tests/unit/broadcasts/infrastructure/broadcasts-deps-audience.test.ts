@@ -218,7 +218,7 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
     stubEnv({ contactMarketing: 'true', importAudience: true });
     const deps = await loadDeps();
     const count = deps.makeResolveSegmentDeps('swecham');
-    const submit = deps.makeSubmitBroadcastDeps('swecham');
+    const submit = deps.makeSubmitBroadcastDeps('swecham', { listRecipients: async () => [] });
     const dispatch = await deps.makeDispatchScheduledBroadcastDeps('swecham');
     expect(count.audienceMode).toBe('all_contacts');
     // 50,000 with the import ON: what compose shows must be what submit and
