@@ -187,7 +187,14 @@
     "errorId": "Fel-ID: {id}",
     "readOnlyNothingChanged": "Ingenting ändrades. Försök igen om några minuter.",
     "notFoundHint": "Länken kan vara gammal, eller så har sidan flyttats.",
-    "backToDashboard": "Tillbaka till översikten"
+    "backToDashboard": "Tillbaka till översikten",
+    "loadError": {
+      "retry": "Försök igen",
+      "retrying": "Försöker igen…",
+      "retryFailed": "Försöket misslyckades — servern returnerade ett nytt fel",
+      "goBack": "Gå tillbaka",
+      "referenceLabel": "Referens-ID"
+    }
   },
   "buttons": {
     "cancel": "Avbryt",
@@ -326,9 +333,18 @@
       "forbidden": "Du har inte behörighet till granskningsloggen.",
       "export": "Exportera CSV",
       "resultCount": "{count, plural, =0 {Inga revisionshändelser} one {# revisionshändelse} other {# revisionshändelser}}",
+      "loadFailed": "Det gick inte att ladda granskningsloggen. Försök igen.",
       "invalidRange": {
         "title": "Ogiltigt filter",
-        "body": "Kontrollera datumintervallet och filtren och försök igen."
+        "body": "Kontrollera datumintervallet och filtren och försök igen.",
+        "field": {
+          "from": "Datumet i ”Från” är inte ett giltigt datum. Välj ett med datumväljaren.",
+          "to": "Datumet i ”Till” är inte ett giltigt datum. Välj ett med datumväljaren.",
+          "range": "”Från”-datumet ligger efter ”Till”-datumet. Byt plats på dem eller välj ett nytt intervall.",
+          "target": "”Målpost” måste vara ett post-ID. Namn och medlemsnummer kan inte sökas här.",
+          "eventType": "Den valda ”Händelsetyp” känns inte igen. Välj en i listan.",
+          "cursor": "Länken till den här sidan har gått ut. Börja om från de senaste posterna."
+        }
       },
       "filters": {
         "legend": "Filtrera revisionshändelser",
@@ -2541,6 +2557,7 @@
         "searchLabel": "Sök fakturor",
         "loadMore": "Ladda fler",
         "filteredEmpty": "Inga fakturor matchar filtren.",
+        "loadFailed": "Det gick inte att ladda fakturorna. Försök igen.",
         "resultCount": "{count, plural, =0 {Inga fakturor matchar filtren} one {# faktura matchar filtren} other {# fakturor matchar filtren}}",
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
@@ -4757,7 +4774,8 @@
         "emptyPaidManual": {
           "title": "Betald via manuell registrering",
           "body": "Denna faktura markerades som betald via dialogen Registrera betalning (kontant, banköverföring, check eller annat). Manuellt registrerade betalningsuppgifter visas i avsnittet Betalningsdetaljer ovan — tidslinjen följer endast onlinebetalningshändelser."
-        }
+        },
+        "loadFailed": "Det gick inte att ladda betalningshändelserna. Försök igen."
       }
     },
     "paymentSettings": {

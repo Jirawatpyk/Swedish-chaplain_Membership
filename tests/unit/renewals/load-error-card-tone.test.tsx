@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { LoadErrorCard } from '@/app/(staff)/admin/renewals/_components/load-error-card';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
 
 describe('<LoadErrorCard> tone', () => {
   it('defaults to the destructive alert skin when tone is omitted', () => {

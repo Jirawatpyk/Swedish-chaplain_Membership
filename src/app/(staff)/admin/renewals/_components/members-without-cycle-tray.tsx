@@ -20,7 +20,7 @@ import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { UserCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { LoadErrorCard } from './load-error-card';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
 import {
   Table,
   TableBody,

@@ -187,7 +187,14 @@
     "errorId": "Error ID: {id}",
     "readOnlyNothingChanged": "Nothing was changed. Try again in a few minutes.",
     "notFoundHint": "The link may be old, or the page was moved.",
-    "backToDashboard": "Back to dashboard"
+    "backToDashboard": "Back to dashboard",
+    "loadError": {
+      "retry": "Try again",
+      "retrying": "Retrying…",
+      "retryFailed": "Retry failed — the server returned another error",
+      "goBack": "Go back",
+      "referenceLabel": "Reference ID"
+    }
   },
   "buttons": {
     "cancel": "Cancel",
@@ -326,9 +333,18 @@
       "forbidden": "You do not have access to the audit log.",
       "export": "Export CSV",
       "resultCount": "{count, plural, =0 {No audit events} one {# audit event} other {# audit events}}",
+      "loadFailed": "Couldn't load the audit log. Please try again.",
       "invalidRange": {
         "title": "Invalid filter",
-        "body": "Check the date range and filters, then try again."
+        "body": "Check the date range and filters, then try again.",
+        "field": {
+          "from": "The “From” date isn't a valid date. Choose one with the date picker.",
+          "to": "The “To” date isn't a valid date. Choose one with the date picker.",
+          "range": "The “From” date is after the “To” date. Swap them or choose a new range.",
+          "target": "“Target record” must be a record ID. Names and member numbers can't be searched here.",
+          "eventType": "The selected “Event type” isn't recognised. Choose one from the list.",
+          "cursor": "This page link has expired. Start again from the latest entries."
+        }
       },
       "filters": {
         "legend": "Filter audit events",
@@ -2541,6 +2557,7 @@
         "searchLabel": "Search invoices",
         "loadMore": "Load more",
         "filteredEmpty": "No invoices match the current filters.",
+        "loadFailed": "Couldn't load invoices. Please try again.",
         "resultCount": "{count, plural, =0 {No invoices match the filters} one {# invoice matches the filters} other {# invoices match the filters}}",
         "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
@@ -4757,7 +4774,8 @@
         "emptyPaidManual": {
           "title": "Paid via manual record",
           "body": "This invoice was marked paid through the Record Payment dialog (cash, bank transfer, cheque, or other). Manually-recorded payment details are shown in the Payment details section above; the timeline tracks online payment events only."
-        }
+        },
+        "loadFailed": "Couldn't load payment activity. Please try again."
       }
     },
     "paymentSettings": {

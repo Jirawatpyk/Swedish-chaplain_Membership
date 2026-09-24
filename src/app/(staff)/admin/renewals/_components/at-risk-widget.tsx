@@ -59,7 +59,7 @@ import {
 import { EmptyState } from '@/components/shell/empty-state';
 import { SnoozeDialog } from './snooze-dialog';
 import { OutreachDialog } from './outreach-dialog';
-import { LoadErrorCard } from './load-error-card';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
 
 const BANDS = ['warning', 'at-risk', 'critical'] as const;
 type Band = (typeof BANDS)[number];
