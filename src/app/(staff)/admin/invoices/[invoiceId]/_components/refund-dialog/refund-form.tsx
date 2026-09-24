@@ -10,7 +10,7 @@
  *   - Reason textarea — 500-char counter; aria-live polite.
  *   - <TypedPhraseConfirm> — renders ONLY when amount === remaining
  *     (full refund) per FR-029(f).
- *   - 0305 — when the amount FULLY credits a MEMBERSHIP invoice (amount ===
+ *   - 0306 — when the amount FULLY credits a MEMBERSHIP invoice (amount ===
  *     the invoice's un-credited headroom), a warning states what Renewals
  *     does next (the period stops counting as paid, but access continues to
  *     period end, then normal reminders) and a Keep / End membership choice
@@ -110,10 +110,10 @@ type Props = {
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
-  /** 0305 — only a MEMBERSHIP invoice's full refund asks Keep / End. */
+  /** 0306 — only a MEMBERSHIP invoice's full refund asks Keep / End. */
   readonly invoiceSubject: 'membership' | 'event';
   /**
-   * 0305 — the invoice's un-credited headroom (`total − credited`). A refund
+   * 0306 — the invoice's un-credited headroom (`total − credited`). A refund
    * of exactly this amount fully credits the invoice, which is what
    * withdraws the paid period.
    */
@@ -123,7 +123,7 @@ type Props = {
 
 type MembershipEffect = 'keep' | 'cancel_membership';
 
-/** `membership_end` outcomes the refund route reports (0305). */
+/** `membership_end` outcomes the refund route reports (0306). */
 const MEMBERSHIP_END_OUTCOMES = [
   'ended',
   'scheduled',
@@ -162,7 +162,7 @@ export function RefundForm({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [typedPhrase, setTypedPhrase] = useState('');
-  // 0305 — default Keep: ending a membership is never the silent default.
+  // 0306 — default Keep: ending a membership is never the silent default.
   const [membershipEffect, setMembershipEffect] = useState<MembershipEffect>('keep');
 
   const amountId = useId();
@@ -215,7 +215,7 @@ export function RefundForm({
 
   const isFullRefund =
     amountSatang !== null && amountSatang === remainingRefundableSatang;
-  // 0305 — the refund fully credits a MEMBERSHIP invoice (withdraws the paid
+  // 0306 — the refund fully credits a MEMBERSHIP invoice (withdraws the paid
   // period). Keyed on the INVOICE headroom, the same test the server applies
   // before accepting `cancel_membership`.
   const isFullMembershipRefund =
@@ -384,7 +384,7 @@ export function RefundForm({
           t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),
         );
       }
-      // 0305 — what happened to the membership (only when End was chosen).
+      // 0306 — what happened to the membership (only when End was chosen).
       const membershipEnd = body.membership_end;
       if (
         membershipEnd !== undefined &&
@@ -504,7 +504,7 @@ export function RefundForm({
         )}
       </div>
 
-      {/* 0305 — a full refund of a membership invoice withdraws the paid
+      {/* 0306 — a full refund of a membership invoice withdraws the paid
           period. Say what Renewals will do next, and let staff end the
           membership instead of letting it run to period end. */}
       {isFullMembershipRefund && (

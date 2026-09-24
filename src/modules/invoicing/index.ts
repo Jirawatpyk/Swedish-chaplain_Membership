@@ -382,7 +382,7 @@ export {
   type GetCreditNoteError,
 } from './application/use-cases/get-credit-note';
 
-// 0305 — renewals reconcile backstop: recent manual credit notes whose staff
+// 0306 — renewals reconcile backstop: recent manual credit notes whose staff
 // chose "End membership" (the durable record of that decision).
 export {
   listManualCreditNotesEndingMembership,

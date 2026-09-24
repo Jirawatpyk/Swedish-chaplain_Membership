@@ -375,7 +375,7 @@ describe('POST /api/credit-notes — contract', () => {
     expect(body.error.remainingSatang).toBe('53500');
   });
 
-  // ---- F8 "end membership coverage" orchestration (0305) -------------------
+  // ---- F8 "end membership coverage" orchestration (0306) -------------------
   //
   // The route (presentation) orchestrates BOTH module barrels: it commits the
   // credit note first (§86/10 numbering never depends on F8), THEN — only when

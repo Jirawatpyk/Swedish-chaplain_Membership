@@ -1,5 +1,5 @@
 /**
- * 0305 — route-level test for the hourly reconcile-coverage-ends cron
+ * 0306 — route-level test for the hourly reconcile-coverage-ends cron
  * (structure mirrors `reconcile-issued-orphans-route.test.ts`).
  *
  *   1. 401 on missing Bearer (+ cron_bearer_auth_rejected audit)
@@ -67,7 +67,7 @@ function makeRequest(headers: Record<string, string> = {}): NextRequest {
 }
 const VALID_AUTH = { authorization: `Bearer ${CRON_SECRET}` };
 
-describe('cron reconcile-coverage-ends route (0305)', () => {
+describe('cron reconcile-coverage-ends route (0306)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     envMock.features.f8Renewals = true;

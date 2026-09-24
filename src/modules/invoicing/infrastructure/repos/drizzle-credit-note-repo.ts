@@ -497,7 +497,7 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
 }
 
 /**
- * 0305 — reader behind `listManualCreditNotesEndingMembership`: MANUAL credit
+ * 0306 — reader behind `listManualCreditNotesEndingMembership`: MANUAL credit
  * notes (no `source_refund_id`) whose staff chose End membership, issued
  * at/after `since`, with the invoice's member. Standalone tenant scope +
  * explicit tenant predicate (Principle I two-layer).

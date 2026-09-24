@@ -500,7 +500,7 @@ export async function sweepStalePendingRefunds(
               // `pending` forever — the exact F-3 shape, recreated by the sweep
               // that exists to clean F-3 up.
               creditNoteWaiverReason: locked.creditNoteWaiverReason,
-              // 0305 — pinned in Phase A; forwarded to the F4 credit note.
+              // 0306 — pinned in Phase A; forwarded to the F4 credit note.
               membershipEffect: locked.membershipEffect,
               processorRefundId,
               // SECURITY / FK: the F4 credit-note `issued_by_user_id` FKs to

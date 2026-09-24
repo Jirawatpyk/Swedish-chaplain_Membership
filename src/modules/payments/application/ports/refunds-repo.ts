@@ -129,7 +129,7 @@ export interface RefundsRepo {
      * column — see migration 0268.
      */
     readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
-    /** 0305 — Keep / End membership; omitted/null = not declared. */
+    /** 0306 — Keep / End membership; omitted/null = not declared. */
     readonly membershipEffect?: RefundMembershipEffect | null;
     readonly initiatedAt: Date;
     },

@@ -406,7 +406,7 @@ export const __internal = {
   generateRefundId,
 };
 
-// 0305 — the renewals reconcile backstop reads recent "End membership"
+// 0306 — the renewals reconcile backstop reads recent "End membership"
 // refunds through this facade (Principle III: never the repo directly).
 export function makeListRefundsEndingMembershipDeps(
   tenantId: string,

@@ -2233,7 +2233,7 @@ database instrumentation is ever added, leave
 would put proposed PII values and member emails into the trace backend, outside every filter
 this section describes (privacy review P-L2).
 
-## 28. 0305 End membership coverage (refund / full credit note) — observability
+## 28. 0306 End membership coverage (refund / full credit note) — observability
 
 Staff can end a member's coverage when a full refund or full manual credit
 note withdraws the paid period (`endMembershipCoverageNow`, closed reason

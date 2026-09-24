@@ -58,7 +58,7 @@ export interface CreditNoteRepo {
        */
       readonly retainsCoverage: boolean;
       /**
-       * 0305 — staff's Keep / End membership intent, set ONLY on a FULL
+       * 0306 — staff's Keep / End membership intent, set ONLY on a FULL
        * membership credit (omitted otherwise). Durable source for the renewals
        * reconcile backstop.
        */

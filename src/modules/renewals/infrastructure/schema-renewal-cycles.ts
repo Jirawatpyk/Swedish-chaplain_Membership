@@ -113,7 +113,7 @@ export const renewalCycles = pgTable(
     // LITERAL role, so the reconcile replay stamps the truth instead of
     // assuming 'admin'. NULL = stamped pre-0290 (replay falls back).
     rejectActorRole: text('reject_actor_role'),
-    // Migration 0305 — durable "end this member's coverage" request on the
+    // Migration 0306 — durable "end this member's coverage" request on the
     // OPEN cycle, converged by the hourly reconcile
     // (`reconcileMembershipCoverageEnds`). Refund-backed when `refundId` +
     // `invoiceId` are set (end only once that F5 refund settles `succeeded`;

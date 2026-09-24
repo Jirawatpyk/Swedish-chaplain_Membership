@@ -52,7 +52,7 @@ export type F5RouteErrorCode =
   | 'payment_not_refundable'
   | 'refund_exceeds_remaining'
   | 'refund_in_progress'
-  // 0305 — End membership was requested on a refund that does not fully
+  // 0306 — End membership was requested on a refund that does not fully
   // credit a membership invoice.
   | 'membership_effect_not_applicable'
   // F4 credit-note issuance failure during the refund flow (Phase 6 T111

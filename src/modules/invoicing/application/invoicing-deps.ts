@@ -705,7 +705,7 @@ export function makeRenderReceiptPdfDeps(
 }
 
 /**
- * 0305 — the renewals reconcile backstop reads recent manual "End
+ * 0306 — the renewals reconcile backstop reads recent manual "End
  * membership" credit notes through this facade.
  */
 export function makeListManualCreditNotesEndingMembershipDeps(

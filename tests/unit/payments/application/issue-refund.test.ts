@@ -1668,13 +1668,13 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
 
 });
 
-// 0305 — staff's Keep / End membership choice on a FULL refund of a
+// 0306 — staff's Keep / End membership choice on a FULL refund of a
 // membership invoice. `cancel_membership` is only meaningful when this refund
 // fully credits a membership invoice (that is what withdraws the paid period);
 // anything else is refused BEFORE Stripe (money never moves on a bad intent).
 // The choice is pinned on the refund row so the webhook / sweep finaliser can
 // forward it when an async refund settles.
-describe('issueRefund — membership effect (0305)', () => {
+describe('issueRefund — membership effect (0306)', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });

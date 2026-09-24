@@ -5,7 +5,7 @@
  * (`POST /api/refunds/initiate`). Both ROUTES orchestrate it after their own
  * money work commits; F4/F5 Application never import F8 (Principle III).
  *
- * WHY a new operation (migration 0305): the member's access is derived from
+ * WHY a new operation (migration 0306): the member's access is derived from
  * their LATEST cycle (`deriveMembershipAccess`). Paying a renewal bill moves
  * its cycle `awaiting_payment → completed` — terminal, so `cancel-cycle`
  * refuses it — and opens the NEXT cycle at the old period end. A plain

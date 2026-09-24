@@ -14,7 +14,7 @@
  * `tests/contract/credit-notes-route.test.ts`).
  *
  * Covers:
- *   1. `cancel_membership` on a full credit → the shared 0305
+ *   1. `cancel_membership` on a full credit → the shared 0306
  *      `endMembershipCoverageNow` closes the member's open renewal cycle
  *      `cancelled` / `closed_reason='coverage_ended'` (access ends NOW — a
  *      plain `cancelled` close would keep paid-through access) + a

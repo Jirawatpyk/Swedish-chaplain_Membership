@@ -380,7 +380,7 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
     expect(await countRefunds()).toBe(0);
   }, 60_000);
 
-  it('0305 — refuses End membership on a PARTIAL refund before Stripe; no refund row written', async () => {
+  it('0306 — refuses End membership on a PARTIAL refund before Stripe; no refund row written', async () => {
     const deps = buildDeps(tenant.ctx.slug);
     const r = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
@@ -412,7 +412,7 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-allow',
       requestId: 'req-allow',
-      // 0305 — exactly the headroom FULLY credits this membership invoice, so
+      // 0306 — exactly the headroom FULLY credits this membership invoice, so
       // End membership applies; it is pinned on the (pending) refund row for
       // the async finaliser.
       membershipEffect: 'cancel_membership',

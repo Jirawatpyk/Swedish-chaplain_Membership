@@ -670,7 +670,7 @@ export default async function InvoiceDetailPage({
                     (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
                       ?.currency_code ?? 'THB'
                   }
-                  // 0305 — a full refund of a membership invoice asks Keep /
+                  // 0306 — a full refund of a membership invoice asks Keep /
                   // End membership; "full" = the invoice's un-credited headroom.
                   invoiceSubject={invoice.invoiceSubject}
                   invoiceHeadroomSatang={

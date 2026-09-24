@@ -948,7 +948,7 @@ export type {
   PlanCatalogPort,
 } from './application/ports/plan-catalog-port';
 
-// --- 0305 — end membership coverage now (refund / full credit note) -------
+// --- 0306 — end membership coverage now (refund / full credit note) -------
 // The ONE operation both the credit-note and refund ROUTES orchestrate after
 // their money work commits; the nightly reconcile converges requests that wait
 // on an async refund's settlement (or retry a failed inline end).

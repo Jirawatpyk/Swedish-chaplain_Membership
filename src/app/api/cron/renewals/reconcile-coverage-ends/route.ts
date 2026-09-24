@@ -1,5 +1,5 @@
 /**
- * 0305 — Hourly reconcile-coverage-ends cron.
+ * 0306 — Hourly reconcile-coverage-ends cron.
  *
  * Converges "end membership coverage" requests (`renewal_cycles.end_coverage_*`)
  * and runs the durable backstop — see `reconcileMembershipCoverageEnds`:

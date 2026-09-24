@@ -1,5 +1,5 @@
 /**
- * 0305 — presentation-layer orchestration of the ONE "end membership coverage"
+ * 0306 — presentation-layer orchestration of the ONE "end membership coverage"
  * operation, shared by `POST /api/credit-notes` (full manual credit note,
  * `membershipEffect: 'cancel_membership'`) and `POST /api/refunds/initiate`
  * (full refund of a membership invoice, same effect).

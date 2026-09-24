@@ -110,7 +110,7 @@ export interface IssueRefundInput {
   readonly correlationId: string;
   readonly requestId: string | null;
   /**
-   * 0305 — staff's Keep / End membership choice for a refund that FULLY
+   * 0306 — staff's Keep / End membership choice for a refund that FULLY
    * credits a membership invoice. `cancel_membership` on anything else is
    * refused before Stripe (`membership_effect_not_applicable`). Pinned on the
    * refund row so the async finaliser forwards it to the F4 credit note; the
@@ -134,7 +134,7 @@ export type IssueRefundSuccess =
         readonly id: string;
         readonly paymentId: string;
         readonly invoiceId: string;
-        /** 0305 — the paying member, so the route can end their coverage. */
+        /** 0306 — the paying member, so the route can end their coverage. */
         readonly memberId: string;
         readonly amountSatang: Satang;
         readonly reason: string;
@@ -173,7 +173,7 @@ export type IssueRefundSuccess =
       readonly kind: 'pending';
       readonly refund: {
         readonly id: string;
-        /** 0305 — the refunded invoice + paying member, for the route's
+        /** 0306 — the refunded invoice + paying member, for the route's
          *  settle-time renewals request. */
         readonly invoiceId: string;
         readonly memberId: string;
@@ -209,7 +209,7 @@ export type IssueRefundError =
     }
   | { readonly code: 'refund_in_progress' }
   /**
-   * 0305 — `membershipEffect: 'cancel_membership'` on a refund that does NOT
+   * 0306 — `membershipEffect: 'cancel_membership'` on a refund that does NOT
    * fully credit a membership invoice (partial, or an event invoice). Refused
    * before Stripe: money never moves on an intent that cannot apply.
    */
@@ -561,7 +561,7 @@ async function issueRefundBody(
          * status of its own because it never credited the invoice.
          */
         readonly invoiceStatusAtPreflight: InvoiceStatus;
-        /** 0305 — pinned on the row; forwarded to the F4 credit note. */
+        /** 0306 — pinned on the row; forwarded to the F4 credit note. */
         readonly membershipEffect: RefundMembershipEffect | null;
       }
     | { readonly kind: 'rejected'; readonly error: IssueRefundError };
@@ -780,7 +780,7 @@ async function issueRefundBody(
       } as const;
     }
 
-    // 0305 — `cancel_membership` only applies when THIS refund fully credits a
+    // 0306 — `cancel_membership` only applies when THIS refund fully credits a
     // MEMBERSHIP invoice (that is what withdraws the paid period) — and only
     // when a credit note will actually be issued: a WAIVED refund (voided
     // invoice) never covered a period, so its money is an orphan / duplicate

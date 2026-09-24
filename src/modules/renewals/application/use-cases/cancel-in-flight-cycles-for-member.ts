@@ -72,7 +72,7 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
  * consistency across cascade ports — chamber DPO compliance reports
  * filter on the same enum across F7 + F8.
  *
- * The F-2 `'credit_note_refund'` reason was retired in 0305: a full membership
+ * The F-2 `'credit_note_refund'` reason was retired in 0306: a full membership
  * credit / refund now calls `endMembershipCoverageNow` instead, because a plain
  * `cancelled` close (this cascade) honours paid-through access and so never
  * actually ended a refunded member's coverage.
@@ -263,7 +263,7 @@ export async function cancelInFlightCyclesForMember(
 > {
   const reason = input.cascadeReason ?? DEFAULT_REASON;
   // Observability — dashboards group every log line in this function by
-  // `cascade:`. F3 archival / erasure is the only caller again since 0305.
+  // `cascade:`. F3 archival / erasure is the only caller again since 0306.
   const cascadeLabel = 'f3_member_archival_or_erasure';
 
   try {

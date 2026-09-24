@@ -236,13 +236,13 @@ export interface RenewalsDeps {
    */
   readonly f5RefundBridge: F5RefundBridge;
   /**
-   * Migration 0305 — the durable "end this member's coverage" request on the
+   * Migration 0306 — the durable "end this member's coverage" request on the
    * open cycle (`end_coverage_*`), written by `endMembershipCoverageNow` and
    * converged by `reconcileMembershipCoverageEnds`.
    */
   readonly coverageEndRequests: MembershipCoverageEndRepo;
   /**
-   * 0305 — the durable record of staff "End membership" decisions (F5 refund
+   * 0306 — the durable record of staff "End membership" decisions (F5 refund
    * + F4 manual credit-note rows) the reconcile backstop re-reads.
    */
   readonly membershipEndRequestSource: MembershipEndRequestSource;

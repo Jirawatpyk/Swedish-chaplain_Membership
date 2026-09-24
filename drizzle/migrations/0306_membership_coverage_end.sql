@@ -27,7 +27,7 @@
 --    of a membership invoice ('keep' | 'cancel_membership', F4's vocabulary),
 --    pinned at initiation so the webhook / sweep finaliser can hand it to the
 --    credit-note bridge when an async refund settles. NULL = not declared
---    (pre-0305 rows, partial refunds, event invoices, the F8 reject bridge).
+--    (pre-0306 rows, partial refunds, event invoices, the F8 reject bridge).
 --
 -- Additive only. The CHECK drop/re-add validates existing rows, none of which
 -- carry the new literal; renewal_cycles is small (one active row per member).
@@ -57,7 +57,7 @@ ALTER TABLE "renewal_cycles"
 --> statement-breakpoint
 
 COMMENT ON CONSTRAINT "renewal_cycles_closed_reason_check" ON "renewal_cycles" IS
-  '0305: + coverage_ended (refund / full credit note ended access immediately; plain cancelled keeps paid-through access)';
+  '0306: + coverage_ended (refund / full credit note ended access immediately; plain cancelled keeps paid-through access)';
 --> statement-breakpoint
 
 ALTER TABLE "renewal_cycles"
@@ -87,7 +87,7 @@ ALTER TABLE "refunds"
 --    written in the credit note's own tx. With `refunds.membership_effect`
 --    it is the DURABLE record the renewals reconcile backstop re-reads when a
 --    route's post-commit "end membership" call was lost. NULL on partial /
---    event credits and pre-0305 rows.
+--    event credits and pre-0306 rows.
 ALTER TABLE "credit_notes"
   ADD COLUMN "membership_effect" text;
 --> statement-breakpoint

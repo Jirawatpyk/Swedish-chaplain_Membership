@@ -118,7 +118,7 @@ export interface FinalizeSucceededRefundInput {
    */
   readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
   /**
-   * 0305 — staff's Keep / End membership choice, read off the refund row
+   * 0306 — staff's Keep / End membership choice, read off the refund row
    * (pinned in Phase A). REQUIRED for the same reason as the waiver: every
    * caller states it, so an async settle cannot silently drop it.
    */

@@ -36,9 +36,9 @@ type Props = {
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
-  /** 0305 — see RefundForm: a full MEMBERSHIP refund asks Keep / End. */
+  /** 0306 — see RefundForm: a full MEMBERSHIP refund asks Keep / End. */
   readonly invoiceSubject: 'membership' | 'event';
-  /** 0305 — the invoice's un-credited headroom (`total − credited`). */
+  /** 0306 — the invoice's un-credited headroom (`total − credited`). */
   readonly invoiceHeadroomSatang: bigint;
   /**
    * Receipt document number (e.g. `RC-2026-0001`) — surfaced in the

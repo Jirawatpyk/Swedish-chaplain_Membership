@@ -49,7 +49,7 @@ const _assertNoEmailDeliveryCollision: false = false as HasEmailDeliveryKey;
 interface CreditNoteResponseBody extends SerialisedCreditNote {
   readonly email_delivery: CreditNoteEmailDelivery;
   /**
-   * 0305 — present ONLY when the credit note was a full membership credit
+   * 0306 — present ONLY when the credit note was a full membership credit
    * with `membershipEffect: 'cancel_membership'`: the outcome of ending the
    * member's coverage (see `MembershipEndOutcome`). The credit note itself is
    * ALWAYS fully committed regardless (§86/10 numbering never depends on F8).

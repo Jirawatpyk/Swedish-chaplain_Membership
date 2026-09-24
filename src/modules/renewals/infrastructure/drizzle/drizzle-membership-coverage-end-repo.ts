@@ -1,5 +1,5 @@
 /**
- * Migration 0305 — Drizzle adapter for `MembershipCoverageEndRepo` (the
+ * Migration 0306 — Drizzle adapter for `MembershipCoverageEndRepo` (the
  * `renewal_cycles.end_coverage_*` request columns). See the port docstring.
  *
  * Every query carries an explicit `tenant_id` predicate ON TOP of the RLS the

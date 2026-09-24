@@ -116,7 +116,7 @@ export const refunds = pgTable('refunds', {
    */
   creditNoteWaiverReason: text('credit_note_waiver_reason'),
   /**
-   * Migration 0305 — staff's declared membership intent for a refund of a
+   * Migration 0306 — staff's declared membership intent for a refund of a
    * membership invoice ('keep' | 'cancel_membership'), pinned at the Phase-A
    * insert so the webhook / sweep finaliser can forward it to the F4 credit
    * note when an async refund settles. NULL = not declared. DB CHECK.

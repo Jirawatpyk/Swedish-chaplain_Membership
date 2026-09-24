@@ -225,7 +225,7 @@ export interface InvoicingBridgePort {
       | 'system';
     readonly requestId: string | null;
     /**
-     * 0305 — staff's Keep / End membership choice, pinned on the refund row.
+     * 0306 — staff's Keep / End membership choice, pinned on the refund row.
      * Omitted → F4 defaults to 'keep' (the gate-satisfying value).
      */
     readonly membershipEffect?: 'keep' | 'cancel_membership';
@@ -289,7 +289,7 @@ export interface InvoicingBridgePort {
         readonly creditedTotalSatang: Satang;
         readonly totalSatang: Satang;
         /**
-         * 0305 — so the refund pre-flight can refuse `cancel_membership` on a
+         * 0306 — so the refund pre-flight can refuse `cancel_membership` on a
          * refund that does not fully credit a MEMBERSHIP invoice.
          */
         readonly invoiceSubject: 'membership' | 'event';

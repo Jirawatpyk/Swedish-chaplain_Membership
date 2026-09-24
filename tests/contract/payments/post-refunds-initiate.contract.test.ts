@@ -83,7 +83,7 @@ vi.mock('@/modules/payments', () => ({
   makeIssueRefundDeps: () => ({ db: {}, stripe: {}, audit: {}, invoicingBridge: {} }),
 }));
 
-// 0305 — the route orchestrates the renewals "end membership coverage"
+// 0306 — the route orchestrates the renewals "end membership coverage"
 // operation (via the shared `@/lib/membership-coverage-end` helper) after a
 // refund with `membershipEffect: 'cancel_membership'`.
 const endMembershipCoverageNowMock = vi.fn();
@@ -680,7 +680,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(JSON.stringify(body)).not.toContain('db connection lost');
   });
 
-  describe('0305 — Keep / End membership on a full membership refund', () => {
+  describe('0306 — Keep / End membership on a full membership refund', () => {
     const FULL_BODY = { ...VALID_BODY, membershipEffect: 'cancel_membership' };
 
     it('forwards membershipEffect to issueRefund', async () => {

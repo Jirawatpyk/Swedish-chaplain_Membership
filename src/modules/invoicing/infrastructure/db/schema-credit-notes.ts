@@ -73,7 +73,7 @@ export const creditNotes = pgTable(
     // The renewal `effectivePaidCoverageSql` predicate + the L1 pipeline read
     // model consult this column via a correlated EXISTS on the settling invoice.
     retainsCoverage: boolean('retains_coverage').notNull().default(false),
-    // Migration 0305 — staff's Keep / End membership intent on a FULL
+    // Migration 0306 — staff's Keep / End membership intent on a FULL
     // membership credit; the renewals reconcile backstop re-reads End
     // decisions from here. NULL on partial / event credits. DB CHECK.
     membershipEffect: text('membership_effect'),

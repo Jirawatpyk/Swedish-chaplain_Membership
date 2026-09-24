@@ -1,5 +1,5 @@
 /**
- * 0305 — read facade: recent MANUAL credit notes (no `source_refund_id`)
+ * 0306 — read facade: recent MANUAL credit notes (no `source_refund_id`)
  * whose staff chose "End membership" (`credit_notes.membership_effect =
  * 'cancel_membership'`, written in the credit note's own tx).
  *

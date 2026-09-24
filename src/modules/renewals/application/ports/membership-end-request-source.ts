@@ -1,5 +1,5 @@
 /**
- * 0305 — the DURABLE record of a staff "End membership" decision, read from
+ * 0306 — the DURABLE record of a staff "End membership" decision, read from
  * where it was written atomically with the money operation:
  *   - F5 `refunds.membership_effect = 'cancel_membership'` (pinned in the
  *     refund's Phase-A insert), and

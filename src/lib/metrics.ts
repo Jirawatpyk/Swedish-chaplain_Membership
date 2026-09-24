@@ -3325,7 +3325,7 @@ export const renewalsMetrics = {
    * Label key `tenant` (unified 107 family — see `pruneAutoDraftsRunCompleted`).
    */
   /**
-   * `renewals_coverage_end_reconcile_total{tenant, outcome}` — 0305. Row
+   * `renewals_coverage_end_reconcile_total{tenant, outcome}` — 0306. Row
    * counts from the hourly reconcile-coverage-ends pass. ALERT on any
    * non-zero `expired`, `stranded_cleared`, `backstop_applied` or `errored`:
    *   - expired: a refund stayed unsettled past the expiry → request dropped,
@@ -3353,27 +3353,27 @@ export const renewalsMetrics = {
     safeMetric(() => {
       counter(
         'renewals_coverage_end_reconcile_total',
-        'F8 reconcile-coverage-ends pass — per-outcome row counts (0305)',
+        'F8 reconcile-coverage-ends pass — per-outcome row counts (0306)',
       ).add(count, { tenant: tenantId, outcome });
     });
   },
 
   /**
-   * `renewals_coverage_end_oldest_waiting_hours{tenant}` — 0305. Age of the
+   * `renewals_coverage_end_oldest_waiting_hours{tenant}` — 0306. Age of the
    * oldest end-membership request still waiting on its refund. Warn > 24,
    * page > 72 (a refund stuck that long is itself an incident).
    */
   coverageEndOldestWaitingHours(tenantId: string, hours: number): void {
     observeTenantGauge(
       'renewals_coverage_end_oldest_waiting_hours',
-      'F8 oldest end-membership request still waiting on its refund, in hours (0305)',
+      'F8 oldest end-membership request still waiting on its refund, in hours (0306)',
       tenantId,
       hours,
     );
   },
 
   /**
-   * `renewals_membership_end_requests_total{tenant, trigger, outcome}` — 0305.
+   * `renewals_membership_end_requests_total{tenant, trigger, outcome}` — 0306.
    * The routes' post-commit "end membership" call (credit note / refund).
    * ALERT on `outcome="failed"` (could neither end nor schedule — the
    * reconcile backstop is the remaining safety net).
@@ -3386,7 +3386,7 @@ export const renewalsMetrics = {
     safeMetric(() => {
       counter(
         'renewals_membership_end_requests_total',
-        'F8 route-orchestrated end-membership calls by outcome (0305)',
+        'F8 route-orchestrated end-membership calls by outcome (0306)',
       ).add(1, { tenant: tenantId, trigger, outcome });
     });
   },

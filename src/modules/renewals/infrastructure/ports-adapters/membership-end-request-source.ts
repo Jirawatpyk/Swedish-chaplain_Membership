@@ -1,5 +1,5 @@
 /**
- * 0305 — `MembershipEndRequestSource` adapter: composes the payments +
+ * 0306 — `MembershipEndRequestSource` adapter: composes the payments +
  * invoicing public barrels (Principle III — no reach into F4/F5 internals) to
  * list recent staff "End membership" decisions from their durable rows.
  *

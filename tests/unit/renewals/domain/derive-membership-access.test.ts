@@ -52,7 +52,7 @@ describe('deriveMembershipAccess', () => {
     ['lapsed, FUTURE expiry (065 born-awaiting)', { status: 'lapsed', expiresAt: FUTURE, closedAt: PAST, closedReason: 'lapsed' }, 'terminated', 'grace_expired'],
     ['cancelled, PAST expiry',        { status: 'cancelled', expiresAt: PAST, closedAt: PAST, closedReason: 'cancelled' }, 'terminated', 'cancelled'],
     ['cancelled, FUTURE expiry',      { status: 'cancelled', expiresAt: FUTURE, closedAt: PAST, closedReason: 'cancelled' }, 'full', 'in_good_standing'],
-    // 0305 — a refund / full credit note that ENDED coverage: terminated NOW,
+    // 0306 — a refund / full credit note that ENDED coverage: terminated NOW,
     // even though the cancelled cycle's period runs into the future (a plain
     // `cancelled` close honours paid-through access; this one returned it).
     ['cancelled coverage_ended, FUTURE expiry', { status: 'cancelled', expiresAt: FUTURE, closedAt: PAST, closedReason: 'coverage_ended' }, 'terminated', 'cancelled'],

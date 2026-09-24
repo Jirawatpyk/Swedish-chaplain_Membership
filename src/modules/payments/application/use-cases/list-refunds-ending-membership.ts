@@ -1,5 +1,5 @@
 /**
- * 0305 — read facade: recent refunds whose staff chose "End membership"
+ * 0306 — read facade: recent refunds whose staff chose "End membership"
  * (`refunds.membership_effect = 'cancel_membership'`, pinned in Phase A).
  *
  * The renewals reconcile uses it as a BACKSTOP: the refund route ends the

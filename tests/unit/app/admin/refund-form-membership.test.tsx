@@ -1,5 +1,5 @@
 /**
- * 0305 — the refund dialog on a FULL refund of a MEMBERSHIP invoice.
+ * 0306 — the refund dialog on a FULL refund of a MEMBERSHIP invoice.
  *
  * Verified behaviour the warning states: a full refund fully credits the
  * invoice, so Renewals stops counting the period as paid — but the member

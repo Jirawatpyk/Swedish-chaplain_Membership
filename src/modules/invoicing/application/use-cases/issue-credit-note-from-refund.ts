@@ -71,7 +71,7 @@ export interface IssueCreditNoteFromRefundInput {
     | 'system';
   readonly requestId?: string | null;
   /**
-   * 0305 — staff's Keep / End membership choice for a full refund of a
+   * 0306 — staff's Keep / End membership choice for a full refund of a
    * membership invoice, pinned on the F5 refund row. Absent → 'keep'.
    */
   readonly membershipEffect?: 'keep' | 'cancel_membership';
@@ -110,7 +110,7 @@ export async function issueCreditNoteFromRefund(
     // manual issue. The F4 repo persists `source_refund_id` verbatim
     // via the barrel-extended insertCreditNote port.
     sourceRefundId: input.refundId,
-    // The staff's declared choice (0305), 'keep' when none was declared — it
+    // The staff's declared choice (0306), 'keep' when none was declared — it
     // also satisfies F4's `membership_effect_required` gate (a full
     // membership refund must never regress into a hard failure). It is
     // recorded on the credit note's audit row, but it does NOT decide coverage:

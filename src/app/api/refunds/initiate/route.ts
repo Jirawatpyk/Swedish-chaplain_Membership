@@ -95,7 +95,7 @@ const InitiateRefundBody = z.object({
     .min(1)
     .max(500)
     .regex(REASON_NO_NEWLINE_RE, 'reason must be a single line'),
-  // 0305 — staff's Keep / End membership choice on a FULL refund of a
+  // 0306 — staff's Keep / End membership choice on a FULL refund of a
   // membership invoice (the use-case refuses `cancel_membership` otherwise).
   membershipEffect: z.enum(['keep', 'cancel_membership']).optional(),
 });
@@ -127,7 +127,7 @@ function httpStatusForUseCaseError(error: IssueRefundError): {
       return { status: 409, routeCode: 'refund_exceeds_remaining' };
     case 'refund_in_progress':
       return { status: 409, routeCode: 'refund_in_progress' };
-    // 0305 — End membership on a refund that does not fully credit a
+    // 0306 — End membership on a refund that does not fully credit a
     // membership invoice. 422: well-formed, but the intent cannot apply.
     // Refused before Stripe — no money moved.
     case 'membership_effect_not_applicable':
@@ -347,7 +347,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (result.ok) {
       const v = result.value;
-      // 0305 — End membership: the refund has committed; now end the member's
+      // 0306 — End membership: the refund has committed; now end the member's
       // coverage through the SAME renewals operation the credit-note route
       // uses (orchestrated HERE, never from F5 Application). A settled refund
       // ends it now; an async (202) one only SCHEDULES it — the hourly

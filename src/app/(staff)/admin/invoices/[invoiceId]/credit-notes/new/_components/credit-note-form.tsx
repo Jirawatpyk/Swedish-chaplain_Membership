@@ -209,7 +209,7 @@ export function CreditNoteForm({
       // MEDIUM-5 — the email-delivery signal rides alongside: a
       // `skipped_no_recipient` value means the CN is still fully issued but the
       // buyer has no email on file, so the auto-email was skipped (non-blocking
-      // description). `membership_end` (0305) is the same kind of non-blocking
+      // description). `membership_end` (0306) is the same kind of non-blocking
       // signal for the requested end of the member's coverage. All fields come
       // from ONE parse of the success body.
       const successBody = (await res.json().catch(() => ({}))) as {
@@ -226,7 +226,7 @@ export function CreditNoteForm({
       if (successBody.email_delivery === 'skipped_no_recipient') {
         noticeParts.push(t('emailSkippedNoRecipient'));
       }
-      // 0305 — the outcome of ending the member's coverage (present only when
+      // 0306 — the outcome of ending the member's coverage (present only when
       // staff chose to end it). `ended` confirms; the rest explain what is
       // still pending or needs follow-up. The credit note is issued either way.
       const membershipEndKey = (

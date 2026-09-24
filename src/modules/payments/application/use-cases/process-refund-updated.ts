@@ -554,7 +554,7 @@ export async function processRefundUpdated(
             // forever and blocking every future refund on the payment. That is
             // the F-3 shape, recreated. A compile error is the cheaper failure.
             creditNoteWaiverReason: refund.creditNoteWaiverReason,
-            // 0305 — pinned in Phase A; forwarded to the F4 credit note.
+            // 0306 — pinned in Phase A; forwarded to the F4 credit note.
             membershipEffect: refund.membershipEffect,
             processorRefundId: input.processorRefundId,
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,

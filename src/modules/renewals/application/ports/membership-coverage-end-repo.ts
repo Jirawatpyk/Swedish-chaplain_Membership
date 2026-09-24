@@ -1,5 +1,5 @@
 /**
- * Migration 0305 — the durable "end this member's coverage" request stamped
+ * Migration 0306 — the durable "end this member's coverage" request stamped
  * on a member's OPEN renewal cycle (`renewal_cycles.end_coverage_*`).
  *
  * Written by `endMembershipCoverageNow` when coverage must NOT end yet:

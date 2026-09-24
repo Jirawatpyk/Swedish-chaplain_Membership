@@ -70,7 +70,7 @@ function assertCreditNoteWaiverReason(
   );
 }
 
-// 0305 — same loud-on-unknown discipline as the waiver reason above; the DB
+// 0306 — same loud-on-unknown discipline as the waiver reason above; the DB
 // CHECK already enforces the vocabulary, so a miss here is a corrupt row.
 function assertRefundMembershipEffect(
   s: string | null,
@@ -647,7 +647,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
 export { runInTenant as _runInTenantForRefundsRepo };
 
 /**
- * 0305 — reader behind `listRefundsEndingMembership`: refunds whose staff
+ * 0306 — reader behind `listRefundsEndingMembership`: refunds whose staff
  * chose End membership, initiated at/after `since`, with the paying member.
  * Standalone tenant scope (`runInTenant`) + explicit tenant predicate
  * (Principle I two-layer).

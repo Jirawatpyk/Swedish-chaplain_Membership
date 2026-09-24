@@ -75,7 +75,7 @@ export const CLOSED_REASONS = [
   'admin_reactivated',
   'admin_rejected_with_refund',
   'pending_reactivation_timed_out',
-  // 0305 — a refund / full credit note ENDED the member's coverage now. Unlike
+  // 0306 — a refund / full credit note ENDED the member's coverage now. Unlike
   // a plain `cancelled` close (paid-through access honoured until
   // `expires_at`), this one terminates access immediately — the money for the
   // period was returned. Written only by `endMembershipCoverageNow`.
@@ -88,7 +88,7 @@ export type ClosedReason = (typeof CLOSED_REASONS)[number];
  * K7: compile-time count assertion — pin the const tuple length so
  * accidentally adding/dropping a closed_reason becomes a build error.
  * Mirrors `_AssertCycleStatusCount` and `_AssertSkipReasonCount`.
- * Keep in sync with the DB CHECK constraint (migrations 0108, 0305).
+ * Keep in sync with the DB CHECK constraint (migrations 0108, 0306).
  */
 type _AssertClosedReasonCount = (typeof CLOSED_REASONS)['length'] extends 10
   ? true
@@ -207,7 +207,7 @@ interface LapsedCycleFields {
 }
 
 /**
- * Terminal — admin-cancelled, admin-rejected with refund, or (0305) coverage
+ * Terminal — admin-cancelled, admin-rejected with refund, or (0306) coverage
  * ended by a refund / full credit note.
  */
 interface CancelledCycleFields {
@@ -391,7 +391,7 @@ export interface MembershipAccessDecision {
  *  - `terminated`: a `lapsed` cycle (ALWAYS — 065 §5.2⇄§5.3, see below), OR
  *    a `cancelled` cycle whose `expiresAt` is in the past (a `cancelled`
  *    cycle whose period has NOT ended is not ended coverage → `full`).
- *    A `cancelled` cycle closed `coverage_ended` (0305 — a refund / full
+ *    A `cancelled` cycle closed `coverage_ended` (0306 — a refund / full
  *    credit note returned the period's money) is terminated IMMEDIATELY.
  *    `completed` is NEVER terminated (057 R2: the member paid; re-prompting
  *    payment causes a duplicate).
@@ -442,7 +442,7 @@ export function deriveMembershipAccess(
   const expired = !Number.isFinite(expiresMs) || expiresMs < now.getTime();
 
   if (cycle.status === 'cancelled') {
-    // 0305 — `coverage_ended` returned the money for the period, so access
+    // 0306 — `coverage_ended` returned the money for the period, so access
     // ends NOW regardless of `expiresAt` (checked before the expiry, like the
     // `lapsed` arm above).
     if (cycle.closedReason === 'coverage_ended') {
