@@ -83,4 +83,27 @@ describe('active-filter chips', () => {
     renderFilters('q=acme');
     expect(screen.getByText('Search: acme')).toBeInTheDocument();
   });
+
+  it('shows the plan year on the plan chip when the list is narrowed to one year', () => {
+    renderFilters('plan_id=p1&plan_year=2026');
+    expect(screen.getByText('Plan: Premium Corporate (2026)')).toBeInTheDocument();
+  });
+
+  it('removing the plan chip clears plan_year with plan_id', () => {
+    renderFilters('status=active&plan_id=p1&plan_year=2026');
+    fireEvent.click(
+      screen.getByRole('button', { name: /remove plan: premium corporate \(2026\)/i }),
+    );
+    const url = nav.replaceMock.mock.calls[0]?.[0] as string;
+    expect(url).not.toContain('plan_id=');
+    expect(url).not.toContain('plan_year=');
+    expect(url).toContain('status=active');
+  });
+
+  it('clear-all also clears plan_year', () => {
+    renderFilters('plan_id=p1&plan_year=2026');
+    fireEvent.click(screen.getByRole('button', { name: /clear/i }));
+    const url = nav.replaceMock.mock.calls[0]?.[0] as string;
+    expect(url).not.toContain('plan_year=');
+  });
 });

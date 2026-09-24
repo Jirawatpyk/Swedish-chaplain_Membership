@@ -25,6 +25,8 @@ export interface DirectoryFilterParams {
   readonly q?: string;
   readonly status?: string;
   readonly plan_id?: string;
+  /** Narrows `plan_id` to one plan year (plans are versioned per year). */
+  readonly plan_year?: string;
   readonly show_archived?: string;
   readonly risk_band?: string;
   readonly portal?: string;
@@ -34,6 +36,8 @@ export interface DirectoryFilterParams {
 export interface ParsedDirectoryFilter {
   readonly q?: string;
   readonly planId?: string;
+  /** Only ever set together with `planId`. */
+  readonly planYear?: number;
   readonly riskBand?: RiskBandValue | readonly RiskBandValue[];
   readonly status: readonly MemberStatusFilter[];
   /** Needs-invite chip (design doc 2026-07-23 §3.7). Caller wraps as `{ now }`. */
@@ -116,6 +120,14 @@ export function parseDirectoryFilterFromParams(
   const q = params.q?.trim() ? params.q.trim() : undefined;
   const planId =
     params.plan_id && params.plan_id !== 'all' ? params.plan_id : undefined;
+  // A plan row is (plan_id, plan_year): renewals move a member to the current
+  // year's row and un-renewed members stay on the old one, so the plan detail
+  // page links with the year to match its per-year member count. Honoured only
+  // alongside a plan and only as a plain year in the plans' own range.
+  const planYear =
+    planId !== undefined && params.plan_year !== undefined
+      ? parsePlanYear(params.plan_year)
+      : undefined;
 
   const hasFilters =
     q !== undefined ||
@@ -128,9 +140,16 @@ export function parseDirectoryFilterFromParams(
   return {
     ...(q !== undefined ? { q } : {}),
     ...(planId !== undefined ? { planId } : {}),
+    ...(planYear !== undefined ? { planYear } : {}),
     ...(riskBand !== undefined ? { riskBand } : {}),
     status,
     portalNeedsInvite,
     hasFilters,
   };
+}
+
+function parsePlanYear(raw: string): number | undefined {
+  if (!/^\d{4}$/.test(raw)) return undefined;
+  const year = Number.parseInt(raw, 10);
+  return year >= 2000 && year <= 2100 ? year : undefined;
 }

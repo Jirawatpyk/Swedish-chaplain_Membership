@@ -74,6 +74,9 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
   const currentPlan = searchParams.get('plan_id') ?? 'all';
+  // Set by the plan detail page's member-count link (one plan YEAR); there is
+  // no Select for it — it shows on the plan chip and clears with the plan.
+  const currentPlanYear = searchParams.get('plan_year');
   const currentRisk = searchParams.get('risk_band') ?? 'all';
 
   const portalActive = searchParams.get('portal') === 'needs_invite';
@@ -163,7 +166,14 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const clearAll = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setSearchValue('');
-    pushUrl({ q: null, status: null, plan_id: null, risk_band: null, portal: null });
+    pushUrl({
+      q: null,
+      status: null,
+      plan_id: null,
+      plan_year: null,
+      risk_band: null,
+      portal: null,
+    });
   };
 
   // Active-filter chips (ux-standards §9.4) — a consolidated, dismissible summary
@@ -194,8 +204,13 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
     const plan = plans.find((p) => p.id === currentPlan);
     activeChips.push({
       key: 'plan',
-      label: t('filterChip.plan', { value: plan?.label ?? currentPlan }),
-      onRemove: () => pushUrl({ plan_id: null }),
+      label: currentPlanYear
+        ? t('filterChip.planYear', {
+            value: plan?.label ?? currentPlan,
+            year: currentPlanYear,
+          })
+        : t('filterChip.plan', { value: plan?.label ?? currentPlan }),
+      onRemove: () => pushUrl({ plan_id: null, plan_year: null }),
     });
   }
   if (currentRisk !== 'all') {
@@ -255,7 +270,10 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
       {plans.length > 0 && (
         <Select
           value={currentPlan}
-          onValueChange={(v) => pushUrl({ plan_id: v === 'all' ? null : v })}
+          // A new plan pick drops a year that belonged to the previous plan.
+          onValueChange={(v) =>
+            pushUrl({ plan_id: v === 'all' ? null : v, plan_year: null })
+          }
         >
           <SelectTrigger className="sm:w-56" aria-label={t('filters.plan.label')}>
             <TranslatedSelectValue

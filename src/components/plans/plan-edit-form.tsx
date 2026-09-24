@@ -33,7 +33,10 @@ import { Separator } from '@/components/ui/separator';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
-import { PriorYearLockBanner } from './prior-year-lock-banner';
+import {
+  PriorYearLockBanner,
+  type CurrentYearPlanStatus,
+} from './prior-year-lock-banner';
 import { usePlanOptions } from './use-plan-options';
 import {
   LOCKED_FIELDS_ON_PRIOR_YEAR,
@@ -44,6 +47,11 @@ export interface PlanEditFormProps {
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
   readonly currencyPrefix: string;
+  /** What `currentYear` holds relative to this plan — picks the prior-year
+   *  banner's CTA (open that version / clone the year / create the plan). */
+  readonly currentYearStatus?: CurrentYearPlanStatus;
+  /** Tenant VAT rate in percent (7 for 7 %) for the fee hint; `null` when unknown. */
+  readonly vatRatePercent?: number | null;
   readonly submitting?: boolean;
   readonly onSubmit: (draft: PlanSchemaInput) => Promise<void> | void;
   readonly onCancel?: () => void;
@@ -88,6 +96,8 @@ export function PlanEditForm({
   initialValues,
   currentYear,
   currencyPrefix,
+  currentYearStatus = 'other_plans',
+  vatRatePercent = null,
   submitting = false,
   onSubmit,
   onCancel,
@@ -119,7 +129,12 @@ export function PlanEditForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {isPriorYear ? (
-        <PriorYearLockBanner planYear={draft.plan_year} currentYear={currentYear} />
+        <PriorYearLockBanner
+          planId={draft.plan_id}
+          planYear={draft.plan_year}
+          currentYear={currentYear}
+          currentYearStatus={currentYearStatus}
+        />
       ) : null}
 
       {/* Basics */}
@@ -196,6 +211,11 @@ export function PlanEditForm({
             prefix={currencyPrefix}
             disabled={isLocked('annual_fee_minor_units')}
             required
+            helpText={
+              vatRatePercent === null
+                ? t('annualFeeHelpNoRate')
+                : t('annualFeeHelp', { rate: vatRatePercent })
+            }
           />
         </LockWrapper>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

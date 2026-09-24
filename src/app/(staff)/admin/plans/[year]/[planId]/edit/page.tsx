@@ -13,12 +13,19 @@ import { getTranslations } from 'next-intl/server';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { asPlanSlug, asPlanYear, getPlan, type PlanSchemaInput } from '@/modules/plans';
+import {
+  asPlanSlug,
+  asPlanYear,
+  getPlan,
+  vatRatePercent,
+  type PlanSchemaInput,
+} from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
+import type { CurrentYearPlanStatus } from '@/components/plans/prior-year-lock-banner';
 import { EditPlanClient } from './edit-plan-client';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -79,6 +86,29 @@ export default async function EditPlanPage({
   const currentYear = deps.clock.currentYear();
   const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
+  // Prior-year plans: what does the current year hold? The lock banner links
+  // to the same plan's current-year version when there is one, to the clone
+  // page only when the year is empty (a whole-year clone refuses a populated
+  // target), and otherwise to the new-plan wizard.
+  let currentYearStatus: CurrentYearPlanStatus = 'other_plans';
+  if (plan.plan_year < currentYear) {
+    const currentVersion = await deps.planRepo.findOne(
+      tenant,
+      asPlanSlug(plan.plan_id),
+      asPlanYear(currentYear),
+    );
+    if (currentVersion !== undefined && currentVersion.deleted_at === null) {
+      currentYearStatus = 'has_plan';
+    } else {
+      // Non-deleted plans only (the repo's default), matching what the
+      // clone use case counts as "target year populated".
+      const currentYearPlans = await deps.planRepo.findByTenantAndYear(tenant, {
+        year: asPlanYear(currentYear),
+      });
+      currentYearStatus = currentYearPlans.length === 0 ? 'empty' : 'other_plans';
+    }
+  }
+
   // Convert the Domain Plan to a PlanSchemaInput-shaped initial value
   const initialValues: PlanSchemaInput = {
     plan_id: plan.plan_id,
@@ -109,9 +139,24 @@ export default async function EditPlanPage({
             initialValues={initialValues}
             currentYear={currentYear}
             currencyPrefix={currencyPrefix}
+            currentYearStatus={currentYearStatus}
+            vatRatePercent={feeHintVatPercent(taxPolicy)}
           />
         </CardContent>
       </Card>
     </FormContainer>
   );
+}
+
+// The fee hint's VAT rate; `null` (hint without a rate) when there is no tax
+// policy or its rate is one the domain rejects — never a failed page.
+function feeHintVatPercent(
+  taxPolicy: { readonly vatRateRaw: string } | null,
+): number | null {
+  if (!taxPolicy) return null;
+  try {
+    return vatRatePercent(taxPolicy.vatRateRaw);
+  } catch {
+    return null;
+  }
 }

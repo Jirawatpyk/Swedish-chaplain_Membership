@@ -7,11 +7,8 @@
  * activeOnly / showDeleted), category badges, and a row-level dropdown
  * menu for US4 actions (Activate/Deactivate/Delete/Undelete).
  *
- * Each US4 action opens a `ConfirmationDialog` per UX standards § 4.1,
- * fires the matching API endpoint with a fresh `Idempotency-Key`, and
- * on success shows a sonner toast + `router.refresh()` to repull the
- * row. On failure we show an error toast — the row is NOT optimistically
- * mutated because the server is the source of truth (FR-018/LWW).
+ * The US4 actions (confirmation dialog, API call, toasts, refresh) live
+ * in `usePlanActions`, shared with the plan detail header menu.
  *
  * **NO inline edit** — US7 deferred to F3 per critique X1c.
  *
@@ -20,11 +17,10 @@
  */
 'use client';
 
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
 import { CopyIcon, MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react';
 // Deep PURE-Domain imports (never the auth barrel — this is a client bundle).
 import type { Role } from '@/modules/auth/domain/role';
@@ -59,45 +55,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
-import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { MoneyDisplay } from './money-display';
 import { LocaleTextDisplay } from './locale-text-display';
+import { usePlanActions } from './use-plan-actions';
 import type { PlanListItem } from '@/modules/plans';
-
-type ActionKind = 'activate' | 'deactivate' | 'delete' | 'undelete';
-
-type PendingAction = {
-  readonly kind: ActionKind;
-  readonly plan: PlanListItem;
-};
-
-function endpointFor(kind: ActionKind, plan: PlanListItem): {
-  readonly method: 'POST' | 'DELETE';
-  readonly url: string;
-} {
-  const base = `/api/plans/${plan.plan_year}/${plan.plan_id}`;
-  switch (kind) {
-    case 'activate':
-      return { method: 'POST', url: `${base}/activate` };
-    case 'deactivate':
-      return { method: 'POST', url: `${base}/deactivate` };
-    case 'delete':
-      return { method: 'DELETE', url: base };
-    case 'undelete':
-      return { method: 'POST', url: `${base}/undelete` };
-  }
-}
-
-function freshIdempotencyKey(): string {
-  if (
-    typeof globalThis.crypto !== 'undefined' &&
-    typeof globalThis.crypto.randomUUID === 'function'
-  ) {
-    return globalThis.crypto.randomUUID();
-  }
-  return `plans-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 export interface PlansTableProps {
   readonly plans: ReadonlyArray<PlanListItem>;
@@ -125,10 +86,6 @@ export function PlansTable({
   const searchParams = useSearchParams();
   const t = useTranslations('admin.plans');
   const tActions = useTranslations('admin.plans.actions');
-  const tConfirm = useTranslations('admin.plans.confirm');
-  const tToast = useTranslations('admin.plans.toast');
-  const tErrors = useTranslations('admin.plans.errors');
-  const tButtons = useTranslations('admin.plans.create.buttons');
   const tOptions = useTranslations('admin.plans.create.options');
   const [isPending, startTransition] = useTransition();
 
@@ -139,102 +96,13 @@ export function PlansTable({
   const [activeOnly, setActiveOnly] = useState(initialFilter.activeOnly);
   const [showDeleted, setShowDeleted] = useState(initialFilter.showDeleted);
 
-  const [pending, setPending] = useState<PendingAction | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  // Synchronous in-flight guard for the no-confirmation Activate path.
-  // `submitting` (React state) only flips on the NEXT render — after an
-  // await tick — so two rapid Activate clicks both passed the
-  // `if (submitting) return` gate and each minted a fresh
-  // Idempotency-Key, defeating server-side dedupe. A ref mutates
-  // synchronously, so the second click sees `inFlightRef.current === true`
-  // within the same event-loop turn and bails before the second fetch.
-  const inFlightRef = useRef(false);
-
-  async function runAction(action: PendingAction): Promise<void> {
-    const { method, url } = endpointFor(action.kind, action.plan);
-    setSubmitting(true);
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': freshIdempotencyKey(),
-        },
-      });
-      if (res.ok) {
-        const toastKey = (
-          {
-            activate: 'activated',
-            deactivate: 'deactivated',
-            delete: 'deleted',
-            undelete: 'undeleted',
-          } as const
-        )[action.kind];
-        toast.success(
-          tToast(toastKey, { planName: action.plan.plan_name.en }),
-        );
-        startTransition(() => {
-          router.refresh();
-        });
-      } else {
-        const body = (await res.json().catch(() => null)) as {
-          error?:
-            | string
-            | { code?: string; details?: { affected_member_count?: number } };
-        } | null;
-        // read-only-mode 503: flat string (proxy) OR nested code (route guard)
-        // — both shapes and both spellings live in `problemCode` /
-        // `isReadOnlyCode` now (PR-3 review B7). The status is NOT part of the
-        // test here, exactly as before: this ladder branches on the code alone.
-        const errObj = body?.error;
-        const code = problemCode(body);
-        if (isReadOnlyCode(code)) {
-          toast.error(tErrors('readOnlyMode'));
-        } else if (code === 'plan_has_active_members') {
-          toast.error(
-            tErrors('memberAttached', {
-              count:
-                (typeof errObj === 'object'
-                  ? errObj?.details?.affected_member_count
-                  : undefined) ?? 0,
-            }),
-          );
-        } else if (code === 'not_found') {
-          toast.error(tErrors('notFound'));
-        } else if (code === 'idempotency_conflict') {
-          toast.error(tErrors('idempotencyConflict'));
-        } else {
-          toast.error(tErrors('generic'));
-        }
-      }
-    } catch {
-      toast.error(tErrors('network'));
-    } finally {
-      setSubmitting(false);
-      setPending(null);
-      // Release the synchronous Activate guard once the request settles
-      // (success or failure) so a subsequent legitimate Activate can run.
-      inFlightRef.current = false;
-    }
-  }
-
-  function openDialog(kind: ActionKind, plan: PlanListItem): void {
-    // Activate is not destructive and doesn't need a confirmation —
-    // click fires the action immediately. The dropdown menu closed
-    // already at click, so there's no UI glitch.
-    if (kind === 'activate') {
-      // Activate is non-destructive — fire immediately, no confirmation.
-      // SYNCHRONOUS guard: `submitting` (state) only updates next render,
-      // so two fast clicks both slipped past a `if (submitting)` check and
-      // each minted a fresh Idempotency-Key (server couldn't dedupe). The
-      // ref flips within this same turn, so the second click bails here.
-      if (inFlightRef.current || submitting) return;
-      inFlightRef.current = true;
-      runAction({ kind, plan }).catch(() => {});
-      return;
-    }
-    setPending({ kind, plan });
-  }
+  // Row actions (Activate / Deactivate / Delete / Restore) + their
+  // confirmation dialog — shared with the plan detail header.
+  const {
+    openAction: openDialog,
+    isPending: actionPending,
+    dialog: actionDialog,
+  } = usePlanActions();
 
   const sorted = useMemo(() => {
     return [...plans].sort((a, b) => {
@@ -310,7 +178,7 @@ export function PlansTable({
                 updateFilter({ q: q || null });
               }
             }}
-            disabled={isPending}
+            disabled={isPending || actionPending}
             className="pl-9"
           />
         </div>
@@ -595,26 +463,7 @@ export function PlansTable({
       </p>
 
       {/* Confirmation dialog for destructive + state-changing US4 actions */}
-      {pending ? (
-        <ConfirmationDialog
-          open={true}
-          onOpenChange={(open) => {
-            if (!open && !submitting) setPending(null);
-          }}
-          title={tConfirm(`${pending.kind as 'deactivate' | 'delete' | 'undelete'}.title`, {
-            planName: pending.plan.plan_name.en,
-          })}
-          description={tConfirm(
-            `${pending.kind as 'deactivate' | 'delete' | 'undelete'}.description`,
-          )}
-          confirmLabel={tConfirm(
-            `${pending.kind as 'deactivate' | 'delete' | 'undelete'}.confirmCta`,
-          )}
-          cancelLabel={tButtons('cancel')}
-          onConfirm={() => runAction(pending)}
-          destructive={pending.kind === 'delete'}
-        />
-      ) : null}
+      {actionDialog}
     </div>
   );
 }
