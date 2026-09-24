@@ -87,18 +87,13 @@ interface ApiResponse {
 }
 
 export interface AtRiskWidgetProps {
-  /** Captured server-side from session — admin/manager/member. */
-  readonly actorRole: 'admin' | 'manager';
+  /** `canPerform(role, 'renewals.write')` — the gate on the snooze route. */
+  readonly canSnooze: boolean;
 }
 
-export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
+export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
   const t = useTranslations('admin.renewals.atRisk');
   const locale = useLocale();
-  // rbac-narrow-ok: `actorRole` is the page's VIEW projection
-  // ('admin' | 'manager' — the D16-aware page already projects super_admin to
-  // 'admin'), not a session role. This picks the widget variant with the
-  // snooze affordance; it does not authorize (the snooze route gates itself).
-  const showAdminSnooze = actorRole === 'admin';
   const [activeBand, setActiveBand] = useState<Band>('at-risk');
   // Phase 6 review C5 — refetch counter bumped by retry button so
   // the effect re-runs fetch when the user dismisses an error state.
@@ -416,7 +411,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                         >
                           {t('actions.contact')}
                         </Button>
-                        {showAdminSnooze ? (
+                        {canSnooze ? (
                           <Button
                             variant="ghost"
                             className="w-full sm:w-auto"
