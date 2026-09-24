@@ -15,8 +15,8 @@ import { SkeletonBlock } from '@/components/shell/page-skeletons';
  *   - Footer: single right-aligned "Next" button (Back only appears
  *     from step 2 onward; Submit only on "review" step)
  *
- * Used by route-level `loading.tsx` at `/admin/plans/new` and
- * `/admin/plans/[year]/[planId]/edit` — both mount the real wizard.
+ * Used by the route-level `loading.tsx` at `/admin/plans/new`. The edit
+ * route renders a flat form and uses `PlanEditFormSkeleton` instead.
  */
 export function PlanFormWizardSkeleton() {
   return (

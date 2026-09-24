@@ -34,6 +34,13 @@ const messages = {
         submitting: 'Cloning…',
         title: 'Clone plans',
         errors: { targetYearPopulated: 'x', noPlans: 'y' },
+        preview: {
+          title: 'Plans to copy from {sourceYear}',
+          loading: 'Loading…',
+          failed: 'Could not load',
+          empty: 'None',
+          inactive: 'inactive',
+        },
       },
     },
   },
@@ -45,7 +52,13 @@ function renderClient() {
       <CloneYearClient
         defaultSourceYear={2026}
         defaultTargetYear={2027}
-        defaultSourcePlanCount={5}
+        currencyCode="THB"
+        defaultSourcePlans={Array.from({ length: 5 }, (_, i) => ({
+          plan_id: `plan-${i}`,
+          plan_name: { en: `Plan ${i}` },
+          annual_fee_minor_units: 100_000,
+          is_active: true,
+        }))}
       />
     </NextIntlClientProvider>,
   );

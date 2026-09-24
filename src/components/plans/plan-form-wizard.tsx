@@ -2,9 +2,11 @@
  * T108 — PlanFormWizard (US2).
  *
  * 4-step wizard (Basics → Fees → Benefits → Review) with per-step
- * validation. Next button is disabled until the current step's
- * minimum fields pass the relevant subset of `planSchema`. Final
- * Save runs the full schema.
+ * validation. Next validates the current step against `planSchema`
+ * (shape + the cross-field rules); a failing step stays put, its
+ * Stepper circle turns into an error and each offending field shows
+ * its message (see `plan-form-errors.ts`). Final Save runs the full
+ * schema and jumps back to the first failing step.
  *
  * State is held in a single plain `draft` object rather than
  * react-hook-form because:
@@ -22,7 +24,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2Icon } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatSatangThb } from '@/lib/format-thb';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,6 +43,11 @@ import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
 import { usePlanOptions } from './use-plan-options';
 import {
+  planFieldStep,
+  planFormFieldErrors,
+  type PlanFormField,
+} from './plan-form-errors';
+import {
   planSchema,
   asBenefitMatrix,
   type BenefitMatrix,
@@ -49,27 +57,6 @@ import {
 
 const STEPS = ['basics', 'fees', 'benefits', 'review'] as const;
 type StepKey = (typeof STEPS)[number];
-
-// F2 polish round 2 — map a zod-rejected field path back to the wizard
-// step that owns it. Used when `planSchema.safeParse(draft)` fails at
-// final submit to flag the offending step with `status='error'` on the
-// Stepper. Fall-through default = basics (covers plan_id, plan_year,
-// plan_name, description, plan_category, member_type_scope, sort_order).
-function zodFieldToStep(fieldPath: PropertyKey | undefined): StepKey {
-  const field = typeof fieldPath === 'string' ? fieldPath : '';
-  if (field.startsWith('benefit_matrix')) return 'benefits';
-  if (
-    field === 'annual_fee_minor_units' ||
-    field === 'min_turnover_minor_units' ||
-    field === 'max_turnover_minor_units' ||
-    field === 'max_member_age' ||
-    field === 'max_duration_years' ||
-    field === 'includes_corporate_plan_id'
-  ) {
-    return 'fees';
-  }
-  return 'basics';
-}
 
 // R4-S4 — route through `asBenefitMatrix` so the empty wizard initial
 // state satisfies the partnership↔category integrity invariant. Default
@@ -114,6 +101,10 @@ function emptyDraft(currentYear: number): PlanSchemaInput {
 export interface PlanFormWizardProps {
   readonly currentYear: number;
   readonly currencyPrefix: string;
+  /** Tenant currency (ISO 4217) for the Review step's fee — default THB. */
+  readonly currencyCode?: string;
+  /** Tenant VAT rate in percent (7 for 7 %) for the fee hint; `null` when unknown. */
+  readonly vatRatePercent?: number | null;
   readonly submitting?: boolean;
   readonly initialValues?: PlanSchemaInput;
   readonly onSubmit: (draft: PlanSchemaInput) => Promise<void> | void;
@@ -123,6 +114,8 @@ export interface PlanFormWizardProps {
 export function PlanFormWizard({
   currentYear,
   currencyPrefix,
+  currencyCode = 'THB',
+  vatRatePercent = null,
   submitting = false,
   initialValues,
   onSubmit,
@@ -131,16 +124,17 @@ export function PlanFormWizard({
   const t = useTranslations('admin.plans.create');
   const tLabels = useTranslations('admin.plans.create.labels');
   const tButtons = useTranslations('admin.plans.create.buttons');
+  const tErrors = useTranslations('admin.plans.create.fieldErrors');
+  const locale = useLocale();
   const { categoryOptions: CATEGORY_OPTIONS, memberTypeOptions: MEMBER_TYPE_OPTIONS } = usePlanOptions();
 
   const [step, setStep] = useState<StepKey>('basics');
   const [draft, setDraft] = useState<PlanSchemaInput>(
     () => initialValues ?? emptyDraft(currentYear),
   );
-  // F2 polish round 2 — which step (if any) failed final zod validation
-  // at submit. Drives `status='error'` on the Stepper so users see the
-  // red circle + AlertCircle on the offending step instead of being
-  // stranded on Review with only a generic "fix validation errors" toast.
+  // Which step (if any) failed validation on Next / Save. Drives
+  // `status='error'` on the Stepper and turns on the per-field messages
+  // for that step. Cleared whenever the user moves between steps.
   const [failedStep, setFailedStep] = useState<StepKey | null>(null);
 
   // F2 polish round 2 — focus management on step transitions (WCAG 2.4.3
@@ -180,34 +174,70 @@ export function PlanFormWizard({
   }
 
   function update<K extends keyof PlanSchemaInput>(key: K, value: PlanSchemaInput[K]): void {
-    setDraft((prev) => ({ ...prev, [key]: value }));
+    setDraft((prev) => {
+      const next = { ...prev, [key]: value };
+      // A corporate plan cannot bundle another plan, and the bundle input
+      // is only rendered for partnership plans — drop a bundle left over
+      // from a partnership draft so it can't fail validation unseen.
+      if (key === 'plan_category' && value === 'corporate') {
+        next.includes_corporate_plan_id = null;
+      }
+      return next;
+    });
   }
 
   const stepIndex = STEPS.indexOf(step);
 
-  // Step-level validity — minimal gate to enable Next.
-  const stepValid = useMemo<Record<StepKey, boolean>>(() => {
-    const basics =
-      /^[a-z0-9-]{1,63}$/.test(draft.plan_id) &&
-      Number.isInteger(draft.plan_year) &&
-      draft.plan_year >= 2000 &&
-      draft.plan_year <= 2100 &&
-      (draft.plan_name.en?.trim().length ?? 0) > 0 &&
-      (draft.description.en?.trim().length ?? 0) > 0;
-    const fees =
-      Number.isInteger(draft.annual_fee_minor_units) &&
-      draft.annual_fee_minor_units >= 0;
-    const benefits = draft.benefit_matrix !== undefined;
-    const finalParse = planSchema.safeParse(draft);
+  // Per-field messages from the authoritative schema (incl. cross-field
+  // rules). Recomputed on every edit, so a fixed field's message clears as
+  // soon as its value is valid.
+  const fieldErrors = useMemo(() => planFormFieldErrors(draft), [draft]);
+  const stepHasErrors = useMemo<Record<StepKey, boolean>>(() => {
+    const fields = Object.keys(fieldErrors) as PlanFormField[];
+    const has = (s: StepKey) => fields.some((f) => planFieldStep(f) === s);
     return {
-      basics,
-      fees: basics && fees,
-      benefits: basics && fees && benefits,
-      review: finalParse.success,
+      basics: has('basics'),
+      fees: has('fees'),
+      benefits: has('benefits'),
+      review: fields.length > 0,
     };
-  }, [draft]);
+  }, [fieldErrors]);
 
-  const canProceed = stepValid[step];
+  // After a failed Next / Save, move focus to the first invalid field of the
+  // step (WCAG 3.3.1): it announces its message via aria-describedby, so the
+  // messages don't need role="alert" (several at once would talk over each
+  // other, and they would re-fire on every keystroke while fixing a value).
+  const [focusErrorRequest, setFocusErrorRequest] = useState(0);
+  useEffect(() => {
+    if (focusErrorRequest === 0) return;
+    const refForStep: Record<StepKey, React.RefObject<HTMLElement | null>> = {
+      basics: basicsRef,
+      fees: feesRef,
+      benefits: benefitsRef,
+      review: reviewRef,
+    };
+    refForStep[step].current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"], [data-field-error]')
+      ?.focus();
+    // Only a new request re-runs this; `step` is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusErrorRequest]);
+
+  // Messages show only on the step whose Next / Save failed.
+  function fieldError(field: PlanFormField): string | undefined {
+    const key = fieldErrors[field];
+    if (key === undefined || failedStep !== step) return undefined;
+    return tErrors(key);
+  }
+
+  function goNext(): void {
+    if (stepHasErrors[step]) {
+      setFailedStep(step);
+      setFocusErrorRequest((n) => n + 1);
+      return;
+    }
+    navigateToStep(STEPS[stepIndex + 1]!);
+  }
 
   // Canonical Stepper primitive (`@/components/ui/stepper`) — replaces the
   // earlier ad-hoc `<ol>` text list so F2 plan creation shares the visual
@@ -222,7 +252,7 @@ export function PlanFormWizard({
         id: s,
         label: t(`steps.${s}`),
         status:
-          s === failedStep
+          s === failedStep && stepHasErrors[s]
             ? 'error'
             : idx < stepIndex
               ? 'complete'
@@ -230,19 +260,20 @@ export function PlanFormWizard({
                 ? 'current'
                 : 'upcoming',
       })),
-    [stepIndex, failedStep, t],
+    [stepIndex, failedStep, stepHasErrors, t],
   );
 
   async function handleSubmit(): Promise<void> {
     const parsed = planSchema.safeParse(draft);
     if (!parsed.success) {
-      // Map the first zod issue back to the wizard step that owns it
-      // and jump the user there so they can fix it. The useEffect on
-      // [step, failedStep] clears the badge as soon as they arrive.
-      const firstIssuePath = parsed.error.issues[0]?.path[0];
-      const targetStep = zodFieldToStep(firstIssuePath);
+      // Jump to the first step (in wizard order) with an invalid field and
+      // show its messages there.
+      const targetStep =
+        (['basics', 'fees', 'benefits'] as const).find((s) => stepHasErrors[s]) ??
+        'basics';
       setFailedStep(targetStep);
       setStep(targetStep);
+      setFocusErrorRequest((n) => n + 1);
       return;
     }
     await onSubmit(parsed.data);
@@ -288,8 +319,10 @@ export function PlanFormWizard({
                 value={draft.plan_id}
                 onChange={(e) => update('plan_id', e.target.value.toLowerCase())}
                 placeholder={tLabels('planIdPlaceholder')}
+                {...invalidProps('plan_id', fieldError('plan_id'))}
               />
               <p className="text-muted-foreground text-sm">{tLabels('planIdHelp')}</p>
+              <FieldError field="plan_id" message={fieldError('plan_id')} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="plan_year">{tLabels('planYear')}</Label>
@@ -302,7 +335,9 @@ export function PlanFormWizard({
                 onChange={(e) =>
                   update('plan_year', Number.parseInt(e.target.value, 10) || currentYear)
                 }
+                {...invalidProps('plan_year', fieldError('plan_year'))}
               />
+              <FieldError field="plan_year" message={fieldError('plan_year')} />
             </div>
             <div className="space-y-1">
               <Label>{tLabels('planCategory')}</Label>
@@ -354,6 +389,7 @@ export function PlanFormWizard({
             value={draft.plan_name}
             onChange={(next) => update('plan_name', next as PlanSchemaInput['plan_name'])}
             required
+            {...optionalError(fieldError('plan_name'))}
           />
           <LocaleTextInput
             label={tLabels('description')}
@@ -362,6 +398,7 @@ export function PlanFormWizard({
             multiline
             maxLength={2000}
             required
+            {...optionalError(fieldError('description'))}
           />
           <div className="space-y-1">
             <Label htmlFor="sort_order">{tLabels('sortOrder')}</Label>
@@ -374,8 +411,10 @@ export function PlanFormWizard({
               onChange={(e) =>
                 update('sort_order', Number.parseInt(e.target.value, 10) || 0)
               }
+              {...invalidProps('sort_order', fieldError('sort_order'))}
             />
             <p className="text-muted-foreground text-sm">{tLabels('sortOrderHelp')}</p>
+            <FieldError field="sort_order" message={fieldError('sort_order')} />
           </div>
         </section>
       ) : null}
@@ -393,6 +432,12 @@ export function PlanFormWizard({
             onChange={(n) => update('annual_fee_minor_units', n ?? 0)}
             prefix={currencyPrefix}
             required
+            helpText={
+              vatRatePercent === null
+                ? tLabels('annualFeeHelpNoRate')
+                : tLabels('annualFeeHelp', { rate: vatRatePercent })
+            }
+            {...optionalError(fieldError('annual_fee_minor_units'))}
           />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <MoneyInput
@@ -400,12 +445,14 @@ export function PlanFormWizard({
               value={draft.min_turnover_minor_units}
               onChange={(n) => update('min_turnover_minor_units', n)}
               prefix={currencyPrefix}
+              {...optionalError(fieldError('min_turnover_minor_units'))}
             />
             <MoneyInput
               label={tLabels('maxTurnover')}
               value={draft.max_turnover_minor_units}
               onChange={(n) => update('max_turnover_minor_units', n)}
               prefix={currencyPrefix}
+              {...optionalError(fieldError('max_turnover_minor_units'))}
             />
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -420,7 +467,9 @@ export function PlanFormWizard({
                   const v = Number.parseInt(e.target.value, 10);
                   update('max_duration_years', Number.isFinite(v) && v > 0 ? v : null);
                 }}
+                {...invalidProps('max_duration', fieldError('max_duration_years'))}
               />
+              <FieldError field="max_duration" message={fieldError('max_duration_years')} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="max_member_age">{tLabels('maxMemberAge')}</Label>
@@ -434,7 +483,9 @@ export function PlanFormWizard({
                   const v = Number.parseInt(e.target.value, 10);
                   update('max_member_age', Number.isFinite(v) && v > 0 ? v : null);
                 }}
+                {...invalidProps('max_member_age', fieldError('max_member_age'))}
               />
+              <FieldError field="max_member_age" message={fieldError('max_member_age')} />
             </div>
           </div>
           {draft.plan_category === 'partnership' ? (
@@ -450,7 +501,9 @@ export function PlanFormWizard({
                   )
                 }
                 placeholder={tLabels('planIdPlaceholder')}
+                {...invalidProps('bundle', fieldError('includes_corporate_plan_id'))}
               />
+              <FieldError field="bundle" message={fieldError('includes_corporate_plan_id')} />
             </div>
           ) : null}
         </section>
@@ -463,6 +516,12 @@ export function PlanFormWizard({
           className="space-y-4 focus-visible:outline-none"
         >
           <h2 className="text-lg font-semibold">{t('steps.benefits')}</h2>
+          {/* No control owns the matrix-level message, so it takes focus itself. */}
+          <FieldError
+            field="benefit_matrix"
+            message={fieldError('benefit_matrix')}
+            focusable
+          />
           <BenefitMatrixEditor
             value={draft.benefit_matrix}
             onChange={(next) => update('benefit_matrix', next)}
@@ -494,21 +553,33 @@ export function PlanFormWizard({
               </div>
               <div>
                 <dt className="text-muted-foreground">{tLabels('planCategory')}</dt>
-                <dd>{draft.plan_category}</dd>
+                <dd>
+                  {CATEGORY_OPTIONS.find((o) => o.value === draft.plan_category)?.label ??
+                    draft.plan_category}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{tLabels('annualFee')}</dt>
                 <dd>
-                  {currencyPrefix} {(draft.annual_fee_minor_units / 100).toLocaleString()}
+                  {Number.isInteger(draft.annual_fee_minor_units)
+                    ? formatSatangThb(
+                        BigInt(draft.annual_fee_minor_units),
+                        locale,
+                        currencyCode,
+                      )
+                    : '—'}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{tLabels('memberTypeScope')}</dt>
-                <dd>{draft.member_type_scope}</dd>
+                <dd>
+                  {MEMBER_TYPE_OPTIONS.find((o) => o.value === draft.member_type_scope)
+                    ?.label ?? draft.member_type_scope}
+                </dd>
               </div>
             </dl>
           </div>
-          {!stepValid.review ? (
+          {stepHasErrors.review ? (
             <p className="text-destructive text-sm" role="alert">
               {t('errors.stepValidation')}
             </p>
@@ -538,18 +609,14 @@ export function PlanFormWizard({
             </Button>
           ) : null}
           {step !== 'review' ? (
-            <Button
-              type="button"
-              onClick={() => navigateToStep(STEPS[stepIndex + 1]!)}
-              disabled={!canProceed || submitting}
-            >
+            <Button type="button" onClick={goNext} disabled={submitting}>
               {tButtons('next')}
             </Button>
           ) : (
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={!stepValid.review || submitting}
+              disabled={submitting}
               aria-busy={submitting}
             >
               {submitting ? (
@@ -565,5 +632,41 @@ export function PlanFormWizard({
         </div>
       </div>
     </div>
+  );
+}
+
+// `aria-invalid` + `aria-describedby` for a raw <Input> whose message is
+// rendered by <FieldError field={id}>.
+function invalidProps(
+  id: string,
+  message: string | undefined,
+): { 'aria-invalid'?: true; 'aria-describedby'?: string } {
+  return message ? { 'aria-invalid': true, 'aria-describedby': `${id}-error` } : {};
+}
+
+// `exactOptionalPropertyTypes` — spread the `error` prop only when set.
+function optionalError(message: string | undefined): { error?: string } {
+  return message ? { error: message } : {};
+}
+
+function FieldError({
+  field,
+  message,
+  focusable = false,
+}: {
+  readonly field: string;
+  readonly message: string | undefined;
+  /** For a message no input points at — it receives the error focus itself. */
+  readonly focusable?: boolean;
+}) {
+  if (!message) return null;
+  return (
+    <p
+      id={`${field}-error`}
+      className="text-destructive text-sm"
+      {...(focusable ? { tabIndex: -1, 'data-field-error': true } : {})}
+    >
+      {message}
+    </p>
   );
 }

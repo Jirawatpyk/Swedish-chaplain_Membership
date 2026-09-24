@@ -198,6 +198,52 @@ export function addVat(a: Money, vatRate: number): Money {
   return asMoney(withVat, a.currency_code);
 }
 
+// Tax-policy VAT rates arrive as the `numeric(5,4)` column rendered to a
+// decimal string ("0.0700" = 7 %). Parsed to an integer count of
+// ten-thousandths so gross amounts never touch floating point.
+const VAT_RATE_RAW = /^0(?:\.(\d{1,4}))?$/;
+const VAT_SCALE = 10_000n;
+
+function vatRateTenThousandths(vatRateRaw: string): bigint {
+  const match = VAT_RATE_RAW.exec(vatRateRaw);
+  if (!match) {
+    throw new InvalidMoneyError(
+      `VAT rate must be a decimal string in [0, 1) with at most 4 places, got ${JSON.stringify(vatRateRaw)}`,
+    );
+  }
+  // "0.07" and "0.0700" are the same rate — pad to 4 places before reading.
+  return BigInt((match[1] ?? '').padEnd(4, '0'));
+}
+
+/**
+ * VAT-inclusive total of a fee, in integer minor units: fee × (1 + rate),
+ * rounded half-up, computed in `bigint` so a non-binary-clean rate (8.5 %,
+ * 13.5 %) cannot pick up IEEE-754 error. Thai-tax amounts are legal figures
+ * (F2 FR-002 / FR-005). Shared by the plans list and plan detail pages.
+ *
+ * Example:
+ *   grossWithVatMinorUnits(3_600_000, '0.0700') // → 3_852_000 (36,000 → 38,520 THB)
+ *
+ * @throws InvalidMoneyError on a malformed rate or a non-integer / negative fee
+ */
+export function grossWithVatMinorUnits(
+  feeMinorUnits: number,
+  vatRateRaw: string,
+): number {
+  const fee = BigInt(asMinorUnits(feeMinorUnits));
+  const rate = vatRateTenThousandths(vatRateRaw);
+  return Number((fee * (VAT_SCALE + rate) + VAT_SCALE / 2n) / VAT_SCALE);
+}
+
+/**
+ * The VAT rate as a percentage for display ("0.0700" → 7, "0.0850" → 8.5).
+ *
+ * @throws InvalidMoneyError on a malformed rate
+ */
+export function vatRatePercent(vatRateRaw: string): number {
+  return Number(vatRateTenThousandths(vatRateRaw)) / 100;
+}
+
 /**
  * Format a Money value for display using `Intl.NumberFormat` in the
  * requested BCP-47 locale. The formatter knows each currency's decimal

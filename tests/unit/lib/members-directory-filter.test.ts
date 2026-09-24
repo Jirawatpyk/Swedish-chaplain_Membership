@@ -83,6 +83,38 @@ describe('parseDirectoryFilterFromParams', () => {
     expect(all.hasFilters).toBe(false);
   });
 
+  // The plan detail page links with ?plan_id=&plan_year= so the list matches
+  // its per-(plan, year) member count: renewals move members to the current
+  // year's plan row, and un-renewed members stay on the old year's row.
+  it('narrows plan_id to one plan year when plan_year is a valid year', () => {
+    const f = parseDirectoryFilterFromParams({ plan_id: 'diamond', plan_year: '2026' });
+    expect(f.planId).toBe('diamond');
+    expect(f.planYear).toBe(2026);
+    expect(f.hasFilters).toBe(true);
+  });
+
+  it.each([
+    ['non-numeric', 'abc'],
+    ['not a plain year', '2026.0'],
+    ['out of range', '1999'],
+    ['empty', ''],
+  ])('ignores a %s plan_year', (_label, plan_year) => {
+    const f = parseDirectoryFilterFromParams({ plan_id: 'diamond', plan_year });
+    expect(f.planYear).toBeUndefined();
+    expect(f.planId).toBe('diamond');
+  });
+
+  it('ignores plan_year without a plan (not an active filter on its own)', () => {
+    for (const plan_id of [undefined, 'all']) {
+      const f = parseDirectoryFilterFromParams({
+        ...(plan_id ? { plan_id } : {}),
+        plan_year: '2026',
+      });
+      expect(f.planYear).toBeUndefined();
+      expect(f.hasFilters).toBe(false);
+    }
+  });
+
   it('honours the needs-invite chip and counts it as an active filter', () => {
     const f = parseDirectoryFilterFromParams({ portal: 'needs_invite' });
     expect(f.portalNeedsInvite).toBe(true);
