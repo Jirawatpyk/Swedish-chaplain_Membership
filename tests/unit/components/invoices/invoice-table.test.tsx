@@ -38,6 +38,7 @@ const messages = {
           issueDate: 'Issued',
           dueDate: 'Due',
           total: 'Total',
+          totalPending: 'Not calculated until issued',
           actions: 'Actions',
           buyer: 'Buyer',
           method: 'Method',
@@ -1020,6 +1021,8 @@ describe('<InvoicesTable> — draft total', () => {
     const cell = screen.getByTestId('invoice-total');
     expect(cell).toHaveTextContent('—');
     expect(cell).not.toHaveTextContent('0.00');
+    // The dash is explained to screen readers.
+    expect(cell).toHaveTextContent('Not calculated until issued');
   });
 
   it('an issued invoice keeps its grouped THB total', () => {
