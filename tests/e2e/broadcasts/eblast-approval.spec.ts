@@ -19,10 +19,10 @@
  *
  * Run: `pnpm test:e2e tests/e2e/broadcasts/eblast-approval.spec.ts --workers=1 --project=chromium`.
  */
-import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { signInAsAdmin } from '../helpers/admin-session';
 import { seedMemberDetailBroadcast, wipeE2EMemberBroadcasts } from '../helpers/broadcasts-seed';
+import { formatAndSendAsMarketing } from '../helpers/eblast-approval-flow';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
@@ -84,26 +84,10 @@ test.describe('F119 T063 — the staff format surface', () => {
  *
  * Same flag requirement as the staff case (T152 gates the first edge), and
  * the member is `e2e-member-empty` — the in-good-standing persona that owns
- * the seeded row and has a portal user.
+ * the seeded row and has a portal user. The staff half is
+ * `formatAndSendAsMarketing` (`helpers/eblast-approval-flow.ts`), shared with
+ * the T086a a11y scan.
  */
-async function formatAndSendAsMarketing(page: Page, broadcastId: string, subject: string): Promise<void> {
-  await signInAsAdmin(page);
-  await page.goto(`/admin/broadcasts/${broadcastId}`);
-  const start = page.locator('[data-testid="eblast-start-version"]:visible');
-  await expect(start, 'Start is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?').toBeVisible();
-  await start.click();
-  await page.locator('[data-testid="eblast-start-version-confirm"]:visible').click();
-  const workspace = page.locator('[data-testid="eblast-format-workspace"]:visible');
-  await expect(workspace).toBeVisible({ timeout: 60_000 });
-  await workspace.locator('#eblast-format-subject').fill(subject);
-  await workspace.locator('#eblast-format-note').fill('We moved the date into the heading.');
-  await workspace.locator('[data-testid="eblast-format-save"]').click();
-  await expect(workspace.getByText(/Saved at/)).toBeVisible();
-  await workspace.locator('[data-testid="eblast-send-to-member"]').click();
-  await page.locator('[data-testid="eblast-send-to-member-confirm"]:visible').click();
-  await expect(page.locator('[data-testid="eblast-whose-turn"]:visible')).toHaveText(/Member/, { timeout: 30_000 });
-}
-
 test.describe('F119 T086 — the member sign-off view', () => {
   test('@eblast member approves on a 375 px viewport', async ({ page, browser }) => {
     expect(MEMBER_PASSWORD, 'E2E_MEMBER_PASSWORD_EMPTY is required to sign in as the owning member').toBeTruthy();

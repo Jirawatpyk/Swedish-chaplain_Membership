@@ -2378,23 +2378,44 @@ match both the field and the message. Alert rules on the 500 class key on the pr
 
 ### 28.6 Performance budgets (T160a)
 
-**UNVERIFIED — not yet measured.** T160a measures each row **once**, on the maintainer's running
-dev server (`pnpm dev` on :3100 — never started or stopped by an agent), each route **alone** and
-never inside a folder run (a folder run puts 100+ files on one Neon compute and can quadruple a
-p95; the pre-push hook exports `INTEGRATION_FOLDER_RUN=1`). A budget that is not met is recorded
-here as UNVERIFIED **with the measured number and the date** — never dropped, never re-stated as
-passed.
+**Measured once by T160a on 2026-09-24 — on the DEV server, so the four route budgets stay
+UNVERIFIED.** The numbers below come from the maintainer's running `next dev` (Turbopack, no
+production build, :3100 — never started or stopped by an agent), measured **alone** (no vitest,
+integration or e2e job running) and never inside a folder run (a folder run puts 100+ files on one
+Neon compute and can quadruple a p95; the pre-push hook exports `INTEGRATION_FOLDER_RUN=1`). A
+budget that is not met is recorded here as UNVERIFIED **with the measured number and the date** —
+never dropped, never re-stated as passed.
 
-| Budget | Target | Read from | Measured | Date | Status |
+**How the routes were timed.** A one-off Playwright script (kept outside the repo) signed in
+through the e2e fixtures (`e2e-admin`; `e2e-member-empty` in its own context) and called each route
+with `fetch` from the signed-in page, timing `performance.now()` around the request and the body
+read. That is the **client-observed round trip on localhost**, an upper bound on the server's own
+time: the `broadcasts_preview_render_ms` / `broadcasts_member_decide_ms` histograms are not
+readable from a workstation. One E-Blast owned by `e2e-member-empty` was cycled 11 times through
+start → save ×2 → preview ×2 → send → approve → schedule (the promotion) → reschedule → withdraw;
+cycle 0 was the warm-up and is discarded, so N counts cycles 1–10. Requests were spaced 2.6 s apart
+to stay under the 30 / 60 s staff-write bucket. Schedule dates were in 2027 (never `send_now`), and
+every row the persona owned was deleted afterwards. p95 is nearest-rank (with N = 20, the 19th of 20).
+"Alone" means no test job was running. Another agent was saving files under `src/` during the run,
+and Turbopack recompiles on save, so the run was not isolated from hot reloads. The outliers below
+are left in with no cause assigned.
+
+**Why the dev numbers are high.** Every request on this workstation crosses the internet to Neon
+`ap-southeast-1` for each SQL round trip (the session lookup, the RLS `SET LOCAL`, the lock, the
+reads and writes), and `next dev` runs unminified with dev-only checks. In production, Vercel `sin1`
+sits in the same region as Neon, so a round trip is ~1–2 ms instead of tens. That is a reason to
+**re-measure on a preview deployment or in production**, not a reason to call these rows met.
+
+| Budget | Target | Read from | Measured (dev server) | Date | Status |
 |---|---|---|---|---|---|
-| `POST /api/admin/broadcasts/preview` server p95 | < 400 ms | `broadcasts_preview_render_ms{surface="staff"}` + the route timing | — | — | **UNVERIFIED (not yet measured)** |
-| `PATCH /api/admin/broadcasts/[id]/version` server p95 | < 400 ms | route timing (no histogram — `broadcasts_version_saved_total` counts, it does not time) | — | — | **UNVERIFIED (not yet measured)** |
-| `POST /api/broadcasts/[id]/decision` server p95 | < 400 ms | `broadcasts_member_decide_ms` + the route timing | — | — | **UNVERIFIED (not yet measured)** |
-| `POST /api/admin/broadcasts/[id]/schedule` server p95 | < 400 ms | route timing (the `broadcasts.schedule.confirm` span; no histogram) | — | — | **UNVERIFIED (not yet measured)** |
-| Test copy (`POST /api/broadcasts/test-copy` / `/api/admin/broadcasts/test-copy`) end to end | < 3 s | route timing | — | — | **UNVERIFIED (not yet measured)** |
-| Compose LCP — `/portal/broadcasts/new` | < 2.5 s | browser (Web Vitals) | — | — | **UNVERIFIED (not yet measured)** |
-| Compose INP — `/portal/broadcasts/new` | < 200 ms | browser (Web Vitals) | — | — | **UNVERIFIED (not yet measured)** |
-| Compose CLS — `/portal/broadcasts/new` | < 0.1 | browser (Web Vitals) | — | — | **UNVERIFIED (not yet measured)** |
+| `POST /api/admin/broadcasts/preview` server p95 | < 400 ms | client round trip on localhost (upper bound; `broadcasts_preview_render_ms{surface="staff"}` not readable locally) | N = 20 · median **662 ms** · p95 **722 ms** · max 5,688 ms (one outlier) | 2026-09-24 | **UNVERIFIED — measured 722 ms p95 on the dev server, 2026-09-24** |
+| `PATCH /api/admin/broadcasts/[id]/version` server p95 | < 400 ms | client round trip on localhost (no histogram — `broadcasts_version_saved_total` counts, it does not time) | N = 20 · median **921 ms** · p95 **1,172 ms** | 2026-09-24 | **UNVERIFIED — measured 1,172 ms p95 on the dev server, 2026-09-24** |
+| `POST /api/broadcasts/[id]/decision` server p95 | < 400 ms | client round trip on localhost (`broadcasts_member_decide_ms` not readable locally) | N = 20 (10 `approved` + 10 `approval_withdrawn`) · median **1,851 ms** · p95 **1,981 ms**. Split: approved median 1,882 / max 1,977; withdrawn median 1,826 / max 2,046 | 2026-09-24 | **UNVERIFIED — measured 1,981 ms p95 on the dev server, 2026-09-24** |
+| `POST /api/admin/broadcasts/[id]/schedule` server p95 | < 400 ms | client round trip on localhost (the `broadcasts.schedule.confirm` span; no histogram) | N = 20 (10 promotions `member_approved → approved` + 10 reschedules on `approved`) · median **1,172 ms** · p95 **1,412 ms**. Split: promotion median 1,345 / max 1,575; reschedule median 1,078 / max 1,140 | 2026-09-24 | **UNVERIFIED — measured 1,412 ms p95 on the dev server, 2026-09-24** |
+| Test copy (`POST /api/admin/broadcasts/test-copy`) end to end | < 3 s | client round trip on localhost, to the `202` with the Resend message id | N = 1 · **1,227 ms**. Two real test copies went to the e2e admin's own address; the first was not timed (the script expected 200, the route answers 202) | 2026-09-24 | **Met on N = 1 on the dev server** — a single sample is not a p95; re-measure before quoting it. The member route `/api/broadcasts/test-copy` was not timed |
+| Compose LCP — `/portal/broadcasts/new` | < 2.5 s | browser, `PerformanceObserver('largest-contentful-paint')`, headless Chromium, Desktop Chrome profile (1280 × 720), no CPU or network throttling | 5 warm loads (a cold compile load was discarded at 8,164 ms): 3,008 · 2,708 · 2,524 · 2,648 · 2,172 ms. Median **2,648 ms**, worst 3,008 ms. The LCP element is a muted helper `<p>` | 2026-09-24 | **UNVERIFIED — measured 2,648 ms median (worst 3,008 ms) on the dev server, 2026-09-24** |
+| Compose INP — `/portal/broadcasts/new` | < 200 ms | browser, Event Timing (`durationThreshold: 16`), worst interaction per load across 36 real interactions (typing into the subject and the editor, one toolbar click) | worst per load: 112 · 88 · 88 · 64 · 64 ms. Worst overall **112 ms** | 2026-09-24 | **Met on the dev server** (unthrottled desktop — not a claim about a mid-range phone) |
+| Compose CLS — `/portal/broadcasts/new` | < 0.1 | browser, `layout-shift` entries without `hadRecentInput`, summed over load + interactions | 0.012 · 0.001 · 0 · 0 · 0.012. Worst **0.012** | 2026-09-24 | **Met on the dev server** |
 
 SC-008 (dashboard counts + first page < 2 s at 1,000 E-Blasts) is not a T160a row: it is asserted
 by `tests/integration/broadcasts/eblast-dashboard-pagination.test.ts` (T114), in a single-file

@@ -23,9 +23,13 @@
  *                                sign-off compare view (T086a); a screen takes
  *                                the pass in EVERY delivery that changes it.
  *
- * `/admin/broadcasts/[id]` is deliberately absent: T063 builds it in PR-2 and
- * T086a scans it there. Gating PR-1 on a screen PR-1 does not build would be an
- * unsatisfiable merge gate.
+ * `/admin/broadcasts/[id]` is absent from the PR-1 list: T063 builds it in PR-2,
+ * so it is scanned by the **T086a** block at the end of this file, together
+ * with the sign-off view of `/portal/broadcasts/[id]` (T086). Both are scanned
+ * in a REAL approval stage the state machine produced (driven through the UI by
+ * `helpers/eblast-approval-flow.ts`), not in the pre-approval shape. The third
+ * PR-2 screen, the rebuilt staff queue, is screen 3 below plus the U2, B1 and
+ * H4 cases — re-run, not duplicated.
  *
  * **axe does not enter the body view's frame.** `PreviewSurface` puts the
  * rendered email in an `<iframe srcdoc sandbox="">`; the empty sandbox
@@ -54,6 +58,10 @@ import {
   seedMemberDetailBroadcast,
   wipeE2EMemberBroadcasts,
 } from '../helpers/broadcasts-seed';
+import {
+  formatAndSendAsMarketing,
+  startFormattedVersionAsMarketing,
+} from '../helpers/eblast-approval-flow';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -559,5 +567,124 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
         'preview shares the editor row at 1280 px',
       ).toBeLessThan(wideSubject!.y + wideSubject!.height);
     });
+  });
+});
+
+/**
+ * WCAG 1.4.10 by hand — axe has no horizontal-scroll rule (T155 U2), so a
+ * clean scan says nothing about reflow. `scrollWidth` is the document's own
+ * content width: an overflowing child widens it.
+ */
+async function expectNoHorizontalScroll(page: Page): Promise<void> {
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(
+    scrollWidth,
+    'no horizontal page scroll at 320 px (WCAG 1.4.10)',
+  ).toBeLessThanOrEqual(REFLOW_VIEWPORT.width);
+}
+
+/**
+ * WCAG 4.1.2 by hand for the frames the scan excludes (header note: axe cannot
+ * enter a `sandbox=""` frame). Counted, not `.first()`: a screen that renders
+ * one frame where it should render two would otherwise pass.
+ */
+async function expectFramesTitled(page: Page, expected: number): Promise<void> {
+  const frames = page.locator('iframe[srcdoc]:visible');
+  await expect(frames).toHaveCount(expected);
+  for (let i = 0; i < expected; i++) {
+    await expect(frames.nth(i)).toHaveAttribute('title', /.+/);
+    await expect(frames.nth(i)).toHaveAttribute('sandbox', '');
+  }
+}
+
+/**
+ * F119 T086a (FR-051, US6) — the PR-2 half of the FR-051 pass: the same bar
+ * T139 applied to PR-1's screens (zero serious or critical at 320 px, no
+ * horizontal scroll), on the two screens PR-2 builds or changes that the block
+ * above cannot reach in their approval shape:
+ *
+ *   - the staff format surface `/admin/broadcasts/[id]` (T063) in `in_design`,
+ *     with the working copy open in the workspace;
+ *   - the member sign-off view of `/portal/broadcasts/[id]` (T086) in
+ *     `awaiting_member_approval`, with a sent version to compare.
+ *
+ * The stage is produced by the state machine (the UI flow marketing uses —
+ * `helpers/eblast-approval-flow.ts`), and each anchor is an element only that
+ * stage renders, awaited before axe runs: a scan of the pre-approval body view
+ * under this test's name would be the wrong screen passing for the right one.
+ *
+ * Needs `FEATURE_EBLAST_MEMBER_APPROVAL=true` on the server (the flag gates the
+ * first edge); without it the flow fails at "Start is absent", not skipped.
+ *
+ * The third PR-2 screen, the rebuilt queue, is screen 3 + U2 + B1 + H4 above.
+ */
+test.describe('@a11y F119 T086a — the approval screens PR-2 builds (320 px)', () => {
+  test.skip(
+    staffSkip || memberSkip,
+    'Set E2E_ADMIN_EMAIL/PASSWORD and E2E_MEMBER_EMAIL_EMPTY/PASSWORD_EMPTY — both halves of the round are needed',
+  );
+
+  test('T086a — staff format surface /admin/broadcasts/[id] in in_design', async ({
+    page,
+  }, testInfo) => {
+    await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
+    const broadcastId = await seedMemberDetailBroadcast(MEMBER_EMAIL);
+    expect(broadcastId, 'DATABASE_URL + E2E_MEMBER_EMAIL_EMPTY are required to seed the E-Blast').not.toBeNull();
+
+    await startFormattedVersionAsMarketing(page, broadcastId!);
+
+    // A fresh load at 320 px: the stage is server state, so it survives.
+    await scanScreen(
+      page,
+      testInfo,
+      `/admin/broadcasts/${broadcastId}`,
+      (p) => p.locator('[data-testid="eblast-format-workspace"]:visible'),
+      { exclude: 'iframe[srcdoc]' },
+    );
+    // It is marketing's turn — the in_design stage, not a read-only view.
+    await expect(page.locator('[data-testid="eblast-whose-turn"]:visible')).toHaveText(/Marketing/);
+    await expect(
+      page.locator('[data-testid="eblast-format-workspace"]:visible [contenteditable="true"]'),
+    ).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    // The member's original beside the working copy.
+    await expect(page.locator('[data-testid="eblast-member-original"]:visible')).toBeVisible();
+    const frames = await page.locator('iframe[srcdoc]:visible').count();
+    expect(frames, 'the format surface renders at least one sandboxed preview').toBeGreaterThan(0);
+    await expectFramesTitled(page, frames);
+  });
+
+  test('T086a — portal sign-off view /portal/broadcasts/[id] in awaiting_member_approval', async ({
+    page,
+    browser,
+  }, testInfo) => {
+    await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
+    const broadcastId = await seedMemberDetailBroadcast(MEMBER_EMAIL);
+    expect(broadcastId, 'DATABASE_URL + E2E_MEMBER_EMAIL_EMPTY are required to seed the E-Blast').not.toBeNull();
+
+    // Marketing's half in its OWN context, so the member scan below runs on
+    // the fixture `page` — the one carrying the pageerror net. The staff
+    // page has no such net; a client error there would not fail this case.
+    const staff = await browser.newContext();
+    try {
+      await formatAndSendAsMarketing(await staff.newPage(), broadcastId!, '[E2E] T086a sign-off scan');
+    } finally {
+      await staff.close();
+    }
+
+    await signInAsPortalMember(page);
+    await scanScreen(
+      page,
+      testInfo,
+      `/portal/broadcasts/${broadcastId}`,
+      (p) => p.locator('[data-testid="eblast-formatted-version"]:visible'),
+      { exclude: 'iframe[srcdoc]' },
+    );
+    // The sign-off actions render only while the member is being asked.
+    await expect(page.locator('[data-testid="eblast-approve"]:visible')).toBeVisible();
+    await expect(page.locator('[data-testid="eblast-member-original"]:visible')).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    // FR-008: the formatted version and the original, each in its own frame.
+    await expectFramesTitled(page, 2);
   });
 });
