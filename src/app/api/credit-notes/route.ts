@@ -93,6 +93,11 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   // 8A — a refund is in flight on this invoice. 409 Conflict: transient, the
   // admin retries once the refund settles.
   refund_in_progress: 409,
+  // A manual CN on an invoice whose online (Stripe) payment is still
+  // refundable, sent without the staff acknowledgement. 422, like
+  // `membership_effect_required`: well-formed, but the use-case needs the
+  // staff's declared intent. Not transient — retrying without it changes nothing.
+  online_payment_refundable: 422,
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -157,6 +162,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // F-2 (2026-07-08) — optional; the schema itself enforces the
     // enum shape + the membership_effect_required gate.
     membershipEffect: rawBody.membershipEffect,
+    // Optional; the use-case refuses a manual CN on a refundable online
+    // payment unless this is `true` (see `online_payment_refundable`).
+    onlinePaymentRefundAcknowledged: rawBody.onlinePaymentRefundAcknowledged,
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -233,7 +241,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             tenant: tenantCtx,
             memberId: asMemberId(memberId),
             // F-2 — distinct from the F3 archival cascade's default reason:
-            // the member is NOT archived here, they were refunded.
+            // the member is NOT archived here, their membership invoice was
+            // fully credited. NB: this route moves NO money — despite the
+            // enum's name, any refund happens separately (Issue refund on an
+            // online payment, or out-of-band for a manual one).
             cascadeReason: 'credit_note_refund',
             initiatedByUserId: ctx.current.user.id,
             requestId,

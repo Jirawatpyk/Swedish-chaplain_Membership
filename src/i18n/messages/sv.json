@@ -2278,6 +2278,23 @@
         "backToInvoice": "Tillbaka till fakturan",
         "againstInvoice": "Mot faktura",
         "remainingLabel": "Återstående krediterbart belopp:",
+        "paidViaLabel": "Betalt via:",
+        "paymentChannel": {
+          "card": "Kort (online)",
+          "promptpay": "PromptPay (online)",
+          "bank_transfer": "Banköverföring",
+          "cheque": "Check",
+          "cash": "Kontant",
+          "other": "Övrigt",
+          "unknown": "Kunde inte fastställas"
+        },
+        "onlinePayment": {
+          "title": "Betalt online — en kreditnota återbetalar inte medlemmen",
+          "body": "Att utfärda en kreditnota här återbetalar inga pengar. För att återbetala denna kort- eller PromptPay-betalning, använd Utfärda återbetalning på fakturan — den återbetalar medlemmen och utfärdar kreditnotan själv. En manuell kreditnota minskar också det belopp som fortfarande kan återbetalas online med samma belopp; efter en fullständig kreditnota kan betalningen inte längre återbetalas via systemet.",
+          "unknownBody": "Betalningskanalen för denna faktura kunde inte kontrolleras. Om den betalades online med kort eller PromptPay, använd Utfärda återbetalning på fakturan i stället — en manuell kreditnota återbetalar inga pengar och minskar det belopp som fortfarande kan återbetalas online.",
+          "refundAction": "Gå till Utfärda återbetalning",
+          "acknowledge": "Jag förstår att denna kreditnota inte återbetalar några pengar och minskar det som fortfarande kan återbetalas online"
+        },
         "amountLabel": "Kreditbelopp (inkl. moms)",
         "amountHelp": "Ange bruttobeloppet att kreditera, inkl. moms. Moms fördelas proportionellt mot originalfakturan.",
         "exceedsRemainder": "Beloppet överstiger återstoden ({remaining}).",
@@ -2297,11 +2314,11 @@
           "legend": "Vad ska hända med medlemskapet?",
           "keep": {
             "label": "Behåll medlemskapet — dokumentkorrigering",
-            "description": "Medlemmen återbetalades INTE för denna period, så medlemskapets täckning behålls."
+            "description": "Registrerar endast kreditnotan — medlemskapet och dess förnyelsecykler förblir oförändrade. Inga pengar återbetalas genom denna åtgärd."
           },
           "cancelMembership": {
-            "label": "Återbetala och avsluta medlemskapet",
-            "description": "Medlemmen återbetalas och deras aktiva förnyelsecykler avbryts."
+            "label": "Avsluta medlemskapet — återbetalning hanteras separat",
+            "description": "Registrerar kreditnotan och avbryter medlemmens aktiva förnyelsecykler. Inga pengar återbetalas. Betalt online? Använd Utfärda återbetalning på fakturan i stället — den återbetalar medlemmen och utfärdar kreditnotan själv."
           }
         },
         "errors": {
@@ -2313,7 +2330,8 @@
           "receiptNotRendered": "Skattekvittots PDF genereras fortfarande, eller kunde inte skapas. En kreditnota kan utfärdas först när §86/4-kvittot har genererats. Vänta en stund och försök igen — om det fortfarande misslyckas, kontakta supporten för att återskapa det.",
           "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota. Ladda om sidan och försök igen.",
           "codeFallback": "Felkod: {code}",
-          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att utfärda en kreditnota nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen."
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att utfärda en kreditnota nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
+          "onlinePaymentRefundable": "Denna faktura har en onlinebetalning (kort eller PromptPay) som fortfarande kan återbetalas. För att återbetala pengarna, använd Utfärda återbetalning på fakturan. För att utfärda en kreditnota utan återbetalning, ladda om sidan och bekräfta med kryssrutan."
         }
       },
       "list": {

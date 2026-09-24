@@ -363,6 +363,11 @@ function makeDeps(
     pendingRefundGuard: {
       countPendingRefundsForInvoice: vi.fn(async () => 0),
     },
+    // Default: no refundable online payment → the online-payment guard never
+    // fires on the existing paths.
+    onlinePaymentRefundGuard: {
+      readRefundableOnlinePayment: vi.fn(async () => ({ kind: 'none' as const })),
+    },
     ...overrides,
   };
 }

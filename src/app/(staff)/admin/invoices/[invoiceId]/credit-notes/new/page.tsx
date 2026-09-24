@@ -22,10 +22,28 @@ import {
   inferEventDocumentKind,
   resolveBuyerIsVatRegistrant,
 } from '@/modules/invoicing';
+import { computeRemainingRefundable } from '@/modules/payments';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
-import { CreditNoteForm } from './_components/credit-note-form';
+import { getInvoicePaymentActivity } from '../../_lib/cached-payment-activity';
+import {
+  CreditNoteForm,
+  type CreditNotePaymentChannel,
+  type OnlineRefundState,
+} from './_components/credit-note-form';
+
+const MANUAL_PAYMENT_CHANNELS: readonly CreditNotePaymentChannel[] = [
+  'bank_transfer',
+  'cheque',
+  'cash',
+  'other',
+];
+
+/** Narrow the invoice's recorded (manual) payment method; unknown → null. */
+function manualPaymentChannel(raw: string | null): CreditNotePaymentChannel | null {
+  return MANUAL_PAYMENT_CHANNELS.find((c) => c === raw) ?? null;
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.creditNotes.new');
@@ -102,6 +120,33 @@ export default async function NewCreditNotePage({
     invoice.total.satang - invoice.creditedTotal.satang
   ).toString();
 
+  // Which payment path applies. A credit note moves no money: an online
+  // (card / PromptPay) payment is refunded via Issue refund, which issues its
+  // own credit note — so the form warns and requires an acknowledgement while
+  // online money is still refundable. Same `computeRemainingRefundable` the
+  // invoice page gates its Issue refund button on, and the same read the
+  // server-side `online_payment_refundable` guard uses. A failed read is
+  // `unknown` (the guard fails closed, so the form must ask too).
+  const activity = await getInvoicePaymentActivity(tenantCtx.slug, invoiceId);
+  let onlineRefundState: OnlineRefundState;
+  let paymentChannel: CreditNotePaymentChannel | null;
+  if (activity.ok) {
+    onlineRefundState =
+      computeRemainingRefundable(activity.value) === null ? 'none' : 'refundable';
+    const onlinePayment = activity.value.payments.find(
+      (p) =>
+        p.status === 'succeeded' ||
+        p.status === 'partially_refunded' ||
+        p.status === 'refunded',
+    );
+    // An F5-paid invoice carries `payment_method='other'` on the invoice row,
+    // so the online rail must come from the payment itself.
+    paymentChannel = onlinePayment?.method ?? manualPaymentChannel(invoice.paymentMethod);
+  } else {
+    onlineRefundState = 'unknown';
+    paymentChannel = null;
+  }
+
   return (
     <FormContainer>
       <PageHeader title={t('title')} subtitle={t('description')} />
@@ -119,6 +164,8 @@ export default async function NewCreditNotePage({
             // F-2 (2026-07-08) — the form shows the membership-effect radio
             // ONLY for a membership invoice whose amount fully credits it.
             invoiceSubject={invoice.invoiceSubject}
+            paymentChannel={paymentChannel}
+            onlineRefundState={onlineRefundState}
           />
         </CardContent>
       </Card>

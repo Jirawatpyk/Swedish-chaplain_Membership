@@ -59,6 +59,9 @@ import {
   makeListSucceededPaymentMethodsDeps,
   countPendingRefundsForInvoice,
   makeCountPendingRefundsForInvoiceDeps,
+  loadInvoicePaymentActivity,
+  makeLoadInvoicePaymentActivityDeps,
+  computeRemainingRefundable,
 } from '@/modules/payments';
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
@@ -69,6 +72,7 @@ import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
 import type { PendingRefundGuardPort } from './ports/pending-refund-guard-port';
+import type { OnlinePaymentRefundGuardPort } from './ports/online-payment-refund-guard-port';
 import type { IssueMembershipBillDeps } from './use-cases/issue-membership-bill';
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
@@ -432,6 +436,30 @@ function makePendingRefundGuard(): PendingRefundGuardPort {
   };
 }
 
+/**
+ * The invoicing-side `OnlinePaymentRefundGuardPort`, wired through the payments
+ * barrel. Uses `computeRemainingRefundable` — the SAME arithmetic the admin
+ * invoice page uses to decide whether to show Issue refund — so the guard fires
+ * exactly when that action is available. FAIL-CLOSED (`unknown`), unlike the
+ * 8A count: the refusal is unblocked by the staff acknowledgement, whereas
+ * failing open could strand an online payment.
+ */
+function makeOnlinePaymentRefundGuard(): OnlinePaymentRefundGuardPort {
+  return {
+    readRefundableOnlinePayment: async (tid, invoiceId) => {
+      const r = await loadInvoicePaymentActivity(
+        makeLoadInvoicePaymentActivityDeps(tid),
+        { tenantId: tid, invoiceId },
+      );
+      if (!r.ok) return { kind: 'unknown' };
+      const remaining = computeRemainingRefundable(r.value);
+      return remaining === null
+        ? { kind: 'none' }
+        : { kind: 'refundable', remainingSatang: remaining.remainingSatang };
+    },
+  };
+}
+
 export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
@@ -449,6 +477,7 @@ export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
     // coupling, deliberate). Fail-open at the seam (`? r.value : 0`): a rare
     // count-read hiccup must not hard-fail an admin credit note.
     pendingRefundGuard: makePendingRefundGuard(),
+    onlinePaymentRefundGuard: makeOnlinePaymentRefundGuard(),
   };
 }
 

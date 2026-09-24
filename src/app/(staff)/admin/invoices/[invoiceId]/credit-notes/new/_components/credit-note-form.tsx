@@ -14,8 +14,14 @@
  *    creditable (invoice.total − invoice.credited_total).
  *  - Typed-phrase confirmation before the Submit button enables.
  *  - Post-commit: toast + router.refresh() + navigate to invoice detail.
+ *  - Payment channel shown in the summary. When the invoice has a refundable
+ *    online (card / PromptPay) payment, a warning steers staff to Issue
+ *    refund — a credit note moves no money, yet it consumes the headroom the
+ *    refund is capped at — and submit requires an explicit acknowledgement
+ *    (mirrors the server's `online_payment_refundable` guard).
  */
 import { useEffect, useMemo, useRef, useState, useTransition, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
@@ -23,13 +29,37 @@ import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  InlineAlert,
+  InlineAlertDescription,
+  InlineAlertTitle,
+} from '@/components/ui/inline-alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { routeCreditNoteError } from './credit-note-error-routing';
 
 /** F-2 (2026-07-08) — membership-effect intent, mirrors the use-case's enum. */
 type MembershipEffect = 'keep' | 'cancel_membership';
+
+/**
+ * How the invoice was paid: an online F5 payment (`card` / `promptpay`) or a
+ * manually-recorded method. `null` when it could not be determined.
+ */
+export type CreditNotePaymentChannel =
+  | 'card'
+  | 'promptpay'
+  | 'bank_transfer'
+  | 'cheque'
+  | 'cash'
+  | 'other';
+
+/**
+ * Whether an online payment on the invoice still has refundable money —
+ * `unknown` when the payments read failed (treated like `refundable`, matching
+ * the server's fail-closed guard).
+ */
+export type OnlineRefundState = 'none' | 'refundable' | 'unknown';
 
 type Props = {
   readonly invoiceId: string;
@@ -42,6 +72,8 @@ type Props = {
    * `'event'` invoice never asks.
    */
   readonly invoiceSubject: 'membership' | 'event';
+  readonly paymentChannel: CreditNotePaymentChannel | null;
+  readonly onlineRefundState: OnlineRefundState;
 };
 
 function formatSatang(satang: string): string {
@@ -64,6 +96,8 @@ export function CreditNoteForm({
   remainingSatang,
   currencySymbol,
   invoiceSubject,
+  paymentChannel,
+  onlineRefundState,
 }: Props) {
   const t = useTranslations('admin.creditNotes.new');
   const locale = useLocale();
@@ -74,6 +108,7 @@ export function CreditNoteForm({
   // F-2 (2026-07-08) — default 'keep' per the design doc; only read/sent when
   // `showMembershipEffect` is true (see below).
   const [membershipEffect, setMembershipEffect] = useState<MembershipEffect>('keep');
+  const [onlineRefundAcknowledged, setOnlineRefundAcknowledged] = useState(false);
   const [pending, startTransition] = useTransition();
 
   // 088 T021a / FR-032 — issuing a credit note MINTS a §87 tax-document number
@@ -116,7 +151,15 @@ export function CreditNoteForm({
   // Mirrors the use-case's own `isFullCredit` derivation server-side.
   const isFullCredit = proposedSatang !== null && proposedSatang === remainingBi;
   const showMembershipEffect = invoiceSubject === 'membership' && isFullCredit;
-  const canSubmit = amountValid && reasonValid && matches && !pending;
+  // Any amount, not just a full credit: a partial CN of X makes X of the
+  // online payment unrefundable the same way.
+  const requiresOnlineAck = onlineRefundState !== 'none';
+  const canSubmit =
+    amountValid &&
+    reasonValid &&
+    matches &&
+    (!requiresOnlineAck || onlineRefundAcknowledged) &&
+    !pending;
 
   const submit = useCallback(() => {
     if (!canSubmit || proposedSatang === null) return;
@@ -133,6 +176,9 @@ export function CreditNoteForm({
           // credits and event invoices never touch membership, so the
           // field is omitted rather than sent-but-ignored.
           ...(showMembershipEffect ? { membershipEffect } : {}),
+          ...(requiresOnlineAck && onlineRefundAcknowledged
+            ? { onlinePaymentRefundAcknowledged: true }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -201,6 +247,8 @@ export function CreditNoteForm({
     router,
     showMembershipEffect,
     membershipEffect,
+    requiresOnlineAck,
+    onlineRefundAcknowledged,
   ]);
 
   return (
@@ -257,7 +305,52 @@ export function CreditNoteForm({
             {formatSatang(remainingSatang)} {currencySymbol}
           </span>
         </p>
+        <p className="mt-1">
+          {t('paidViaLabel')}{' '}
+          <span className="font-medium" data-testid="cn-payment-channel">
+            {t(`paymentChannel.${paymentChannel ?? 'unknown'}`)}
+          </span>
+        </p>
       </div>
+
+      {/* A credit note moves NO money. On an online-paid invoice the refund is
+          the Issue refund action (it issues its own credit note); a manual
+          credit note here also shrinks what that action can still refund. */}
+      {requiresOnlineAck && (
+        <InlineAlert tone="warning" role="note" data-testid="cn-online-payment-warning">
+          <TriangleAlertIcon className="size-4" aria-hidden="true" />
+          <InlineAlertTitle>{t('onlinePayment.title')}</InlineAlertTitle>
+          <InlineAlertDescription className="flex flex-col items-start gap-3 text-foreground">
+            <p>
+              {onlineRefundState === 'unknown'
+                ? t('onlinePayment.unknownBody')
+                : t('onlinePayment.body')}
+            </p>
+            <Link
+              href={`/admin/invoices/${invoiceId}?refund=1`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              {t('onlinePayment.refundAction')}
+            </Link>
+            <div className="flex items-start gap-2">
+              <Checkbox
+                className="mt-0.5"
+                // Base UI's visible role=checkbox element carries its own
+                // generated id, so name it directly (same fix as the member
+                // form's art14_attested checkbox).
+                aria-label={t('onlinePayment.acknowledge')}
+                checked={onlineRefundAcknowledged}
+                onCheckedChange={(checked: boolean) =>
+                  setOnlineRefundAcknowledged(checked)
+                }
+              />
+              <span aria-hidden="true" className="text-sm">
+                {t('onlinePayment.acknowledge')}
+              </span>
+            </div>
+          </InlineAlertDescription>
+        </InlineAlert>
+      )}
 
       <div className="grid gap-2">
         <Label htmlFor="cn-amount">{t('amountLabel')}</Label>

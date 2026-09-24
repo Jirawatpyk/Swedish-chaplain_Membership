@@ -21,7 +21,7 @@
  * event-fee-form.test): the radio toggles via a click on its associated
  * <label> text, not on the role=radio element itself.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
@@ -276,6 +276,20 @@ describe('<CreditNoteForm> — F-2 submit body wiring', () => {
 });
 
 describe('<CreditNoteForm> — online-payment steering (a credit note moves no money)', () => {
+  // Base UI Checkbox uses PointerEvent internally; jsdom lacks it. Same
+  // polyfill as tests/unit/components/schedules/schedule-editor.test.tsx.
+  beforeAll(() => {
+    if (typeof globalThis.PointerEvent === 'undefined') {
+      // @ts-expect-error — minimal polyfill for jsdom
+      globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+        readonly pointerId: number;
+        constructor(type: string, params?: PointerEventInit) {
+          super(type, params);
+          this.pointerId = params?.pointerId ?? 0;
+        }
+      };
+    }
+  });
   beforeEach(() => {
     vi.useRealTimers();
     pushMock.mockClear();

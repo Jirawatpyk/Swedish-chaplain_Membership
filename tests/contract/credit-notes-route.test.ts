@@ -320,6 +320,9 @@ describe('POST /api/credit-notes — contract', () => {
     // 8A — a refund is in flight on this invoice → 409 Conflict (transient,
     // retriable once the refund settles).
     ['refund_in_progress', 409],
+    // A manual CN on a still-refundable online payment without the staff
+    // acknowledgement → 422 (the use-case needs declared intent).
+    ['online_payment_refundable', 422],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {
     requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });

@@ -242,6 +242,7 @@ async function seedRefundForInvoice(
 function makeCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
   return {
     pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
+    onlinePaymentRefundGuard: { readRefundableOnlinePayment: async () => ({ kind: 'none' }) },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

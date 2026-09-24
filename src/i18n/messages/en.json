@@ -2278,6 +2278,23 @@
         "backToInvoice": "Back to invoice",
         "againstInvoice": "Against invoice",
         "remainingLabel": "Creditable remainder:",
+        "paidViaLabel": "Paid via:",
+        "paymentChannel": {
+          "card": "Card (online)",
+          "promptpay": "PromptPay (online)",
+          "bank_transfer": "Bank transfer",
+          "cheque": "Cheque",
+          "cash": "Cash",
+          "other": "Other",
+          "unknown": "Could not be determined"
+        },
+        "onlinePayment": {
+          "title": "Paid online — a credit note does not refund the member",
+          "body": "Issuing a credit note here returns no money. To refund this card or PromptPay payment, use Issue refund on the invoice — it refunds the member and issues the credit note itself. A manual credit note also reduces the amount that can still be refunded online by the same amount; after a full credit note the payment can no longer be refunded through the system.",
+          "unknownBody": "The payment channel for this invoice could not be checked. If it was paid online by card or PromptPay, use Issue refund on the invoice instead — a manual credit note returns no money and reduces the amount that can still be refunded online.",
+          "refundAction": "Go to Issue refund",
+          "acknowledge": "I understand this credit note returns no money and reduces what can still be refunded online"
+        },
         "amountLabel": "Credit amount (incl. VAT)",
         "amountHelp": "Enter the gross amount to credit, inclusive of VAT. VAT is split proportionally to the original invoice.",
         "exceedsRemainder": "Amount exceeds remainder ({remaining}).",
@@ -2297,11 +2314,11 @@
           "legend": "What should happen to the membership?",
           "keep": {
             "label": "Keep membership — document correction",
-            "description": "The member was NOT refunded for this period, so their membership coverage is retained."
+            "description": "Records the credit note only — the membership and its renewal cycles stay as they are. No money is returned by this action."
           },
           "cancelMembership": {
-            "label": "Refund and cancel membership",
-            "description": "The member is refunded and their active renewal cycles are cancelled."
+            "label": "Cancel membership — refund handled separately",
+            "description": "Records the credit note and cancels the member's active renewal cycles. No money is returned. Paid online? Use Issue refund on the invoice instead — it refunds the member and issues the credit note itself."
           }
         },
         "errors": {
@@ -2313,7 +2330,8 @@
           "receiptNotRendered": "The tax receipt PDF is still being generated, or failed to render. A credit note can only be issued once the §86/4 receipt has rendered. Wait a moment and retry — if it still fails, contact support to regenerate it.",
           "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note. Reload the page and try again.",
           "codeFallback": "Error code: {code}",
-          "refundInProgress": "A refund is currently being processed on this invoice's payment. Issuing a credit note now could conflict with it — wait until the refund settles, then try again."
+          "refundInProgress": "A refund is currently being processed on this invoice's payment. Issuing a credit note now could conflict with it — wait until the refund settles, then try again.",
+          "onlinePaymentRefundable": "This invoice has an online (card or PromptPay) payment that can still be refunded. To return the money, use Issue refund on the invoice. To issue a credit note without a refund, reload this page and tick the acknowledgement."
         }
       },
       "list": {
