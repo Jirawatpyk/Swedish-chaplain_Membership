@@ -80,13 +80,15 @@ function routeIssue(issue: WireSupersedeIssue): SupersedeIssueCopy {
   }
 }
 
-export function routeSupersedeIssues(body: {
-  readonly supersede_issues?: unknown;
-  readonly supersede_warnings?: unknown;
-}): readonly SupersedeIssueCopy[] {
-  const issues = body.supersede_issues;
+export function routeSupersedeIssues(body: unknown): readonly SupersedeIssueCopy[] {
+  // A non-object body (e.g. JSON `null`) carries no issues. Never throw: this
+  // runs after a SUCCESSFUL issue, so a throw would read as a failure.
+  if (typeof body !== 'object' || body === null) return [];
+  const { supersede_issues: issues, supersede_warnings: legacy } = body as {
+    readonly supersede_issues?: unknown;
+    readonly supersede_warnings?: unknown;
+  };
   if (!Array.isArray(issues)) {
-    const legacy = body.supersede_warnings;
     return Array.isArray(legacy) && legacy.length > 0 ? [GENERIC] : [];
   }
   const routed: SupersedeIssueCopy[] = [];

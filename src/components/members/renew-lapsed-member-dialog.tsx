@@ -89,10 +89,7 @@ export function RenewLapsedMemberDialog({
         toast.success(t('toast.success'));
         // 106-void-on-reissue follow-up — the reactivation bill was issued,
         // but the member's older unpaid bill may not have been auto-voided.
-        const body = (await res.json().catch(() => ({}))) as {
-          supersede_issues?: unknown;
-        };
-        showSupersedeWarning(body);
+        showSupersedeWarning(await res.json().catch(() => null));
         setOpen(false);
         router.refresh();
       } catch {

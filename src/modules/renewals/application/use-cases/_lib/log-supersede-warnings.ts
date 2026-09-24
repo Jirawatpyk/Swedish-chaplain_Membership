@@ -26,19 +26,26 @@ export function logSupersedeWarnings(
   },
 ): void {
   for (const warning of warnings) {
-    logger.warn(
-      {
-        ...context,
-        kind: warning.kind,
-        ...(warning.kind === 'list_failed'
-          ? {}
-          : {
-              supersededInvoiceId: warning.invoiceId,
-              supersededBillNumber: warning.billDocumentNumber,
-            }),
-        ...(warning.kind === 'void_failed' ? { voidErrorCode: warning.errorCode } : {}),
-      },
-      '[renewals] older unpaid bill NOT auto-voided after reissue — void it manually',
-    );
+    // Runs after a §86/4 was minted and before the cycle link: a throw here
+    // would fail the use case and leave the issued bill unlinked. Logging is
+    // observability only, so a log-sink failure is swallowed.
+    try {
+      logger.warn(
+        {
+          ...context,
+          kind: warning.kind,
+          ...(warning.kind === 'list_failed'
+            ? {}
+            : {
+                supersededInvoiceId: warning.invoiceId,
+                supersededBillNumber: warning.billDocumentNumber,
+              }),
+          ...(warning.kind === 'void_failed' ? { voidErrorCode: warning.errorCode } : {}),
+        },
+        '[renewals] older unpaid bill NOT auto-voided after reissue — void it manually',
+      );
+    } catch {
+      // Swallowed by design — see above. The metric still counted it.
+    }
   }
 }
