@@ -31,6 +31,7 @@ function row(id: string, status: Invoice['status'], subtotalSatang: bigint): Inv
 function makeDeps(
   rows: readonly Invoice[],
   nowIso = '2026-09-24T05:00:00Z',
+  legacyCombinedCount = 0,
 ): ListTaxDocumentRegisterDeps & {
   registerRepo: {
     listForPeriod: ReturnType<typeof vi.fn>;
@@ -44,6 +45,7 @@ function makeDeps(
         rcVatSatang: '0',
         reVatSatang: '0',
         creditNoteVatSatang: '0',
+        legacyCombinedCount,
       })),
       listForExport: vi.fn(),
     },
@@ -120,6 +122,31 @@ describe('listTaxDocumentRegister — period status', () => {
     expect(await statusFor('2026-07-01', '2026-08-31')).toBe('not_a_month');
     expect(await statusFor('2026-08-02', '2026-08-31')).toBe('not_a_month');
     expect(await statusFor('2026-08-01', '2026-08-30')).toBe('not_a_month');
+  });
+});
+
+describe('listTaxDocumentRegister — combined-mode rows outside the register', () => {
+  it('a closed month with combined-mode receipts is not labelled "the figure to report"', async () => {
+    // Combined-mode rows (no RC/RE number — paid before the tax-at-payment
+    // switch, or with the flag off) are not in the register's output VAT, so
+    // the net figure is incomplete for that month.
+    const result = await listTaxDocumentRegister(
+      makeDeps([], '2026-09-24T05:00:00Z', 2),
+      { ...INPUT, from: '2026-08-01', to: '2026-08-31' },
+    );
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.periodStatus).toBe('closed_month_incomplete');
+    expect(result.value.legacyCombinedCount).toBe(2);
+  });
+
+  it('other statuses are unchanged; the count is still reported', async () => {
+    const result = await listTaxDocumentRegister(
+      makeDeps([], '2026-09-24T05:00:00Z', 1),
+      { ...INPUT, from: '2026-09-01', to: '2026-09-24' },
+    );
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.periodStatus).toBe('month_to_date');
+    expect(result.value.legacyCombinedCount).toBe(1);
   });
 });
 

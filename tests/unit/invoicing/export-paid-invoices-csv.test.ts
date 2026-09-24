@@ -18,7 +18,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 
 const BOM = '﻿';
 const HEADER_LINE =
-  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method';
+  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method,Payment Date';
 
 function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
   const base = {
@@ -293,7 +293,9 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     expect(result.value.rowCount).toBe(2);
-    expect(result.value.csv).toContain('2026-06-02T03:00:00Z');
+    // "Paid At" is when it was marked paid; the trailing "Payment Date" column
+    // is the tax point that put the row in this month.
+    expect(result.value.csv).toMatch(/2026-06-02T03:00:00Z,manual,2026-05-31\r\n/);
   });
 
   it('refuses an impossible calendar date without querying', async () => {

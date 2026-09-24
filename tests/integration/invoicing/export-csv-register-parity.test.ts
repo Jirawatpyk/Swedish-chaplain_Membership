@@ -92,6 +92,12 @@ function csvVatSatang(csv: string): bigint {
   return sum;
 }
 
+/** Column 2 ("Invoice No.") — the §87 number a combined-mode row carries. */
+function csvInvoiceNumbers(csv: string): string[] {
+  const lines = csv.replace(/^\uFEFF/, '').trim().split('\r\n').slice(1);
+  return lines.map((l) => l.split(',')[1] ?? '').sort();
+}
+
 function csvReceiptNumbers(csv: string): string[] {
   const lines = csv.replace(/^﻿/, '').trim().split('\r\n').slice(1);
   return lines.map((l) => l.split(',')[2] ?? '').sort();
@@ -115,6 +121,29 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
   const rcVoid = randomUUID();
   const eventId = randomUUID();
   const regRe = randomUUID();
+  // May: combined-mode rows (the §87 INV number IS the receipt; no RC/RE) —
+  // paid before the tax-at-payment switch, or with the flag off.
+  const combinedPaid = randomUUID();
+  const combinedCredited = randomUUID();
+  const combinedVoid = randomUUID();
+
+  function combinedReceipt(o: { invoiceId: string; sequenceNumber: number; paymentDate: string }) {
+    return {
+      ...paidReceipt({
+        invoiceId: o.invoiceId,
+        bill: 'unused',
+        rc: 'unused',
+        paymentDate: o.paymentDate,
+        paidAt: `${o.paymentDate}T04:00:00Z`,
+        subtotalSatang: 100_000n,
+        vatSatang: 7_000n,
+      }),
+      billDocumentNumberRaw: null,
+      receiptDocumentNumberRaw: null,
+      sequenceNumber: o.sequenceNumber,
+      documentNumber: `INV-2026-${String(o.sequenceNumber).padStart(6, '0')}`,
+    };
+  }
 
   function paidReceipt(o: {
     invoiceId: string;
@@ -312,6 +341,13 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
           subtotalSatang: 50_000n,
           vatSatang: 3_500n,
         }),
+        combinedReceipt({ invoiceId: combinedPaid, sequenceNumber: 501, paymentDate: '2026-05-10' }),
+        combinedReceipt({
+          invoiceId: combinedCredited,
+          sequenceNumber: 502,
+          paymentDate: '2026-05-12',
+        }),
+        combinedReceipt({ invoiceId: combinedVoid, sequenceNumber: 503, paymentDate: '2026-05-14' }),
         // §105 RE receipt (event, no TIN) in July — real 7% output VAT.
         {
           tenantId: slug,
@@ -349,6 +385,19 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
         },
       ]);
 
+      await tx
+        .update(invoices)
+        .set({ status: 'credited', creditedTotalSatang: 107_000n })
+        .where(and(eq(invoices.tenantId, slug), eq(invoices.invoiceId, combinedCredited)));
+      await tx
+        .update(invoices)
+        .set({
+          status: 'void',
+          voidedAt: new Date('2026-05-14T05:00:00Z'),
+          voidReason: 'test cancellation',
+          voidedByUserId: user.userId,
+        })
+        .where(and(eq(invoices.tenantId, slug), eq(invoices.invoiceId, combinedVoid)));
       // Fully credited in July by a §86/10 note; partially credited in June.
       await tx
         .update(invoices)
@@ -443,5 +492,24 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
     expect(csvReceiptNumbers(jun.csv)).toEqual(junRegister.receiptNumbers);
     expect(csvVatSatang(jun.csv)).toBe(28_000n);
     expect(csvVatSatang(jun.csv)).toBe(junRegister.grossVat);
+  });
+
+  it('combined-mode receipts still export, and the register flags the month as incomplete', async () => {
+    const may = await exportMonth('2026-05-01', '2026-05-31');
+    // Paid + credited export on their tax point; the void does not.
+    expect(csvInvoiceNumbers(may.csv)).toEqual(['INV-2026-000501', 'INV-2026-000502']);
+    expect(csvVatSatang(may.csv)).toBe(14_000n);
+
+    // The register lists only RC/RE receipts, so none of the three appear and
+    // its gross VAT is 0 — the month cannot be "the figure to report".
+    const result = await listTaxDocumentRegister(
+      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-05-01', to: '2026-05-31' },
+    );
+    if (!result.ok) throw new Error('register failed');
+    expect(result.value.rows).toEqual([]);
+    expect(result.value.periodOutputVat.rcVatSatang).toBe('0');
+    expect(result.value.legacyCombinedCount).toBe(2);
+    expect(result.value.periodStatus).toBe('closed_month_incomplete');
   });
 });
