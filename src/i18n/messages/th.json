@@ -1266,6 +1266,7 @@
           "search": "ค้นหา: {q}",
           "status": "สถานะ: {value}",
           "plan": "แพ็กเกจ: {value}",
+          "planYear": "แพ็กเกจ: {value} ({year})",
           "risk": "ความเสี่ยง: {value}"
         },
         "filters": {

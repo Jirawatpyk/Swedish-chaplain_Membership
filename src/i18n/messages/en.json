@@ -1266,6 +1266,7 @@
           "search": "Search: {q}",
           "status": "Status: {value}",
           "plan": "Plan: {value}",
+          "planYear": "Plan: {value} ({year})",
           "risk": "Risk: {value}"
         },
         "filters": {

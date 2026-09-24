@@ -239,7 +239,9 @@ export default async function PlanDetailPage({
                 <dd className="text-lg font-semibold">
                   {canPerform(currentUser.role, 'members.read') ? (
                     <Link
-                      href={`/admin/members?plan_id=${encodeURIComponent(plan.plan_id)}`}
+                      // With the year: the count is per (plan, year) and
+                      // un-renewed members stay on older years' plan rows.
+                      href={`/admin/members?plan_id=${encodeURIComponent(plan.plan_id)}&plan_year=${plan.plan_year}`}
                       className="underline-offset-4 hover:underline focus-visible:underline"
                     >
                       {tDetail('memberCount', { count: memberCount })}
