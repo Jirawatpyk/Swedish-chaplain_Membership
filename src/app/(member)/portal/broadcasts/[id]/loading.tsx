@@ -16,6 +16,14 @@
  * jumped ~640 px down on every settle. The frame height is imported from
  * `preview-frame-heights`, the same constant `page.tsx` hands
  * `PreviewSurface`, so the reservation cannot drift from the thing reserved.
+ *
+ * F119 T086 — the page became the sign-off view: a stage banner above the
+ * fields card, and the content is a compare grid (the formatted version
+ * first, the member's original beside it at ≥ lg). The skeleton cannot know
+ * the stage, so it reserves the sign-off shape above the fold — banner,
+ * fields, the first frame (and the second beside it on a wide screen) — and
+ * leaves the stage-dependent sections below (decision controls, history) to
+ * arrive under the fold.
  */
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -41,13 +49,16 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
           <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
           {t('back')}
         </Link>
-        {/* Fields card: heading + subject + 4-item dl grid. */}
+        {/* F119 T086 — the stage banner (status badge + whose turn + expiry). */}
+        <SkeletonBlock data-testid="detail-stage-banner-skeleton" className="h-16 w-full" />
+        {/* Fields card: heading + subject + the dl grid (recipients, submitted,
+            sent, proposed and confirmed send time). */}
         <Card>
           <CardContent className="flex flex-col gap-3">
             <SkeletonBlock className="h-5 w-24" />
             <SkeletonBlock className="h-5 w-2/3" />
             <div className="grid grid-cols-2 gap-3 pt-2">
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-1.5">
                   <SkeletonBlock className="h-3 w-20" />
                   <SkeletonBlock className="h-5 w-28" />
@@ -56,21 +67,29 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
             </div>
           </CardContent>
         </Card>
-        {/* Content card (T141): heading + the preview frame, reserved at the
-            page's own DETAIL_PREVIEW_FRAME_HEIGHT so the delivery card below
-            does not move when the document arrives. */}
-        <Card>
-          <CardHeader>
-            <SkeletonBlock className="h-5 w-28" />
-          </CardHeader>
-          <CardContent>
-            <SkeletonBlock
-              data-testid="detail-content-frame-skeleton"
-              className="w-full"
-              style={{ height: DETAIL_PREVIEW_FRAME_HEIGHT }}
-            />
-          </CardContent>
-        </Card>
+        {/* The content: the sign-off compare grid — the formatted version
+            first, the member's original beside it at ≥ lg. Below lg only the
+            first frame is reserved: the page may render one card (no version
+            sent yet) or two stacked, and reserving one keeps the first
+            viewport still either way. Frames are the page's own
+            DETAIL_PREVIEW_FRAME_HEIGHT, so the reservation cannot drift. */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Card key={i} className={i === 1 ? 'hidden lg:flex' : undefined}>
+              <CardHeader>
+                <SkeletonBlock className="h-5 w-40" />
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <SkeletonBlock className="h-4 w-2/3" />
+                <SkeletonBlock
+                  data-testid={i === 0 ? 'detail-content-frame-skeleton' : 'detail-original-frame-skeleton'}
+                  className="w-full"
+                  style={{ height: DETAIL_PREVIEW_FRAME_HEIGHT }}
+                />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
         {/* Delivery breakdown card: heading + 6-stat grid (2-col, 3-col ≥sm). */}
         <Card>
           <CardContent className="flex flex-col gap-3">

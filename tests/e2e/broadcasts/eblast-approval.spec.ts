@@ -19,11 +19,13 @@
  *
  * Run: `pnpm test:e2e tests/e2e/broadcasts/eblast-approval.spec.ts --workers=1 --project=chromium`.
  */
+import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { signInAsAdmin } from '../helpers/admin-session';
 import { seedMemberDetailBroadcast, wipeE2EMemberBroadcasts } from '../helpers/broadcasts-seed';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 /** Cold Turbopack compiles (Tiptap especially) dominate. */
 test.describe.configure({ timeout: 240_000, retries: 0 });
@@ -66,5 +68,92 @@ test.describe('F119 T063 — the staff format surface', () => {
     const comparison = page.locator('[data-testid="eblast-version-comparison"]:visible');
     await expect(comparison).toBeVisible();
     await expect(comparison.getByText(subject)).toBeVisible();
+  });
+});
+
+/**
+ * F119 T086 (US2, FR-008, FR-009, SC-003) — "@eblast member approves on a
+ * 375 px viewport".
+ *
+ * Marketing formats and sends a version (the staff half above, as a setup
+ * step), then the owning member signs in on a PHONE-width viewport: the
+ * formatted version comes first and the original is below it on the same
+ * page (FR-008), Approve is confirmed in a dialog that says marketing now
+ * confirms the send time (FR-009), and afterwards the stage banner shows the
+ * new stage and the page still offers the way back to the E-Blast list.
+ *
+ * Same flag requirement as the staff case (T152 gates the first edge), and
+ * the member is `e2e-member-empty` — the in-good-standing persona that owns
+ * the seeded row and has a portal user.
+ */
+async function formatAndSendAsMarketing(page: Page, broadcastId: string, subject: string): Promise<void> {
+  await signInAsAdmin(page);
+  await page.goto(`/admin/broadcasts/${broadcastId}`);
+  const start = page.locator('[data-testid="eblast-start-version"]:visible');
+  await expect(start, 'Start is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?').toBeVisible();
+  await start.click();
+  await page.locator('[data-testid="eblast-start-version-confirm"]:visible').click();
+  const workspace = page.locator('[data-testid="eblast-format-workspace"]:visible');
+  await expect(workspace).toBeVisible({ timeout: 60_000 });
+  await workspace.locator('#eblast-format-subject').fill(subject);
+  await workspace.locator('#eblast-format-note').fill('We moved the date into the heading.');
+  await workspace.locator('[data-testid="eblast-format-save"]').click();
+  await expect(workspace.getByText(/Saved at/)).toBeVisible();
+  await workspace.locator('[data-testid="eblast-send-to-member"]').click();
+  await page.locator('[data-testid="eblast-send-to-member-confirm"]:visible').click();
+  await expect(page.locator('[data-testid="eblast-whose-turn"]:visible')).toHaveText(/Member/, { timeout: 30_000 });
+}
+
+test.describe('F119 T086 — the member sign-off view', () => {
+  test('@eblast member approves on a 375 px viewport', async ({ page, browser }) => {
+    expect(MEMBER_PASSWORD, 'E2E_MEMBER_PASSWORD_EMPTY is required to sign in as the owning member').toBeTruthy();
+    await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
+    const broadcastId = await seedMemberDetailBroadcast(MEMBER_EMAIL);
+    expect(broadcastId, 'DATABASE_URL + E2E_MEMBER_EMAIL_EMPTY are required to seed the E-Blast').not.toBeNull();
+    const subject = '[E2E] Ready for the member';
+    await formatAndSendAsMarketing(page, broadcastId!, subject);
+
+    // The member, on a phone.
+    const phone = await browser.newContext({ viewport: { width: 375, height: 812 } });
+    try {
+      const member = await phone.newPage();
+      await member.goto('/portal/sign-in');
+      await member.locator('input#email').fill(MEMBER_EMAIL!);
+      await member.locator('input#password').fill(MEMBER_PASSWORD!);
+      await member.getByRole('button', { name: /sign in/i }).click();
+      await member.waitForURL((u) => /^\/portal(\/|$)/.test(u.pathname) && !u.pathname.startsWith('/portal/sign-in'), {
+        timeout: 120_000,
+      });
+      await member.goto(`/portal/broadcasts/${broadcastId}`);
+
+      // FR-008 — formatted FIRST, the original BELOW it on the same page.
+      const formatted = member.locator('[data-testid="eblast-formatted-version"]:visible');
+      const original = member.locator('[data-testid="eblast-member-original"]:visible');
+      await expect(formatted).toBeVisible({ timeout: 60_000 });
+      await expect(formatted.getByText(subject)).toBeVisible();
+      await expect(formatted.getByText('We moved the date into the heading.')).toBeVisible();
+      const [f, o] = [await formatted.boundingBox(), await original.boundingBox()];
+      expect(f, 'formatted card has no box').not.toBeNull();
+      expect(o, 'original card has no box').not.toBeNull();
+      expect(o!.y).toBeGreaterThan(f!.y + f!.height - 1);
+      // Nothing scrolls sideways at phone width.
+      expect(await member.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+
+      // FR-009 — Approve is confirmed, and the dialog says what happens next.
+      await member.locator('[data-testid="eblast-approve"]:visible').click();
+      const dialog = member.getByRole('alertdialog');
+      await expect(dialog).toContainText('will now confirm the send time');
+      await expect(dialog).toContainText('cannot change without a new approval');
+      await dialog.locator('[data-testid="eblast-approve-confirm"]').click();
+
+      // After the decision: the new stage in the banner, the way back to the list.
+      const banner = member.locator('[data-testid="eblast-stage-banner"]:visible');
+      await expect(banner).toContainText(/Member approved/, { timeout: 30_000 });
+      await expect(banner).toContainText(/chamber's turn/);
+      await expect(member.locator('[data-testid="eblast-approve"]:visible')).toHaveCount(0);
+      await expect(member.getByRole('link', { name: /back to/i })).toBeVisible();
+    } finally {
+      await phone.close();
+    }
   });
 });

@@ -57,6 +57,7 @@ import {
   typedPhraseMatches,
 } from '@/components/shell/typed-phrase-field';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
+import { InlineError } from '@/components/broadcast/approval/inline-error';
 
 /** What the typed-phrase gate asks for, resolved from the caller's text. */
 interface PhraseGate {
@@ -169,6 +170,24 @@ export interface ReasonConfirmationDialogProps {
    * dialog are not irreversible and stay one step.
    */
   readonly typedPhrase?: string;
+  /**
+   * F119 T067 (FR-010) — with a REQUIRED reason, a reason field left blank
+   * (on blur) is an announced field error: `aria-invalid`, described by the
+   * error, `role="alert"` (ux-standards § 4.1), read from
+   * `namespace.errors.reasonRequired`. Confirm stays disabled either way; this
+   * is what tells a screen-reader user WHY. Off by default, so the existing
+   * callers keep their behaviour.
+   */
+  readonly announceBlankReason?: boolean;
+  /**
+   * F119 T084 — a server refusal said INSIDE the open dialog (ux-standards
+   * § 6.4: inline, `role="alert"` — a toast renders outside the modal, which
+   * hides everything outside itself from AT). `field: 'reason'` marks the
+   * reason field invalid and describes it; `null` is a form-level line above
+   * the buttons. The caller clears it at the start of every request, so a
+   * repeat is a new node and is announced again.
+   */
+  readonly refusal?: { readonly message: string; readonly field: 'reason' | null } | null;
 }
 
 export function ReasonConfirmationDialog({
@@ -182,12 +201,15 @@ export function ReasonConfirmationDialog({
   onConfirm,
   finalFocus,
   typedPhrase,
+  announceBlankReason = false,
+  refusal = null,
 }: ReasonConfirmationDialogProps): React.ReactElement {
   const t = useTranslations(namespace);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [reason, setReason] = useState('');
   const [phraseInput, setPhraseInput] = useState('');
+  const [reasonBlurred, setReasonBlurred] = useState(false);
   const [pending, startTransition] = useTransition();
 
   // Reset on OPEN so every re-open starts fresh — covers the programmatic close
@@ -201,6 +223,7 @@ export function ReasonConfirmationDialog({
     if (open) {
       setReason('');
       setPhraseInput('');
+      setReasonBlurred(false);
     }
   }
 
@@ -263,6 +286,16 @@ export function ReasonConfirmationDialog({
 
   const helpId = `${fieldIdPrefix}-help`;
   const counterId = `${fieldIdPrefix}-counter`;
+  const fieldErrorId = `${fieldIdPrefix}-error`;
+  // The field's own error: a required reason left blank (opt-in), else a
+  // server refusal naming the reason field. Over-cap keeps its own line below.
+  const blankReason = announceBlankReason && reasonRequired && reasonBlurred && reason.trim().length === 0;
+  const fieldError = blankReason
+    ? t('errors.reasonRequired')
+    : refusal !== null && refusal.field === 'reason'
+      ? refusal.message
+      : null;
+  const formError = refusal !== null && refusal.field === null ? refusal.message : null;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -283,12 +316,16 @@ export function ReasonConfirmationDialog({
             ref={textareaRef}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
+            onBlur={() => setReasonBlurred(true)}
             placeholder={t('reasonPlaceholder')}
             rows={textareaRows}
             disabled={pending}
-            aria-describedby={`${helpId} ${counterId}`}
-            aria-invalid={overCap}
+            aria-describedby={
+              fieldError !== null ? `${helpId} ${counterId} ${fieldErrorId}` : `${helpId} ${counterId}`
+            }
+            aria-invalid={overCap || fieldError !== null}
           />
+          {fieldError !== null ? <InlineError id={fieldErrorId} message={fieldError} /> : null}
           <p id={helpId} className="text-xs text-muted-foreground">
             {t('reasonHelp')}
           </p>
@@ -323,6 +360,8 @@ export function ReasonConfirmationDialog({
             disabled={pending}
           />
         ) : null}
+
+        {formError !== null ? <InlineError id={`${fieldIdPrefix}-form-error`} message={formError} /> : null}
 
         <AlertDialogFooter>
           <AlertDialogCancel ref={cancelRef} disabled={pending}>

@@ -83,6 +83,24 @@ vi.mock('@/components/broadcast/approval/formatted-version-workspace', () => ({
   FormattedVersionWorkspace: () => <div data-testid="format-workspace" />,
 }));
 vi.mock('@/components/broadcast/admin/audit-timeline', () => ({ AuditTimeline: () => null }));
+// F119 T085 — the REAL staff model builder; the thread itself is a marker that
+// echoes each round's decision reasons (`v<no>:<reason>|<reason>`).
+vi.mock('@/components/broadcast/approval/version-thread', async () => {
+  const actual = await vi.importActual<typeof import('@/components/broadcast/approval/version-thread')>(
+    '@/components/broadcast/approval/version-thread',
+  );
+  return {
+    ...actual,
+    VersionThread: (p: { model: import('@/components/broadcast/approval/version-thread').VersionThreadModel }) => (
+      <div data-testid="version-thread">
+        {p.model.rounds.map((r) => `v${r.version.versionNo}:${r.decisions.map((d) => d.reason).join('|')}`).join(';')}
+        {p.model.approvedAsSubmitted !== null && p.model.approvedAsSubmitted.author.side === 'organisation'
+          ? `as-submitted:${p.model.approvedAsSubmitted.author.name ?? ''}`
+          : ''}
+      </div>
+    ),
+  };
+});
 vi.mock('@/components/broadcast/admin/status-badge', () => ({
   StatusBadge: () => <span data-testid="status-badge" />,
 }));
@@ -130,13 +148,16 @@ const V0 = {
   subject: 'Original subject',
   bodyHtml: '<p>original</p>',
   noteToMember: null,
+  authoredByRole: 'member_self_service',
   sentToMemberAt: new Date('2026-09-20T08:00:00Z'),
+  createdAt: new Date('2026-09-20T08:00:00Z'),
   updatedAt: new Date('2026-09-20T08:00:00Z'),
 };
 const V1 = {
   ...V0,
   id: 'aaaaaaaa-0000-4000-8000-000000000001',
   versionNo: 1,
+  authoredByRole: 'admin_proxy',
   subject: 'Formatted subject',
   bodyHtml: '<p>formatted</p>',
 };
@@ -157,6 +178,7 @@ function makeBroadcast(over: Record<string, unknown> = {}) {
     stageEnteredAt: new Date('2026-09-20T03:00:00.000Z'),
     currentRound: 0,
     approvedVersionId: null,
+    approvedAt: null,
     ...over,
   };
 }
@@ -371,29 +393,52 @@ describe('F119 T063 — the staff detail page action controls', () => {
     expect(cell).toContain('<span class="sr-only">turnValue.none</span>');
   });
 
-  /** FR-011 follow-up — marketing edits with the member's latest reason in view (T085 replaces this). */
+  /**
+   * F119 T085 — the version thread REPLACES the interim latest-reason note
+   * (FR-011, FR-032): every decision and its reason, attached to the version
+   * it concerns, on every stage that carries a round — for a manager too.
+   */
   it.each([
-    ['changes_requested', 1, 'changes_requested', 'changesRequestedTitle'],
-    ['changes_requested', 1, 'approval_withdrawn', 'withdrawnTitle'],
-    ['in_design', 1, 'changes_requested', 'changesRequestedTitle'],
-  ] as const)('%s (round %s) after a %s decision → the latest reason, read-only, as a note', async (status, round, decision, title) => {
+    ['changes_requested', 1],
+    ['in_design', 1],
+    ['member_approved', 1],
+  ] as const)('%s (round %s) → the version thread, with every reason, and no interim note', async (status, round) => {
     decisions = [
-      { id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: null, decidedAt: new Date('2026-09-21T08:00:00Z') },
-      { id: 'd1', versionId: V1.id, round: 1, decision, reason: 'The date in the heading is wrong', decidedAt: new Date('2026-09-22T08:00:00Z') },
+      { id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: 'Looks good', decidedAt: new Date('2026-09-21T08:00:00Z') },
+      { id: 'd1', versionId: V1.id, round: 1, decision: 'approval_withdrawn', reason: 'The date in the heading is wrong', decidedAt: new Date('2026-09-22T08:00:00Z') },
     ];
+    role = 'manager';
     const html = await renderPage(status, round);
-    const at = html.indexOf('data-testid="eblast-member-feedback"');
-    expect(at).toBeGreaterThan(-1);
-    expect(html.slice(html.lastIndexOf('<div', at), at)).toContain('role="note"');
-    expect(html).toContain('The date in the heading is wrong');
-    expect(html).toContain(title);
+    expect(has(html, 'version-thread')).toBe(true);
+    expect(has(html, 'eblast-member-feedback')).toBe(false);
+    // Both reasons, on version 1 — the thread keeps the whole history, not the latest line.
+    expect(html).toContain('v1:Looks good|The date in the heading is wrong');
+    // The unsent working copy is never a round of the thread.
+    expect(html).not.toContain('v2:');
   });
 
-  it('no member feedback note when the latest decision was an approval (or there is none)', async () => {
-    decisions = [{ id: 'd0', versionId: V1.id, round: 1, decision: 'approved', reason: 'Looks good', decidedAt: new Date('2026-09-21T08:00:00Z') }];
-    expect(has(await renderPage('changes_requested', 1), 'eblast-member-feedback')).toBe(false);
-    decisions = [];
-    expect(has(await renderPage('changes_requested', 1), 'eblast-member-feedback')).toBe(false);
+  it('approved as submitted (round 0) → the single "approved as submitted" entry, with the staff name (FR-007)', async () => {
+    findByIdMock.mockResolvedValue(
+      makeBroadcast({ status: 'approved', currentRound: 0, approvedAt: new Date('2026-09-21T08:00:00Z') }),
+    );
+    listVersionsMock.mockResolvedValue({
+      ok: true,
+      value: {
+        ...threadFor('approved', 0).value,
+        approvedVersionId: null,
+        memberOriginal: null,
+        approvedAsSubmitted: { at: new Date('2026-09-21T08:00:00Z'), byUserId: 'staff-9', byUserName: 'Karin Lindqvist' },
+      },
+    });
+    const Page = (await import('@/app/(staff)/admin/broadcasts/[id]/page')).default;
+    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: ID }) }));
+    expect(has(html, 'version-thread')).toBe(true);
+    expect(html).toContain('as-submitted:Karin Lindqvist');
+  });
+
+  it('an E-Blast with no round and no approval shows no thread', async () => {
+    const html = await renderPage('submitted');
+    expect(has(html, 'version-thread')).toBe(false);
   });
 
   it('in_design whose thread cannot be read → an explicit alert, never the record body as if nothing were wrong', async () => {

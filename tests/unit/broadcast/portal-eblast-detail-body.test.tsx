@@ -55,6 +55,17 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
   CancelBroadcastAction: () => null,
 }));
+// F119 T086 — the sign-off islands and the thread are pinned by
+// `portal-eblast-sign-off-page.test.tsx`; here they are inert.
+vi.mock('@/components/broadcast/approval/member-sign-off-actions', () => ({
+  MemberSignOffActions: () => null,
+}));
+vi.mock('@/components/broadcast/approval/version-thread', () => ({
+  VersionThread: () => null,
+  memberThreadModel: () => ({ original: null, rounds: [], approvedAsSubmitted: null }),
+  hasThreadHistory: () => false,
+}));
+vi.mock('@/lib/broadcast-approval-deps', () => ({ makeGetMemberVersionThreadDeps: () => ({}) }));
 
 const findByLinkedUserId = vi.fn();
 vi.mock('@/modules/members/members-deps', () => ({
@@ -72,6 +83,26 @@ vi.mock('@/modules/broadcasts', async () => ({
     )
   ).canCancel,
   getMemberBroadcast: (...args: unknown[]) => getMemberBroadcastMock(...args),
+  // F119 T086 — a `sent` E-Blast approved as submitted: no version rows, so
+  // the page shows the record's own content (no compare view).
+  getMemberVersionThread: async () => ({
+    ok: true as const,
+    value: {
+      summary: {
+        stage: 'sent',
+        whoseTurn: null,
+        round: 0,
+        proposedSendAt: null,
+        confirmedSendAt: null,
+        approvedVersionId: null,
+        stageEnteredAt: new Date('2026-09-02T03:00:00.000Z'),
+        expiresAt: null,
+      },
+      versions: [],
+      decisions: [],
+      approvedAsSubmitted: null,
+    },
+  }),
   makeGetMemberBroadcastDeps: () => ({}),
   parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
   renderBroadcastPreview: (...args: unknown[]) =>

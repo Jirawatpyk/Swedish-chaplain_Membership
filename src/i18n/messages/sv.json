@@ -3385,7 +3385,23 @@
         },
         "feedback": {
           "changesRequestedTitle": "Medlemmen begärde ändringar i version {version}",
-          "withdrawnTitle": "Medlemmen drog tillbaka sitt godkännande av version {version}"
+          "withdrawnTitle": "Medlemmen drog tillbaka sitt godkännande av version {version}",
+          "approvedTitle": "Medlemmen godkände version {version}"
+        },
+        "thread": {
+          "title": "Versionshistorik",
+          "original": "Medlemmens original",
+          "round": "Omgång {round}",
+          "submittedByMember": "Inskickat av medlemmen",
+          "submittedOnBehalf": "Inskickat för medlemmens räkning",
+          "submittedOnBehalfBy": "Inskickat för medlemmens räkning av {name}",
+          "versionSent": "Version {version} — skickad till medlemmen",
+          "versionSentBy": "Version {version} — skickad till medlemmen av {name}",
+          "noteLabel": "Meddelande till medlemmen",
+          "reasonLabel": "Motivering",
+          "approvalNoteLabel": "Medlemmens meddelande",
+          "approvedAsSubmitted": "Godkänt som inskickat",
+          "approvedAsSubmittedBy": "Godkänt som inskickat av {name}"
         },
         "workspace": {
           "title": "Formaterad version {version}",
@@ -6371,6 +6387,109 @@
           "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
           "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
           "concurrentRace": "Detta utskick har redan hanterats. Vyn har uppdaterats."
+        }
+      },
+      "approval": {
+        "banner": {
+          "turn": {
+            "member": "Det är din tur: granska version {version} nedan och godkänn den eller begär ändringar.",
+            "marketing": "Det är handelskammarens tur — du behöver inte göra något just nu."
+          },
+          "expires": "Svara senast {date}. Om inget svar har kommit då förfaller detta utskick och skickas inte."
+        },
+        "fields": {
+          "proposedSendAt": "Din föreslagna sändningstid",
+          "confirmedSendAt": "Bekräftad sändningstid",
+          "notSet": "Inte angiven"
+        },
+        "compare": {
+          "formattedTitle": "Version {version} från handelskammaren",
+          "formattedHint": "Visas så som mottagarna får det.",
+          "originalTitle": "Ditt original",
+          "originalHint": "Det du skickade in, exakt som du skrev det.",
+          "noteLabel": "Meddelande från handelskammaren"
+        },
+        "threadUnavailable": {
+          "title": "Versionshistoriken kunde inte läsas in",
+          "body": "Du kan inte godkänna eller begära ändringar förrän den har lästs in. Uppdatera sidan om en stund."
+        },
+        "actions": {
+          "title": "Ditt beslut",
+          "decideDescription": "Godkänn version {version} eller berätta för handelskammaren vad som ska ändras.",
+          "withdrawDescription": "Du har godkänt version {version}. Du kan dra tillbaka ditt godkännande tills utskicket börjar skickas.",
+          "approve": "Godkänn",
+          "requestChanges": "Begär ändringar",
+          "withdrawApproval": "Dra tillbaka godkännande"
+        },
+        "approveDialog": {
+          "title": "Godkänna version {version}?",
+          "description": "Handelskammarens marknadsföringsteam bekräftar nu sändningstiden. När du har godkänt kan innehållet inte ändras utan ett nytt godkännande från dig.",
+          "noteLabel": "Meddelande till handelskammaren (valfritt)",
+          "notePlaceholder": "Något handelskammaren bör veta före utskicket",
+          "noteHelp": "Högst 500 tecken.",
+          "noteTooLong": "Meddelandet är längre än 500 tecken.",
+          "confirm": "Godkänn",
+          "cancel": "Inte än"
+        },
+        "requestChanges": {
+          "title": "Begära ändringar?",
+          "description": "Utskicket går tillbaka till handelskammaren med din motivering, och de skickar en ny version som du får godkänna.",
+          "reasonLabel": "Vad ska ändras?",
+          "reasonPlaceholder": "Till exempel: datumet i rubriken är fel.",
+          "reasonHelp": "Obligatoriskt — högst 2 000 tecken.",
+          "confirm": "Begär ändringar",
+          "cancel": "Fortsätt granska",
+          "errors": {
+            "reasonRequired": "Berätta för handelskammaren vad som ska ändras.",
+            "reasonTooLong": "Motiveringen är längre än 2 000 tecken."
+          }
+        },
+        "withdrawApproval": {
+          "title": "Dra tillbaka ditt godkännande?",
+          "description": "Utskicket går tillbaka till handelskammaren och en bekräftad sändningstid ställs in. Det skickas inte förrän du godkänner en version igen.",
+          "reasonLabel": "Varför drar du tillbaka ditt godkännande?",
+          "reasonPlaceholder": "Till exempel: priset i erbjudandet har ändrats.",
+          "reasonHelp": "Obligatoriskt — högst 2 000 tecken.",
+          "confirm": "Dra tillbaka godkännande",
+          "cancel": "Behåll mitt godkännande",
+          "errors": {
+            "reasonRequired": "Ange varför du drar tillbaka ditt godkännande.",
+            "reasonTooLong": "Motiveringen är längre än 2 000 tecken."
+          }
+        },
+        "toast": {
+          "approved": "Versionen är godkänd. Handelskammaren bekräftar nu sändningstiden.",
+          "changesRequested": "Din begäran om ändringar har skickats till handelskammaren.",
+          "approvalWithdrawn": "Ditt godkännande har dragits tillbaka."
+        },
+        "errors": {
+          "reason_required": "Ange en motivering — fältet får inte vara tomt.",
+          "validation_error": "Texten är för lång. Korta den och försök igen.",
+          "stale_version": "Handelskammaren har skickat en nyare version. Sidan har uppdaterats — granska den senaste.",
+          "stage_changed": "Utskicket har redan gått vidare. Sidan har uppdaterats.",
+          "sending_started": "Utskicket har redan börjat skickas och kan inte längre ändras.",
+          "broadcast_not_found": "Utskicket finns inte längre.",
+          "broadcast_rate_limit_exceeded": "För många försök på kort tid. Vänta en minut och försök igen.",
+          "generic": "Något gick fel. Försök igen."
+        },
+        "thread": {
+          "title": "Historik",
+          "description": "Varje version som handelskammaren har skickat dig och varje beslut, äldst först.",
+          "original": "Ditt original",
+          "round": "Omgång {round}",
+          "submittedByYou": "Inskickat av dig",
+          "submittedByChamber": "Inskickat av handelskammaren för din räkning",
+          "versionSent": "Version {version} — skickad till dig av handelskammaren",
+          "noteLabel": "Meddelande från handelskammaren",
+          "reasonLabel": "Motivering",
+          "approvalNoteLabel": "Meddelande",
+          "approvedByYou": "Du godkände den här versionen",
+          "approvedByColleague": "En kollega på ditt företag godkände den här versionen",
+          "changesRequestedByYou": "Du begärde ändringar",
+          "changesRequestedByColleague": "En kollega på ditt företag begärde ändringar",
+          "withdrawnByYou": "Du drog tillbaka ditt godkännande",
+          "withdrawnByColleague": "En kollega på ditt företag drog tillbaka godkännandet",
+          "approvedAsSubmitted": "Handelskammaren godkände ditt utskick som du skickade in det"
         }
       }
     },

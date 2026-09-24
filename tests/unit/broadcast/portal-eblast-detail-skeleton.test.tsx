@@ -10,8 +10,11 @@
  * invisible to the axe suite.
  *
  * Pinned here, on structure rather than on pixels jsdom cannot measure:
- *   1. the skeleton renders three card regions, in the page's order;
- *   2. the middle one reserves a frame whose height is the SAME constant the
+ *   1. the skeleton renders the page's regions in the page's order — since
+ *      F119 T086 the sign-off shape: the stage banner, the fields card, the
+ *      compare grid (formatted first; the original beside it at ≥ lg only),
+ *      the delivery card;
+ *   2. the formatted frame reserves a height that is the SAME constant the
  *      page passes `PreviewSurface` — imported, not retyped, so the two can
  *      never drift by a number again.
  */
@@ -35,16 +38,21 @@ beforeEach(() => {
 });
 
 describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', () => {
-  it('renders three card regions, not two', async () => {
+  it('renders the stage banner, then the fields card, the content grid and the delivery card', async () => {
     const { default: Loading } = await import(
       '@/app/(member)/portal/broadcasts/[id]/loading'
     );
     render(await Loading());
 
-    expect(document.querySelectorAll('[data-slot="card"]')).toHaveLength(3);
+    // F119 T086 — fields · formatted · original (≥ lg) · delivery.
+    const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
+    expect(cards).toHaveLength(4);
+    // The banner is reserved ABOVE the fields card, as the page renders it.
+    const banner = screen.getByTestId('detail-stage-banner-skeleton');
+    expect(banner.compareDocumentPosition(cards[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('the middle card reserves the frame height the page passes PreviewSurface', async () => {
+  it('the formatted frame reserves the height the page passes PreviewSurface, first in the grid', async () => {
     const { default: Loading } = await import(
       '@/app/(member)/portal/broadcasts/[id]/loading'
     );
@@ -55,8 +63,12 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
     // change to both, or this fails.
     expect(frame.style.height).toBe(`${DETAIL_PREVIEW_FRAME_HEIGHT}px`);
 
-    // …and it sits in the SECOND card, between fields and delivery.
+    // …and it sits in the SECOND card (the grid's first), between fields and
+    // delivery; the original's frame beside it is reserved at ≥ lg only.
     const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
     expect(cards[1]?.contains(frame)).toBe(true);
+    const original = screen.getByTestId('detail-original-frame-skeleton');
+    expect(cards[2]?.contains(original)).toBe(true);
+    expect(cards[2]?.className).toContain('hidden lg:flex');
   });
 });

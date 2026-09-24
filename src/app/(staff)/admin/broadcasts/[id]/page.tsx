@@ -15,6 +15,7 @@ import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import { FormattedVersionWorkspace } from '@/components/broadcast/approval/formatted-version-workspace';
 import { ScheduleConfirmAction } from '@/components/broadcast/approval/schedule-confirm-dialog';
 import { StartFormattedVersionAction } from '@/components/broadcast/approval/start-formatted-version-action';
+import { VersionThread, hasThreadHistory, staffThreadModel } from '@/components/broadcast/approval/version-thread';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
 import {
@@ -32,7 +33,6 @@ import {
   type BroadcastVersion,
   type BroadcastVersionThread,
   type FormattingWarnings,
-  type MemberDecision,
 } from '@/modules/broadcasts';
 import {
   makeListBroadcastVersionsDeps,
@@ -83,7 +83,6 @@ export default async function AdminBroadcastDetailPage({
   const tHeader = await getTranslations('admin.broadcasts.approval.header');
   const tWarnings = await getTranslations('admin.broadcasts.approval.warnings');
   const tContent = await getTranslations('admin.broadcasts.approval.content');
-  const tFeedback = await getTranslations('admin.broadcasts.approval.feedback');
   const session = await requirePagePermission('broadcasts.read');
   // 016 re-review D — evaluator-derived, never ROLE_BUNDLES: a `manager` holds
   // `broadcasts.read` only, so every action control below is ABSENT for them
@@ -141,11 +140,13 @@ export default async function AdminBroadcastDetailPage({
   const bodyRenderFailed = previewState.status === 'error';
 
   // F119 T063 — the version thread (T061's use case, the same read the GET
-  // route serves) for every stage that carries versions. The history list
-  // itself is T085; this page needs the member's original, the working copy
-  // and the version that was sent / approved.
+  // route serves) for every stage that carries versions: this page needs the
+  // member's original, the working copy and the version that was sent /
+  // approved, and T085's history list renders the rest — including, for an
+  // E-Blast approved as submitted (no version row at all), its single
+  // "approved as submitted" entry (FR-007), hence the `approvedAt` arm.
   const thread =
-    VERSIONED_STATUSES.has(status) || round >= 1
+    VERSIONED_STATUSES.has(status) || round >= 1 || broadcast.approvedAt !== null
       ? await readThread(tenant.slug, broadcast.broadcastId, session.user.id)
       : null;
   const original = thread?.memberOriginal?.version ?? null;
@@ -224,12 +225,12 @@ export default async function AdminBroadcastDetailPage({
       : status === 'submitted' || status === 'in_design'
         ? tHeader('roundNone')
         : <EmptyValue label={tHeader('roundNoRound')} />;
-  // FR-011 (interim until T085's thread) — marketing formats the next version
-  // with the member's latest reason in view. Only a request for changes or a
-  // withdrawn approval carries one; an approval (or a staff-cancelled time)
-  // leaves nothing to act on.
-  const memberFeedback =
-    (status === 'changes_requested' || status === 'in_design') ? latestChangeRequest(thread) : null;
+  // F119 T085 (FR-011, FR-032) — the history: every version sent to the
+  // member and every decision with its reason, attached to the version it
+  // concerns, so marketing formats the next version with the member's
+  // feedback in view. It replaced the interim latest-reason note. The unsent
+  // working copy is not part of it (it is the workspace below).
+  const threadModel = thread === null ? null : staffThreadModel(thread, (d) => fmt.format(d));
 
   return (
     <DetailContainer>
@@ -336,17 +337,8 @@ export default async function AdminBroadcastDetailPage({
         </Card>
       </section>
 
-      {memberFeedback !== null ? (
-        <InlineAlert tone="info" role="note" data-testid="eblast-member-feedback">
-          <InlineAlertTitle>
-            {tFeedback(memberFeedback.decision === 'approval_withdrawn' ? 'withdrawnTitle' : 'changesRequestedTitle', {
-              version: thread?.sentVersions.find((e) => e.version.id === memberFeedback.versionId)?.version.versionNo ?? memberFeedback.round,
-            })}
-          </InlineAlertTitle>
-          <InlineAlertDescription>
-            <span className="block whitespace-pre-line break-words text-foreground">{memberFeedback.reason}</span>
-          </InlineAlertDescription>
-        </InlineAlert>
+      {threadModel !== null && hasThreadHistory(threadModel) ? (
+        <VersionThread audience="staff" model={threadModel} />
       ) : null}
 
       {showWorkspace && workingCopy !== null && original !== null && originalPreview !== null ? (
@@ -460,13 +452,6 @@ async function readThread(
     'broadcasts.detail_page.thread_read_failed',
   );
   return null;
-}
-
-/** The member's latest decision when it asked for changes (or withdrew an approval) with a reason. */
-function latestChangeRequest(thread: BroadcastVersionThread | null): MemberDecision | null {
-  const latest = thread?.decisions.at(-1) ?? null;
-  if (latest === null || latest.decision === 'approved' || latest.reason === null) return null;
-  return latest;
 }
 
 /** The version the member approved, else the latest one sent to them. */
