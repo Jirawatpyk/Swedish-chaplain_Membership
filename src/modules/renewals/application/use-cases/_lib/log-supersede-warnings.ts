@@ -22,7 +22,9 @@ export function logSupersedeWarnings(
     readonly memberId: string;
     /** The NEW bill that was issued (and is valid regardless). */
     readonly invoiceId: string;
-    readonly correlationId: string;
+    /** Whichever request identifier the calling path carries. */
+    readonly correlationId?: string;
+    readonly requestId?: string | null;
   },
 ): void {
   for (const warning of warnings) {

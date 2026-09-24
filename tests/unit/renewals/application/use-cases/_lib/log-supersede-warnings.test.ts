@@ -45,6 +45,26 @@ describe('logSupersedeWarnings', () => {
     ]);
   });
 
+  it('carries a requestId instead of a correlationId for a path that has only a request id', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    logSupersedeWarnings([{ kind: 'list_failed' }], {
+      errorId: 'F8.AUTO_ISSUE.SUPERSEDE_VOID_FAILED',
+      tenantId: 'tenantA',
+      memberId: 'mem-1',
+      invoiceId: 'inv-new',
+      requestId: 'req-1',
+    });
+
+    expect(warnSpy.mock.calls[0]![0]).toEqual({
+      errorId: 'F8.AUTO_ISSUE.SUPERSEDE_VOID_FAILED',
+      tenantId: 'tenantA',
+      memberId: 'mem-1',
+      invoiceId: 'inv-new',
+      requestId: 'req-1',
+      kind: 'list_failed',
+    });
+  });
+
   it('never throws, even when the logger does (a minted bill must still get linked)', () => {
     vi.spyOn(logger, 'warn').mockImplementation(() => {
       throw new Error('log sink down');
