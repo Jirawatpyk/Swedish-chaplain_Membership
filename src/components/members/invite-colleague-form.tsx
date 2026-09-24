@@ -8,6 +8,8 @@ import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import {
   Card,
   CardContent,
@@ -53,6 +55,7 @@ type InviteFormValues = z.infer<ReturnType<typeof buildInviteSchema>>;
 
 export function InviteColleagueForm() {
   const t = useTranslations('portal.invite');
+  const readOnlyToast = useReadOnlyToast();
   const tLang = useTranslations('common');
   const tv = useTranslations('shared.validation');
   const router = useRouter();
@@ -102,6 +105,10 @@ export function InviteColleagueForm() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+        if (isReadOnlyRefusal(res.status, data)) {
+          readOnlyToast();
+          return;
+        }
         const code = data?.error?.code;
         if (code === 'email_taken') {
           // Field-scoped — surface inline on the email input (+ focus) rather

@@ -7,6 +7,8 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,6 +53,7 @@ type PortalEditFormProps = {
 
 export function PortalEditForm({ initialValues }: PortalEditFormProps) {
   const t = useTranslations('portal.edit');
+  const readOnlyToast = useReadOnlyToast();
   const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -98,6 +101,11 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+        // The write freeze: the typed values stay in the form for the retry.
+        if (isReadOnlyRefusal(res.status, data)) {
+          readOnlyToast();
+          return;
+        }
         // Surface a field-scoped server rejection INLINE (audit XF-01): map the
         // first validation issue whose path tail matches a form field, else
         // fall back to a toast. The form's field names match the server keys.

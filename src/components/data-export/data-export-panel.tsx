@@ -16,6 +16,8 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Download, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -72,6 +74,7 @@ export function DataExportPanel({
   readonly downloadUrlBase?: string;
 }): React.JSX.Element {
   const router = useRouter();
+  const readOnlyToast = useReadOnlyToast();
   const [pending, setPending] = React.useState(false);
   // Polite live-region message so screen-reader users hear the request result
   // even if the sonner toast (rendered in a portal outside main) is missed (W1).
@@ -91,6 +94,10 @@ export function DataExportPanel({
         body: '{}',
       });
       if (!res.ok) {
+        if (await isReadOnlyResponse(res)) {
+          setAnnouncement(readOnlyToast());
+          return;
+        }
         toast.error(labels.errorTitle, { description: labels.errorBody });
         setAnnouncement(labels.errorTitle);
         return;

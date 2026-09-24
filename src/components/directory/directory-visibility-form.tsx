@@ -13,6 +13,8 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -52,6 +54,7 @@ export function DirectoryVisibilityForm({
   readonly initial: DirectoryVisibilityFormInitial;
 }): React.JSX.Element {
   const t = useTranslations('directorySettings');
+  const readOnlyToast = useReadOnlyToast();
   const tf = useTranslations('directorySettings.fields');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -93,6 +96,10 @@ export function DirectoryVisibilityForm({
           }),
         });
         if (!res.ok) {
+          if (await isReadOnlyResponse(res)) {
+            readOnlyToast();
+            return;
+          }
           const code = await readErrorCode<UpdateDirectoryListingError>(res);
           if (code === 'invalid_website') setWebsiteError(t('invalidWebsite'));
           else if (code === 'description_too_long') setDescriptionError(t('descriptionTooLong'));
