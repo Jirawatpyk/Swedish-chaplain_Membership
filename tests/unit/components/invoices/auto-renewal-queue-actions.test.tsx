@@ -345,8 +345,9 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
         t.toast.issuedAndSent.replace('{number}', 'SC2026-00101'),
       ),
     );
+    const w = en.admin.invoices.supersedeWarning;
     expect(toast.warning).toHaveBeenCalledWith(
-      t.supersedeWarning.title,
+      w.title,
       expect.objectContaining({ duration: Infinity, closeButton: true }),
     );
     const opts = vi.mocked(toast.warning).mock.calls[0]![1] as {
@@ -356,12 +357,12 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     render(<>{opts.description}</>);
 
     expect(
-      screen.getByText(t.supersedeWarning.voidFailed.replace('{number}', 'SC-2026-000123')),
+      screen.getByText(w.voidFailed.replace('{number}', 'SC-2026-000123')),
     ).toBeInTheDocument();
-    expect(screen.getByText(t.supersedeWarning.listFailed)).toBeInTheDocument();
+    expect(screen.getByText(w.listFailed)).toBeInTheDocument();
     expect(
       screen.getByRole('link', {
-        name: t.supersedeWarning.openBill.replace('{number}', 'SC-2026-000123'),
+        name: w.openBill.replace('{number}', 'SC-2026-000123'),
       }),
     ).toHaveAttribute('href', '/admin/invoices/inv-old-1');
     expect(document.body.textContent).not.toMatch(/supersede:/);
@@ -392,11 +393,12 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
       string,
       { description: React.ReactNode },
     ];
-    expect(title).toBe(thT.supersedeWarning.title);
+    const w = th.admin.invoices.supersedeWarning;
+    expect(title).toBe(w.title);
     cleanup();
     render(<>{opts.description}</>);
     expect(
-      screen.getByText(thT.supersedeWarning.voidFailed.replace('{number}', 'SC-2026-000124')),
+      screen.getByText(w.voidFailed.replace('{number}', 'SC-2026-000124')),
     ).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/supersede:/);
   });
@@ -419,7 +421,7 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     };
     cleanup();
     render(<>{opts.description}</>);
-    expect(screen.getByText(t.supersedeWarning.listFailed)).toBeInTheDocument();
+    expect(screen.getByText(en.admin.invoices.supersedeWarning.listFailed)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/supersede:/);
   });
 

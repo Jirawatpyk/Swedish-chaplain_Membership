@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { asSatang, parseThbDecimal } from '@/lib/money';
+import { logger } from '@/lib/logger';
 import {
   confirmRenewal,
   selfServiceFailureReason,
@@ -372,6 +373,65 @@ describe('confirmRenewal (T122) — happy paths', () => {
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
       type: 'renewal_invoice_created',
     });
+  });
+
+  it('supersede-void failures are logged for staff with an errorId + the old bill number, never returned to the member', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { deps } = fakeDeps({
+      cycle: buildCycle(),
+      invoiceResult: {
+        status: 'issued',
+        invoiceId: 'inv-1',
+        invoiceNumber: 'SC-2026-000200',
+        totalSatang: asSatang(5_000_000n),
+        supersedeWarnings: [
+          {
+            kind: 'void_failed',
+            invoiceId: 'inv-old-1',
+            billDocumentNumber: 'SC-2026-000123',
+            errorCode: 'refund_in_progress',
+          },
+          { kind: 'list_failed' },
+        ],
+      },
+    });
+    const r = await confirmRenewal(deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    // Member-facing path: the member is never shown staff remediation copy.
+    if (r.ok) expect(r.value).not.toHaveProperty('supersedeWarnings');
+    const supersedeLogs = warnSpy.mock.calls.filter(
+      ([obj]) =>
+        (obj as { errorId?: string }).errorId === 'F8.CONFIRM_RENEWAL.SUPERSEDE_VOID_FAILED',
+    );
+    expect(supersedeLogs.map(([obj]) => obj)).toEqual([
+      expect.objectContaining({
+        tenantId: TENANT_ID,
+        memberId: MEMBER_UUID,
+        invoiceId: 'inv-1',
+        kind: 'void_failed',
+        supersededInvoiceId: 'inv-old-1',
+        supersededBillNumber: 'SC-2026-000123',
+        voidErrorCode: 'refund_in_progress',
+      }),
+      expect.objectContaining({ invoiceId: 'inv-1', kind: 'list_failed' }),
+    ]);
+    warnSpy.mockRestore();
+  });
+
+  it('no supersede-void failures → no supersede log', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const { deps } = fakeDeps({ cycle: buildCycle() });
+    const r = await confirmRenewal(deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    expect(
+      warnSpy.mock.calls.some(
+        ([obj]) =>
+          (obj as { errorId?: string }).errorId === 'F8.CONFIRM_RENEWAL.SUPERSEDE_VOID_FAILED',
+      ),
+    ).toBe(false);
+    warnSpy.mockRestore();
   });
 
   it('happy path plan-change — updates frozen plan + emits 3 audits', async () => {
