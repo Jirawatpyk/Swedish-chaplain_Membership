@@ -43,6 +43,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 type RegisterKind = 'rc_register' | 'zero_rate_sales' | 're_register';
 
+// Shape only. A shape-valid but impossible date (`2026-02-30`) is passed
+// through so the use-case refuses it as `invalid_range` / `not_a_date` rather
+// than silently swapping in the default range.
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 interface SearchParams {
@@ -113,9 +116,11 @@ export default async function TaxRegistersPage({
 
           {!result.ok ? (
             <p className="py-8 text-center text-sm text-destructive" role="alert">
-              {result.error.code === 'invalid_range'
-                ? t('errors.invalidRange')
-                : t('errors.loadFailed')}
+              {result.error.code !== 'invalid_range'
+                ? t('errors.loadFailed')
+                : result.error.reason === 'not_a_date'
+                  ? t('errors.invalidDate')
+                  : t('errors.invalidRange')}
             </p>
           ) : (
             <>
@@ -165,7 +170,17 @@ export default async function TaxRegistersPage({
                     locale,
                   )}
                 </p>
-                <p className="mt-2 text-xs text-muted-foreground">{t('outputVat.note')}</p>
+                {/* Only a closed calendar month is "the figure to report" —
+                    the current month can still take receipts, and a range
+                    that is not one month is not a ภ.พ.30 period at all. */}
+                <p className="mt-2 text-sm font-medium" data-testid="period-output-vat-status">
+                  {result.value.periodStatus === 'closed_month'
+                    ? t('outputVat.status.closedMonth')
+                    : result.value.periodStatus === 'month_to_date'
+                      ? t('outputVat.status.monthToDate')
+                      : t('outputVat.status.notAMonth')}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('outputVat.note')}</p>
               </section>
 
               {result.value.rows.length === 0 ? (
@@ -174,6 +189,12 @@ export default async function TaxRegistersPage({
                 <>
                   <p className="text-sm text-muted-foreground" data-testid="register-summary">
                     {t('summary.count', { count: result.value.summary.rowCount })}
+                    {result.value.summary.cancelledCount > 0 ? (
+                      <>
+                        {' '}
+                        {t('summary.cancelled', { count: result.value.summary.cancelledCount })}
+                      </>
+                    ) : null}
                     {' · '}
                     {t('summary.subtotal')}{' '}
                     {formatSatangThb(BigInt(result.value.summary.totalSubtotalSatang), locale)}

@@ -299,6 +299,7 @@ export {
   type ListTaxDocumentRegisterDeps,
   type TaxDocumentRegisterSummary,
   type PeriodOutputVat,
+  type RegisterPeriodStatus,
 } from './application/use-cases/list-tax-document-register';
 export type {
   TaxRegisterRepo,

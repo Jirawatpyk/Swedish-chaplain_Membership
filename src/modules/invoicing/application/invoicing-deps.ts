@@ -220,7 +220,7 @@ export function makeListInvoicesByMemberDeps(tenantId: string): import('./use-ca
 export function makeListTaxDocumentRegisterDeps(
   tenantId: string,
 ): import('./use-cases/list-tax-document-register').ListTaxDocumentRegisterDeps {
-  return { registerRepo: makeDrizzleTaxRegisterRepo(tenantId) };
+  return { registerRepo: makeDrizzleTaxRegisterRepo(tenantId), clock: systemClock };
 }
 
 export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfSignedUrlDeps {

@@ -2688,14 +2688,20 @@
           "rc": "§86/4 (RC)",
           "re": "§105 (RE)",
           "gross": "Gross output VAT",
-          "creditNote": "less §86/10 credit notes",
-          "note": "Net standard-rated output VAT for the period: §86/4 tax-receipt + §105 receipt streams (cancelled receipts excluded), less §86/10 credit notes issued this period — the figure to report on ภ.พ.30. §80/1(5) zero-rate sales add 0. The table below shows only the selected register."
+          "creditNote": "§86/10 credit notes",
+          "note": "Net standard-rated output VAT for the period: §86/4 tax-receipt + §105 receipt streams (cancelled receipts excluded), less §86/10 credit notes issued this period. §80/1(5) zero-rate sales add 0. The table below shows only the selected register.",
+          "status": {
+            "closedMonth": "The figure to report on ภ.พ.30 for this month.",
+            "monthToDate": "Month to date — the period is not closed.",
+            "notAMonth": "Not a single calendar month — ภ.พ.30 is filed per calendar month."
+          }
         },
         "summary": {
           "count": "{count, plural, one {# receipt} other {# receipts}}",
           "subtotal": "Subtotal",
           "vat": "VAT",
-          "total": "Total"
+          "total": "Total",
+          "cancelled": "({count} cancelled — not in totals)"
         },
         "columns": {
           "receiptNo": "Receipt No.",
@@ -2716,7 +2722,8 @@
         "empty": "No tax documents in this period.",
         "errors": {
           "invalidRange": "From-date must be on or before To-date, within one year.",
-          "loadFailed": "Could not load the register. Please try again."
+          "loadFailed": "Could not load the register. Please try again.",
+          "invalidDate": "Enter a real calendar date (YYYY-MM-DD)."
         }
       },
       "new": {

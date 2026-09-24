@@ -2688,14 +2688,20 @@
           "rc": "§86/4 (RC)",
           "re": "§105 (RE)",
           "gross": "Brutto utgående moms",
-          "creditNote": "minus §86/10-kreditnotor",
-          "note": "Netto standardbeskattad utgående moms för perioden: §86/4-skattekvitton + §105-kvitton (annullerade kvitton exkluderade), minus §86/10-kreditnotor utfärdade denna period — beloppet som ska rapporteras i ภ.พ.30. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret."
+          "creditNote": "§86/10-kreditnotor",
+          "note": "Netto standardbeskattad utgående moms för perioden: §86/4-skattekvitton + §105-kvitton (annullerade kvitton exkluderade), minus §86/10-kreditnotor utfärdade denna period. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret.",
+          "status": {
+            "closedMonth": "Beloppet som ska rapporteras i ภ.พ.30 för denna månad.",
+            "monthToDate": "Månaden hittills — perioden är inte stängd.",
+            "notAMonth": "Inte en enskild kalendermånad — ภ.พ.30 lämnas per kalendermånad."
+          }
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",
           "subtotal": "Delsumma",
           "vat": "Moms",
-          "total": "Totalt"
+          "total": "Totalt",
+          "cancelled": "({count, plural, one {# annullerat} other {# annullerade}} — ingår inte i summorna)"
         },
         "columns": {
           "receiptNo": "Kvittonr.",
@@ -2716,7 +2722,8 @@
         "empty": "Inga skattedokument under denna period.",
         "errors": {
           "invalidRange": "Från-datumet måste vara samma dag eller före Till-datumet, inom ett år.",
-          "loadFailed": "Kunde inte ladda registret. Försök igen."
+          "loadFailed": "Kunde inte ladda registret. Försök igen.",
+          "invalidDate": "Ange ett giltigt datum (ÅÅÅÅ-MM-DD)."
         }
       },
       "new": {
