@@ -39,10 +39,11 @@ vi.mock('@/modules/plans', async (importActual) => ({
   getPlan,
 }));
 const findOne = vi.hoisted(() => vi.fn());
+const findByTenantAndYear = vi.hoisted(() => vi.fn());
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: () => ({
     tenant: { slug: 'swecham' },
-    planRepo: { findOne },
+    planRepo: { findOne, findByTenantAndYear },
     audit: {},
     taxPolicy: async () => ({ currencyCode: 'THB', vatRateRaw: '0.0700' }),
     clock: { currentYear: () => 2026 },
@@ -79,14 +80,27 @@ describe('Edit plan page — prior-year banner CTA', () => {
     );
   });
 
-  it('falls back to the clone page when the current-year version is missing or deleted', async () => {
+  it('falls back to the clone page when the current-year version is deleted and 2026 is empty', async () => {
     getPlan.mockResolvedValue({ ok: true, value: makePlan({ plan_year: 2025 }) });
     findOne.mockResolvedValue(makePlan({ plan_year: 2026, deleted_at: new Date() }));
+    findByTenantAndYear.mockResolvedValue([]);
     await renderPage();
+    expect(findByTenantAndYear).toHaveBeenCalledWith({ slug: 'swecham' }, { year: 2026 });
     expect(screen.queryByRole('link', { name: 'Open the 2026 version' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /2026/ })).toHaveAttribute(
       'href',
       '/admin/plans/clone?from=2025&to=2026',
+    );
+  });
+
+  it('links to the new-plan wizard when 2026 has other plans but not this one', async () => {
+    getPlan.mockResolvedValue({ ok: true, value: makePlan({ plan_year: 2025 }) });
+    findOne.mockResolvedValue(undefined);
+    findByTenantAndYear.mockResolvedValue([makePlan({ plan_id: 'gold', plan_year: 2026 })]);
+    await renderPage();
+    expect(screen.getByRole('link', { name: 'Create the 2026 plan' })).toHaveAttribute(
+      'href',
+      '/admin/plans/new',
     );
   });
 });

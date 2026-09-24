@@ -156,4 +156,35 @@ describe('PlanFormWizard per-field errors', () => {
     expect(screen.queryByText(E.planId)).not.toBeInTheDocument();
     expect(stepStatus(0)).toBe('current');
   });
+
+  it('moves focus to the first invalid field when Next fails', () => {
+    renderWizard();
+    next();
+    expect(document.activeElement).toBe(document.getElementById('plan_id'));
+  });
+
+  it('links money and locale-text errors to their inputs', () => {
+    renderWizard({
+      ...VALID,
+      plan_name: { en: '' },
+    });
+    next();
+    const name = screen.getByLabelText('Plan name (EN)');
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(name).toHaveAccessibleDescription(E.planName);
+  });
+
+  it('describes max turnover with the cross-field message', () => {
+    renderWizard({
+      ...VALID,
+      min_turnover_minor_units: 500_000_000,
+      max_turnover_minor_units: 100_000_000,
+    });
+    next();
+    next();
+    const max = screen.getByRole('textbox', { name: /Maximum turnover/ });
+    expect(max).toHaveAttribute('aria-invalid', 'true');
+    expect(max).toHaveAccessibleDescription(E.turnoverOrder);
+    expect(document.activeElement).toBe(max);
+  });
 });

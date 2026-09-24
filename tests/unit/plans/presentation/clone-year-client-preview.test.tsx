@@ -122,4 +122,15 @@ describe('CloneYearClient plan preview', () => {
     });
     expect(screen.getByText(en.admin.plans.clone.preview.failed)).toBeInTheDocument();
   });
+
+  it('drops the year from the heading while a partial year is typed', () => {
+    renderClient();
+    act(() => {
+      fireEvent.change(document.getElementById('source_year')!, {
+        target: { value: '202' },
+      });
+    });
+    expect(screen.queryByText('Plans to copy from 202')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Plans to copy' })).toBeInTheDocument();
+  });
 });
