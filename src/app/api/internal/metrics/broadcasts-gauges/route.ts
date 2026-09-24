@@ -268,7 +268,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // below. `status::text` like every sibling: a bare comparison against
       // a literal the pg enum does not (yet) carry is an error, not a miss.
       // MIN over zero FILTERed rows is NULL, hence the COALESCE. This query
-      // needs migration 0305 (`stage_entered_at` + the five statuses), which
+      // needs migration 0308 (`stage_entered_at` + the five statuses), which
       // ships in the same PR and runs in `vercel-build` before the build.
       const eblastStageRows = await tx.execute<EblastStageRow>(sql`
         SELECT

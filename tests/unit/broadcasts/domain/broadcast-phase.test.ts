@@ -234,7 +234,7 @@ describe('phaseOf', () => {
     ).toThrow(/BroadcastPhaseInvariantViolation/);
   });
 
-  // F119 T051 — the five 0305 statuses. Every one of them is entered after
+  // F119 T051 — the five 0308 statuses. Every one of them is entered after
   // submission, so each needs `submittedAt`; nothing else is guaranteed
   // (`approvedAt` survives an `approved → in_design | changes_requested` edge).
   const approvalRoundStatuses = [

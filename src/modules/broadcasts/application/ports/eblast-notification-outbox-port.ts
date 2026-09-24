@@ -20,7 +20,7 @@
  */
 import type { TenantContext } from '@/modules/tenants';
 
-/** The five 0305 `notification_type` values (data-model § 7.3). */
+/** The five 0308 `notification_type` values (data-model § 7.3). */
 export const F119_NOTIFICATION_TYPES = [
   'eblast_submitted_marketing',
   'eblast_member_decided_marketing',

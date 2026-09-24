@@ -97,9 +97,9 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                           from 0267 at stack assembly so it follows task-7's 0268)
  *                        += 'member_plan_change_billing_effect' (0270, renumbered from
  *                           0259 at rebase so it follows the task-7 stack's 0269)
- *                        += the ten F119 approval-round events (0305)
- *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0305)
- *   - `broadcast_status`  += the five F119 approval-round statuses (0305)
+ *                        += the ten F119 approval-round events (0308)
+ *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0308)
+ *   - `broadcast_status`  += the five F119 approval-round statuses (0308)
  */
 export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
   // role base 'admin','manager','member' (0000) + 'super_admin','marketing' (0285,
@@ -164,7 +164,7 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'broadcast_brand_settings_changed',
     'broadcast_image_uploaded',
     'broadcast_image_removed',
-    // F119 PR-2 (0305) — the approval round's use cases and the daily tick
+    // F119 PR-2 (0308) — the approval round's use cases and the daily tick
     // INSERT these in the same tx as their state change (T056–T060, T078,
     // T130); a non-persisting ADD VALUE would 500 every hand-off in prod.
     'broadcast_version_started',
@@ -182,7 +182,7 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
   notification_type: [
     'member_change_request_submitted_staff',
     'member_change_request_decided_member',
-    // F119 PR-2 (0305) — the five hand-off rows; enqueued unconditionally,
+    // F119 PR-2 (0308) — the five hand-off rows; enqueued unconditionally,
     // so a missing value fails the INSERT whether or not the flag is on.
     'eblast_submitted_marketing',
     'eblast_member_decided_marketing',
@@ -190,8 +190,8 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'eblast_schedule_confirmed_member',
     'eblast_approval_lifecycle',
   ],
-  // F119 PR-2 (0305) — the five approval-round statuses. Every hand-off
-  // UPDATEs `broadcasts.status` to one of them (and 0305's partial index
+  // F119 PR-2 (0308) — the five approval-round statuses. Every hand-off
+  // UPDATEs `broadcasts.status` to one of them (and 0308's partial index
   // names `awaiting_member_approval`), so a silently-no-op ADD VALUE would
   // 500 every transition in prod instead of failing the deploy (R-9). The
   // ten pre-existing labels are not listed: nothing here can lose them.

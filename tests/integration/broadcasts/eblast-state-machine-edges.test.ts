@@ -1,5 +1,5 @@
 /**
- * F119 T037 — the state-machine edges migration 0305 adds (data-model § 8.2)
+ * F119 T037 — the state-machine edges migration 0308 adds (data-model § 8.2)
  * behave identically at the DB trigger (`broadcasts_state_machine_fn`) and in
  * the Domain map (`canTransition`).
  *
@@ -7,7 +7,7 @@
  *   - DB: every `from` row of the § 8.2 table permits EXACTLY its listed
  *     targets and refuses the other thirteen with
  *     `broadcast_invalid_state_transition`; `expired_no_member_response` has
- *     no outgoing edge. Green once 0305 is applied (T048).
+ *     no outgoing edge. Green once 0308 is applied (T048).
  *   - Domain parity: every (from,to) pair that involves at least one of the
  *     five new statuses is probed at the DB and compared with
  *     `canTransition`. RED until T051 widens the Domain union and the

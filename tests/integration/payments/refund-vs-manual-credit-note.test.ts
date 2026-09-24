@@ -380,6 +380,24 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
     expect(await countRefunds()).toBe(0);
   }, 60_000);
 
+  it('0306 — refuses End membership on a PARTIAL refund before Stripe; no refund row written', async () => {
+    const deps = buildDeps(tenant.ctx.slug);
+    const r = await issueRefund(deps, {
+      tenantId: tenant.ctx.slug,
+      paymentId,
+      amountSatang: asSatang(10_000n),
+      reason: 'partial — cannot end the membership',
+      actorUserId: user.userId,
+      correlationId: 'corr-membership-partial',
+      requestId: 'req-membership-partial',
+      membershipEffect: 'cancel_membership',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('membership_effect_not_applicable');
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+    expect(await countRefunds()).toBe(0);
+  }, 60_000);
+
   it('allows a 53,500 refund that exactly equals the F4 headroom — createRefund IS called', async () => {
     // A `pending` Stripe status keeps this at the pre-CN boundary: it proves
     // the pre-flight ALLOWED the refund (createRefund invoked) without needing
@@ -394,6 +412,10 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-allow',
       requestId: 'req-allow',
+      // 0306 — exactly the headroom FULLY credits this membership invoice, so
+      // End membership applies; it is pinned on the (pending) refund row for
+      // the async finaliser.
+      membershipEffect: 'cancel_membership',
     });
 
     expect(r.ok).toBe(true);
@@ -404,5 +426,12 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
     // The pre-flight let it through → Stripe was asked to move the money.
     expect(deps.processorGateway.createRefund).toHaveBeenCalledTimes(1);
     expect(await countRefunds()).toBe(1);
+    const [row] = await runInTenant(tenant.ctx, async (tx) =>
+      (await tx.execute(sql`
+        SELECT membership_effect FROM refunds
+        WHERE tenant_id = ${tenant.ctx.slug} AND payment_id = ${paymentId}
+      `)) as unknown as Array<{ membership_effect: string | null }>,
+    );
+    expect(row!.membership_effect).toBe('cancel_membership');
   }, 60_000);
 });

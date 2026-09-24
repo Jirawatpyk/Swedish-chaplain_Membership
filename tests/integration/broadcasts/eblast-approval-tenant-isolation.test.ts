@@ -9,7 +9,7 @@
  *     turns it into a tenant-authored WRITE surface (brand colour + postal
  *     address) and T021 registers it in `SCOPED_TABLES`, so it takes the same
  *     probe as a new table.
- * PR-2 (migration 0305, T047): `broadcast_versions` + `broadcast_member_decisions`.
+ * PR-2 (migration 0308, T047): `broadcast_versions` + `broadcast_member_decisions`.
  *
  * Fixtures are inserted through the schema-owner `db` (BYPASSRLS); every
  * probe runs under `runInTenant`, which is the only way application code
@@ -195,7 +195,7 @@ describe('F119 tenant isolation — broadcast_images + tenant_broadcast_settings
     });
   });
 
-  // --- T047 (PR-2, migration 0305) -----------------------------------------
+  // --- T047 (PR-2, migration 0308) -----------------------------------------
   describe('tenant B cannot read or write tenant A\'s versions or decisions', () => {
     // One E-Blast per tenant, awaiting the member, with one sent version and
     // one decision on it. The rows are the FK chain the tables require.

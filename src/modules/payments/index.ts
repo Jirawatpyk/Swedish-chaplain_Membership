@@ -114,6 +114,14 @@ export {
   type CountPendingRefundsForInvoiceDeps,
 } from './application/use-cases/count-pending-refunds-for-invoice';
 export { makeCountPendingRefundsForInvoiceDeps } from './infrastructure/di';
+// 0306 — renewals reconcile backstop: recent refunds whose staff chose
+// "End membership" (the durable record of that decision).
+export {
+  listRefundsEndingMembership,
+  type RefundEndingMembershipRow,
+  type ListRefundsEndingMembershipDeps,
+} from './application/use-cases/list-refunds-ending-membership';
+export { makeListRefundsEndingMembershipDeps } from './infrastructure/di';
 export {
   issueRefund,
   type IssueRefundInput,

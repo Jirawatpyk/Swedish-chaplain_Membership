@@ -900,7 +900,7 @@ export async function submitBroadcast(
       // Apply transition draft → submitted with submittedAt timestamp.
       // F119 FR-016 — the requested time becomes the member's PROPOSAL here,
       // and only here: `scheduled_for` is overwritten by every later confirm,
-      // `proposed_send_at` is frozen from this write on (0305 F1). null is an
+      // `proposed_send_at` is frozen from this write on (0308 F1). null is an
       // explicit "did not propose".
       broadcast = await deps.broadcastsRepo.applyTransition(
         tx,

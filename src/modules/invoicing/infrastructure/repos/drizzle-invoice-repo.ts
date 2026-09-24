@@ -812,7 +812,10 @@ export function makeDrizzleInvoiceRepo(
     async listSupersedableMembershipBills(tenantIdArg, memberId, bound) {
       return runInTenant(ctx, async (tx) => {
         const rows = await (tx as TenantTx)
-          .select({ invoiceId: invoices.invoiceId })
+          .select({
+            invoiceId: invoices.invoiceId,
+            billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+          })
           .from(invoices)
           .where(
             and(
@@ -830,7 +833,16 @@ export function makeDrizzleInvoiceRepo(
             ),
           )
           .orderBy(invoices.createdAt, invoices.invoiceId);
-        return rows.map((r) => ({ invoiceId: r.invoiceId }));
+        // `isNotNull(billDocumentNumberRaw)` above makes a NULL unreachable.
+        // Should that filter ever regress, fail LOUD rather than drop the row:
+        // the throw lands in `issueMembershipBill`'s list catch → `list_failed`
+        // warning + metric, instead of an outstanding bill silently skipped.
+        return rows.map((r) => {
+          if (r.billDocumentNumberRaw === null) {
+            throw new Error('invariant: supersedable membership bill without a bill number');
+          }
+          return { invoiceId: r.invoiceId, billDocumentNumberRaw: r.billDocumentNumberRaw };
+        });
       });
     },
 

@@ -374,6 +374,8 @@ export function makeResolveFailedAutoRefundDeps(
 // ---------------------------------------------------------------------------
 import type { SweepStalePendingRefundsDeps } from '../application/use-cases/sweep-stale-pending-refunds';
 import { billingRecipientAdapter } from './billing-recipient-adapter';
+import type { ListRefundsEndingMembershipDeps } from '../application/use-cases/list-refunds-ending-membership';
+import { makeDrizzleRefundsEndingMembershipReader } from './repos/drizzle-refunds-repo';
 
 export function makeSweepStalePendingRefundsDeps(
   tenantId: string,
@@ -403,3 +405,11 @@ export const __internal = {
   generatePaymentId,
   generateRefundId,
 };
+
+// 0306 — the renewals reconcile backstop reads recent "End membership"
+// refunds through this facade (Principle III: never the repo directly).
+export function makeListRefundsEndingMembershipDeps(
+  tenantId: string,
+): ListRefundsEndingMembershipDeps {
+  return { read: makeDrizzleRefundsEndingMembershipReader(tenantId) };
+}

@@ -9,7 +9,7 @@
 import type { PaymentId } from '../../domain/payment';
 // Single source of truth — Domain owns the status enum so a future
 // `'voided'` addition (post-MVP) cannot drift between Domain + Port.
-import type { Refund, RefundStatus } from '../../domain/refund';
+import type { Refund, RefundMembershipEffect, RefundStatus } from '../../domain/refund';
 import type { RejectionProof } from '../../domain/settlement/money-moved';
 import type { Satang } from '@/lib/money';
 // Track B — the waiver vocabulary is owned by F4 Domain (it encodes §86/10
@@ -129,6 +129,8 @@ export interface RefundsRepo {
      * column — see migration 0268.
      */
     readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
+    /** 0306 — Keep / End membership; omitted/null = not declared. */
+    readonly membershipEffect?: RefundMembershipEffect | null;
     readonly initiatedAt: Date;
     },
   ): Promise<RefundRow>;

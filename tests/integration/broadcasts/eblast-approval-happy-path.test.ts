@@ -260,7 +260,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
 /**
  * FR-016 / FR-018 — the member's proposed time is WRITTEN AT SUBMIT and frozen.
  * The suite above submits with no time and confirms `send_now`, so it could not
- * see that nothing wrote `proposed_send_at` after the 0305 backfill: every new
+ * see that nothing wrote `proposed_send_at` after the 0308 backfill: every new
  * E-Blast then refused `keep_proposal` with 409 `no_proposal` and the "not the
  * time you proposed" line never fired. This one submits WITH a time, keeps it,
  * then moves it — and the proposal survives the move (the F1 freeze).

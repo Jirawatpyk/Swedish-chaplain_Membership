@@ -3,7 +3,7 @@
  * way marketing does, so a spec that needs a real `in_design` or
  * `awaiting_member_approval` row gets one the state machine produced rather
  * than a hand-written INSERT that would have to mirror `broadcast_versions`,
- * the 0305 stage columns and the round counter (and drift from them).
+ * the 0308 stage columns and the round counter (and drift from them).
  *
  * Start from a `submitted` row (`seedMemberDetailBroadcast`). Both helpers
  * need `FEATURE_EBLAST_MEMBER_APPROVAL=true` on the server under test — the

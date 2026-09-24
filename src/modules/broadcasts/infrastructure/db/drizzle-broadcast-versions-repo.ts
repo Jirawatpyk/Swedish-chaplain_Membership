@@ -1,5 +1,5 @@
 /**
- * F119 T055 — Drizzle adapter for `BroadcastVersionsRepo` (migration 0305).
+ * F119 T055 — Drizzle adapter for `BroadcastVersionsRepo` (migration 0308).
  *
  * Every query runs on the caller's `runInTenant` `tx` — the port makes it
  * required, so there is no path to the pool-global `db` (which would bypass

@@ -5,7 +5,7 @@
  * module's own retired-status rule, `broadcast-status.ts`), and never hide a
  * stage an in-flight E-Blast is sitting in.
  *
- * The five stages that exist only because of migration 0305 are the gated
+ * The five stages that exist only because of migration 0308 are the gated
  * set; the eight pre-existing offered statuses are never gated.
  *
  * `next/navigation` is mocked per `queue-filters-grouping.test.tsx`.

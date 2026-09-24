@@ -39,7 +39,7 @@ import {
  */
 const TRANSITIONS: Readonly<Record<BroadcastStatus, ReadonlyArray<BroadcastStatus>>> = {
   draft: ['submitted'],
-  // F119 (0305, data-model § 8.2) — every arm that touches one of the five
+  // F119 (0308, data-model § 8.2) — every arm that touches one of the five
   // new statuses is identical to `broadcasts_state_machine_fn`; T037 probes
   // each pair at the DB and here. `approved → failed_to_dispatch` stays a
   // trigger-only edge (a recorded pre-existing divergence, out of scope).

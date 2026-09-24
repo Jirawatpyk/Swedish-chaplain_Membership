@@ -63,6 +63,8 @@ function renderForm() {
         remainingSatang={REMAINING_SATANG}
         currencySymbol="THB"
         invoiceSubject="event"
+        paymentChannel="bank_transfer"
+        onlineRefundState="none"
       />
     </NextIntlClientProvider>,
   );

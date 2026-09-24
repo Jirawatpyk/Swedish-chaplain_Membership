@@ -78,7 +78,7 @@ export const broadcastStatusEnum = pgEnum('broadcast_status', [
   // sets broadcasts.partial_delivery_accepted_at + _by_user_id.
   'partially_sent',
   'partial_delivery_accepted',
-  // F119 PR-2 (migration 0305, data-model § 7.1 + § 8.2) — the two-sided
+  // F119 PR-2 (migration 0308, data-model § 7.1 + § 8.2) — the two-sided
   // approval round. `in_design`, `changes_requested` and `member_approved`
   // are marketing's turn, `awaiting_member_approval` the member's;
   // `expired_no_member_response` is TERMINAL and reachable only from
@@ -273,7 +273,7 @@ export const broadcasts = pgTable(
       withTimezone: true,
     }),
 
-    // F119 PR-2 (migration 0305, data-model § 3) — the approval round.
+    // F119 PR-2 (migration 0308, data-model § 3) — the approval round.
     // `proposedSendAt` is the member's proposal, written at submit and FROZEN
     // after draft by `broadcasts_immutable_after_submit_fn` (F1). The other
     // five are workflow bookkeeping, freely writable by the workflow and
@@ -431,13 +431,13 @@ export const broadcasts = pgTable(
         sql`audience_import_id IS NOT NULL AND audience_import_completed_at IS NULL`,
       ),
 
-    // F119 PR-2 (migration 0305, data-model § 3).
+    // F119 PR-2 (migration 0308, data-model § 3).
     check(
       'broadcasts_member_reminder_stage_check',
       sql`${table.memberReminderStage} BETWEEN 0 AND 3`,
     ),
     // `broadcasts_approved_version_fk` — (tenant_id, approved_version_id) →
-    // broadcast_versions(tenant_id, id) — exists in migration 0305 but is NOT
+    // broadcast_versions(tenant_id, id) — exists in migration 0308 but is NOT
     // declared here: broadcast_versions already references broadcasts, and a
     // back-reference makes the two table types circular (TS7022, both infer
     // `any`). `db:generate` is abandoned, so the migration is the source.
@@ -1072,7 +1072,7 @@ export type BroadcastImageRow = typeof broadcastImages.$inferSelect;
 export type NewBroadcastImageRow = typeof broadcastImages.$inferInsert;
 
 // ---------------------------------------------------------------------------
-// F119 PR-2 — broadcast_versions (migration 0305, data-model § 1)
+// F119 PR-2 — broadcast_versions (migration 0308, data-model § 1)
 // ---------------------------------------------------------------------------
 
 /**
@@ -1157,7 +1157,7 @@ export type BroadcastVersionRow = typeof broadcastVersions.$inferSelect;
 export type NewBroadcastVersionRow = typeof broadcastVersions.$inferInsert;
 
 // ---------------------------------------------------------------------------
-// F119 PR-2 — broadcast_member_decisions (migration 0305, data-model § 2)
+// F119 PR-2 — broadcast_member_decisions (migration 0308, data-model § 2)
 // ---------------------------------------------------------------------------
 
 /**

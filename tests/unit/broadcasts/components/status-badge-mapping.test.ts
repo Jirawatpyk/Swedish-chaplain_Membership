@@ -39,7 +39,7 @@ describe('getBroadcastStatusBadgeProps', () => {
     ['rejected', 'destructive'],
     ['cancelled', 'outline'],
     ['failed_to_dispatch', 'destructive'],
-    // F119 (0305) — marketing's turn reads like `submitted`; the member's turn
+    // F119 (0308) — marketing's turn reads like `submitted`; the member's turn
     // is distinct and non-destructive; expiry is muted like `cancelled`.
     ['in_design', 'secondary'],
     ['awaiting_member_approval', 'outline'],

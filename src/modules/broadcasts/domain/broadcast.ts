@@ -191,7 +191,7 @@ export interface Broadcast {
     | { readonly templateId: string; readonly templateNameSnapshot: string }
     | null;
 
-  // F119 (migration 0305, data-model § 3) — the approval-round bookkeeping.
+  // F119 (migration 0308, data-model § 3) — the approval-round bookkeeping.
   // `proposedSendAt` is the member's proposal, frozen after submit (FR-016).
   // `stageEnteredAt` drives time-in-stage and the reminder clock (FR-026).
   // `currentRound` counts versions SENT to the member (0 = never formatted).
@@ -283,7 +283,7 @@ export type BroadcastPhase =
       readonly quotaYearConsumed: number;
       readonly quotaConsumedAt: Date;
     }
-  // F119 (0305) — the approval round and its day-30 close. All five are
+  // F119 (0308) — the approval round and its day-30 close. All five are
   // entered after submission and never reach a send stage, so submission is
   // the only lifecycle guarantee they share; `approvedAt` may or may not
   // survive (`approved → in_design | changes_requested`), so it is not

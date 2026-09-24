@@ -42,7 +42,7 @@ describe('BROADCAST_STATUSES', () => {
       'failed_to_dispatch',
       'partially_sent',
       'partial_delivery_accepted',
-      // F119 (migration 0305) — the approval round, in pgEnum order.
+      // F119 (migration 0308) — the approval round, in pgEnum order.
       'in_design',
       'awaiting_member_approval',
       'changes_requested',
@@ -51,7 +51,7 @@ describe('BROADCAST_STATUSES', () => {
     ]);
   });
 
-  it('count matches data-model + DB enum (15 values after F119 0305)', () => {
+  it('count matches data-model + DB enum (15 values after F119 0308)', () => {
     expect(BROADCAST_STATUSES).toHaveLength(15);
   });
 });

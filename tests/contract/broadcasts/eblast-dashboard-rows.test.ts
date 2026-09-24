@@ -138,7 +138,7 @@ describe('every dashboard row carries the FR-026 columns (T110)', () => {
     expect(item['confirmedSendAt']).toBeNull();
   });
 
-  it('a pre-0305 row with no recorded proposal reads null, not the confirmed time', async () => {
+  it('a pre-0308 row with no recorded proposal reads null, not the confirmed time', async () => {
     dash.rows = [makeApprovalBroadcast({ status: 'sent', proposedSendAt: null, scheduledFor: CONFIRMED })];
     const item = await onlyItem();
     expect(item['proposedSendAt']).toBeNull();

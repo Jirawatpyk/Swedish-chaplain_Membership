@@ -4,7 +4,7 @@
  *
  * 15-state lifecycle constant tuple (FR-004 + FR-004a + FR-008a/b, and the
  * five F119 approval-round statuses). Mirrors the `broadcastStatusEnum` in
- * Infrastructure schema + DB pgEnum (migrations 0064 + 0169 + 0305) verbatim. The Domain owns the
+ * Infrastructure schema + DB pgEnum (migrations 0064 + 0169 + 0308) verbatim. The Domain owns the
  * **transition policy** (`broadcast-status-transitions.ts`);
  * Infrastructure owns the **DB enum + state-machine trigger**
  * (data-model § 4.2).
@@ -24,7 +24,7 @@ export const BROADCAST_STATUSES = [
   // F7.1a US1 — Phase 3 B0 extension
   'partially_sent',
   'partial_delivery_accepted',
-  // F119 (migration 0305, data-model § 7.1) — the two-sided approval round.
+  // F119 (migration 0308, data-model § 7.1) — the two-sided approval round.
   // Same order as the `broadcast_status` pgEnum and `broadcastStatusEnum`.
   'in_design',
   'awaiting_member_approval',
@@ -99,7 +99,7 @@ export const OFFERED_BROADCAST_STATUSES: ReadonlyArray<BroadcastStatus> =
 
 /**
  * F119 T116 / T151 (research R18) — the stages that exist only because of the
- * approval round (migration 0305). Their filter chip is offered while the round
+ * approval round (migration 0308). Their filter chip is offered while the round
  * is switched on OR while the tenant has a row in that stage: never a filter
  * that can only return zero rows (the retired-status rule above), and never a
  * stage an in-flight E-Blast is sitting in hidden from the people who must act

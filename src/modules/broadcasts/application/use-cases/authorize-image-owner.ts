@@ -12,7 +12,7 @@
  *              existence leak. A closed broadcast → `closed`.
  *   staff    → a broadcast in the accepted stage set
  *              (`IMAGE_UPLOAD_STAFF_STAGES` = draft, submitted, in_design —
- *              T106a added in_design with migration 0305), same tenant. A
+ *              T106a added in_design with migration 0308), same tenant. A
  *              SENT version is read-only, so awaiting_member_approval and
  *              every later stage are `closed`. Returns the
  *              owning member so the upload audit carries `related_member_id`.

@@ -9,7 +9,7 @@
  *
  * The two UPDATEs set `app.allow_broadcast_redaction = 'on'` themselves
  * (SET LOCAL — scoped to this tx, idempotent) rather than relying on
- * `scrubContentForMemberInTx` having run first: under it the 0305 triggers
+ * `scrubContentForMemberInTx` having run first: under it the 0308 triggers
  * permit ONLY `subject`/`body_html`/`body_source`/`note_to_member` on a sent
  * version and ONLY `reason` on a decision, so this path cannot move anything
  * else. `'[redacted]'` satisfies every CHECK it touches (subject 1–200 chars,

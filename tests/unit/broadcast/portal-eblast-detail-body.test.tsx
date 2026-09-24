@@ -20,7 +20,7 @@
  *
  * PR-1 scope (plan Amendment 5): the body is the broadcast RECORD's own
  * content. "the latest sent version while awaiting the member" needs
- * `broadcast_versions` (migration 0305) and is asserted by T141a in PR-2.
+ * `broadcast_versions` (migration 0308) and is asserted by T141a in PR-2.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';

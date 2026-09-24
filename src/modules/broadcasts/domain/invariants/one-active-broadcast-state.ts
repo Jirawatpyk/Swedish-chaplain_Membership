@@ -39,7 +39,7 @@ interface FieldRule {
 }
 
 /**
- * F119 (0305) — the approval-round statuses (`in_design`,
+ * F119 (0308) — the approval-round statuses (`in_design`,
  * `awaiting_member_approval`, `changes_requested`, `member_approved`) and the
  * closed `expired_no_member_response` are all entered after submission and
  * never reach a send stage, so they share one rule set. `approvedAt` /

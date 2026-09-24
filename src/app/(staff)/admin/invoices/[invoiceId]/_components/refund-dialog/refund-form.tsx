@@ -10,6 +10,11 @@
  *   - Reason textarea — 500-char counter; aria-live polite.
  *   - <TypedPhraseConfirm> — renders ONLY when amount === remaining
  *     (full refund) per FR-029(f).
+ *   - 0306 — when the amount FULLY credits a MEMBERSHIP invoice (amount ===
+ *     the invoice's un-credited headroom), a warning states what Renewals
+ *     does next (the period stops counting as paid, but access continues to
+ *     period end, then normal reminders) and a Keep / End membership choice
+ *     is sent as `membershipEffect`. End takes effect when the refund settles.
  *   - Cancel + Confirm buttons — Cancel default-focused; Confirm
  *     shows spinner while in flight.
  *
@@ -32,7 +37,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { Loader2Icon } from 'lucide-react';
+import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 // TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
 // server-only modules; a value import here would drag them into a client
 // bundle. `import type` is erased at compile time, so this costs nothing at
@@ -53,6 +58,7 @@ import {
 } from '@/components/ui/inline-alert';
 import { useLocale } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
 
 const REASON_MAX = 500;
@@ -104,8 +110,28 @@ type Props = {
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
+  /** 0306 — only a MEMBERSHIP invoice's full refund asks Keep / End. */
+  readonly invoiceSubject: 'membership' | 'event';
+  /**
+   * 0306 — the invoice's un-credited headroom (`total − credited`). A refund
+   * of exactly this amount fully credits the invoice, which is what
+   * withdraws the paid period.
+   */
+  readonly invoiceHeadroomSatang: bigint;
   readonly onClose: () => void;
 };
+
+type MembershipEffect = 'keep' | 'cancel_membership';
+
+/** `membership_end` outcomes the refund route reports (0306). */
+const MEMBERSHIP_END_OUTCOMES = [
+  'ended',
+  'scheduled',
+  'deferred',
+  'no_open_cycle',
+  'failed',
+] as const;
+type MembershipEndOutcome = (typeof MEMBERSHIP_END_OUTCOMES)[number];
 
 // Display-only formatting via the canonical `formatSatangThb` helper
 // (`src/lib/format-thb.ts`). Server-side accounting arithmetic stays
@@ -116,6 +142,8 @@ export function RefundForm({
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
+  invoiceSubject,
+  invoiceHeadroomSatang,
   onClose,
 }: Props) {
   const t = useTranslations('admin.refund');
@@ -134,6 +162,8 @@ export function RefundForm({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [typedPhrase, setTypedPhrase] = useState('');
+  // 0306 — default Keep: ending a membership is never the silent default.
+  const [membershipEffect, setMembershipEffect] = useState<MembershipEffect>('keep');
 
   const amountId = useId();
   const reasonId = useId();
@@ -185,6 +215,13 @@ export function RefundForm({
 
   const isFullRefund =
     amountSatang !== null && amountSatang === remainingRefundableSatang;
+  // 0306 — the refund fully credits a MEMBERSHIP invoice (withdraws the paid
+  // period). Keyed on the INVOICE headroom, the same test the server applies
+  // before accepting `cancel_membership`.
+  const isFullMembershipRefund =
+    invoiceSubject === 'membership' &&
+    amountSatang !== null &&
+    amountSatang === invoiceHeadroomSatang;
   const expectedPhrase = `REFUND ${memberCompanyName}`;
   const phraseMatches = typedPhrase === expectedPhrase;
 
@@ -213,11 +250,14 @@ export function RefundForm({
           paymentId,
           amountSatang: Number(amountSatang),
           reason: values.reason.trim(),
+          // Only sent when the choice was shown; a partial / event refund
+          // never touches membership.
+          ...(isFullMembershipRefund ? { membershipEffect } : {}),
         }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
+          error?: { code?: string; remainingSatang?: string };
         };
         const code = body.error?.code ?? 'internal_error';
         // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
@@ -253,10 +293,16 @@ export function RefundForm({
             // race, but the definitive guard is server-side; showing the
             // localised balance text beats a raw token. Every other route code
             // has no placeholder, so `tError(code)` is correct for them.
+            // The 409 carries the server's authoritative cap
+            // (min(payment, invoice headroom)); quote it when present so a
+            // cap shrunk by a credit note is not mis-stated.
             if (code === 'refund_exceeds_remaining') {
+              const serverRemaining = body.error?.remainingSatang;
               return tError('refund_exceeds_remaining', {
                 remaining: formatSatangThb(
-                  remainingRefundableSatang,
+                  serverRemaining !== undefined && /^\d+$/.test(serverRemaining)
+                    ? BigInt(serverRemaining)
+                    : remainingRefundableSatang,
                   locale,
                   currencyCode,
                 ),
@@ -272,6 +318,7 @@ export function RefundForm({
         return;
       }
       const body = (await res.json()) as {
+        membership_end?: string;
         refund: {
           status?: string;
           creditNoteNumber?: string | null;
@@ -336,6 +383,14 @@ export function RefundForm({
         toast.success(
           t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),
         );
+      }
+      // 0306 — what happened to the membership (only when End was chosen).
+      const membershipEnd = body.membership_end;
+      if (
+        membershipEnd !== undefined &&
+        (MEMBERSHIP_END_OUTCOMES as readonly string[]).includes(membershipEnd)
+      ) {
+        toast.info(t(`membership.outcome.${membershipEnd as MembershipEndOutcome}`));
       }
       succeeded = true;
       onClose();
@@ -448,6 +503,60 @@ export function RefundForm({
           </p>
         )}
       </div>
+
+      {/* 0306 — a full refund of a membership invoice withdraws the paid
+          period. Say what Renewals will do next, and let staff end the
+          membership instead of letting it run to period end. */}
+      {isFullMembershipRefund && (
+        <InlineAlert tone="warning" role="note" data-testid="refund-membership-warning">
+          <TriangleAlertIcon className="size-4" aria-hidden="true" />
+          <InlineAlertTitle>{t('membership.warningTitle')}</InlineAlertTitle>
+          <InlineAlertDescription className="flex flex-col gap-3 text-foreground">
+            <p>{t('membership.warningBody')}</p>
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-1 text-sm font-medium">{t('membership.legend')}</legend>
+              <RadioGroup
+                value={membershipEffect}
+                onValueChange={(v) =>
+                  setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')
+                }
+                className="gap-2"
+              >
+                {(
+                  [
+                    ['keep', 'keep'],
+                    ['cancel_membership', 'end'],
+                  ] as const
+                ).map(([value, key]) => (
+                  <div key={value} className="flex items-start gap-2">
+                    <RadioGroupItem
+                      id={`${amountId}-membership-${key}`}
+                      value={value}
+                      className="mt-0.5"
+                      aria-labelledby={`${amountId}-membership-${key}-label`}
+                      aria-describedby={`${amountId}-membership-${key}-desc`}
+                    />
+                    <Label
+                      htmlFor={`${amountId}-membership-${key}`}
+                      className="flex min-h-[44px] cursor-pointer flex-col gap-0.5"
+                    >
+                      <span id={`${amountId}-membership-${key}-label`} className="font-medium">
+                        {t(`membership.${key}.label`)}
+                      </span>
+                      <span
+                        id={`${amountId}-membership-${key}-desc`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {t(`membership.${key}.description`)}
+                      </span>
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </fieldset>
+          </InlineAlertDescription>
+        </InlineAlert>
+      )}
 
       {/* Reason — single-line textarea (server enforces no CR/LF too) */}
       <div className="grid gap-2">

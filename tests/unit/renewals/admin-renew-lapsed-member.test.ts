@@ -38,6 +38,7 @@ import {
 } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 import type { MembershipBillCoverageRow } from '@/modules/renewals/domain/membership-bill-coverage';
 import { asSatang, parseThbDecimal } from '@/lib/money';
+import { logger } from '@/lib/logger';
 import { buildCycle as buildCycleShared } from './_helpers/build-cycle';
 
 const TENANT_ID = 'tenantA';
@@ -527,6 +528,53 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
       // createCycleInTx's own freeze reads it again.
       expect(t.loadPlanFrozenMock).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('supersede-void failures are returned to the admin AND logged with an errorId + the old bill number', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const warnings = [
+      {
+        kind: 'void_threw',
+        invoiceId: 'inv-old-1',
+        billDocumentNumber: 'SC-2026-000123',
+      },
+    ] as const;
+    const t = makeDeps({
+      bridgeResult: {
+        status: 'issued',
+        invoiceId: 'inv-1',
+        invoiceNumber: 'SC-2026-000200',
+        totalSatang: asSatang(5_350_000n),
+        supersedeWarnings: warnings,
+      },
+    });
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.supersedeWarnings).toEqual(warnings);
+    const supersedeLogs = warnSpy.mock.calls.filter(
+      ([obj]) =>
+        (obj as { errorId?: string }).errorId === 'F8.ADMIN_RENEW.SUPERSEDE_VOID_FAILED',
+    );
+    expect(supersedeLogs.map(([obj]) => obj)).toEqual([
+      expect.objectContaining({
+        tenantId: TENANT_ID,
+        memberId: MEMBER_ID,
+        invoiceId: 'inv-1',
+        kind: 'void_threw',
+        supersededInvoiceId: 'inv-old-1',
+        supersededBillNumber: 'SC-2026-000123',
+      }),
+    ]);
+    warnSpy.mockRestore();
+  });
+
+  it('no supersede-void failures → supersedeWarnings is empty', async () => {
+    const t = makeDeps();
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.supersedeWarnings).toEqual([]);
   });
 
   it('member_has_active_cycle: the member already holds an active cycle (Task-9 precedence read refuses first) — no invoice issued', async () => {

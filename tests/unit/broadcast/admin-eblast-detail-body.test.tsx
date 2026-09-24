@@ -236,7 +236,7 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
   });
 
   /**
-   * F119 T051 + B1 — the five 0305 stages must not inherit today's Approve:
+   * F119 T051 + B1 — the five 0308 stages must not inherit today's Approve:
    * it is approve-AS-SUBMITTED, so it stays `submitted`-only. Reject follows
    * the Domain `canTransition(status, 'rejected')` (T081 widened it), and
    * Cancel the Domain `canCancel` — the same policies the `/reject` and

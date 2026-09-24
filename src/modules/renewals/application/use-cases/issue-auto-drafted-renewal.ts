@@ -181,12 +181,14 @@ import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { asMemberId } from '@/modules/members';
 import { parseInput } from './_lib/parse-input';
+import { logSupersedeWarnings } from './_lib/log-supersede-warnings';
 import { addMonthsUtc } from '@/lib/dates';
 import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import { deriveMembershipAccess } from '../../domain/renewal-cycle';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { RenewalInvoiceErrorCode } from '../ports/f4-invoicing-bridge';
+import type { SupersedeWarning } from '@/modules/invoicing';
 import { InvoiceLinkConflictError } from '../ports/renewal-cycle-repo';
 
 export const issueAutoDraftedRenewalInputSchema = z.object({
@@ -216,7 +218,7 @@ export interface IssueAutoDraftedRenewalOutput {
   readonly invoiceId: string;
   readonly invoiceNumber: string;
   /** 106-void-on-reissue supersede-void warnings, threaded verbatim from F4. */
-  readonly supersedeWarnings: readonly string[];
+  readonly supersedeWarnings: readonly SupersedeWarning[];
   /**
    * Non-null when the bill was issued but the cycle could NOT be flipped/linked
    * even after the idempotent retry. The bill is valid and payable; the cycle
@@ -506,7 +508,7 @@ export async function issueAutoDraftedRenewal(
     });
   });
   if (!guardResult.ok) return err(guardResult.error);
-  const { cycleId, discardedInvoiceIds } = guardResult.value;
+  const { cycleId, memberId, discardedInvoiceIds } = guardResult.value;
 
   // ---- issue: STANDALONE, no F8 tx or lock held --------------------------
   const issued = await deps.f4InvoicingBridge.issueExistingDraftForRenewal({
@@ -558,6 +560,17 @@ export async function issueAutoDraftedRenewal(
       detail: issued.detail,
     });
   }
+
+  // 106-void-on-reissue follow-up — the toast alone is lost once staff
+  // dismiss it; this errorId line names the still-open older bill for the
+  // runbook. Logged before the link step so a link failure cannot swallow it.
+  logSupersedeWarnings(issued.supersedeWarnings ?? [], {
+    errorId: 'F8.AUTO_ISSUE.SUPERSEDE_VOID_FAILED',
+    tenantId: input.tenantId,
+    memberId,
+    invoiceId: issued.invoiceId,
+    requestId,
+  });
 
   // ---- tx2: flip + link (idempotent, retried once) -----------------------
   const linkWarning = await linkWithRetry(deps, {

@@ -94,6 +94,7 @@ import {
   routeDiscardAutoDraftError,
   routeIssueAutoDraftError,
 } from './issue-auto-draft-error-routing';
+import { useSupersedeWarningToast } from '@/components/invoices/use-supersede-warning-toast';
 
 type ActiveAction = 'send' | 'silent' | 'discard' | null;
 
@@ -164,6 +165,7 @@ export function AutoRenewalQueueActions({
 }: AutoRenewalQueueActionsProps) {
   const t = useTranslations('admin.invoices.autoRenewalQueue.actions');
   const tQueue = useTranslations('admin.invoices.list.queue');
+  const showSupersedeWarning = useSupersedeWarningToast();
   const router = useRouter();
 
   const [active, setActive] = useState<ActiveAction>(null);
@@ -260,15 +262,16 @@ export function AutoRenewalQueueActions({
     }
     const body = (await res.json().catch(() => ({}))) as {
       invoice_number?: string;
-      supersede_warnings?: readonly string[];
+      supersede_issues?: unknown;
     };
-    const warnings = body.supersede_warnings ?? [];
     toast.success(
       sendEmail
         ? t('toast.issuedAndSent', { number: body.invoice_number ?? '' })
         : t('toast.issuedSilently', { number: body.invoice_number ?? '' }),
-      warnings.length > 0 ? { description: warnings.join(' ') } : undefined,
     );
+    // 106-void-on-reissue follow-up — the bill WAS issued, but an older
+    // unpaid bill may still be open; see `useSupersedeWarningToast`.
+    showSupersedeWarning(body);
     // Success unmounts the trigger (status flips away from 'draft' on
     // refresh) — see module header. Must be set BEFORE the close so
     // `finalFocus` (read at close time) observes it.

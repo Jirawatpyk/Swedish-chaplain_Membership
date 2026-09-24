@@ -28,11 +28,12 @@
  *   (g) Orphan recovery — the link step is forced to fail ONCE; the
  *       idempotent retry re-links, no duplicate invoice.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { logger } from '@/lib/logger';
 import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
@@ -1299,4 +1300,59 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     expect(cyc?.status).toBe('awaiting_payment');
     expect(cyc?.linkedInvoiceId).toBe(aInvoiceId);
   }, 120_000);
+
+  it('(q) 106 follow-up — a supersede-void failure on the queue path is logged with an errorId + the old bill number', async () => {
+    const { invoiceId } = await seedQueueRow({ t: tenant });
+    const real = depsFor(tenant);
+    // The real issue runs end to end; only the bridge's supersede outcome is
+    // injected (a real void failure cannot be provoked deterministically).
+    const warning = {
+      kind: 'void_failed',
+      invoiceId: 'inv-old-injected',
+      billDocumentNumber: 'SC-2025-999999',
+      errorCode: 'refund_in_progress',
+    } as const;
+    const deps = {
+      ...real,
+      f4InvoicingBridge: {
+        ...real.f4InvoicingBridge,
+        issueExistingDraftForRenewal: async (
+          args: Parameters<typeof real.f4InvoicingBridge.issueExistingDraftForRenewal>[0],
+        ) => {
+          const out = await real.f4InvoicingBridge.issueExistingDraftForRenewal(args);
+          return out.status === 'issued' ? { ...out, supersedeWarnings: [warning] } : out;
+        },
+      },
+    };
+    const warnSpy = vi.spyOn(logger, 'warn');
+
+    const result = await issueAutoDraftedRenewal(deps, {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      actorRole: 'admin' as const,
+      sendEmail: false,
+      requestId: 'req-q',
+    });
+
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    if (result.ok) expect(result.value.supersedeWarnings).toEqual([warning]);
+    const supersedeLogs = warnSpy.mock.calls.filter(
+      ([obj]) =>
+        (obj as { errorId?: string }).errorId === 'F8.AUTO_ISSUE.SUPERSEDE_VOID_FAILED',
+    );
+    expect(supersedeLogs.map(([obj]) => obj)).toEqual([
+      expect.objectContaining({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        requestId: 'req-q',
+        kind: 'void_failed',
+        supersededInvoiceId: 'inv-old-injected',
+        supersededBillNumber: 'SC-2025-999999',
+        voidErrorCode: 'refund_in_progress',
+      }),
+    ]);
+    expect((supersedeLogs[0]![0] as { memberId?: string }).memberId).toEqual(expect.any(String));
+    warnSpy.mockRestore();
+  }, 90_000);
 });

@@ -1,6 +1,6 @@
 /**
  * F119 T036 — FR-012a: `broadcasts_immutable_after_submit_fn` amended by
- * migration 0305 (data-model § 8.3). A direct DB `UPDATE` outside the
+ * migration 0308 (data-model § 8.3). A direct DB `UPDATE` outside the
  * application must still be refused with `broadcast_immutable_after_submit`
  * on every non-exempt transition and on a no-status-change write in each new
  * stage; exactly two new exemptions exist:
@@ -26,11 +26,11 @@
  * T166 — the erasure GUC (`app.allow_broadcast_redaction = 'on'`) arms, run
  * as `chamber_app` inside `runInTenant` so RLS passes and the trigger is the
  * thing that answers. Each probe targets ONE line of an arm in
- * `0305_eblast_member_approval.sql`, and each has a positive control showing
+ * `0308_eblast_member_approval.sql`, and each has a positive control showing
  * the GUC really took effect (a whitelisted column still moves), so "refused"
  * cannot come from a GUC that was never set:
  *
- *   broadcasts        GUC arm :425–472 — the six 0305 columns (:466–471)
+ *   broadcasts        GUC arm :425–472 — the six 0308 columns (:466–471)
  *                     → `broadcast_redaction_only_pii_cols`; control: subject.
  *   broadcast_versions GUC arm :182–195 — version_no / authored_by_* /
  *                     sent_to_member_at (:186–189) → `…_immutable_after_send`;
@@ -68,7 +68,7 @@ const NEW_STAGES: readonly Status[] = [
   'expired_no_member_response',
 ];
 
-/** data-model § 8.2 — the legal edges out of every row 0305 touches. */
+/** data-model § 8.2 — the legal edges out of every row 0308 touches. */
 const EDGES: ReadonlyArray<readonly [Status, Status]> = [
   ['submitted', 'approved'], ['submitted', 'rejected'], ['submitted', 'cancelled'],
   ['submitted', 'in_design'],
@@ -111,7 +111,7 @@ class Rollback extends Error {}
 type Want = 'ok' | 'immutable' | 'redaction';
 const REDACTION_GUC = sql`SET LOCAL app.allow_broadcast_redaction = 'on'`;
 
-describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0305 (FR-012a)', () => {
+describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0308 (FR-012a)', () => {
   let tenant: TestTenant;
   const ids = new Map<Status, string>();
 
@@ -270,16 +270,16 @@ describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0305 (FR-012a
   });
 
   /**
-   * T166 — the GUC arm's whitelist (0305 :466–471). The erasure scrub may
+   * T166 — the GUC arm's whitelist (0308 :466–471). The erasure scrub may
    * rewrite PII content, never move a row through the workflow: each of the six
-   * 0305 columns is refused under the GUC, on a no-status-change write in four
+   * 0308 columns is refused under the GUC, on a no-status-change write in four
    * post-draft stages. Remove any one of those lines and the arm falls through
    * to `RETURN NEW` — that probe reads 'ok' and the test fails. A random
    * `approved_version_id` would also trip the FK, but that check runs at
    * statement end, AFTER this BEFORE trigger: only the trigger can answer
    * 'redaction'.
    */
-  it('under the erasure GUC, each of the six 0305 columns → broadcast_redaction_only_pii_cols; subject still moves (positive control)', async () => {
+  it('under the erasure GUC, each of the six 0308 columns → broadcast_redaction_only_pii_cols; subject still moves (positive control)', async () => {
     const SIX: ReadonlyArray<readonly [string, Patch]> = [
       ['proposed_send_at', { proposedSendAt: LATER }],
       ['stage_entered_at', { stageEnteredAt: LATER }],
@@ -391,7 +391,7 @@ describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0305 (FR-012a
 
     it('a same-tenant UPDATE of a decision WITHOUT the redaction GUC → broadcast_decision_append_only (as chamber_app, RLS passing)', async () => {
       const { decisionId } = await seedChain();
-      // Only the GUC arm (0305 :300–311) returns NEW; without it every UPDATE
+      // Only the GUC arm (0308 :300–311) returns NEW; without it every UPDATE
       // falls to the RAISE (:314). Drop the no_update trigger and chamber_app's
       // UPDATE grant lets this through — 'ok', and the test fails.
       expect(await attempt(false, updateDecision(decisionId, { reason: 'rewritten after the fact' }))).toContain(

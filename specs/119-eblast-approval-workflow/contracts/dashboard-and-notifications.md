@@ -285,11 +285,11 @@ field does not typecheck, so a registration a PR behind its emitter is not a doc
 a broken build (`/speckit.analyze` round 3 C1). `broadcasts_version_saved_total` is emitted by
 `PATCH /api/admin/broadcasts/[id]/version` (a save is not a hand-off, so it is counted rather than
 audited) and was previously named only in `admin-eblast-formatting-api.md`, i.e. absent from this
-inventory, from `src/lib/metrics.ts` and from `docs/observability.md` § 28 — it would have shipped
+inventory, from `src/lib/metrics.ts` and from `docs/observability.md` § 29 — it would have shipped
 unregistered (`/speckit.analyze` M2). This table is the registration list; a metric not on it does
 not exist.
 
-### 4.3 Alerts (`docs/observability.md` § 28 — the file ends at § 27, line 2205)
+### 4.3 Alerts (`docs/observability.md` § 29 — the file ends at § 27, line 2205)
 
 | condition | severity | why |
 |---|---|---|

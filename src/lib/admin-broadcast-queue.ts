@@ -68,7 +68,7 @@ export interface AdminQueueItem {
   readonly stageEnteredAt: string;
   /** Versions sent to the member so far (0 = never formatted). */
   readonly currentRound: number;
-  /** The member's proposal; null on a row that predates 0305 ("not recorded"). */
+  /** The member's proposal; null on a row that predates 0308 ("not recorded"). */
   readonly proposedSendAt: string | null;
   /** `scheduled_for` once marketing confirmed it (Scheduled onwards); null before. */
   readonly confirmedSendAt: string | null;

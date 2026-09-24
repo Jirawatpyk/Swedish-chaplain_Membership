@@ -64,7 +64,7 @@ const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
       'motion-safe:animate-pulse motion-reduce:ring-2 motion-reduce:ring-white motion-reduce:ring-offset-1',
   },
   partial_delivery_accepted: { variant: 'secondary', className: 'text-muted-foreground' },
-  // F119 (0305). Marketing's turn reads like `submitted` (secondary) — the
+  // F119 (0308). Marketing's turn reads like `submitted` (secondary) — the
   // same party is waiting. The member's turn gets plain `outline`: distinct
   // from secondary, not destructive, and not muted like draft/cancelled,
   // because it is live work. Expiry is a closed, non-error outcome, muted

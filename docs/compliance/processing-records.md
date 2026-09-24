@@ -1918,7 +1918,7 @@ reading the record wrongly.
 commits — none of which changes the processing recorded here except security finding S-H1, which
 adds a read-only standing check of the member at schedule confirmation (a read of existing
 membership state; no new datum, recipient or retention). Authored **before PR-2 merges**
-(migration `0305`). This record is the **precondition of the flag flip**
+(migration `0308`). This record is the **precondition of the flag flip**
 (`quickstart.md` § 3.2 step 4): `FEATURE_EBLAST_MEMBER_APPROVAL` is not set until it lands.
 **Scope**: exactly what spec § Personal data names for the approval round — the new purpose, the
 new fields by name, the staff recipients of the hand-off emails, the chamber postal address in
@@ -1926,7 +1926,7 @@ every footer, the export category `broadcast-versions.json`, the erasure reach i
 notifications, and the retention of a sent outbox row. It **adds to** the F119 PR-1 record above
 and to the F7 record; it replaces neither. Authority: `specs/119-eblast-approval-workflow/spec.md`
 § Personal data, `data-model.md` §§ 1–3, 7.3, `contracts/dashboard-and-notifications.md` §§ 2–3,
-`drizzle/migrations/0305_eblast_member_approval.sql`.
+`drizzle/migrations/0308_eblast_member_approval.sql`.
 
 **What is live on the PR-2 merge, before the flag** — recorded because the flag does not hold it
 back:
@@ -1956,12 +1956,12 @@ formatted version**, which the flag gates (the `submitted → in_design` edge).
 
 | Storage | Fields (by name) | Data category | Subject category |
 |---|---|---|---|
-| `broadcast_versions` (NEW, migration 0305) — the **versions** | `tenant_id`, `id`, `broadcast_id`, `version_no` (0 = the member's original, materialised when the first formatted version starts), `subject`, `body_html`, `body_source`, **`note_to_member`** (marketing's **note**, ≤ 1,000 chars), `authored_by_user_id`, `authored_by_role`, `sent_to_member_at`, `created_at`, `updated_at` | E-Blast content (may name or depict natural persons, as F7 content may), a free-text note, and the author's user id | The member's authors; the staff author (user id + role); any person named in the content or note |
-| `broadcast_member_decisions` (NEW, migration 0305) — the **decisions** and the **reasons** | `tenant_id`, `id`, `broadcast_id`, `version_id`, `round`, `decision` ∈ {`approved`, `changes_requested`, `approval_withdrawn`}, **`reason`** (the member's **reason** for a change request or a withdrawal, 1–2,000 chars; the optional **approval note**, ≤ 500, in the same column), `decided_by_user_id`, `decided_by_contact_id`, `decided_at` | Who on the member side decided, when, and their free text | The deciding member contact / portal user; any person named in the reason |
-| `broadcasts` (existing) — six new columns (0305) | `proposed_send_at`, `stage_entered_at`, `current_round`, `approved_version_id`, `member_reminder_stage`, `member_expiry_notified_at` | Workflow metadata; no new personal datum beyond the parent record | — |
+| `broadcast_versions` (NEW, migration 0308) — the **versions** | `tenant_id`, `id`, `broadcast_id`, `version_no` (0 = the member's original, materialised when the first formatted version starts), `subject`, `body_html`, `body_source`, **`note_to_member`** (marketing's **note**, ≤ 1,000 chars), `authored_by_user_id`, `authored_by_role`, `sent_to_member_at`, `created_at`, `updated_at` | E-Blast content (may name or depict natural persons, as F7 content may), a free-text note, and the author's user id | The member's authors; the staff author (user id + role); any person named in the content or note |
+| `broadcast_member_decisions` (NEW, migration 0308) — the **decisions** and the **reasons** | `tenant_id`, `id`, `broadcast_id`, `version_id`, `round`, `decision` ∈ {`approved`, `changes_requested`, `approval_withdrawn`}, **`reason`** (the member's **reason** for a change request or a withdrawal, 1–2,000 chars; the optional **approval note**, ≤ 500, in the same column), `decided_by_user_id`, `decided_by_contact_id`, `decided_at` | Who on the member side decided, when, and their free text | The deciding member contact / portal user; any person named in the reason |
+| `broadcasts` (existing) — six new columns (0308) | `proposed_send_at`, `stage_entered_at`, `current_round`, `approved_version_id`, `member_reminder_stage`, `member_expiry_notified_at` | Workflow metadata; no new personal datum beyond the parent record | — |
 | `broadcast_images` (PR-1 table) — **uploaded images** | unchanged columns; PR-2 adds the **staff upload onto an E-Blast being formatted** (`POST /api/admin/broadcasts/[id]/images` now also accepts `in_design`) | as the PR-1 record | as the PR-1 record — the uploading staff user; persons depicted |
 | `notifications_outbox` — five new `notification_type` values | `to_email` (the recipient's address **frozen at enqueue**), `locale`, `context_data` (ids and discriminators only — `broadcastId`, `versionId`, `round`, `decision`, `kind`, `audience`, `recipientUserId`) | A staff or member contact address | The staff recipients; the member's approval contact |
-| `audit_log` — ten new event types (0305) | `broadcast_version_started`, `broadcast_version_sent_to_member`, `broadcast_member_approved`, `broadcast_member_changes_requested`, `broadcast_member_approval_withdrawn`, `broadcast_member_approval_voided`, `broadcast_schedule_confirmed`, `broadcast_approval_reminder_sent`, `broadcast_approval_expiry_warned`, `broadcast_approval_expired` — payloads carry ids, rounds, `note_length` / `reason_length`, send times and `differs`; **never** the subject, body, note or reason text | Accountability record | The actor (member portal user, staff, or system) |
+| `audit_log` — ten new event types (0308) | `broadcast_version_started`, `broadcast_version_sent_to_member`, `broadcast_member_approved`, `broadcast_member_changes_requested`, `broadcast_member_approval_withdrawn`, `broadcast_member_approval_voided`, `broadcast_schedule_confirmed`, `broadcast_approval_reminder_sent`, `broadcast_approval_expiry_warned`, `broadcast_approval_expired` — payloads carry ids, rounds, `note_length` / `reason_length`, send times and `differs`; **never** the subject, body, note or reason text | Accountability record | The actor (member portal user, staff, or system) |
 
 ### Recipients — the staff recipients of the hand-off emails
 

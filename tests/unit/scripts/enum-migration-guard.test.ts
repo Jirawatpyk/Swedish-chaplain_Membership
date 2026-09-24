@@ -158,7 +158,7 @@ describe('findMissingEnumValues', () => {
           'broadcast_brand_settings_changed',
           'broadcast_image_uploaded',
           'broadcast_image_removed',
-          // 0305 (F119 eblast-approval-workflow PR-2):
+          // 0308 (F119 eblast-approval-workflow PR-2):
           'broadcast_version_started',
           'broadcast_version_sent_to_member',
           'broadcast_member_approved',
@@ -177,7 +177,7 @@ describe('findMissingEnumValues', () => {
         new Set([
           'member_change_request_submitted_staff',
           'member_change_request_decided_member',
-          // 0305 (F119 PR-2): the five eblast_* hand-off rows.
+          // 0308 (F119 PR-2): the five eblast_* hand-off rows.
           'eblast_submitted_marketing',
           'eblast_member_decided_marketing',
           'eblast_version_sent_member',
@@ -185,7 +185,7 @@ describe('findMissingEnumValues', () => {
           'eblast_approval_lifecycle',
         ]),
       ],
-      // 0305 (F119 PR-2): the five approval-round statuses.
+      // 0308 (F119 PR-2): the five approval-round statuses.
       [
         'broadcast_status',
         new Set(['in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved', 'expired_no_member_response']),
@@ -244,7 +244,7 @@ describe('findMissingEnumValues', () => {
           'broadcast_brand_settings_changed',
           'broadcast_image_uploaded',
           'broadcast_image_removed',
-          // 0305 (F119 eblast-approval-workflow PR-2):
+          // 0308 (F119 eblast-approval-workflow PR-2):
           'broadcast_version_started',
           'broadcast_version_sent_to_member',
           'broadcast_member_approved',
@@ -263,7 +263,7 @@ describe('findMissingEnumValues', () => {
         new Set([
           'member_change_request_submitted_staff',
           'member_change_request_decided_member',
-          // 0305 (F119 PR-2): the five eblast_* hand-off rows.
+          // 0308 (F119 PR-2): the five eblast_* hand-off rows.
           'eblast_submitted_marketing',
           'eblast_member_decided_marketing',
           'eblast_version_sent_member',
@@ -271,7 +271,7 @@ describe('findMissingEnumValues', () => {
           'eblast_approval_lifecycle',
         ]),
       ],
-      // 0305 (F119 PR-2): the five approval-round statuses.
+      // 0308 (F119 PR-2): the five approval-round statuses.
       [
         'broadcast_status',
         new Set(['in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved', 'expired_no_member_response']),
@@ -293,7 +293,7 @@ describe('findMissingEnumValues', () => {
         new Set([
           'member_change_request_submitted_staff',
           'member_change_request_decided_member',
-          // 0305 (F119 PR-2): the five eblast_* hand-off rows.
+          // 0308 (F119 PR-2): the five eblast_* hand-off rows.
           'eblast_submitted_marketing',
           'eblast_member_decided_marketing',
           'eblast_version_sent_member',
@@ -301,7 +301,7 @@ describe('findMissingEnumValues', () => {
           'eblast_approval_lifecycle',
         ]),
       ],
-      // 0305 (F119 PR-2): the five approval-round statuses.
+      // 0308 (F119 PR-2): the five approval-round statuses.
       [
         'broadcast_status',
         new Set(['in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved', 'expired_no_member_response']),
@@ -357,7 +357,7 @@ describe('findMissingEnumValues', () => {
           'broadcast_brand_settings_changed',
           'broadcast_image_uploaded',
           'broadcast_image_removed',
-          // 0305 (F119 eblast-approval-workflow PR-2):
+          // 0308 (F119 eblast-approval-workflow PR-2):
           'broadcast_version_started',
           'broadcast_version_sent_to_member',
           'broadcast_member_approved',
@@ -402,7 +402,7 @@ describe('findMissingEnumValues', () => {
     // staff switch and the portal self-toggle in prod.
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_out');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_in');
-    // F119 PR-2 (mig 0305): a new KEY, not an append — every hand-off UPDATEs
+    // F119 PR-2 (mig 0308): a new KEY, not an append — every hand-off UPDATEs
     // broadcasts.status to one of these (R-9).
     expect(REQUIRED_ENUM_VALUES['broadcast_status']).toContain('awaiting_member_approval');
     expect(REQUIRED_ENUM_VALUES['notification_type']).toContain('eblast_version_sent_member');

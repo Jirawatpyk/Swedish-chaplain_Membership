@@ -154,6 +154,7 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
           creditedTotalSatang: asSatang(0n),
           totalSatang: asSatang(TOTAL_SATANG),
           creditNoteRequirement: { kind: 'issue' as const },
+          invoiceSubject: 'membership' as const,
         }),
       ),
       // tax#5 (B.2) — the shared finaliser reads F4's authoritative post-CN

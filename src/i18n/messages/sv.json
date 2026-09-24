@@ -106,6 +106,8 @@
       "submitting": "Återställer…",
       "successMessage": "E-postbytet har återställts. Slutför lösenordsåterställningen för att få tillgång igen.",
       "completePasswordReset": "Slutför lösenordsåterställning",
+      "goToSignIn": "Gå till inloggning",
+      "successNextStep": "Alla sessioner för det här kontot har loggats ut. Ange din ursprungliga e-postadress på nästa sida.",
       "errors": {
         "invalidToken": "Denna återställningslänk har upphört att gälla eller har redan använts.",
         "conflict": "Den tidigare e-postadressen är inte längre tillgänglig. Kontakta din kammaradministratör.",
@@ -2278,6 +2280,25 @@
         "backToInvoice": "Tillbaka till fakturan",
         "againstInvoice": "Mot faktura",
         "remainingLabel": "Återstående krediterbart belopp:",
+        "paidViaLabel": "Betalt via:",
+        "paymentChannel": {
+          "card": "Kort (online)",
+          "promptpay": "PromptPay (online)",
+          "bank_transfer": "Banköverföring",
+          "cheque": "Check",
+          "cash": "Kontant",
+          "other": "Övrigt",
+          "unknown": "Kunde inte fastställas"
+        },
+        "onlinePayment": {
+          "title": "Betalt online — en kreditnota återbetalar inte medlemmen",
+          "unknownTitle": "Kontrollera hur fakturan betalades innan du krediterar den",
+          "body": "Att utfärda en kreditnota här återbetalar inga pengar. För att återbetala denna kort- eller PromptPay-betalning, använd Utfärda återbetalning på fakturan — den återbetalar medlemmen och utfärdar kreditnotan själv. En manuell kreditnota minskar också det belopp som fortfarande kan återbetalas online med samma belopp; efter en fullständig kreditnota kan betalningen inte längre återbetalas via systemet.",
+          "unknownBody": "Betalningskanalen för denna faktura kunde inte kontrolleras. Om den betalades online med kort eller PromptPay, använd Utfärda återbetalning på fakturan i stället — en manuell kreditnota återbetalar inga pengar och minskar det belopp som fortfarande kan återbetalas online.",
+          "refundAction": "Gå till Utfärda återbetalning",
+          "acknowledge": "Jag förstår att denna kreditnota inte återbetalar några pengar och minskar det som fortfarande kan återbetalas online",
+          "ackRequiredHint": "Bekräfta med kryssrutan i varningen om onlinebetalning ovan för att fortsätta."
+        },
         "amountLabel": "Kreditbelopp (inkl. moms)",
         "amountHelp": "Ange bruttobeloppet att kreditera, inkl. moms. Moms fördelas proportionellt mot originalfakturan.",
         "exceedsRemainder": "Beloppet överstiger återstoden ({remaining}).",
@@ -2291,18 +2312,22 @@
         "cancel": "Avbryt",
         "success": "Kreditnota utfärdad.",
         "successWithNumber": "Kreditnota {number} utfärdad.",
-        "successWithNumberNoNotice": "Faktura {number} annullerades, men inget annulleringsmeddelande skickades — medlemmen saknar primär kontakt.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
-        "membershipCancellationFailedNotice": "Kreditnotan utfärdades, men medlemskapet kunde inte avslutas automatiskt — avsluta det manuellt från sidan Förnyelser.",
+        "membershipEnd": {
+          "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
+          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt inom en timme.",
+          "noOpenCycle": "Medlemmen har ingen öppen förnyelsecykel, så det fanns ingen täckning att avsluta. Kontrollera medlemmens förnyelsestatus.",
+          "failed": "Kreditnotan utfärdades, men medlemskapet kunde inte avslutas. Rapportera detta till supporten med kreditnotans nummer."
+        },
         "membershipEffect": {
           "legend": "Vad ska hända med medlemskapet?",
           "keep": {
             "label": "Behåll medlemskapet — dokumentkorrigering",
-            "description": "Medlemmen återbetalades INTE för denna period, så medlemskapets täckning behålls."
+            "description": "Registrerar endast kreditnotan — medlemskapet och dess förnyelsecykler förblir oförändrade. Inga pengar återbetalas genom denna åtgärd; eventuellt belopp som ska återföras till medlemmen hanteras separat."
           },
           "cancelMembership": {
-            "label": "Återbetala och avsluta medlemskapet",
-            "description": "Medlemmen återbetalas och deras aktiva förnyelsecykler avbryts."
+            "label": "Avsluta medlemskapet — återbetalning hanteras separat",
+            "description": "Registrerar kreditnotan och avslutar medlemmens täckning nu — åtkomsten upphör i dag, även om perioden inte har löpt ut. Inga pengar återbetalas genom denna åtgärd. Betalt online? Använd Utfärda återbetalning på fakturan i stället — den återbetalar medlemmen och utfärdar kreditnotan själv."
           }
         },
         "errors": {
@@ -2314,7 +2339,8 @@
           "receiptNotRendered": "Skattekvittots PDF genereras fortfarande, eller kunde inte skapas. En kreditnota kan utfärdas först när §86/4-kvittot har genererats. Vänta en stund och försök igen — om det fortfarande misslyckas, kontakta supporten för att återskapa det.",
           "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota. Ladda om sidan och försök igen.",
           "codeFallback": "Felkod: {code}",
-          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att utfärda en kreditnota nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen."
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att utfärda en kreditnota nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
+          "onlinePaymentRefundable": "Denna faktura har en onlinebetalning (kort eller PromptPay) som fortfarande kan återbetalas. För att återbetala pengarna, använd Utfärda återbetalning på fakturan. För att utfärda en kreditnota utan återbetalning, ladda om sidan och bekräfta med kryssrutan."
         }
       },
       "list": {
@@ -2409,6 +2435,12 @@
       "queueView": {
         "title": "Kö för granskning av automatisk förnyelse",
         "description": "Förnyelsefakturor som skapats automatiskt av systemet, väntar på granskning innan de utfärdas."
+      },
+      "supersedeWarning": {
+        "title": "Fakturan utfärdades — en äldre obetald faktura är fortfarande öppen",
+        "voidFailed": "Den äldre fakturan {number} kunde inte annulleras automatiskt. Annullera den manuellt.",
+        "listFailed": "Vi kunde inte bekräfta att medlemmens äldre obetalda fakturor annullerades. Gå igenom medlemmens fakturor och annullera eventuella dubbletter manuellt.",
+        "openBill": "Öppna faktura {number}"
       },
       "autoRenewalQueue": {
         "actions": {
@@ -2866,6 +2898,7 @@
           "pay": "Registrera betalning…",
           "void": "Annullera…",
           "issueCreditNote": "Utfärda kreditnota…",
+          "issueCreditNoteRefundSettling": "Inte tillgängligt medan en återbetalning behandlas — försök igen när den är klar.",
           "resendInvoice": "Skicka faktura-mejl igen",
           "resendReceipt": "Skicka kvitto-mejl igen",
           "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
@@ -2906,7 +2939,8 @@
           "receiptNumber": "Kvittonummer",
           "subtotal": "Delsumma",
           "vat": "Moms",
-          "total": "Totalt"
+          "total": "Totalt",
+          "replaces": "Ersätter"
         },
         "lines": {
           "title": "Rader",
@@ -2936,7 +2970,9 @@
           "voidedAt": "Annullerad",
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
-          "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs."
+          "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
+          "replacedBy": "Ersatt av <link>{number}</link>",
+          "replacedByIssued": "utfärdad {date}"
         },
         "creditNotesSection": {
           "title": "Kreditnotor ({count})",
@@ -2976,7 +3012,7 @@
           "resolve": "Markera som avstämd",
           "resolveConfirm": {
             "title": "Markera denna automatiska återbetalning som avstämd?",
-            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (en återbetalning via Stripe Dashboard eller en manuell kreditnota). Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
+            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (t.ex. en återbetalning via Stripe Dashboard eller en banköverföring) — en kreditnota i sig återbetalar inga pengar. Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
             "cancel": "Avbryt",
             "confirm": "Ja, markera som avstämd",
             "pending": "Registrerar…"
@@ -3181,6 +3217,7 @@
         "cancel": "Avbryt",
         "success": "Fakturan annullerad.",
         "successWithNumber": "Faktura {number} annullerad.",
+        "successWithNumberNoNotice": "Faktura {number} annullerad, men inget annulleringsmeddelande skickades — medlemmen saknar primär kontakt.",
         "errors": {
           "failed": "Fakturan kunde inte annulleras.",
           "unknown": "Ett okänt fel inträffade. Försök igen.",
@@ -3852,7 +3889,8 @@
         "completed_offline": "Betald offline",
         "admin_reactivated": "Återaktiverad",
         "admin_rejected_with_refund": "Återbetald",
-        "pending_reactivation_timed_out": "Återaktivering tog slut"
+        "pending_reactivation_timed_out": "Återaktivering tog slut",
+        "coverage_ended": "Medlemskapet avslutat i förtid"
       },
       "terminationBasis": {
         "due_plus_60": "Obetald mer än 60 dagar efter förfallodagen",
@@ -4753,6 +4791,26 @@
       }
     },
     "refund": {
+      "membership": {
+        "warningTitle": "En fullständig återbetalning drar tillbaka denna betalda medlemsperiod",
+        "warningBody": "Förnyelser slutar räkna perioden som betald, men medlemmen behåller portalåtkomst och förmåner tills den nuvarande medlemsperioden tar slut; därefter följer förnyelsepåminnelserna det vanliga schemat. Om medlemmen lämnar, välj Avsluta medlemskapet.",
+        "legend": "Vad ska hända med medlemskapet?",
+        "keep": {
+          "label": "Behåll medlemskapet till periodens slut",
+          "description": "Åtkomsten fortsätter tills den nuvarande perioden tar slut; förnyelsepåminnelser skickas som vanligt."
+        },
+        "end": {
+          "label": "Avsluta medlemskapet",
+          "description": "Åtkomsten upphör när återbetalningen är klar — direkt för de flesta kortåterbetalningar; en väntande återbetalning kontrolleras varje timme, så åtkomsten upphör inom en timme efter att den bekräftats. Om återbetalningen misslyckas behålls medlemskapet."
+        },
+        "outcome": {
+          "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
+          "scheduled": "Medlemskapet avslutas inom en timme efter att återbetalningen är klar. Om återbetalningen misslyckas behålls medlemskapet.",
+          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt inom en timme.",
+          "no_open_cycle": "Medlemmen har ingen öppen förnyelsecykel, så det fanns ingen täckning att avsluta. Kontrollera medlemmens förnyelsestatus.",
+          "failed": "Återbetalningen genomfördes, men medlemskapet kunde inte avslutas. Rapportera detta till supporten med återbetalningsreferensen."
+        }
+      },
       "title": "Utfärda återbetalning",
       "button": {
         "label": "Utfärda återbetalning…",
@@ -4812,6 +4870,7 @@
         "payment_not_found": "Betalning hittades inte.",
         "payment_not_refundable": "Denna betalning kan inte återbetalas i sitt nuvarande tillstånd.",
         "refund_exceeds_remaining": "Återbetalningsbeloppet överskrider återstående återbetalningsbar saldo ({remaining} THB).",
+        "membership_effect_not_applicable": "Att avsluta medlemskapet gäller bara en fullständig återbetalning av en medlemsfaktura. Återbetala hela det återstående beloppet eller välj Behåll medlemskapet.",
         "refund_in_progress": "En återbetalning behandlas redan för den här betalningen — ingen åtgärd behövs. Den slutförs av sig själv när betalningsleverantören bekräftar.",
         "processor_unavailable": "Betalningssystemet är tillfälligt otillgängligt. Försök igen.",
         "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",
@@ -6093,7 +6152,8 @@
           "dueDate": "Förfaller",
           "paidDate": "Betald",
           "receiptNumber": "Kvittonummer",
-          "planYear": "Paketår"
+          "planYear": "Paketår",
+          "replaces": "Ersätter"
         },
         "lines": {
           "description": "Beskrivning",
@@ -6125,7 +6185,9 @@
           "autoRefundFailedHeading": "Vi stämmer av din betalning",
           "autoRefundFailedBody": "Din betalning har registrerats och en återbetalning håller på att stämmas av av vårt team. Vi återkommer så snart det är löst.",
           "autoRefundFailedContact": "Om du har frågor under tiden, kontakta din kammaradministratör med referensen nedan.",
-          "autoRefundRef": "Återbetalningsreferens: {ref}"
+          "autoRefundRef": "Återbetalningsreferens: {ref}",
+          "replacedBy": "Den här fakturan har ersatts av <link>{number}</link>",
+          "replacedByIssued": "utfärdad {date}"
         }
       }
     },

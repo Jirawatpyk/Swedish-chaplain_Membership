@@ -70,6 +70,11 @@ export interface IssueCreditNoteFromRefundInput {
     | 'cron'
     | 'system';
   readonly requestId?: string | null;
+  /**
+   * 0306 — staff's Keep / End membership choice for a full refund of a
+   * membership invoice, pinned on the F5 refund row. Absent → 'keep'.
+   */
+  readonly membershipEffect?: 'keep' | 'cancel_membership';
 }
 
 /**
@@ -105,15 +110,19 @@ export async function issueCreditNoteFromRefund(
     // manual issue. The F4 repo persists `source_refund_id` verbatim
     // via the barrel-extended insertCreditNote port.
     sourceRefundId: input.refundId,
-    // F-2 (2026-07-08) — a Stripe-initiated refund has no UI surface to
-    // capture staff intent about the membership, so a FULL refund on a
-    // membership invoice never auto-cancels: F5 refunds always declare
-    // 'keep'. If the refunding admin also wants to end the membership, they
-    // cancel it explicitly via the renewals UI (F-2 scope is the F4-manual
-    // credit-note flow only — see design doc § F-2). This also satisfies
-    // F4's new `membership_effect_required` gate so a full-invoice Stripe
-    // refund on a membership invoice never regresses into a hard failure.
-    membershipEffect: 'keep',
+    // The staff's declared choice (0306), 'keep' when none was declared — it
+    // also satisfies F4's `membership_effect_required` gate (a full
+    // membership refund must never regress into a hard failure). It is
+    // recorded on the credit note's audit row, but it does NOT decide coverage:
+    // `issueCreditNote` checks `sourceRefundId` FIRST and always writes
+    // `retains_coverage = false` — money went back, so the renewals
+    // effective-paid predicate stops counting the period (billing frontier +
+    // pipeline "Covered" retract). Member ACCESS is untouched by that
+    // retraction: the open cycle keeps full access until its period ends and
+    // renewal reminders follow the normal schedule. Ending access now is a
+    // separate, explicit renewals operation (`endMembershipCoverageNow`),
+    // orchestrated by a route — never from F4 Application (Principle III).
+    membershipEffect: input.membershipEffect ?? 'keep',
   });
   // MEDIUM-5 — F4's success value is now `{ creditNote, emailDelivery }`. The
   // F5 refund bridge's public output stays `CreditNote` (the payments module

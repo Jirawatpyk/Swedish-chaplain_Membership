@@ -7,7 +7,7 @@
  * would name the member's act on a row the member no longer holds.
  *
  * The second test is the one that bites later: it enumerates the Domain
- * status tuple, so the moment 0305's five statuses join it (T051) every
+ * status tuple, so the moment 0308's five statuses join it (T051) every
  * locale must carry a label for each — next-intl does not throw on a missing
  * key, it renders the raw key path, so without this a new stage would reach
  * the queue chip, the portal list and the staff header as

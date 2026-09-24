@@ -53,6 +53,7 @@ import {
   makeIssueAutoDraftedRenewalDeps,
   type IssueAutoDraftError,
 } from '@/modules/renewals';
+import { serialiseSupersedeIssue } from '@/lib/supersede-issues-wire';
 import { issueErrorStatus, isIssuanceServerFault } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -226,7 +227,7 @@ export async function POST(
     {
       invoice_id: result.value.invoiceId,
       invoice_number: result.value.invoiceNumber,
-      supersede_warnings: result.value.supersedeWarnings,
+      supersede_issues: result.value.supersedeWarnings.map(serialiseSupersedeIssue),
       link_warning: result.value.linkWarning,
       discarded_invoice_ids: result.value.discardedInvoiceIds,
     },

@@ -34,6 +34,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { useSupersedeWarningToast } from '@/components/invoices/use-supersede-warning-toast';
 
 export interface RenewLapsedMemberDialogProps {
   readonly memberId: string;
@@ -44,6 +45,7 @@ export function RenewLapsedMemberDialog({
 }: RenewLapsedMemberDialogProps): React.ReactElement {
   const t = useTranslations('admin.members.detail.renewLapsed');
   const router = useRouter();
+  const showSupersedeWarning = useSupersedeWarningToast();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const cancelRef = useRef<HTMLButtonElement | null>(null);
@@ -85,6 +87,9 @@ export function RenewLapsedMemberDialog({
           return;
         }
         toast.success(t('toast.success'));
+        // 106-void-on-reissue follow-up — the reactivation bill was issued,
+        // but the member's older unpaid bill may not have been auto-voided.
+        showSupersedeWarning(await res.json().catch(() => null));
         setOpen(false);
         router.refresh();
       } catch {

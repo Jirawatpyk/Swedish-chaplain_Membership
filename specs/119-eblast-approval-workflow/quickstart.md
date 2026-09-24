@@ -19,7 +19,7 @@ Implementation detail lives in `tasks.md`; shapes in `data-model.md` and `contra
 
 ```bash
 # apply BOTH migrations to the dev branch
-pnpm db:migrate                 # 0304 then 0305
+pnpm db:migrate                 # 0304 then 0308
 
 # a duplicate `when` makes db:migrate a SILENT no-op that still prints "✓ applied" —
 # verify the DDL actually landed, do not trust the migrator's output
@@ -29,7 +29,7 @@ psql "$DATABASE_URL" -c "SELECT column_name FROM information_schema.columns WHER
 psql "$DATABASE_URL" -c "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('broadcast_versions','broadcast_member_decisions','broadcast_images');"   # expect t,t ×3
 psql "$DATABASE_URL" -c "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid WHERE t.typname='audit_event_type' AND e.enumlabel IN ('broadcast_test_copy_sent','broadcast_brand_settings_changed','broadcast_image_uploaded','broadcast_image_removed','broadcast_version_started','broadcast_version_sent_to_member','broadcast_member_approved','broadcast_member_changes_requested','broadcast_member_approval_withdrawn','broadcast_member_approval_voided','broadcast_schedule_confirmed','broadcast_approval_reminder_sent','broadcast_approval_expiry_warned','broadcast_approval_expired');"   # expect 14
 
-# the 0305 backfills ran: every row that was 'submitted' with a time carries a proposal, and no
+# the 0308 backfills ran: every row that was 'submitted' with a time carries a proposal, and no
 # waiting row was left with a fresh stage clock. If the file put CREATE OR REPLACE of the
 # immutability fn BEFORE the backfills, db:migrate aborted with broadcast_immutable_after_submit
 # (round 3 H5) — and if stage_entered_at is uniformly "now", backfill 2 is missing (round 3 M3).
@@ -47,7 +47,7 @@ pnpm check:audit-events && pnpm check:audit-counts && pnpm check:i18n
 
 **Why one file can both add an enum value and use it**: `scripts/run-migrations.ts` extracts every
 `ALTER TYPE … ADD VALUE` and replays it in AUTOCOMMIT **before** the transactional pass (the 0301
-precedent), which is what lets `0305` add `'awaiting_member_approval'` and create a partial index on
+precedent), which is what lets `0308` add `'awaiting_member_approval'` and create a partial index on
 it. Keep one `ADD VALUE` per line, or the extraction misses them.
 
 ---
@@ -209,7 +209,7 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    when Resend accepts the message is the row's last write. The 1-minute outbox tick plus the
    provider call is the whole budget. A provider failure is an `email_dispatch_failed` row, not an
    SC-004 breach, and a row enqueued while the flag was off measures the dark period, not the
-   dispatcher (`docs/observability.md` § 28.6).
+   dispatcher (`docs/observability.md` § 29.6).
 6. The nav badge counts the E-Blasts waiting on marketing, from anywhere in the staff portal.
 
 ### US6 — the screens
@@ -1189,8 +1189,8 @@ strip) is **met on all three screens**, and the § 15 hand-walk is now **clean**
 reports them, the runbook and the EN + TH UAT walkthrough all land in one PR — which is what makes
 step 5's flip safe to take immediately after this merge.
 
-1. Merge → prod auto-migrates **`0305`** on deploy (`vercel-build`); `0304` already applied with
-   PR-1, so this deploy adds only the `0305` DDL. Run
+1. Merge → prod auto-migrates **`0308`** on deploy (`vercel-build`); `0304` already applied with
+   PR-1, so this deploy adds only the `0308` DDL. Run
    `pnpm db:verify:prod` and the `pg_proc` checks from § 0 against prod, read-only.
 2. **Do not set `FEATURE_EBLAST_MEMBER_APPROVAL` yet.** Setting the env var is the deploy and the
    flip in one action.
@@ -1201,7 +1201,7 @@ step 5's flip safe to take immediately after this merge.
      `0304` in PR-1, ten land here) and the five
      `notification_type` values (`ADD VALUE` is irreversible — not even a revert undoes these);
    - the two amended trigger functions (a reversal is a new migration);
-   - the `0305` backfill of `proposed_send_at` for rows in `submitted` at the deploy, and the
+   - the `0308` backfill of `proposed_send_at` for rows in `submitted` at the deploy, and the
      submit writing it from then on (the `draft → submitted` transition copies the requested time
      into it; the immutability trigger freezes it after — FR-016);
    - the widened allowance bucket and cancel cascade — they read the same set, which currently
@@ -1405,9 +1405,9 @@ every preview, so changing it never voids a pending or given approval (FR-041c).
 | 2 — code revert of PR-2 | revert the PR | rows in a new stage become unreachable by the application until the code returns — **cancel them first** (`/admin/broadcasts/<id>` → Cancel, typed phrase + reason), because the enum values and the triggers stay and the pre-PR-2 code has no label, action or transition for them. **Also close the pending `eblast_*` outbox rows first**: the pre-PR-2 drainer has neither the skip nor an arm for them, so each would walk the `no_template_handler` ladder (5 attempts, ~3.6 h) into `permanently_failed` with an `email_dispatch_failed` row, paging `outbox_permanent_failures_total` (SQL in `docs/runbooks/eblast-approval.md` § Layer 2). Scheduled rows that went through a round already hold the promoted content and are sent normally by the old dispatcher; the member loses the ability to withdraw them. `stage_entered_at` stops being stamped, so a later re-merge reads stale "time in stage" on rows that moved in between. PR-2's unflagged changes (§ 3.2 step 3) are undone by this layer only | one deploy |
 | 3 — code revert of PR-1 | revert the PR | the wrapper returns to today's and the staff detail page returns to the raw-body view; brand columns and `broadcast_images` rows are orphaned but harmless. **What does NOT come back**: the pre-`sharp` upload path (already-uploaded images stay re-encoded — the originals were never stored), the image sweep (stamped rows stop being reclaimed and their bytes stay in Blob until the code returns), the erasure cascade's image reach (an erasure run after the revert will NOT stamp images again) and the four enum values. The full inventory is § 3.1's "Unflagged and live" list; every line of it is undone by this layer and by nothing else | one deploy |
 
-Migrations `0304` and `0305` are **not** undone by any layer; reversing them is a new migration, and
+Migrations `0304` and `0308` are **not** undone by any layer; reversing them is a new migration, and
 `ALTER TYPE … ADD VALUE` cannot be reversed at all (5 `broadcast_status`, 14 `audit_event_type` —
-four in `0304`, ten in `0305` — and 5 `notification_type` values). Layer 3 needs layer 2 first:
+four in `0304`, ten in `0308` — and 5 `notification_type` values). Layer 3 needs layer 2 first:
 PR-2 builds on PR-1.
 
 ---
@@ -1446,7 +1446,7 @@ arrived in the expected inbox and nowhere else.
 
 ## 5. Watch after cutover
 
-**Three configured alerts** (`docs/observability.md` § 28, task T160) — these page or warn on their
+**Three configured alerts** (`docs/observability.md` § 29, task T160) — these page or warn on their
 own:
 
 - `broadcasts_awaiting_member_oldest_age_seconds` — **warning at 7 days**, **page at 14**. Both sit

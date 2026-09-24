@@ -26,7 +26,7 @@
  *   never freed quota), the four approval-round stages, and any status a later
  *   migration adds (an allow-list fails closed; the old deny-list did not).
  *   WHY the history rule (T166 security LOW): deleting a broadcast CASCADEs to
- *   its versions and decisions, and 0305's append-only trigger lets that
+ *   its versions and decisions, and 0308's append-only trigger lets that
  *   cascade through (`pg_trigger_depth() > 1`), so the old `status NOT IN
  *   send-stages` filter silently destroyed the SC-002 proof — which version the
  *   member was shown and who approved it. A round-stage row still holds quota:
@@ -228,7 +228,7 @@ async function main(): Promise<void> {
     //   - status in DELETABLE_STATUSES (allow-list);
     //   - no approval-round history — a broadcast with a `broadcast_versions`
     //     row is kept, because the CASCADE would take its versions AND its
-    //     `broadcast_member_decisions` (0305's append-only trigger lets the
+    //     `broadcast_member_decisions` (0308's append-only trigger lets the
     //     cascade through at pg_trigger_depth() > 1), i.e. the SC-002 proof;
     //     a decision always references a version, so "no version" implies "no
     //     decision" (T166 security LOW);

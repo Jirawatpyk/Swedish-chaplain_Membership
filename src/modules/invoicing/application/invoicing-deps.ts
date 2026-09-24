@@ -25,6 +25,8 @@ import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/recei
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { recipientLocaleAdapter } from '../infrastructure/adapters/recipient-locale-adapter';
 import type { GetMemberMoneyRecipientStatusDeps } from './use-cases/get-member-money-recipient-status';
+import { invoiceSupersessionAdapter } from '../infrastructure/adapters/invoice-supersession-adapter';
+import type { GetInvoiceSupersessionDeps } from './use-cases/get-invoice-supersession';
 import { makeClamavVirusScanner } from '../infrastructure/adapters/clamav-virus-scanner';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { eventRegistrationLookupAdapter } from '../infrastructure/adapters/event-registration-lookup-adapter';
@@ -57,6 +59,9 @@ import {
   makeListSucceededPaymentMethodsDeps,
   countPendingRefundsForInvoice,
   makeCountPendingRefundsForInvoiceDeps,
+  loadInvoicePaymentActivity,
+  makeLoadInvoicePaymentActivityDeps,
+  computeRemainingRefundable,
 } from '@/modules/payments';
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
@@ -67,11 +72,14 @@ import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
 import type { PendingRefundGuardPort } from './ports/pending-refund-guard-port';
+import type { OnlinePaymentRefundGuardPort } from './ports/online-payment-refund-guard-port';
 import type { IssueMembershipBillDeps } from './use-cases/issue-membership-bill';
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
 import type { ResendPdfDeps } from './use-cases/resend-pdf';
 import type { BlobStoragePort } from './ports/blob-storage-port';
+import type { ListManualCreditNotesEndingMembershipDeps } from './use-cases/list-manual-credit-notes-ending-membership';
+import { makeDrizzleManualCreditNotesEndingMembershipReader } from '../infrastructure/repos/drizzle-credit-note-repo';
 
 /**
  * The one seam for swapping an EXTERNAL service out of a composition.
@@ -430,6 +438,30 @@ function makePendingRefundGuard(): PendingRefundGuardPort {
   };
 }
 
+/**
+ * The invoicing-side `OnlinePaymentRefundGuardPort`, wired through the payments
+ * barrel. Uses `computeRemainingRefundable` — the SAME arithmetic the admin
+ * invoice page uses to decide whether to show Issue refund — so the guard fires
+ * exactly when that action is available. FAIL-CLOSED (`unknown`), unlike the
+ * 8A count: the refusal is unblocked by the staff acknowledgement, whereas
+ * failing open could strand an online payment.
+ */
+function makeOnlinePaymentRefundGuard(): OnlinePaymentRefundGuardPort {
+  return {
+    readRefundableOnlinePayment: async (tid, invoiceId) => {
+      const r = await loadInvoicePaymentActivity(
+        makeLoadInvoicePaymentActivityDeps(tid),
+        { tenantId: tid, invoiceId },
+      );
+      if (!r.ok) return { kind: 'unknown' };
+      const remaining = computeRemainingRefundable(r.value);
+      return remaining === null
+        ? { kind: 'none' }
+        : { kind: 'refundable', remainingSatang: remaining.remainingSatang };
+    },
+  };
+}
+
 export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
@@ -447,6 +479,7 @@ export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
     // coupling, deliberate). Fail-open at the seam (`? r.value : 0`): a rare
     // count-read hiccup must not hard-fail an admin credit note.
     pendingRefundGuard: makePendingRefundGuard(),
+    onlinePaymentRefundGuard: makeOnlinePaymentRefundGuard(),
   };
 }
 
@@ -564,6 +597,15 @@ export function makeMemberMoneyRecipientStatusDeps(): GetMemberMoneyRecipientSta
   return { recipientLocale: recipientLocaleAdapter };
 }
 
+/**
+ * 121-void-supersede-links — deps for the "Replaced by" / "Replaces" read on
+ * the admin + portal invoice detail pages. The adapter self-scopes each read
+ * via `runInTenant`, so the factory takes no tenant argument.
+ */
+export function makeGetInvoiceSupersessionDeps(): GetInvoiceSupersessionDeps {
+  return { supersession: invoiceSupersessionAdapter };
+}
+
 export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
@@ -660,4 +702,14 @@ export function makeRenderReceiptPdfDeps(
     audit: f4AuditAdapter,
     clock: systemClock,
   };
+}
+
+/**
+ * 0306 — the renewals reconcile backstop reads recent manual "End
+ * membership" credit notes through this facade.
+ */
+export function makeListManualCreditNotesEndingMembershipDeps(
+  tenantId: string,
+): ListManualCreditNotesEndingMembershipDeps {
+  return { read: makeDrizzleManualCreditNotesEndingMembershipReader(tenantId) };
 }

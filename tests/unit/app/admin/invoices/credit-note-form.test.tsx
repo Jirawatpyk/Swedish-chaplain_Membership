@@ -14,14 +14,14 @@
  *  - Selecting "cancel_membership" (via its label — Base UI Radio gotcha:
  *    the radio toggles via a click on its associated <label> text) changes
  *    what is submitted.
- *  - A `membership_cancellation_failed: true` response field surfaces as a
- *    toast description alongside the success toast.
+ *  - The `membership_end` response field (0306) surfaces as a toast
+ *    alongside the success toast.
  *
  * Base UI Radio gotcha (same as invoice-create-switcher.test /
  * event-fee-form.test): the radio toggles via a click on its associated
  * <label> text, not on the role=radio element itself.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
@@ -36,7 +36,11 @@ vi.mock('sonner', () => ({
   toast: { success: toastSuccess, error: vi.fn(), info: vi.fn() },
 }));
 
-import { CreditNoteForm } from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form';
+import {
+  CreditNoteForm,
+  type CreditNotePaymentChannel,
+  type OnlineRefundState,
+} from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form';
 import enMessages from '@/i18n/messages/en.json';
 
 const cnMessages = enMessages.admin.creditNotes.new;
@@ -44,7 +48,13 @@ const cnMessages = enMessages.admin.creditNotes.new;
 /** 1,070.00 THB remaining (107,000 satang) — matches the FULL-credit fixture. */
 const REMAINING_SATANG = '107000';
 
-function renderForm(overrides: Partial<{ invoiceSubject: 'membership' | 'event' }> = {}) {
+type FormOverrides = Partial<{
+  invoiceSubject: 'membership' | 'event';
+  paymentChannel: CreditNotePaymentChannel | null;
+  onlineRefundState: OnlineRefundState;
+}>;
+
+function renderForm(overrides: FormOverrides = {}) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <CreditNoteForm
@@ -53,6 +63,12 @@ function renderForm(overrides: Partial<{ invoiceSubject: 'membership' | 'event' 
         remainingSatang={REMAINING_SATANG}
         currencySymbol="THB"
         invoiceSubject={overrides.invoiceSubject ?? 'membership'}
+        // Default: a manually-recorded bank transfer — no online payment, so
+        // the F-2 tests below see the form exactly as before.
+        paymentChannel={
+          overrides.paymentChannel === undefined ? 'bank_transfer' : overrides.paymentChannel
+        }
+        onlineRefundState={overrides.onlineRefundState ?? 'none'}
       />
     </NextIntlClientProvider>,
   );
@@ -228,10 +244,15 @@ describe('<CreditNoteForm> — F-2 submit body wiring', () => {
     expect(sentBody.membershipEffect).toBe('cancel_membership');
   });
 
-  it('a membership_cancellation_failed:true response shows a toast description prompting a manual renewals retry', async () => {
+  it.each([
+    ['ended', 'ended'],
+    ['deferred', 'deferred'],
+    ['no_open_cycle', 'noOpenCycle'],
+    ['failed', 'failed'],
+  ] as const)('membership_end:%s shows its own toast description (no "cancel it in Renewals" hint)', async (outcome, key) => {
     const fetchMock = mockFetchOk({
       document_number: 'CN-2026-000004',
-      membership_cancellation_failed: true,
+      membership_end: outcome,
     });
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ invoiceSubject: 'membership' });
@@ -241,9 +262,9 @@ describe('<CreditNoteForm> — F-2 submit body wiring', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
 
     const [, opts] = toastSuccess.mock.calls[0]!;
-    expect((opts as { description?: string }).description).toContain(
-      cnMessages.membershipCancellationFailedNotice,
-    );
+    const description = (opts as { description?: string }).description ?? '';
+    expect(description).toContain(cnMessages.membershipEnd[key]);
+    expect(description).not.toMatch(/renewals page/i);
   });
 
   it('a normal success (no cascade warning) shows a toast with no description', async () => {
@@ -256,5 +277,127 @@ describe('<CreditNoteForm> — F-2 submit body wiring', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
 
     expect(toastSuccess.mock.calls[0]!.length).toBe(1);
+  });
+});
+
+describe('<CreditNoteForm> — online-payment steering (a credit note moves no money)', () => {
+  // Base UI Checkbox uses PointerEvent internally; jsdom lacks it. Same
+  // polyfill as tests/unit/components/schedules/schedule-editor.test.tsx.
+  beforeAll(() => {
+    if (typeof globalThis.PointerEvent === 'undefined') {
+      // @ts-expect-error — minimal polyfill for jsdom
+      globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+        readonly pointerId: number;
+        constructor(type: string, params?: PointerEventInit) {
+          super(type, params);
+          this.pointerId = params?.pointerId ?? 0;
+        }
+      };
+    }
+  });
+  beforeEach(() => {
+    vi.useRealTimers();
+    pushMock.mockClear();
+    toastSuccess.mockClear();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+    vi.restoreAllMocks();
+  });
+
+  function sentBody(fetchMock: ReturnType<typeof mockFetchOk>): Record<string, unknown> {
+    const [, init] = fetchMock.mock.calls[0]!;
+    return JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+  }
+
+  it('shows the payment channel for a card-paid invoice', () => {
+    renderForm({ paymentChannel: 'card', onlineRefundState: 'refundable' });
+    expect(screen.getByText(cnMessages.paidViaLabel)).toBeInTheDocument();
+    expect(screen.getByText(cnMessages.paymentChannel.card)).toBeInTheDocument();
+  });
+
+  it('shows the payment channel for a bank-transfer-paid invoice', () => {
+    renderForm({ paymentChannel: 'bank_transfer', onlineRefundState: 'none' });
+    expect(screen.getByText(cnMessages.paymentChannel.bank_transfer)).toBeInTheDocument();
+  });
+
+  it('an online-paid invoice renders the steering warning with a link to Issue refund', () => {
+    renderForm({ paymentChannel: 'promptpay', onlineRefundState: 'refundable' });
+    const warning = screen.getByTestId('cn-online-payment-warning');
+    expect(warning).toHaveTextContent(cnMessages.onlinePayment.title);
+    expect(
+      screen.getByRole('link', { name: cnMessages.onlinePayment.refundAction }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1?refund=1');
+  });
+
+  it('a bank-transfer-paid invoice renders NO steering warning and NO acknowledgement', () => {
+    renderForm({ paymentChannel: 'bank_transfer', onlineRefundState: 'none' });
+    expect(screen.queryByTestId('cn-online-payment-warning')).toBeNull();
+    expect(
+      screen.queryByRole('checkbox', { name: cnMessages.onlinePayment.acknowledge }),
+    ).toBeNull();
+  });
+
+  it('an unverifiable payment state (read failed) still warns and requires the acknowledgement', () => {
+    renderForm({ paymentChannel: null, onlineRefundState: 'unknown' });
+    const warning = screen.getByTestId('cn-online-payment-warning');
+    expect(warning).toHaveTextContent(cnMessages.onlinePayment.unknownTitle);
+    expect(warning).toHaveTextContent(cnMessages.onlinePayment.unknownBody);
+    expect(
+      screen.getByRole('checkbox', { name: cnMessages.onlinePayment.acknowledge }),
+    ).toBeInTheDocument();
+  });
+
+  it('online-paid: submit stays disabled until the acknowledgement is ticked, then sends it', async () => {
+    const fetchMock = mockFetchOk({ document_number: 'CN-2026-000010' });
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ paymentChannel: 'card', onlineRefundState: 'refundable' });
+    fillPartialFormFields();
+
+    const submit = screen.getByRole('button', { name: cnMessages.submit });
+    expect(submit).toBeDisabled();
+
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: cnMessages.onlinePayment.acknowledge }),
+    );
+    await waitFor(() => expect(submit).toBeEnabled());
+
+    fireEvent.click(submit);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sentBody(fetchMock).onlinePaymentRefundAcknowledged).toBe(true);
+  });
+
+  it('online-paid: the acknowledgement sentence itself is clickable, and a hint explains the disabled submit', async () => {
+    renderForm({ paymentChannel: 'card', onlineRefundState: 'refundable' });
+    expect(screen.getByTestId('cn-ack-required-hint')).toHaveTextContent(
+      cnMessages.onlinePayment.ackRequiredHint,
+    );
+    fireEvent.click(screen.getByText(cnMessages.onlinePayment.acknowledge));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('checkbox', { name: cnMessages.onlinePayment.acknowledge }),
+      ).toBeChecked(),
+    );
+    expect(screen.queryByTestId('cn-ack-required-hint')).toBeNull();
+  });
+
+  it('bank-transfer-paid: submits without the acknowledgement field', async () => {
+    const fetchMock = mockFetchOk({ document_number: 'CN-2026-000011' });
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ paymentChannel: 'bank_transfer', onlineRefundState: 'none' });
+    fillPartialFormFields();
+
+    fireEvent.click(screen.getByRole('button', { name: cnMessages.submit }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sentBody(fetchMock).onlinePaymentRefundAcknowledged).toBeUndefined();
+  });
+
+  it('the cancel-membership option no longer claims the member is refunded', () => {
+    renderForm({ invoiceSubject: 'membership' });
+    fillAmount('1070.00');
+    const cancel = cnMessages.membershipEffect.cancelMembership;
+    expect(screen.getByText(cancel.label)).toBeInTheDocument();
+    expect(`${cancel.label} ${cancel.description}`).not.toMatch(/is refunded|refund and cancel/i);
+    expect(cancel.description).toMatch(/no money is returned/i);
   });
 });

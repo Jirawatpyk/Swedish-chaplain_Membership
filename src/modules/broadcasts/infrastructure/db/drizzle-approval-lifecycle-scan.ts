@@ -5,7 +5,7 @@
  * `status = 'awaiting_member_approval'` compared on the ENUM column, not
  * `status::text` — the cast would stop the planner matching the partial index
  * `broadcasts_awaiting_member_idx (tenant_id, stage_entered_at) WHERE status =
- * 'awaiting_member_approval'` (migration 0305), which is what serves this
+ * 'awaiting_member_approval'` (migration 0308), which is what serves this
  * scan. Explicit `tenant_id` predicate on top of RLS (two-layer isolation,
  * Principle I), and the caller's `runInTenant` tx — never the pool-global
  * `db`, which would read without `app.current_tenant`.

@@ -84,7 +84,7 @@ const SCOPED_TABLES = [
   // tenant-authored WRITE surface (brand colour + postal address).
   'broadcast_images',
   'tenant_broadcast_settings',
-  // F119 PR-2 (migration 0305) — the approval round's version history and
+  // F119 PR-2 (migration 0308) — the approval round's version history and
   // the append-only member decisions; RLS ENABLE + FORCE + the 0064 policy.
   'broadcast_versions',
   'broadcast_member_decisions',

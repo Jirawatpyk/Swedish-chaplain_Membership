@@ -103,7 +103,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
 
     // Positive controls: the count alone passes if the strip renders the wrong
     // eight, and it also passes if a live status were retired by mistake.
-    // F119 (0305): 8 → 13 — the five approval-round statuses are live, so
+    // F119 (0308): 8 → 13 — the five approval-round statuses are live, so
     // each is offered (here with the round switched on; the flag-off rule is
     // `queue-filters-flag-visibility.test.tsx`). T116: the four in-progress
     // ones sit under "In review", `expired_no_member_response` under "Closed"

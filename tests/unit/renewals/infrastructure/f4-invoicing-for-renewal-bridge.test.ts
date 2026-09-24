@@ -46,7 +46,11 @@ vi.mock('@/modules/invoicing', () => ({
   }): string | null => inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null,
 }));
 
-import { createInvoiceDraft, issueMembershipBill } from '@/modules/invoicing';
+import {
+  createInvoiceDraft,
+  issueMembershipBill,
+  type SupersedeWarning,
+} from '@/modules/invoicing';
 import { f4InvoicingForRenewalBridge } from '@/modules/renewals/infrastructure/ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
 import { parseThbDecimal } from '@/lib/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
@@ -61,8 +65,8 @@ const mockedIssue = vi.mocked(issueMembershipBill);
 function issuedFixture(overrides: {
   documentNumber: DocumentNumber | null;
   billDocumentNumberRaw: string | null;
-  supersedeWarnings?: readonly string[];
-}): Invoice & { supersedeWarnings: readonly string[] } {
+  supersedeWarnings?: readonly SupersedeWarning[];
+}): Invoice & { supersedeWarnings: readonly SupersedeWarning[] } {
   return {
     invoiceId: 'inv-1',
     status: 'issued',
@@ -70,7 +74,7 @@ function issuedFixture(overrides: {
     documentNumber: overrides.documentNumber,
     billDocumentNumberRaw: overrides.billDocumentNumberRaw,
     supersedeWarnings: overrides.supersedeWarnings ?? [],
-  } as unknown as Invoice & { supersedeWarnings: readonly string[] };
+  } as unknown as Invoice & { supersedeWarnings: readonly SupersedeWarning[] };
 }
 
 const BASE_INPUT = {

@@ -138,6 +138,7 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
         cycleId: 'cyc-1',
         invoiceId: 'inv-1',
         cycleStatus: 'awaiting_payment',
+        supersedeWarnings: [],
       }),
     );
     const POST = await loadHandler();
@@ -162,6 +163,7 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
         cycleId: 'cyc-1',
         invoiceId: 'inv-1',
         cycleStatus: 'awaiting_payment',
+        supersedeWarnings: [],
       }),
     );
     const POST = await loadHandler();
@@ -187,6 +189,55 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
     expect('frozenPlanPriceThb' in useCaseInput).toBe(false);
   });
 
+  it('200 surfaces supersede-void failures as structured supersede_issues (bill number, never prose)', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRenewLapsedMemberMock.mockResolvedValueOnce(
+      ok({
+        cycleId: 'cyc-1',
+        invoiceId: 'inv-1',
+        cycleStatus: 'awaiting_payment',
+        supersedeWarnings: [
+          {
+            kind: 'void_failed',
+            invoiceId: 'inv-old-1',
+            billDocumentNumber: 'SC-2026-000123',
+            errorCode: 'refund_in_progress',
+          },
+          { kind: 'list_failed' },
+        ],
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.supersede_issues).toEqual([
+      {
+        kind: 'void_failed',
+        invoice_id: 'inv-old-1',
+        bill_document_number: 'SC-2026-000123',
+        error_code: 'refund_in_progress',
+      },
+      { kind: 'list_failed' },
+    ]);
+  });
+
+  it('200 with no supersede-void failures → supersede_issues is empty', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRenewLapsedMemberMock.mockResolvedValueOnce(
+      ok({
+        cycleId: 'cyc-1',
+        invoiceId: 'inv-1',
+        cycleStatus: 'awaiting_payment',
+        supersedeWarnings: [],
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    const body = await res.json();
+    expect(body.supersede_issues).toEqual([]);
+  });
+
   it('L2: a client-supplied plan_year in the body is IGNORED (server derives it) — still 200, no plan_year threaded to the use-case', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminRenewLapsedMemberMock.mockResolvedValueOnce(
@@ -194,6 +245,7 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
         cycleId: 'cyc-1',
         invoiceId: 'inv-1',
         cycleStatus: 'awaiting_payment',
+        supersedeWarnings: [],
       }),
     );
     const POST = await loadHandler();

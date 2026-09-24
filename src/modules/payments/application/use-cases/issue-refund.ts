@@ -77,6 +77,7 @@ import {
   type RejectionProof,
 } from '../../domain/settlement/money-moved';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
+import type { RefundMembershipEffect } from '../../domain/refund';
 import {
   asPaymentId,
   parsePaymentId,
@@ -108,6 +109,14 @@ export interface IssueRefundInput {
   readonly actorRole?: 'admin' | 'super_admin';
   readonly correlationId: string;
   readonly requestId: string | null;
+  /**
+   * 0306 — staff's Keep / End membership choice for a refund that FULLY
+   * credits a membership invoice. `cancel_membership` on anything else is
+   * refused before Stripe (`membership_effect_not_applicable`). Pinned on the
+   * refund row so the async finaliser forwards it to the F4 credit note; the
+   * ROUTE (never this use-case) orchestrates the renewals end.
+   */
+  readonly membershipEffect?: RefundMembershipEffect;
 }
 
 /**
@@ -125,6 +134,8 @@ export type IssueRefundSuccess =
         readonly id: string;
         readonly paymentId: string;
         readonly invoiceId: string;
+        /** 0306 — the paying member, so the route can end their coverage. */
+        readonly memberId: string;
         readonly amountSatang: Satang;
         readonly reason: string;
         readonly status: 'succeeded';
@@ -162,6 +173,10 @@ export type IssueRefundSuccess =
       readonly kind: 'pending';
       readonly refund: {
         readonly id: string;
+        /** 0306 — the refunded invoice + paying member, for the route's
+         *  settle-time renewals request. */
+        readonly invoiceId: string;
+        readonly memberId: string;
         readonly status: 'pending';
         readonly processorRefundId: string;
         /**
@@ -193,6 +208,12 @@ export type IssueRefundError =
       readonly remainingSatang: Satang;
     }
   | { readonly code: 'refund_in_progress' }
+  /**
+   * 0306 — `membershipEffect: 'cancel_membership'` on a refund that does NOT
+   * fully credit a membership invoice (partial, or an event invoice). Refused
+   * before Stripe: money never moves on an intent that cannot apply.
+   */
+  | { readonly code: 'membership_effect_not_applicable' }
   | {
       readonly code: 'processor_unavailable';
       readonly kind: 'retryable' | 'idempotency_conflict' | 'permanent';
@@ -540,6 +561,8 @@ async function issueRefundBody(
          * status of its own because it never credited the invoice.
          */
         readonly invoiceStatusAtPreflight: InvoiceStatus;
+        /** 0306 — pinned on the row; forwarded to the F4 credit note. */
+        readonly membershipEffect: RefundMembershipEffect | null;
       }
     | { readonly kind: 'rejected'; readonly error: IssueRefundError };
 
@@ -757,6 +780,26 @@ async function issueRefundBody(
       } as const;
     }
 
+    // 0306 — `cancel_membership` only applies when THIS refund fully credits a
+    // MEMBERSHIP invoice (that is what withdraws the paid period) — and only
+    // when a credit note will actually be issued: a WAIVED refund (voided
+    // invoice) never covered a period, so its money is an orphan / duplicate
+    // and ending a paid-up member's coverage for it would be wrong. Above the
+    // insert + `refund_initiated` emit for the same reason as every guard
+    // here: `err()` inside `runInTenant` COMMITS.
+    if (
+      input.membershipEffect === 'cancel_membership' &&
+      (invoiceCredited.value.invoiceSubject !== 'membership' ||
+        requirement.kind !== 'issue' ||
+        input.amountSatang !==
+          invoiceCredited.value.totalSatang - invoiceCredited.value.creditedTotalSatang)
+    ) {
+      return {
+        kind: 'rejected',
+        error: { code: 'membership_effect_not_applicable' },
+      } as const;
+    }
+
     // F-3 leg 3 — the key is derived from THIS refund row's own id, which is
     // immutable for the life of the logical attempt.
     //
@@ -787,6 +830,7 @@ async function issueRefundBody(
       // timestamp, never on this column, because this one is written while the
       // row is still `pending`.
       creditNoteWaiverReason,
+      membershipEffect: input.membershipEffect ?? null,
       initiatorUserId: input.actorUserId,
       correlationId: input.correlationId,
       initiatedAt,
@@ -805,6 +849,11 @@ async function issueRefundBody(
         amount_satang: input.amountSatang.toString(),
         reason: input.reason,
         idempotency_key: idempotencyKey,
+        // Staff's Keep / End membership decision (0306) — on the permanent
+        // trail, since the async end is later performed by the cron actor.
+        ...(input.membershipEffect !== undefined
+          ? { membership_effect: input.membershipEffect }
+          : {}),
       },
       retentionYears: retentionFor('refund_initiated'),
     });
@@ -855,6 +904,7 @@ async function issueRefundBody(
       succeededSumBefore: ctx.succeededSumSatang,
       creditNoteWaiverReason,
       invoiceStatusAtPreflight: invoiceStatusAtPreflight,
+      membershipEffect: input.membershipEffect ?? null,
     } as const;
   });
 
@@ -1040,6 +1090,8 @@ async function issueRefundBody(
       kind: 'pending',
       refund: {
         id: prepared.refundId,
+        invoiceId: prepared.payment.invoiceId,
+        memberId: prepared.payment.memberId,
         status: 'pending',
         processorRefundId: stripeRefund.value.id,
         creditNoteWaiverReason: prepared.creditNoteWaiverReason,
@@ -1076,6 +1128,7 @@ async function issueRefundBody(
         // Track B — pinned in Phase A under the payment lock; Phase B cannot
         // re-derive it.
         creditNoteWaiverReason: prepared.creditNoteWaiverReason,
+        membershipEffect: prepared.membershipEffect,
         invoiceId: prepared.payment.invoiceId,
         amountSatang: input.amountSatang,
         reason: input.reason,
@@ -1231,6 +1284,7 @@ async function issueRefundBody(
       id: prepared.refundId,
       paymentId,
       invoiceId: prepared.payment.invoiceId,
+      memberId: prepared.payment.memberId,
       amountSatang: input.amountSatang,
       reason: input.reason,
       status: 'succeeded',

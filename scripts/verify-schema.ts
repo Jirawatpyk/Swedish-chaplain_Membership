@@ -157,13 +157,13 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE to_regclass('public.broadcast_images') IS NOT NULL AND (SELECT count(*) FROM information_schema.columns WHERE table_name = 'tenant_broadcast_settings' AND column_name IN ('brand_primary_color','brand_postal_address','brand_updated_at','brand_updated_by_user_id')) = 4 AND (SELECT count(*) FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel IN ('broadcast_test_copy_sent','broadcast_brand_settings_changed','broadcast_image_uploaded','broadcast_image_removed')) = 4`,
       },
       {
-        // F119 PR-2 (mig 0305) — the FR-012a bundle. Same class as 0304: the
+        // F119 PR-2 (mig 0308) — the FR-012a bundle. Same class as 0304: the
         // enum values are hoisted to the AUTOCOMMIT pre-pass, so a journal
-        // that skips 0305 leaves `broadcast_status` short (every hand-off
+        // that skips 0308 leaves `broadcast_status` short (every hand-off
         // UPDATE then 500s) with nothing else to notice. Asserted together:
         // the two new tables, the six `broadcasts` columns, and a
         // `broadcast_status` value the partial index and every hand-off need.
-        name: "broadcast_versions + broadcast_member_decisions tables + broadcasts.{proposed_send_at, stage_entered_at, current_round, approved_version_id, member_reminder_stage, member_expiry_notified_at} + broadcast_status 'awaiting_member_approval' (mig 0305)",
+        name: "broadcast_versions + broadcast_member_decisions tables + broadcasts.{proposed_send_at, stage_entered_at, current_round, approved_version_id, member_reminder_stage, member_expiry_notified_at} + broadcast_status 'awaiting_member_approval' (mig 0308)",
         query: `SELECT 1 AS hit WHERE to_regclass('public.broadcast_versions') IS NOT NULL AND to_regclass('public.broadcast_member_decisions') IS NOT NULL AND (SELECT count(*) FROM information_schema.columns WHERE table_name = 'broadcasts' AND column_name IN ('proposed_send_at','stage_entered_at','current_round','approved_version_id','member_reminder_stage','member_expiry_notified_at')) = 6 AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'broadcast_status'::regtype AND enumlabel = 'awaiting_member_approval')`,
       },
     ];

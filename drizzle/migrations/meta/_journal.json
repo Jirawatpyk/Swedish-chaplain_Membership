@@ -2078,7 +2078,28 @@
       "idx": 306,
       "version": "7",
       "when": 1798543800000,
-      "tag": "0305_eblast_member_approval",
+      "tag": "0305_audit_log_invoice_supersede_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1798543900000,
+      "tag": "0306_membership_coverage_end",
+      "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1798544000000,
+      "tag": "0307_membership_coverage_end_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1798544100000,
+      "tag": "0308_eblast_member_approval",
       "breakpoints": true
     }
   ]

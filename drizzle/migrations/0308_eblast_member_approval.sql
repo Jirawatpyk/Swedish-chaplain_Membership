@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- Migration 0305 — F119 E-Blast two-sided approval (PR-2). THE FR-012a
+-- Migration 0308 — F119 E-Blast two-sided approval (PR-2). THE FR-012a
 -- BUNDLE: the new stages, the tables they need and both trigger amendments
 -- ship in ONE migration, so no deploy can carry a stage the triggers refuse
 -- or a trigger exemption for a stage that does not exist.
@@ -112,7 +112,7 @@ ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_approval_expire
 -- The runner's statement_timeout (30 s) bounds the wait: a cron holding
 -- broadcasts longer fails the deploy cleanly rather than hanging it — re-run
 -- the deploy. The lock is transient, so the dev branch (which already
--- applied 0305 without it) has nothing to re-apply.
+-- applied 0308 without it) has nothing to re-apply.
 LOCK TABLE "broadcasts" IN ACCESS EXCLUSIVE MODE;--> statement-breakpoint
 
 -- --- 1. broadcast_versions (data-model § 1) ---------------------------------
@@ -354,7 +354,7 @@ ALTER TABLE "broadcasts"
   -- this one deliberately does not. NO ACTION, not RESTRICT: its check runs
   -- at the end of the statement, so `DELETE FROM broadcasts` (which removes
   -- the referencing row and cascades its versions in one statement) passes.
-  -- The dev branch already applied 0305 with the implicit default — the
+  -- The dev branch already applied 0308 with the implicit default — the
   -- same constraint — so nothing needs re-applying there.
   ADD CONSTRAINT "broadcasts_approved_version_fk"
     FOREIGN KEY ("tenant_id", "approved_version_id")
@@ -461,7 +461,7 @@ BEGIN
          OR NEW.audience_import_submitted_at         IS DISTINCT FROM OLD.audience_import_submitted_at
          OR NEW.audience_import_completed_at         IS DISTINCT FROM OLD.audience_import_completed_at
          OR NEW.audience_deleted_at                  IS DISTINCT FROM OLD.audience_deleted_at
-         -- 0305 (F119 FR-012a) — the approval round's bookkeeping. Not PII;
+         -- 0308 (F119 FR-012a) — the approval round's bookkeeping. Not PII;
          -- the erasure scrub must never move a row through the workflow.
          OR NEW.proposed_send_at                     IS DISTINCT FROM OLD.proposed_send_at
          OR NEW.stage_entered_at                     IS DISTINCT FROM OLD.stage_entered_at
@@ -480,7 +480,7 @@ BEGIN
     content_changed := NEW.subject IS DISTINCT FROM OLD.subject
                        OR NEW.body_html IS DISTINCT FROM OLD.body_html
                        OR NEW.body_source IS DISTINCT FROM OLD.body_source;
-    -- 0305 E1 — the promotion of the member-approved version.
+    -- 0308 E1 — the promotion of the member-approved version.
     IF OLD.status = 'member_approved' AND NEW.status = 'approved' THEN
       content_changed := FALSE;
     END IF;
@@ -490,7 +490,7 @@ BEGIN
     IF OLD.status = 'submitted' AND NEW.status = 'approved' THEN
       scheduled_for_changed := FALSE;
     END IF;
-    -- 0305 E2 — confirm, change, or cancel the time (on a withdrawal or a
+    -- 0308 E2 — confirm, change, or cancel the time (on a withdrawal or a
     -- voiding edit).
     IF OLD.status IN ('member_approved', 'approved')
        AND NEW.status IN ('approved', 'changes_requested', 'in_design') THEN
@@ -501,7 +501,7 @@ BEGIN
        OR NEW.segment_type IS DISTINCT FROM OLD.segment_type
        OR NEW.segment_params IS DISTINCT FROM OLD.segment_params
        OR NEW.custom_recipient_emails IS DISTINCT FROM OLD.custom_recipient_emails
-       -- 0305 F1 — the member's proposal is frozen after draft.
+       -- 0308 F1 — the member's proposal is frozen after draft.
        OR NEW.proposed_send_at IS DISTINCT FROM OLD.proposed_send_at
        OR scheduled_for_changed THEN
       RAISE EXCEPTION 'broadcast_immutable_after_submit'
@@ -538,9 +538,9 @@ BEGIN
 
   CASE OLD.status
     WHEN 'draft'                      THEN allowed_targets := ARRAY['submitted', 'cancelled'];
-    -- 0305: + in_design (start a formatted version; flag-gated in Application).
+    -- 0308: + in_design (start a formatted version; flag-gated in Application).
     WHEN 'submitted'                  THEN allowed_targets := ARRAY['approved', 'rejected', 'cancelled', 'in_design'];
-    -- 0305: + changes_requested (withdrawn approval / cancelled time) and
+    -- 0308: + changes_requested (withdrawn approval / cancelled time) and
     -- in_design (marketing edits after a round) — both need round >= 1.
     WHEN 'approved'                   THEN allowed_targets := ARRAY['sending', 'cancelled', 'failed_to_dispatch', 'changes_requested', 'in_design'];
     -- F7.1a US1: a batched send may progress to partially_sent (FR-008a) or
@@ -550,7 +550,7 @@ BEGIN
     -- F7.1a US1: partially_sent is NON-terminal — admin retry (-> sending,
     -- FR-008b) or accept-partial (-> partial_delivery_accepted, FR-008c).
     WHEN 'partially_sent'             THEN allowed_targets := ARRAY['sending', 'partial_delivery_accepted'];
-    -- 0305 (F119) — the approval round.
+    -- 0308 (F119) — the approval round.
     WHEN 'in_design'                  THEN allowed_targets := ARRAY['awaiting_member_approval', 'rejected', 'cancelled'];
     WHEN 'awaiting_member_approval'   THEN allowed_targets := ARRAY['member_approved', 'changes_requested', 'rejected', 'cancelled', 'expired_no_member_response'];
     WHEN 'changes_requested'          THEN allowed_targets := ARRAY['in_design', 'rejected', 'cancelled'];
@@ -560,7 +560,7 @@ BEGIN
     WHEN 'cancelled'                  THEN allowed_targets := ARRAY[]::text[];
     WHEN 'failed_to_dispatch'         THEN allowed_targets := ARRAY[]::text[];
     WHEN 'partial_delivery_accepted'  THEN allowed_targets := ARRAY[]::text[];  -- TERMINAL
-    -- 0305: TERMINAL — no closed stage can be reopened (FR-022a).
+    -- 0308: TERMINAL — no closed stage can be reopened (FR-022a).
     WHEN 'expired_no_member_response' THEN allowed_targets := ARRAY[]::text[];
     ELSE
       -- Defensive: any future enum value reaching an UPDATE without a

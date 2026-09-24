@@ -41,7 +41,7 @@
  *     (`broadcast_membership_suspended_blocked`, migration 0246)
  *   - F119 PR-1 (migration 0304): 4 events — test copy, brand settings
  *     changed, image uploaded, image removed.
- *   - F119 PR-2 (migration 0305): 10 events — the two-sided approval round
+ *   - F119 PR-2 (migration 0308): 10 events — the two-sided approval round
  *     (version started / sent to member, member approved / changes requested
  *     / approval withdrawn, approval voided, schedule confirmed, reminder
  *     sent, expiry warned, expired).
@@ -197,7 +197,7 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_image_uploaded',
   'broadcast_image_removed',
 
-  // --- F119 PR-2 (migration 0305) — the two-sided approval round — 10 events
+  // --- F119 PR-2 (migration 0308) — the two-sided approval round — 10 events
   // Actor, member key and payload per event are fixed by the table in
   // specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md
   // (its single source of truth): the member's own three decisions carry

@@ -268,8 +268,8 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     partialDeliveryAcceptedByUserId: row.partialDeliveryAcceptedByUserId,
     templateProvenance: deriveTemplateProvenance(row),
 
-    // F119 (0305) — approval-round bookkeeping; DB defaults cover every
-    // pre-0305 row (stage_entered_at backfilled, current_round 0, …).
+    // F119 (0308) — approval-round bookkeeping; DB defaults cover every
+    // pre-0308 row (stage_entered_at backfilled, current_round 0, …).
     proposedSendAt: row.proposedSendAt,
     stageEnteredAt: row.stageEnteredAt,
     currentRound: row.currentRound,
@@ -843,7 +843,7 @@ export function makeDrizzleBroadcastsRepo(
         'quotaYearConsumed',
         'quotaConsumedAt',
         'estimatedRecipientCount',
-        // F119 (0305) — the approval-round bookkeeping a transition writes.
+        // F119 (0308) — the approval-round bookkeeping a transition writes.
         // Not in the immutability trigger's blocklist; `scheduledFor` above is
         // the one that needs an exempt edge (E2). A key missing here is
         // silently DROPPED, so every F119 transition field must be listed.
@@ -854,7 +854,7 @@ export function makeDrizzleBroadcastsRepo(
         'memberExpiryNotifiedAt',
         // F119 FR-016 — the member's proposal, written by the `draft →
         // submitted` transition ONLY. Any post-draft write of it is refused by
-        // the immutability trigger (0305 F1), loud, never silent.
+        // the immutability trigger (0308 F1), loud, never silent.
         'proposedSendAt',
         // F119 T060 — the PROMOTION of the member-approved version. It must
         // ride the SAME statement as the `member_approved → approved` flip:

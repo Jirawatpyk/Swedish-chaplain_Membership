@@ -171,6 +171,8 @@ describe('credit_notes.retains_coverage immutability (M1 migration 0273, live Ne
         pdfTemplateVersion: 1,
         // Write-once TRUE — an F4-manual full-membership 'keep' retention note.
         retainsCoverage: true,
+        // Write-once Keep / End decision (0306 column, locked by 0307).
+        membershipEffect: 'cancel_membership',
       });
     });
 
@@ -252,6 +254,28 @@ describe('credit_notes.retains_coverage immutability (M1 migration 0273, live Ne
     expect(rows[0]?.pii_blob_purged_at).not.toBeNull();
     // The write-once coverage signal survives the redaction untouched.
     expect(rows[0]?.retains_coverage).toBe(true);
+  }, 30_000);
+
+  it('0307 — flipping membership_effect RAISEs, on the normal path AND under the redaction GUC', async () => {
+    const { tenant, creditNoteId } = await seedCreditNote();
+    const normal = await captureRaise(() =>
+      runInTenant(tenant.ctx, (tx) =>
+        tx.execute(
+          sql`UPDATE credit_notes SET membership_effect = 'keep' WHERE credit_note_id = ${creditNoteId}`,
+        ),
+      ),
+    );
+    expect(normal, 'expected the normal-path trigger to raise on a membership_effect change').not.toBeNull();
+    expect(normal!).toMatch(/immutable/i);
+    const underGuc = await captureRaise(() =>
+      runInTenant(tenant.ctx, async (tx) => {
+        await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+        await tx.execute(
+          sql`UPDATE credit_notes SET membership_effect = NULL WHERE credit_note_id = ${creditNoteId}`,
+        );
+      }),
+    );
+    expect(underGuc, 'expected the GUC branch to raise on a membership_effect change').not.toBeNull();
   }, 30_000);
 
   it('the immutability function retains its search_path hardening after the 0273 CREATE OR REPLACE', async () => {

@@ -447,7 +447,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'broadcast_brand_settings_changed',
   'broadcast_image_uploaded',
   'broadcast_image_removed',
-  // --- F119 PR-2 (migration 0305) — the two-sided approval round: version
+  // --- F119 PR-2 (migration 0308) — the two-sided approval round: version
   //     started / sent to member, the member's approve / request changes /
   //     withdraw approval, approval voided by a staff edit, schedule
   //     confirmed, and the daily tick's reminder / expiry warning / expiry.
@@ -730,7 +730,7 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   // tenant tx (research R8 / § V3). ---
   'member_change_request_submitted_staff',
   'member_change_request_decided_member',
-  // --- F119 migration 0305: E-Blast approval hand-offs (data-model § 7.3).
+  // --- F119 migration 0308: E-Blast approval hand-offs (data-model § 7.3).
   // Enqueued unconditionally; T152a makes the outbox drainer skip all five
   // while FEATURE_EBLAST_MEMBER_APPROVAL is off. Each needs its
   // `buildPayload` case arm before PR-2 merges (T065 / T129 / T131) — the

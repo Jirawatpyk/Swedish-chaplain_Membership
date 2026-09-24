@@ -57,7 +57,7 @@ const ROOTS_TO_GREP = [
  * follow-up branch per Staff Review W-1 (2026-05-19). Removing these
  * from KNOWN_NOT_YET_EMITTED when Phase 4 + Phase 5 ship.
  *
- * F119 PR-2 (2026-09-23): the ten 0305 approval-round events were listed
+ * F119 PR-2 (2026-09-23): the ten 0308 approval-round events were listed
  * here, each naming its emitting task, and each left with its emitter; since
  * T130 (2026-09-24) the list holds no F119 value, and it must stay that way.
  */
@@ -75,7 +75,7 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   // Application-layer `reseedStarterTemplates` use-case will become
   // the primary emit caller. No emit site in src/ today.
   'broadcast_template_seed_skipped_existing_name',
-  // F119 PR-2 (migration 0305, T050): no F119 value may appear here — every
+  // F119 PR-2 (migration 0308, T050): no F119 value may appear here — every
   // one of the fourteen has its emit site (the last three, the approval
   // lifecycle's, since T130 `expire-stale-member-approvals`).
 ];

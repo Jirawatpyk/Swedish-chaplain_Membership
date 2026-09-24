@@ -72,6 +72,7 @@ function makeRefund(partial: Partial<Refund> = {}): Refund {
     // for an ordinary refund — silently skipping credit-note issuance. Explicit
     // nulls are load-bearing here, not boilerplate.
     creditNoteWaivedAt: null,
+    membershipEffect: null,
     creditNoteWaiverReason: null,
     initiatedAt: new Date('2026-07-11T00:00:00.000Z'),
     completedAt: null,

@@ -93,6 +93,8 @@ import { classifyMembershipPayment } from '../../domain/classify-membership-paym
 import { loadClassificationCounts } from './_lib/classification-input';
 import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
+import { logSupersedeWarnings } from './_lib/log-supersede-warnings';
+import type { SupersedeWarning } from '@/modules/invoicing';
 import {
   CycleNotFoundError,
   InvoiceLinkConflictError,
@@ -132,6 +134,12 @@ export interface AdminRenewLapsedMemberOutput {
   readonly cycleId: string;
   readonly invoiceId: string;
   readonly cycleStatus: 'awaiting_payment';
+  /**
+   * 106-void-on-reissue follow-up — older unpaid bills the reissue could NOT
+   * auto-void, threaded from F4 for the admin UI to name. Empty when nothing
+   * failed (or `FEATURE_VOID_ON_REISSUE` is off).
+   */
+  readonly supersedeWarnings: readonly SupersedeWarning[];
 }
 
 export type AdminRenewLapsedMemberError =
@@ -627,6 +635,16 @@ export async function adminRenewLapsedMember(
     );
     return mapInvoiceError(invoiceResult);
   }
+  // 106-void-on-reissue follow-up — logged before the link step so a later
+  // link failure cannot swallow it; also returned for the admin toast below.
+  const supersedeWarnings = invoiceResult.supersedeWarnings ?? [];
+  logSupersedeWarnings(supersedeWarnings, {
+    errorId: 'F8.ADMIN_RENEW.SUPERSEDE_VOID_FAILED',
+    tenantId: input.tenantId,
+    memberId: input.memberId,
+    invoiceId: invoiceResult.invoiceId,
+    correlationId: input.correlationId,
+  });
 
   // ---- Step 3 (tx2): link invoice + reconcile frozen price + emit audit
   // atomically under the per-cycle advisory lock (mirror confirm-renewal
@@ -787,6 +805,7 @@ export async function adminRenewLapsedMember(
       cycleId: cycle.cycleId,
       invoiceId: invoiceResult.invoiceId,
       cycleStatus: 'awaiting_payment' as const,
+      supersedeWarnings,
     });
   });
 }

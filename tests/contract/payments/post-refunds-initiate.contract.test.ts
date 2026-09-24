@@ -37,10 +37,13 @@ import { ok, err } from '@/lib/result';
 // ---------------------------------------------------------------------------
 
 const requireApiPermissionMock = vi.fn();
+// 0306 — the End-membership sub-gate (`renewals.write`); admins hold it.
+const canPerformMock = vi.fn((..._args: unknown[]) => true);
 const issueRefundMock = vi.fn();
 
 vi.mock('@/lib/rbac', () => ({
   requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
+  canPerform: (...args: unknown[]) => canPerformMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -81,6 +84,15 @@ vi.mock('@/lib/stripe-webhook-deps', () => ({
 vi.mock('@/modules/payments', () => ({
   issueRefund: (...args: unknown[]) => issueRefundMock(...args),
   makeIssueRefundDeps: () => ({ db: {}, stripe: {}, audit: {}, invoicingBridge: {} }),
+}));
+
+// 0306 — the route orchestrates the renewals "end membership coverage"
+// operation (via the shared `@/lib/membership-coverage-end` helper) after a
+// refund with `membershipEffect: 'cancel_membership'`.
+const endMembershipCoverageNowMock = vi.fn();
+vi.mock('@/modules/renewals', () => ({
+  endMembershipCoverageNow: (...args: unknown[]) => endMembershipCoverageNowMock(...args),
+  makeRenewalsDeps: () => ({}),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -452,6 +464,9 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect((body['error'] as Record<string, unknown>)['code']).toBe(
       'refund_exceeds_remaining',
     );
+    // The server's authoritative cap (min(payment, invoice headroom)) rides on
+    // the 409 so the dialog can quote it instead of its possibly-stale prop.
+    expect((body['error'] as Record<string, unknown>)['remainingSatang']).toBe('350000');
   });
 
   it('409 refund_in_progress — concurrent refund holds the row lock', async () => {
@@ -666,5 +681,120 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     const body = (await res.json()) as Record<string, unknown>;
     expect((body['error'] as Record<string, unknown>)['code']).toBe('internal_error');
     expect(JSON.stringify(body)).not.toContain('db connection lost');
+  });
+
+  describe('0306 — Keep / End membership on a full membership refund', () => {
+    const FULL_BODY = { ...VALID_BODY, membershipEffect: 'cancel_membership' };
+
+    it('End membership also requires renewals.write → 403 BEFORE any refund is attempted', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      canPerformMock.mockReturnValueOnce(false);
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(FULL_BODY));
+      expect(res.status).toBe(403);
+      expect(canPerformMock).toHaveBeenCalledWith(expect.anything(), 'renewals.write');
+      expect(issueRefundMock).not.toHaveBeenCalled();
+      expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
+    });
+
+    it('forwards membershipEffect to issueRefund', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(ok(SUCCESS_PAYLOAD));
+      endMembershipCoverageNowMock.mockResolvedValueOnce(ok({ outcome: 'ended', cycleId: 'c-1' }));
+      const { POST } = await importRoute();
+      await POST(makeJsonRequest(FULL_BODY));
+      expect(issueRefundMock.mock.calls[0]![1]).toMatchObject({
+        membershipEffect: 'cancel_membership',
+      });
+    });
+
+    it('sync refund settled → ends coverage NOW (no awaitRefund), 201 + membership_end:"ended"', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(
+        ok({ ...SUCCESS_PAYLOAD, refund: { ...SUCCESS_PAYLOAD.refund, memberId: 'mbr-7' } }),
+      );
+      endMembershipCoverageNowMock.mockResolvedValueOnce(ok({ outcome: 'ended', cycleId: 'c-1' }));
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(FULL_BODY));
+      expect(res.status).toBe(201);
+      expect(((await res.json()) as Record<string, unknown>)['membership_end']).toBe('ended');
+      const [, input] = endMembershipCoverageNowMock.mock.calls[0]!;
+      expect(input).toMatchObject({
+        memberId: 'mbr-7',
+        trigger: 'refund',
+        correlationId: 'refund:rfnd_01JREFUND0',
+      });
+      expect(input.awaitRefund).toBeUndefined();
+    });
+
+    it('async refund (202) → only SCHEDULES the end on settlement (awaitRefund), membership_end:"scheduled"', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(
+        ok({
+          kind: 'pending' as const,
+          refund: {
+            id: 'rfnd_01JREFUND0',
+            invoiceId: 'inv_01JABCDEFGHIJKLMNOPQRSTUV',
+            memberId: 'mbr-7',
+            status: 'pending' as const,
+            processorRefundId: 're_3RASYNC0',
+            creditNoteWaiverReason: null,
+          },
+        }),
+      );
+      endMembershipCoverageNowMock.mockResolvedValueOnce(
+        ok({ outcome: 'scheduled', cycleId: 'c-1' }),
+      );
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(FULL_BODY));
+      expect(res.status).toBe(202);
+      expect(((await res.json()) as Record<string, unknown>)['membership_end']).toBe('scheduled');
+      const [, input] = endMembershipCoverageNowMock.mock.calls[0]!;
+      expect(input.awaitRefund).toEqual({
+        refundId: 'rfnd_01JREFUND0',
+        invoiceId: 'inv_01JABCDEFGHIJKLMNOPQRSTUV',
+      });
+    });
+
+    it('keep (or no choice) → renewals is never called, no membership_end field', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(ok(SUCCESS_PAYLOAD));
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest({ ...VALID_BODY, membershipEffect: 'keep' }));
+      expect(res.status).toBe(201);
+      expect(((await res.json()) as Record<string, unknown>)['membership_end']).toBeUndefined();
+      expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
+    });
+
+    it('a renewals failure never fails the refund → 201 + membership_end:"failed"', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(
+        ok({ ...SUCCESS_PAYLOAD, refund: { ...SUCCESS_PAYLOAD.refund, memberId: 'mbr-7' } }),
+      );
+      endMembershipCoverageNowMock.mockRejectedValueOnce(new Error('db down'));
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(FULL_BODY));
+      expect(res.status).toBe(201);
+      expect(((await res.json()) as Record<string, unknown>)['membership_end']).toBe('failed');
+    });
+
+    it('422 membership_effect_not_applicable maps to its own route code', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(err({ code: 'membership_effect_not_applicable' }));
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(FULL_BODY));
+      expect(res.status).toBe(422);
+      expect(
+        ((await res.json()) as { error: { code: string } }).error.code,
+      ).toBe('membership_effect_not_applicable');
+    });
+
+    it('rejects an unknown membershipEffect value (400)', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest({ ...VALID_BODY, membershipEffect: 'archive' }));
+      expect(res.status).toBe(400);
+      expect(issueRefundMock).not.toHaveBeenCalled();
+    });
   });
 });

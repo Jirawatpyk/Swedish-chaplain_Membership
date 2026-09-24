@@ -79,7 +79,7 @@ export function hasDispatchBegun(row: {
 
 /**
  * F119 T132 — the in-progress stages that exist ONLY inside the
- * member-approval round (migration 0305): a row in one of them is in flight
+ * member-approval round (migration 0308): a row in one of them is in flight
  * whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says. Research R18's "flag ON or
  * rows exist" rule reads this set — with the flag off, a surface that would
  * otherwise stay dark (the nav's waiting count) still shows while any row is

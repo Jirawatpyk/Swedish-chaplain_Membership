@@ -130,6 +130,39 @@ Pay-now action 403s.
    AND the member's prior new-flow bill (if any) flips to `void` with a
    `supersededByInvoiceId` audit payload pointing at the new bill.
 
+## When a supersede-void fails
+
+The new bill is issued regardless; the older bill stays `issued`, so the
+member has two open bills until someone voids the older one. Signals:
+
+- `invoicing_void_on_reissue_failed_total{tenant}` increments (one per
+  failed list or failed void).
+- `issueMembershipBill` returns a typed `SupersedeWarning` per failure
+  (`list_failed` / `void_failed` with the `voidInvoice` error code /
+  `void_threw`), carrying the old bill's `invoiceId` and printed `SC`
+  number. `POST /api/invoices/[invoiceId]/issue-auto-drafted` and
+  `POST /api/admin/members/[id]/renew` return them as `supersede_issues[]`.
+- Staff who issue from the admin auto-renewal queue or the member-detail
+  "Renew" dialog see a persistent warning toast in their locale: "The older
+  bill SC-… could not be voided automatically. Void it manually." It
+  includes a link to that bill. For `list_failed`, no bill can be named, so
+  the toast asks staff to check the member's invoices.
+- Every renewal path logs one `warn` line per failure with the old bill's
+  number (`supersededBillNumber`) and invoice id (`supersededInvoiceId`):
+  - `F8.CONFIRM_RENEWAL.SUPERSEDE_VOID_FAILED`: member self-service
+    renewal. The member is never shown this, so **no staff member sees a
+    toast**. This log line is the only place that names the bill.
+  - `F8.ADMIN_RENEW.SUPERSEDE_VOID_FAILED`: the admin "Renew" dialog, which
+    also shows the toast above.
+  - `F8.AUTO_ISSUE.SUPERSEDE_VOID_FAILED`: the auto-renewal queue's Issue
+    actions, which also show the toast above. Carries `requestId` instead
+    of `correlationId`.
+
+Action: open the named bill and void it through the normal admin void.
+Whenever the metric increments, search the logs for
+`*.SUPERSEDE_VOID_FAILED`. A toast can be dismissed before anyone acts on
+it; the log line cannot.
+
 ## Rollback
 
 Flip `FEATURE_VOID_ON_REISSUE=false` in Vercel env + redeploy. Zero
@@ -139,6 +172,27 @@ plain env flip — `issueMembershipBill` reverts to a plain issue with
 auto-voided while the flag was on stays voided (void is not reversible
 by the flag flip — that is expected; a wrongly-voided bill is corrected
 through the normal admin re-issue flow, same as any other void).
+
+## Where staff and members see the link (121-void-supersede-links)
+
+The `superseded_by_invoice_id` audit payload (snake_case in storage; the
+use-case input field is `supersededByInvoiceId`) is read back by
+`getInvoiceSupersession` (`src/modules/invoicing`):
+
+- **Admin** `/admin/invoices/[id]` — a dashed "Replaced by SC-… · issued
+  {date}" row inside the Voided section of the old bill; a "Replaces SC-…"
+  field on the new bill.
+- **Portal** `/portal/invoices/[id]` — "This bill was replaced by SC-…" inside
+  the void block, and "Replaces SC-…" on the new bill. Member-scoped: a link
+  whose other end is not the viewing member's own invoice is dropped and
+  logged (`getInvoiceSupersession: supersede link member mismatch`). That
+  should never happen; if it does, investigate the audit row.
+
+A manual void carries no `superseded_by_invoice_id`, so it shows nothing new.
+The audit row stays the single source of truth; migration `0305` only adds two
+partial expression indexes on `audit_log` for the forward and reverse lookups.
+Flipping the flag off stops new links being written; links already written
+keep rendering.
 
 ## Related
 

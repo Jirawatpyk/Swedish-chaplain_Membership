@@ -20,7 +20,7 @@ on any increase of `broadcasts_no_marketing_recipient_total`; WARNING at `> 7 d`
 - Gauges: the broadcasts half of `/api/internal/metrics/broadcasts-gauges` (every 5 min)
 - Spec authority: `specs/119-eblast-approval-workflow/` (`spec.md`, `quickstart.md` § 3.2 cutover
   + § 3.5 rollback matrix, `contracts/dashboard-and-notifications.md`)
-- Metrics, alerts and the `M119.*` errorId taxonomy: `docs/observability.md` § 28
+- Metrics, alerts and the `M119.*` errorId taxonomy: `docs/observability.md` § 29
 
 ## What the feature does (so the audit trail reads correctly)
 
@@ -103,7 +103,7 @@ their detail pages.
 ## Stuck stage — what each one means and what to do
 
 The dashboard flags a row as **stalled** at **48 h** in a marketing-held stage and **3 days** in
-the member-held stage (FR-027). The age alerts (§ 28.4) bind to the member-held stage only.
+the member-held stage (FR-027). The age alerts (§ 29.4) bind to the member-held stage only.
 
 ### `submitted` — Awaiting review (marketing)
 
@@ -171,7 +171,7 @@ The proposal is `proposed_send_at`: written by the submit (`draft → submitted`
 member requested, and frozen from then on by the immutability trigger — a later confirm or
 reschedule moves `scheduled_for`, never the proposal. A member who requested no time has `NULL`
 ("The member did not propose a time.", and "keep" is not offered — 409 `no_proposal`). Rows
-submitted before `0305` carry a proposal only if they were still `submitted` at that deploy (the
+submitted before `0308` carry a proposal only if they were still `submitted` at that deploy (the
 backfill); every other historical row shows "not recorded".
 
 ### `approved` — Scheduled (nobody)
@@ -237,7 +237,7 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:3100/api/cron/b
 it is nine days ahead of the day-23 warning. Work § Stuck stage — `awaiting_member_approval`.
 If the gauge sits at an unchanged value for hours while rows move, check
 `broadcastsGaugesOk` in the gauges tick body: a failed broadcasts half emits nothing and the
-last value is re-reported (`docs/observability.md` § 28.1).
+last value is re-reported (`docs/observability.md` § 29.1).
 
 ## Alarm — no marketing recipient (page)
 
@@ -368,7 +368,7 @@ Before the revert deploy, in this order:
 
 1. **Cancel every row in a new stage** — `in_design`, `awaiting_member_approval`,
    `changes_requested`, `member_approved` — from `/admin/broadcasts/<id>` (Cancel, typed phrase +
-   reason). The pre-PR-2 code has no label, action or transition for those statuses; the 0305
+   reason). The pre-PR-2 code has no label, action or transition for those statuses; the 0308
    enum values and triggers stay, so the rows would sit unreachable. `expired_no_member_response`
    rows are terminal and harmless but also unlabelled.
 2. **Scheduled rows** (`approved`) that went through a round already hold the approved content
@@ -397,7 +397,7 @@ Revert PR-2 first (it builds on PR-1). What PR-1's revert does and does not undo
 
 ### What no layer undoes
 
-Migrations `0304` and `0305` are undone by **no** layer; reversing either is a new migration, and
+Migrations `0304` and `0308` are undone by **no** layer; reversing either is a new migration, and
 `ALTER TYPE … ADD VALUE` (5 `broadcast_status`, 14 `audit_event_type`, 5 `notification_type`
 values) **cannot be reversed at all**.
 
@@ -406,7 +406,7 @@ values) **cannot be reversed at all**.
 - `specs/119-eblast-approval-workflow/quickstart.md` § 3.2 (cutover, the unflagged-on-merge list),
   § 3.4 (flag matrix), § 3.5 (rollback matrix), § 4 (the SweCham UAT)
 - `specs/119-eblast-approval-workflow/uat-walkthrough-en.md` / `uat-walkthrough-th.md`
-- `docs/observability.md` § 28 (metrics, spans, alerts, `M119.*`), § 22.12 (the image sweep)
+- `docs/observability.md` § 29 (metrics, spans, alerts, `M119.*`), § 22.12 (the image sweep)
 - `docs/runbooks/cron-jobs.md` § F7 prune-expired-drafts, Blocks 2 and 3
 - `docs/runbooks/member-erasure.md` § E-Blast approval round (erasure reach)
 - `docs/compliance/processing-records.md` § F119 PR-2 (the RoPA precondition of the flag)

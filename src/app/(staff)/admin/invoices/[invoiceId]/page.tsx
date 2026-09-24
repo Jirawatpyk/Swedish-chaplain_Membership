@@ -42,6 +42,9 @@ import {
   resolveTaxDocumentKind,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
+  getInvoiceSupersession,
+  isSupersessionLinkLive,
+  makeGetInvoiceSupersessionDeps,
 } from '@/modules/invoicing';
 // Direct infra import for the settings read — same escape-hatch as
 // the B2 settings page. This is a READ against the public port
@@ -102,6 +105,7 @@ import { AutoRefundFailedAlert } from '../_components/auto-refund-failed-alert';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 import { RefundDialog } from './_components/refund-dialog';
+import { IssueCreditNoteAction } from './_components/issue-credit-note-action';
 import { computeRemainingRefundable } from '@/modules/payments';
 // F5 UX D2 — tenant-scoped audit read for the failed-auto-refund alert. Same
 // documented escape-hatch as the tenant-settings / credit-note reads above:
@@ -297,6 +301,22 @@ export default async function InvoiceDetailPage({
   );
 
   const isDraft = invoice.status === 'draft';
+
+  // 121-void-supersede-links — the void-on-reissue link, read back from the
+  // `invoice_voided` audit payload: "Replaced by" on a supersede-voided bill,
+  // "Replaces" on the bill that superseded it. A manual void has no link, so
+  // nothing renders. Best-effort: a failed read (logged in the use case) hides
+  // the link rather than 500-ing the page.
+  const supersession = await getInvoiceSupersession(makeGetInvoiceSupersessionDeps(), {
+    tenantId: tenantCtx.slug,
+    invoice: {
+      invoiceId: invoice.invoiceId,
+      status: invoice.status,
+      memberId: invoice.memberId,
+    },
+  });
+  const replacedBy = supersession.ok ? supersession.value.replacedBy : null;
+  const replaces = supersession.ok ? supersession.value.replaces : [];
   // 016 re-review D — evaluator-derived ('invoicing.write'; OFF leg legacyAdminOnly
   // reproduces the admin-only affordance and admits a promoted super_admin).
   const isAdmin = canPerform(currentUser.role, 'invoicing.write');
@@ -453,6 +473,11 @@ export default async function InvoiceDetailPage({
   // refundable presence. Shares the React `cache()`-deduplicated
   // loader with the Suspense'd PaymentTimeline panel below — one
   // DB roundtrip per request, not two.
+  // A refund still settling on ANY of this invoice's payments blocks a manual
+  // credit note server-side (8A `refund_in_progress`); the action is disabled
+  // to match. A failed activity read leaves it enabled — the server guard
+  // still refuses, with its dedicated message.
+  let refundSettling = false;
   let refundButtonProps: {
     paymentId: string;
     remainingRefundableSatang: bigint;
@@ -467,7 +492,19 @@ export default async function InvoiceDetailPage({
       invoiceId,
     );
     if (activity.ok) {
-      const remaining = computeRemainingRefundable(activity.value);
+      refundSettling = activity.value.refunds.some((r) => r.status === 'pending');
+      // Capped at the invoice's un-credited headroom — the same min(...) the
+      // refund pre-flight enforces. Payment-side only would overstate the
+      // max after a manual credit note (and the admin would submit into a 409).
+      const remaining = computeRemainingRefundable(
+        activity.value,
+        invoice.total
+          ? {
+              totalSatang: invoice.total.satang,
+              creditedTotalSatang: invoice.creditedTotal.satang,
+            }
+          : undefined,
+      );
       if (remaining) {
         // Gap E (2026-07-12) — gate the Issue-refund action on a NON-terminal
         // (pending/async) refund for THIS payment. Pending amounts are NOT
@@ -594,12 +631,10 @@ export default async function InvoiceDetailPage({
             )}
             {(invoice.status === 'paid' || invoice.status === 'partially_credited') &&
               isAdmin && (
-                <Link
-                  href={`/admin/invoices/${invoice.invoiceId}/credit-notes/new`}
-                  className={buttonVariants({ variant: 'outline' })}
-                >
-                  {t('actions.issueCreditNote')}
-                </Link>
+                <IssueCreditNoteAction
+                  invoiceId={invoice.invoiceId}
+                  refundSettling={refundSettling}
+                />
               )}
             {/* F5 Phase 6 (T112) — Refund online payment. Only appears
                 when the invoice was paid via Stripe (i.e. there is a
@@ -634,6 +669,14 @@ export default async function InvoiceDetailPage({
                   currencyCode={
                     (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
                       ?.currency_code ?? 'THB'
+                  }
+                  // 0306 — a full refund of a membership invoice asks Keep /
+                  // End membership; "full" = the invoice's un-credited headroom.
+                  invoiceSubject={invoice.invoiceSubject}
+                  invoiceHeadroomSatang={
+                    invoice.total
+                      ? invoice.total.satang - invoice.creditedTotal.satang
+                      : 0n
                   }
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
                   // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).
@@ -793,6 +836,25 @@ export default async function InvoiceDetailPage({
                 </dd>
               </div>
             )}
+            {replaces.length > 0 && (
+              <div>
+                <dt className="text-muted-foreground">{t('fields.replaces')}</dt>
+                <dd
+                  className="flex flex-wrap gap-x-3 gap-y-1"
+                  data-testid="invoice-replaces"
+                >
+                  {replaces.map((r) => (
+                    <Link
+                      key={r.invoiceId}
+                      href={`/admin/invoices/${r.invoiceId}`}
+                      className="rounded-xs font-mono underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      {r.displayNumber}
+                    </Link>
+                  ))}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-muted-foreground">{t('fields.subtotal')}</dt>
               <dd>{formatSatang(displaySubtotalSatang)} THB</dd>
@@ -913,6 +975,50 @@ export default async function InvoiceDetailPage({
                   </div>
                 )}
               </dl>
+              {/* 121-void-supersede-links — this bill was auto-voided because a
+                  reactivation bill superseded it. Dashed = a pointer, not a
+                  second status; the persistent underline carries the link
+                  affordance (WCAG 1.4.1). "Voided by" above already names who. */}
+              {replacedBy && (
+                <p
+                  className="mt-3 rounded-md border border-dashed border-destructive/40 px-3 py-2 text-sm"
+                  data-testid="invoice-replaced-by"
+                >
+                  {t.rich('voidDetails.replacedBy', {
+                    number: replacedBy.displayNumber,
+                    link: (chunks) => (
+                      <Link
+                        href={`/admin/invoices/${replacedBy.invoiceId}`}
+                        className="rounded-xs font-mono font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      >
+                        {chunks}
+                      </Link>
+                    ),
+                  })}
+                  {replacedBy.issueDate && (
+                    <span className="text-muted-foreground">
+                      {' · '}
+                      {t('voidDetails.replacedByIssued', {
+                        // issue_date is a Postgres `date` — UTC-pin so the day never shifts.
+                        date: formatLocalisedDate(replacedBy.issueDate, userLocale, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          timeZone: 'UTC',
+                        }),
+                      })}
+                    </span>
+                  )}
+                  {/* The replacement is itself no longer live (superseded again,
+                      voided or fully credited) — say so, so staff open it and
+                      follow ITS "Replaced by" instead of chasing this number. */}
+                  {!isSupersessionLinkLive(replacedBy) && (
+                    <Badge variant="outline" className="ml-2 align-middle">
+                      {tStatus(replacedBy.status)}
+                    </Badge>
+                  )}
+                </p>
+              )}
               {/* Next-step hint (M6) — voided invoices are terminal in
                   §87 terms but finance almost always wants to issue a
                   credit note as the legal undo. F4 US6 ships the flow;

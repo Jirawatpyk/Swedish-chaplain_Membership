@@ -218,7 +218,7 @@ describe('enforceOneActiveBroadcastState', () => {
     expect(result.ok).toBe(true);
   });
 
-  // F119 T051 — the five 0305 statuses: submitted, never sending/sent/closed,
+  // F119 T051 — the five 0308 statuses: submitted, never sending/sent/closed,
   // no quota consumed. `approvedAt` is deliberately unconstrained — the
   // `approved → in_design | changes_requested` edges keep it.
   const approvalRoundStatuses = [

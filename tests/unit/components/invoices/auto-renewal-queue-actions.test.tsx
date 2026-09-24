@@ -30,6 +30,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
+import th from '@/i18n/messages/th.json';
 import { toast } from 'sonner';
 
 // Simulate Base UI's React-19 contract: the Menu.Trigger passes its OWN ref
@@ -128,6 +129,7 @@ beforeEach(() => {
   // test relying on the default no-op must not inherit a stale one.
   refreshSpy.mockReset();
   (toast.success as ReturnType<typeof vi.fn>).mockClear();
+  (toast.warning as ReturnType<typeof vi.fn>).mockClear();
   baseUiTriggerRef.mockClear();
 });
 
@@ -270,7 +272,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
       json: async () => ({
         invoice_id: 'inv-draft-1',
         invoice_number: 'SC2026-00099',
-        supersede_warnings: [],
       }),
     } as Response);
     renderActions();
@@ -282,7 +283,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
         t.toast.issuedAndSent.replace('{number}', 'SC2026-00099'),
-        undefined,
       ),
     );
     const [, init] = fetchSpy.mock.calls[0]!;
@@ -296,7 +296,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
       json: async () => ({
         invoice_id: 'inv-draft-1',
         invoice_number: 'SC2026-00100',
-        supersede_warnings: [],
       }),
     } as Response);
     renderActions();
@@ -305,7 +304,7 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     expect(screen.getByText(t.silentDialog.title)).toBeInTheDocument();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
-      json: async () => ({ invoice_number: 'SC2026-00100', supersede_warnings: [] }),
+      json: async () => ({ invoice_number: 'SC2026-00100' }),
     } as Response);
     fireEvent.click(screen.getByRole('button', { name: t.issueSilently }));
 
@@ -314,23 +313,117 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ sendEmail: false });
   });
 
-  it('surfaces supersedeWarnings as the toast description', async () => {
+  it('supersede issues → a persistent, translated warning naming the old bill number + a link to it (never the raw server string)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
         invoice_number: 'SC2026-00101',
-        supersede_warnings: ['superseded SC2026-00090'],
+        supersede_issues: [
+          {
+            kind: 'void_failed',
+            invoice_id: 'inv-old-1',
+            bill_document_number: 'SC-2026-000123',
+            error_code: 'concurrent_state_change',
+          },
+          { kind: 'list_failed' },
+        ],
       }),
     } as Response);
     renderActions();
     openMenuAndClick('queue-row-issue-send');
     fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
 
+    // The issue itself succeeded — its toast stays a plain success.
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(expect.any(String), {
-        description: 'superseded SC2026-00090',
-      }),
+      expect(toast.success).toHaveBeenCalledWith(
+        t.toast.issuedAndSent.replace('{number}', 'SC2026-00101'),
+      ),
     );
+    const w = en.admin.invoices.supersedeWarning;
+    expect(toast.warning).toHaveBeenCalledWith(
+      w.title,
+      expect.objectContaining({ duration: Infinity, closeButton: true }),
+    );
+    const opts = vi.mocked(toast.warning).mock.calls[0]![1] as {
+      description: React.ReactNode;
+    };
+    cleanup();
+    render(<>{opts.description}</>);
+
+    expect(
+      screen.getByText(w.voidFailed.replace('{number}', 'SC-2026-000123')),
+    ).toBeInTheDocument();
+    expect(screen.getByText(w.listFailed)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', {
+        name: w.openBill.replace('{number}', 'SC-2026-000123'),
+      }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-old-1');
+    expect(document.body.textContent).not.toMatch(/supersede:/);
+    expect(document.body.textContent).not.toContain('inv-old-1');
+  });
+
+  it('renders the supersede warning in Thai for a TH admin', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        invoice_number: 'SC2026-00102',
+        supersede_issues: [
+          { kind: 'void_threw', invoice_id: 'inv-old-2', bill_document_number: 'SC-2026-000124' },
+        ],
+      }),
+    } as Response);
+    const thT = th.admin.invoices.autoRenewalQueue.actions;
+    render(
+      <NextIntlClientProvider locale="th" messages={th as unknown as Record<string, unknown>}>
+        <AutoRenewalQueueActions invoiceId="inv-draft-1" memberName="Acme Co Ltd" status="draft" />
+      </NextIntlClientProvider>,
+    );
+    openMenuAndClick('queue-row-issue-silent');
+    fireEvent.click(screen.getByRole('button', { name: thT.issueSilently }));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+    const [title, opts] = vi.mocked(toast.warning).mock.calls[0]! as [
+      string,
+      { description: React.ReactNode },
+    ];
+    const w = th.admin.invoices.supersedeWarning;
+    expect(title).toBe(w.title);
+    cleanup();
+    render(<>{opts.description}</>);
+    expect(
+      screen.getByText(w.voidFailed.replace('{number}', 'SC-2026-000124')),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/supersede:/);
+  });
+
+  it('a legacy-only string array (no structured issues) is ignored — no raw server string, no warning', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        invoice_number: 'SC2026-00103',
+        supersede_warnings: ['supersede: void of inv-old-3 threw'],
+      }),
+    } as Response);
+    renderActions();
+    openMenuAndClick('queue-row-issue-send');
+    fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('no supersede issues → no warning toast', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ invoice_number: 'SC2026-00104', supersede_issues: [] }),
+    } as Response);
+    renderActions();
+    openMenuAndClick('queue-row-issue-send');
+    fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 });
 
@@ -535,7 +628,6 @@ describe('<AutoRenewalQueueActions> — focus-on-close (review round 1 BLOCKING)
       json: async () => ({
         invoice_id: 'inv-draft-1',
         invoice_number: 'SC2026-00050',
-        supersede_warnings: [],
       }),
     } as Response);
     renderHarness();

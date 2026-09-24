@@ -11,11 +11,16 @@
  *      which is stricter than spec FR-014 — both are honoured per the
  *      precedence rule documented in FR-014.
  *
- * Run via `pnpm check:i18n`. The script is intentionally a single file
- * with no dependencies so it can run in any environment.
+ *   3. Every statically resolvable `t('key')` in `src/` names a key that
+ *      EXISTS in en.json (`scripts/lib/i18n-key-refs.ts`). Hard fail on every
+ *      branch — see `checkCodeKeyRefs`.
+ *
+ * Run via `pnpm check:i18n`. Beyond Node built-ins it imports only the pure
+ * scanners under `scripts/lib/`.
  */
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
+import { findOrphanKeys, scanKeyRefs } from './lib/i18n-key-refs';
 
 const MESSAGES_DIR = resolve(process.cwd(), 'src', 'i18n', 'messages');
 const LOCALES = ['en', 'th', 'sv'] as const;
@@ -274,23 +279,89 @@ async function checkSubCatalogueKeyParity(
 }
 
 /**
+ * Code → en.json reference gate (#377 follow-up).
+ *
+ * Every check above compares the catalogues with EACH OTHER; none walked from a
+ * call site to en.json. #377 shipped a void-invoice warning toast whose
+ * `t('successWithNumberNoNotice')` resolved under `admin.invoices.void` while
+ * the copy sat under `admin.creditNotes.new` — present in all three locales, so
+ * parity passed, and next-intl rendered the raw dotted key on a money path.
+ *
+ * Hard fail on EVERY branch, like the route-code gate: a missing EN key breaks
+ * EN too, so it is not TH/SV translation lag. The scanner skips what it cannot
+ * resolve statically (dynamic keys, a `t` received as a parameter) rather than
+ * guessing — see the module header for the exact shapes.
+ */
+// Floor guard against a silent false-GREEN: 4,859 calls resolved on
+// 2026-09-24. If a refactor changes the binding shape the scanner keys on, it
+// must fail loudly rather than conclude "0 missing of 0 checked". Fix the
+// scanner; never lower this to get green.
+const MIN_CHECKED_KEY_REFS = 4000;
+
+async function checkCodeKeyRefs(enKeys: ReadonlySet<string>): Promise<boolean> {
+  const { readdir, stat } = await import('node:fs/promises');
+  const srcDir = resolve(process.cwd(), 'src');
+  const files: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    for (const entry of await readdir(dir)) {
+      const path = resolve(dir, entry);
+      if ((await stat(path)).isDirectory()) {
+        if (entry !== 'node_modules' && !entry.startsWith('.')) await walk(path);
+      } else if (/\.tsx?$/.test(entry) && !entry.endsWith('.d.ts')) {
+        files.push(path);
+      }
+    }
+  }
+  await walk(srcDir);
+
+  let ok = true;
+  let checked = 0;
+  for (const file of files.sort()) {
+    const scan = scanKeyRefs(await readFile(file, 'utf8'), enKeys);
+    checked += scan.checked;
+    for (const ref of scan.missing) {
+      console.error(
+        `[check:i18n] HARD FAIL — ${relative(process.cwd(), file)}:${ref.line} calls ` +
+          `t() for "${ref.key}", which is not a message in en.json. next-intl renders ` +
+          `the raw dotted key instead of throwing.`,
+      );
+      ok = false;
+    }
+  }
+  if (checked < MIN_CHECKED_KEY_REFS) {
+    console.error(
+      `[check:i18n] HARD FAIL — code key-reference scan resolved only ${checked} t() ` +
+        `call(s) across ${files.length} files (expected >= ${MIN_CHECKED_KEY_REFS}). The ` +
+        `scanner no longer recognises the translator bindings. Fix ` +
+        `scripts/lib/i18n-key-refs.ts — do NOT lower MIN_CHECKED_KEY_REFS.`,
+    );
+    ok = false;
+  }
+  if (ok) {
+    console.log(
+      `[check:i18n] OK — ${checked} static t() references across ${files.length} files resolve to en.json keys`,
+    );
+  }
+  return ok;
+}
+
+/**
  * T187 (Phase 10 / i18n.md CHK054) — orphan-key scanner.
  *
  * Finds keys present in `en.json` but NEVER referenced via `t('foo')`
  * or `t('foo.bar')` calls in `src/`. Orphans are dead translations
  * that bloat bundles and confuse i18n liaison reviews.
  *
- * The scanner accepts a literal-only argument extraction (matching
- * T188's static-key invariant ESLint rule) — it does NOT try to
- * resolve variable namespaces or `getTranslations({namespace})`
- * dynamic prefixes. Static `t('error.too_long')` / `t('shell.userMenu')`
- * patterns + `getTranslations('admin.plans')` namespace prefixes are
- * recognised; everything else is conservatively assumed used.
+ * The matching lives in `findOrphanKeys` (scripts/lib/i18n-key-refs.ts):
+ * calls resolved by the key-reference scanner, literal `t('…')` calls
+ * paired with the namespaces bound in the SAME file (it used to pair them
+ * repo-wide, which hid #377's misplaced key), and dotted string literals
+ * held as data. Dynamic keys it cannot see still show up as candidates —
+ * the report is advisory.
  */
 async function findOrphans(enKeys: Set<string>): Promise<string[]> {
   const { readdir, stat } = await import('node:fs/promises');
-  const used = new Set<string>();
-  const namespaces: string[] = [];
+  const sources: string[] = [];
 
   async function walk(dir: string): Promise<void> {
     const entries = await readdir(dir);
@@ -305,53 +376,13 @@ async function findOrphans(enKeys: Set<string>): Promise<string[]> {
         entry.endsWith('.tsx') ||
         entry.endsWith('.js')
       ) {
-        const text = await readFile(path, 'utf8');
-        // t('foo.bar') and t("foo.bar")
-        const tCallRe = /\bt\(\s*['"]([\w.\-]+)['"]/g;
-        let m: RegExpExecArray | null;
-        while ((m = tCallRe.exec(text)) !== null) used.add(m[1]!);
-        // getTranslations('namespace.path')
-        const nsRe = /getTranslations\(\s*['"]([\w.\-]+)['"]/g;
-        while ((m = nsRe.exec(text)) !== null) namespaces.push(m[1]!);
-        // useTranslations('namespace.path')
-        const useNsRe = /useTranslations\(\s*['"]([\w.\-]+)['"]/g;
-        while ((m = useNsRe.exec(text)) !== null) namespaces.push(m[1]!);
+        sources.push(await readFile(path, 'utf8'));
       }
     }
   }
 
   await walk(resolve(process.cwd(), 'src'));
-
-  // For each enKey, count it as used if:
-  //   - exactly matches a `t('full.key')` call, OR
-  //   - any of its prefixes is a known namespace + the suffix is a
-  //     `t('suffix')` call.
-  const orphans: string[] = [];
-  for (const key of enKeys) {
-    if (used.has(key)) continue;
-    let foundViaNs = false;
-    for (const ns of namespaces) {
-      if (key.startsWith(`${ns}.`)) {
-        const suffix = key.slice(ns.length + 1);
-        if (used.has(suffix)) {
-          foundViaNs = true;
-          break;
-        }
-        // Conservative: if any t() call exactly matches a leaf of this
-        // namespace, allow keys nested under it. This avoids false-
-        // positive orphan flags on dynamic key composition.
-        for (const u of used) {
-          if (u === suffix || suffix.startsWith(`${u}.`) || u.startsWith(`${suffix}.`)) {
-            foundViaNs = true;
-            break;
-          }
-        }
-        if (foundViaNs) break;
-      }
-    }
-    if (!foundViaNs) orphans.push(key);
-  }
-  return orphans.sort();
+  return findOrphanKeys(sources, enKeys);
 }
 
 async function main(): Promise<void> {
@@ -398,6 +429,11 @@ async function main(): Promise<void> {
   // leaves an admin holding an unrecorded output-VAT obligation and a raw
   // dotted key. Hard fail on every branch, EN included.
   if (!(await checkWaiverReasonI18nCoverage(sets))) {
+    process.exitCode = 1;
+  }
+
+  // #377 follow-up — code → en.json references. Same severity as above.
+  if (!(await checkCodeKeyRefs(enKeys))) {
     process.exitCode = 1;
   }
 

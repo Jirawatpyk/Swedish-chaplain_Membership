@@ -2233,7 +2233,62 @@ database instrumentation is ever added, leave
 would put proposed PII values and member emails into the trace backend, outside every filter
 this section describes (privacy review P-L2).
 
-## 28. F119 E-Blast approval workflow (PR-2) — observability (T160 / T160a)
+## 28. 0306 End membership coverage (refund / full credit note) — observability
+
+Staff can end a member's coverage when a full refund or full manual credit
+note withdraws the paid period (`endMembershipCoverageNow`, closed reason
+`coverage_ended`). A settled refund ends it at once; an async refund leaves a
+request on the open cycle that the hourly
+`/api/cron/renewals/reconcile-coverage-ends` converges (ends on refund
+`succeeded`, keeps the membership on `failed`). The same pass retries a failed
+inline end and, as a backstop, re-reads staff decisions from
+`refunds.membership_effect` / `credit_notes.membership_effect` so a lost route
+call never drops one.
+
+| Metric | Type | Labels | Alert |
+|---|---|---|---|
+| `renewals_membership_end_requests_total` | counter | `tenant`, `trigger` (`credit_note`/`refund`), `outcome` (`ended`/`scheduled`/`deferred`/`no_open_cycle`/`failed`) | **page** on any `outcome="failed"` (the backstop is the remaining safety net) |
+| `renewals_coverage_end_reconcile_total` | counter | `tenant`, `outcome` (`ended`/`refund_failed_kept`/`expired`/`stranded_cleared`/`backstop_applied`/`lookup_unresolved`/`errored`) | **warn** on any non-zero `expired`, `stranded_cleared`, `backstop_applied`, `errored`; `lookup_unresolved` > 0 for 3 successive runs |
+| `renewals_coverage_end_oldest_waiting_hours` | gauge | `tenant` | **warn** > 24, **page** > 72 |
+| `renewals_coverage_end_reconcile_runs_total` | counter | `tenant`, `outcome` (`success`/`failure`/`skipped_flag_disabled`/`skipped_read_only`) | **page** when no `outcome="success"` for > 2h (heartbeat — the cron stopped, or is skipped by the flag / read-only mode, so scheduled ends silently stall and every other row here stays flat) |
+
+Triage:
+- `expired` — a refund stayed unsettled for 14 days; the request was dropped
+  and the member KEPT coverage. Check the refund (`docs/runbooks/stale-pending-refund-sweep.md`);
+  if the money did go back, end the membership with the procedure below.
+- `stranded_cleared` — the request's cycle closed some other way (paid, admin
+  cancel, lapse) before it converged. Confirm with staff whether the member
+  should still lose access; if so, use the procedure below on their current
+  OPEN cycle.
+
+**Ending a membership by hand.** Do NOT use Renewals → Cancel cycle: a plain
+`cancelled` keeps access until the period ends. Instead stamp a PLAIN request
+on the member's OPEN cycle; the next hourly pass ends it through
+`endMembershipCoverageNow` (`coverage_ended`, audited, `requested_by_user_id`
+in the payload):
+
+```sql
+UPDATE renewal_cycles
+SET end_coverage_requested_at = now(),
+    end_coverage_actor_user_id = '<your user id>'
+WHERE tenant_id = '<tenant>' AND member_id = '<member id>'
+  AND status IN ('upcoming', 'reminded', 'awaiting_payment')
+  AND end_coverage_requested_at IS NULL;
+```
+- `backstop_applied` — the route's post-commit call was lost (function killed,
+  or `f4_bridge_deferred`). The decision took effect up to an hour late; look
+  for the matching `membership_end.*` / `refunds.initiate.*` error log.
+
+Log events: `renewals.coverage_end.*` (pino), `membership_end.*` (routes).
+
+**Roll-forward only.** Pre-0306 code reads a `cancelled`/`coverage_ended`
+cycle as a plain cancellation (access until `expires_at`) and has no reconcile
+cron, so rolling the APP back restores access for members whose coverage was
+ended and orphans pending requests. Fix forward; if a code rollback is
+unavoidable, follow the remediation in `docs/runbooks/cron-jobs.md`
+(reconcile-coverage-ends).
+
+## 29. F119 E-Blast approval workflow (PR-2) — observability (T160 / T160a)
 
 Feature shape: a member submits an E-Blast; marketing formats it as a numbered **version**
 (`in_design`), sends that version to the member (`awaiting_member_approval`, round N), the member
@@ -2243,18 +2298,18 @@ sends the approved version. A member who never answers is reminded on day 3 and 
 are warned on day 23, and on day 30 the E-Blast closes as `expired_no_member_response`. The flag
 `FEATURE_EBLAST_MEMBER_APPROVAL` (default OFF) gates exactly one edge — `submitted → in_design` —
 and, at the outbox drainer, the delivery of the five `eblast_*` emails. Everything else in this
-section is **live on the PR-2 merge whatever the flag says** (see § 28.1 for what that means for
+section is **live on the PR-2 merge whatever the flag says** (see § 29.1 for what that means for
 each series).
 
 PR-1's instruments (brand chrome, the image sweep) are in § 22.11 / § 22.12; the two preview
-instruments PR-1 registered are restated in § 28.2 because the PR-2 budgets read them.
+instruments PR-1 registered are restated in § 29.2 because the PR-2 budgets read them.
 
 Owner: Broadcasts (broadcasts module). Tracer: `swecham.broadcasts` (`broadcastsTracer()` in
 `src/lib/otel-tracer.ts`). Runbook: `docs/runbooks/eblast-approval.md`. Contract:
 `specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md` § 4 — where the
 built code differs from the contract, this section follows the code and says so.
 
-### 28.1 Gauges
+### 29.1 Gauges
 
 Emitted by the **existing** broadcasts half of `/api/internal/metrics/broadcasts-gauges` (native
 Vercel Cron, `*/5 * * * *`, UTC), in the same transaction as the F7 gauges, from one grouped query
@@ -2265,7 +2320,7 @@ reads 0, never its last value. No new cron job. Registered on `broadcastsMetrics
 | Metric | Type | Labels | Source | Notes |
 |---|---|---|---|---|
 | `broadcasts_awaiting_member_approval_count` | gauge | `tenant` | `count(*) WHERE status = 'awaiting_member_approval'` | E-Blasts waiting on the member. 0 until a round is started, so 0 on every tenant while the flag has never been on. |
-| `broadcasts_awaiting_member_oldest_age_seconds` | gauge | `tenant` | `EXTRACT(EPOCH FROM now() - MIN(stage_entered_at))` over the same rows, clamped at 0 | **0 when nothing is waiting** (a level, like § 27's age gauge). The clock is `stage_entered_at`, which every entry into `awaiting_member_approval` re-stamps, so a new version restarts it — the same clock the day-3/7/23/30 tick uses. The two age alerts in § 28.4 bind here. |
+| `broadcasts_awaiting_member_oldest_age_seconds` | gauge | `tenant` | `EXTRACT(EPOCH FROM now() - MIN(stage_entered_at))` over the same rows, clamped at 0 | **0 when nothing is waiting** (a level, like § 27's age gauge). The clock is `stage_entered_at`, which every entry into `awaiting_member_approval` re-stamps, so a new version restarts it — the same clock the day-3/7/23/30 tick uses. The two age alerts in § 29.4 bind here. |
 | `broadcasts_changes_requested_count` | gauge | `tenant` | `count(*) WHERE status = 'changes_requested'` | Sent back by the member (a change request or a withdrawn approval) and waiting on marketing. |
 | `broadcasts_marketing_turn_count` | gauge | `tenant` | `count(*) WHERE status IN ('submitted','in_design','changes_requested','member_approved')` | The **marketing-turn set**, imported from the Domain (`MARKETING_TURN_STATUSES`, derived from `turnOf`) — the same set the staff nav badge counts live at render and the F9 needs-attention count now follows. **Non-zero before the flip**: it counts `submitted` rows, which exist today. |
 
@@ -2282,9 +2337,9 @@ alerts.
 and observes nothing for that half. `observeGauge` re-reports the last value at every scrape, so
 the age gauge reads a **frozen level** for the length of the outage and can sit below the 14-day
 page threshold while the real age crosses it. The § 27.3 warning on `broadcastsGaugesOk = false`
-(three consecutive ticks) is the signal that the § 28.4 age alerts are blind.
+(three consecutive ticks) is the signal that the § 29.4 age alerts are blind.
 
-### 28.2 Counters and histograms
+### 29.2 Counters and histograms
 
 **Six counters and two histograms**, exactly the contract § 4.2 list, all `safeMetric`-wrapped on
 `broadcastsMetrics` (`src/lib/metrics.ts`). Labels are `tenant` plus one bounded discriminator —
@@ -2299,13 +2354,13 @@ never an id, an address, a subject, a note or a reason.
 | `broadcasts_no_marketing_recipient_total` | counter | `tenant` | `makeMarketingDirectory(…).listRecipients()` (T066) | One per hand-off whose roster resolved to nobody: no ACTIVE `marketing`-role user **and** no ACTIVE `broadcasts.write` holder of the admin tiers to fall back to. Counted at **enqueue**, inside the state-changing transaction, so it moves on submit (every submit enqueues `eblast_submitted_marketing`), on a member decision or whole-E-Blast withdrawal, and on the day-23 warning and day-30 closure — **with the flag off as well**, because the enqueue is unconditional. A transaction that later rolls back does not un-count it. |
 | `broadcasts_version_saved_total` | counter | `tenant` | `saveFormattedVersion` (T058) | One per successful working-copy save (`PATCH …/[id]/version`). A save is not a hand-off: counted, not audited. |
 | `broadcasts_member_decide_ms` | histogram | `tenant` | `POST /api/broadcasts/[id]/decision` (the **route**, not the use case) | Wall time from just before the span opens to its end, recorded for **every** outcome that reached the use case — refusals (`stale_version`, `stage_changed`, `reason_required`, …) included. A 400 body-parse refusal and a 429 bucket refusal return before the timer starts. |
-| `broadcasts_preview_render_ms` | histogram | `tenant`, `surface` | `renderBroadcastPreview` (PR-1) | Sanitise + brand read + wrapper. Same `surface` label as the counter. Budget in § 28.6. |
+| `broadcasts_preview_render_ms` | histogram | `tenant`, `surface` | `renderBroadcastPreview` (PR-1) | Sanitise + brand read + wrapper. Same `surface` label as the counter. Budget in § 29.6. |
 
 No counter is added for the schedule confirmation or the version start: both are audited
 (`broadcast_schedule_confirmed`, `broadcast_version_started`), and the audit row is the durable
 record.
 
-### 28.3 Traces
+### 29.3 Traces
 
 `F119_BROADCASTS_SPANS` in `src/lib/otel-tracer.ts` names **four** spans; **three are emitted**.
 Each emitted span wraps its route's use-case call through `inApprovalSpan`
@@ -2324,7 +2379,7 @@ the status UNSET; only a `server_error` result or a throw marks the span `ERROR`
 `server_error` / `threw`, never an error's `.message`). No database instrumentation is registered
 (§ 27.5), so no statement span carries SQL text or a bind parameter under these.
 
-### 28.4 Alerts
+### 29.4 Alerts
 
 | Severity | Metric | Threshold | Action |
 |---|---|---|---|
@@ -2334,7 +2389,7 @@ the status UNSET; only a `server_error` result or a throw marks the span `ERROR`
 
 Routing per § 22.8 — **page** → PagerDuty; **warning** routes as § 22.8's alarm tier
 (`#oncall-platform`). The age gauges read **0**, not "no data", while nothing is waiting, so the
-age alerts are quiet rather than blind while the feature is dark; § 28.1's frozen-level case is
+age alerts are quiet rather than blind while the feature is dark; § 29.1's frozen-level case is
 the one way they go blind.
 
 **Watched by hand, not alerted** (first week after the flip — `quickstart.md` § 5):
@@ -2343,7 +2398,7 @@ the one way they go blind.
 divergence means the two are reading different predicates); and the share of
 `broadcast_schedule_confirmed` rows with `differs: true`.
 
-### 28.5 Logs and the `M119.*` errorId taxonomy
+### 29.5 Logs and the `M119.*` errorId taxonomy
 
 pino, with `correlationId` / `requestId`, `tenantId`, `broadcastId`, and where they exist
 `versionId`, `round`, `stage`; faults carry `err: errKind(e)`. **Never** a subject, a body, a
@@ -2376,7 +2431,7 @@ match both the field and the message. Alert rules on the 500 class key on the pr
 | `M119.cron.image_sweep` · `.uncaught` · `.rows_failed` | `prune-expired-drafts` Block 2 (PR-1) | § 22.12 |
 | `M119.admin.brand.*` · `M119.admin.draft.*` · `M119.admin.quota.*` | brand, staff draft and quota routes (PR-1) | PR-1's staff routes |
 
-### 28.6 Performance budgets (T160a)
+### 29.6 Performance budgets (T160a)
 
 **Measured once by T160a on 2026-09-24 — on the DEV server, so the four route budgets stay
 UNVERIFIED.** The numbers below come from the maintainer's running `next dev` (Turbopack, no
@@ -2433,7 +2488,7 @@ things are **not** SC-004 breaches: a provider failure (an `email_dispatch_faile
 row enqueued **while the flag is off** — the drainer does not select the five types until the
 flip, so their age measures the dark period, not the dispatcher.
 
-### 28.7 Forbidden log fields
+### 29.7 Forbidden log fields
 
 No extension beyond § 3 and § 22.4: version subjects and bodies, marketing's note, the member's
 reason or note, and member / contact / staff addresses never reach a log line, a metric label or

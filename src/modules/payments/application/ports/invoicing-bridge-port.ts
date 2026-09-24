@@ -224,6 +224,11 @@ export interface InvoicingBridgePort {
       | 'cron'
       | 'system';
     readonly requestId: string | null;
+    /**
+     * 0306 — staff's Keep / End membership choice, pinned on the refund row.
+     * Omitted → F4 defaults to 'keep' (the gate-satisfying value).
+     */
+    readonly membershipEffect?: 'keep' | 'cancel_membership';
   }): Promise<
     Result<
       {
@@ -283,6 +288,11 @@ export interface InvoicingBridgePort {
       {
         readonly creditedTotalSatang: Satang;
         readonly totalSatang: Satang;
+        /**
+         * 0306 — so the refund pre-flight can refuse `cancel_membership` on a
+         * refund that does not fully credit a MEMBERSHIP invoice.
+         */
+        readonly invoiceSubject: 'membership' | 'event';
         /**
          * Track B — the F4-authoritative answer to "does this refund owe a
          * §86/10 ใบลดหนี้, and if so can one be issued right now?".
