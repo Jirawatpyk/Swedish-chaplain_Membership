@@ -31,6 +31,8 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import {
   ReasonConfirmationDialog,
   useDialogFinalFocus,
@@ -83,6 +85,7 @@ export function CancelBroadcastDialog({
   subject,
 }: CancelBroadcastDialogProps): React.ReactElement {
   const tToast = useTranslations(toastNamespace);
+  const readOnlyToast = useReadOnlyToast();
   const router = useRouter();
   // F7-A11Y-1 — raised on every programmatic close path below (success / 409 /
   // 404 / 403), each of which runs router.refresh() → the cancel trigger Button
@@ -143,6 +146,10 @@ export function CancelBroadcastDialog({
         onOpenChange(false);
         toast.error(tToast('cancelError'));
         router.refresh();
+      } else if (isReadOnlyRefusal(res.status, json)) {
+        // The write freeze: the broadcast is untouched. Keep the dialog open —
+        // the typed confirmation is still valid once the freeze lifts.
+        readOnlyToast();
       } else {
         // Transient (5xx / unexpected): keep the dialog open for retry.
         refuse();

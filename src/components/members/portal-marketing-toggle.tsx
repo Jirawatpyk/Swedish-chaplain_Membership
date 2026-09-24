@@ -27,6 +27,8 @@ import { useId, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { Switch } from '@/components/ui/switch';
 import type { MarketingState } from '@/modules/members';
 
@@ -40,6 +42,7 @@ export function PortalMarketingToggle({
   readonly isPrimary: boolean;
 }): React.ReactElement {
   const t = useTranslations('portal.profile.marketing');
+  const readOnlyToast = useReadOnlyToast();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
@@ -98,7 +101,8 @@ export function PortalMarketingToggle({
         else if (res.status === 429) toast.error(t('toast.errors.rateLimited'));
         else if (res.status === 503 && code === 'suppression_unavailable') {
           toast.error(t('toast.errors.unavailable'));
-        } else toast.error(t('toast.errors.generic'));
+        } else if (isReadOnlyRefusal(res.status, body)) readOnlyToast();
+        else toast.error(t('toast.errors.generic'));
         // Round-1 finding 5, narrowed by round-2 finding 3: only a 409
         // proves the rendered state is stale (the address reached the
         // suppression list since this page loaded, so the control should be

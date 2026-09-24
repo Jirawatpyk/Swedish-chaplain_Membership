@@ -89,3 +89,31 @@ export function isReadOnlyCode(code: string | null | undefined): boolean {
 export function isReadOnlyRefusal(status: number, body: unknown): boolean {
   return status === 503 && isReadOnlyCode(problemCode(body));
 }
+
+/**
+ * Whole minutes from a `Retry-After` header given in delta-seconds, rounded
+ * UP (a 5 s route-guard hint reads "about 1 minute", never "0 minutes"), or
+ * `null` when the header is absent or not a positive integer — the caller
+ * then says "shortly" rather than inventing a number. The HTTP-date form is
+ * not parsed: no layer here sends it.
+ */
+export function retryAfterMinutes(headers: Pick<Headers, 'get'> | null | undefined): number | null {
+  const raw = headers?.get('Retry-After')?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return null;
+  const seconds = Number.parseInt(raw, 10);
+  return seconds > 0 ? Math.ceil(seconds / 60) : null;
+}
+
+/**
+ * {@link isReadOnlyRefusal}, read off a live `Response` — for callers that
+ * decide before parsing the body, or parse it through a helper of their own
+ * (`readErrorCode`, the resend button's 409 branch).
+ *
+ * Reads a CLONE, and only of a 503, so the caller's body is still unread
+ * whatever the answer. A body that is not JSON is simply not the refusal.
+ */
+export async function isReadOnlyResponse(res: Response): Promise<boolean> {
+  if (res.status !== 503) return false;
+  const body: unknown = await res.clone().json().catch(() => null);
+  return isReadOnlyRefusal(res.status, body);
+}

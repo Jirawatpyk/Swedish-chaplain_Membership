@@ -418,6 +418,7 @@ Each metric follows the `<module>_<subject>_<action>` convention established in 
 | `members_change_request_decision_email_skipped_total` | counter (watch only) | `{tenant, reason}` `reason ∈ {recipient_gone}` | F114 — a decision committed but the submitting contact is gone / unlinked, so FR-023's email was skipped (the decided audit event carries `member_notified: false`) |
 | `members_change_request_submitted_total` | counter | `{tenant, scope, coalesced}` | F114 — one per created request (`coalesced` is always `false` until T087) |
 | `members_change_request_decided_total` | counter | `{tenant, outcome}` | F114 — one per decision (`approved` / `partially_approved` / `rejected`) |
+| `members_portal_invite_refused_total` | counter | `{tenant, reason}` `reason ∈ {rate_limited, email_registered_elsewhere, contact_of_other_member, contact_check_failed}` | Portal "Invite colleague" refusals. The member only ever sees the neutral `invite_unavailable` (or 429); this is where staff see the real cause. A sustained `email_registered_elsewhere` / `contact_of_other_member` rate from one tenant suggests someone probing for accounts (account-enumeration guard); the matching log line `portal.contacts.invite.unavailable` carries `memberId` and `hashed:sha256(email)[0..8]` |
 | `members_change_request_refused_total` | counter | `{tenant, reason}` `reason ∈ {rate_limited, attempt_throttled, forbidden, archived, already_decided, validation, not_owner}` | F114 — a submit / decide / acknowledge / by-id read refused with nothing persisted; `rate_limited` is the durable 10 / 24 h cap, `attempt_throttled` a route's per-actor attempt bucket (full catalogue § 27.1) |
 | `members_change_request_decide_ms` | histogram | `{tenant}` | F114 — `decideChangeRequest` transaction wall time |
 | `members_change_requests_pending_count` | gauge | `{tenant}` | F114 — pending requests per tenant; emitted by the per-tenant gauges tick (`broadcasts-gauges`, every 5 min) — full catalogue + alerts in § 27 |
@@ -2280,6 +2281,18 @@ WHERE tenant_id = '<tenant>' AND member_id = '<member id>'
   for the matching `membership_end.*` / `refunds.initiate.*` error log.
 
 Log events: `renewals.coverage_end.*` (pino), `membership_end.*` (routes).
+
+**Dead-man's switch (the alert that works today).** App metrics are not yet
+exported anywhere — `instrumentation.ts` registers `@vercel/otel` without a
+`metricReader`, so every `*_total` above is a no-op in production until a
+metrics backend is wired. The cron-is-alive signal therefore goes to an
+EXTERNAL check instead: set `HEALTHCHECK_URL_COVERAGE_END` to a
+healthchecks.io ping URL (check: period **1 hour**, grace **1 hour** → alerts
+after ~2h without a successful pass). The route pings it after every
+successful pass and `<url>/fail` on a failed one (alerts immediately);
+skipped passes (flag off / read-only) do not ping, so they alert too. The
+ping never fails the cron (`src/lib/cron-heartbeat.ts`, 5 s timeout; log
+events `cron.heartbeat.ping_failed` / `ping_rejected`).
 
 **Roll-forward only.** Pre-0306 code reads a `cancelled`/`coverage_ended`
 cycle as a plain cancellation (access until `expires_at`) and has no reconcile

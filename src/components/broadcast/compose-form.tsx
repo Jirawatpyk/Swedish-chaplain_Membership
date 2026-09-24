@@ -13,6 +13,8 @@
  *   - 422 → toast.error with bilingual error message (mapped via
  *     portal.broadcasts.compose.errors.<code>)
  *   - 429 → toast.error retry-later
+ *   - 503 read-only (either envelope) → focused inline warning, no toast;
+ *     the typed message stays on the page
  *   - 4xx/5xx → toast.error generic
  *
  * `useDeferredValue(bodyHtml)` keeps the editor responsive while the
@@ -38,6 +40,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import {
+  InlineAlert,
+  InlineAlertDescription,
+  InlineAlertTitle,
+} from '@/components/ui/inline-alert';
+import { isReadOnlyCode, isReadOnlyRefusal, retryAfterMinutes } from '@/lib/http/read-only-refusal';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
@@ -110,6 +118,20 @@ const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {
   broadcast_custom_recipient_empty: 'customList',
   broadcast_custom_recipient_too_many: 'customList',
 };
+
+/** The read-only alert's copy per refused action (portal error states). */
+const READ_ONLY_COPY = {
+  submit: {
+    title: 'readOnly.title',
+    body: 'readOnly.body',
+    bodyShortly: 'readOnly.bodyShortly',
+  },
+  draft: {
+    title: 'readOnly.draftTitle',
+    body: 'readOnly.draftBody',
+    bodyShortly: 'readOnly.draftBodyShortly',
+  },
+} as const;
 
 /**
  * Simplify-S4 (round-3) — switch instead of nested ternary
@@ -225,9 +247,20 @@ export function ComposeForm({
   const [unsafeImageSources, setUnsafeImageSources] = useState<
     readonly string[] | null
   >(null);
+  // Portal error states #1 — the READ_ONLY_MODE refusal. Its own state, not a
+  // `serverError`: it names no field, says nothing about the message itself,
+  // and is the one refusal whose advice is "wait", so it gets the warning
+  // tone and its `Retry-After` rather than a red toast. `minutes: null` =
+  // the response carried no usable hint. `kind` picks the copy: a refused
+  // draft save must not talk about sending or E-Blast slots.
+  const [readOnlyRefusal, setReadOnlyRefusal] = useState<{
+    readonly kind: 'submit' | 'draft';
+    readonly minutes: number | null;
+  } | null>(null);
 
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyContainerRef = useRef<HTMLDivElement>(null);
+  const readOnlyAlertRef = useRef<HTMLDivElement>(null);
 
   const deferredBody = useDeferredValue(bodyHtml);
   // 108 PR-C T089 — debounced live count for the chosen segment (member mode:
@@ -266,6 +299,12 @@ export function ComposeForm({
     else if (serverError.field === 'body') bodyContainerRef.current?.focus();
     // segment / customList are radio/textarea — toast suffices
   }, [serverError]);
+
+  // The read-only alert takes focus so a keyboard / SR user lands on the
+  // reason the submit did nothing (there is no toast to announce it).
+  useEffect(() => {
+    if (readOnlyRefusal !== null) readOnlyAlertRef.current?.focus();
+  }, [readOnlyRefusal]);
 
   const customLines = parseLines(customList);
   // /code-review 2026-09-07 (finding #6) — both are null for a segment
@@ -335,6 +374,7 @@ export function ComposeForm({
     if (submitting) return;
     setSubmitting(true);
     setServerError(null);
+    setReadOnlyRefusal(null);
     try {
       const body: Record<string, unknown> = {
         subject,
@@ -358,7 +398,9 @@ export function ComposeForm({
       // JSON parse failure logs + shows specific toast; error path
       // keeps the silent default.
       let responseBody: {
-        error?: {
+        // A string on the proxy's flat refusals (`read-only-mode`); an object
+        // on every route-level refusal.
+        error?: string | {
           code?: string;
           message?: string;
           // 108 PR-C T085: `cap` / `count` ride on the audience-too-large 422
@@ -409,16 +451,24 @@ export function ComposeForm({
         return;
       }
 
-      const code = responseBody.error?.code ?? 'internal_error';
+      // The write freeze is refused BEFORE the route runs, so nothing was
+      // created and no quota reserved — the member only needs to wait.
+      if (isReadOnlyRefusal(res.status, responseBody)) {
+        setReadOnlyRefusal({ kind: 'submit', minutes: retryAfterMinutes(res.headers) });
+        return;
+      }
+
+      const errorBody = typeof responseBody.error === 'object' ? responseBody.error : undefined;
+      const code = errorBody?.code ?? 'internal_error';
       // PR-review fix 2026-05-20 UX-C1 — surface accumulated list of
       // disallowed image sources from route payload so the
       // <UnsafeImageSourcesList /> below the editor can render each
       // offender (AS2 + FR-011).
       if (
         code === 'broadcast_body_image_source_unsafe' &&
-        Array.isArray(responseBody.error?.details?.disallowedSources)
+        Array.isArray(errorBody?.details?.disallowedSources)
       ) {
-        setUnsafeImageSources(responseBody.error.details.disallowedSources);
+        setUnsafeImageSources(errorBody.details.disallowedSources);
       } else {
         setUnsafeImageSources(null);
       }
@@ -426,7 +476,7 @@ export function ComposeForm({
       // 422 body, falling back to the page's own ceiling (round 2, i18n H4 —
       // next-intl never throws; a missing value would have rendered the raw
       // key path, so the `try/catch` that used to sit here was dead code).
-      const msg = tErr(code, errorValues(code, responseBody.error?.details, audienceCeiling));
+      const msg = tErr(code, errorValues(code, errorBody?.details, audienceCeiling));
       // UX-R2-1: surface to the failing field; useEffect will focus.
       setServerError({ field: ERROR_CODE_FIELD[code] ?? null, message: msg });
       toast.error(msg);
@@ -456,6 +506,7 @@ export function ComposeForm({
     // is the snapshot the dirty guard must compare against afterwards.
     const savedSnapshot = { subject, bodyHtml };
     setServerError(null);
+    setReadOnlyRefusal(null);
     try {
       const body: Record<string, unknown> = {
         subject,
@@ -474,6 +525,12 @@ export function ComposeForm({
         payload: body,
       });
       if (!saved.ok) {
+        // The write freeze: the same focused alert as a refused submit, in
+        // its draft wording, and no toast.
+        if (isReadOnlyCode(saved.code)) {
+          setReadOnlyRefusal({ kind: 'draft', minutes: saved.retryAfterMinutes });
+          return;
+        }
         // T155 finding U8 — the `try/catch` that stood here was unreachable:
         // next-intl returns the key path rather than throwing, so a draft-save
         // code with no key toasted the raw path. This file already SAID so
@@ -709,6 +766,26 @@ export function ComposeForm({
               >
                 {t(blockedHintKey)}
               </p>
+            ) : null}
+
+            {/* Portal error states #1 — approved copy, AURA canvas "Compose —
+                read-only, hit on submit". Beside the button that was pressed,
+                so the reason sits where the member is looking. */}
+            {readOnlyRefusal !== null ? (
+              <InlineAlert
+                ref={readOnlyAlertRef}
+                tone="warning"
+                tabIndex={-1}
+                data-testid="compose-read-only-alert"
+                className="outline-none"
+              >
+                <InlineAlertTitle>{t(READ_ONLY_COPY[readOnlyRefusal.kind].title)}</InlineAlertTitle>
+                <InlineAlertDescription>
+                  {readOnlyRefusal.minutes !== null
+                    ? t(READ_ONLY_COPY[readOnlyRefusal.kind].body, { minutes: readOnlyRefusal.minutes })
+                    : t(READ_ONLY_COPY[readOnlyRefusal.kind].bodyShortly)}
+                </InlineAlertDescription>
+              </InlineAlert>
             ) : null}
 
             <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">

@@ -11,6 +11,8 @@ import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
@@ -23,6 +25,7 @@ export function DirectoryLogoControl({
   readonly currentLogoUrl: string | null;
 }): React.JSX.Element {
   const t = useTranslations('directorySettings');
+  const readOnlyToast = useReadOnlyToast();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
@@ -41,6 +44,10 @@ export function DirectoryLogoControl({
         fd.append('file', file);
         const res = await fetch('/api/portal/directory/logo', { method: 'POST', body: fd });
         if (!res.ok) {
+          if (await isReadOnlyResponse(res)) {
+            readOnlyToast();
+            return;
+          }
           const code = await readErrorCode(res);
           if (code === 'too_large') toast.error(t('logoTooLarge'));
           else if (code === 'unsupported_format') toast.error(t('logoUnsupported'));
@@ -67,6 +74,10 @@ export function DirectoryLogoControl({
       try {
         const res = await fetch('/api/portal/directory/logo', { method: 'DELETE' });
         if (!res.ok) {
+          if (await isReadOnlyResponse(res)) {
+            readOnlyToast();
+            return;
+          }
           const code = await readErrorCode(res);
           if (code === 'member_not_found' || code === 'no_member_profile')
             toast.error(t('logoProfileMissing'));

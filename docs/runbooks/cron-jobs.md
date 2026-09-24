@@ -71,7 +71,7 @@ gone on Pro.
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
 | **auto-invoice auto-draft (coordinator)** (107 Task 8) | **`POST /api/cron/renewals/auto-draft-coordinator`** | **`0 5 * * *`** (daily 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — pre-fills renewal invoice **drafts**; also feeds the 3 auto-invoice gauges. Ships dark (3 keys, all default-off) |
 | **auto-invoice prune-auto-drafts** (107 Task 11) | **`POST /api/cron/renewals/prune-auto-drafts`** | **`15 7 * * *`** (daily 07:15 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — discards auto-drafts whose cycle left the eligibility window (self-renewed / lapsed) |
-| **renewals reconcile-coverage-ends** (0306) | **`POST /api/cron/renewals/reconcile-coverage-ends`** | **`37 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | Ends a refunded member's coverage once their refund settles `succeeded` (keeps it if the refund failed), retries a failed inline end, and recovers "End membership" decisions whose route call was lost. Heartbeat: `renewals_coverage_end_reconcile_runs_total{outcome="success"}` must tick hourly. **Roll-forward only** — see "Rolling back 0306" below and `docs/observability.md` § 28 |
+| **renewals reconcile-coverage-ends** (0306) | **`POST /api/cron/renewals/reconcile-coverage-ends`** | **`37 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | Ends a refunded member's coverage once their refund settles `succeeded` (keeps it if the refund failed), retries a failed inline end, and recovers "End membership" decisions whose route call was lost. Heartbeat: dead-man's switch via `HEALTHCHECK_URL_COVERAGE_END` (healthchecks.io, period 1h / grace 1h — see "Coverage-end heartbeat setup" below); `renewals_coverage_end_reconcile_runs_total{outcome="success"}` once metrics are exported. **Roll-forward only** — see "Rolling back 0306" below and `docs/observability.md` § 28 |
 | **auto-invoice reconcile-issued-orphans** (107 Task 11) | **`POST /api/cron/renewals/reconcile-issued-orphans`** | **`30 7 * * *`** (daily 07:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — re-links an `issued` auto-drafted invoice whose `linked_invoice_id` never got stamped |
 | **F6 idempotency sweep** | **`POST /api/internal/retention/sweep-eventcreate-idempotency`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
 | **F6 PII pseudonymisation sweep** | **`POST /api/internal/retention/pseudonymise-eventcreate`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
@@ -1926,4 +1926,19 @@ WHERE end_coverage_requested_at IS NOT NULL
 
 After redeploying 0306 code, the hourly pass converges the second set on its
 own; the backstop also re-reads staff decisions from the last 7 days.
+
+## Coverage-end heartbeat setup (healthchecks.io)
+
+1. Create a free account at https://healthchecks.io and add a check named
+   `reconcile-coverage-ends` with **Period = 1 hour** and **Grace = 1 hour**.
+2. Under the check's Integrations, route alerts to the on-call email (and/or
+   Slack).
+3. Copy the check's ping URL (`https://hc-ping.com/<uuid>`) into the Vercel
+   **Production** env var `HEALTHCHECK_URL_COVERAGE_END`, then redeploy.
+4. Verify: after the next :37 run the check turns green ("up"). A failed pass
+   pings `<url>/fail` and alerts at once; a missed or skipped pass alerts
+   after the grace period.
+
+Leave the variable unset on Preview / local so test runs never ping the
+production check.
 

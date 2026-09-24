@@ -14,6 +14,8 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 
 interface RenewalRemindersToggleProps {
   readonly initialOptedOut: boolean;
@@ -23,6 +25,7 @@ export function RenewalRemindersToggle({
   initialOptedOut,
 }: RenewalRemindersToggleProps) {
   const t = useTranslations('portal.preferences.renewals');
+  const readOnlyToast = useReadOnlyToast();
   const [optedOut, setOptedOut] = useState(initialOptedOut);
   const [isPending, startTransition] = useTransition();
 
@@ -46,6 +49,11 @@ export function RenewalRemindersToggle({
           const body = (await r.json().catch(() => ({}))) as {
             error?: { code?: string };
           };
+          // The write freeze: the switch has already flipped back.
+          if (isReadOnlyRefusal(r.status, body)) {
+            readOnlyToast();
+            return;
+          }
           console.warn('[renewal-reminders-toggle] save failed', {
             code: body.error?.code,
             status: r.status,

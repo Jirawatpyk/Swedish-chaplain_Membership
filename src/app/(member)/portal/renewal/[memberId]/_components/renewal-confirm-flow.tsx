@@ -41,6 +41,7 @@ import { groupPlanOptions } from '../_lib/group-plan-options';
 import { formatThbMinorUnits } from '../_lib/format-thb';
 import { PriceDiffPanel } from './price-diff-panel';
 import { DowngradeConfirmDialogBody } from './downgrade-confirm-dialog-body';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 
 /**
  * Map raw backend error codes to user-friendly i18n keys so the UI never
@@ -64,6 +65,8 @@ const ERROR_CODE_TO_I18N_KEY: Readonly<Record<string, string>> = {
   downgrade_not_acknowledged: 'errorDowngradeNotAcknowledged',
   rate_limited: 'errorRateLimited',
   network_error: 'errorNetwork',
+  // The write freeze, either envelope — normalised in `submitConfirm`.
+  read_only_mode: 'errorReadOnly',
 };
 
 export interface RenewalPlanOption {
@@ -187,7 +190,9 @@ export function RenewalConfirmFlow({
           const payload = (await r.json().catch(() => ({}))) as {
             error?: { code?: string };
           };
-          const code = payload.error?.code ?? `http_${r.status}`;
+          const code = isReadOnlyRefusal(r.status, payload)
+            ? 'read_only_mode'
+            : (payload.error?.code ?? `http_${r.status}`);
           console.warn('[renewal-confirm] error', { code, status: r.status });
           reportClientError({
             tag: 'renewal-confirm',

@@ -37,6 +37,7 @@ import { RequiredMark } from '@/components/ui/required-mark';
 import { Textarea } from '@/components/ui/textarea';
 import { boundedText, requiredText, type Translator } from '@/lib/zod-i18n';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
 import { normalizeWebsiteUrl } from '@/modules/members/domain/change-request/field-rules';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
@@ -219,7 +220,7 @@ export interface PortalChangeRequestFormProps {
   readonly resubmitOf?: ChangeRequestView | null;
 }
 
-type StatusKind = 'nothing_to_submit' | 'already_pending' | 'already_pending_unchanged' | 'rate_limited' | null;
+type StatusKind = 'nothing_to_submit' | 'already_pending' | 'already_pending_unchanged' | 'rate_limited' | 'read_only' | null;
 
 export function PortalChangeRequestForm({
   initialValues,
@@ -345,6 +346,14 @@ export function PortalChangeRequestForm({
         return;
       }
 
+      // The write freeze (either envelope): refused before the route ran, so
+      // nothing was stored. Inline like the other outcomes, not a generic
+      // toast — the values stay in the form and the key survives (`keySurvives`
+      // keeps it for every 5xx), so the retry is the same attempt.
+      if (isReadOnlyRefusal(res.status, data)) {
+        setStatus({ kind: 'read_only' });
+        return;
+      }
       if (res.status === 422 && data?.error === 'validation_error' && Array.isArray(data.issues)) {
         let focused = false;
         for (const issue of data.issues) {
@@ -440,6 +449,8 @@ export function PortalChangeRequestForm({
       case 'rate_limited':
         // no retry hint at all when the server sent none
         return s.retryAt ? tStatus('rateLimited', { retryAt: s.retryAt }) : tStatus('rateLimitedGeneric');
+      case 'read_only':
+        return tStatus('readOnly');
       case null:
         return '';
       default: {
@@ -569,7 +580,7 @@ export function PortalChangeRequestForm({
 
         {/* FR-034 — outcome messages announced through a live region, not a toast */}
         <div id={statusId} role="status" aria-live="polite" className={statusMessage ? 'text-sm' : 'sr-only'} data-testid="submit-status">
-          {statusMessage ? <InlineAlert tone={status.kind === 'rate_limited' ? 'warning' : 'info'} role="none">{statusMessage}</InlineAlert> : null}
+          {statusMessage ? <InlineAlert tone={status.kind === 'rate_limited' || status.kind === 'read_only' ? 'warning' : 'info'} role="none">{statusMessage}</InlineAlert> : null}
         </div>
 
         <div className="flex items-center justify-end gap-3">

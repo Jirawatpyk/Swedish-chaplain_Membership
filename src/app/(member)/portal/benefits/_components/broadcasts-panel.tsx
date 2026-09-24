@@ -35,6 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { EmptyState } from '@/components/shell/empty-state';
+import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
 import { logger } from '@/lib/logger';
@@ -127,6 +128,8 @@ export async function BroadcastsPanel({
     estimatedRecipientCount: number;
   }> = [];
   let pagination = { page: 1, totalPages: 0, total: 0 };
+  // Portal error states #2 — a failed history read is NOT an empty history.
+  let historyFailed = false;
 
   {
     // `memberId` is always present (page-resolved). Bare block scope keeps
@@ -241,8 +244,10 @@ export async function BroadcastsPanel({
       }));
     } else {
       // History query failure must not crash the entire page — quota
-      // panel + reset-date are the primary surface; the table degrades
-      // to the AS4 empty-state.
+      // panel + reset-date are the primary surface. The table becomes a
+      // load-error state, never the AS4 empty state: "No broadcasts yet"
+      // beside a Compose CTA told a member with history that they had none.
+      historyFailed = true;
       logger.error(
         {
           errKind: errKind(listResultS.reason),
@@ -316,8 +321,12 @@ export async function BroadcastsPanel({
         planChangedExplainer={planChangedExplainer}
       />
 
-      {/* AS4 empty-state OR AS1 history-table */}
-      {historyRows.length === 0 ? (
+      {/* Load-error (canvas "E-Blasts — empty variants" B) OR AS4 empty-state
+          OR AS1 history-table */}
+      {historyFailed ? (
+        <DashboardErrorState title={t('loadError.title')} description={t('loadError.body')} />
+      ) : null}
+      {!historyFailed && historyRows.length === 0 ? (
         // Shared EmptyState (standalone, so the default bordered placeholder).
         // One canonical empty-state treatment across the app (UX R2 #8/#10).
         <EmptyState
@@ -333,7 +342,8 @@ export async function BroadcastsPanel({
             )
           }
         />
-      ) : (
+      ) : null}
+      {historyRows.length > 0 ? (
         <>
           {/* U37 — dual-render: the table from `md` up, the card list below it
               (at 320 px the table was 729 px wide inside a 209 px box). */}
@@ -392,7 +402,7 @@ export async function BroadcastsPanel({
             className="md:hidden"
           />
         </>
-      )}
+      ) : null}
 
       {/* Server-driven pagination (T128 / T129). At edges, render a
           disabled <span> instead of an <a href="#"> — clicking

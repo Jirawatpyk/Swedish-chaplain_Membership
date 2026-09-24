@@ -59,7 +59,25 @@ export type InviteColleagueInput = {
 export type InviteColleagueError =
   | { type: 'not_primary'; reason: string }
   | { type: 'validation_error'; issues: z.ZodIssue[] }
+  /**
+   * The address already belongs to a live contact of the INVITER'S OWN member —
+   * information the inviter can already see on /portal/profile, so it may be
+   * named specifically.
+   */
   | { type: 'email_taken' }
+  /**
+   * The invite cannot proceed for a reason the member must NOT learn: the
+   * address is registered to an account outside their member (`users.email` is
+   * unique across every member, staff user and tenant), or it is a live contact
+   * of ANOTHER member in this tenant (`contacts_tenant_email_uniq`). Returning
+   * `email_taken` / `link_failed` for these made the portal an account- and
+   * contact-existence oracle (PDPA/GDPR). `reason` is for staff (log + metric)
+   * only — the route never puts it in the response.
+   */
+  | {
+      type: 'invite_unavailable';
+      reason: InviteUnavailableReason;
+    }
   | { type: 'invalid_email' }
   // 059-membership-suspension Task 6 — a suspended/terminated member (F8
   // `deriveMembershipAccess`) cannot invite a colleague: every invite mints
@@ -72,6 +90,11 @@ export type InviteColleagueError =
   // with invitePortal — see invite-portal.ts `link_failed`.
   | { type: 'link_failed' }
   | { type: 'server_error'; message: string };
+
+export type InviteUnavailableReason =
+  | 'email_registered_elsewhere'
+  | 'contact_of_other_member'
+  | 'contact_check_failed';
 
 export type InviteColleagueDeps = {
   readonly tenant: TenantContext;
@@ -149,7 +172,24 @@ export async function inviteColleague(
     return err({ type: 'invalid_email' });
   }
 
-  // 3. Create F1 user with member role
+  // 3. Is the address already a live contact in this tenant? Checked BEFORE
+  // createUser so neither answer depends on whether an F1 account exists:
+  //   - on MY member → `email_taken` (the inviter already sees that contact);
+  //   - on ANOTHER member → neutral. Letting it through used to mint the F1
+  //     user and then hit `contacts_tenant_email_uniq` → a distinct 500
+  //     `link_failed` (plus an invitation to compensate): a contact-existence
+  //     oracle across member companies.
+  //   - lookup failure → neutral (fail towards privacy, never towards naming).
+  const existing = await deps.contactRepo.findByEmail(deps.tenant, emailResult.value);
+  if (existing.ok) {
+    if (existing.value.memberId === input.memberId) return err({ type: 'email_taken' });
+    return err({ type: 'invite_unavailable', reason: 'contact_of_other_member' });
+  }
+  if (existing.error.code !== 'repo.not_found') {
+    return err({ type: 'invite_unavailable', reason: 'contact_check_failed' });
+  }
+
+  // 4. Create F1 user with member role
   // W-1: Use normalized (lowercase) email from emailResult.value
   const created = await deps.createUser({
     email: emailResult.value,
@@ -166,7 +206,10 @@ export async function inviteColleague(
       return err({ type: 'invalid_email' });
     }
     if (created.error.code === 'email-taken') {
-      return err({ type: 'email_taken' });
+      // Step 3 proved the address is not a live contact of this member, so an
+      // F1 account for it exists somewhere the inviter cannot see (another
+      // member's user, staff, another tenant). Neutral answer.
+      return err({ type: 'invite_unavailable', reason: 'email_registered_elsewhere' });
     }
     // `invitation-create-failed` — F1 create-user already ran its
     // compensating `users.deletePending`, so no state leaks here.
@@ -178,7 +221,7 @@ export async function inviteColleague(
     });
   }
 
-  // 4. Add secondary contact to the member
+  // 5. Add secondary contact to the member
   const newContactId = deps.idFactory.contactId();
   const contactDraft = {
     // W-3: Use branded constructor instead of raw `as` cast

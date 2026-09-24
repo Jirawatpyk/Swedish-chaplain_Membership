@@ -573,6 +573,7 @@ export {
   type InviteColleagueInput,
   type InviteColleagueError,
   type InviteColleagueDeps,
+  type InviteUnavailableReason,
 } from './application/use-cases/invite-colleague';
 
 // --- F1 spec:672-678 — admin invite with optional member link --------------
