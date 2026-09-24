@@ -97,6 +97,28 @@ export const OFFERED_BROADCAST_STATUSES: ReadonlyArray<BroadcastStatus> =
     (s) => !(RETIRED_BROADCAST_STATUSES as readonly string[]).includes(s),
   );
 
+/**
+ * F119 T116 / T151 (research R18) — the stages that exist only because of the
+ * approval round (migration 0305). Their filter chip is offered while the round
+ * is switched on OR while the tenant has a row in that stage: never a filter
+ * that can only return zero rows (the retired-status rule above), and never a
+ * stage an in-flight E-Blast is sitting in hidden from the people who must act
+ * on it.
+ *
+ * UX review M2 — it lives HERE, beside `OFFERED_BROADCAST_STATUSES`, because
+ * two surfaces size from it: the chip strip (`queue-filters.tsx`, a client
+ * component that may import this file but not `domain/stage/**`) and the
+ * queue's loading skeleton, which reserves 8 chips with the round off and 13
+ * with it on. `queue-filters-flag-visibility.test.tsx` pins the five.
+ */
+export const APPROVAL_ROUND_ONLY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+  'expired_no_member_response',
+]);
+
 export const TERMINAL_BROADCAST_STATUSES = [
   'sent',
   'rejected',

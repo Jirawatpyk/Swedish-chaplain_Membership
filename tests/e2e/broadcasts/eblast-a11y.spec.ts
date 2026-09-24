@@ -316,6 +316,122 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
         'the action row fits inside the 320 px viewport',
       ).toBeLessThanOrEqual(REFLOW_VIEWPORT.width);
     });
+
+    /**
+     * F119 dashboard UX review B1 — the chip strip at 320 px in the two
+     * locales with the longest new-stage labels. The U2 case above runs in EN,
+     * where "Member approved — awaiting schedule" happens to fit; the SV
+     * "Godkänd av medlem — inväntar schemaläggning" did not: the fieldset's
+     * default `min-inline-size: min-content` and the two `role="group"` flex
+     * rows' `min-width: auto` held the chip at its min-content width, so its
+     * `truncate` never engaged.
+     *
+     * Needs the `member_approved` chip on screen — the approval-round flag on
+     * (the maintainer's dev server), or a row in that stage. Asserted, not
+     * assumed: without the chip this case would measure the short EN-length
+     * strip and pass for the wrong reason.
+     */
+    /**
+     * F119 dashboard UX review H4 — selecting a stage is announced through the
+     * list's ONE live region, and the keyboard user stays on the chip they
+     * pressed. The region survives the filter navigation only because the
+     * `router.replace` runs inside `startTransition` (which suppresses the
+     * `loading.tsx` fallback); a unit test's `rerender` cannot tell a preserved
+     * region from a remounted one, so this runs against the real app.
+     */
+    test('H4 — a stage chip announces the new view and keeps focus on the chip', async ({
+      page,
+    }) => {
+      await signInAsAdmin(page);
+      await page.goto('/admin/broadcasts');
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible({
+        timeout: 120_000,
+      });
+
+      const announcer = page.locator('[data-testid="queue-selection-announcer"]:visible');
+      await expect(announcer).toHaveCount(1);
+      const sent = page.locator('input[name="status"][value="sent"]:visible');
+      await expect(sent).not.toBeChecked();
+      // Element identity, not only text: a region REMOUNTED by the navigation
+      // (a `loading.tsx` swap) would carry the same text but lose this mark —
+      // and a freshly mounted live region is not reliably announced.
+      await announcer.evaluate((el) => {
+        (el as HTMLElement).dataset['probe'] = 'kept';
+      });
+
+      // The keyboard path: focus the chip's checkbox, press Space.
+      await sent.focus();
+      await page.keyboard.press('Space');
+
+      await expect(page).toHaveURL(/status=sent/, { timeout: 60_000 });
+      await expect(sent).toBeChecked();
+      await expect(announcer).toHaveText(
+        /(?:No E-Blasts|\d+ E-Blasts?) in this view/,
+        { timeout: 60_000 },
+      );
+      // Still exactly one region — the SAME element — and focus never left the chip.
+      await expect(announcer).toHaveCount(1);
+      await expect(announcer).toHaveAttribute('data-probe', 'kept');
+      expect(
+        await page.evaluate(() => {
+          const el = document.activeElement;
+          return el instanceof HTMLInputElement ? el.value : el?.tagName ?? null;
+        }),
+      ).toBe('sent');
+    });
+
+    for (const locale of ['sv', 'th'] as const) {
+      test(`B1 — the ${locale.toUpperCase()} chip strip has no horizontal scroll at 320 px`, async ({
+        page,
+      }) => {
+        await signInAsAdmin(page);
+        // The locale cookie AFTER sign-in: the sign-in helper finds its fields
+        // by their English labels.
+        await page.context().addCookies([
+          { name: 'NEXT_LOCALE', value: locale, url: 'http://localhost:3100' },
+        ]);
+        await page.setViewportSize(REFLOW_VIEWPORT);
+        await page.goto('/admin/broadcasts');
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible({
+          timeout: 120_000,
+        });
+        await expect(page.locator('html')).toHaveAttribute('lang', locale);
+
+        const chip = page.locator(
+          'input[name="status"][value="member_approved"]:visible',
+        );
+        await expect(
+          chip,
+          'the member_approved chip is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?',
+        ).toHaveCount(1);
+
+        const scrollWidth = await page.evaluate(
+          () => document.documentElement.scrollWidth,
+        );
+        expect(
+          scrollWidth,
+          'no horizontal page scroll on the chip strip at 320 px (WCAG 1.4.10)',
+        ).toBeLessThanOrEqual(REFLOW_VIEWPORT.width);
+
+        // The strip itself, not only the document: an ancestor that clips
+        // overflow would hide a chip that still runs off the edge.
+        const fieldset = page.locator('fieldset:visible').filter({
+          has: page.locator('input[name="status"]'),
+        });
+        const overflow = await fieldset.evaluate(
+          (el) => el.scrollWidth - el.clientWidth,
+        );
+        expect(overflow, 'the Stage fieldset does not overflow').toBeLessThanOrEqual(0);
+        const chipBox = await chip
+          .locator('xpath=ancestor::label[1]')
+          .boundingBox();
+        expect(chipBox).not.toBeNull();
+        expect(
+          chipBox!.x + chipBox!.width,
+          'the longest chip ends inside the viewport',
+        ).toBeLessThanOrEqual(REFLOW_VIEWPORT.width);
+      });
+    }
   });
 
   test.describe('keyboard + reflow behaviours FR-050/FR-051 name by hand', () => {

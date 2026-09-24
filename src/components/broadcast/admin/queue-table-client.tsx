@@ -78,7 +78,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
 import { QueueCardList } from './queue-card-list';
-import { EmptySentinel, TimeInStage } from './queue-row-cells';
+import { EmptySentinel, SendTime, TimeInStage } from './queue-row-cells';
 
 type BadgeVariant =
   | 'default'
@@ -87,6 +87,29 @@ type BadgeVariant =
   | 'outline'
   | 'ghost';
 
+/** UX review M1 — the visible hint for each order. */
+const ORDER_HINT_KEY = {
+  longest_in_stage: 'order.longestInStage',
+  most_recent: 'order.mostRecent',
+  send_time: 'order.sendTime',
+} as const satisfies Record<QueueOrder, string>;
+
+/**
+ * UX review M1 — the column each order follows, and its `aria-sort`. Longest
+ * in stage first is Time in stage DESCENDING; most recent first is the
+ * shortest time in stage first, so ASCENDING.
+ */
+const SORTED_COLUMN: Readonly<
+  Record<QueueOrder, { readonly id: string; readonly direction: 'ascending' | 'descending' }>
+> = {
+  longest_in_stage: { id: 'timeInStage', direction: 'descending' },
+  most_recent: { id: 'timeInStage', direction: 'ascending' },
+  send_time: { id: 'sendTime', direction: 'ascending' },
+};
+
+/** UX review M1 — the text cells that wrap (capped) rather than widen the table. */
+const WRAPPED_COLUMNS: ReadonlySet<string> = new Set(['member', 'timeInStage', 'sendTime', 'audience']);
+
 export interface EnrichedQueueRow {
   readonly broadcastId: string;
   readonly subject: string;
@@ -94,7 +117,6 @@ export interface EnrichedQueueRow {
   readonly actorRoleLabel: string | null;
   readonly segmentLabel: string;
   readonly recipientCount: number;
-  readonly submittedAtFormatted: string;
   /**
    * Type-3 (round-3) — single nullable struct so `(label, variant)`
    * cannot drift apart. Null = no badge to render.
@@ -118,35 +140,59 @@ export interface EnrichedQueueRow {
   readonly whoseTurnLabel: string | null;
   /** Time in the current stage on a waiting stage; null ("—") otherwise. */
   readonly timeInStageLabel: string | null;
-  /** Versions sent to the member so far; 0 renders "—" (never formatted). */
+  /** Versions sent to the member so far; 0 (never formatted) renders no "Round" line. */
   readonly round: number;
   readonly proposedSendAtFormatted: string | null;
   readonly confirmedSendAtFormatted: string | null;
-  /** `stage_entered_at`, tenant time zone. */
+  /** `stage_entered_at`, tenant time zone — the "since …" line under Time in stage (the row's last activity). */
   readonly lastActivityFormatted: string;
   /** F119 T119 (FR-029) — "N recipients · N delivered · …" on sent rows; null elsewhere. */
   readonly deliverySummary: string | null;
 }
 
+/**
+ * UX review H1 / M1 — the order the page asked the list for, so the table can
+ * say it: `aria-sort` on the column it follows, and a visible hint.
+ *   - `longest_in_stage` — a view of waiting stages: time in stage, longest first;
+ *   - `most_recent` — every other view: the most recent stage entry first;
+ *   - `send_time` — the Upcoming sends preset: send time, soonest first.
+ */
+export type QueueOrder = 'longest_in_stage' | 'most_recent' | 'send_time';
+
 export interface QueueTableClientProps {
   readonly rows: ReadonlyArray<EnrichedQueueRow>;
+  /**
+   * UX review M1 — eight columns (plus selection): the FR-026 fields folded
+   * into fewer, wrapping cells so Actions stays reachable. Round sits under
+   * the Stage badge, last activity is Time in stage's "since" line, the two
+   * send times share one column, and Audience carries the recipient count.
+   */
   readonly columnLabels: {
-    readonly submittedAt: string;
     readonly member: string;
     readonly subject: string;
-    readonly segment: string;
-    readonly recipientCount: string;
     readonly status: string;
     readonly whoseTurn: string;
     readonly timeInStage: string;
-    readonly round: string;
-    readonly proposedSendAt: string;
-    readonly confirmedSendAt: string;
-    readonly lastActivity: string;
+    readonly sendTime: string;
+    readonly audience: string;
     readonly actions: string;
     readonly select: string;
     readonly tableAria: string;
   };
+  /** Defaults to `longest_in_stage` — the default Awaiting-review view's order. */
+  readonly order?: QueueOrder;
+  /**
+   * UX review H3 — how many E-Blasts the whole VIEW holds (not the page of
+   * ≤ 50), when the page knows it; `null` when it does not (a member filter or
+   * the Upcoming preset narrows the per-stage counts it is summed from), and
+   * then the announcement says "shown" rather than claiming a total.
+   */
+  readonly viewTotal?: number | null;
+  /**
+   * UX review H4 — the view's identity (its URL query). A change of view is
+   * announced even when the rows, and so the words, are identical.
+   */
+  readonly viewKey?: string;
   readonly readOnly?: boolean;
   /**
    * F119 T109 — rendered in place of the table AND the card list when there
@@ -195,6 +241,9 @@ export function QueueTableClient({
   reselectIds,
   reselectNonce,
   emptyState,
+  order = 'longest_in_stage',
+  viewTotal = null,
+  viewKey = '',
 }: QueueTableClientProps): React.ReactElement {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const tBulk = useTranslations('admin.broadcasts.queue.bulk');
@@ -242,11 +291,15 @@ export function QueueTableClient({
       });
     }
 
-    // F119 T117 — the FR-026 columns, in the order a reviewer scans them:
-    // who and what, where it stands and whose move it is, how long it has
-    // waited, then the round, the two send times and the last activity. The
-    // SLA badge moved from the submitted date to Time in stage, which is what
-    // it now measures (`stage_entered_at`, every waiting stage).
+    // F119 T117 — the FR-026 fields, in the order a reviewer scans them: who
+    // and what, where it stands and whose move it is, how long it has waited,
+    // when it goes out and to whom. UX review M1 folded the twelve columns
+    // into eight so Actions stays on screen at 1,280-1,440 px: Round rides
+    // under the Stage badge, last activity is Time in stage's "since" line,
+    // the two send times share Send time, and Audience carries the recipient
+    // count. Submitted left the table (it is on the detail page). Every FR-026
+    // field is still on the row. The SLA badge lives on Time in stage, which is
+    // what it measures (`stage_entered_at`, every waiting stage).
     base.push(
       {
         id: 'member',
@@ -287,6 +340,12 @@ export function QueueTableClient({
             >
               {ctx.row.original.statusBadgeLabel}
             </Badge>
+            {/* FR-026 — the round: versions sent to the member so far. */}
+            {ctx.row.original.round > 0 ? (
+              <span className="text-xs tabular-nums">
+                {tQueue('row.round', { round: ctx.row.original.round })}
+              </span>
+            ) : null}
             {/* FR-029 — delivery results travel with the Sent stage. */}
             {ctx.row.original.deliverySummary !== null ? (
               <span className="text-xs tabular-nums">
@@ -309,68 +368,32 @@ export function QueueTableClient({
       {
         id: 'timeInStage',
         header: columnLabels.timeInStage,
-        cell: (ctx) => <TimeInStage row={ctx.row.original} />,
-      },
-      {
-        id: 'round',
-        header: columnLabels.round,
-        cell: (ctx) =>
-          ctx.row.original.round > 0 ? (
-            <span className="tabular-nums">{ctx.row.original.round}</span>
-          ) : (
-            <EmptySentinel />
-          ),
-      },
-      {
-        id: 'proposedSendAt',
-        header: columnLabels.proposedSendAt,
-        cell: (ctx) =>
-          ctx.row.original.proposedSendAtFormatted !== null ? (
-            <span className="tabular-nums">{ctx.row.original.proposedSendAtFormatted}</span>
-          ) : (
-            <EmptySentinel />
-          ),
-      },
-      {
-        id: 'confirmedSendAt',
-        header: columnLabels.confirmedSendAt,
-        cell: (ctx) =>
-          ctx.row.original.confirmedSendAtFormatted !== null ? (
-            <span className="tabular-nums">{ctx.row.original.confirmedSendAtFormatted}</span>
-          ) : (
-            <EmptySentinel />
-          ),
-      },
-      {
-        id: 'lastActivity',
-        header: columnLabels.lastActivity,
+        // FR-026 — last activity (`stage_entered_at`) is the "since" line: on
+        // a waiting stage it dates the wait, on any other it is the only time.
         cell: (ctx) => (
-          <span className="tabular-nums">{ctx.row.original.lastActivityFormatted}</span>
+          <div className="flex flex-col gap-1">
+            <TimeInStage row={ctx.row.original} />
+            <span className="text-xs tabular-nums">
+              {tQueue('row.since', { date: ctx.row.original.lastActivityFormatted })}
+            </span>
+          </div>
         ),
       },
       {
-        id: 'segment',
-        header: columnLabels.segment,
-        accessorKey: 'segmentLabel',
-        cell: (ctx) => (
-          <span className="text-muted-foreground">{ctx.getValue<string>()}</span>
-        ),
+        id: 'sendTime',
+        header: columnLabels.sendTime,
+        cell: (ctx) => <SendTime row={ctx.row.original} proposedLabel={tQueue('row.proposed')} />,
       },
       {
-        id: 'recipientCount',
-        header: columnLabels.recipientCount,
-        accessorKey: 'recipientCount',
+        id: 'audience',
+        header: columnLabels.audience,
+        // The label keeps its own element, so "All members" is still a whole
+        // text node to find (admin-review-queue D2b, queue-table-segment).
         cell: (ctx) => (
-          <span className="tabular-nums">{ctx.getValue<number>()}</span>
-        ),
-      },
-      {
-        id: 'submittedAt',
-        header: columnLabels.submittedAt,
-        accessorKey: 'submittedAtFormatted',
-        cell: (ctx) => (
-          <span className="text-muted-foreground tabular-nums">
-            {ctx.row.original.submittedAtFormatted}
+          <span>
+            <span>{ctx.row.original.segmentLabel}</span>
+            {' · '}
+            <span className="tabular-nums">{ctx.row.original.recipientCount}</span>
           </span>
         ),
       },
@@ -389,7 +412,7 @@ export function QueueTableClient({
       });
     }
     return base;
-  }, [columnLabels, readOnly, selectionEnabled]);
+  }, [columnLabels, readOnly, selectionEnabled, tQueue]);
 
   // Task 6 (2026-08-02-broadcast-review-queue-pr3) — the
   // `react-hooks/incompatible-library` disable that used to sit here is now
@@ -518,23 +541,40 @@ export function QueueTableClient({
   // in an effect with a run-once ref, which StrictMode's double mount defeats.
   // `stalled` counts ONLY the red (stalled) badges: the amber pre-warning is
   // never announced as stalled (FR-027).
+  //
+  // UX review H3 — the count is the VIEW's (`viewTotal`, what the stage chips
+  // add up to), not the page of ≤ 50 the list holds; when the page cannot know
+  // the total it says "shown". Stalled is counted on the rows shown, and says
+  // so ("N stalled shown"): the stalled flag is computed per row, and a page
+  // is all the rows there are here.
+  //
+  // UX review H4 — the list is keyed on the VIEW (`viewKey`, the URL) as well
+  // as its rows, so a change of view is news even when it lands on the same
+  // rows (two empty views, say). And every announcement is a NEW text node
+  // (`seq` keys the span): with `aria-atomic`, replacing the node is a DOM
+  // mutation a screen reader hears even when the words repeat — setting the
+  // same string again changes nothing and is silent.
   const stalledCount = rows.filter((r) => r.ageBadge?.variant === 'red').length;
-  const resultKey = rows.map((r) => r.broadcastId).join('|');
+  const listKey = `${viewKey}#${rows.map((r) => r.broadcastId).join('|')}`;
   const [announced, setAnnounced] = useState({
-    resultKey,
+    listKey,
     selectedCount: selectedIds.length,
     text: '',
+    seq: 0,
   });
-  if (announced.resultKey !== resultKey || announced.selectedCount !== selectedIds.length) {
-    const listChanged = announced.resultKey !== resultKey;
+  if (announced.listKey !== listKey || announced.selectedCount !== selectedIds.length) {
+    const listChanged = announced.listKey !== listKey;
     setAnnounced({
-      resultKey,
+      listKey,
       selectedCount: selectedIds.length,
       text: listChanged
-        ? tQueue('resultsAnnouncement', { count: rows.length, stalled: stalledCount })
+        ? viewTotal !== null
+          ? tQueue('resultsAnnouncement', { count: viewTotal, stalled: stalledCount })
+          : tQueue('resultsAnnouncementShown', { count: rows.length, stalled: stalledCount })
         : selectedIds.length > 0
           ? bulkSelectedLabel
           : '',
+      seq: announced.seq + 1,
     });
   }
   // `data-testid`: the bulk-action bar mounts a SECOND permanently-mounted
@@ -550,7 +590,7 @@ export function QueueTableClient({
       aria-atomic="true"
       data-testid="queue-selection-announcer"
     >
-      {announced.text}
+      {announced.text !== '' ? <span key={announced.seq}>{announced.text}</span> : null}
     </div>
   );
 
@@ -566,14 +606,20 @@ export function QueueTableClient({
   return (
     <>
       {announcer}
-      {/* F119 T118 — the stalled count of this view: icon + text, the same
-          number the announcer speaks; amber rows are not in it. */}
+      {/* F119 T118 — the stalled count of the rows shown: icon + text, the
+          same number the announcer speaks; amber rows are not in it. UX review
+          H3 — worded "shown", because it is counted on this page. */}
       {stalledCount > 0 ? (
         <p className="flex items-center gap-1.5 text-sm font-medium">
           <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden="true" />
           {tQueue('stalledSummary', { count: stalledCount })}
         </p>
       ) : null}
+      {/* UX review M1 — the order, said out loud for sighted users (the table
+          header carries `aria-sort`; the phone card list has no header). */}
+      <p className="text-xs text-muted-foreground" data-testid="queue-order-hint">
+        {tQueue(ORDER_HINT_KEY[order])}
+      </p>
       {/* Task 4 — dual-render: desktop `<table>` hidden below `md`, mobile
           `QueueCardList` hidden at/above `md`. Both read from the SAME
           `table` instance built above, so a selection made in one
@@ -584,13 +630,17 @@ export function QueueTableClient({
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
-                  const alignRight = header.column.id === 'recipientCount';
                   const narrow = header.column.id === 'select';
+                  const sort =
+                    header.column.id === SORTED_COLUMN[order].id
+                      ? SORTED_COLUMN[order].direction
+                      : undefined;
                   return (
                     <TableHead
                       key={header.id}
                       scope="col"
-                      className={cn(alignRight && 'text-right', narrow && 'w-10')}
+                      aria-sort={sort}
+                      className={cn(narrow && 'w-10')}
                     >
                       {header.isPlaceholder
                         ? null
@@ -605,7 +655,6 @@ export function QueueTableClient({
             {rowModel.rows.map((row) => (
               <TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
                 {row.getVisibleCells().map((cell) => {
-                  const alignRight = cell.column.id === 'recipientCount';
                   // Review round 1, I-1 — `TableCell` applies `whitespace-nowrap`
                   // to every cell. `subject` is free-text up to ~200 chars (F7
                   // sanitiser cap) and the primary column admins scan; under
@@ -620,13 +669,18 @@ export function QueueTableClient({
                   // a sent row; let that line wrap under the badge instead of
                   // widening the whole table.
                   const wrapStage = cell.column.id === 'status';
+                  // UX review M1 — the other text cells wrap too, each capped,
+                  // so a long company name, audience label or two-line date
+                  // grows the row instead of pushing Actions off screen
+                  // (measured: the member column alone ran 317 px unwrapped).
+                  const wrapText = WRAPPED_COLUMNS.has(cell.column.id);
                   return (
                     <TableCell
                       key={cell.id}
                       className={cn(
-                        alignRight && 'text-right',
                         wrapSubject && 'max-w-[40ch] whitespace-normal break-words',
-                        wrapStage && 'min-w-[10rem] max-w-[16rem] whitespace-normal',
+                        wrapStage && 'min-w-[8rem] max-w-[16rem] whitespace-normal',
+                        wrapText && 'max-w-[12rem] whitespace-normal break-words',
                       )}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

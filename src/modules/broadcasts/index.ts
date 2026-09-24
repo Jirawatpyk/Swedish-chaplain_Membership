@@ -74,6 +74,7 @@ export {
   type QuotaCounterError,
 } from './domain/value-objects/quota-counter';
 export {
+  APPROVAL_ROUND_ONLY_STATUSES,
   BROADCAST_STATUSES,
   OFFERED_BROADCAST_STATUSES,
   TERMINAL_BROADCAST_STATUSES,
@@ -927,7 +928,7 @@ export type {
 export type { BroadcastApprovalScrubPort } from './application/ports/broadcast-approval-scrub-port';
 // T063 — the staff detail page's stage header ("whose turn", FR-026) and its
 // two standing warnings (no portal user; an image off the allow-list).
-export { turnOf, MARKETING_TURN_STATUSES, type WhoseTurn } from './domain/stage/whose-turn';
+export { isWaitingView, turnOf, MARKETING_TURN_STATUSES, type WhoseTurn } from './domain/stage/whose-turn';
 export {
   readFormattingWarnings,
   type FormattingWarnings,

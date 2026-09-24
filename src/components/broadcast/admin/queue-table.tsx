@@ -15,7 +15,8 @@
  */
 import { Inbox } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
-import type { EnrichedQueueRow } from './queue-table-client';
+import { EmptyState } from '@/components/shell/empty-state';
+import type { EnrichedQueueRow, QueueOrder } from './queue-table-client';
 import { QueueWithBulk } from './queue-with-bulk';
 import { SLA_RED_HOURS, stageAgeOf } from '@/modules/broadcasts';
 import type { AdminQueueItem } from '@/lib/admin-broadcast-queue';
@@ -43,12 +44,21 @@ export interface QueueTableProps {
    * dialog, which repeats the warning at the decision point.
    */
   readonly haltUnknown?: boolean;
+  /** UX review H1 / M1 — the order the list was read in (`aria-sort` + the visible hint). */
+  readonly order?: QueueOrder;
+  /** UX review H3 — the whole view's count when known; see `QueueTableClientProps.viewTotal`. */
+  readonly viewTotal?: number | null;
+  /** UX review H4 — the view's identity (its URL query). */
+  readonly viewKey?: string;
 }
 
 export async function QueueTable({
   rows,
   readOnly = false,
   haltUnknown = false,
+  order = 'longest_in_stage',
+  viewTotal = null,
+  viewKey = '',
 }: QueueTableProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
@@ -77,7 +87,6 @@ export async function QueueTable({
     iso === null ? null : dateFormatter.format(new Date(iso));
 
   const enrichedRows: ReadonlyArray<EnrichedQueueRow> = rows.map((row) => {
-    const submittedAt = dateFormatter.format(new Date(row.submittedAt ?? row.createdAt));
     const age = stageAgeOf(row.status, new Date(row.stageEnteredAt), now);
     const days = age === null ? 0 : Math.floor(age.hours / HOURS_PER_DAY);
 
@@ -108,7 +117,6 @@ export async function QueueTable({
           : null,
       segmentLabel: tSegment(row.segmentType as Parameters<typeof tSegment>[0]),
       recipientCount: row.estimatedRecipientCount,
-      submittedAtFormatted: submittedAt,
       ageBadge,
       statusBadgeVariant: style.variant,
       statusBadgeLabel: tStatus(row.status),
@@ -145,32 +153,32 @@ export async function QueueTable({
       rows={enrichedRows}
       readOnly={readOnly}
       haltUnknown={haltUnknown}
+      order={order}
+      viewTotal={viewTotal}
+      viewKey={viewKey}
       emptyState={
         // UX-C5: empty state with title + body + visual anchor (no CTA —
         // admin can't manufacture submissions; queue empties when members
         // submit). F119 T109 — rendered INSIDE the client component, so the
         // list's one live region survives a stage change to an empty view.
-        <div className="flex flex-col items-center gap-3 rounded-md border bg-muted/20 px-4 py-12 text-center">
-          <div className="rounded-full bg-background p-3">
-            <Inbox className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
-          </div>
-          <p className="text-sm font-medium">{t('emptyTitle')}</p>
-          <p className="max-w-md text-xs text-muted-foreground">{t('empty')}</p>
-        </div>
+        // UX review LOW — the shared `EmptyState`, with its own `role="status"`
+        // switched off: the queue's announcer already says "No E-Blasts in
+        // this view", and FR-025 allows the list ONE live region.
+        <EmptyState
+          icon={Inbox}
+          title={t('emptyTitle')}
+          description={t('empty')}
+          announce={false}
+        />
       }
       columnLabels={{
-        submittedAt: t('columns.submittedAt'),
         member: t('columns.member'),
         subject: t('columns.subject'),
-        segment: t('columns.segment'),
-        recipientCount: t('columns.recipientCount'),
         status: t('columns.status'),
         whoseTurn: t('columns.whoseTurn'),
         timeInStage: t('columns.timeInStage'),
-        round: t('columns.round'),
-        proposedSendAt: t('columns.proposedSendAt'),
-        confirmedSendAt: t('columns.confirmedSendAt'),
-        lastActivity: t('columns.lastActivity'),
+        sendTime: t('columns.sendTime'),
+        audience: t('columns.segment'),
         actions: t('columns.actions'),
         select: t('bulk.selectAria'),
         tableAria: t('tableAria'),

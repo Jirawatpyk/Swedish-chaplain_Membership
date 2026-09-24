@@ -3195,9 +3195,9 @@
     "broadcasts": {
       "queue": {
         "title": "E-Blast review queue",
-        "subtitle": "Review and approve broadcasts submitted by members.",
+        "subtitle": "Review and approve E-Blasts submitted by members.",
         "templatesEntryButton": "Templates",
-        "empty": "When members submit broadcasts, they appear here for your review.",
+        "empty": "When members submit E-Blasts, they appear here for your review.",
         "emptyTitle": "Queue is clear",
         "totalPending": "{count} pending",
         "tableAria": "Broadcast review queue",
@@ -3212,10 +3212,27 @@
         "delivery": {
           "summary": "{recipients, plural, one {# recipient} other {# recipients}} · {delivered} delivered · {bounced} bounced · {complained} complained"
         },
-        "resultsAnnouncement": "{count, plural, =0 {No E-Blasts in this view} one {# E-Blast in this view} other {# E-Blasts in this view}}{stalled, plural, =0 {} other {, # stalled}}",
-        "stalledSummary": "{count, plural, one {# stalled in this view} other {# stalled in this view}}",
+        "resultsAnnouncement": "{count, plural, =0 {No E-Blasts in this view} one {# E-Blast in this view} other {# E-Blasts in this view}}{stalled, plural, =0 {} other {, # stalled shown}}",
+        "resultsAnnouncementShown": "{count, plural, =0 {No E-Blasts shown} one {# E-Blast shown} other {# E-Blasts shown}}{stalled, plural, =0 {} other {, # stalled shown}}",
+        "stalledSummary": "{count, plural, one {# stalled shown} other {# stalled shown}}",
+        "row": {
+          "round": "Round {round}",
+          "since": "since {date}",
+          "proposed": "Proposed"
+        },
+        "order": {
+          "longestInStage": "Sorted by longest in stage",
+          "mostRecent": "Sorted by most recent first",
+          "sendTime": "Sorted by send time"
+        },
+        "pagination": {
+          "label": "Queue pages",
+          "summary": "Showing {shown} of {total}",
+          "next": "Next page",
+          "first": "First page"
+        },
         "ageBadge": {
-          "aging": "{hours}h waiting",
+          "aging": "{hours} h waiting",
           "stalled": "Stalled — {days, plural, one {# day} other {# days}}"
         },
         "bulk": {
@@ -3260,9 +3277,6 @@
         },
         "card": {
           "actionsLabel": "Actions",
-          "audienceLabel": "Audience",
-          "recipientsLabel": "Recipients",
-          "submittedLabel": "Submitted",
           "statusLabel": "Stage",
           "whoseTurnLabel": "Whose turn",
           "timeInStageLabel": "Time in stage"
@@ -3279,18 +3293,13 @@
           "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}"
         },
         "columns": {
-          "submittedAt": "Submitted",
           "member": "Member",
           "subject": "Subject",
           "segment": "Audience",
-          "recipientCount": "Recipients",
           "status": "Stage",
           "whoseTurn": "Whose turn",
           "timeInStage": "Time in stage",
-          "round": "Round",
-          "proposedSendAt": "Proposed send",
-          "confirmedSendAt": "Confirmed send",
-          "lastActivity": "Last activity",
+          "sendTime": "Send time",
           "actions": "Actions"
         },
         "status": {
@@ -3327,7 +3336,6 @@
           "breachWarning": "Reviews are running slow"
         },
         "overdueBanner": "{count, plural, one {# broadcast has} other {# broadcasts have}} been waiting over 48 hours — review now.",
-        "truncationNote": "Showing the first 50 — refine the filters to see more.",
         "haltStateUnavailableTitle": "Halt state could not be read",
         "haltStateUnavailable": "Halt state could not be read — this queue may be hiding halted members. Refresh before approving anything."
       },

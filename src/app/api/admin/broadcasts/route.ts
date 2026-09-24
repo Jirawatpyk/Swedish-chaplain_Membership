@@ -33,7 +33,7 @@ import {
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { loadAdminBroadcastQueue, upcomingFrom } from '@/lib/admin-broadcast-queue';
+import { loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 
 /** URL sort tokens → the repo's orders. `scheduled_for` is the Upcoming sends preset's token. */
@@ -42,6 +42,7 @@ const SORT_TOKENS = {
   submitted_at_desc: 'submitted_at_desc',
   created_at_desc: 'created_at_desc',
   stage_entered_at_asc: 'stage_entered_at_asc',
+  stage_entered_at_desc: 'stage_entered_at_desc',
   scheduled_for: 'scheduled_for_asc',
 } as const satisfies Record<string, ListByTenantStatusSort>;
 
@@ -59,9 +60,18 @@ const ListQuerySchema = z.object({
   memberId: z.string().uuid().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  // UX review H1 — no default token: an absent sort is the view's own order
+  // (`queueSortFor`, shared with the page), never one order for every view.
   sort: z
-    .enum(['submitted_at_asc', 'submitted_at_desc', 'created_at_desc', 'stage_entered_at_asc', 'scheduled_for'])
-    .default('submitted_at_asc'),
+    .enum([
+      'submitted_at_asc',
+      'submitted_at_desc',
+      'created_at_desc',
+      'stage_entered_at_asc',
+      'stage_entered_at_desc',
+      'scheduled_for',
+    ])
+    .optional(),
   from: z.literal('now').optional(),
 });
 
@@ -98,7 +108,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       loadAdminBroadcastQueue(tenantCtx, {
         statusFilter: parsed.data.status,
         pageSize: parsed.data.limit,
-        sort: SORT_TOKENS[parsed.data.sort],
+        sort:
+          parsed.data.sort !== undefined
+            ? SORT_TOKENS[parsed.data.sort]
+            : queueSortFor(parsed.data.status, false),
         ...(parsed.data.cursor !== undefined && { cursor: parsed.data.cursor }),
         ...(parsed.data.memberId !== undefined && { memberId: parsed.data.memberId }),
         ...(scheduledFrom !== undefined && { scheduledFrom }),

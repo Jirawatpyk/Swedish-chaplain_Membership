@@ -26,13 +26,18 @@
  *   │ [ ] Q3 Newsletter               [Awaiting]  │  select checkbox (if actionable+!readOnly) · subject link · status badge
  *   │     Acme Co · Member                        │  memberDisplayName + actorRoleLabel, unlabelled subtitle (no i18n key — mirrors the bare subject)
  *   │ Whose turn  Marketing                       │  F119 T117 — "—" when nobody is waiting
- *   │ Time in stage  [30h waiting]                │  the SLA badge (stalled / aging) or the plain duration
- *   │ Audience  All members                       │
- *   │ Recipients  42                              │
- *   │ Submitted  1 Aug 2026, 07:00                │
+ *   │ Time in stage  [30 h waiting]               │  the SLA badge (stalled / aging) or the plain duration
+ *   │ 40 recipients · 37 delivered · …            │  sent rows only (FR-029, UX review H2)
  *   │ ─────────────────────────────────────────  │
  *   │                        [Approve] [Reject]  │  ReviewActions (unchanged), actionable + !readOnly only
  *   └───────────────────────────────────────────┘
+ *
+ * UX review M7 — exactly the five phone-width fields FR-026 names (member,
+ * subject, stage, whose turn, time in stage) plus the delivery line on a sent
+ * row. Audience, Recipients and Submitted left the card: they are desktop
+ * columns (Audience) or detail-page facts (Submitted), and at phone width
+ * every extra line pushes the next card off screen. UX review M6 — the labels
+ * are muted, the values are not.
  *
  * The member subtitle mirrors the desktop `member` column cell verbatim
  * (`queue-table-client.tsx:190-204`: bold name stacked over xs-muted role
@@ -152,13 +157,11 @@ export function QueueCardList({
                   <LabeledRow label={t('timeInStageLabel')}>
                     <TimeInStage row={original} />
                   </LabeledRow>
-                  <LabeledRow label={t('audienceLabel')}>{original.segmentLabel}</LabeledRow>
-                  <LabeledRow label={t('recipientsLabel')}>
-                    <span className="tabular-nums">{original.recipientCount}</span>
-                  </LabeledRow>
-                  <LabeledRow label={t('submittedLabel')}>
-                    <span className="tabular-nums">{original.submittedAtFormatted}</span>
-                  </LabeledRow>
+                  {/* FR-029 — delivery results travel with a sent row at
+                      every width (UX review H2: the card had dropped them). */}
+                  {original.deliverySummary !== null ? (
+                    <p className="text-sm tabular-nums">{original.deliverySummary}</p>
+                  ) : null}
                   {showActions ? (
                     <div className="flex justify-end">
                       <span className="sr-only">{t('actionsLabel')}</span>
@@ -179,9 +182,9 @@ export function QueueCardList({
 }
 
 /**
- * Same shared-shape helper as `PipelineCardList`'s `LabeledRow` — a
- * `text-sm text-muted-foreground` `<p>` with an inline label followed by
- * the value node(s).
+ * Same shared-shape helper as `PipelineCardList`'s `LabeledRow` — a `text-sm`
+ * `<p>` with an inline label followed by the value node(s). UX review M6 —
+ * only the LABEL is muted: a muted value reads as empty or disabled.
  */
 function LabeledRow({
   label,
@@ -191,8 +194,11 @@ function LabeledRow({
   readonly children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <p className="text-sm text-muted-foreground">
-      {label} {children}
+    <p className="text-sm">
+      <span data-slot="card-field-label" className="text-muted-foreground">
+        {label}
+      </span>{' '}
+      {children}
     </p>
   );
 }

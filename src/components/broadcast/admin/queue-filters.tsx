@@ -18,10 +18,10 @@
  * Findings closed by this file: D1, D2, D3 (filter buttons), A1, A2,
  * A3, H3 (see specs/010-email-broadcast review report).
  */
-import { useCallback, useMemo, useRef, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CalendarClockIcon, XIcon } from 'lucide-react';
+import { CalendarClockIcon, CheckIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -37,9 +37,11 @@ import {
 // server-only Next.js APIs (`revalidateTag` via the F5 payments repo
 // chain). Client components must stay free of those imports.
 import {
+  APPROVAL_ROUND_ONLY_STATUSES,
   OFFERED_BROADCAST_STATUSES,
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import { cn } from '@/lib/utils';
 
 const DEBOUNCE_MS = 300;
 
@@ -87,22 +89,10 @@ const IN_REVIEW_STATUSES: ReadonlyArray<BroadcastStatus> = [
 const TERMINAL_STATUSES: ReadonlyArray<BroadcastStatus> =
   OFFERED_BROADCAST_STATUSES.filter((s) => !IN_REVIEW_STATUSES.includes(s));
 
-/**
- * F119 T116 / T151 (research R18) — the stages that exist only because of the
- * approval round (migration 0305). Their chip is offered while the round is
- * switched on OR while the tenant has a row in that stage: never a filter that
- * can only return zero rows (the retired-status rule above), and never a stage
- * an in-flight E-Blast is sitting in hidden from the people who must act on it.
- * Hand-listed because a client component cannot import `domain/stage/**`
- * (the barrel guard); `queue-filters-flag-visibility.test.tsx` pins the five.
- */
-const APPROVAL_ROUND_ONLY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
-  'in_design',
-  'awaiting_member_approval',
-  'changes_requested',
-  'member_approved',
-  'expired_no_member_response',
-]);
+// F119 T116 / T151 — `APPROVAL_ROUND_ONLY_STATUSES` (the five stages whose chip
+// follows R18's "flag ON or rows exist") lives in the VO file beside
+// `OFFERED_BROADCAST_STATUSES`, so the loading skeleton sizes from it too
+// (UX review M2).
 
 /** F119 T119 — the Upcoming sends preset's URL tokens (FR-028). */
 const UPCOMING_SORT = 'scheduled_for';
@@ -136,6 +126,11 @@ export function QueueFilters({
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // UX review LOW — set just before a navigation that will unmount the
+  // focused control (a chip offered only because the URL named it; Reset once
+  // nothing is left to reset). See the effect below `isOffered`.
+  const stageFieldsetRef = useRef<HTMLFieldSetElement>(null);
+  const restoreFocusRef = useRef(false);
 
   const urlStatus = searchParams.getAll('status') as ReadonlyArray<BroadcastStatus>;
   const currentStatusAll = searchParams.get('status_all') === '1';
@@ -244,6 +239,17 @@ export function QueueFilters({
    */
   const toggleStatus = useCallback(
     (status: BroadcastStatus, checked: boolean) => {
+      // Unchecking a chip that is on screen only because the URL names it
+      // (R18: round off, no rows) unmounts the control under the user.
+      if (
+        !checked &&
+        APPROVAL_ROUND_ONLY_STATUSES.has(status) &&
+        !approvalRoundEnabled &&
+        stageCounts !== null &&
+        stageCounts[status] === 0
+      ) {
+        restoreFocusRef.current = true;
+      }
       const next = checked
         ? Array.from(new Set([...currentStatus, status]))
         : currentStatus.filter((s) => s !== status);
@@ -253,7 +259,7 @@ export function QueueFilters({
         pushUrl({ status: next, statusAll: null });
       }
     },
-    [currentStatus, pushUrl],
+    [currentStatus, pushUrl, approvalRoundEnabled, stageCounts],
   );
 
   const onDateChange = useCallback(
@@ -299,6 +305,8 @@ export function QueueFilters({
   // automatically.
   const clearAll = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    // Reset unmounts itself once the URL is clean.
+    restoreFocusRef.current = true;
     startTransition(() => {
       // Reset is a same-page filter change too — treated consistently with
       // `pushUrl` above (scroll preserved).
@@ -308,15 +316,17 @@ export function QueueFilters({
 
   // F119 T119 — the preset is a toggle: on, it is exactly
   // `?status=approved&sort=scheduled_for&from=now` (member and date filters
-  // kept — "upcoming sends for this member" is a real question); off, the
-  // queue returns to its default view, as Reset does.
+  // kept — "upcoming sends for this member" is a real question); off, it
+  // removes only what it added — `sort`, `from` and `status` — so the stages
+  // return to the default view and the member and date filters stay (UX
+  // review M3: it used to call Reset and drop those too).
   const toggleUpcoming = useCallback(() => {
     if (upcomingActive) {
-      clearAll();
+      pushUrl({ status: null, statusAll: null });
       return;
     }
     pushUrl({ status: ['approved'], statusAll: null, upcoming: true });
-  }, [upcomingActive, clearAll, pushUrl]);
+  }, [upcomingActive, pushUrl]);
 
   // Visual check uses the separate `visualStatus` set so sentinel-mode
   // (`status_all=1`) renders ALL chips unchecked — matching the user's
@@ -332,6 +342,20 @@ export function QueueFilters({
     stageCounts === null ||
     stageCounts[s] > 0 ||
     urlStatus.includes(s);
+
+  // UX review LOW — when the control that had focus unmounted with the URL
+  // change it started, focus fell to `<body>` and a keyboard user had to Tab
+  // back from the top of the page. Hand it to the first Stage checkbox — only
+  // then, and only if focus really was lost, so a URL change started anywhere
+  // else never moves focus.
+  useEffect(() => {
+    if (!restoreFocusRef.current) return;
+    restoreFocusRef.current = false;
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    stageFieldsetRef.current
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      ?.focus();
+  }, [searchParams]);
 
   const renderChip = (s: BroadcastStatus): React.ReactElement => {
     const label = tStatus(s);
@@ -349,9 +373,11 @@ export function QueueFilters({
           onChange={(e) => toggleStatus(s, e.target.checked)}
           className="h-4 w-4 shrink-0 accent-primary"
         />
-        {/* SV runs up to +28 %: the label truncates inside its chip (the full
-            text in the tooltip) instead of reflowing the strip at 320 px. */}
-        <span className="min-w-0 max-w-[14rem] truncate" title={label}>
+        {/* SV runs up to +28 %: below `sm` the label truncates inside its chip
+            (the full text in the tooltip) instead of reflowing the strip at
+            320 px. From `sm` up there is room for the whole label, so it is no
+            longer capped (UX review M4 — it truncated at every width). */}
+        <span className="min-w-0 max-w-[14rem] truncate sm:max-w-none" title={label}>
           {label}
         </span>
         {count !== null ? (
@@ -377,7 +403,12 @@ export function QueueFilters({
       aria-label={t('formAriaLabel')}
       className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/20 p-3"
     >
-      <fieldset className="space-y-1">
+      {/* UX review B1 — `min-w-0` on the fieldset AND on both group rows: a
+          fieldset's default `min-inline-size: min-content` and a flex item's
+          `min-width: auto` each pin a chip at its min-content width, so the
+          chip's `truncate` never engaged and the SV "member approved" chip ran
+          334 px wide at a 320 px viewport. Every link of the chain needs it. */}
+      <fieldset ref={stageFieldsetRef} className="min-w-0 space-y-1">
         <legend className="mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] font-medium">
           {t('statusLabel')}
         </legend>
@@ -385,14 +416,14 @@ export function QueueFilters({
           <div
             role="group"
             aria-label={tStatusGroup('inReview')}
-            className="flex flex-wrap gap-2"
+            className="flex min-w-0 flex-wrap gap-2"
           >
             {IN_REVIEW_STATUSES.filter(isOffered).map(renderChip)}
           </div>
           <div
             role="group"
             aria-label={tStatusGroup('terminal')}
-            className="flex flex-wrap gap-2"
+            className="flex min-w-0 flex-wrap gap-2"
           >
             {TERMINAL_STATUSES.filter(isOffered).map(renderChip)}
           </div>
@@ -459,22 +490,34 @@ export function QueueFilters({
         />
       </div>
 
+      {/* UX review H5 — the pressed state wears the stage chip's checked
+          style plus a check icon. The old `outline` -> `secondary` swap
+          changed the fill by 1.09:1 (light) / 1.31:1 (dark): state you could
+          not see. */}
       <Button
         type="button"
-        variant={upcomingActive ? 'secondary' : 'outline'}
+        variant="outline"
         aria-pressed={upcomingActive}
         onClick={toggleUpcoming}
-        className="whitespace-nowrap"
+        className={cn(
+          'whitespace-nowrap',
+          upcomingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
+        )}
       >
-        <CalendarClockIcon className="size-4" aria-hidden="true" />
+        {upcomingActive ? (
+          <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
+        ) : (
+          <CalendarClockIcon className="size-4" aria-hidden="true" />
+        )}
         {t('upcomingSends')}
       </Button>
 
+      {/* UX review LOW — the default h-9, like the controls beside it (it
+          was `size="sm"`, h-7). */}
       {hasAnyFilter && (
         <Button
           type="button"
           variant="ghost"
-          size="sm"
           onClick={clearAll}
           className="whitespace-nowrap"
         >

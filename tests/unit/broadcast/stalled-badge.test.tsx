@@ -125,7 +125,7 @@ describe('the stalled flag (T111, FR-027)', () => {
     expect(table().queryByText(/Stalled/)).toBeNull();
     // …and no amber pre-warning on the member's clock either (the member has
     // 30 days; amber is the marketing review SLA's): the plain time in stage.
-    expect(table().queryByText(/\d+h waiting/)).toBeNull();
+    expect(table().queryByText(/\d+ h waiting/)).toBeNull();
     expect(table().getByText('2 days')).toBeInTheDocument();
   });
 
@@ -136,10 +136,11 @@ describe('the stalled flag (T111, FR-027)', () => {
       row('member', 'awaiting_member_approval', 80),
     ]);
     // Amber: the existing pre-warning, re-based on time in stage.
-    expect(table().getByText('30h waiting')).toBeInTheDocument();
+    expect(table().getByText('30 h waiting')).toBeInTheDocument();
     expect(table().getAllByText(/^Stalled — /)).toHaveLength(2);
-    // The stalled count names the two stalled rows, not the amber one.
-    expect(screen.getByText('2 stalled in this view')).toBeInTheDocument();
+    // The stalled count names the two stalled rows, not the amber one — on
+    // the rows shown (UX review H3: it is counted on this page, and says so).
+    expect(screen.getByText('2 stalled shown')).toBeInTheDocument();
   });
 
   it('…and is never announced as stalled: the one live region counts only the stalled rows', async () => {
@@ -150,7 +151,6 @@ describe('the stalled flag (T111, FR-027)', () => {
       actorRoleLabel: null,
       segmentLabel: 'All members',
       recipientCount: 10,
-      submittedAtFormatted: '1 Aug 2026, 07:00',
       ageBadge,
       statusBadgeVariant: 'secondary',
       statusBadgeLabel: 'In design',
@@ -164,18 +164,13 @@ describe('the stalled flag (T111, FR-027)', () => {
       deliverySummary: null,
     });
     const labels = {
-      submittedAt: 'Submitted',
       member: 'Member',
       subject: 'Subject',
-      segment: 'Audience',
-      recipientCount: 'Recipients',
+      audience: 'Audience',
+      sendTime: 'Send time',
       status: 'Stage',
       whoseTurn: 'Whose turn',
       timeInStage: 'Time in stage',
-      round: 'Round',
-      proposedSendAt: 'Proposed send',
-      confirmedSendAt: 'Confirmed send',
-      lastActivity: 'Last activity',
       actions: 'Actions',
       select: 'Select broadcast',
       tableAria: 'Broadcast review queue',
@@ -188,13 +183,14 @@ describe('the stalled flag (T111, FR-027)', () => {
     const { container, rerender } = render(queue([enriched('x', null)]));
     rerender(
       queue([
-        enriched('amber', { label: '30h waiting', variant: 'amber' }),
+        enriched('amber', { label: '30 h waiting', variant: 'amber' }),
         enriched('red', { label: 'Stalled — 2 days', variant: 'red' }),
         enriched('none', null),
       ]),
     );
     const region = container.querySelector('[role="status"]');
-    expect(region).toHaveTextContent('3 E-Blasts in this view, 1 stalled');
+    // No view total passed → "shown" (UX review H3); stalled counts only the red row.
+    expect(region).toHaveTextContent('3 E-Blasts shown, 1 stalled shown');
   });
 
   it('a stage nobody is waiting on carries no age badge at all', async () => {

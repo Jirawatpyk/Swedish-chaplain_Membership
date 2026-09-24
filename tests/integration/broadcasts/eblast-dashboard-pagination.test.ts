@@ -259,6 +259,20 @@ describe('SC-008 — the dashboard at 1,000 E-Blasts (T114, live Neon)', () => {
     expect(Date.parse(next.items[0]!.stageEnteredAt)).toBeGreaterThanOrEqual(times.at(-1)!);
   }, 120_000);
 
+  it('a finished-stage view reads most recent first, and the keyset walks backwards across the page boundary (UX review H1)', async () => {
+    const sentView = { statusFilter: ['sent'] as BroadcastStatus[], pageSize: PAGE, sort: 'stage_entered_at_desc' as const };
+    const page = await loadAdminBroadcastQueue(tenant.ctx, sentView);
+    expect(page.items).toHaveLength(PAGE);
+    const times = page.items.map((i) => Date.parse(i.stageEnteredAt));
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    expect(page.nextCursor).not.toBeNull();
+    const next = await loadAdminBroadcastQueue(tenant.ctx, { ...sentView, cursor: page.nextCursor! });
+    const firstIds = new Set(page.items.map((i) => i.broadcastId));
+    expect(next.items.length).toBe((seeded.get('sent') ?? 0) - PAGE);
+    expect(next.items.some((i) => firstIds.has(i.broadcastId))).toBe(false);
+    expect(Date.parse(next.items[0]!.stageEnteredAt)).toBeLessThanOrEqual(times.at(-1)!);
+  }, 120_000);
+
   it('the Upcoming sends preset lists every future Scheduled row in send-time order, across the page boundary, and nothing already due', async () => {
     const from = new Date();
     const seen: number[] = [];

@@ -15,7 +15,7 @@ import {
   stageOf,
   type BroadcastStage,
 } from '@/modules/broadcasts/domain/stage/broadcast-stage';
-import { turnOf, type WhoseTurn } from '@/modules/broadcasts/domain/stage/whose-turn';
+import { isWaitingView, turnOf, type WhoseTurn } from '@/modules/broadcasts/domain/stage/whose-turn';
 import {
   BROADCAST_STATUSES,
   RETIRED_BROADCAST_STATUSES,
@@ -100,5 +100,28 @@ describe('turnOf (FR-026)', () => {
     for (const s of BROADCAST_STATUSES) {
       expect(['marketing', 'member', null]).toContain(turnOf(s));
     }
+  });
+});
+
+/**
+ * UX review H1 — the dashboard sorts "longest in stage first" only when every
+ * stage in the view is one somebody is waiting on; a view that holds any
+ * finished or dispatcher-owned stage (Sent, Closed, show-all) reads most
+ * recent first, or its first page is the OLDEST sends.
+ */
+describe('isWaitingView (UX review H1)', () => {
+  it("is true when every selected stage is someone's turn", () => {
+    expect(isWaitingView(['submitted'])).toBe(true);
+    expect(isWaitingView(['awaiting_member_approval', 'in_design', 'member_approved'])).toBe(true);
+  });
+
+  it("is false as soon as one selected stage is nobody's turn", () => {
+    expect(isWaitingView(['sent'])).toBe(false);
+    expect(isWaitingView(['submitted', 'approved'])).toBe(false);
+    expect(isWaitingView(['expired_no_member_response'])).toBe(false);
+  });
+
+  it('is false for the show-all view (no stage selected) — `[].every` is vacuously true', () => {
+    expect(isWaitingView([])).toBe(false);
   });
 });

@@ -64,6 +64,10 @@ export interface QueueWithBulkProps {
   readonly haltUnknown?: boolean;
   /** F119 T109 — see `QueueTableClientProps.emptyState`. */
   readonly emptyState?: React.ReactNode;
+  /** UX review H1 / M1 / H3 / H4 — see the same props on `QueueTableClientProps`. */
+  readonly order?: QueueTableClientProps['order'];
+  readonly viewTotal?: QueueTableClientProps['viewTotal'];
+  readonly viewKey?: QueueTableClientProps['viewKey'];
 }
 
 export function QueueWithBulk({
@@ -72,6 +76,9 @@ export function QueueWithBulk({
   readOnly = false,
   haltUnknown = false,
   emptyState,
+  order,
+  viewTotal,
+  viewKey,
 }: QueueWithBulkProps): React.ReactElement {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clearNonce, setClearNonce] = useState(0);
@@ -111,6 +118,9 @@ export function QueueWithBulk({
         reselectIds={reselectIds}
         reselectNonce={reselectNonce}
         emptyState={emptyState}
+        {...(order !== undefined && { order })}
+        {...(viewTotal !== undefined && { viewTotal })}
+        {...(viewKey !== undefined && { viewKey })}
       />
       <QueueBulkActionBar
         selectedIds={selectedIds}

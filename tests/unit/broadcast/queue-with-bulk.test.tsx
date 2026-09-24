@@ -70,7 +70,6 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     actorRoleLabel: null,
     segmentLabel: 'All members',
     recipientCount: 42,
-    submittedAtFormatted: '1 Aug 2026, 07:00',
     ageBadge: null,
     statusBadgeVariant: 'secondary',
     statusBadgeLabel: 'Awaiting review',
@@ -87,18 +86,13 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
 }
 
 const LABELS = {
-  submittedAt: 'Submitted',
   member: 'Member',
   subject: 'Subject',
-  segment: 'Audience',
-  recipientCount: 'Recipients',
+  audience: 'Audience',
+  sendTime: 'Send time',
   status: 'Stage',
   whoseTurn: 'Whose turn',
   timeInStage: 'Time in stage',
-  round: 'Round',
-  proposedSendAt: 'Proposed send',
-  confirmedSendAt: 'Confirmed send',
-  lastActivity: 'Last activity',
   actions: 'Actions',
   select: 'Select broadcast',
   tableAria: 'Broadcast review queue',

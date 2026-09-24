@@ -3212,8 +3212,25 @@
         "delivery": {
           "summary": "ผู้รับ {recipients} ราย · ส่งถึง {delivered} · ตีกลับ {bounced} · ร้องเรียน {complained}"
         },
-        "resultsAnnouncement": "{count, plural, =0 {ไม่มี E-Blast ในมุมมองนี้} other {E-Blast # รายการในมุมมองนี้}}{stalled, plural, =0 {} other {, ค้าง # รายการ}}",
-        "stalledSummary": "ค้าง {count} รายการในมุมมองนี้",
+        "resultsAnnouncement": "{count, plural, =0 {ไม่มี E-Blast ในมุมมองนี้} other {E-Blast # รายการในมุมมองนี้}}{stalled, plural, =0 {} other {, ค้าง # รายการที่แสดงอยู่}}",
+        "resultsAnnouncementShown": "{count, plural, =0 {ไม่มี E-Blast ที่แสดงอยู่} other {แสดง E-Blast # รายการ}}{stalled, plural, =0 {} other {, ค้าง # รายการที่แสดงอยู่}}",
+        "stalledSummary": "ค้าง {count} รายการที่แสดงอยู่",
+        "row": {
+          "round": "รอบที่ {round}",
+          "since": "ตั้งแต่ {date}",
+          "proposed": "เวลาที่เสนอ"
+        },
+        "order": {
+          "longestInStage": "เรียงจากรายการที่อยู่ในขั้นตอนนานที่สุด",
+          "mostRecent": "เรียงจากล่าสุดก่อน",
+          "sendTime": "เรียงตามเวลาส่ง"
+        },
+        "pagination": {
+          "label": "หน้าของคิว",
+          "summary": "แสดง {shown} จาก {total} รายการ",
+          "next": "หน้าถัดไป",
+          "first": "หน้าแรก"
+        },
         "ageBadge": {
           "aging": "รอ {hours} ชม.",
           "stalled": "ค้าง — {days} วัน"
@@ -3260,11 +3277,8 @@
         },
         "card": {
           "actionsLabel": "การดำเนินการ",
-          "audienceLabel": "กลุ่มผู้รับ",
-          "recipientsLabel": "ผู้รับ",
-          "submittedLabel": "ส่งเมื่อ",
           "statusLabel": "ขั้นตอน",
-          "whoseTurnLabel": "รอฝ่าย",
+          "whoseTurnLabel": "ถึงคิวใคร",
           "timeInStageLabel": "อยู่ในขั้นตอนนี้"
         },
         "filters": {
@@ -3279,18 +3293,13 @@
           "chipCount": "{count} รายการ"
         },
         "columns": {
-          "submittedAt": "ส่งเมื่อ",
           "member": "สมาชิก",
           "subject": "หัวข้อ",
-          "segment": "ผู้รับ",
-          "recipientCount": "จำนวนผู้รับ",
+          "segment": "กลุ่มผู้รับ",
           "status": "ขั้นตอน",
-          "whoseTurn": "รอฝ่าย",
+          "whoseTurn": "ถึงคิวใคร",
           "timeInStage": "อยู่ในขั้นตอนนี้",
-          "round": "รอบ",
-          "proposedSendAt": "เวลาส่งที่เสนอ",
-          "confirmedSendAt": "เวลาส่งที่ยืนยัน",
-          "lastActivity": "ความเคลื่อนไหวล่าสุด",
+          "sendTime": "เวลาส่ง",
           "actions": "การดำเนินการ"
         },
         "status": {
@@ -3327,7 +3336,6 @@
           "breachWarning": "การตรวจล่าช้า"
         },
         "overdueBanner": "มี {count} รายการรออนุมัติเกิน 48 ชั่วโมง — รีบตรวจสอบ",
-        "truncationNote": "แสดง 50 รายการแรก — กรองเพิ่มเพื่อดูรายการอื่น",
         "haltStateUnavailableTitle": "ไม่สามารถอ่านสถานะระงับการส่งได้",
         "haltStateUnavailable": "ไม่สามารถอ่านสถานะระงับการส่งได้ในขณะนี้ คิวนี้อาจไม่แสดงสมาชิกที่ถูกระงับอยู่ โปรดรีเฟรชก่อนอนุมัติ"
       },

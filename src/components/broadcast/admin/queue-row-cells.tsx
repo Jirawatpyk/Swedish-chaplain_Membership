@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * F119 T117 / T118 — the two cells the queue's desktop table and its phone
- * card list both render, in one place so the two presentations cannot drift
- * apart (the `ageBadge` struct's own rule, one level up).
+ * F119 T117 / T118 — the cells the queue's desktop table and its phone card
+ * list both render, in one place so the two presentations cannot drift apart
+ * (the `ageBadge` struct's own rule, one level up). `SendTime` is table-only:
+ * below `md` the send times live on the detail page (FR-026).
  */
 import { AlertCircle, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -52,4 +53,43 @@ export function TimeInStage({
   }
   if (row.timeInStageLabel === null) return <EmptySentinel />;
   return <span className="tabular-nums text-foreground">{row.timeInStageLabel}</span>;
+}
+
+/**
+ * UX review M1 — the two FR-026 send times in one cell. The confirmed time
+ * when marketing has confirmed one; before that the member's proposal, marked
+ * "Proposed". When the confirmed time differs from the proposal, the proposal
+ * stays on a second line, so both FR-026 times are still on the row. "—" when
+ * neither exists (a draft, or a row that predates the proposal column).
+ *
+ * The marker is a label, so it alone is muted (M6); the times are values.
+ */
+export function SendTime({
+  row,
+  proposedLabel,
+}: {
+  readonly row: Pick<EnrichedQueueRow, 'proposedSendAtFormatted' | 'confirmedSendAtFormatted'>;
+  readonly proposedLabel: string;
+}): React.JSX.Element {
+  const { confirmedSendAtFormatted: confirmed, proposedSendAtFormatted: proposed } = row;
+  if (confirmed === null && proposed === null) return <EmptySentinel />;
+  if (confirmed === null) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="tabular-nums">{proposed}</span>
+        <span className="text-xs text-muted-foreground">{proposedLabel}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="tabular-nums">{confirmed}</span>
+      {proposed !== null && proposed !== confirmed ? (
+        <span className="text-xs">
+          <span className="text-muted-foreground">{proposedLabel}</span>{' '}
+          <span className="tabular-nums">{proposed}</span>
+        </span>
+      ) : null}
+    </div>
+  );
 }

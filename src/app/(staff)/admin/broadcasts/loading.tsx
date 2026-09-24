@@ -26,6 +26,15 @@
  *     two retired statuses from the real strip, and this kept reserving 10 for a
  *     row of 8. Both surfaces now read the same derived tuple, so the count
  *     cannot disagree again.
+ *
+ *     UX review M2 (F119) — with the approval round OFF the strip withholds the
+ *     five round-only stages (R18, `APPROVAL_ROUND_ONLY_STATUSES`) unless a row
+ *     sits in one, so it renders 8 chips, not 13; the skeleton now reads the
+ *     same flag (a synchronous env read) and reserves 8 or 13. A tenant with the
+ *     flag off but a row still in a round-only stage renders one or two chips
+ *     more than reserved — the rare case, and the chips wrap onto the line the
+ *     strip already has.
+ *   - The Upcoming sends button (h-9), which the skeleton did not reserve.
  *   - Table: header row + 6 body rows
  *
  * Bulk-action bar is omitted intentionally — it only renders when the
@@ -36,10 +45,17 @@ import { getTranslations } from 'next-intl/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { OFFERED_BROADCAST_STATUSES } from '@/modules/broadcasts';
+import {
+  APPROVAL_ROUND_ONLY_STATUSES,
+  OFFERED_BROADCAST_STATUSES,
+  isEblastMemberApprovalEnabled,
+} from '@/modules/broadcasts';
 
 export default async function AdminBroadcastsLoading(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
+  const chipCount = isEblastMemberApprovalEnabled()
+    ? OFFERED_BROADCAST_STATUSES.length
+    : OFFERED_BROADCAST_STATUSES.filter((s) => !APPROVAL_ROUND_ONLY_STATUSES.has(s)).length;
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
@@ -62,8 +78,8 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
         <div className="flex flex-col gap-1">
           <Skeleton className="h-5 w-16" />
           <div className="flex flex-wrap gap-2">
-            {Array.from({ length: OFFERED_BROADCAST_STATUSES.length }).map((_, i) => (
-              <Skeleton key={i} className="h-11 w-24 rounded-full" />
+            {Array.from({ length: chipCount }).map((_, i) => (
+              <Skeleton key={i} data-skeleton="stage-chip" className="h-11 w-24 rounded-full" />
             ))}
           </div>
         </div>
@@ -79,6 +95,8 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
           <Skeleton className="h-4 w-20" />
           <Skeleton className="h-9 w-40" />
         </div>
+        {/* The Upcoming sends button — no label above it. */}
+        <Skeleton data-skeleton="upcoming-sends" className="h-9 w-40" />
       </div>
       {/* Table: header + 6 rows */}
       <div className="space-y-2" aria-hidden="true">

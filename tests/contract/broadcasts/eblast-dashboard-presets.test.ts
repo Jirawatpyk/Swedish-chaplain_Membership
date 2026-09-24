@@ -62,6 +62,31 @@ describe('the Upcoming sends preset (T112, FR-028)', () => {
   });
 });
 
+/**
+ * UX review H1 — with no explicit `sort`, the list is ordered for the view it
+ * is: longest in stage first when every stage in it is someone's turn, most
+ * recent first otherwise (a Sent view must open on the latest sends, not the
+ * 50 oldest). The page and this route share the one helper.
+ */
+describe('the default order follows the view (UX review H1)', () => {
+  it.each([
+    ['?status=submitted', 'stage_entered_at_asc'],
+    ['?status=awaiting_member_approval&status=member_approved', 'stage_entered_at_asc'],
+    ['?status=sent', 'stage_entered_at_desc'],
+    ['?status=submitted&status=sent', 'stage_entered_at_desc'],
+    ['?status=not_a_status', 'stage_entered_at_desc'],
+  ])('%s → %s', async (query, sort) => {
+    const { status } = await getQueue(query);
+    expect(status).toBe(200);
+    expect(dash.listCalls.at(-1)!.opts['sort']).toBe(sort);
+  });
+
+  it('an explicit sort still wins', async () => {
+    await getQueue('?status=sent&sort=submitted_at_asc');
+    expect(dash.listCalls.at(-1)!.opts['sort']).toBe('submitted_at_asc');
+  });
+});
+
 describe('delivery results on sent rows (T112, FR-029, FR-036)', () => {
   it('a sent row carries the four counts and no recipient address', async () => {
     dash.rows = [

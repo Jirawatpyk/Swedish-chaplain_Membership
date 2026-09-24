@@ -48,3 +48,17 @@ export function turnOf(status: BroadcastStatus): WhoseTurn {
 export const MARKETING_TURN_STATUSES: readonly BroadcastStatus[] = BROADCAST_STATUSES.filter(
   (status) => TURN_OF[status] === 'marketing',
 );
+
+/**
+ * UX review H1 — whether a dashboard view holds only stages somebody is
+ * waiting on. Such a view reads longest-in-stage first (the oldest wait is the
+ * most urgent); any other view — one with a Sent, Scheduled or closed stage in
+ * it, or the show-all view (no stage selected) — reads most recent first, or
+ * its first page would be the oldest history instead of the latest.
+ *
+ * `[].every(...)` is vacuously true, so the empty (show-all) view is refused
+ * explicitly.
+ */
+export function isWaitingView(statuses: readonly BroadcastStatus[]): boolean {
+  return statuses.length > 0 && statuses.every((status) => TURN_OF[status] !== null);
+}

@@ -60,7 +60,6 @@ function makeRow(id: string): EnrichedQueueRow {
     actorRoleLabel: null,
     segmentLabel: 'All members',
     recipientCount: 42,
-    submittedAtFormatted: '1 Aug 2026, 07:00',
     ageBadge: null,
     statusBadgeVariant: 'secondary',
     statusBadgeLabel: 'Awaiting review',
@@ -76,27 +75,23 @@ function makeRow(id: string): EnrichedQueueRow {
 }
 
 const LABELS = {
-  submittedAt: 'Submitted',
   member: 'Member',
   subject: 'Subject',
-  segment: 'Audience',
-  recipientCount: 'Recipients',
+  audience: 'Audience',
+  sendTime: 'Send time',
   status: 'Stage',
   whoseTurn: 'Whose turn',
   timeInStage: 'Time in stage',
-  round: 'Round',
-  proposedSendAt: 'Proposed send',
-  confirmedSendAt: 'Confirmed send',
-  lastActivity: 'Last activity',
   actions: 'Actions',
   select: 'Select broadcast',
   tableAria: 'Broadcast review queue',
 };
 
+// UX review H3 — the page passes the VIEW total; here the page IS the view.
 function queue(rows: EnrichedQueueRow[], readOnly: boolean) {
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueWithBulk rows={rows} readOnly={readOnly} columnLabels={LABELS} />
+      <QueueWithBulk rows={rows} readOnly={readOnly} columnLabels={LABELS} viewTotal={rows.length} />
     </NextIntlClientProvider>
   );
 }

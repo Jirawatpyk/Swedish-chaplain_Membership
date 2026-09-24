@@ -27,7 +27,8 @@ export interface QueueViewParams {
 /**
  * True only on the pristine default queue view (no filter of any kind
  * active) — matches queue-filters' `hasAnyFilter`, so the overdue
- * banner + truncation note never render over a filtered subset.
+ * banner never renders over a filtered subset (the pager renders on every
+ * view since the F119 dashboard UX review H1).
  */
 export function isDefaultBroadcastView(p: QueueViewParams): boolean {
   return (

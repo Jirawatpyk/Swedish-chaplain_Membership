@@ -20,6 +20,7 @@ import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import {
   hasConfirmedSendTime,
+  isWaitingView,
   makeBroadcastQueueReads,
   makeGetBroadcastDeps,
   stageOf,
@@ -81,6 +82,20 @@ const SENT_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
 ]);
 
 const NO_DELIVERY_EVENTS: DeliveryResult = { recipients: 0, delivered: 0, bounced: 0, complained: 0 };
+
+/**
+ * UX review H1 — the dashboard's order when the URL names none, for the page
+ * AND the list API: the Upcoming sends preset in send-time order; a view of
+ * waiting stages only, longest in stage first; every other view (Sent, Closed,
+ * show-all), most recent first — else its first page is the 50 OLDEST rows.
+ */
+export function queueSortFor(
+  statusFilter: readonly BroadcastStatus[],
+  upcoming: boolean,
+): ListByTenantStatusSort {
+  if (upcoming) return 'scheduled_for_asc';
+  return isWaitingView(statusFilter) ? 'stage_entered_at_asc' : 'stage_entered_at_desc';
+}
 
 /** The Upcoming sends preset's `from` token: `now` is the only one (anything else is not a bound). */
 export function upcomingFrom(token: string | undefined): Date | undefined {

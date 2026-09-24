@@ -48,6 +48,9 @@ export interface NewBroadcastDraftInput {
  *     current stage first, served by `broadcasts_stage_queue_idx`. On the
  *     default Awaiting-marketing-review view it is the old submitted-first
  *     order (submit stamps `stage_entered_at`).
+ *   - `stage_entered_at_desc` — the same column, most recent first: the order
+ *     of every view that is not only waiting stages (Sent, Closed, show-all —
+ *     UX review H1), so its first page is the latest, not the oldest.
  *   - `scheduled_for_asc` — the Upcoming sends preset: send-time order,
  *     served by `broadcasts_tenant_scheduled_idx`.
  * The keyset cursor carries the value of whichever column the sort orders by.
@@ -57,6 +60,7 @@ export type ListByTenantStatusSort =
   | 'submitted_at_desc'
   | 'created_at_desc'
   | 'stage_entered_at_asc'
+  | 'stage_entered_at_desc'
   | 'scheduled_for_asc';
 
 export interface ListByTenantStatusOpts {

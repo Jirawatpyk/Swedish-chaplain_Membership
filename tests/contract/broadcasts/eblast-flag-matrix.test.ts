@@ -267,7 +267,7 @@ describe('the existing E-Blast suite runs flag-off, and nothing it exercises rea
     expect(setup).not.toMatch(/process\.env\[\s*['"]FEATURE_EBLAST_MEMBER_APPROVAL['"]\s*\]\s*=/);
   });
 
-  it('the flag is read only by its definition, the barrel re-export, the version routes\' composition root, the outbox drainer and the staff detail page (affordance only)', () => {
+  it('the flag is read only by its definition, the barrel re-export, the version routes\' composition root, the outbox drainer, the staff detail page (affordance only) and the queue skeleton (layout only)', () => {
     const helperReaders = readersOf(/\bisEblastMemberApprovalEnabled\b/);
     // Positive control: a scan that found nothing would pass the next line vacuously.
     expect(helperReaders).toContain('src/modules/broadcasts/infrastructure/feature-flags.ts');
@@ -278,6 +278,11 @@ describe('the existing E-Blast suite runs flag-off, and nothing it exercises rea
       // on `submitted` the only remaining path is approve-as-submitted, which
       // the page renders in both flag states (FR-007, FR-034).
       'src/app/(staff)/admin/broadcasts/[id]/page.tsx',
+      // UX review M2 — the queue's loading skeleton reserves 8 stage chips
+      // with the flag off and 13 with it on, the number the strip will render
+      // (the round-only chips follow R18). Layout only: no write, no email,
+      // no filter — a wrong count is a few pixels of shift.
+      'src/app/(staff)/admin/broadcasts/loading.tsx',
       // T152a — the drainer's SELECTION skips the five eblast_* types while the
       // flag is off. No pre-F119 test reaches that branch with an F119 row: the
       // F7 / F114 dispatch suites seed none of those types, so their rows are

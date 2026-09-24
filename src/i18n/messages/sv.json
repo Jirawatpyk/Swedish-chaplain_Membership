@@ -3202,7 +3202,7 @@
         "totalPending": "{count} väntar",
         "tableAria": "Granskningskö för utskick",
         "whoseTurn": {
-          "marketing": "Marknadsföring",
+          "marketing": "Marknad",
           "member": "Medlem"
         },
         "timeInStage": {
@@ -3212,8 +3212,25 @@
         "delivery": {
           "summary": "{recipients, plural, one {# mottagare} other {# mottagare}} · {delivered} levererade · {bounced} studsade · {complained} klagomål"
         },
-        "resultsAnnouncement": "{count, plural, =0 {Inga utskick i den här vyn} one {# utskick i den här vyn} other {# utskick i den här vyn}}{stalled, plural, =0 {} other {, # har fastnat}}",
-        "stalledSummary": "{count, plural, one {# har fastnat i den här vyn} other {# har fastnat i den här vyn}}",
+        "resultsAnnouncement": "{count, plural, =0 {Inga utskick i den här vyn} one {# utskick i den här vyn} other {# utskick i den här vyn}}{stalled, plural, =0 {} other {, # av de visade har fastnat}}",
+        "resultsAnnouncementShown": "{count, plural, =0 {Inga utskick visas} one {# utskick visas} other {# utskick visas}}{stalled, plural, =0 {} other {, # av de visade har fastnat}}",
+        "stalledSummary": "{count, plural, one {# av de visade har fastnat} other {# av de visade har fastnat}}",
+        "row": {
+          "round": "Omgång {round}",
+          "since": "sedan {date}",
+          "proposed": "Föreslagen"
+        },
+        "order": {
+          "longestInStage": "Sorterat efter längst tid i steget",
+          "mostRecent": "Sorterat med senaste först",
+          "sendTime": "Sorterat efter utskickstid"
+        },
+        "pagination": {
+          "label": "Sidor i kön",
+          "summary": "Visar {shown} av {total}",
+          "next": "Nästa sida",
+          "first": "Första sidan"
+        },
         "ageBadge": {
           "aging": "{hours} h väntar",
           "stalled": "Fastnat — {days, plural, one {# dag} other {# dagar}}"
@@ -3260,9 +3277,6 @@
         },
         "card": {
           "actionsLabel": "Åtgärder",
-          "audienceLabel": "Målgrupp",
-          "recipientsLabel": "Mottagare",
-          "submittedLabel": "Skickat",
           "statusLabel": "Steg",
           "whoseTurnLabel": "Vems tur",
           "timeInStageLabel": "Tid i steget"
@@ -3279,18 +3293,13 @@
           "chipCount": "{count, plural, one {# utskick} other {# utskick}}"
         },
         "columns": {
-          "submittedAt": "Inskickad",
           "member": "Medlem",
           "subject": "Ämne",
-          "segment": "Mottagare",
-          "recipientCount": "Mottagare",
+          "segment": "Målgrupp",
           "status": "Steg",
           "whoseTurn": "Vems tur",
           "timeInStage": "Tid i steget",
-          "round": "Runda",
-          "proposedSendAt": "Föreslagen sändning",
-          "confirmedSendAt": "Bekräftad sändning",
-          "lastActivity": "Senaste aktivitet",
+          "sendTime": "Utskickstid",
           "actions": "Åtgärder"
         },
         "status": {
@@ -3327,7 +3336,6 @@
           "breachWarning": "Granskningar går långsamt"
         },
         "overdueBanner": "{count, plural, one {# utskick har} other {# utskick har}} väntat i över 48 timmar — granska nu.",
-        "truncationNote": "Visar de första 50 — förfina filtren för att se fler.",
         "haltStateUnavailableTitle": "Spärrstatus kunde inte läsas",
         "haltStateUnavailable": "Spärrstatus kunde inte läsas just nu. Kön kan dölja spärrade medlemmar. Uppdatera innan du godkänner något."
       },

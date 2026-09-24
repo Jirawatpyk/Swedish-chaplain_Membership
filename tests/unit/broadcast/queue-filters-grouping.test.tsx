@@ -123,7 +123,9 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
    * reserved 10 for a row of 8. A count is only as good as the two things it
    * keeps equal.
    */
-  it('renders exactly OFFERED_BROADCAST_STATUSES.length chips — the number the loading skeleton reserves', () => {
+  // UX review M2 — with the approval round on; with it off the skeleton
+  // reserves 8 (`queue-loading-skeleton.test.tsx`).
+  it('renders exactly OFFERED_BROADCAST_STATUSES.length chips with the round on — the number the loading skeleton reserves then', () => {
     render(
       <Provider>
         <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />

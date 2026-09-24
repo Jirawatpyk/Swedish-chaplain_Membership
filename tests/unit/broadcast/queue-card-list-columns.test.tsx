@@ -5,6 +5,12 @@
  * the detail page. No horizontal scroll and no hidden-column menu: the card
  * is a stack of labelled lines, never a squeezed table.
  *
+ * UX review M7 — exactly those five fields: Audience, Recipients and
+ * Submitted left the card (the test used to assert only that Round was
+ * absent, so three extra fields rode along unnoticed). UX review H2 — plus
+ * FR-029's delivery results on a sent row, which the card had dropped.
+ * UX review M6 — the labels are muted, the values are not.
+ *
  * The harness builds the SAME `useReactTable` config `queue-table-client.tsx`
  * uses (see `queue-card-list.test.tsx` for why `columns: []` is faithful).
  */
@@ -44,8 +50,7 @@ const ROW: EnrichedQueueRow = {
   actorRoleLabel: null,
   segmentLabel: 'All members',
   recipientCount: 42,
-  submittedAtFormatted: '20 Sep 2026, 15:00',
-  ageBadge: { label: '30h waiting', variant: 'amber' },
+  ageBadge: { label: '30 h waiting', variant: 'amber' },
   statusBadgeVariant: 'secondary',
   statusBadgeLabel: 'Member approved — awaiting schedule',
   actionable: false,
@@ -88,7 +93,47 @@ describe('<QueueCardList> — the phone-width columns (T115, FR-026)', () => {
     expect(card.getByText('Marketing')).toBeInTheDocument();
     expect(card.getByText(/Time in stage/)).toBeInTheDocument();
     // The SLA badge travels with time in stage, not with the submitted date.
-    expect(card.getByText('30h waiting')).toBeInTheDocument();
+    expect(card.getByText('30 h waiting')).toBeInTheDocument();
+  });
+
+  it('exactly the five phone-width fields: the only labelled lines are Whose turn and Time in stage — no Audience, Recipients or Submitted', () => {
+    render(<Harness rows={[ROW]} />);
+    const card = screen.getByRole('group', { name: 'Autumn gala' });
+    const labels = Array.from(card.querySelectorAll('[data-slot="card-field-label"]')).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(labels).toEqual(['Whose turn', 'Time in stage']);
+    const list = within(screen.getByTestId('queue-card-list'));
+    expect(list.queryByText(/Audience/)).toBeNull();
+    expect(list.queryByText(/Recipients/)).toBeNull();
+    expect(list.queryByText(/Submitted/)).toBeNull();
+    expect(list.queryByText('All members')).toBeNull();
+    expect(list.queryByText('42')).toBeNull();
+  });
+
+  it('a sent row carries its delivery results (FR-029, UX review H2); other rows carry none', () => {
+    const summary = '40 recipients · 37 delivered · 2 bounced · 1 complained';
+    render(
+      <Harness
+        rows={[
+          { ...ROW, broadcastId: 'b-sent', subject: 'Sent one', deliverySummary: summary },
+          { ...ROW, broadcastId: 'b-open', subject: 'Open one' },
+        ]}
+      />,
+    );
+    expect(within(screen.getByRole('group', { name: 'Sent one' })).getByText(summary)).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Open one' })).queryByText(/delivered/)).toBeNull();
+  });
+
+  it('the labels are muted and the values are not (UX review M6)', () => {
+    render(<Harness rows={[ROW]} />);
+    const card = within(screen.getByRole('group', { name: 'Autumn gala' }));
+    expect(card.getByText('Marketing').closest('.text-muted-foreground')).toBeNull();
+    for (const label of screen
+      .getByRole('group', { name: 'Autumn gala' })
+      .querySelectorAll('[data-slot="card-field-label"]')) {
+      expect(label).toHaveClass('text-muted-foreground');
+    }
   });
 
   it('round and both send times are absent below md', () => {

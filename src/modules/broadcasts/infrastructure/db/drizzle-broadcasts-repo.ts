@@ -358,6 +358,7 @@ const LIST_SORTS: Readonly<
   submitted_at_desc: { column: broadcasts.submittedAt, direction: 'desc', keyOf: (r) => r.submittedAt },
   created_at_desc: { column: broadcasts.createdAt, direction: 'desc', keyOf: (r) => r.createdAt },
   stage_entered_at_asc: { column: broadcasts.stageEnteredAt, direction: 'asc', keyOf: (r) => r.stageEnteredAt },
+  stage_entered_at_desc: { column: broadcasts.stageEnteredAt, direction: 'desc', keyOf: (r) => r.stageEnteredAt },
   scheduled_for_asc: { column: broadcasts.scheduledFor, direction: 'asc', keyOf: (r) => r.scheduledFor },
 };
 
