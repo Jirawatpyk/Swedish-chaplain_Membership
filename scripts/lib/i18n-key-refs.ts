@@ -178,6 +178,8 @@ export type KeyRefScan = {
   /** Calls resolved to a namespace and checked against en.json. */
   readonly checked: number;
   readonly missing: readonly MissingKeyRef[];
+  /** The full key of every checked call, present or not. */
+  readonly resolved: readonly string[];
 };
 
 /**
@@ -190,9 +192,9 @@ export function scanKeyRefs(source: string, enKeys: ReadonlySet<string>): KeyRef
   const code = stripCommentsPreserveLines(source);
   const bindings = collectBindings(code);
   const names = new Set(bindings.filter((b) => b.namespace !== null).map((b) => b.name));
-  if (names.size === 0) return { checked: 0, missing: [] };
+  if (names.size === 0) return { checked: 0, missing: [], resolved: [] };
 
-  let checked = 0;
+  const resolved: string[] = [];
   const missing: MissingKeyRef[] = [];
   for (const m of code.matchAll(CALL_RE)) {
     const name = m[1]!;
@@ -207,10 +209,10 @@ export function scanKeyRefs(source: string, enKeys: ReadonlySet<string>): KeyRef
     const literal = m[3] ?? m[4] ?? m[5]!;
     const key = binding.namespace ? `${binding.namespace}.${literal}` : literal;
     const ok = m[2] === 'raw' ? hasKeyOrSubtree(enKeys, key) : enKeys.has(key);
-    checked += 1;
+    resolved.push(key);
     if (!ok) missing.push({ key, line: lineOfIndex(code, m.index) + 1 });
   }
-  return { checked, missing };
+  return { checked: resolved.length, missing, resolved };
 }
 
 /** The `missing` half of {@link scanKeyRefs}. */
@@ -219,4 +221,75 @@ export function findMissingKeyRefs(
   enKeys: ReadonlySet<string>,
 ): readonly MissingKeyRef[] {
   return scanKeyRefs(source, enKeys).missing;
+}
+
+// ---------------------------------------------------------------------------
+// Orphan-key scan (`check:i18n --orphans`, advisory — never fails CI).
+//
+// It used to pool every file's namespaces and every file's `t('…')` literals
+// into two repo-wide lists, so a namespace from one file plus a suffix from
+// ANOTHER counted as a reference — which is how #377's misplaced
+// `admin.creditNotes.new.successWithNumberNoNotice` looked used (the credit-note
+// form declared the namespace, the void dialog called the suffix). Pairing is
+// now per file, and every call `scanKeyRefs` resolves (a `tNav('home')`
+// included, which the literal-`t` regex never saw) counts as a reference.
+// ---------------------------------------------------------------------------
+
+const ORPHAN_T_CALL_RE = /\bt\(\s*['"]([\w.\-]+)['"]/g;
+const ORPHAN_NS_RE = /(?:getTranslations|useTranslations)\(\s*['"]([\w.\-]+)['"]/g;
+// A dotted string literal anywhere else in the file: a namespace or key held as
+// DATA (`dialogNamespace: 'admin.broadcasts.cancelDialog'`, a status → key map).
+const DOTTED_LITERAL_RE = /['"`]([A-Za-z][\w-]*(?:\.[\w-]+)+)['"`]/g;
+
+/** `a.b.c` → `a`, `a.b`. */
+function ancestors(path: string): string[] {
+  const out: string[] = [];
+  for (let i = path.indexOf('.'); i !== -1; i = path.indexOf('.', i + 1)) {
+    out.push(path.slice(0, i));
+  }
+  return out;
+}
+
+/**
+ * en.json keys that no source file references, for the advisory
+ * `check:i18n --orphans` report. `sources` is the text of every scanned file.
+ *
+ * A key counts as referenced when some path P was referenced and the key is P,
+ * lies under P (a parent called for dynamic composition, `t('labels')` then
+ * `` t(`labels.${s}`) ``), or is an ancestor of P. P comes from, per file:
+ * every call `scanKeyRefs` resolves; every literal `t('x')` taken as a full
+ * key; every literal `t('x')` joined to each namespace bound in THAT file; and
+ * every other dotted string literal (a namespace or key held as data). The
+ * `useTranslations`/`getTranslations` arguments themselves are NOT taken as
+ * data — a bound namespace refers to its keys only through that file's calls,
+ * which is the whole #377 fix.
+ * Anything it cannot see (dynamic keys, a `t` passed across files) still
+ * reads as a candidate, so the report stays advisory.
+ */
+export function findOrphanKeys(sources: readonly string[], enKeys: ReadonlySet<string>): string[] {
+  const referenced = new Set<string>();
+  for (const source of sources) {
+    for (const key of scanKeyRefs(source, enKeys).resolved) referenced.add(key);
+    const code = stripCommentsPreserveLines(source);
+    const literals = [...code.matchAll(ORPHAN_T_CALL_RE)].map((m) => m[1]!);
+    const namespaces = [...code.matchAll(ORPHAN_NS_RE)].map((m) => m[1]!);
+    for (const literal of literals) {
+      referenced.add(literal);
+      for (const ns of namespaces) referenced.add(`${ns}.${literal}`);
+    }
+    for (const m of code.replace(ORPHAN_NS_RE, '').matchAll(DOTTED_LITERAL_RE)) {
+      referenced.add(m[1]!);
+    }
+  }
+
+  const referencedAncestors = new Set<string>();
+  for (const path of referenced) for (const a of ancestors(path)) referencedAncestors.add(a);
+
+  const orphans: string[] = [];
+  for (const key of enKeys) {
+    if (referenced.has(key) || referencedAncestors.has(key)) continue;
+    if (ancestors(key).some((a) => referenced.has(a))) continue;
+    orphans.push(key);
+  }
+  return orphans.sort();
 }

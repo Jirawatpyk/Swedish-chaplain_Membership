@@ -20,7 +20,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
-import { scanKeyRefs } from './lib/i18n-key-refs';
+import { findOrphanKeys, scanKeyRefs } from './lib/i18n-key-refs';
 
 const MESSAGES_DIR = resolve(process.cwd(), 'src', 'i18n', 'messages');
 const LOCALES = ['en', 'th', 'sv'] as const;
@@ -352,17 +352,16 @@ async function checkCodeKeyRefs(enKeys: ReadonlySet<string>): Promise<boolean> {
  * or `t('foo.bar')` calls in `src/`. Orphans are dead translations
  * that bloat bundles and confuse i18n liaison reviews.
  *
- * The scanner accepts a literal-only argument extraction (matching
- * T188's static-key invariant ESLint rule) — it does NOT try to
- * resolve variable namespaces or `getTranslations({namespace})`
- * dynamic prefixes. Static `t('error.too_long')` / `t('shell.userMenu')`
- * patterns + `getTranslations('admin.plans')` namespace prefixes are
- * recognised; everything else is conservatively assumed used.
+ * The matching lives in `findOrphanKeys` (scripts/lib/i18n-key-refs.ts):
+ * calls resolved by the key-reference scanner, literal `t('…')` calls
+ * paired with the namespaces bound in the SAME file (it used to pair them
+ * repo-wide, which hid #377's misplaced key), and dotted string literals
+ * held as data. Dynamic keys it cannot see still show up as candidates —
+ * the report is advisory.
  */
 async function findOrphans(enKeys: Set<string>): Promise<string[]> {
   const { readdir, stat } = await import('node:fs/promises');
-  const used = new Set<string>();
-  const namespaces: string[] = [];
+  const sources: string[] = [];
 
   async function walk(dir: string): Promise<void> {
     const entries = await readdir(dir);
@@ -377,53 +376,13 @@ async function findOrphans(enKeys: Set<string>): Promise<string[]> {
         entry.endsWith('.tsx') ||
         entry.endsWith('.js')
       ) {
-        const text = await readFile(path, 'utf8');
-        // t('foo.bar') and t("foo.bar")
-        const tCallRe = /\bt\(\s*['"]([\w.\-]+)['"]/g;
-        let m: RegExpExecArray | null;
-        while ((m = tCallRe.exec(text)) !== null) used.add(m[1]!);
-        // getTranslations('namespace.path')
-        const nsRe = /getTranslations\(\s*['"]([\w.\-]+)['"]/g;
-        while ((m = nsRe.exec(text)) !== null) namespaces.push(m[1]!);
-        // useTranslations('namespace.path')
-        const useNsRe = /useTranslations\(\s*['"]([\w.\-]+)['"]/g;
-        while ((m = useNsRe.exec(text)) !== null) namespaces.push(m[1]!);
+        sources.push(await readFile(path, 'utf8'));
       }
     }
   }
 
   await walk(resolve(process.cwd(), 'src'));
-
-  // For each enKey, count it as used if:
-  //   - exactly matches a `t('full.key')` call, OR
-  //   - any of its prefixes is a known namespace + the suffix is a
-  //     `t('suffix')` call.
-  const orphans: string[] = [];
-  for (const key of enKeys) {
-    if (used.has(key)) continue;
-    let foundViaNs = false;
-    for (const ns of namespaces) {
-      if (key.startsWith(`${ns}.`)) {
-        const suffix = key.slice(ns.length + 1);
-        if (used.has(suffix)) {
-          foundViaNs = true;
-          break;
-        }
-        // Conservative: if any t() call exactly matches a leaf of this
-        // namespace, allow keys nested under it. This avoids false-
-        // positive orphan flags on dynamic key composition.
-        for (const u of used) {
-          if (u === suffix || suffix.startsWith(`${u}.`) || u.startsWith(`${suffix}.`)) {
-            foundViaNs = true;
-            break;
-          }
-        }
-        if (foundViaNs) break;
-      }
-    }
-    if (!foundViaNs) orphans.push(key);
-  }
-  return orphans.sort();
+  return findOrphanKeys(sources, enKeys);
 }
 
 async function main(): Promise<void> {
