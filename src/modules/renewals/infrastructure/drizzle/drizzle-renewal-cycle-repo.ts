@@ -2335,7 +2335,7 @@ export function makeDrizzleRenewalCycleRepo(
         setClause.linkedCreditNoteId = args.linkedCreditNoteId;
       }
       // Migration 0308 — the early-bill marker `deriveMembershipAccess` reads.
-      // Stamp it ONLY on a flip out of a paid/grandfathered period
+      // Stamp it ONLY on a flip out of a PAID period
       // (`upcoming|reminded → awaiting_payment`); every other edge into
       // `awaiting_payment` (e.g. `lapsed →`) has no paid period behind it, so
       // it is cleared, and so is every edge OUT of `awaiting_payment`, so a
