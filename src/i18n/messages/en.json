@@ -3678,6 +3678,7 @@
         "cancelled": "Broadcast cancelled. The member has been notified.",
         "cancelError": "Could not cancel the broadcast. Please try again.",
         "cancelTooLate": "This broadcast can no longer be cancelled — it is past the point where it can be stopped.",
+        "rejectTooLate": "This broadcast can no longer be rejected — it has already started sending.",
         "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
         "member_halted": "Not approved: this member's E-Blasts are halted pending admin review.",
         "member_not_in_good_standing": "Not approved: this member's membership is suspended or terminated, so their E-Blasts cannot be sent.",

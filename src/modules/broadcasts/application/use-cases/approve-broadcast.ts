@@ -171,10 +171,10 @@ export async function approveBroadcast(
         });
       }
 
-      // F119 T166 S-H1 — "the rules that block sending still apply at send
-      // time". Approving makes the row dispatchable, so the owning member's
-      // halt flag and F8 membership access are re-read here, under the row
-      // lock, exactly as submit reads them. Refusals return BEFORE any write
+      // F119 T166 S-H1 — approving makes the row dispatchable, so the owning
+      // member's halt flag and F8 membership access are re-read here, under
+      // the row lock, exactly as submit reads them. This is the LAST read on
+      // this path: dispatch does not re-check standing (quickstart § 3.6). Refusals return BEFORE any write
       // (a `return err()` inside the tx commits nothing written so far).
       const row = await deps.broadcastsRepo.findByIdInTx(
         tx,

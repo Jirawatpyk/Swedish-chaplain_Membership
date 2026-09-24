@@ -1,11 +1,11 @@
 /**
  * F119 T166 S-H1 — the member-side rules that block SENDING, read in one place.
  *
- * Spec § Edge Cases and `src/lib/lapsed-portal-scope.ts` both rely on "the
- * existing rules that block sending still apply at send time". Until T166
- * only `submitBroadcast` applied them, so the minutes-long submit → approve
- * edge — and F119's 30-day approval round — let a member who was halted, or
- * whose membership lapsed, have an E-Blast approved and sent. The rules:
+ * Spec § Edge Cases and `src/lib/lapsed-portal-scope.ts` rely on the rules
+ * that block sending being re-applied after submit. Until T166 only
+ * `submitBroadcast` applied them, so the minutes-long submit → approve edge —
+ * and F119's 30-day approval round — let a member who was halted, or whose
+ * membership lapsed, have an E-Blast approved and sent. The rules:
  *
  *   k. the halt flag — the member's broadcasts are halted pending admin
  *      review (complaint-rate auto-halt, Clarifications Q14);
@@ -15,6 +15,14 @@
  * `submitBroadcast`, `approveBroadcast` (approve-as-submitted) and
  * `confirmSchedule`'s promotion (`member_approved → approved`) all read them
  * through `readMemberSendStanding`, so the three cannot drift apart.
+ *
+ * WHERE the gate runs — exactly those three edges, the ones that make a row
+ * dispatchable, and nowhere later. It is NOT a send-time check: neither
+ * dispatch path (`dispatchScheduledBroadcast`, `buildAudienceTick`) reads
+ * standing, so an `approved` E-Blast scheduled days ahead is still sent if the
+ * member is halted, suspended or loses coverage in between — including by a
+ * refund or full credit note, which ends coverage immediately since migration
+ * 0306 (#383). Tracked as a follow-up (quickstart § 3.6).
  *
  * Fail CLOSED, never open: a halt read that throws is `halt_read_failed`, an
  * access lookup error is `access_unavailable` — each caller turns both into a

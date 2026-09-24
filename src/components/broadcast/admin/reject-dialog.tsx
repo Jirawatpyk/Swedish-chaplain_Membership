@@ -12,10 +12,21 @@
  * reason state, the double-RAF textarea auto-focus, validation, the counter,
  * pending, and reset-on-open. Behavior is preserved exactly:
  *   - max 2000, reason required, verbatim (untrimmed) reason in the body.
- *   - success → toast 'rejected' + close + refresh; any 409 → 'concurrentRace'
- *     + close + refresh; other non-ok / network → 'error', dialog stays open.
+ *   - success → toast 'rejected' + close + refresh.
+ *   - 409 split by body.error.code (F119 round-2 finding 4), each closing
+ *     FIRST and toasting after, so the toast is not born under the modal's
+ *     aria-hidden outside:
+ *       'sending_started' (T081 widened reject into stages where the send may
+ *       have begun)                  → 'rejectTooLate' — too late, not a race
+ *       anything else                → 'concurrentRace'
+ *     The route maps `RejectBroadcastError` only, which has no
+ *     `broadcast_cancel_too_late` arm, so that code is not read here.
+ *   - 429 (the 30 / 60 s staff write bucket) and 5xx / network throw keep the
+ *     dialog open for a retry, reason intact, and say so INSIDE it (the shared
+ *     dialog's `refusal`, `role="alert"`, focused — ux-standards § 6.4): a
+ *     toast would render behind the modal.
  */
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -51,6 +62,9 @@ export function RejectDialog({
   fallbackFocusRef,
 }: RejectDialogProps): React.ReactElement {
   const tToast = useTranslations('admin.broadcasts.toast');
+  // The staff write bucket's refusal — the same copy the approval-round
+  // actions read for the same 429 (`broadcast_rate_limit_exceeded`).
+  const tApprovalErrors = useTranslations('admin.broadcasts.approval.errors');
   const router = useRouter();
   // F7-A11Y-1 — raised on the success / 409 close (both run router.refresh() →
   // the ReviewActions trigger Button unmounts). finalFocus reads it to SKIP the
@@ -63,7 +77,15 @@ export function RejectDialog({
     closedViaSuccessRef,
   );
 
+  // A retryable failure, said inside the open dialog. `seq` makes a repeat a
+  // new node (announced again) — this runs inside the shared dialog's
+  // transition, so the clear below never commits on its own.
+  const [refusal, setRefusal] = useState<{ message: string; field: null; seq: number } | null>(null);
+  const refuse = (message: string): void =>
+    setRefusal((prev) => ({ message, field: null, seq: (prev?.seq ?? 0) + 1 }));
+
   async function onConfirm(reason: string): Promise<void> {
+    setRefusal(null);
     try {
       const res = await fetch(`/api/admin/broadcasts/${broadcastId}/reject`, {
         method: 'POST',
@@ -77,15 +99,24 @@ export function RejectDialog({
         onOpenChange(false);
         router.refresh();
       } else if (res.status === 409) {
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: { code?: string };
+        };
         closedViaSuccessRef.current = true;
-        toast.error(tToast('concurrentRace'));
         onOpenChange(false);
+        toast.error(
+          json.error?.code === 'sending_started'
+            ? tToast('rejectTooLate')
+            : tToast('concurrentRace'),
+        );
         router.refresh();
+      } else if (res.status === 429) {
+        refuse(tApprovalErrors('broadcast_rate_limit_exceeded'));
       } else {
-        toast.error(tToast('error'));
+        refuse(tToast('error'));
       }
     } catch {
-      toast.error(tToast('error'));
+      refuse(tToast('error'));
     }
   }
 
@@ -100,6 +131,7 @@ export function RejectDialog({
       textareaRows={5}
       onConfirm={onConfirm}
       finalFocus={finalFocus}
+      refusal={refusal}
     />
   );
 }

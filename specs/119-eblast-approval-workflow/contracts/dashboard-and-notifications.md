@@ -293,7 +293,7 @@ inventory, from `src/lib/metrics.ts` and from `docs/observability.md` § 29 — 
 unregistered (`/speckit.analyze` M2). This table is the registration list; a metric not on it does
 not exist.
 
-### 4.3 Alerts (`docs/observability.md` § 29 — the file ends at § 27, line 2205)
+### 4.3 Alerts (`docs/observability.md` § 29 — F119's section, after `main`'s § 28 on the `0306` membership-coverage end)
 
 | condition | severity | why |
 |---|---|---|

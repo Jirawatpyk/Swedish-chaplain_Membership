@@ -278,10 +278,11 @@ otherwise it is the record's own content.
 | field | PR | why |
 |---|---|---|
 | `subject`, `bodyHtml` (from the broadcast record's own content — already on the wire; PR-1 pins them and builds the screen) | **PR-1**, task T141 | FR-049 is a screen-standard fix; it needs no new column and no version row |
-| `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt`, and "the body is the latest **sent** version while awaiting the member" | **PR-2**, task T141a | every one of these reads a `0305` column (`proposed_send_at`, `current_round`, `stage_entered_at`), the `broadcast_versions` table, or the Domain `stageOf`/`turnOf` maps (T052) — none of which exists in PR-1 |
+| `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt`, and "the body is the latest **sent** version while awaiting the member" | **PR-2**, task T141a | every one of these reads a `0308` column (`proposed_send_at`, `current_round`, `stage_entered_at`), the `broadcast_versions` table, or the Domain `stageOf`/`turnOf` maps (T052) — none of which exists in PR-1 |
 
 A PR-1 implementation of the second row is not merely early, it does not compile: the columns and
-the table are created by migration `0305`, which ships with PR-2.
+the table are created by migration `0308`, which ships with PR-2.
+*Renumbered at merge (2026-09-24): `main` took `0305`–`0307` while PR-2 was open, so the F119 bundle ships as `0308` (`idx 309`, `when 1798544100000`); see `data-model.md`.*
 
 ---
 

@@ -303,9 +303,11 @@ plan Amendment 6):
 | PR | accepted stages | what it serves | refusal outside the set |
 |---|---|---|---|
 | **PR-1** (`0304`, task T106) | `draft`, `submitted` | the staff **compose-on-behalf** draft — the half of US3-AS3 PR-1 can honestly satisfy | 409 `stage_changed` |
-| **PR-2** (`0305`, task T106a) | `draft`, `submitted`, **`in_design`** | marketing illustrating the formatted version — the other half of US3-AS3 | 409 `stage_changed` |
+| **PR-2** (`0308`, task T106a) | `draft`, `submitted`, **`in_design`** | marketing illustrating the formatted version — the other half of US3-AS3 | 409 `stage_changed` |
 
-`in_design` is a `broadcast_status` value migration `0305` introduces, so a PR-1 route gated on it
+*Renumbered at merge (2026-09-24): `main` took `0305`–`0307` while PR-2 was open, so the F119 bundle ships as `0308` (`idx 309`, `when 1798544100000`); see `data-model.md`.*
+
+`in_design` is a `broadcast_status` value migration `0308` introduces, so a PR-1 route gated on it
 could only ever answer 409 and its success path could never go green. A **sent** version is
 read-only (FR-003), so `awaiting_member_approval` and everything after it stay refused in both PRs.
 Together with the tenant check this is the "a staff user adds an image to another member's E-Blast:

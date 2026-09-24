@@ -1452,6 +1452,21 @@ Migrations `0304` and `0308` are **not** undone by any layer; reversing them is 
 four in `0304`, ten in `0308` — and 5 `notification_type` values). Layer 3 needs layer 2 first:
 PR-2 builds on PR-1.
 
+### 3.6 Known follow-ups
+
+- **The member-standing gate does not run at dispatch** (whole-branch review round 2). The halt
+  flag and F8 membership access (`readMemberSendStanding`) are read at submit, approve-as-submitted
+  and confirm-schedule's promotion — the edges that make a row dispatchable — and nowhere later:
+  neither `dispatchScheduledBroadcast` nor `buildAudienceTick` reads them, which is also true on
+  `main`. Since `main`'s migration `0306` (#383) a refund or a full credit note ends coverage
+  immediately, so an E-Blast **already `approved` and scheduled days ahead is still sent** after the
+  member is refunded, suspended or halted. Spec § Edge Cases ("the existing rules that block
+  sending still apply at send time") is therefore met at the approval edges only. Until the fix
+  lands, cancel the member's `approved` rows by hand when their coverage ends. Proposed fix: each
+  dispatch path reads standing before any Resend call; a refusal moves the row to
+  `failed_to_dispatch` with its own reason, audits, and notifies; a failed read leaves the row
+  `approved` for the next tick.
+
 ---
 
 ## 4. SweCham UAT (FR-035, US7, SC-005)

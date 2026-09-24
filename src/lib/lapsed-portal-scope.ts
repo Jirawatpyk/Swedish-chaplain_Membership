@@ -127,8 +127,11 @@ const UUID_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
  * terminated member may still OPEN their own E-Blast and DECIDE on a pending
  * version, or cancel it: reading and deciding are not benefit actions, and a
  * member whose membership ended must still be able to stop an E-Blast going
- * out under their name. Sending stays blocked at send time by the existing
- * rules, not here.
+ * out under their name. Sending is blocked by the existing standing rules, not
+ * here — they run at submit, approve-as-submitted and confirm-schedule's
+ * promotion (`_member-send-standing.ts`), NOT at dispatch, so an E-Blast
+ * already `approved` before the membership ended still sends unless it is
+ * cancelled (quickstart § 3.6).
  *
  * EXACT paths, never prefixes: `/api/broadcasts/**` also holds the benefit-
  * consuming routes (`submit`, `draft/**`, `inline-image-upload`, `preview`,

@@ -3678,6 +3678,7 @@
         "cancelled": "Utskicket har avbrutits. Medlemmen har meddelats.",
         "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
         "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
+        "rejectTooLate": "Detta utskick kan inte längre avvisas — det har redan börjat skickas.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
         "member_halted": "Inte godkänt: medlemmens E-Blast-utskick är spärrade i väntan på administratörsgranskning.",
         "member_not_in_good_standing": "Inte godkänt: medlemmens medlemskap är avstängt eller avslutat, så E-Blast-utskicket kan inte skickas.",
