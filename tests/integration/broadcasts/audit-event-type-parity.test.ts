@@ -41,9 +41,17 @@ describe('F7 audit_event_type ↔ F7AuditEventType parity', () => {
           label === 'member_missing_primary_contact'),
     });
 
+    // The SQL→TS direction is scoped to values a migration IN THIS TREE
+    // declares — the CI/dev Neon branch is SHARED, so a sibling branch's
+    // migration puts values there this branch cannot (and must not) add to the
+    // tuple. Same rule as the F5 parity test; foreign values are warned about
+    // by the helper and listed below for triage.
     expect(
-      { missingInSql: result.missingInSql, missingInTs: result.missingInTs },
-      `Drift detected:\n  SQL missing TS values: ${JSON.stringify(result.missingInSql)}\n  TS tuple missing SQL values: ${JSON.stringify(result.missingInTs)}\n\nAdd a migration to extend audit_event_type, OR update F7_AUDIT_EVENT_TYPES in audit-port.ts (and bump _AssertF7AuditEventCount accordingly).`,
+      {
+        missingInSql: result.missingInSql,
+        missingInTs: result.missingInTsDeclaredHere,
+      },
+      `Drift detected:\n  SQL missing TS values: ${JSON.stringify(result.missingInSql)}\n  TS tuple missing SQL values (declared by a migration in THIS tree): ${JSON.stringify(result.missingInTsDeclaredHere)}\n\nAdd a migration to extend audit_event_type, OR update F7_AUDIT_EVENT_TYPES in audit-port.ts (and bump _AssertF7AuditEventCount accordingly).\n\nIgnored as sibling-branch values (no declaring migration in this tree): ${JSON.stringify(result.missingInTsForeign)}`,
     ).toEqual({ missingInSql: [], missingInTs: [] });
   });
 });
