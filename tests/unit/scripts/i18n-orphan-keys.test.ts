@@ -53,6 +53,24 @@ describe('findOrphanKeys — must NOT report', () => {
     expect(findOrphanKeys([a], new Set(['buttons.save']))).toEqual([]);
   });
 
+  it('keys under a namespace passed as data (config-driven useTranslations(namespace))', () => {
+    // cancel-broadcast-action.tsx hands `dialogNamespace: 'admin.broadcasts.cancelDialog'`
+    // to a dialog that calls useTranslations(namespace) — invisible to per-file pairing.
+    const config = `const ADMIN = { dialogNamespace: 'admin.broadcasts.cancelDialog' };`;
+    const dialog = `const t = useTranslations(namespace); t('confirm');`;
+    expect(
+      findOrphanKeys(
+        [config, dialog],
+        new Set(['admin.broadcasts.cancelDialog.confirm', 'admin.broadcasts.cancelDialog.cancel']),
+      ),
+    ).toEqual([]);
+  });
+
+  it('a full key stored as data and rendered through a root translator', () => {
+    const src = `const LABELS = { paid: 'admin.invoices.status.paid' };`;
+    expect(findOrphanKeys([src], new Set(['admin.invoices.status.paid']))).toEqual([]);
+  });
+
   it('keys under a parent that the same file calls (dynamic composition)', () => {
     const src = `
       const t = useTranslations('admin.status');

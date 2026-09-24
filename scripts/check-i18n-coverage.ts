@@ -352,12 +352,12 @@ async function checkCodeKeyRefs(enKeys: ReadonlySet<string>): Promise<boolean> {
  * or `t('foo.bar')` calls in `src/`. Orphans are dead translations
  * that bloat bundles and confuse i18n liaison reviews.
  *
- * The scanner accepts a literal-only argument extraction (matching
- * T188's static-key invariant ESLint rule) — it does NOT try to
- * resolve variable namespaces or `getTranslations({namespace})`
- * dynamic prefixes. Static `t('error.too_long')` / `t('shell.userMenu')`
- * patterns + `getTranslations('admin.plans')` namespace prefixes are
- * recognised; everything else is conservatively assumed used.
+ * The matching lives in `findOrphanKeys` (scripts/lib/i18n-key-refs.ts):
+ * calls resolved by the key-reference scanner, literal `t('…')` calls
+ * paired with the namespaces bound in the SAME file (it used to pair them
+ * repo-wide, which hid #377's misplaced key), and dotted string literals
+ * held as data. Dynamic keys it cannot see still show up as candidates —
+ * the report is advisory.
  */
 async function findOrphans(enKeys: Set<string>): Promise<string[]> {
   const { readdir, stat } = await import('node:fs/promises');
