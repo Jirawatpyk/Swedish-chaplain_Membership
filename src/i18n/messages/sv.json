@@ -979,6 +979,13 @@
         "errors": {
           "targetYearPopulated": "Målåret {year} har redan paket. Ta bort dem eller välj ett annat år.",
           "noPlans": "Källåret {year} har inga paket att klona."
+        },
+        "preview": {
+          "title": "Paket som kopieras från {sourceYear}",
+          "loading": "Läser in paket…",
+          "failed": "Det gick inte att läsa in årets paket. Kloningen kopierar dem ändå.",
+          "empty": "Inga paket för {sourceYear}.",
+          "inactive": "inaktivt"
         }
       },
       "confirm": {

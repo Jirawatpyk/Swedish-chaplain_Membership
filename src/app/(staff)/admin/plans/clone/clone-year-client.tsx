@@ -1,24 +1,49 @@
 /**
- * Client shell for /admin/plans/clone — source/target pickers +
- * confirmation dialog + POST + toast.
+ * Client shell for /admin/plans/clone — source/target pickers, a
+ * read-only preview of the plans the clone will copy, confirmation
+ * dialog + POST + toast.
  */
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatSatangThb } from '@/lib/format-thb';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { CloneYearDialog } from '@/components/plans/clone-year-dialog';
+import { LocaleTextDisplay } from '@/components/plans/locale-text-display';
+import type { LocaleText } from '@/modules/plans';
+
+/** One row of the "plans to copy" preview (a subset of `PlanListItem`). */
+export interface CloneSourcePlan {
+  readonly plan_id: string;
+  readonly plan_name: LocaleText;
+  readonly annual_fee_minor_units: number;
+  readonly is_active: boolean;
+}
 
 export interface CloneYearClientProps {
   readonly defaultSourceYear: number;
   readonly defaultTargetYear: number;
-  readonly defaultSourcePlanCount: number;
+  /** Tenant currency for the preview's fees. */
+  readonly currencyCode: string;
+  /** Non-deleted plans of `defaultSourceYear`, as the clone will copy them. */
+  readonly defaultSourcePlans: ReadonlyArray<CloneSourcePlan>;
+}
+
+function toSourcePlans(data: unknown): ReadonlyArray<CloneSourcePlan> {
+  if (!Array.isArray(data)) return [];
+  return data.map((p: CloneSourcePlan) => ({
+    plan_id: p.plan_id,
+    plan_name: p.plan_name,
+    annual_fee_minor_units: p.annual_fee_minor_units,
+    is_active: p.is_active,
+  }));
 }
 
 function freshIdempotencyKey(): string {
@@ -31,9 +56,11 @@ function freshIdempotencyKey(): string {
 export function CloneYearClient({
   defaultSourceYear,
   defaultTargetYear,
-  defaultSourcePlanCount,
+  currencyCode,
+  defaultSourcePlans,
 }: CloneYearClientProps) {
   const router = useRouter();
+  const locale = useLocale();
   const t = useTranslations('admin.plans');
   const tClone = useTranslations('admin.plans.clone');
 
@@ -56,9 +83,16 @@ export function CloneYearClient({
   // Clone button is disabled while null, so we never quote a stale count (from
   // the previous year, during the debounce) or a falsely-zero count (on a
   // transient fetch error) — code-review follow-up to BUG-010.
-  const [sourcePlanCount, setSourcePlanCount] = useState<number | null>(
-    defaultSourcePlanCount,
+  // The preview list is the count's source of truth (count = its length),
+  // so both refetch together. `previewFailed` separates a failed fetch from
+  // one still loading, for the list's copy only — the count shows "…" for
+  // either.
+  const [sourcePlans, setSourcePlans] = useState<ReadonlyArray<CloneSourcePlan> | null>(
+    defaultSourcePlans,
   );
+  const [previewCurrency, setPreviewCurrency] = useState(currencyCode);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const sourcePlanCount = sourcePlans?.length ?? null;
 
   // Refetch the pre-flight count whenever the Source year changes (free-typed
   // number input). A hand-rolled debounce is deliberate here — NOT
@@ -70,19 +104,21 @@ export function CloneYearClient({
   // the clone always uses the real Source year server-side — so a failed count
   // fetch must NOT block the Clone button (it doesn't; see the button below).
   useEffect(() => {
+    setPreviewFailed(false);
     if (sourceYear === defaultSourceYear) {
-      setSourcePlanCount(defaultSourcePlanCount);
+      setSourcePlans(defaultSourcePlans);
+      setPreviewCurrency(currencyCode);
       return;
     }
     if (sourceYear < 2000 || sourceYear > 2100) {
       // Out-of-range — including transient digits ("2"/"20"/"202") while the
       // admin is still typing a year — is UNKNOWN, not "0 plans". Show "…".
-      setSourcePlanCount(null);
+      setSourcePlans(null);
       return;
     }
     // onChange already blanked to null synchronously; keep it null here too
     // (defensive, and covers a programmatic sourceYear change).
-    setSourcePlanCount(null);
+    setSourcePlans(null);
     let cancelled = false;
     const handle = setTimeout(() => {
       void (async () => {
@@ -91,14 +127,21 @@ export function CloneYearClient({
             credentials: 'same-origin',
           });
           if (!res.ok) throw new Error(`status ${res.status}`);
-          const body = (await res.json()) as { data?: unknown };
+          const body = (await res.json()) as {
+            data?: unknown;
+            meta?: { currency_code?: string };
+          };
           if (!cancelled) {
-            setSourcePlanCount(Array.isArray(body.data) ? body.data.length : 0);
+            setSourcePlans(toSourcePlans(body.data));
+            if (body.meta?.currency_code) setPreviewCurrency(body.meta.currency_code);
           }
         } catch {
           // Leave the count UNKNOWN (null → "…") on a transient failure — do
           // NOT coerce to 0 (falsely "no plans"). Clone stays clickable.
-          if (!cancelled) setSourcePlanCount(null);
+          if (!cancelled) {
+            setSourcePlans(null);
+            setPreviewFailed(true);
+          }
         }
       })();
     }, 350);
@@ -106,7 +149,7 @@ export function CloneYearClient({
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [sourceYear, defaultSourceYear, defaultSourcePlanCount]);
+  }, [sourceYear, defaultSourceYear, defaultSourcePlans, currencyCode]);
 
   async function handleConfirm(): Promise<void> {
     setSubmitting(true);
@@ -191,7 +234,7 @@ export function CloneYearClient({
               // stranding it at "…" — a no-op setSourceYear would not re-run the
               // effect that restores the count.
               if (nextYear !== sourceYear) {
-                setSourcePlanCount(null);
+                setSourcePlans(null);
               }
             }}
           />
@@ -210,6 +253,44 @@ export function CloneYearClient({
           />
         </div>
       </div>
+      <section aria-labelledby="clone-preview-title" className="space-y-2">
+        <h3 id="clone-preview-title" className="text-sm font-medium">
+          {tClone('preview.title', { sourceYear })}
+        </h3>
+        {sourcePlans === null ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            {previewFailed ? tClone('preview.failed') : tClone('preview.loading')}
+          </p>
+        ) : sourcePlans.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            {tClone('preview.empty', { sourceYear })}
+          </p>
+        ) : (
+          <ul
+            aria-labelledby="clone-preview-title"
+            className="divide-y rounded-md border text-sm"
+          >
+            {sourcePlans.map((p) => (
+              <li
+                key={p.plan_id}
+                className="flex items-center justify-between gap-4 px-3 py-2"
+              >
+                <span className="min-w-0 truncate">
+                  <LocaleTextDisplay value={p.plan_name} />
+                  {p.is_active ? null : (
+                    <span className="text-muted-foreground">
+                      {' '}({tClone('preview.inactive')})
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 tabular-nums">
+                  {formatSatangThb(BigInt(p.annual_fee_minor_units), locale, previewCurrency)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <div className="flex items-center justify-between gap-4">
         <Label htmlFor="activate_cloned" className="flex-1">
           {tClone('activateClonedLabel')}

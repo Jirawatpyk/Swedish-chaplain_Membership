@@ -979,6 +979,13 @@
         "errors": {
           "targetYearPopulated": "Target year {year} already has plans. Delete or choose another year.",
           "noPlans": "Source year {year} has no plans to clone."
+        },
+        "preview": {
+          "title": "Plans to copy from {sourceYear}",
+          "loading": "Loading plans…",
+          "failed": "Couldn't load the plans for this year. Cloning still copies them.",
+          "empty": "No plans in {sourceYear}.",
+          "inactive": "inactive"
         }
       },
       "confirm": {

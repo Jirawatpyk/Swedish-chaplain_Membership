@@ -58,7 +58,15 @@ export default async function CloneYearPage({
       clock: deps.clock,
     },
   );
-  const sourcePlanCount = listResult.ok ? listResult.value.data.length : 0;
+  const sourcePlans = listResult.ok
+    ? listResult.value.data.map((p) => ({
+        plan_id: p.plan_id,
+        plan_name: p.plan_name,
+        annual_fee_minor_units: p.annual_fee_minor_units,
+        is_active: p.is_active,
+      }))
+    : [];
+  const currencyCode = listResult.ok ? listResult.value.meta.currency_code : 'THB';
 
   return (
     <FormContainer>
@@ -71,7 +79,8 @@ export default async function CloneYearPage({
           <CloneYearClient
             defaultSourceYear={sourceYear}
             defaultTargetYear={targetYear}
-            defaultSourcePlanCount={sourcePlanCount}
+            currencyCode={currencyCode}
+            defaultSourcePlans={sourcePlans}
           />
         </CardContent>
       </Card>
