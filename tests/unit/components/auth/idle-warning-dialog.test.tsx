@@ -119,6 +119,28 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     vi.unstubAllGlobals();
   });
 
+  it('"Sign out now" is voluntary — it signs out and redirects but does NOT show the inactivity toast', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    renderDialog();
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Sign out'));
+    });
+    // Same sign-out POST as the timeout path…
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/sign-out', {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // …but the member chose to leave, so they are NOT told they were inactive
+    // (matches the user-menu sign-out, which shows no success toast).
+    expect(toast.info).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it('BUG-018: a transient 5xx/429 heartbeat re-warns (re-opens) but does NOT immediately sign the user out', async () => {
     // Pre-fix, stayAction force-signed-out on ANY non-OK heartbeat. Now a
     // transient 500 (Neon/Upstash blip) or 429 (heartbeat rate limit) does NOT
