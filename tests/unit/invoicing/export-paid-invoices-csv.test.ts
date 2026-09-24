@@ -18,7 +18,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 
 const BOM = '﻿';
 const HEADER_LINE =
-  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method,Payment Date';
+  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method,Tax Point Date';
 
 function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
   const base = {
@@ -293,9 +293,29 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     expect(result.value.rowCount).toBe(2);
-    // "Paid At" is when it was marked paid; the trailing "Payment Date" column
-    // is the tax point that put the row in this month.
+    // "Paid At" is when it was marked paid; the trailing "Tax Point Date"
+    // column is the date that put the row in this month.
     expect(result.value.csv).toMatch(/2026-06-02T03:00:00Z,manual,2026-05-31\r\n/);
+  });
+
+  it('a combined-mode row (no RC/RE) takes its issue date as the tax point', async () => {
+    // The §87 INV was a §86/4 tax invoice at issue, so §78/1(1)(ก) fixes the
+    // tax point at issue — not at the later payment.
+    const combined = makeInvoice({
+      issueDate: '2026-04-28',
+      paymentDate: '2026-05-10',
+      paidAt: '2026-05-10T03:00:00Z',
+      receiptDocumentNumberRaw: null,
+    });
+    const deps = makeDeps([combined]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-04-01',
+      to: '2026-04-30',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.csv).toMatch(/,manual,2026-04-28\r\n/);
   });
 
   it('refuses an impossible calendar date without querying', async () => {

@@ -121,13 +121,21 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
   const rcVoid = randomUUID();
   const eventId = randomUUID();
   const regRe = randomUUID();
-  // May: combined-mode rows (the §87 INV number IS the receipt; no RC/RE) —
-  // paid before the tax-at-payment switch, or with the flag off.
+  // Combined-mode rows (the §87 INV number IS the §86/4 tax invoice; no
+  // RC/RE) — issued before the tax-at-payment switch, or with the flag off.
+  // Issued in APRIL, paid in MAY: a tax invoice issued before payment fixes
+  // the tax point at its issue date (§78/1(1)(ก)), so they belong to April.
   const combinedPaid = randomUUID();
   const combinedCredited = randomUUID();
   const combinedVoid = randomUUID();
+  const combinedUnpaid = randomUUID();
 
-  function combinedReceipt(o: { invoiceId: string; sequenceNumber: number; paymentDate: string }) {
+  function combinedReceipt(o: {
+    invoiceId: string;
+    sequenceNumber: number;
+    issueDate: string;
+    paymentDate: string;
+  }) {
     return {
       ...paidReceipt({
         invoiceId: o.invoiceId,
@@ -142,6 +150,40 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
       receiptDocumentNumberRaw: null,
       sequenceNumber: o.sequenceNumber,
       documentNumber: `INV-2026-${String(o.sequenceNumber).padStart(6, '0')}`,
+      issueDate: o.issueDate,
+      dueDate: o.issueDate,
+    };
+  }
+
+  /** An issued, not-yet-paid combined-mode INV — a tax invoice already. */
+  function combinedIssuedUnpaid(o: { invoiceId: string; sequenceNumber: number; issueDate: string }) {
+    return {
+      tenantId: tenant.ctx.slug,
+      invoiceId: o.invoiceId,
+      invoiceSubject: 'membership' as const,
+      memberId: MEMBER_ID,
+      planYear: 2026,
+      planId: 'parity-plan',
+      draftByUserId: user.userId,
+      status: 'issued' as const,
+      fiscalYear: 2026,
+      sequenceNumber: o.sequenceNumber,
+      documentNumber: `INV-2026-${String(o.sequenceNumber).padStart(6, '0')}`,
+      issueDate: o.issueDate,
+      dueDate: '2026-05-30',
+      subtotalSatang: 100_000n,
+      vatRateSnapshot: '0.0700',
+      vatSatang: 7_000n,
+      totalSatang: 107_000n,
+      creditedTotalSatang: 0n,
+      proRatePolicySnapshot: 'monthly',
+      netDaysSnapshot: 30,
+      tenantIdentitySnapshot: SNAP_TENANT,
+      memberIdentitySnapshot: SNAP_MEMBER,
+      pdfDocKind: 'invoice' as const,
+      pdfBlobKey: 'invoicing/parity/unpaid.pdf',
+      pdfSha256: 'd'.repeat(64),
+      pdfTemplateVersion: 8,
     };
   }
 
@@ -341,13 +383,25 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
           subtotalSatang: 50_000n,
           vatSatang: 3_500n,
         }),
-        combinedReceipt({ invoiceId: combinedPaid, sequenceNumber: 501, paymentDate: '2026-05-10' }),
+        combinedReceipt({
+          invoiceId: combinedPaid,
+          sequenceNumber: 501,
+          issueDate: '2026-04-27',
+          paymentDate: '2026-05-10',
+        }),
         combinedReceipt({
           invoiceId: combinedCredited,
           sequenceNumber: 502,
+          issueDate: '2026-04-28',
           paymentDate: '2026-05-12',
         }),
-        combinedReceipt({ invoiceId: combinedVoid, sequenceNumber: 503, paymentDate: '2026-05-14' }),
+        combinedReceipt({
+          invoiceId: combinedVoid,
+          sequenceNumber: 503,
+          issueDate: '2026-04-29',
+          paymentDate: '2026-05-14',
+        }),
+        combinedIssuedUnpaid({ invoiceId: combinedUnpaid, sequenceNumber: 504, issueDate: '2026-04-30' }),
         // §105 RE receipt (event, no TIN) in July — real 7% output VAT.
         {
           tenantId: slug,
@@ -494,22 +548,40 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
     expect(csvVatSatang(jun.csv)).toBe(junRegister.grossVat);
   });
 
-  it('combined-mode receipts still export, and the register flags the month as incomplete', async () => {
-    const may = await exportMonth('2026-05-01', '2026-05-31');
-    // Paid + credited export on their tax point; the void does not.
-    expect(csvInvoiceNumbers(may.csv)).toEqual(['INV-2026-000501', 'INV-2026-000502']);
-    expect(csvVatSatang(may.csv)).toBe(14_000n);
+  it('combined-mode tax invoices are bucketed by issue date, and flag that month incomplete', async () => {
+    // April — the issue month. Paid + credited export; the void and the
+    // unpaid one do not (this is the paid-invoices CSV).
+    const apr = await exportMonth('2026-04-01', '2026-04-30');
+    expect(csvInvoiceNumbers(apr.csv)).toEqual(['INV-2026-000501', 'INV-2026-000502']);
+    expect(csvVatSatang(apr.csv)).toBe(14_000n);
 
-    // The register lists only RC/RE receipts, so none of the three appear and
-    // its gross VAT is 0 — the month cannot be "the figure to report".
-    const result = await listTaxDocumentRegister(
-      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
-      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-05-01', to: '2026-05-31' },
-    );
-    if (!result.ok) throw new Error('register failed');
-    expect(result.value.rows).toEqual([]);
-    expect(result.value.periodOutputVat.rcVatSatang).toBe('0');
-    expect(result.value.legacyCombinedCount).toBe(2);
-    expect(result.value.periodStatus).toBe('closed_month_incomplete');
+    // May — the payment month holds none of them.
+    const may = await exportMonth('2026-05-01', '2026-05-31');
+    expect(csvInvoiceNumbers(may.csv)).toEqual([]);
+
+    // The register lists only RC/RE, so April's figure is incomplete: the
+    // three non-void combined INVs (unpaid one included — it is already a tax
+    // invoice) are counted.
+    const deps = makeListTaxDocumentRegisterDeps(tenant.ctx.slug);
+    const aprRegister = await listTaxDocumentRegister(deps, {
+      tenantId: tenant.ctx.slug,
+      kind: 'rc_register',
+      from: '2026-04-01',
+      to: '2026-04-30',
+    });
+    if (!aprRegister.ok) throw new Error('register failed');
+    expect(aprRegister.value.rows).toEqual([]);
+    expect(aprRegister.value.legacyCombinedCount).toBe(3);
+    expect(aprRegister.value.periodStatus).toBe('closed_month_incomplete');
+
+    const mayRegister = await listTaxDocumentRegister(deps, {
+      tenantId: tenant.ctx.slug,
+      kind: 'rc_register',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!mayRegister.ok) throw new Error('register failed');
+    expect(mayRegister.value.legacyCombinedCount).toBe(0);
+    expect(mayRegister.value.periodStatus).toBe('closed_month');
   });
 });
