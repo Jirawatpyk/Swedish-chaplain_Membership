@@ -1334,7 +1334,8 @@
         "zero": {
           "title": "No members yet",
           "description": "Add your first member to get started.",
-          "cta": "Add your first member"
+          "cta": "Add your first member",
+          "adminOnlyHint": "Members will appear here once an admin adds them."
         },
         "filtered": {
           "title": "No members match these filters",
@@ -4829,14 +4830,16 @@
           "noIntegration": {
             "title": "No events yet",
             "body": "Set up your EventCreate integration to start importing attendees automatically.",
-            "cta": "Set up EventCreate integration"
+            "cta": "Set up EventCreate integration",
+            "adminOnlyHint": "Events will appear here once an admin sets up the EventCreate integration."
           },
           "noDeliveries": {
             "title": "Waiting for first event",
             "body": "Your Zap should deliver new attendee data within about 15 minutes after their EventCreate registration. You can also send a test webhook to verify the connection.",
             "primaryCta": "Send a test event",
             "cta": "View integration settings",
-            "illustrationAlt": "Empty inbox illustration"
+            "illustrationAlt": "Empty inbox illustration",
+            "adminOnlyHint": "New attendee data should arrive within about 15 minutes of an EventCreate registration. If nothing arrives, ask an admin to check the integration."
           },
           "allArchived": {
             "title": "All events are archived",

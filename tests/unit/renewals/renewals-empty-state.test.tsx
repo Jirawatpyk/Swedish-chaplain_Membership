@@ -14,16 +14,18 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { RenewalsEmptyState } from '@/app/(staff)/admin/renewals/_components/empty-state';
+import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 
 beforeEach(() => vi.useRealTimers());
 
 function renderEmpty(props?: {
   suspendedInWindowCount?: number;
   suspendedOutsideWindowCount?: number;
+  canManageSchedules?: boolean;
 }) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <RenewalsEmptyState {...props} />
+      <RenewalsEmptyState canManageSchedules {...props} />
     </NextIntlClientProvider>,
   );
 }
@@ -58,5 +60,36 @@ describe('RenewalsEmptyState × suspended bridge (A2)', () => {
       'href',
       '/admin/invoices?status=issued&subject=membership',
     );
+  });
+});
+
+/**
+ * The "Review schedule settings" link targets
+ * `/admin/settings/renewals/schedules`, gated on
+ * `settings.renewal_schedules` — which manager lacks, so a manager who
+ * followed it hit a 404. The link follows the evaluated permission.
+ */
+describe('RenewalsEmptyState × settings.renewal_schedules', () => {
+  function renderAs(role: 'manager' | 'admin') {
+    return renderEmpty({
+      canManageSchedules: hasPermission(role, 'settings.renewal_schedules'),
+    });
+  }
+
+  it('manager: the schedule-settings link is hidden; the members CTA stays', () => {
+    renderAs('manager');
+    expect(
+      screen.queryByRole('link', { name: en.admin.renewals.empty.settingsLink }),
+    ).toBeNull();
+    expect(
+      screen.getByRole('link', { name: en.admin.renewals.empty.cta }),
+    ).toHaveAttribute('href', '/admin/members');
+  });
+
+  it('admin: the schedule-settings link renders', () => {
+    renderAs('admin');
+    expect(
+      screen.getByRole('link', { name: en.admin.renewals.empty.settingsLink }),
+    ).toHaveAttribute('href', '/admin/settings/renewals/schedules');
   });
 });
