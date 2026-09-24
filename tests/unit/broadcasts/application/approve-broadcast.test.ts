@@ -251,6 +251,8 @@ function makeRepo(opts: RepoOpts): {
 const baseInput = {
   broadcastId,
   actorUserId: 'admin-7',
+  // T166 follow-up — the session role, recorded as held on a standing-refusal audit row.
+  actorRole: 'marketing',
   decision: { mode: 'send_now' as const },
   requestId: 'req-1',
 };
@@ -411,6 +413,8 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
         .fn()
         .mockRejectedValue(new Error('bridge boom')),
     } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    const { logger } = await import('@/lib/logger');
+    const warn = vi.spyOn(logger, 'warn');
     const result = await approveBroadcast(
       {
         tenant,
@@ -425,6 +429,10 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     );
     expect(result.ok).toBe(true);
     expect(email.memberCalls[0]?.locale).toBe('sv'); // input fallback
+    // T166 follow-up (R-M4 class) — the error CLASS, never the message.
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ err: 'Error' }), 'broadcasts.locale_resolve_failed');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('bridge boom');
+    warn.mockRestore();
   });
 
   // ---- send_now path ---------------------------------------------------
@@ -631,13 +639,9 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe('approve.server_error');
-      if (result.error.kind === 'approve.server_error') {
-        expect(result.error.message).toBe('db down');
-      }
-    }
+    // T166 follow-up (R-M4 class) — the error CLASS only; the raw message
+    // (a Neon error's bound parameters) never reaches the route's log.
+    expect(result).toEqual({ ok: false, error: { kind: 'approve.server_error', errKind: 'Error' } });
   });
 
   it('non-Error thrown โ’ approve.server_error with "unknown error" message', async () => {
@@ -647,9 +651,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
-    if (!result.ok && result.error.kind === 'approve.server_error') {
-      expect(result.error.message).toBe('unknown error');
-    }
+    expect(result).toEqual({ ok: false, error: { kind: 'approve.server_error', errKind: 'unknown' } });
   });
 
   // ---- T166 S-H1 — the send-time standing + halt rules ----------------
@@ -659,13 +661,19 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
   // and sent anyway. The approval now re-reads them, under the row lock, with
   // the SAME helper submit uses.
 
-  const approveWith = (standing: FakeSendStandingOpts, repoOpts: RepoOpts = { lockedStatus: 'submitted' }) => {
+  const approveWith = (
+    standing: FakeSendStandingOpts,
+    repoOpts: RepoOpts = { lockedStatus: 'submitted' },
+    input: typeof baseInput | Omit<typeof baseInput, 'actorRole'> & { actorRole: string | null } = baseInput,
+  ) => {
     const repo = makeRepo(repoOpts);
     const sendStanding = makeFakeSendStanding(standing);
+    const audit = makeAudit();
     return {
       repo,
       sendStanding,
-      result: approveBroadcast({ tenant, broadcastsRepo: repo.port, sendStanding, audit: makeAudit().port, clock }, baseInput),
+      audit,
+      result: approveBroadcast({ tenant, broadcastsRepo: repo.port, sendStanding, audit: audit.port, clock }, input),
     };
   };
 
@@ -681,14 +689,45 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
   });
 
   it.each([{ haltReadThrows: true }, { access: 'lookup_error' as const }])(
-    'T166 S-H1: a standing read that cannot be answered (%o) fails CLOSED → approve.server_error, no transition',
+    'T166 S-H1: a standing read that cannot be answered (%o) fails CLOSED → approve.server_error, no transition, no refusal audit',
     async (standing) => {
-      const { repo, result } = approveWith(standing);
+      const { repo, audit, result } = approveWith(standing);
       const r = await result;
       expect(r.ok ? null : r.error.kind).toBe('approve.server_error');
       expect(repo.transitions).toHaveLength(0);
+      // The gate was never decided — recording a refusal would be a false row.
+      expect(audit.emits).toEqual([]);
     },
   );
+
+  // T166 follow-up — submit audits the same two refusals; approve now does too,
+  // with the SAME event types, so "why was this member's E-Blast refused" is
+  // one query whichever surface refused it. Staff act → `related_member_id`
+  // (never `member_id`: the 0009 last_activity_at trigger must not fire).
+  it.each([
+    { standing: { halted: ['m-1'] }, eventType: 'broadcast_member_halted_pending_review' },
+    { standing: { access: 'terminated' as const }, eventType: 'broadcast_membership_suspended_blocked' },
+    { standing: { access: 'suspended' as const }, eventType: 'broadcast_membership_suspended_blocked' },
+  ])('T166 follow-up: the $eventType refusal is audited — ids only, the session role as held', async ({ standing, eventType }) => {
+    const { audit, result } = approveWith(standing);
+    expect((await result).ok).toBe(false);
+    expect(audit.emits).toEqual([
+      {
+        tenantId: 'test-tenant',
+        eventType,
+        actorUserId: 'admin-7',
+        requestId: 'req-1',
+        summary: `Approve refused (${eventType}) for member m-1`,
+        payload: { related_member_id: 'm-1', broadcast_id: broadcastId, surface: 'approve_as_submitted', actor_role: 'marketing' },
+      },
+    ]);
+  });
+
+  it('T166 follow-up: a refusal with no session role records actor_role null — never a stand-in', async () => {
+    const { audit, result } = approveWith({ halted: ['m-1'] }, { lockedStatus: 'submitted' }, { ...baseInput, actorRole: null });
+    await result;
+    expect(audit.emits[0]!.payload).toMatchObject({ actor_role: null });
+  });
 
   it('T166 S-H1: the row vanishing under the lock → broadcast_not_found, no standing read, no transition', async () => {
     const { repo, sendStanding, result } = approveWith({}, { lockedStatus: 'submitted', row: null });

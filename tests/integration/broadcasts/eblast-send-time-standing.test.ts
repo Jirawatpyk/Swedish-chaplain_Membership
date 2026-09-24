@@ -11,11 +11,19 @@
  * lapsed — after submitting had the E-Blast approved and sent. Both now
  * refuse with 409: a terminated member → `member_not_in_good_standing`, a
  * halted member → `member_halted`; the row is left exactly as it was.
+ *
+ * T166 follow-up — each refusal also writes submit's own refusal audit row
+ * (`broadcast_member_halted_pending_review` / `…_membership_suspended_blocked`).
+ * The promotion's row is written on AUTOCOMMIT after its tx rolled back
+ * (tx null → the pool-global `db`), so only a read-back on live Postgres
+ * proves it lands under RLS + FORCE; it is read here inside the tenant's own
+ * RLS slice.
  */
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { makeConfirmScheduleDeps } from '@/lib/broadcast-approval-deps';
 import { asBroadcastId, makeApproveBroadcastDeps } from '@/modules/broadcasts';
 import { approveBroadcast } from '@/modules/broadcasts/application/use-cases/approve-broadcast';
@@ -116,6 +124,20 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     ...patch,
   });
 
+  /** The audit rows this call wrote, read inside the tenant's RLS slice. */
+  const readAudits = (requestId: string) =>
+    runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ eventType: auditLog.eventType, actorUserId: auditLog.actorUserId, payload: auditLog.payload })
+        .from(auditLog)
+        .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.requestId, requestId))),
+    );
+
+  const EVENT_OF = {
+    member_halted: 'broadcast_member_halted_pending_review',
+    member_not_in_good_standing: 'broadcast_membership_suspended_blocked',
+  } as const;
+
   const readRow = (id: string) =>
     runInTenant(tenant.ctx, async (tx) =>
       (await tx.select().from(broadcasts).where(and(eq(broadcasts.tenantId, tenant.ctx.slug), eq(broadcasts.broadcastId, id))))[0]!,
@@ -145,37 +167,55 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
   }
 
   it.each([
-    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' },
-    { standing: 'halted' as const, kind: 'member_halted' },
-  ])('the promotion (member_approved → approved) for a $standing member → $kind, the row untouched', async ({ standing, kind }) => {
-    const id = await seedMemberApproved(await seedMember(standing));
+    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' as const },
+    { standing: 'halted' as const, kind: 'member_halted' as const },
+  ])('the promotion (member_approved → approved) for a $standing member → $kind, the row untouched, the refusal audited', async ({ standing, kind }) => {
+    const memberId = await seedMember(standing);
+    const id = await seedMemberApproved(memberId);
     const before = await readRow(id);
+    const requestId = `standing-confirm-${randomUUID()}`;
     const r = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), {
       broadcastId: asBroadcastId(id),
       actorUserId: MARKETER,
       actorRole: 'marketing',
-      requestId: null,
+      requestId,
       mode: { mode: 'send_now' },
     });
-    expect(r.ok ? r.value.stage : r.error).toEqual({ kind });
+    expect(r.ok ? r.value.stage : r.error).toEqual({ kind, memberId });
     expect(await readRow(id)).toEqual(before);
+    expect(await readAudits(requestId)).toEqual([
+      {
+        eventType: EVENT_OF[kind],
+        actorUserId: MARKETER,
+        payload: { related_member_id: memberId, broadcast_id: id, surface: 'schedule_confirm', actor_role: 'marketing' },
+      },
+    ]);
   });
 
   it.each([
-    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' },
-    { standing: 'halted' as const, kind: 'member_halted' },
-  ])('approve-as-submitted (submitted → approved) for a $standing member → $kind, the row untouched', async ({ standing, kind }) => {
+    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' as const },
+    { standing: 'halted' as const, kind: 'member_halted' as const },
+  ])('approve-as-submitted (submitted → approved) for a $standing member → $kind, the row untouched, the refusal audited', async ({ standing, kind }) => {
     const memberId = await seedMember(standing);
     const row = baseRow(memberId, {});
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
     const before = await readRow(row.broadcastId!);
+    const requestId = `standing-approve-${randomUUID()}`;
     const r = await approveBroadcast(makeApproveBroadcastDeps(tenant.ctx.slug), {
       broadcastId: asBroadcastId(row.broadcastId!),
       actorUserId: MARKETER,
+      actorRole: 'marketing',
       decision: { mode: 'send_now' },
-      requestId: null,
+      requestId,
     });
     expect(r.ok ? r.value.status : r.error).toEqual({ kind, memberId });
     expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await readAudits(requestId)).toEqual([
+      {
+        eventType: EVENT_OF[kind],
+        actorUserId: MARKETER,
+        payload: { related_member_id: memberId, broadcast_id: row.broadcastId, surface: 'approve_as_submitted', actor_role: 'marketing' },
+      },
+    ]);
   });
 });

@@ -207,7 +207,7 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
 
   it('T166 R-L2: a day-23 warning that reaches nobody (no member contact, empty roster) still advances once, and says so in a warn — the same line as day 3 / 7', async () => {
     const h = harness({ broadcasts: [awaitingRow({ memberReminderStage: 2 })] }, { contacts: false });
-    vi.mocked(h.deps.marketingDirectory.listRecipients).mockResolvedValue([]);
+    vi.mocked(h.deps.marketingDirectory.readRoster).mockResolvedValue([]);
     const { logger } = await import('@/lib/logger');
     vi.mocked(logger.warn).mockClear();
     expect(await h.tick(23)).toMatchObject({ warningsSent: 1 });
@@ -217,6 +217,72 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
       expect.objectContaining({ reminder: 'day23', tenantId: TENANT }),
       'M119.cron.approval_lifecycle.no_member_recipient',
     );
+  });
+
+  // T166 follow-up (the R-L3 class) — the roster is a pool-global read (`users`
+  // has no tenant). Read inside each row tx it held a second connection while
+  // the row lock was held, once per staff notice. It is now read ONCE per tick,
+  // before any row tx; the empty-roster count stays "one per committed hand-off
+  // that reached nobody" (the counting `listRecipients` is no longer called).
+  describe('T166 follow-up — the marketing roster is read once per tick, outside every row lock', () => {
+    const SECOND = '11111111-1111-4111-8111-111111111112' as Broadcast['broadcastId'];
+    const V2 = 'aaaaaaaa-0000-4000-8000-000000000002';
+    const twoWarnings = () =>
+      harness({
+        broadcasts: [awaitingRow({ memberReminderStage: 2 }), awaitingRow({ broadcastId: SECOND, memberReminderStage: 2 })],
+        versions: [sentV1(), makeApprovalVersion({ id: V2, broadcastId: SECOND, versionNo: 1, sentToMemberAt: T0 })],
+      });
+
+    it('two staff notices in one tick → one readRoster, before the first row tx; listRecipients never', async () => {
+      const h = twoWarnings();
+      const order: string[] = [];
+      vi.mocked(h.deps.marketingDirectory.readRoster).mockImplementation(async () => {
+        order.push('roster');
+        return [MARKETER];
+      });
+      const lockForUpdate = h.store.broadcastsRepo.lockForUpdate;
+      const spy = vi.spyOn(h.store.broadcastsRepo, 'lockForUpdate').mockImplementation(async (...args) => {
+        order.push('lock');
+        return lockForUpdate(...args);
+      });
+      expect(await h.tick(23)).toMatchObject({ warningsSent: 2, rowsFailed: 0 });
+      expect(h.deps.marketingDirectory.readRoster).toHaveBeenCalledTimes(1);
+      expect(h.deps.marketingDirectory.listRecipients).not.toHaveBeenCalled();
+      expect(order).toEqual(['roster', 'lock', 'lock']);
+      expect(h.store.outbox.rows().filter((r) => r.contextData.audience === 'staff')).toHaveLength(2);
+      spy.mockRestore();
+    });
+
+    it('an empty roster is counted once per committed staff hand-off — never for a reminder-only tick', async () => {
+      const h = twoWarnings();
+      vi.mocked(h.deps.marketingDirectory.readRoster).mockResolvedValue([]);
+      await h.tick(23);
+      expect(h.deps.marketingDirectory.reportEmptyRoster).toHaveBeenCalledTimes(2);
+
+      const reminderOnly = harness({ broadcasts: [awaitingRow()] });
+      vi.mocked(reminderOnly.deps.marketingDirectory.readRoster).mockResolvedValue([]);
+      expect(await reminderOnly.tick(3)).toMatchObject({ remindersSent: 1 });
+      expect(reminderOnly.deps.marketingDirectory.reportEmptyRoster).not.toHaveBeenCalled();
+    });
+
+    it('a tick with nothing due reads no roster at all', async () => {
+      const h = harness({ broadcasts: [] });
+      await h.tick(3);
+      expect(h.deps.marketingDirectory.readRoster).not.toHaveBeenCalled();
+    });
+
+    it('a roster read that fails fails only the rows that need it: the member reminder still goes', async () => {
+      const h = harness({
+        broadcasts: [awaitingRow(), awaitingRow({ broadcastId: SECOND, memberReminderStage: 2 })],
+        versions: [sentV1(), makeApprovalVersion({ id: V2, broadcastId: SECOND, versionNo: 1, sentToMemberAt: at(-20) })],
+      });
+      vi.mocked(h.deps.marketingDirectory.readRoster).mockRejectedValue(new TypeError('pool exhausted'));
+      // Row 1 is at day 3 (a member reminder); row 2 entered 20 days earlier, so day 23 (needs staff).
+      const secondRow = h.store.state.broadcasts.get(`${TENANT}::${SECOND}`)!;
+      h.store.state.broadcasts.set(`${TENANT}::${SECOND}`, { ...secondRow, stageEnteredAt: at(-20) });
+      expect(await h.tick(3)).toMatchObject({ remindersSent: 1, warningsSent: 0, rowsFailed: 1 });
+      expect(h.store.outbox.rows().map((r) => r.contextData.kind)).toEqual(['reminder_day3']);
+    });
   });
 
   it('the scan and every row transaction set their own statement timeout', async () => {

@@ -123,6 +123,7 @@ import {
   type BulkApproveDecision,
 } from '@/components/broadcast/admin/bulk-approve-confirm-dialog';
 import { cancelApprovedBroadcasts } from '@/components/broadcast/admin/send-now-undo';
+import { STANDING_REFUSAL_CODES } from '@/components/broadcast/approval/approval-error';
 
 const BULK_CHUNK = 5;
 
@@ -170,6 +171,9 @@ export function QueueBulkActionBar({
   const t = useTranslations('admin.broadcasts.queue.bulk');
   const tUndo = useTranslations('admin.broadcasts.queue.bulk.undo');
   const tProgress = useTranslations('admin.broadcasts.queue.bulk.progress');
+  // T166 follow-up — the single approve dialog's standing-refusal copy, reused
+  // to say WHY rows were not approved (not a race: a retry will not help).
+  const tToast = useTranslations('admin.broadcasts.toast');
   const router = useRouter();
   const [executing, setExecuting] = useState(false);
 
@@ -326,6 +330,16 @@ export function QueueBulkActionBar({
         (o): o is Extract<Outcome, { ok: false }> => !o.ok,
       );
       const succeeded = outcomes.length - failures.length;
+      // T166 follow-up — each distinct standing refusal, named once, in the
+      // order first seen; no description at all when there is none.
+      const reasons = [
+        ...new Set(
+          failures
+            .map((f) => f.code)
+            .filter((c): c is string => c !== null && STANDING_REFUSAL_CODES.has(c) && tToast.has(c)),
+        ),
+      ].map((c) => tToast(c));
+      const description = reasons.length > 0 ? reasons.join(' ') : null;
 
       if (failures.length === 0) {
         toast.success(t('successAll'));
@@ -334,7 +348,8 @@ export function QueueBulkActionBar({
         // asking the caller to.
         onClear();
       } else if (succeeded === 0) {
-        toast.error(t('failureAll'));
+        if (description === null) toast.error(t('failureAll'));
+        else toast.error(t('failureAll'), { description });
         // Keep the bar mounted (selection unchanged) so the admin can retry
         // without re-selecting.
         //
@@ -343,7 +358,9 @@ export function QueueBulkActionBar({
         // back to `false` and the button is re-enabled.
         focusRetryOnEnableRef.current = true;
       } else {
-        toast.warning(t('partial', { ok: succeeded, fail: failures.length }));
+        const partial = t('partial', { ok: succeeded, fail: failures.length });
+        if (description === null) toast.warning(partial);
+        else toast.warning(partial, { description });
         // Task 6 CF-2 — tell the caller which ids failed so it can decide
         // what to do with the selection (see queue-with-bulk.tsx's module
         // docstring for the caller's current acceptable-minimum handling).
@@ -390,7 +407,7 @@ export function QueueBulkActionBar({
     } finally {
       setExecuting(false);
     }
-  }, [cappedIds, executing, onClear, onPartialFailure, router, t, tUndo]);
+  }, [cappedIds, executing, onClear, onPartialFailure, router, t, tToast, tUndo]);
 
   // T086a V2 — Clear empties the selection, so this bar returns null and the
   // focused Clear button goes with it: focus fell to `<body>`. Hand it to the

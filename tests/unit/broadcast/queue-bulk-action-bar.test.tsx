@@ -509,6 +509,57 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
     expect(onClear).not.toHaveBeenCalled();
   });
 
+  // T166 follow-up — approve-as-submitted refuses a halted / suspended /
+  // terminated member (409 member_halted / member_not_in_good_standing). The
+  // per-row outcome already carried the code; the toast only counted. It now
+  // names each standing reason, so the admin knows WHY those rows were not
+  // approved (not a race — retrying will not help).
+  it('a partial failure names the standing reason in the toast description', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        String(url).includes('b2')
+          ? jsonResponse({ error: { code: 'member_halted' } }, 409)
+          : jsonResponse({ ok: true }),
+      ),
+    );
+    render(
+      <Provider>
+        <QueueBulkActionBar selectedIds={['b1', 'b2']} onClear={vi.fn()} readOnly={false} recipientByIdRows={[]} />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+    expect(toastWarning).toHaveBeenCalledWith('1 approved, 1 failed.', {
+      description: enMessages.admin.broadcasts.toast.member_halted,
+    });
+  });
+
+  it('a total failure names every distinct standing reason once', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        jsonResponse({ error: { code: String(url).includes('b1') ? 'member_not_in_good_standing' : 'member_halted' } }, 409),
+      ),
+    );
+    render(
+      <Provider>
+        <QueueBulkActionBar selectedIds={['b1', 'b2', 'b3']} onClear={vi.fn()} readOnly={false} recipientByIdRows={[]} />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    const [message, opts] = toastError.mock.calls[0] as [string, { description: string }];
+    expect(message).toBe(enMessages.admin.broadcasts.queue.bulk.failureAll);
+    expect(opts.description).toBe(
+      `${enMessages.admin.broadcasts.toast.member_not_in_good_standing} ${enMessages.admin.broadcasts.toast.member_halted}`,
+    );
+  });
+
   it('clicking Clear calls onClear without hitting the network', () => {
     const onClear = vi.fn();
     render(

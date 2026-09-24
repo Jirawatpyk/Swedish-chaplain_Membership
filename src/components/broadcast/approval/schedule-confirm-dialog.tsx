@@ -61,7 +61,7 @@ import {
   isoToBangkokInput,
 } from '@/components/broadcast/bangkok-datetime';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { approvalErrorMessage, readErrorCode } from './approval-error';
+import { approvalErrorMessage, readErrorCode, STANDING_REFUSAL_CODES } from './approval-error';
 import { InlineError } from './inline-error';
 
 /** The route's floor (`approve-broadcast.ts` / `confirm-schedule.ts`). */
@@ -203,6 +203,12 @@ export function ScheduleConfirmAction({
           setProposalUsable(false);
           setMode('schedule');
           setFieldError(message);
+          return;
+        }
+        if (res.status === 409 && code !== null && STANDING_REFUSAL_CODES.has(code)) {
+          // T166 follow-up — the member's standing refused the promotion; the
+          // row did not move, so say it here and keep the trigger's focus.
+          setFormError(message);
           return;
         }
         if (res.status === 409 || res.status === 404) {

@@ -39,7 +39,9 @@
  * The promotion re-reads the owning member's halt flag and F8 membership
  * access under the row lock (T166 S-H1, the rules submit applies): halted →
  * `member_halted`, suspended / terminated → `member_not_in_good_standing`, a
- * read that cannot be answered → `server_error` (fail closed). A re-time of an
+ * read that cannot be answered → `server_error` (fail closed). Both refusals
+ * write submit's own refusal audit row after the rollback (T166 follow-up,
+ * `standingRefusalAuditEvent`); a fail-closed read writes none. A re-time of an
  * already `approved` row does not re-read them — the promotion is the edge
  * where the row becomes dispatchable.
  *
@@ -69,6 +71,7 @@
  */
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../../domain/broadcast';
@@ -86,9 +89,14 @@ import type { EblastNotificationOutboxPort } from '../../ports/eblast-notificati
 import type { ImageAllowlistPort } from '../../ports/image-allowlist-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
+import { safeAuditEmit } from '../_safe-audit-emit';
 import { MIN_SCHEDULE_LEAD_MS } from '../approve-broadcast';
 import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist';
-import { readMemberSendStanding, type MemberSendStandingDeps } from '../_member-send-standing';
+import {
+  readMemberSendStanding,
+  standingRefusalAuditEvent,
+  type MemberSendStandingDeps,
+} from '../_member-send-standing';
 import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
 import { chooseApprovalRecipient } from './_approval-recipient';
 
@@ -144,9 +152,9 @@ export type ConfirmScheduleError =
   | { readonly kind: 'sending_started'; readonly status: BroadcastStatus }
   | { readonly kind: 'no_proposal' }
   /** T166 S-H1 — the owning member's broadcasts are halted pending admin review. */
-  | { readonly kind: 'member_halted' }
+  | { readonly kind: 'member_halted'; readonly memberId: string }
   /** T166 S-H1 — the owning member's membership is suspended or terminated (F8). */
-  | { readonly kind: 'member_not_in_good_standing' }
+  | { readonly kind: 'member_not_in_good_standing'; readonly memberId: string }
   | { readonly kind: 'schedule_too_soon'; readonly scheduledFor: Date }
   | { readonly kind: 'image_source_not_allowlisted'; readonly images: readonly UnsafeImageSource[] }
   /** An infrastructure fault; `errKind` is the error CLASS only (never `e.message` — F7-5). */
@@ -274,6 +282,23 @@ export async function confirmSchedule(
         surface: { kind: 'broadcast', broadcastId: input.broadcastId as string, useCase: 'confirm-schedule' },
       });
     }
+    if (refusal.kind === 'member_halted' || refusal.kind === 'member_not_in_good_standing') {
+      // T166 follow-up — submit's own refusal row, written AFTER the rollback
+      // (a row on the refused tx would roll back with it): best-effort on
+      // autocommit, exactly like the cross-tenant probe above.
+      const event = standingRefusalAuditEvent({
+        refusal: refusal.kind === 'member_halted' ? 'halted' : 'not_in_good_standing',
+        surface: 'schedule_confirm',
+        tenantSlug: slug,
+        memberId: refusal.memberId,
+        broadcastId: input.broadcastId as string,
+        actorUserId: input.actorUserId,
+        actorRole: input.actorRole,
+        requestId: input.requestId,
+      });
+      await safeAuditEmit(deps.audit, null, event);
+      broadcastsMetrics.auditEmitCount(slug, event.eventType);
+    }
     if (refusal.kind === 'image_source_not_allowlisted') {
       await emitUnsafeImageSourcesAudit(deps.audit, {
         tenantId: slug,
@@ -296,9 +321,9 @@ async function assertMemberMaySend(deps: ConfirmScheduleDeps, memberId: string):
     case 'ok':
       return;
     case 'halted':
-      return refuse({ kind: 'member_halted' });
+      return refuse({ kind: 'member_halted', memberId });
     case 'not_in_good_standing':
-      return refuse({ kind: 'member_not_in_good_standing' });
+      return refuse({ kind: 'member_not_in_good_standing', memberId });
     case 'halt_read_failed':
     case 'access_unavailable':
       throw new Error(`member send standing unavailable: ${standing.kind}`);

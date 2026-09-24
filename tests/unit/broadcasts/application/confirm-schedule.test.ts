@@ -98,26 +98,45 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
   describe('T166 S-H1 — the promotion re-checks the owning member\'s standing and the halt list', () => {
     const promotable = () => makeApprovalBroadcast({ status: 'member_approved', currentRound: 1, approvedVersionId: V0.id });
 
+    // T166 follow-up — the refusal is audited with submit's own event types,
+    // AFTER the rollback (tx null: a row written on the refused tx would roll
+    // back with it). Staff act → `related_member_id`; the session role as held.
     it.each([
-      { standing: { halted: [MEMBER] }, kind: 'member_halted' },
-      { standing: { access: 'terminated' as const }, kind: 'member_not_in_good_standing' },
-      { standing: { access: 'suspended' as const }, kind: 'member_not_in_good_standing' },
-    ])('$kind ($standing) → refused, nothing written, no member email', async ({ standing, kind }) => {
+      { standing: { halted: [MEMBER] }, kind: 'member_halted', eventType: 'broadcast_member_halted_pending_review' },
+      { standing: { access: 'terminated' as const }, kind: 'member_not_in_good_standing', eventType: 'broadcast_membership_suspended_blocked' },
+      { standing: { access: 'suspended' as const }, kind: 'member_not_in_good_standing', eventType: 'broadcast_membership_suspended_blocked' },
+    ])('$kind ($standing) → refused, nothing written, no member email, one $eventType row', async ({ standing, kind, eventType }) => {
       const { store, audit, run, sendStanding } = setup(promotable(), standing);
-      expect(await run()).toEqual({ ok: false, error: { kind } });
+      const b = promotable();
+      expect(await run({ actorRole: 'marketing' })).toEqual({ ok: false, error: { kind, memberId: MEMBER } });
       expect(sendStanding.membershipAccess.getMembershipAccess.mock.calls.every((c) => c[1] === MEMBER)).toBe(true);
       expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
       expect(store.outbox.rows()).toHaveLength(0);
-      expect(audit.events).toHaveLength(0);
+      expect(audit.events).toEqual([
+        {
+          tx: null,
+          eventType,
+          actorUserId: '44444444-4444-4444-8444-444444444444',
+          tenantId: 'test-tenant',
+          payload: { related_member_id: MEMBER, broadcast_id: b.broadcastId, surface: 'schedule_confirm', actor_role: 'marketing' },
+        },
+      ]);
+    });
+
+    it('a standing refusal with no session role records actor_role null', async () => {
+      const { audit, run } = setup(promotable(), { halted: [MEMBER] });
+      await run();
+      expect(audit.events[0]!.payload).toMatchObject({ actor_role: null });
     });
 
     it.each([
       { standing: { haltReadThrows: true }, errKind: 'Error' },
       { standing: { access: 'lookup_error' as const }, errKind: 'Error' },
-    ])('a standing read that cannot be answered ($standing) fails CLOSED → server_error, nothing written', async ({ standing, errKind }) => {
-      const { store, run } = setup(promotable(), standing);
+    ])('a standing read that cannot be answered ($standing) fails CLOSED → server_error, nothing written, no refusal audit', async ({ standing, errKind }) => {
+      const { store, audit, run } = setup(promotable(), standing);
       expect(await run()).toEqual({ ok: false, error: { kind: 'server_error', errKind } });
       expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+      expect(audit.events).toEqual([]);
     });
 
     it('a member in good standing is promoted (the gate is not over-eager)', async () => {

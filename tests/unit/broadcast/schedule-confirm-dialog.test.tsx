@@ -193,6 +193,37 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     },
   );
 
+  // T166 follow-up — the promotion's send-time standing refusals leave the row
+  // at member_approved (the page is not stale), so they are said INSIDE the
+  // dialog with their own copy, never the generic line or a hidden toast.
+  it.each([
+    ['member_halted', tErrors.member_halted],
+    ['member_not_in_good_standing', tErrors.member_not_in_good_standing],
+  ] as const)('T166: a 409 %s is named inside the dialog; it stays open', async (code, text) => {
+    vi.stubGlobal('fetch', vi.fn(async () => refusal(409, code)));
+    renderAction({ status: 'member_approved', proposedSendAt: new Date(Date.now() + 2 * HOUR_MS).toISOString() });
+    open();
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(text);
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
+  it('T166: a 409 sending_started keeps the stale-page path — its own copy in a toast, the dialog closes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => refusal(409, 'sending_started')));
+    renderAction({ status: 'approved', proposedSendAt: null });
+    open();
+    await screen.findByRole('alertdialog');
+    await chooseSendNow();
+    fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(tErrors.sending_started));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
   it('H1: a repeated refusal is a NEW alert node (cleared at the start of each request), so it is announced again', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => refusal(429, 'broadcast_rate_limit_exceeded')));
     renderAction({ status: 'approved', proposedSendAt: null });

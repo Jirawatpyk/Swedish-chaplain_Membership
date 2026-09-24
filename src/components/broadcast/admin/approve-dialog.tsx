@@ -6,6 +6,13 @@
  *   - schedule: collects datetime-local with min=now+5min defence
  *
  * Calls POST /api/admin/broadcasts/[id]/approve.
+ *
+ * T166 follow-up — a 409 is not always a race. `member_halted` /
+ * `member_not_in_good_standing` (the send-time standing re-check) leave the row
+ * `submitted` and its trigger mounted: the dialog stays open and names the
+ * reason inside itself (`InlineError`, role=alert — a toast behind this modal
+ * would be aria-hidden, ux-standards § 6.4). Every other 409 keeps the
+ * concurrentRace close + refresh.
  */
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { Loader2Icon } from 'lucide-react';
@@ -30,6 +37,8 @@ import '@js-joda/timezone';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { cancelApprovedBroadcasts } from '@/components/broadcast/admin/send-now-undo';
+import { readErrorCode, STANDING_REFUSAL_CODES } from '@/components/broadcast/approval/approval-error';
+import { InlineError } from '@/components/broadcast/approval/inline-error';
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
 const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
@@ -112,6 +121,7 @@ export function ApproveDialog({
   const [decision, setDecision] = useState<'send_now' | 'schedule'>('send_now');
   const [scheduledFor, setScheduledFor] = useState<string>('');
   const [pending, startTransition] = useTransition();
+  const [formError, setFormError] = useState<string | null>(null);
   const minLocal = useMemo(() => minLocalDateTime(), []);
   // F7-A11Y-1 — raised on the success / 409 close (both run router.refresh() →
   // the ReviewActions trigger Button unmounts). finalFocus reads it to SKIP the
@@ -125,6 +135,7 @@ export function ApproveDialog({
     if (!next) {
       setDecision('send_now');
       setScheduledFor('');
+      setFormError(null);
     }
     onOpenChange(next);
   }
@@ -151,6 +162,8 @@ export function ApproveDialog({
 
   function onConfirm() {
     if (!isScheduleValid() || pending) return;
+    // Cleared first, so a repeated refusal mounts a NEW alert and is announced.
+    setFormError(null);
     startTransition(async () => {
       try {
         const body =
@@ -210,8 +223,17 @@ export function ApproveDialog({
           onOpenChange(false);
           router.refresh();
         } else if (res.status === 409) {
+          const code = await readErrorCode(res);
+          const message = code !== null && tToast.has(code) ? tToast(code) : tToast('concurrentRace');
+          if (code !== null && STANDING_REFUSAL_CODES.has(code)) {
+            // The row did not move and the trigger survives: stay open, say
+            // why here, and leave closedViaSuccessRef down so Cancel returns
+            // focus to the trigger.
+            setFormError(message);
+            return;
+          }
           closedViaSuccessRef.current = true;
-          toast.error(tToast('concurrentRace'));
+          toast.error(message);
           onOpenChange(false);
           router.refresh();
         } else {
@@ -339,6 +361,9 @@ export function ApproveDialog({
             </div>
           ) : null}
         </fieldset>
+        {formError !== null ? (
+          <InlineError id="approve-dialog-error" data-testid="approve-dialog-error" message={formError} />
+        ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
           <AlertDialogAction

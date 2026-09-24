@@ -48,6 +48,17 @@ export interface ErrorTranslator {
   has(key: string): boolean;
 }
 
+/**
+ * T166 follow-up — the 409 codes that refuse a send-time step WITHOUT moving
+ * the row (the member's standing, re-read at approve-as-submitted and at the
+ * promotion). The page is not stale, so a dialog stays open and says why
+ * inside itself instead of closing on a toast.
+ */
+export const STANDING_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  'member_halted',
+  'member_not_in_good_standing',
+]);
+
 export function approvalErrorMessage(t: ErrorTranslator, code: string | null): string {
   if (code !== null && t.has(code)) return t(code);
   return t('generic');

@@ -168,6 +168,7 @@ describe('F119 send + promotion + the stage clock — real composition on live P
       {
         broadcastId: asBroadcastId(row.broadcastId!),
         actorUserId: MARKETER,
+        actorRole: 'marketing',
         decision: { mode: 'schedule', scheduledFor: new Date(Date.now() + 3_600_000) },
         requestId: null,
       },

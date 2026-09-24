@@ -29,6 +29,7 @@ import {
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { broadcastsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -117,6 +118,9 @@ export async function POST(
           const r = await approveBroadcast(deps, {
             broadcastId: parsedId.value,
             actorUserId: ctx.current.user.id,
+            // T166 follow-up — recorded as held on a standing-refusal audit
+            // row. rbac-narrow-ok: attribution only.
+            actorRole: ctx.current.user.role ?? null,
             decision,
             requestId: ctx.requestId,
             notificationLocale: tenantDefaultLocaleFor(tenantCtx.slug),
@@ -127,10 +131,7 @@ export async function POST(
           );
           return r;
         } catch (e) {
-          span.setStatus({
-            code: SpanStatusCode.ERROR,
-            message: e instanceof Error ? e.message : 'approve_threw',
-          });
+          span.setStatus({ code: SpanStatusCode.ERROR, message: errKind(e) });
           throw e;
         } finally {
           span.end();
@@ -154,7 +155,8 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
+        errorId: 'M119.admin.approve.unexpected',
         correlationId,
         tenantId: tenantCtx.slug,
         broadcastId: parsedId.value as string,
@@ -175,6 +177,11 @@ function mapApproveError(
   correlationId: string,
 ): NextResponse {
   if (error.kind === 'approve.server_error') {
+    // T166 follow-up (the R-M4 class) — this 500 used to leave no trace at all.
+    logger.error(
+      { err: error.errKind, correlationId, errorId: 'M119.admin.approve.server_error' },
+      'broadcasts.admin.approve.server_error',
+    );
     return errorResponse(500, 'internal_error', correlationId);
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);

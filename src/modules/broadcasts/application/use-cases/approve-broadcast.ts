@@ -16,12 +16,16 @@
  * Send-time standing (F119 T166 S-H1): the owning member must not be halted
  * and must hold full F8 membership access — the rules submit applies, re-read
  * under the row lock (`member_halted` / `member_not_in_good_standing`, 409).
+ * Each refusal writes submit's own refusal audit row (T166 follow-up) on the
+ * approval's tx — a `return err()` inside it commits, and nothing else was
+ * written, so the row lands under the tenant GUC with no null-tx question.
  * Schedule defence: scheduledFor must be ≥ now+5min (Ultraplan AD8).
  *
  * Atomic: applyTransition('approved') + audit `broadcast_approved` +
  * member-notification outbox enqueue inside single tx.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
@@ -31,7 +35,11 @@ import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
-import { readMemberSendStanding, type MemberSendStandingDeps } from './_member-send-standing';
+import {
+  readMemberSendStanding,
+  standingRefusalAuditEvent,
+  type MemberSendStandingDeps,
+} from './_member-send-standing';
 // Verify-fix R4 (Types-#1, 2026-05-02): re-export canonical `Locale`
 // from `@/i18n/config` instead of duplicating the union literal in
 // every use-case file. Single source of truth; adding a 4th locale
@@ -61,7 +69,12 @@ export type ApproveBroadcastError =
   | { readonly kind: 'member_halted'; readonly memberId: string }
   /** F119 T166 S-H1 — the owning member's membership is suspended or terminated (F8). */
   | { readonly kind: 'member_not_in_good_standing'; readonly memberId: string }
-  | { readonly kind: 'approve.server_error'; readonly message: string };
+  /**
+   * An infrastructure fault. `errKind` is the error CLASS only (T166 follow-up,
+   * the R-M4 class): the raw message can carry a Neon error's bound
+   * parameters, and the route logs what it is handed.
+   */
+  | { readonly kind: 'approve.server_error'; readonly errKind: string };
 
 export interface ApproveBroadcastDeps {
   readonly tenant: TenantContext;
@@ -96,6 +109,11 @@ export interface ApproveBroadcastDeps {
 export interface ApproveBroadcastInput {
   readonly broadcastId: BroadcastId;
   readonly actorUserId: string;
+  /**
+   * T166 follow-up — the session role, recorded as held (`?? null`, never a
+   * literal stand-in) on a standing-refusal audit row.
+   */
+  readonly actorRole: string | null;
   readonly decision: ApproveDecision;
   readonly requestId: string | null;
   /**
@@ -176,9 +194,24 @@ export async function approveBroadcast(
       );
       switch (standing.kind) {
         case 'halted':
-          return err({ kind: 'member_halted', memberId: row.requestedByMemberId });
-        case 'not_in_good_standing':
-          return err({ kind: 'member_not_in_good_standing', memberId: row.requestedByMemberId });
+        case 'not_in_good_standing': {
+          const refusal = standingRefusalAuditEvent({
+            refusal: standing.kind,
+            surface: 'approve_as_submitted',
+            tenantSlug: deps.tenant.slug,
+            memberId: row.requestedByMemberId,
+            broadcastId: input.broadcastId as string,
+            actorUserId: input.actorUserId,
+            actorRole: input.actorRole,
+            requestId: input.requestId,
+          });
+          await deps.audit.emit(tx, refusal);
+          broadcastsMetrics.auditEmitCount(deps.tenant.slug, refusal.eventType);
+          return err({
+            kind: standing.kind === 'halted' ? 'member_halted' : 'member_not_in_good_standing',
+            memberId: row.requestedByMemberId,
+          });
+        }
         case 'halt_read_failed':
         case 'access_unavailable':
           // Fail CLOSED: the gate was not decided → approve.server_error.
@@ -275,7 +308,7 @@ export async function approveBroadcast(
             // (was empty catch, locale downgrade was invisible).
             logger.warn(
               {
-                err: e instanceof Error ? e.message : String(e),
+                err: errKind(e),
                 tenantId: deps.tenant.slug,
                 memberId: approved.requestedByMemberId,
                 useCase: 'approve-broadcast',
@@ -305,10 +338,7 @@ export async function approveBroadcast(
       });
     });
   } catch (e) {
-    return err({
-      kind: 'approve.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
+    return err({ kind: 'approve.server_error', errKind: errKind(e) });
   }
 }
 

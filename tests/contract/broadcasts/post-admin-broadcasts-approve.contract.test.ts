@@ -117,6 +117,13 @@ function broadcastFixture(status = 'approved', overrides: Record<string, unknown
 beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); });
 afterEach(() => vi.clearAllMocks());
 
+/** T166 follow-up (R-M4 class) — every `logger.error` object the route wrote, as JSON (the leak check reads it). */
+async function loggedErrors(): Promise<{ calls: unknown[][]; json: string }> {
+  const { logger } = await import('@/lib/logger');
+  const calls = (logger.error as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  return { calls, json: JSON.stringify(calls) };
+}
+
 describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () => {
   it('200 send_now: { broadcastId, status:approved, approvedAt, scheduledFor, resendBroadcastId:null }', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
@@ -318,24 +325,39 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
     expect(res.status).toBe(403);
   });
 
-  it('500 internal_error: use-case throws', async () => {
+  it('500 internal_error: use-case throws — logged by class + errorId, never the message', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
-    approveBroadcastMock.mockRejectedValueOnce(new Error('db down'));
+    approveBroadcastMock.mockRejectedValueOnce(new Error('db down SECRET-a41f'));
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ decision: 'send_now' });
     const res = await POST(req, ctx);
     expect(res.status).toBe(500);
+    const logged = await loggedErrors();
+    expect(logged.calls[0]![0]).toMatchObject({ err: 'Error', errorId: 'M119.admin.approve.unexpected' });
+    expect(logged.json).not.toContain('SECRET-a41f');
   });
 
-  it('500 internal_error: use-case returns approve.server_error', async () => {
+  it('500 internal_error: use-case returns approve.server_error — T166 follow-up: logged with errKind + errorId (it was a silent 500)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     approveBroadcastMock.mockResolvedValueOnce(
-      err({ kind: 'approve.server_error', message: 'db down' }),
+      err({ kind: 'approve.server_error', errKind: 'TypeError' }),
     );
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ decision: 'send_now' });
     const res = await POST(req, ctx);
     expect(res.status).toBe(500);
+    const logged = await loggedErrors();
+    expect(logged.calls).toHaveLength(1);
+    expect(logged.calls[0]![0]).toMatchObject({ err: 'TypeError', errorId: 'M119.admin.approve.server_error' });
+  });
+
+  it('T166 follow-up: the session role reaches the use case as held (a standing refusal audits it)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({ ...adminCtx, current: { ...adminCtx.current, user: { ...adminCtx.current.user, role: 'marketing' } } });
+    approveBroadcastMock.mockResolvedValueOnce(err({ kind: 'member_halted', memberId: 'm-1' }));
+    const { POST } = await importRoute();
+    const { req, ctx } = makeRequest({ decision: 'send_now' });
+    await POST(req, ctx);
+    expect(approveBroadcastMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ actorRole: 'marketing' }));
   });
 
   it('member email failure does NOT 5xx the request (best-effort)', async () => {

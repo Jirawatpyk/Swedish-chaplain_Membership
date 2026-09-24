@@ -58,6 +58,7 @@ describe('approve as submitted (FR-007) — the thread without a formatting roun
     const approved = await approveBroadcast(approveDeps(), {
       broadcastId: SUBMITTED.broadcastId,
       actorUserId: ADMIN_USER_ID,
+      actorRole: 'admin',
       decision: { mode: 'schedule', scheduledFor: SCHEDULE },
       requestId: 'req-approve',
     });

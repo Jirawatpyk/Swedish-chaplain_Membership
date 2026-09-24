@@ -3528,7 +3528,10 @@
           "permission_denied": "You do not have permission to do this.",
           "test_copy_invalid_recipient": "The test copy could not be delivered to your email address.",
           "test_copy_unavailable": "The email service is unavailable. Try the test copy again in a moment.",
-          "internal_error": "Something went wrong on our side. Please try again."
+          "internal_error": "Something went wrong on our side. Please try again.",
+          "sending_started": "Sending has already started for this E-Blast, so its send time can no longer be changed.",
+          "member_halted": "The send time was not confirmed: this member's E-Blasts are halted pending admin review.",
+          "member_not_in_good_standing": "The send time was not confirmed: this member's membership is suspended or terminated, so the E-Blast cannot be sent."
         }
       },
       "approveDialog": {
@@ -3635,6 +3638,8 @@
         "cancelError": "Could not cancel the broadcast. Please try again.",
         "cancelTooLate": "This broadcast can no longer be cancelled — it is past the point where it can be stopped.",
         "concurrentRace": "This broadcast was already actioned by another administrator. The view has been refreshed.",
+        "member_halted": "Not approved: this member's E-Blasts are halted pending admin review.",
+        "member_not_in_good_standing": "Not approved: this member's membership is suspended or terminated, so their E-Blasts cannot be sent.",
         "clearHalted": "Broadcast halt cleared for this member.",
         "error": "Something went wrong. Please try again."
       },

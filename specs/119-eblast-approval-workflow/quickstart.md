@@ -1281,6 +1281,31 @@ step 5's flip safe to take immediately after this merge.
      because it counts `submitted` rows — and Block 3 of the daily prune tick (runs, and finds
      nothing, until a row awaits the member).
 
+   Added by T166 (2026-09-24 — the reliability and security follow-ups; each code-revert-only):
+   - **the dispatcher's attach CAS checks `status = 'approved'`** (R-H1), so an admin cancel, a
+     member withdrawal or a schedule cancel that lands during dispatch wins the race — the
+     dispatcher reclaims the row and sends nothing;
+   - **`outbox_stuck_rows_total` no longer counts the flag-skipped types** (R-H2), so the held
+     `eblast_*` rows cannot fire the "cron is down" alert;
+   - **cancel / reject 500s are logged with an `errorId`** (`M119.admin.cancel.*`,
+     `M119.admin.reject.*`, R-M4) — the error class, never the message; the approve route now
+     does the same (`M119.admin.approve.unexpected` / `M119.admin.approve.server_error`);
+   - **the erasure cascade retries a lost CAS three times**, then reports
+     `cascade_partial_failure` (R-M3);
+   - **submit and the member cancel read the marketing roster before their transaction** (R-L3);
+     the daily approval-lifecycle tick reads it once per tick, before any row lock;
+   - **approve-as-submitted refuses a halted, suspended or terminated member with 409
+     `member_halted` / `member_not_in_good_standing`** (S-H1) — the live, unflagged approve path,
+     a deliberate behaviour change. The approve dialog names that reason **inside the open
+     dialog** (every 409 used to read "already actioned by another administrator"), and a bulk
+     approve names each standing reason in its summary toast;
+   - **each standing refusal writes an audit row** under the types submit already writes —
+     `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` — with
+     `related_member_id`, `broadcast_id`, `surface` (`approve_as_submitted` | `schedule_confirm`)
+     and the session `actor_role`. A query on either type now returns staff refusals as well as
+     member submits; submit's own rows keep their `memberId` payload;
+   - **`PATCH …/version` spends the staff write bucket before parsing its body** (S-INFO).
+
    **Not on this list, deliberately: the staff "new submission" email.** `eblast_submitted_marketing`
    is enqueued from the moment PR-2 merges, but the outbox drainer **skips the five new
    notification types while the flag is off** (T152a, plan Amendment 7), so nothing is delivered

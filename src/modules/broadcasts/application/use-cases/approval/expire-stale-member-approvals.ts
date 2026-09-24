@@ -29,6 +29,11 @@
  *      make the row a no-op. The counter/status write, the audit row and the
  *      outbox rows share that transaction (SC-004); a row that throws rolls
  *      back alone, is counted in `rowsFailed` and is retried tomorrow.
+ *   The marketing roster (the day-23 / day-30 staff notices) is read ONCE per
+ *   tick, between the two (T166 follow-up, the R-L3 class): it is a
+ *   pool-global read (`users` has no tenant) and must not hold a second
+ *   connection under a row lock. An empty one is counted once per committed
+ *   staff hand-off; a failed read fails only the rows that need it.
  *
  * Audit (system rows, `actor_role: 'system'`, `related_member_id`):
  * `broadcast_approval_reminder_sent { reminder }` when a reminder was actually
@@ -60,7 +65,7 @@ import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
-import type { MarketingDirectoryPort } from '../../ports/marketing-directory-port';
+import type { MarketingDirectoryPort, MarketingRecipient } from '../../ports/marketing-directory-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
 import type { ApprovalBroadcastsRepo } from './_approval-tx';
 import { chooseApprovalRecipient } from './_approval-recipient';
@@ -111,6 +116,14 @@ export type ExpireStaleMemberApprovalsError = { readonly kind: 'lifecycle.server
 /** The `kind` discriminator of `eblast_approval_lifecycle` (data-model § 7.3) each step enqueues. */
 type LifecycleKind = 'reminder_day3' | 'reminder_day7' | 'expiry_warning_day23' | 'expired_day30';
 
+/** The tick's one roster read — or the error CLASS, so a row that needs it fails and is retried. */
+type Roster =
+  | { readonly ok: true; readonly recipients: readonly MarketingRecipient[] }
+  | { readonly ok: false; readonly errKind: string };
+
+/** The steps that notify marketing as well as the member. */
+const STAFF_STEPS: ReadonlySet<ApprovalScheduleStep> = new Set(['day23', 'expire']);
+
 const KIND_OF: Readonly<Record<ApprovalScheduleStep, LifecycleKind>> = {
   day3: 'reminder_day3',
   day7: 'reminder_day7',
@@ -148,10 +161,16 @@ export async function expireStaleMemberApprovals(
     return err({ kind: 'lifecycle.server_error', errKind: errKind(e) });
   }
 
+  // No candidate, no staff notice: the roster is not read on an idle tick.
+  const roster: Roster = candidates.length === 0 ? { ok: true, recipients: [] } : await readRosterOnce(deps);
   const counts = { remindersSent: 0, warningsSent: 0, expired: 0, rowsFailed: 0 };
   for (const candidate of candidates) {
     try {
-      const step = await processRow(deps, candidate, now, input.requestId);
+      const step = await processRow(deps, candidate, now, input.requestId, roster);
+      // Committed: a staff hand-off that reached nobody is counted now.
+      if (step !== null && STAFF_STEPS.has(step) && roster.ok && roster.recipients.length === 0) {
+        deps.marketingDirectory.reportEmptyRoster();
+      }
       if (step === 'expire') {
         counts.expired += 1;
         broadcastsMetrics.approvalExpired(slug);
@@ -171,12 +190,21 @@ export async function expireStaleMemberApprovals(
   return ok({ scanned: candidates.length, ...counts });
 }
 
+async function readRosterOnce(deps: ExpireStaleMemberApprovalsDeps): Promise<Roster> {
+  try {
+    return { ok: true, recipients: await deps.marketingDirectory.readRoster() };
+  } catch (e) {
+    return { ok: false, errKind: errKind(e) };
+  }
+}
+
 /** One candidate, in its own transaction; the step it applied, or null when the lock saw nothing due. */
 async function processRow(
   deps: ExpireStaleMemberApprovalsDeps,
   candidate: AwaitingApprovalCandidate,
   now: Date,
   requestId: string,
+  roster: Roster,
 ): Promise<ApprovalScheduleStep | null> {
   const slug = deps.tenant.slug;
   return deps.broadcastsRepo.withTx(async (tx) => {
@@ -220,7 +248,7 @@ async function processRow(
         summary: `E-Blast ${candidate.broadcastId as string} closed after ${waited} days without a member response`,
         payload: { ...common, days_waiting: waited, allowance_released: true },
       });
-      await notify(deps, tx, broadcast, version.id, 'expire', { member: true, staff: true });
+      await notify(deps, tx, broadcast, version.id, 'expire', { member: true, staff: staffOf(roster) });
       return step;
     }
 
@@ -233,7 +261,7 @@ async function processRow(
       'awaiting_member_approval',
     );
     if (step === 'day23') {
-      const sent = await notify(deps, tx, broadcast, version.id, step, { member: true, staff: true });
+      const sent = await notify(deps, tx, broadcast, version.id, step, { member: true, staff: staffOf(roster) });
       if (sent > 0) {
         await deps.audit.emitTyped(tx, {
           eventType: 'broadcast_approval_expiry_warned',
@@ -253,7 +281,7 @@ async function processRow(
       }
       return step;
     }
-    const sent = await notify(deps, tx, broadcast, version.id, step, { member: true, staff: false });
+    const sent = await notify(deps, tx, broadcast, version.id, step, { member: true, staff: [] });
     if (sent > 0) {
       await deps.audit.emitTyped(tx, {
         eventType: 'broadcast_approval_reminder_sent',
@@ -274,9 +302,20 @@ async function processRow(
 }
 
 /**
+ * The roster a staff notice goes to; a failed tick read THROWS here, so the
+ * row rolls back, is counted in `rowsFailed` and is retried tomorrow — the
+ * member-only reminders of the same tick are unaffected.
+ */
+function staffOf(roster: Roster): readonly MarketingRecipient[] {
+  if (!roster.ok) throw new Error(`marketing roster unavailable: ${roster.errKind}`);
+  return roster.recipients;
+}
+
+/**
  * Enqueue the step's `eblast_approval_lifecycle` rows on the row's tx, ids and
  * discriminators only: one to the member's approval contact (their language),
- * and — for the warning and the closure — one per marketing roster recipient.
+ * and — for the warning and the closure — one per marketing roster recipient
+ * (`to.staff`, the tick's roster; empty for a member-only reminder).
  * Returns how many rows were enqueued.
  */
 async function notify(
@@ -285,7 +324,7 @@ async function notify(
   broadcast: Broadcast,
   versionId: string,
   step: ApprovalScheduleStep,
-  to: { readonly member: boolean; readonly staff: boolean },
+  to: { readonly member: boolean; readonly staff: readonly MarketingRecipient[] },
 ): Promise<number> {
   const slug = deps.tenant.slug;
   const base = {
@@ -309,16 +348,14 @@ async function notify(
       enqueued += 1;
     }
   }
-  if (to.staff) {
-    for (const recipient of await deps.marketingDirectory.listRecipients()) {
-      await deps.outbox.enqueueInTx(tx, deps.tenant, {
-        type: 'eblast_approval_lifecycle',
-        toEmail: recipient.email,
-        locale: recipient.locale,
-        contextData: { ...base, audience: 'staff', recipientUserId: recipient.userId },
-      });
-      enqueued += 1;
-    }
+  for (const recipient of to.staff) {
+    await deps.outbox.enqueueInTx(tx, deps.tenant, {
+      type: 'eblast_approval_lifecycle',
+      toEmail: recipient.email,
+      locale: recipient.locale,
+      contextData: { ...base, audience: 'staff', recipientUserId: recipient.userId },
+    });
+    enqueued += 1;
   }
   return enqueued;
 }

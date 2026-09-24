@@ -126,6 +126,9 @@ Permission `broadcasts.write`. Stage must be `in_design`.
   "expectedUpdatedAt": "2026-09-24T09:10:00.000Z" }
 ```
 
+- **Order of checks** (T166 S-INFO): PATCH consumes the staff write bucket BEFORE reading the body; a
+  malformed body still answers 400 but spends one call, and an exhausted bucket answers 429 without
+  parsing up to 2 MB.
 - **Optimistic concurrency** (FR-033, the "two marketing users" edge case): `expectedUpdatedAt` must
   equal the row's `updated_at` → otherwise **409 `version_changed`** with `currentUpdatedAt` and the
   current content, so the client can show "someone else changed this" rather than overwrite. There is
