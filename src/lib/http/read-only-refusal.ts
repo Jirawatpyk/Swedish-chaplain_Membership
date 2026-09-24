@@ -89,3 +89,17 @@ export function isReadOnlyCode(code: string | null | undefined): boolean {
 export function isReadOnlyRefusal(status: number, body: unknown): boolean {
   return status === 503 && isReadOnlyCode(problemCode(body));
 }
+
+/**
+ * Whole minutes from a `Retry-After` header given in delta-seconds, rounded
+ * UP (a 5 s route-guard hint reads "about 1 minute", never "0 minutes"), or
+ * `null` when the header is absent or not a positive integer — the caller
+ * then says "shortly" rather than inventing a number. The HTTP-date form is
+ * not parsed: no layer here sends it.
+ */
+export function retryAfterMinutes(headers: Pick<Headers, 'get'> | null | undefined): number | null {
+  const raw = headers?.get('Retry-After')?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return null;
+  const seconds = Number.parseInt(raw, 10);
+  return seconds > 0 ? Math.ceil(seconds / 60) : null;
+}

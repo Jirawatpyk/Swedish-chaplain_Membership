@@ -182,7 +182,9 @@
     "unauthorized": "You need to sign in to see this.",
     "forbidden": "You don't have permission to see this.",
     "readOnlyMode": "The system is currently in read-only mode for maintenance.",
-    "errorId": "Error ID: {id}"
+    "errorId": "Error ID: {id}",
+    "notFoundHint": "The link may be old, or the page was moved.",
+    "backToDashboard": "Back to dashboard"
   },
   "buttons": {
     "cancel": "Cancel",
@@ -6170,6 +6172,11 @@
         "clamavBanner": {
           "title": "Virus scanner temporarily unavailable",
           "description": "Image uploads are paused while we reconnect to the scanner. Drafts without images can still be saved and submitted."
+        },
+        "readOnly": {
+          "title": "Not submitted — the system is in read-only mode for maintenance.",
+          "body": "Nothing was sent and no E-Blast slot was used. Your message is still on this page — keep it open and try again in about {minutes, plural, one {# minute} other {# minutes}}.",
+          "bodyShortly": "Nothing was sent and no E-Blast slot was used. Your message is still on this page — keep it open and try again shortly."
         }
       },
       "quota": {
@@ -6205,6 +6212,10 @@
         "empty": "Send your first chamber-wide email — your audience is just one click away.",
         "emptyTitle": "No broadcasts yet",
         "emptyCta": "Compose your first E-Blast",
+        "loadError": {
+          "title": "Your E-Blasts couldn't be loaded.",
+          "body": "This is a problem on our side, not with your broadcasts. Try again in a moment."
+        },
         "quotaExhaustedTooltip": "Your {year} E-Blast quota is exhausted. Renews January 1 of next year.",
         "columns": {
           "subject": "Subject",
@@ -6447,6 +6458,7 @@
         "alreadyPendingUnchanged": "Your values match your record. The request you sent earlier is still awaiting review and has not changed.",
         "rateLimited": "You have reached the limit of submissions for the last 24 hours. Try again after {retryAt}.",
         "rateLimitedGeneric": "You have reached the limit of submissions for the last 24 hours. Try again later.",
+        "readOnly": "Not submitted — the system is in read-only mode for maintenance. Your changes are still in the form; try again shortly.",
         "approvalNotRequired": "Changes no longer need approval — your edits now save directly."
       },
       "errors": {
@@ -6636,6 +6648,7 @@
         "reasonMembershipTerminated": "Your membership has been terminated. Please contact the chamber to reactivate your membership before paying.",
         "reasonNoPrimaryContact": "This membership has no primary contact, so PromptPay cannot be used. Please contact the chamber staff, or pay by card instead.",
         "reasonServer": "Our payment service is temporarily unavailable.",
+        "reasonReadOnly": "Payments are paused while the system is in read-only mode for maintenance. You have not been charged.",
         "reasonNetwork": "Network error. Check your connection and try again.",
         "reasonCardDeclined": "Your card was declined.",
         "reasonIncorrectCvc": "Your card's security code is incorrect.",

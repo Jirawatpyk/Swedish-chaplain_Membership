@@ -135,3 +135,29 @@ describe('useInitiatePayment — 409 primary_contact_missing (108 FR-004)', () =
     }
   });
 });
+
+/**
+ * Portal error states #1 — the READ_ONLY_MODE refusal on initiate. The proxy
+ * answers 503 with a FLAT `{ error: 'read-only-mode' }`, which the `>= 500`
+ * arm turned into "Our payment service is temporarily unavailable" — wrong
+ * cause, and silent on the one thing a member worries about (was I charged?).
+ * Same static idiom as the 409 block above, for the reason it gives.
+ */
+describe('useInitiatePayment — read-only 503', () => {
+  it('recognises the refusal through the shared helper, before the 5xx arm', () => {
+    expect(source).toContain('isReadOnlyRefusal(response.status, body)');
+    expect(source).toContain("t('retry.reasonReadOnly')");
+    expect(source.indexOf("t('retry.reasonReadOnly')")).toBeLessThan(
+      source.indexOf("t('retry.reasonServer')"),
+    );
+  });
+
+  it('the reason key exists in every locale', () => {
+    for (const locale of ['en', 'th', 'sv'] as const) {
+      const messages = JSON.parse(
+        readFileSync(resolve(process.cwd(), `src/i18n/messages/${locale}.json`), 'utf8'),
+      ) as { portal: { payment: { retry: Record<string, string> } } };
+      expect(messages.portal.payment.retry.reasonReadOnly, `${locale} is missing the key`).toBeTruthy();
+    }
+  });
+});

@@ -182,7 +182,9 @@
     "unauthorized": "Du måste logga in för att se det här.",
     "forbidden": "Du har inte behörighet att se det här.",
     "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll.",
-    "errorId": "Fel-ID: {id}"
+    "errorId": "Fel-ID: {id}",
+    "notFoundHint": "Länken kan vara gammal, eller så har sidan flyttats.",
+    "backToDashboard": "Tillbaka till översikten"
   },
   "buttons": {
     "cancel": "Avbryt",
@@ -6170,6 +6172,11 @@
         "clamavBanner": {
           "title": "Virusskannern är tillfälligt otillgänglig",
           "description": "Bilduppladdningar pausas medan vi återansluter till skannern. Utkast utan bilder kan fortfarande sparas och skickas in."
+        },
+        "readOnly": {
+          "title": "Inte skickat — systemet är i skrivskyddat läge för underhåll.",
+          "body": "Ingenting skickades och ingen E-Blast-plats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
+          "bodyShortly": "Ingenting skickades och ingen E-Blast-plats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om en stund."
         }
       },
       "quota": {
@@ -6205,6 +6212,10 @@
         "empty": "Skicka ditt första kammaromfattande utskick — dina mottagare är bara ett klick bort.",
         "emptyTitle": "Inga utskick ännu",
         "emptyCta": "Skapa ditt första E-Blast",
+        "loadError": {
+          "title": "Dina E-Blasts kunde inte laddas.",
+          "body": "Det här är ett problem hos oss, inte med dina utskick. Försök igen om en stund."
+        },
         "quotaExhaustedTooltip": "Din E-Blast-kvot för {year} är förbrukad. Förnyas den 1 januari nästa år.",
         "columns": {
           "subject": "Ämne",
@@ -6447,6 +6458,7 @@
         "alreadyPendingUnchanged": "Dina värden matchar din post. Begäran du skickade tidigare väntar fortfarande på granskning och har inte ändrats.",
         "rateLimited": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen efter {retryAt}.",
         "rateLimitedGeneric": "Du har nått gränsen för inskickningar under de senaste 24 timmarna. Försök igen senare.",
+        "readOnly": "Inte skickat — systemet är i skrivskyddat läge för underhåll. Dina ändringar finns kvar i formuläret; försök igen om en stund.",
         "approvalNotRequired": "Ändringar behöver inte längre godkännas — dina redigeringar sparas nu direkt."
       },
       "errors": {
@@ -6636,6 +6648,7 @@
         "reasonMembershipTerminated": "Ditt medlemskap har avslutats. Kontakta kammaren för att återaktivera medlemskapet innan du betalar.",
         "reasonNoPrimaryContact": "Detta medlemskap saknar primär kontakt, så PromptPay kan inte användas. Kontakta kammarens personal, eller betala med kort i stället.",
         "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
+        "reasonReadOnly": "Betalningar är pausade medan systemet är i skrivskyddat läge för underhåll. Du har inte debiterats.",
         "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
         "reasonCardDeclined": "Ditt kort avvisades.",
         "reasonIncorrectCvc": "Kortets säkerhetskod är felaktig.",
