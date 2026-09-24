@@ -1334,7 +1334,8 @@
         "zero": {
           "title": "Inga medlemmar ännu",
           "description": "Lägg till din första medlem för att komma igång.",
-          "cta": "Lägg till första medlem"
+          "cta": "Lägg till första medlem",
+          "adminOnlyHint": "Medlemmar visas här när en administratör har lagt till dem."
         },
         "filtered": {
           "title": "Inga medlemmar matchar filtren",
@@ -4827,14 +4828,16 @@
           "noIntegration": {
             "title": "Inga evenemang ännu",
             "body": "Konfigurera din EventCreate-integration för att automatiskt importera deltagare.",
-            "cta": "Konfigurera EventCreate-integration"
+            "cta": "Konfigurera EventCreate-integration",
+            "adminOnlyHint": "Evenemang visas här när en administratör har konfigurerat EventCreate-integrationen."
           },
           "noDeliveries": {
             "title": "Väntar på första evenemanget",
             "body": "Din Zap ska leverera nya deltagardata inom cirka 15 minuter efter en EventCreate-registrering. Du kan också skicka en testwebhook för att bekräfta anslutningen.",
             "primaryCta": "Skicka en testhändelse",
             "cta": "Visa integrationsinställningar",
-            "illustrationAlt": "Illustration av tom inkorg"
+            "illustrationAlt": "Illustration av tom inkorg",
+            "adminOnlyHint": "Nya deltagardata bör komma in inom cirka 15 minuter efter en EventCreate-registrering. Om inget kommer in, be en administratör att kontrollera integrationen."
           },
           "allArchived": {
             "title": "Alla evenemang är arkiverade",

@@ -587,6 +587,10 @@ export default async function RenewalsPipelinePage({
                 // first-bill collection case outside the window) hits
                 // exactly this branch.
                 <RenewalsEmptyState
+                  canManageSchedules={canPerform(
+                    currentUser.role,
+                    'settings.renewal_schedules',
+                  )}
                   // A3 — tenant-global pair (NOT the tier-sliced badge):
                   // the bridge reconciles against the Members page's
                   // global Suspended number.
