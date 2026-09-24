@@ -27,6 +27,16 @@ import { formatAndSendAsMarketing } from '../helpers/eblast-approval-flow';
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
+/**
+ * The last test's E-Blast (with its versions, decisions and outbox rows)
+ * would otherwise sit on the shared dev branch until the next run — each
+ * test wipes only at its start. It also holds an allowance place for the
+ * persona. T166 senior-tester M5.
+ */
+test.afterAll(async () => {
+  if (MEMBER_EMAIL) await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
+});
+
 /** Cold Turbopack compiles (Tiptap especially) dominate. */
 test.describe.configure({ timeout: 240_000, retries: 0 });
 

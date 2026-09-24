@@ -73,6 +73,16 @@ const staffSkip = !ADMIN_EMAIL || !ADMIN_PASSWORD;
 const memberSkip = !MEMBER_EMAIL || !MEMBER_PASSWORD;
 
 /**
+ * The last test's E-Blast (with its versions, decisions and outbox rows)
+ * would otherwise sit on the shared dev branch until the next run — each
+ * test wipes only at its start. It also holds an allowance place for the
+ * persona. T166 senior-tester M5.
+ */
+test.afterAll(async () => {
+  if (MEMBER_EMAIL) await wipeE2EMemberBroadcasts(MEMBER_EMAIL);
+});
+
+/**
  * WCAG 2.1 1.4.10 reflow: 320 CSS px is the narrow end the standard names
  * (1280 px at 400 % zoom). Every scan below is taken there because that is the
  * width at which E-Blast layout defects actually appear — the audit that
