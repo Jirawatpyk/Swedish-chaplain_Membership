@@ -1013,3 +1013,17 @@ describe('<InvoicesTable> — draft row Number-cell label', () => {
     expect(link).toHaveAttribute('href', '/admin/invoices/inv-1');
   });
 });
+
+describe('<InvoicesTable> — draft total', () => {
+  it('a draft with no computed total renders "—", never "0.00 THB"', () => {
+    renderTable([baseRow({ status: 'draft', totalSatang: null })]);
+    const cell = screen.getByTestId('invoice-total');
+    expect(cell).toHaveTextContent('—');
+    expect(cell).not.toHaveTextContent('0.00');
+  });
+
+  it('an issued invoice keeps its grouped THB total', () => {
+    renderTable([baseRow({ totalSatang: '3852000' })]);
+    expect(screen.getByTestId('invoice-total')).toHaveTextContent('38,520.00 THB');
+  });
+});
