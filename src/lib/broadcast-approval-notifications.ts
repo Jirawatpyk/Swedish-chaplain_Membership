@@ -260,9 +260,9 @@ async function scheduleConfirmedMember(
 
 /**
  * The member decided (or withdrew) — to one marketing recipient: subject,
- * company, stage, link. Reads the broadcast ALONE: `versionId` / `round` are
- * null on a withdrawal from `submitted` / `draft`, and nothing here needs
- * them. The recipient must STILL be on the roster (F114: a user disabled
+ * company, stage, link. Reads the broadcast ALONE: `versionId` is always null
+ * on a whole-E-Blast withdrawal and `round` is null before the first round,
+ * and nothing here needs them. The recipient must STILL be on the roster (F114: a user disabled
  * between enqueue and send gets nothing) — matched by user id when the row
  * carries it, else by the address frozen at enqueue — and is reached at the
  * CURRENT address.

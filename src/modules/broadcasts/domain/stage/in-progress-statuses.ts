@@ -3,7 +3,8 @@
  * data-model § 9).
  *
  * An E-Blast in one of these statuses holds the member's allowance
- * (reserved), can still be withdrawn or rejected (FR-015), and is swept by
+ * (reserved), can still be withdrawn — and rejected, except from `approved`
+ * (FR-015) — and is swept by
  * the erasure/cancel cascade. Rounds do not multiply the cost: the allowance
  * belongs to the broadcast row, and there is one row however many versions it
  * carries.

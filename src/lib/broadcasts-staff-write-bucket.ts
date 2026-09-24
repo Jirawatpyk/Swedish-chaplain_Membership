@@ -1,6 +1,7 @@
 /**
  * F119 T062a — the staff write bucket as the approval-round routes consume
- * it (`…/[id]/version` POST + PATCH, `…/[id]/version/send`, `…/[id]/schedule`):
+ * it (`…/[id]/version` POST + PATCH, `…/[id]/version/send`, `…/[id]/schedule`,
+ * and the widened `…/[id]/reject` of T081 — the one unflagged consumer):
  * 30 requests / 60 s per (tenant, actor) over `broadcastsRateLimiter`, an
  * ATOMIC check (the limiter consumes on check — never peek-then-act), taken
  * BEFORE the use case so a refused call writes nothing. Refused 429

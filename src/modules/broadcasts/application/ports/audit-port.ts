@@ -791,7 +791,7 @@ export interface AuditPort {
    * same `vi.fn()` so behaviour mirrors).
    *
    * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
-   * (all 59 events) to `keyof F7AuditPayloadShapes` (19 typed events since F119 PR-2).
+   * (all 69 events) to `keyof F7AuditPayloadShapes` (27 typed events since F119 PR-2).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
    * silently fell back to `Record<string, unknown>` via a now-retired

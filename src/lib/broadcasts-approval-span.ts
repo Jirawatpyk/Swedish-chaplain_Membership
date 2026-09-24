@@ -1,6 +1,7 @@
 /**
  * F119 T122 — the OTel span around an approval-round hand-off
- * (`broadcasts.version.send`, `broadcasts.schedule.confirm`;
+ * (`broadcasts.version.send`, `broadcasts.schedule.confirm`,
+ * `broadcasts.member.decide`;
  * contracts/dashboard-and-notifications.md § 4.4).
  *
  * Attributes are limited to `tenant.slug`, `broadcast.id`, `broadcast.stage`

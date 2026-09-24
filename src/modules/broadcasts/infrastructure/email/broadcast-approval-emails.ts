@@ -45,8 +45,9 @@ export interface BuiltEblastEmail {
 
 /**
  * The `decision` discriminator of `eblast_member_decided_marketing`. Wider
- * than `MemberDecisionKind`: `withdrawn` is the whole-E-Blast withdrawal
- * raised from `submitted` / `draft`, which has no version and no round.
+ * than `MemberDecisionKind`: `withdrawn` is the whole-E-Blast withdrawal (a
+ * member cancel from any in-progress stage); it carries no version, and no
+ * round before the first one.
  */
 export const EBLAST_MEMBER_DECIDED_KINDS = ['approved', 'changes_requested', 'approval_withdrawn', 'withdrawn'] as const;
 export type EblastMemberDecidedKind = (typeof EBLAST_MEMBER_DECIDED_KINDS)[number];

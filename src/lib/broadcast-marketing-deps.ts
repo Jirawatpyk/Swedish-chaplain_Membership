@@ -45,7 +45,9 @@ export function marketingRoles(): readonly Role[] {
 /**
  * The hand-off roster with no side effect: the ACTIVE marketing users, else
  * the ACTIVE fallback users. The dispatcher arms re-check a recipient against
- * this at send time; only `listRecipients` counts an empty roster.
+ * this at send time. It counts nothing: an empty roster is counted by
+ * `reportEmptyRoster()` after the hand-off commits (the path production
+ * uses) or by `listRecipients`.
  */
 export async function resolveMarketingRoster(): Promise<readonly MarketingRecipient[]> {
   const primary = marketingRoles();

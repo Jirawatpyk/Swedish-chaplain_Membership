@@ -2000,8 +2000,8 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts_member_decide_ms{tenant}` — F119 T122; recorded by T078,
-   * server duration of one member decision (approve / request changes /
+   * `broadcasts_member_decide_ms{tenant}` — F119 T122; recorded by the T079
+   * decision route around the T078 use case, server duration of one member decision (approve / request changes /
    * withdraw).
    */
   memberDecideMs(tenantId: string | null, ms: number): void {

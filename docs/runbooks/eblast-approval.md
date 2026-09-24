@@ -35,7 +35,7 @@ member's behalf.
 
 | Stage (status) | Label (staff) | Whose turn | Leaves by |
 |---|---|---|---|
-| `submitted` | Awaiting review | Marketing | approve as submitted → Scheduled · Start formatted version → In design · reject · cancel |
+| `submitted` | Awaiting marketing review | Marketing | approve as submitted → Scheduled · Start formatted version → In design · reject · cancel |
 | `in_design` | In design | Marketing | Send to member → Awaiting member approval · reject · cancel |
 | `awaiting_member_approval` | Awaiting member approval | **Member** | approve → Member approved · request changes → Changes requested · day 30 → Expired · reject · cancel |
 | `changes_requested` | Changes requested by member | Marketing | Start formatted version (next round) → In design · reject · cancel |
@@ -105,7 +105,7 @@ their detail pages.
 The dashboard flags a row as **stalled** at **48 h** in a marketing-held stage and **3 days** in
 the member-held stage (FR-027). The age alerts (§ 29.4) bind to the member-held stage only.
 
-### `submitted` — Awaiting review (marketing)
+### `submitted` — Awaiting marketing review (marketing)
 
 Nobody has decided. With the flag on, each marketing user was emailed
 (`eblast_submitted_marketing`); with it off, nobody was, exactly as before this feature. Decide
@@ -258,7 +258,7 @@ unconditional).
 | `broadcasts_awaiting_member_approval_count` | small, moving | the same count for days — members are not answering; check the reminders went |
 | `broadcasts_awaiting_member_oldest_age_seconds` | < 3 d | > 7 d warns, > 14 d pages. 0 = nothing waiting |
 | `broadcasts_changes_requested_count` | small | rising — marketing is not picking up change requests (a marketing-held stage; stalled at 48 h) |
-| `broadcasts_marketing_turn_count` | small | growing — the review queue is not being worked. **Non-zero before the flip**: it counts `submitted` rows too. It must equal the staff nav badge; a divergence means the two read different predicates |
+| `broadcasts_marketing_turn_count` | small | growing — the review queue is not being worked. **Non-zero before the flip**: it counts `submitted` rows too. It must equal the staff nav badge whenever the badge shows (the flag is on, or a row is in an approval-round stage — with the flag off and no row in the round the badge is hidden while the gauge still counts `submitted`); a divergence then means the two read different predicates |
 
 All four are zero-filled per tenant every 5 minutes and none is flag-gated.
 

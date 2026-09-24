@@ -253,15 +253,32 @@ template image the chamber still uses must not be deleted out from under it.
       AND bi.deleted_at IS NULL;          -- stamped by the cascade, then un-stamped
    ```
 
-   For each row, name the holder with the same two legs the sweep itself
-   checks (`isBlobReferencedByContent`) — live broadcasts AND templates:
+   For each row, name the holder with the same three legs the sweep itself
+   checks (`isBlobReferencedByContent`) — broadcasts, their `broadcast_versions`
+   (0308), and templates. A broadcast (or a version's owner) that is closed and
+   never sent (`rejected` / `cancelled` / `expired_no_member_response` with no
+   `sending_started_at`, `resend_broadcast_id` or `audience_import_id`) does NOT
+   hold the image, so it is filtered out here too:
 
    ```sql
    SELECT 'broadcast' AS holder_kind, broadcast_id AS holder_id, requested_by_member_id
-     FROM broadcasts
+     FROM broadcasts b
     WHERE tenant_id = '<tenant>'
       AND (position('<blob_url>' in body_html) > 0
         OR position('<blob_url>' in body_source) > 0)
+      AND NOT (b.status IN ('rejected', 'cancelled', 'expired_no_member_response')
+               AND b.sending_started_at IS NULL AND b.resend_broadcast_id IS NULL
+               AND b.audience_import_id IS NULL)
+   UNION ALL
+   SELECT 'broadcast_version', v.broadcast_id, b.requested_by_member_id
+     FROM broadcast_versions v
+     JOIN broadcasts b ON b.tenant_id = v.tenant_id AND b.broadcast_id = v.broadcast_id
+    WHERE v.tenant_id = '<tenant>'
+      AND (position('<blob_url>' in v.body_html) > 0
+        OR position('<blob_url>' in v.body_source) > 0)
+      AND NOT (b.status IN ('rejected', 'cancelled', 'expired_no_member_response')
+               AND b.sending_started_at IS NULL AND b.resend_broadcast_id IS NULL
+               AND b.audience_import_id IS NULL)
    UNION ALL
    SELECT 'template', id, NULL
      FROM broadcast_templates
