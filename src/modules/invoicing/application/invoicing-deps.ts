@@ -287,7 +287,7 @@ export function makeExportPaidInvoicesCsvDeps(
   tenantId: string,
 ): ExportPaidInvoicesCsvDeps {
   return {
-    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    registerRepo: makeDrizzleTaxRegisterRepo(tenantId),
     audit: f4AuditAdapter,
     paymentMethodLookup: async (tid, invoiceIds) => {
       const result = await listSucceededPaymentMethods(

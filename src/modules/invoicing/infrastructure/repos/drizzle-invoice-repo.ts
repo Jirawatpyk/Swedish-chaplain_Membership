@@ -1776,6 +1776,20 @@ export function makeDrizzleInvoiceRepo(
  *     are ISSUED, so `sumPeriodOutputVat` also returns the period credit-note
  *     VAT for the use-case to subtract (net = RC + RE − credit notes).
  */
+/**
+ * The §78/1 tax point every register method — and the CSV export — buckets by:
+ * the admin-entered Bangkok-local `payment_date`, falling back to the server
+ * `paid_at` (as a Bangkok-local date) only when a row has none. ONE definition
+ * so the ภ.พ.30 register and the bookkeeper's CSV can never disagree about
+ * which month a receipt belongs to.
+ */
+const TAX_POINT = sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date)`;
+
+/** Inclusive `[from, to]` on {@link TAX_POINT}; a date-less row never matches. */
+function taxPointBetween(from: string, to: string) {
+  return [sql`${TAX_POINT} >= ${from}`, sql`${TAX_POINT} <= ${to}`];
+}
+
 export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
   const ctx = asTenantContext(tenantId);
 
@@ -1794,8 +1808,7 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
           // tax invoice must STILL appear in the sales report (marked
           // cancelled), so void rows stay LISTED here; they are excluded only
           // from the period output-VAT TOTAL (`sumPeriodOutputVat`).
-          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
-          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
+          ...taxPointBetween(opts.from, opts.to),
         ];
         if (opts.kind === 're_register') {
           // §105 RE stream only (no-TIN event/member receipts).
@@ -1843,8 +1856,7 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
               eq(invoices.tenantId, tenantIdArg),
               isNotNull(invoices.receiptDocumentNumberRaw),
               ne(invoices.status, 'void'),
-              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
-              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
+              ...taxPointBetween(opts.from, opts.to),
             ),
           );
 
@@ -1871,6 +1883,41 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
           reVatSatang: agg?.reVat ?? '0',
           creditNoteVatSatang: cnAgg?.cnVat ?? '0',
         };
+      });
+    },
+
+    async listForExport(tenantIdArg, opts) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx
+          .select()
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              // The rows `sumPeriodOutputVat` counts: same tax point, same
+              // void exclusion, every other status.
+              ne(invoices.status, 'void'),
+              ...taxPointBetween(opts.from, opts.to),
+              or(
+                // §86/4 RC + §105 RE receipts (the two register streams).
+                isNotNull(invoices.receiptDocumentNumberRaw),
+                // Pre-088 combined mode: the §87 invoice number IS the receipt
+                // (no receipt raw). Paid-family statuses only, so an issued
+                // bill can never slip in.
+                and(
+                  isNull(invoices.receiptDocumentNumberRaw),
+                  sql`${invoices.status} IN ('paid', 'credited', 'partially_credited')`,
+                ),
+              ),
+            ),
+          )
+          .orderBy(
+            asc(TAX_POINT),
+            asc(invoices.receiptDocumentNumberRaw),
+            asc(invoices.sequenceNumber),
+          )) as InvoiceRow[];
+
+        return rows.map((r) => rowsToInvoice(r, []));
       });
     },
   };

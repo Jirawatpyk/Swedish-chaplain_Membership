@@ -45,6 +45,7 @@ function makeDeps(
         reVatSatang: '0',
         creditNoteVatSatang: '0',
       })),
+      listForExport: vi.fn(),
     },
     clock: { nowIso: () => nowIso },
   };

@@ -115,4 +115,29 @@ export interface TaxRegisterRepo {
       readonly to: string;
     },
   ): Promise<PeriodOutputVatSummary>;
+
+  /**
+   * The rows the paid-invoices CSV export writes for the inclusive Bangkok-
+   * local `[from, to]` range, bucketed by the SAME tax point as the registers
+   * (`payment_date`, else `paid_at`), so the CSV of a month always reconciles
+   * to that month's register:
+   *   - every NON-VOID receipt that {@link sumPeriodOutputVat} counts — the
+   *     §86/4 RC and §105 RE streams, whatever the status (`credited` /
+   *     `partially_credited` included: their reduction is a §86/10 credit
+   *     note in the month the note is issued, not a missing sale);
+   *   - plus pre-088 combined-mode rows (paid under the §87 invoice number,
+   *     `receipt_document_number_raw` NULL) that the registers never listed,
+   *     so exporting an old period does not silently lose them.
+   * Ordered by tax point, then receipt / invoice number. Rows carry
+   * `lines: []`. RLS-scoped via `runInTenant`.
+   */
+  listForExport(
+    tenantId: string,
+    opts: {
+      /** Inclusive `YYYY-MM-DD` Bangkok-local. */
+      readonly from: string;
+      /** Inclusive `YYYY-MM-DD` Bangkok-local. */
+      readonly to: string;
+    },
+  ): Promise<readonly Invoice[]>;
 }
