@@ -552,6 +552,97 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
     expect(lapsePage.items.some((c) => c.cycleId === cycleId)).toBe(true);
   }, 120_000);
 
+  // financial-integrity B1 — an UN-anchored cycle with no settled
+  // predecessor (e.g. an imported member the R4 backfill skipped) classifies
+  // `first_payment`: its early bill charges the CURRENT period, which is
+  // therefore unpaid. The marker must NOT be stamped, so the pre-0308 answer
+  // holds: suspended, and still due+60-terminable.
+  it('early confirm on a FIRST-PAYMENT cycle (bill charges the current period) stays suspended + lapse-eligible', async () => {
+    const expiresAt = new Date(Date.now() + 20 * 86_400_000);
+    const { memberId, cycleId } = await seedMemberWithCycle('upcoming', { expiresAt });
+
+    const result = await confirmRenewal(makeConfirmDeps(), {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'member',
+      correlationId: `early-fp-${cycleId}`,
+    });
+    if (!result.ok) {
+      throw new Error(`confirm failed: ${JSON.stringify(result.error)}`);
+    }
+
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          awaitingEnteredAt: renewalCycles.awaitingEnteredAt,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row?.status).toBe('awaiting_payment');
+    expect(row?.awaitingEnteredAt).toBeNull();
+
+    const access = await membershipAccessBridge.getMembershipAccess(
+      tenant.ctx,
+      memberId,
+    );
+    expect(access.ok && access.value.access).toBe('suspended');
+
+    const lapsePage = await makeRenewalsDeps(
+      tenant.ctx.slug,
+    ).cyclesRepo.listCyclesEligibleForLapse(tenant.ctx.slug, { pageSize: 1000 });
+    expect(lapsePage.items.some((c) => c.cycleId === cycleId)).toBe(true);
+  }, 120_000);
+
+  it('an early-flipped cycle whose paid period has ENDED re-enters the lapse candidates', async () => {
+    const { memberId, cycleId } = await seedMemberWithCycle('awaiting_payment', {
+      expiresAt: new Date(Date.now() - 2 * 86_400_000),
+    });
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ awaitingEnteredAt: new Date(Date.now() - 40 * 86_400_000) })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+
+    const lapsePage = await makeRenewalsDeps(
+      tenant.ctx.slug,
+    ).cyclesRepo.listCyclesEligibleForLapse(tenant.ctx.slug, { pageSize: 1000 });
+    expect(lapsePage.items.some((c) => c.cycleId === cycleId)).toBe(true);
+    const access = await membershipAccessBridge.getMembershipAccess(
+      tenant.ctx,
+      memberId,
+    );
+    expect(access.ok && access.value.access).toBe('suspended');
+  }, 120_000);
+
+  it('reanchorPeriodInTx clears the flip marker (awaiting → upcoming bypass)', async () => {
+    const { cycleId } = await seedMemberWithCycle('awaiting_payment');
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ awaitingEnteredAt: new Date() })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+    const repo = makeRenewalsDeps(tenant.ctx.slug).cyclesRepo;
+    const out = await runInTenant(tenant.ctx, (tx) =>
+      repo.reanchorPeriodInTx(tx, tenant.ctx.slug, cycleId as never, {
+        periodFrom: '2026-06-01T00:00:00.000Z',
+        periodTo: '2027-06-01T00:00:00.000Z',
+        anchoredAt: new Date().toISOString(),
+        anchorInvoiceId: null,
+        frozenPlanPriceThb: FROZEN_THB as never,
+        frozenPlanTermMonths: 12,
+      }),
+    );
+    expect(out?.cycle.status).toBe('upcoming');
+    expect(out?.cycle.awaitingEnteredAt).toBeNull();
+  }, 120_000);
+
   it('the flip marker is cleared when the cycle leaves awaiting_payment', async () => {
     const { cycleId } = await seedMemberWithCycle('upcoming', { anchored: true });
     const repo = makeRenewalsDeps(tenant.ctx.slug).cyclesRepo;

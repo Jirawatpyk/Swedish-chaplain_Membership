@@ -73,6 +73,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
+import { BillIssuedBadge } from '@/components/renewals/bill-issued-badge';
 import { isPastDeadlineUrgency } from '@/components/renewals/urgency';
 import {
   CycleTierCell,
@@ -349,7 +350,18 @@ export function PipelineTable({
       {
         id: 'urgency',
         header: t('columns.urgency'),
-        cell: ({ row }) => <UrgencyPill urgency={row.original.urgency} />,
+        // 0308 — an early renewal bill keeps the countdown pill (access stays
+        // full until expiry); the badge says the bill is already out.
+        cell: ({ row }) => (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            <UrgencyPill urgency={row.original.urgency} />
+            <BillIssuedBadge
+              status={row.original.status}
+              urgency={row.original.urgency}
+              linkedInvoiceId={row.original.linkedInvoiceId}
+            />
+          </span>
+        ),
       },
       {
         id: 'last_reminder',

@@ -131,10 +131,12 @@ interface RenewalCycleBase {
 
   /**
    * Migration 0308. Set when the cycle was FLIPPED `upcoming|reminded →
-   * awaiting_payment`, i.e. a renewal bill was issued against a period the
-   * member already paid for (or was grandfathered into). Null on a cycle
-   * born `awaiting_payment` (065 §5.3 new member / admin lapsed-comeback),
-   * which has no paid period behind it. Meaningful only while
+   * awaiting_payment` by a RENEWAL bill (`classifyMembershipPayment` →
+   * `renewal`: the cycle is anchored or the member has a settled predecessor),
+   * i.e. the bill charges the NEXT term while the current one is paid. Null
+   * on a cycle born `awaiting_payment` (065 §5.3 new member / admin
+   * lapsed-comeback) and on a `first_payment` flip, whose bill charges the
+   * CURRENT, unpaid period. Meaningful only while
    * `status === 'awaiting_payment'`; see `deriveMembershipAccess`.
    */
   readonly awaitingEnteredAt: string | null;
@@ -414,11 +416,23 @@ export interface MembershipAccessDecision {
  *    `expiresAt = period_to`, so the gate would wrongly flip a lapsed
  *    non-payer back to `full`. `cancelled` keeps the expiry check because it
  *    can befall a PAID cycle (archive cascade) whose coverage is still live.
- *  - `suspended`: `awaiting_payment`/`pending_admin_reactivation`, OR a
- *    NON-terminal cycle (`upcoming`/`reminded`) whose period already ended
- *    (closes the 06:15-cron gap — correct the instant the period ends, no
- *    cron dependency).
- *  - `full`: everything else, including a member with no cycle.
+ *  - `suspended`: `pending_admin_reactivation`; an `awaiting_payment` cycle
+ *    EXCEPT the early-bill case below; OR a NON-terminal cycle
+ *    (`upcoming`/`reminded`) whose period already ended (closes the
+ *    06:15-cron gap — correct the instant the period ends, no cron
+ *    dependency).
+ *  - `full`: everything else, including a member with no cycle, AND an
+ *    `awaiting_payment` cycle that was FLIPPED out of `upcoming|reminded`
+ *    by a RENEWAL bill (`awaitingEnteredAt` set, migration 0308) while its
+ *    period is still running. A renewal bill issued before T-0 (member
+ *    confirm, 107 auto-drafted issue, orphan relink) bills the NEXT term; the
+ *    current period is already paid, so it keeps full access until
+ *    `expiresAt`, exactly as the same cycle had while `upcoming`. The marker
+ *    is null (→ `suspended`) on a cycle BORN `awaiting_payment` (065 §5.3 new
+ *    member, admin lapsed-comeback: no paid period behind it, so the
+ *    far-future `expiresAt = period_to` buys nothing) and on a
+ *    `first_payment` flip (its bill charges the CURRENT period, so that
+ *    period is unpaid).
  *
  * Comparison is instant-vs-instant on `expiresAt` (the trigger-maintained
  * mirror of `period_to`); a malformed `expiresAt` on a terminal cycle is
@@ -432,9 +446,6 @@ export function deriveMembershipAccess(
 
   if (cycle.status === 'pending_admin_reactivation') {
     return { access: 'suspended', reason: 'pending_review' };
-  }
-  if (cycle.status === 'awaiting_payment') {
-    return { access: 'suspended', reason: 'unpaid' };
   }
   if (cycle.status === 'completed') {
     return { access: 'full', reason: 'in_good_standing' };
@@ -450,6 +461,17 @@ export function deriveMembershipAccess(
 
   const expiresMs = Date.parse(cycle.expiresAt);
   const expired = !Number.isFinite(expiresMs) || expiresMs < now.getTime();
+
+  if (cycle.status === 'awaiting_payment') {
+    // 0308 — an early bill on a paid period keeps access until that period
+    // ends (see the docstring). Born-awaiting (null marker) → suspended.
+    // `typeof` rather than `!== null`: a cycle object assembled without the
+    // field (a partial projection, a stale fixture) must fail CLOSED to the
+    // pre-0308 answer, never read `undefined` as "flipped" and grant access.
+    return typeof cycle.awaitingEnteredAt === 'string' && !expired
+      ? { access: 'full', reason: 'in_good_standing' }
+      : { access: 'suspended', reason: 'unpaid' };
+  }
 
   if (cycle.status === 'cancelled') {
     // 0306 — `coverage_ended` returned the money for the period, so access

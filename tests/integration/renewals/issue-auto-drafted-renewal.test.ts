@@ -42,6 +42,7 @@ import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/sch
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import {
   confirmRenewal,
+  deriveMembershipAccess,
   issueAutoDraftedRenewal,
   makeRenewalsDeps,
 } from '@/modules/renewals';
@@ -233,6 +234,7 @@ async function cycleRow(t: TestTenant, cycleId: string) {
       .select({
         status: renewalCycles.status,
         linkedInvoiceId: renewalCycles.linkedInvoiceId,
+        awaitingEnteredAt: renewalCycles.awaitingEnteredAt,
       })
       .from(renewalCycles)
       .where(eq(renewalCycles.cycleId, cycleId)),
@@ -318,6 +320,20 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     const cyc = await cycleRow(tenant, cycleId);
     expect(cyc?.status).toBe('awaiting_payment');
     expect(cyc?.linkedInvoiceId).toBe(invoiceId);
+    // 0308 — the auto-issue flip is the common early-bill path: it must
+    // stamp the marker so the member keeps access for the paid period that
+    // is still running (drafts exist only before T-0).
+    expect(cyc?.awaitingEnteredAt).toBeInstanceOf(Date);
+    // This suite's fixture period ([2025-08-01, 2026-08-01)) has already
+    // ended on the wall clock, so judge access at an instant INSIDE it: the
+    // paid period is still running there, so the early bill keeps access full.
+    const flipped = await makeRenewalsDeps(tenant.ctx.slug).cyclesRepo.findById(
+      tenant.ctx.slug,
+      cycleId as never,
+    );
+    expect(
+      deriveMembershipAccess(flipped, new Date('2026-07-15T00:00:00Z')).access,
+    ).toBe('full');
 
     expect(await outboxCountForInvoice(tenant, invoiceId)).toBe(0);
   }, 90_000);

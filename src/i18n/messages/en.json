@@ -3779,6 +3779,8 @@
         "viewInvoice": "View invoice",
         "invoiceCoveredLabel": "Covered",
         "invoiceCoveredTitle": "This renewal period is already covered by an earlier payment — no renewal invoice is linked yet.",
+        "billIssuedLabel": "Bill issued",
+        "billIssuedTitle": "A renewal bill for the next term has been issued. The current period is paid, so benefits continue until the current period ends.",
         "noRows": "No members in this bucket.",
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "noRowsInMonth": "No members renew in {month}.",
