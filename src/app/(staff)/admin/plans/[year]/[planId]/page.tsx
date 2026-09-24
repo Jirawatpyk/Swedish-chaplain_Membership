@@ -1,20 +1,31 @@
 /**
  * T087 — /admin/plans/[year]/[planId] detail page (US1).
  *
- * Read-only plan detail view showing full benefit matrix grouped by
- * category (Brand Visibility / Events / Additional / Partnership).
+ * Plan detail view: fee (with the VAT-inclusive total), eligibility,
+ * the number of members on the plan, and the full benefit matrix grouped
+ * by category (Brand Visibility / Events / Additional / Partnership).
+ * `plans.write` holders also get Edit + the actions menu (Activate /
+ * Deactivate, Delete, Restore) in the header.
  * Server component — loads via `getPlan` use case, 404s via
  * `notFound()` when the plan doesn't exist (or belongs to another
  * tenant — RLS handles that case transparently).
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { PencilIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
-import { asPlanSlug, asPlanYear, getPlan } from '@/modules/plans';
+import {
+  asPlanSlug,
+  asPlanYear,
+  getPlan,
+  grossWithVatMinorUnits,
+  vatRatePercent,
+} from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import {
   Card,
@@ -24,9 +35,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { MoneyDisplay } from '@/components/plans/money-display';
 import { LocaleTextDisplay } from '@/components/plans/locale-text-display';
+import { PlanDetailActions } from '@/components/plans/plan-detail-actions';
+import { PlanFeeWithVat } from '@/components/plans/plan-fee-with-vat';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
@@ -67,6 +81,7 @@ export default async function PlanDetailPage({
   const tM = await getTranslations('admin.plans.create.matrix');
   const tOptions = await getTranslations('admin.plans.create.options');
   const tCommon = await getTranslations('common');
+  const tDetail = await getTranslations('admin.plans.detail');
 
   const yearNumber = Number(year);
   if (!Number.isInteger(yearNumber) || yearNumber < 2000 || yearNumber > 2100) {
@@ -101,6 +116,16 @@ export default async function PlanDetailPage({
   // R8 — currency via F4 invoice_settings taxPolicy (consolidated).
   const taxPolicy = await deps.taxPolicy();
   const currencyCode = taxPolicy?.currencyCode ?? 'THB';
+  const vat = taxPolicy ? vatSummary(plan.annual_fee_minor_units, taxPolicy.vatRateRaw) : null;
+
+  // Active + inactive members on this (plan, year) — the FR-010 count the
+  // delete guard uses. A failed count hides the row rather than the page.
+  const memberCount = await deps.members
+    .countActivePlanMembers(tenant, asPlanSlug(plan.plan_id), asPlanYear(plan.plan_year))
+    .catch(() => null);
+
+  const canWritePlans = canPerform(currentUser.role, 'plans.write');
+  const isDeleted = plan.deleted_at !== null;
 
   const planDisplayName = plan.plan_name.en ?? planId;
 
@@ -125,7 +150,7 @@ export default async function PlanDetailPage({
             value={plan.plan_name}
             // 016 re-review D — the badge is a write-side affordance (it
             // prompts fixing the missing locale), so it follows 'plans.write'.
-            showMissingBadge={canPerform(currentUser.role, 'plans.write')}
+            showMissingBadge={canWritePlans}
           />
         }
         subtitle={
@@ -144,6 +169,30 @@ export default async function PlanDetailPage({
               <Badge variant="secondary">{t('badges.inactive')}</Badge>
             )}
           </div>
+        }
+        actions={
+          canWritePlans ? (
+            <>
+              {!isDeleted ? (
+                <Link
+                  href={`/admin/plans/${plan.plan_year}/${plan.plan_id}/edit`}
+                  className={buttonVariants({ variant: 'outline' })}
+                >
+                  <PencilIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t('actions.edit')}
+                </Link>
+              ) : null}
+              <PlanDetailActions
+                plan={{
+                  plan_id: plan.plan_id,
+                  plan_year: plan.plan_year,
+                  plan_name: plan.plan_name,
+                  is_active: plan.is_active,
+                  deleted_at: plan.deleted_at ? plan.deleted_at.toISOString() : null,
+                }}
+              />
+            </>
+          ) : undefined
         }
       />
 
@@ -167,6 +216,42 @@ export default async function PlanDetailPage({
                 />
               </dd>
             </div>
+            {vat ? (
+              <div>
+                <dt className="text-xs font-medium uppercase text-muted-foreground">
+                  {tDetail('totalWithVat')}
+                </dt>
+                <dd className="text-lg font-semibold">
+                  <PlanFeeWithVat
+                    feeMinorUnits={plan.annual_fee_minor_units}
+                    totalWithVatMinorUnits={vat.totalMinorUnits}
+                    vatRatePercent={vat.ratePercent}
+                    currencyCode={currencyCode}
+                  />
+                </dd>
+              </div>
+            ) : null}
+            {memberCount !== null ? (
+              <div>
+                <dt className="text-xs font-medium uppercase text-muted-foreground">
+                  {tDetail('members')}
+                </dt>
+                <dd className="text-lg font-semibold">
+                  {canPerform(currentUser.role, 'members.read') ? (
+                    <Link
+                      // With the year: the count is per (plan, year) and
+                      // un-renewed members stay on older years' plan rows.
+                      href={`/admin/members?plan_id=${encodeURIComponent(plan.plan_id)}&plan_year=${plan.plan_year}`}
+                      className="underline-offset-4 hover:underline focus-visible:underline"
+                    >
+                      {tDetail('memberCount', { count: memberCount })}
+                    </Link>
+                  ) : (
+                    tDetail('memberCount', { count: memberCount })
+                  )}
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt className="text-xs font-medium uppercase text-muted-foreground">
                 {t('create.labels.memberTypeScope')}
@@ -282,6 +367,26 @@ export default async function PlanDetailPage({
               />
             </dl>
           </section>
+          <Separator />
+          <section>
+            <h2 className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">
+              {tM('section.additionalBenefits')}
+            </h2>
+            <dl className="mt-2 grid grid-cols-1 gap-2 text-body md:grid-cols-2">
+              <KV
+                label={tM('m2mBenefitsAccess')}
+                value={tCommon(plan.benefit_matrix.m2m_benefits_access ? 'yes' : 'no')}
+              />
+              <KV
+                label={tM('businessReferrals')}
+                value={tCommon(plan.benefit_matrix.business_referrals ? 'yes' : 'no')}
+              />
+              <KV
+                label={tM('tailorMadeServices')}
+                value={tCommon(plan.benefit_matrix.tailor_made_services ? 'yes' : 'no')}
+              />
+            </dl>
+          </section>
           {plan.benefit_matrix.partnership ? (
             <>
               <Separator />
@@ -297,8 +402,17 @@ export default async function PlanDetailPage({
                   />
                   <KV
                     label={tM('videoDurationShort')}
-                    value={`${plan.benefit_matrix.partnership.video_duration_minutes} min`}
-                    raw
+                    value={tOptions(
+                      plan.benefit_matrix.partnership.video_duration_minutes === 1.5
+                        ? 'videoDuration.1_5'
+                        : 'videoDuration.1_0',
+                    )}
+                  />
+                  <KV
+                    label={tM('videoFrequencyScope')}
+                    value={tOptions(
+                      `videoFrequencyScope.${plan.benefit_matrix.partnership.video_frequency_scope}`,
+                    )}
                   />
                   <KV
                     label={tM('websiteLogoMonths')}
@@ -315,6 +429,30 @@ export default async function PlanDetailPage({
                     value={tOptions(
                       `directoryAdPosition.${plan.benefit_matrix.partnership.directory_ad_position}`,
                     )}
+                  />
+                  <KV
+                    label={tM('boothIncluded')}
+                    value={tCommon(plan.benefit_matrix.partnership.booth_included ? 'yes' : 'no')}
+                  />
+                  <KV
+                    label={tM('rollupLogoAtEvents')}
+                    value={tCommon(
+                      plan.benefit_matrix.partnership.rollup_logo_at_events ? 'yes' : 'no',
+                    )}
+                  />
+                  <KV
+                    label={tM('logoOnMerch')}
+                    value={tCommon(plan.benefit_matrix.partnership.logo_on_merch ? 'yes' : 'no')}
+                  />
+                  <KV
+                    label={tM('newsletterPromotion')}
+                    value={tCommon(
+                      plan.benefit_matrix.partnership.newsletter_promotion ? 'yes' : 'no',
+                    )}
+                  />
+                  <KV
+                    label={tM('eNewsletterLogo')}
+                    value={tCommon(plan.benefit_matrix.partnership.enewsletter_logo ? 'yes' : 'no')}
                   />
                 </dl>
               </section>
@@ -338,4 +476,21 @@ function KV({ label, value }: { label: string; value: string; raw?: boolean }) {
       <dd className="font-medium">{value}</dd>
     </div>
   );
+}
+
+// VAT-inclusive total + the rate as a percentage, via the same integer math
+// the plans list uses. A tax-policy rate the domain rejects hides the row
+// instead of failing the page.
+function vatSummary(
+  feeMinorUnits: number,
+  vatRateRaw: string,
+): { readonly totalMinorUnits: number; readonly ratePercent: number } | null {
+  try {
+    return {
+      totalMinorUnits: grossWithVatMinorUnits(feeMinorUnits, vatRateRaw),
+      ratePercent: vatRatePercent(vatRateRaw),
+    };
+  } catch {
+    return null;
+  }
 }

@@ -85,6 +85,7 @@ interface SearchParams {
   readonly q?: string;
   readonly status?: string;
   readonly plan_id?: string;
+  readonly plan_year?: string;
   readonly show_archived?: string;
   readonly page?: string;
   /** I1 round-10 — quick filter on F8-derived risk score band. */
@@ -267,6 +268,7 @@ export async function MembersDirectoryBody({
   const {
     q: filterQ,
     planId: filterPlanId,
+    planYear: filterPlanYear,
     status: statuses,
     riskBand,
     portalNeedsInvite,
@@ -299,6 +301,7 @@ export async function MembersDirectoryBody({
   const directoryFilter = {
     ...(filterQ !== undefined ? { q: filterQ } : {}),
     ...(filterPlanId !== undefined ? { planId: filterPlanId } : {}),
+    ...(filterPlanYear !== undefined ? { planYear: filterPlanYear } : {}),
     ...(riskBand ? { riskBand } : {}),
     ...(sort ? { sort, ...(order ? { order } : {}) } : {}),
     status: [...statuses],
@@ -341,6 +344,7 @@ export async function MembersDirectoryBody({
       : countMembersNeedingPortalInviteSafe(tenant, deps.memberRepo, {
           ...(filterQ !== undefined ? { q: filterQ } : {}),
           ...(filterPlanId !== undefined ? { planId: filterPlanId } : {}),
+          ...(filterPlanYear !== undefined ? { planYear: filterPlanYear } : {}),
           ...(riskBand ? { riskBand } : {}),
           status: [...statuses],
           limit: PAGE_SIZE,
@@ -392,7 +396,7 @@ export async function MembersDirectoryBody({
         ) : hasFilters ? (
           <MembersFilteredEmptyState />
         ) : (
-          <MembersZeroState />
+          <MembersZeroState canAddMember={isAdmin} />
         )}
       </>
     );

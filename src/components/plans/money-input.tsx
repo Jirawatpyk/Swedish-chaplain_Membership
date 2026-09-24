@@ -62,6 +62,11 @@ export function MoneyInput({
   helpText,
 }: MoneyInputProps) {
   const id = useId();
+  const helpId = `${id}-help`;
+  const errorId = `${id}-error`;
+  const describedBy =
+    [helpText ? helpId : null, error ? errorId : null].filter(Boolean).join(' ') ||
+    undefined;
 
   return (
     <div className="space-y-1">
@@ -92,13 +97,18 @@ export function MoneyInput({
           }}
           disabled={disabled}
           aria-invalid={Boolean(error)}
+          aria-describedby={describedBy}
         />
       </div>
       {helpText ? (
-        <p className="text-muted-foreground text-sm">{helpText}</p>
+        <p id={helpId} className="text-muted-foreground text-sm">
+          {helpText}
+        </p>
       ) : null}
       {error ? (
-        <p className="text-destructive text-sm" role="alert">
+        // Linked via aria-describedby (not role="alert"): the form moves
+        // focus to the first invalid field, which then reads its message.
+        <p id={errorId} className="text-destructive text-sm">
           {error}
         </p>
       ) : null}

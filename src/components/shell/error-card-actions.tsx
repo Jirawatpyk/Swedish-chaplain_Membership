@@ -21,8 +21,9 @@
  *     same via `aria-busy` + label change. Per ux-standards.md § 2.1
  *     async ≥100 ms operations should show explicit pending indicators.
  *
- * Reused on both `/admin/renewals` (pipeline) and
- * `/admin/settings/renewals/schedules` error states. Each surface passes
+ * Reused on `/admin/renewals` (pipeline + pending review),
+ * `/admin/settings/renewals/schedules`, `/admin/audit`, `/admin/invoices`
+ * and the invoice payment-activity panel. Each surface passes
  * its own `goBackHref` and pre-translated labels (component stays free
  * of `next-intl` imports — small enough to be parameter-driven).
  *
@@ -36,7 +37,7 @@ import { useEffect, useId, useTransition } from 'react';
 import { toast } from 'sonner';
 import { Button, buttonVariants } from '@/components/ui/button';
 
-const RETRY_SESSION_KEY = 'f8:renewals:retry-correlation';
+const RETRY_SESSION_KEY = 'load-error:retry-correlation';
 
 export interface ErrorCardActionsProps {
   readonly correlationId: string;
@@ -138,10 +139,7 @@ export function ErrorCardActions({
         >
           {isPending ? (pendingLabel ?? retryLabel) : retryLabel}
         </Button>
-        <Link
-          href={goBackHref}
-          className={buttonVariants({ variant: 'outline', size: 'sm' })}
-        >
+        <Link href={goBackHref} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
           {goBackLabel}
         </Link>
       </div>
@@ -149,10 +147,7 @@ export function ErrorCardActions({
         <span id={referenceId} className="sr-only">
           {referenceLabel}
         </span>
-        <code
-          aria-describedby={referenceId}
-          className="text-xs text-muted-foreground font-mono"
-        >
+        <code aria-describedby={referenceId} className="text-xs text-muted-foreground font-mono">
           {correlationId}
         </code>
       </div>
