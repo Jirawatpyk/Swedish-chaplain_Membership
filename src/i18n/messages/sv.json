@@ -106,6 +106,8 @@
       "submitting": "Återställer…",
       "successMessage": "E-postbytet har återställts. Slutför lösenordsåterställningen för att få tillgång igen.",
       "completePasswordReset": "Slutför lösenordsåterställning",
+      "goToSignIn": "Gå till inloggning",
+      "successNextStep": "Alla sessioner för det här kontot har loggats ut. Ange din ursprungliga e-postadress på nästa sida.",
       "errors": {
         "invalidToken": "Denna återställningslänk har upphört att gälla eller har redan använts.",
         "conflict": "Den tidigare e-postadressen är inte längre tillgänglig. Kontakta din kammaradministratör.",

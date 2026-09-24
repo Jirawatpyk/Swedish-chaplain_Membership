@@ -15,13 +15,6 @@
 
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { AuthPageControls } from '@/components/shell/auth-page-controls';
 import { BrandMark } from '@/components/shell/brand-mark';
 import { EmailChangeRevertForm } from '@/components/auth/email-change-revert-form';
@@ -39,7 +32,6 @@ export default async function EmailChangeRevertPage({
   params,
 }: RevertPageProps) {
   const { token } = await params;
-  const t = await getTranslations('auth.emailChangeRevert');
 
   return (
     <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
@@ -50,15 +42,8 @@ export default async function EmailChangeRevertPage({
           title={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
           className="w-44"
         />
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-2">
-            <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>{t('cardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <EmailChangeRevertForm token={token} />
-          </CardContent>
-        </Card>
+        {/* The form owns the whole card so the header copy follows its state. */}
+        <EmailChangeRevertForm token={token} />
       </div>
     </main>
   );
