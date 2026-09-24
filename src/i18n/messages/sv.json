@@ -3290,7 +3290,8 @@
           "toDate": "Till",
           "reset": "Återställ filter",
           "upcomingSends": "Kommande utskick",
-          "chipCount": "{count, plural, one {# utskick} other {# utskick}}"
+          "chipCount": "{count, plural, one {# utskick} other {# utskick}}",
+          "chipCountsScope": "Antalen gäller alla utskick i varje steg — filtren för medlem, datum och kommande utskick ändrar dem inte."
         },
         "columns": {
           "member": "Medlem",

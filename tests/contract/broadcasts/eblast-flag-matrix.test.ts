@@ -32,7 +32,13 @@ import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { notificationTypeEnum } from '@/modules/auth/infrastructure/db/schema';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
-import { makeApprovalBroadcast, makeApprovalVersion } from '../../helpers/eblast-approval-fakes';
+import {
+  makeApprovalBroadcast,
+  makeApprovalVersion,
+  makeFakeEblastOutbox,
+  makeFakeMarketingDirectory,
+  makeMarketingRecipient,
+} from '../../helpers/eblast-approval-fakes';
 import {
   harness,
   importDecisionRoute,
@@ -380,7 +386,7 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
     const { unsafeBrandEmailLower } = await import('@/modules/broadcasts/domain/value-objects/email-lower');
     const { asTenantContext } = await import('@/modules/tenants');
     const { ok } = await import('@/lib/result');
-    const enqueued: Array<{ type: string; toEmail: string }> = [];
+    const eblastOutbox = makeFakeEblastOutbox();
     const deps = {
       tenant: asTenantContext('test-tenant'),
       broadcastsRepo: {
@@ -408,17 +414,11 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
       rateLimiter: { checkLimit: async () => ok(true as const) },
       audit: { emit: async () => undefined, emitTyped: async () => undefined },
       clock: { now: () => new Date('2026-09-24T09:00:00Z') },
-      marketingDirectory: {
-        listRecipients: async () => [
-          { userId: 'mk-1', email: 'marketing-1@swecham.test', locale: 'en' as const },
-          { userId: 'mk-2', email: 'marketing-2@swecham.test', locale: 'en' as const },
-        ],
-      },
-      eblastOutbox: {
-        enqueueInTx: async (_tx: unknown, _t: unknown, r: { type: string; toEmail: string }) => {
-          enqueued.push({ type: r.type, toEmail: r.toEmail });
-        },
-      },
+      marketingDirectory: makeFakeMarketingDirectory([
+        makeMarketingRecipient({ userId: 'mk-1', email: 'marketing-1@swecham.test' }),
+        makeMarketingRecipient({ userId: 'mk-2', email: 'marketing-2@swecham.test' }),
+      ]),
+      eblastOutbox,
     } as unknown as Parameters<typeof submitBroadcast>[0];
     const result = await submitBroadcast(deps, {
       memberId: 'm-1',
@@ -434,7 +434,7 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
       requestId: 'req-flag-off',
     });
     expect(result.ok ? 'submitted' : result.error).toBe('submitted');
-    expect(enqueued).toEqual([
+    expect(eblastOutbox.rows().map((r) => ({ type: r.type, toEmail: r.toEmail }))).toEqual([
       { type: 'eblast_submitted_marketing', toEmail: 'marketing-1@swecham.test' },
       { type: 'eblast_submitted_marketing', toEmail: 'marketing-2@swecham.test' },
     ]);

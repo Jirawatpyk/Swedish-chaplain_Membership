@@ -17,6 +17,7 @@
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
@@ -122,7 +123,7 @@ describe('F119 T075 — one allowance place per in-progress E-Blast, whatever th
 
   it('a withdrawal (cancel) frees its place, with quota_year_consumed still NULL', async () => {
     const id = ids.get('member_approved')!;
-    const r = await cancelBroadcast(makeCancelBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
+    const r = await cancelBroadcast(makeCancelBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])), {
       broadcastId: asBroadcastId(id),
       actor: { kind: 'member', memberId, userId: randomUUID() },
       actorRole: 'member',
@@ -189,7 +190,7 @@ describe('F119 T075 — one allowance place per in-progress E-Blast, whatever th
     const held = await counter();
 
     const r = await expireStaleMemberApprovals(
-      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: { listRecipients: async () => [] } },
+      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([]) },
       { requestId: 't126' },
     );
     expect(r.ok ? r.value : r.error).toMatchObject({ scanned: 1, expired: 1, rowsFailed: 0 });
@@ -206,7 +207,7 @@ describe('F119 T075 — one allowance place per in-progress E-Blast, whatever th
 
     // A second tick the same day is a no-op.
     const again = await expireStaleMemberApprovals(
-      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: { listRecipients: async () => [] } },
+      { ...makeExpireStaleMemberApprovalsDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([]) },
       { requestId: 't126-again' },
     );
     expect(again.ok ? again.value : again.error).toMatchObject({ scanned: 0, expired: 0 });

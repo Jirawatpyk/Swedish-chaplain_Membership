@@ -33,6 +33,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { db, runInTenant } from '@/lib/db';
 import {
   makeRecordMemberDecisionDeps,
@@ -87,7 +88,7 @@ describe('F119 T076 — a member erased at Awaiting member approval: nothing the
   let peerBroadcastId: BroadcastId;
   const planId = `plan-f119-erase-${randomUUID().slice(0, 8)}`;
   const actor = { actorUserId: MARKETER.userId, actorRole: 'marketing' as const, requestId: null };
-  const roster = { listRecipients: async () => [MARKETER] };
+  const roster = makeFakeMarketingDirectory([MARKETER]);
 
   async function versionsOf(id: BroadcastId): Promise<VersionRow[]> {
     return (await runInTenant(tenant.ctx, (tx) =>
@@ -139,7 +140,7 @@ describe('F119 T076 — a member erased at Awaiting member approval: nothing the
 
   /** submit → start → save → send: the E-Blast is awaiting its member in round 1. */
   async function driveToRoundOne(forMember: string, submitter: TestUser, company: string): Promise<{ id: BroadcastId; versionId: string }> {
-    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])), {
       memberId: forMember,
       submittedByUserId: submitter.userId,
       actorRole: 'member_self_service',

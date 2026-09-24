@@ -11,7 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { cancelBroadcast } from '@/modules/broadcasts/application/use-cases/cancel-broadcast';
-import { makeFakeBroadcastImagesRepo, makeFakeMarketingDirectory } from '../../../helpers/eblast-approval-fakes';
+import {
+  makeFakeBroadcastImagesRepo,
+  makeFakeEblastOutbox,
+  makeFakeMarketingDirectory,
+} from '../../../helpers/eblast-approval-fakes';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import {
@@ -267,7 +271,7 @@ const baseInput = {
 const t081Deps = () => ({
   imagesRepo: makeFakeBroadcastImagesRepo(),
   marketingDirectory: makeFakeMarketingDirectory([]),
-  eblastOutbox: { enqueueInTx: vi.fn(async () => undefined) },
+  eblastOutbox: makeFakeEblastOutbox(),
 });
 
 const clock = { now: (): Date => FROZEN_NOW };

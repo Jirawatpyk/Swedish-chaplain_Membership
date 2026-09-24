@@ -21,6 +21,7 @@
  * is never reached, so quota still gets spent by a suspended member).
  */
 import { describe, expect, it } from 'vitest';
+import { makeFakeEblastOutbox, makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { ok, err } from '@/lib/result';
 import { submitBroadcast } from '@/modules/broadcasts';
 import { asTenantContext } from '@/modules/tenants';
@@ -290,8 +291,8 @@ function makeDeps(counters: CallCounters, membershipAccess: MembershipAccessPort
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
       // F119 T129 — the submit's marketing hand-off (no roster here).
-      marketingDirectory: { listRecipients: async () => [] },
-      eblastOutbox: { enqueueInTx: async () => undefined },
+      marketingDirectory: makeFakeMarketingDirectory([]),
+      eblastOutbox: makeFakeEblastOutbox(),
     },
   };
 }

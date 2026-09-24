@@ -22,6 +22,7 @@
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { db, runInTenant } from '@/lib/db';
 import {
   makeGetMemberVersionThreadDeps,
@@ -66,7 +67,7 @@ describe('F119 T069 — two rounds, both visible to both sides in order, a hand-
   let broadcastId: BroadcastId;
   const planId = `plan-f119-rounds-${randomUUID().slice(0, 8)}`;
   const actor = { actorUserId: MARKETERS[0]!.userId, actorRole: 'marketing' as const, requestId: null };
-  const roster = { listRecipients: async () => MARKETERS };
+  const roster = makeFakeMarketingDirectory(MARKETERS);
 
   async function outboxRows(): Promise<OutboxRow[]> {
     return (await runInTenant(tenant.ctx, (tx) =>
@@ -121,7 +122,7 @@ describe('F119 T069 — two rounds, both visible to both sides in order, a hand-
   }, 120_000);
 
   it('after a change request and a second version, the thread shows both versions, both notes and the feedback attached to round 1, oldest first', async () => {
-    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])), {
       memberId,
       submittedByUserId: portalUser.userId,
       actorRole: 'member_self_service',

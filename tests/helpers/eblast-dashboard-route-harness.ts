@@ -21,11 +21,9 @@
 import { vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
-import {
-  BROADCAST_STATUSES,
-  type BroadcastStatus,
-} from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
+import { makeFakeBroadcastQueueReads } from './eblast-approval-fakes';
 
 export const DASH_TENANT = 'test-tenant';
 
@@ -145,19 +143,28 @@ export async function broadcastsBarrelMock() {
         listByTenantStatus: async (tenantId: string, opts: Record<string, unknown>) => {
           dash.listCalls.push({ tenantId, opts });
           const filter = opts['statusFilter'] as readonly string[] | undefined;
-          const rows = filter === undefined ? dash.rows : dash.rows.filter((r) => filter.includes(r.status));
+          // FR-030's date range, as the repo applies it: `submitted_at` in
+          // `[submittedFrom, submittedBefore)`; a never-submitted row is outside any range.
+          const from = opts['submittedFrom'] as Date | undefined;
+          const before = opts['submittedBefore'] as Date | undefined;
+          const rows = dash.rows
+            .filter((r) => filter === undefined || filter.includes(r.status))
+            .filter((r) => from === undefined || (r.submittedAt !== null && r.submittedAt >= from))
+            .filter((r) => before === undefined || (r.submittedAt !== null && r.submittedAt < before));
           return { rows, nextCursor: null };
         },
       },
     }),
-    makeBroadcastQueueReads: () => ({
-      countByStatus: async () =>
-        Object.fromEntries(BROADCAST_STATUSES.map((s) => [s, dash.counts[s] ?? 0])) as Record<BroadcastStatus, number>,
-      deliveryCountsFor: async (_ctx: unknown, ids: readonly string[]) => {
+    // The shared `BroadcastQueueReads` fake (T159a) over `dash`, recording the ids each batch asked for.
+    makeBroadcastQueueReads: () => {
+      const reads = makeFakeBroadcastQueueReads(dash.counts, dash.deliveries);
+      const read = reads.deliveryCountsFor.getMockImplementation()!;
+      reads.deliveryCountsFor.mockImplementation(async (ctx, ids) => {
         dash.deliveryCalls.push([...ids]);
-        return new Map([...dash.deliveries.entries()].filter(([id]) => ids.includes(id)));
-      },
-    }),
+        return read(ctx, ids);
+      });
+      return reads;
+    },
   };
 }
 

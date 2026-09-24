@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, gte, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -391,6 +391,16 @@ export function adminQueueListQuery(tx: TenantTx, tenantId: string, opts: ListBy
   }
   if (opts.scheduledFrom !== undefined) {
     conditions.push(gte(broadcasts.scheduledFor, opts.scheduledFrom));
+  }
+  // FR-030's date range — half-open on `submitted_at`. Typed builders, like
+  // `scheduledFrom` above: they bind the `Date` through the column's own
+  // mapping (only a raw `sql` param needs the ISO-text `::timestamptz` cast the
+  // cursor below uses). A NULL `submitted_at` (a draft) satisfies neither.
+  if (opts.submittedFrom !== undefined) {
+    conditions.push(gte(broadcasts.submittedAt, opts.submittedFrom));
+  }
+  if (opts.submittedBefore !== undefined) {
+    conditions.push(lt(broadcasts.submittedAt, opts.submittedBefore));
   }
   const sort = LIST_SORTS[opts.sort ?? 'created_at_desc'];
   const cursor = opts.cursor !== undefined ? decodeCursor(opts.cursor) : null;

@@ -11,7 +11,7 @@ import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
 import { isDefaultBroadcastView } from './_lib/is-default-view';
-import { queueOrderOf, queuePageHref, queueViewKey, queueViewTotal } from './_lib/queue-view';
+import { queueOrderOf, queuePageHref, queueViewKey, queueViewNarrowed, queueViewTotal } from './_lib/queue-view';
 import { HaltStateBanner } from '@/components/broadcast/admin/halt-state-banner';
 import { HaltStateUnavailableBanner } from '@/components/broadcast/admin/halt-state-unavailable-banner';
 import { logger } from '@/lib/logger';
@@ -28,6 +28,8 @@ import { loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
+import { isYmd, tenantDayRangeUtc } from '@/lib/tenant-day-range';
 import { unstable_cache } from 'next/cache';
 
 /**
@@ -109,6 +111,11 @@ type SearchParams = {
    */
   readonly status_all?: string;
   readonly memberId?: string;
+  /**
+   * FR-030 — `YYYY-MM-DD` days in the tenant's timezone bounding `submitted_at`,
+   * both days whole. One that is not a real calendar day is ignored here (the
+   * list API refuses it with a 400 instead).
+   */
   readonly fromDate?: string;
   readonly toDate?: string;
   readonly cursor?: string;
@@ -172,6 +179,11 @@ export default async function AdminBroadcastsPage({
   // the default Awaiting-review view that is the old submitted-first order —
   // submit stamps `stage_entered_at`); most recent first on every other view.
   const scheduledFrom = upcomingFrom(params.from);
+  const submitted = tenantDayRangeUtc(
+    typeof params.fromDate === 'string' && isYmd(params.fromDate) ? params.fromDate : undefined,
+    typeof params.toDate === 'string' && isYmd(params.toDate) ? params.toDate : undefined,
+    env.tenant.timezone,
+  );
   const sort = queueSortFor(status, params.sort === 'scheduled_for');
   const [listResult, stageChips] = await Promise.all([
     loadAdminBroadcastQueue(tenant, {
@@ -181,6 +193,8 @@ export default async function AdminBroadcastsPage({
       ...(params.memberId !== undefined && { memberId: params.memberId }),
       ...(params.cursor !== undefined && { cursor: params.cursor }),
       ...(scheduledFrom !== undefined && { scheduledFrom }),
+      ...(submitted.fromInclusive !== undefined && { submittedFrom: submitted.fromInclusive }),
+      ...(submitted.toExclusive !== undefined && { submittedBefore: submitted.toExclusive }),
     }),
     // F119 T116 (FR-025, R18) — the per-stage chip counts + the flag the chip
     // strip's "flag ON or rows exist" rule needs. A failed read degrades to
@@ -192,13 +206,17 @@ export default async function AdminBroadcastsPage({
 
   // UX review H3 — the announcement counts the VIEW, not this page of ≤ 50:
   // the chip counts summed over the view's stages, when nothing they cannot
-  // see (a member, the Upcoming bound) narrows it. H4 — the view's identity,
+  // see (a member, the Upcoming bound, the FR-030 date range) narrows it. H4 — the view's identity,
   // so a change of view is announced even when it lands on the same rows.
   const viewTotal = queueViewTotal({
     stageCounts: stageChips.kind === 'ok' ? stageChips.counts : null,
     statusFilter: status,
     allStatuses: BROADCAST_STATUSES,
-    narrowed: params.memberId !== undefined || scheduledFrom !== undefined,
+    narrowed: queueViewNarrowed({
+      ...(params.memberId !== undefined && { memberId: params.memberId }),
+      ...(scheduledFrom !== undefined && { scheduledFrom }),
+      submitted,
+    }),
     firstPage: params.cursor === undefined,
     rowsOnPage: rows.length,
     hasNextPage: listResult.nextCursor !== null,

@@ -22,6 +22,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { db, runInTenant } from '@/lib/db';
 import {
   makeConfirmScheduleDeps,
@@ -77,7 +78,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
 
   it('the delivered content equals the version the member approved', async () => {
     // 1. The member submits (the real submit: membership access, quota, rate limit, audience).
-    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])), {
       memberId,
       submittedByUserId: portalUser.userId,
       actorRole: 'member_self_service',
@@ -123,7 +124,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
 
     // 5. The member approves the version they were shown.
     const decided = await recordMemberDecision(
-      { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: { listRecipients: async () => [MARKETER] } },
+      { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([MARKETER]) },
       {
         broadcastId,
         memberId,
@@ -219,7 +220,7 @@ describe('F119 FR-016 — the proposal written at submit is kept, then survives 
   };
 
   it('keep_proposal confirms the submitted time (differs: false); a different time then reports differs: true and leaves the proposal untouched', async () => {
-    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])), {
       memberId,
       submittedByUserId: portalUser.userId,
       actorRole: 'member_self_service',
@@ -260,7 +261,7 @@ describe('F119 FR-016 — the proposal written at submit is kept, then survives 
     const sent = await sendVersionToMember(makeSendVersionToMemberDeps(tenant.ctx.slug), { broadcastId, ...actor });
     if (!sent.ok) throw new Error(`send refused: ${JSON.stringify(sent.error)}`);
     const decided = await recordMemberDecision(
-      { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: { listRecipients: async () => [MARKETER] } },
+      { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([MARKETER]) },
       {
         broadcastId,
         memberId,

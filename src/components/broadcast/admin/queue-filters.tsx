@@ -18,7 +18,7 @@
  * Findings closed by this file: D1, D2, D3 (filter buttons), A1, A2,
  * A3, H3 (see specs/010-email-broadcast review report).
  */
-import { useCallback, useEffect, useMemo, useRef, useTransition } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { CalendarClockIcon, CheckIcon, XIcon } from 'lucide-react';
@@ -170,6 +170,16 @@ export function QueueFilters({
   const currentMemberId = searchParams.get('memberId') ?? '';
   const currentFromDate = searchParams.get('fromDate') ?? '';
   const currentToDate = searchParams.get('toDate') ?? '';
+  // FR-030 — the chip counts are per stage for the WHOLE tenant (the FR-025
+  // backlog; R18 offers a chip by them), so they do not follow a member filter,
+  // a date range or the Upcoming bound. With one of those on, the Stage group
+  // says so — on screen and as its accessible description — rather than let
+  // "70 E-Blasts" sit beside a list of five. The page's announced total falls
+  // back to the rows shown for the same reason (`queueViewNarrowed`).
+  const countsNoteId = useId();
+  const countsCoverMoreThanView =
+    stageCounts !== null &&
+    (currentMemberId !== '' || currentFromDate !== '' || currentToDate !== '' || currentFrom === UPCOMING_FROM);
 
   /**
    * Build a fresh URLSearchParams from a patch object, preserving any
@@ -408,7 +418,11 @@ export function QueueFilters({
           `min-width: auto` each pin a chip at its min-content width, so the
           chip's `truncate` never engaged and the SV "member approved" chip ran
           334 px wide at a 320 px viewport. Every link of the chain needs it. */}
-      <fieldset ref={stageFieldsetRef} className="min-w-0 space-y-1">
+      <fieldset
+        ref={stageFieldsetRef}
+        className="min-w-0 space-y-1"
+        aria-describedby={countsCoverMoreThanView ? countsNoteId : undefined}
+      >
         <legend className="mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] font-medium">
           {t('statusLabel')}
         </legend>
@@ -428,6 +442,11 @@ export function QueueFilters({
             {TERMINAL_STATUSES.filter(isOffered).map(renderChip)}
           </div>
         </div>
+        {countsCoverMoreThanView ? (
+          <p id={countsNoteId} className="text-xs text-muted-foreground">
+            {t('chipCountsScope')}
+          </p>
+        ) : null}
       </fieldset>
 
       <div className="space-y-1">

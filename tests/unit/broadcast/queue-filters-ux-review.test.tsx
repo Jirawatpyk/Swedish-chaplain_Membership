@@ -134,3 +134,30 @@ describe('Reset matches its h-9 neighbours (UX review LOW)', () => {
     expect(reset.className).not.toContain('h-7');
   });
 });
+
+/**
+ * FR-030 — the stage chip counts stay per stage for the WHOLE tenant (they are
+ * the stage backlog FR-025 asks for, and R18 offers a chip by them). When a
+ * filter they cannot see is on — member, date range, the Upcoming bound — the
+ * Stage group says so in its accessible description, and on screen, instead of
+ * letting "70 E-Blasts" sit beside a list of five.
+ */
+describe('chip counts under a filter they do not see (FR-030)', () => {
+  const stageGroup = () => screen.getByRole('group', { name: /^stage$/i });
+
+  it.each([['fromDate=2026-09-01'], ['toDate=2026-09-30'], ['memberId=m-1'], ['status=approved&sort=scheduled_for&from=now']])(
+    '%s → the Stage group is described as counting every E-Blast',
+    (query) => {
+      nav.searchParams.current = new URLSearchParams(query);
+      render(filters());
+      expect(stageGroup()).toHaveAccessibleDescription(/every e-blast in each stage/i);
+    },
+  );
+
+  it('no such filter → no description (the counts ARE the view)', () => {
+    nav.searchParams.current = new URLSearchParams('status=submitted');
+    render(filters());
+    expect(stageGroup()).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByText(/every e-blast in each stage/i)).toBeNull();
+  });
+});

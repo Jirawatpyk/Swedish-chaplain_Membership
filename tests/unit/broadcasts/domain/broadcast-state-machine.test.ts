@@ -177,6 +177,10 @@ describe('canTransition', () => {
     },
   );
 
+  it('a `from` outside the status union (a widened DB enum, a parsed string) is refused, not a throw', () => {
+    expect(canTransition('not_a_status' as BroadcastStatus, 'sent')).toBe(false);
+  });
+
   it('terminal states have empty outbound adjacency', () => {
     expect(BROADCAST_TRANSITIONS.sent).toEqual([]);
     expect(BROADCAST_TRANSITIONS.rejected).toEqual([]);

@@ -17,6 +17,7 @@
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { db, runInTenant } from '@/lib/db';
 import { makeRecordMemberDecisionDeps } from '@/lib/broadcast-approval-deps';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -57,7 +58,7 @@ describe('F119 T073 — member B cannot read or decide member A\'s E-Blast (live
     ...makeRecordMemberDecisionDeps(slug),
     // The live roster is cross-tenant and shared on the dev branch; one
     // recipient keeps the enqueue count exact. The outbox INSERT is real.
-    marketingDirectory: { listRecipients: async () => [MARKETER] },
+    marketingDirectory: makeFakeMarketingDirectory([MARKETER]),
   });
   const decideAs = (slug: string, who: { userId: string; memberId: string; contactId: string }, requestId: string) =>
     recordMemberDecision(deps(slug), {

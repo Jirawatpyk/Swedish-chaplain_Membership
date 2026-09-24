@@ -15,6 +15,11 @@
  * `?status=approved&sort=scheduled_for&from=now` is the Upcoming sends preset
  * (FR-028). `from` accepts `now` only — any other value is refused rather than
  * read as "no bound". No contact-level field is selected anywhere (FR-036).
+ *
+ * FR-030 — `fromDate` / `toDate` (`YYYY-MM-DD`, the names the filter bar
+ * writes) bound `submitted_at` as whole calendar days in the tenant's timezone
+ * (`tenantDayRangeUtc`). A day that is not a real calendar day is refused (400),
+ * never read as "no bound".
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -33,6 +38,8 @@ import {
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
+import { isYmd, tenantDayRangeUtc } from '@/lib/tenant-day-range';
 import { loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 
@@ -73,6 +80,8 @@ const ListQuerySchema = z.object({
     ])
     .optional(),
   from: z.literal('now').optional(),
+  fromDate: z.string().refine(isYmd).optional(),
+  toDate: z.string().refine(isYmd).optional(),
 });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -104,6 +113,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const scheduledFrom = upcomingFrom(parsed.data.from);
+    const submitted = tenantDayRangeUtc(parsed.data.fromDate, parsed.data.toDate, env.tenant.timezone);
     const [page, chips] = await Promise.all([
       loadAdminBroadcastQueue(tenantCtx, {
         statusFilter: parsed.data.status,
@@ -115,6 +125,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         ...(parsed.data.cursor !== undefined && { cursor: parsed.data.cursor }),
         ...(parsed.data.memberId !== undefined && { memberId: parsed.data.memberId }),
         ...(scheduledFrom !== undefined && { scheduledFrom }),
+        ...(submitted.fromInclusive !== undefined && { submittedFrom: submitted.fromInclusive }),
+        ...(submitted.toExclusive !== undefined && { submittedBefore: submitted.toExclusive }),
       }),
       readEblastStageChips(tenantCtx, 'M119.api.admin_broadcasts.stage_counts_failed'),
     ]);

@@ -28,6 +28,7 @@
  * unit coverage of the precondition's branches with a stub port).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -124,7 +125,7 @@ describe('submitBroadcast — membership-access wiring (live Neon, 059 Task 5)',
     // the gate is wired into the actual production dependency graph
     // that every route (and proxySubmitBroadcast) delegates through,
     // not merely callable in isolation against a hand-built stub.
-    const deps = makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] });
+    const deps = makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([]));
 
     const result = await submitBroadcast(deps, {
       memberId,
@@ -198,7 +199,7 @@ describe('submitBroadcast — membership-access wiring (live Neon, 059 Task 5)',
       }),
     );
 
-    const deps = makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] });
+    const deps = makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([]));
     const result = await submitBroadcast(deps, {
       memberId,
       submittedByUserId: user.userId,
@@ -223,7 +224,7 @@ describe('submitBroadcast — membership-access wiring (live Neon, 059 Task 5)',
   it('member with NO renewal cycle at all → full access (control — precondition (l) does not block; reaches quota reservation)', async () => {
     const memberId = await seedMember('Good-Standing Wiring Co');
 
-    const deps = makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] });
+    const deps = makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([]));
     const result = await submitBroadcast(deps, {
       memberId,
       submittedByUserId: user.userId,

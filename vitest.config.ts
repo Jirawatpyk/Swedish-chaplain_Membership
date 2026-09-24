@@ -754,6 +754,97 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F119 PR-2 (T157a) — the Domain files PR-2 creates or reshapes: the
+        // stage vocabulary (stage / whose turn / in-progress set / time in
+        // stage), the widened status machine, and the approval VOs + policies.
+        // 100% line per Constitution II; measured at 100% branch too, so pinned
+        // there (`canTransition`'s off-union `from` arm is exercised, not
+        // excused). `stage-age.ts` and `member-approval-expiry.ts` are PR-2
+        // files beyond T157a's seven, measured at 100% and pinned with them —
+        // nine in all.
+        'src/modules/broadcasts/domain/stage/broadcast-stage.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/stage/whose-turn.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/stage/in-progress-statuses.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/stage/stage-age.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/policies/broadcast-status-transitions.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/approval/approval-schedule-policy.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/approval/broadcast-version.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/approval/member-decision.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/domain/approval/member-approval-expiry.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F119 PR-2 (T158) — the four approval use cases that carry five of
+        // the six security-critical paths (research R20: `promoteApprovedVersion`
+        // lives inside `confirm-schedule.ts`; the voiding arm inside
+        // `start-formatted-version.ts`). 100% BRANCH (Constitution II); the sixth,
+        // `set-brand-settings.ts`, is T157's above.
+        'src/modules/broadcasts/application/use-cases/approval/start-formatted-version.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/application/use-cases/approval/send-version-to-member.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/application/use-cases/approval/record-member-decision.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/application/use-cases/approval/confirm-schedule.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // The count endpoints' shared core. The `_exhaustive: never` arm is
         // unreachable by construction, so 100% line is not honest here; the
         // floor is what the unit + contract suites measured (parse, rate key,

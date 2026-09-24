@@ -18,6 +18,7 @@
  *   - SubmitBroadcastError pass-through
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeFakeEblastOutbox, makeFakeMarketingDirectory } from '../../../helpers/eblast-approval-fakes';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { proxySubmitBroadcast } from '@/modules/broadcasts/application/use-cases/proxy-submit-broadcast';
@@ -354,8 +355,8 @@ function makeDeps(opts: FixtureOpts) {
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
       // F119 T129 — the submit's marketing hand-off (no roster here).
-      marketingDirectory: { listRecipients: async () => [] },
-      eblastOutbox: { enqueueInTx: async () => undefined },
+      marketingDirectory: makeFakeMarketingDirectory([]),
+      eblastOutbox: makeFakeEblastOutbox(),
     },
   };
 }

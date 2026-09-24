@@ -41,6 +41,13 @@ export interface AdminQueueQuery {
   readonly sort: ListByTenantStatusSort;
   /** The Upcoming sends preset's lower bound on `scheduled_for`. */
   readonly scheduledFrom?: Date;
+  /**
+   * FR-030's date range on `submitted_at`: `submittedFrom <= submitted_at <
+   * submittedBefore` (`tenantDayRangeUtc` — the filter bar's `fromDate` /
+   * `toDate` as whole tenant-timezone days).
+   */
+  readonly submittedFrom?: Date;
+  readonly submittedBefore?: Date;
 }
 
 /** One dashboard row — ISO strings, so it crosses the server → client and JSON boundaries unchanged. */
@@ -132,6 +139,8 @@ export async function loadAdminBroadcastQueue(
     ...(query.memberId !== undefined && { memberIdFilter: query.memberId }),
     ...(query.cursor !== undefined && { cursor: query.cursor }),
     ...(query.scheduledFrom !== undefined && { scheduledFrom: query.scheduledFrom }),
+    ...(query.submittedFrom !== undefined && { submittedFrom: query.submittedFrom }),
+    ...(query.submittedBefore !== undefined && { submittedBefore: query.submittedBefore }),
   });
 
   const memberIds = [...new Set(list.rows.map((r) => r.requestedByMemberId))];

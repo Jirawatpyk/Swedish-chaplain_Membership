@@ -71,6 +71,14 @@ export interface ListByTenantStatusOpts {
   readonly sort?: ListByTenantStatusSort;
   /** F119 T119 — only rows whose `scheduled_for` is at or after this instant (the Upcoming sends preset). */
   readonly scheduledFrom?: Date;
+  /**
+   * F119 FR-030 — the dashboard's date range, on `submitted_at`: only rows
+   * submitted at or after `submittedFrom` and strictly before
+   * `submittedBefore` (half-open, so a whole `to` day is one bound with no
+   * sub-millisecond gap). A never-submitted row is outside any range.
+   */
+  readonly submittedFrom?: Date;
+  readonly submittedBefore?: Date;
 }
 
 export interface ListByTenantStatusResult {

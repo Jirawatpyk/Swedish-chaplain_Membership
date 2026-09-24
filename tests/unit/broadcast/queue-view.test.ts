@@ -14,6 +14,7 @@ import {
   queueOrderOf,
   queuePageHref,
   queueViewKey,
+  queueViewNarrowed,
   queueViewTotal,
 } from '@/app/(staff)/admin/broadcasts/_lib/queue-view';
 import {
@@ -104,5 +105,34 @@ describe('queueOrderOf (UX review H1 / M1)', () => {
     expect(queueOrderOf('stage_entered_at_asc')).toBe('longest_in_stage');
     expect(queueOrderOf('stage_entered_at_desc')).toBe('most_recent');
     expect(queueOrderOf('scheduled_for_asc')).toBe('send_time');
+  });
+});
+
+/**
+ * FR-030 — the chip counts are per stage for the whole tenant; a filter they
+ * cannot see narrows the view, so the announcement must fall back to the page's
+ * own rows ("N shown") instead of the chip total. The date range is one of
+ * those filters since it reached the list query.
+ */
+describe('queueViewNarrowed (FR-030 + UX review H3)', () => {
+  const day = new Date('2026-03-09T17:00:00.000Z');
+
+  it('a date range alone — either side — narrows the view', () => {
+    expect(queueViewNarrowed({ submitted: { fromInclusive: day } })).toBe(true);
+    expect(queueViewNarrowed({ submitted: { toExclusive: day } })).toBe(true);
+  });
+
+  it('a member filter or the Upcoming bound narrows it, as before', () => {
+    expect(queueViewNarrowed({ memberId: 'm-1', submitted: {} })).toBe(true);
+    expect(queueViewNarrowed({ scheduledFrom: day, submitted: {} })).toBe(true);
+  });
+
+  it('nothing the chips cannot see → not narrowed (the chip total is the view)', () => {
+    expect(queueViewNarrowed({ submitted: {} })).toBe(false);
+  });
+
+  it('a date-ranged view never announces the chip total', () => {
+    const narrowed = queueViewNarrowed({ submitted: { fromInclusive: day } });
+    expect(queueViewTotal({ ...base, statusFilter: ['submitted'], narrowed })).toBeNull();
   });
 });

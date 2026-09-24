@@ -9,9 +9,9 @@
  * `isDefaultView` expression in `page.tsx` omitted the date params, so
  * a `?fromDate=...` URL rendered the overdue banner + truncation note
  * as if the view were pristine — the "banner over a filtered subset"
- * bug the design explicitly warns against. Inert today (date params
- * aren't wired into the query yet) but becomes live the moment date
- * filtering ships.
+ * bug the design explicitly warns against. Live since F119 FR-030 wired
+ * the date params into the list query (`submitted_at`, whole tenant-timezone
+ * days — `tenantDayRangeUtc`).
  */
 export interface QueueViewParams {
   readonly status_all?: string;

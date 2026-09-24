@@ -6,11 +6,35 @@
  */
 import type { BroadcastStatus, ListByTenantStatusSort } from '@/modules/broadcasts';
 import type { QueueOrder } from '@/components/broadcast/admin/queue-table-client';
+import type { TenantDayRange } from '@/lib/tenant-day-range';
 
 /** The page's own URL parameters, exactly as Next hands them over. */
 export type QueueSearchParams = Readonly<Record<string, string | readonly string[] | undefined>>;
 
 const QUEUE_PATH = '/admin/broadcasts';
+
+export interface QueueViewNarrowingInput {
+  readonly memberId?: string;
+  /** The Upcoming sends preset's bound on `scheduled_for`. */
+  readonly scheduledFrom?: Date;
+  /** FR-030's date range on `submitted_at`, as the list query received it. */
+  readonly submitted: TenantDayRange;
+}
+
+/**
+ * FR-030 + UX review H3 — is a filter on that the per-stage chip counts cannot
+ * see? The counts are per stage for the whole tenant, so a member filter, the
+ * Upcoming bound or a date range each make their sum the wrong total for the
+ * view.
+ */
+export function queueViewNarrowed(input: QueueViewNarrowingInput): boolean {
+  return (
+    input.memberId !== undefined ||
+    input.scheduledFrom !== undefined ||
+    input.submitted.fromInclusive !== undefined ||
+    input.submitted.toExclusive !== undefined
+  );
+}
 
 export interface QueueViewTotalInput {
   /** Rows per status for the tenant (the chip counts); `null` when that read failed. */
@@ -18,7 +42,7 @@ export interface QueueViewTotalInput {
   /** The stages the list was asked for; empty = every stage (show-all). */
   readonly statusFilter: readonly BroadcastStatus[];
   readonly allStatuses: readonly BroadcastStatus[];
-  /** A member filter or the Upcoming preset's time bound is on — the chip counts do not see either. */
+  /** A member filter, the Upcoming preset's time bound or the FR-030 date range is on — the chip counts see none of them. */
   readonly narrowed: boolean;
   readonly firstPage: boolean;
   readonly rowsOnPage: number;
@@ -28,8 +52,8 @@ export interface QueueViewTotalInput {
 /**
  * UX review H3 — how many E-Blasts the whole view holds, or `null` when that
  * is not known. The chip counts are per stage for the whole tenant, so their
- * sum over the view's stages IS the view — until a member filter or a time
- * bound narrows it, which they cannot see. A first page with no next page is
+ * sum over the view's stages IS the view — until a member filter, a time
+ * bound or a date range narrows it, which they cannot see. A first page with no next page is
  * the whole view whatever narrowed it.
  */
 export function queueViewTotal(input: QueueViewTotalInput): number | null {

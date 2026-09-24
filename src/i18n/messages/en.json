@@ -3290,7 +3290,8 @@
           "toDate": "To",
           "reset": "Reset filters",
           "upcomingSends": "Upcoming sends",
-          "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}"
+          "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}",
+          "chipCountsScope": "Counts are for every E-Blast in each stage — the member, date and Upcoming sends filters do not change them."
         },
         "columns": {
           "member": "Member",

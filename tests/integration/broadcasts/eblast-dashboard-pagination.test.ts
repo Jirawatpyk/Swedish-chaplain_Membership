@@ -20,7 +20,10 @@
  *   - positive control, OUTSIDE RLS: the same statement narrows a
  *     `(tenant_id, status, …)` index on `status` — RLS is the only blocker;
  *   - the Upcoming sends preset walks every future Scheduled row across the
- *     keyset page boundary in send-time order, and nothing in the past.
+ *     keyset page boundary in send-time order, and nothing in the past;
+ *   - FR-030's date range (`fromDate` / `toDate`, Bangkok calendar days on
+ *     `submitted_at`) returns exactly the seeded rows submitted on that day,
+ *     across the page boundary, and never a draft.
  *
  * FINDING (T114, 2026-09-24) — the contract's "served by
  * `broadcasts_stage_queue_idx`" does NOT hold under row-level security for
@@ -52,6 +55,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { loadAdminBroadcastQueue } from '@/lib/admin-broadcast-queue';
+import { tenantDayRangeUtc } from '@/lib/tenant-day-range';
 import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 import { adminQueueListQuery } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import {
@@ -78,6 +82,8 @@ const HOUR = 3_600_000;
 let tenant: TestTenant;
 const seeded = new Map<BroadcastStatus, number>();
 let futureScheduled = 0;
+/** Every seeded row's id + submit time — the date-range arm computes its expectation from these. */
+const submittedAtById = new Map<string, Date | null>();
 
 function chunks<T>(xs: readonly T[], size: number): T[][] {
   const out: T[][] = [];
@@ -130,6 +136,7 @@ describe('SC-008 — the dashboard at 1,000 E-Blasts (T114, live Neon)', () => {
         ...(sentLike ? { quotaYearConsumed: 2026, quotaConsumedAt: stageEnteredAt } : {}),
       };
     });
+    for (const r of rows) submittedAtById.set(r.broadcastId!, r.submittedAt ?? null);
     await runInTenant(tenant.ctx, async (tx) => {
       for (const chunk of chunks(rows, 500)) await tx.insert(broadcasts).values(chunk);
       const sent = rows.filter((r) => r.status === 'sent').slice(0, 3);
@@ -296,6 +303,65 @@ describe('SC-008 — the dashboard at 1,000 E-Blasts (T114, live Neon)', () => {
     expect(seen.length).toBeGreaterThan(PAGE); // the walk crossed a page boundary
     expect(seen).toEqual([...seen].sort((a, b) => a - b));
     expect(seen.every((t) => t >= from.getTime())).toBe(true);
+  }, 120_000);
+
+  it('the date range (FR-030) returns exactly the rows submitted on those Bangkok calendar days, across the page boundary', async () => {
+    // Two days ago on the Bangkok calendar — wholly inside the seed's ~8 days of submit times.
+    const day = new Date(Date.now() - 48 * HOUR + 7 * HOUR).toISOString().slice(0, 10);
+    const range = tenantDayRangeUtc(day, day, 'Asia/Bangkok');
+    const from = range.fromInclusive!.getTime();
+    const before = range.toExclusive!.getTime();
+    // Two rows ON the bounds pin the comparison operators: 00:00 of the day is
+    // in, 00:00 of the day after is out (`>=` / `<`, never `>` / `<=`).
+    const onBounds = [range.fromInclusive!, range.toExclusive!].map((at, k) => ({
+      tenantId: tenant.ctx.slug,
+      broadcastId: randomUUID(),
+      requestedByMemberId: randomUUID(),
+      requestedByMemberPlanIdSnapshot: 'plan-t114',
+      submittedByUserId: randomUUID(),
+      actorRole: 'member_self_service' as const,
+      subject: `FR-030 bound ${k}`,
+      bodyHtml: '<p>b</p>',
+      bodySource: 'b',
+      fromName: 'Chamber',
+      replyToEmail: 'reply@example.com',
+      segmentType: 'all_members' as const,
+      estimatedRecipientCount: 10,
+      status: 'rejected' as const,
+      submittedAt: at,
+      stageEnteredAt: at,
+    }));
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(broadcasts).values(onBounds);
+    });
+    for (const r of onBounds) submittedAtById.set(r.broadcastId, r.submittedAt);
+    const expected = [...submittedAtById.entries()]
+      .filter(([, at]) => at !== null && at.getTime() >= from && at.getTime() < before)
+      .map(([id]) => id)
+      .sort();
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let pages = 0; pages < 10; pages += 1) {
+      // The show-all view: every stage, drafts included — only the range narrows it.
+      const page = await loadAdminBroadcastQueue(tenant.ctx, {
+        statusFilter: [],
+        pageSize: PAGE,
+        sort: 'stage_entered_at_desc',
+        submittedFrom: range.fromInclusive!,
+        submittedBefore: range.toExclusive!,
+        ...(cursor !== undefined && { cursor }),
+      });
+      for (const item of page.items) {
+        expect(item.status).not.toBe('draft');
+        seen.push(item.broadcastId);
+      }
+      if (page.nextCursor === null) break;
+      cursor = page.nextCursor;
+    }
+    expect(expected.length).toBeGreaterThan(PAGE); // the walk crosses a page boundary
+    expect(expected).toContain(onBounds[0]!.broadcastId);
+    expect(expected).not.toContain(onBounds[1]!.broadcastId);
+    expect(seen.sort()).toEqual(expected);
   }, 120_000);
 
   it('sent rows carry the delivery aggregate; no other row does', async () => {

@@ -23,7 +23,10 @@ vi.mock('@/lib/rbac', () => ({
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
 }));
-vi.mock('@/lib/broadcast-marketing-deps', () => ({ makeMarketingDirectory: () => ({ listRecipients: async () => [] }) }));
+vi.mock('@/lib/broadcast-marketing-deps', async () => {
+  const { makeFakeMarketingDirectory } = await import('../../helpers/eblast-approval-fakes');
+  return { makeMarketingDirectory: () => makeFakeMarketingDirectory([]) };
+});
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));

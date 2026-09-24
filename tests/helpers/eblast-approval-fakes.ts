@@ -16,7 +16,11 @@
  * staff display names for the version thread), which T159a's list omits,
  * and the two T059 / T060 ports: `MemberPortalRecipientPort` (active portal
  * contacts) and `EblastNotificationOutboxPort` (whose rows live in the
- * approval store, so a rollback discards them — SC-004).
+ * approval store, so a rollback discards them — SC-004). T159a's completeness
+ * audit added the two it found without a shared fake: `BroadcastQueueReads`
+ * (T116 / T119, the dashboard's counts + delivery results) and a standalone
+ * `makeFakeEblastOutbox` for consumers that need the outbox without a store —
+ * `ApprovalLifecycleScanPort` (T130) was already here.
  *
  * Every fake `satisfies` its port, so a method added to a port without a
  * fake here fails to COMPILE — an unstubbed port method is an unexercised
@@ -65,6 +69,8 @@ import type {
 import type { MemberPortalRecipientPort, PortalContact } from '@/modules/broadcasts/application/ports/member-portal-recipient-port';
 import type { MarketingDirectoryPort, MarketingRecipient } from '@/modules/broadcasts/application/ports/marketing-directory-port';
 import type { BroadcastApprovalScrubPort } from '@/modules/broadcasts/application/ports/broadcast-approval-scrub-port';
+import type { BroadcastQueueReads, DeliveryResult } from '@/modules/broadcasts/application/ports/broadcast-queue-reads';
+import { BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import type {
   ApprovalLifecycleScanPort,
   AwaitingApprovalCandidate,
@@ -792,6 +798,33 @@ export function makeFakeBroadcastVersionsRepo(seed: readonly BroadcastVersion[] 
 /** `BroadcastDecisionsRepo` alone — append-only by construction (no update method exists). */
 export function makeFakeBroadcastDecisionsRepo(seed: readonly MemberDecision[] = []): FakeBroadcastDecisionsRepo {
   return makeFakeApprovalStore({ decisions: seed }).decisionsRepo;
+}
+
+/** `EblastNotificationOutboxPort` alone — records each row with the tx it rode on (`rows()`). */
+export function makeFakeEblastOutbox(): FakeEblastOutbox {
+  return makeFakeApprovalStore().outbox;
+}
+
+// --- BroadcastQueueReads (T116 / T119) ---------------------------------------
+
+/**
+ * The dashboard's two aggregate reads: per-status counts zero-filled over
+ * EVERY status (as the SQL's), and the delivery results of the ids asked for —
+ * an id with no delivery event is absent from the map.
+ */
+export function makeFakeBroadcastQueueReads(
+  counts: Partial<Record<BroadcastStatus, number>> = {},
+  deliveries: ReadonlyMap<string, DeliveryResult> = new Map(),
+): Mocked<BroadcastQueueReads> {
+  return {
+    countByStatus: vi.fn(
+      async (_ctx: TenantContext) =>
+        Object.fromEntries(BROADCAST_STATUSES.map((st) => [st, counts[st] ?? 0])) as Record<BroadcastStatus, number>,
+    ),
+    deliveryCountsFor: vi.fn(
+      async (_ctx: TenantContext, ids: readonly string[]) => new Map([...deliveries].filter(([id]) => ids.includes(id))),
+    ),
+  } satisfies BroadcastQueueReads;
 }
 
 // --- BroadcastApprovalScrubPort (T082) ---------------------------------------
