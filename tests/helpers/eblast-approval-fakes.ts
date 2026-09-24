@@ -59,7 +59,7 @@ import type {
   NewBroadcastVersion,
   WorkingCopyWrite,
 } from '@/modules/broadcasts/application/ports/broadcast-versions-repo';
-import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { Hostname, ImageAllowlistPort } from '@/modules/broadcasts/application/ports/image-allowlist-port';
 import type { ApprovalBroadcastsRepo } from '@/modules/broadcasts/application/use-cases/approval/_approval-tx';
 import type {
@@ -71,6 +71,7 @@ import type { MarketingDirectoryPort, MarketingRecipient } from '@/modules/broad
 import type { BroadcastApprovalScrubPort } from '@/modules/broadcasts/application/ports/broadcast-approval-scrub-port';
 import type { BroadcastQueueReads, DeliveryResult } from '@/modules/broadcasts/application/ports/broadcast-queue-reads';
 import { BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import { holdsImageReferences } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
 import type {
   ApprovalLifecycleScanPort,
   AwaitingApprovalCandidate,
@@ -93,7 +94,22 @@ export interface FakeBroadcastImagesRepo extends BroadcastImagesRepo {
 
 let imageSeq = 0;
 
-export function makeFakeBroadcastImagesRepo(seed: readonly BroadcastImageRecord[] = []): FakeBroadcastImagesRepo {
+/**
+ * T081 follow-up — the content `isBlobReferencedByContent` searches, read LIVE
+ * (a write through the store after construction counts). Absent → nothing
+ * references anything.
+ */
+export interface FakeImageContent {
+  /** Broadcast bodies + version bodies, under the owner rule (`holdsImageReferences`). */
+  readonly store?: Pick<FakeApprovalStore, 'state'>;
+  /** Template bodies — an unconditional reference, like the SQL. */
+  readonly templates?: ReadonlyArray<{ readonly tenantId: string; readonly bodyHtml: string }>;
+}
+
+export function makeFakeBroadcastImagesRepo(
+  seed: readonly BroadcastImageRecord[] = [],
+  content: FakeImageContent = {},
+): FakeBroadcastImagesRepo {
   const rows: BroadcastImageRecord[] = [...seed];
   const repo = {
     rows,
@@ -169,9 +185,24 @@ export function makeFakeBroadcastImagesRepo(seed: readonly BroadcastImageRecord[
     // F2-10(a) — a no-op here; the real lock is SQL. Spying on it is how the
     // sweep test proves the lock is taken BEFORE the count.
     lockContentHash: vi.fn(async (_tenantId: never, _contentHash: string, _tx: unknown) => undefined),
-    // F2-10(b) — the fake holds no content, so "nothing references it" is the
-    // default; a test that wants the referenced branch overrides it.
-    isBlobReferencedByContent: vi.fn(async (_tenantId: never, _blobUrl: string, _tx: unknown) => false),
+    // F2-10(b) + T081 follow-up — the SQL's rule over the content handed in:
+    // a closed-never-sent owner holds nothing, through its body OR its
+    // versions; a template always holds. No content → `false`.
+    isBlobReferencedByContent: vi.fn(async (tenantId: never, blobUrl: string, _tx: unknown) => {
+      const t = tenantId as unknown as string;
+      const embeds = (...bodies: string[]) => bodies.some((b) => b.includes(blobUrl));
+      const owners = [...(content.store?.state.broadcasts.values() ?? [])].filter(
+        (b) => b.tenantId === t && holdsImageReferences(b),
+      );
+      const holding = new Set(owners.map((b) => b.broadcastId as string));
+      return (
+        owners.some((b) => embeds(b.bodyHtml, b.bodySource)) ||
+        (content.store?.state.versions ?? []).some(
+          (v) => v.tenantId === t && holding.has(v.broadcastId as string) && embeds(v.bodyHtml, v.bodySource),
+        ) ||
+        (content.templates ?? []).some((x) => x.tenantId === t && embeds(x.bodyHtml))
+      );
+    }),
     // ROUND-2 S-3 — the sweep's `sweep_referenced` arm un-stamps instead of
     // removing, so the row stays reachable by the erasure + orphan arms.
     restoreLive: vi.fn(async (tenantId: never, imageId: string, _tx: unknown) => {
@@ -480,7 +511,7 @@ export interface ApprovalStoreState {
 }
 
 /** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
-export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> & {
+export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> & Mocked<Pick<BroadcastsRepo, 'findById'>> & {
   readonly rows: Map<string, Broadcast>;
 };
 
@@ -588,6 +619,11 @@ export function makeFakeApprovalStore(
     findByIdInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId) =>
       state.broadcasts.get(keyOf(tenantId as string, broadcastId)) ?? null,
     ),
+    // T166 follow-up — the non-locking pre-read (no tx) a use case makes
+    // before its row-lock tx, to key a pool-connection read on the owner.
+    findById: vi.fn(async (tenantId: TenantSlug, broadcastId: BroadcastId) =>
+      state.broadcasts.get(keyOf(tenantId as string, broadcastId)) ?? null,
+    ),
     applyTransition: vi.fn(
       async (
         _tx: unknown,
@@ -614,7 +650,9 @@ export function makeFakeApprovalStore(
     // `withTx` is generic on the port and a `vi.fn` cannot carry the type
     // parameter, so it is checked by presence; every other method is checked
     // against the port's signature.
-  } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> & Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
+  } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> &
+    Pick<BroadcastsRepo, 'findById'> &
+    Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
 
   // T083 — the member's own E-Blasts, for the two DSAR reads.
   const ownedBy = (tenantId: string, memberId: string) =>

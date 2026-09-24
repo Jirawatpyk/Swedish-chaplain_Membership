@@ -1256,6 +1256,11 @@ step 5's flip safe to take immediately after this merge.
      (`broadcast_image_removed { reason: 'rejected' | 'withdrawn' }` — a staff cancel uses
      `withdrawn`), so the next daily sweep deletes the bytes of a rejected or cancelled E-Blast in
      **today's** flow as well;
+   - **a closed-never-sent E-Blast's own content no longer holds its images** (T081 follow-up):
+     the sweep's last-reference rule skips the body and the version bodies of a `rejected`,
+     `cancelled` or `expired_no_member_response` E-Blast that never entered sending, so its images
+     are deleted on the next sweep and its detail pages show broken images. Any other E-Blast,
+     sent or in progress (versions included), and any template still holds a shared image;
    - **the lapsed-member exemption** (`7c7973c52`): five exact, uuid-anchored paths —
      `GET /api/broadcasts/<id>`, `GET …/versions`, `POST …/decision`, `POST …/cancel` and the page
      `/portal/broadcasts/<id>` — are no longer refused for a lapsed member, so a lapsed member can

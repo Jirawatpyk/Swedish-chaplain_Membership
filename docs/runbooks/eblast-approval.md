@@ -271,6 +271,12 @@ deleted by the daily sweep (Block 2 of the same tick, `cron-jobs.md` § Block 2)
 last-reference rule — only when no live image row of either owner kind shares the
 `content_hash` **and** no live E-Blast or template body still embeds the URL.
 
+**A closed-never-sent E-Blast's own content no longer holds its images.** The rule skips the body
+and the version bodies of a `rejected`, `cancelled` or `expired_no_member_response` E-Blast that
+never entered sending (Domain `holdsImageReferences`), so rejected / cancelled / expired E-Blast
+images are deleted on the next sweep, and their detail pages show broken images. A sent or
+in-progress E-Blast (its versions included) or a template that embeds the same URL keeps it.
+
 **The backstop is the next daily tick, not 24 hours.** The sweep runs at 04:30 UTC and reaps at
 most **200 rows per arm per tenant per tick**; a backlog (a bulk erasure, a burst of rejections)
 clears over successive ticks, and a row whose transaction fails is retried the next day. "Within

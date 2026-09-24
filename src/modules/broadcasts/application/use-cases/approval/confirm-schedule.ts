@@ -37,7 +37,8 @@
  * `approveBroadcast`.
  *
  * The promotion re-reads the owning member's halt flag and F8 membership
- * access under the row lock (T166 S-H1, the rules submit applies): halted →
+ * access just before the row lock (T166 S-H1, the rules submit applies; the
+ * bridges take their own pool connections) and applies them under it: halted →
  * `member_halted`, suspended / terminated → `member_not_in_good_standing`, a
  * read that cannot be answered → `server_error` (fail closed). Both refusals
  * write submit's own refusal audit row after the rollback (T166 follow-up,
@@ -84,6 +85,7 @@ import {
 } from '../../../domain/value-objects/image-source-allowlist';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
+import type { BroadcastsRepo } from '../../ports/broadcasts-repo';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
@@ -96,6 +98,7 @@ import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist'
 import {
   readMemberSendStanding,
   standingRefusalAuditEvent,
+  type MemberSendStanding,
   type MemberSendStandingDeps,
 } from '../_member-send-standing';
 import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
@@ -109,7 +112,8 @@ export type ScheduleMode =
 
 export interface ConfirmScheduleDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: ApprovalBroadcastsRepo;
+  /** `findById` — the non-locking pre-read the standing read keys on (T166 follow-up). */
+  readonly broadcastsRepo: ApprovalBroadcastsRepo & Pick<BroadcastsRepo, 'findById'>;
   readonly versionsRepo: BroadcastVersionsRepo;
   readonly imageAllowlist: ImageAllowlistPort;
   readonly portalRecipients: MemberPortalRecipientPort;
@@ -177,6 +181,17 @@ export async function confirmSchedule(
   try {
     // Before the row lock, on its own connection (the promotion re-check).
     const allowlist = await deps.imageAllowlist.findByTenantId(slug);
+    // T166 follow-up — the promotion's standing reads go through the members
+    // bridges, each on its OWN pool connection, so they are made before the
+    // lock too (the R-L3 class). `requested_by_member_id` is immutable after
+    // submit, so a non-locking pre-read names the member the locked row will.
+    // Only a promotion reads standing, so only a `member_approved` row is read
+    // for; a missing row falls through to the not-found handling in the tx.
+    const preRead = await deps.broadcastsRepo.findById(slug, input.broadcastId);
+    const standing =
+      preRead?.status === 'member_approved'
+        ? await readMemberSendStanding(deps.sendStanding, deps.tenant, preRead.requestedByMemberId)
+        : null;
 
     return ok(
       await deps.broadcastsRepo.withTx(async (tx) => {
@@ -203,9 +218,10 @@ export async function confirmSchedule(
         if (promoting) {
           // T166 S-H1 — the promotion is the send-time edge of the round (the
           // row becomes dispatchable here), so the rules that block sending
-          // are re-read now, under the row lock: a member halted, suspended or
-          // terminated since they submitted does not get the E-Blast sent.
-          await assertMemberMaySend(deps, broadcast.requestedByMemberId);
+          // (read just before the lock) are applied now: a member halted,
+          // suspended or terminated since they submitted does not get the
+          // E-Blast sent.
+          assertMemberMaySend(standing, broadcast.requestedByMemberId);
           const versions = await deps.versionsRepo.listByBroadcast(slug, input.broadcastId, tx);
           const approved = versions.find((v) => v.id === versionId);
           if (approved === undefined) throw new Error('approved version not found under the broadcast lock');
@@ -315,9 +331,11 @@ export async function confirmSchedule(
 /**
  * T166 S-H1 — refuse the promotion for a member who may not send; a read that
  * cannot be answered THROWS (→ `server_error`, the tx rolls back): fail closed.
+ * `null` = the row reached `member_approved` after the pre-read, so nothing
+ * was read for it — fail closed the same way rather than promote unchecked.
  */
-async function assertMemberMaySend(deps: ConfirmScheduleDeps, memberId: string): Promise<void> {
-  const standing = await readMemberSendStanding(deps.sendStanding, deps.tenant, memberId);
+function assertMemberMaySend(standing: MemberSendStanding | null, memberId: string): void {
+  if (standing === null) throw new Error('member send standing not read before the lock');
   switch (standing.kind) {
     case 'ok':
       return;

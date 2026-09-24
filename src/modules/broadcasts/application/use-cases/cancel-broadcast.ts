@@ -6,7 +6,9 @@
  * State-check via Domain `authorizeCancel` policy (widened by F119 T081):
  *   - cancellable at every in-progress stage (`IN_PROGRESS_BROADCAST_STATUSES`
  *     — FR-015: withdrawable at ANY stage before sending begins)
- *   - from `sending` onward → `sending_started` (409): the send completes
+ *   - from `sending` onward → `sending_started` (409): the send completes;
+ *     likewise an `approved` row the dispatcher already handed over
+ *     (`hasDispatchBegun`, T166 R-H1)
  *   - a closed E-Blast that never started sending (rejected / cancelled /
  *     expired / a failed dispatch) → `broadcast_cancel_too_late` (409)
  *   Both refusals audit `broadcast_cancel_too_late` (the forensic event).
@@ -39,6 +41,7 @@ import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
+import { hasDispatchBegun } from '../../domain/stage/in-progress-statuses';
 import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
 import type { EblastNotificationOutboxPort } from '../ports/eblast-notification-outbox-port';
 import type { MarketingDirectoryPort } from '../ports/marketing-directory-port';
@@ -215,7 +218,16 @@ export async function cancelBroadcast(
       // would delete the batch branch's last documentation of itself, and the
       // policy's own tests still exercise both. Reviewed as a dead branch and
       // kept deliberately — see reviews/review-20260908-223000.md S40.
-      const policyResult = authorizeCancel(existing.status, false);
+      //
+      // T166 R-H1 — an `approved` row the dispatcher has already handed over
+      // (`resend_broadcast_id` / `audience_import_id` set, status not moved
+      // yet) is refused `sending_started`, exactly as every other exit from
+      // `approved` is. Otherwise the row would read `cancelled` and free the
+      // allowance while the email goes out. Decided before any write.
+      const policyResult =
+        existing.status === 'approved' && hasDispatchBegun(existing)
+          ? err({ code: 'sending_started' as const, status: existing.status })
+          : authorizeCancel(existing.status, false);
       if (!policyResult.ok) {
         // R7 staff-review MED-R2 — `null` tx is intentional here: the
         // policy reject branch performs NO state mutation (no UPDATE,
@@ -232,7 +244,7 @@ export async function cancelBroadcast(
             tenantId: deps.tenant.slug,
             eventType: 'broadcast_cancel_too_late',
             actorUserId,
-            summary: `Cancel rejected — broadcast ${input.broadcastId} in terminal state ${existing.status}`,
+            summary: `Cancel rejected (${policyResult.error.code}) — broadcast ${input.broadcastId} at ${existing.status}`,
             payload: {
               broadcastId: input.broadcastId,
               observedStatus: existing.status,

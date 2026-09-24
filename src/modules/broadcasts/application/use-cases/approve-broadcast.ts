@@ -15,7 +15,9 @@
  * State-check: status must be `submitted`.
  * Send-time standing (F119 T166 S-H1): the owning member must not be halted
  * and must hold full F8 membership access — the rules submit applies, re-read
- * under the row lock (`member_halted` / `member_not_in_good_standing`, 409).
+ * just BEFORE the row-lock tx (the bridges take their own pool connections)
+ * and applied under the lock (`member_halted` / `member_not_in_good_standing`,
+ * 409).
  * Each refusal writes submit's own refusal audit row (T166 follow-up) on the
  * approval's tx — a `return err()` inside it commits, and nothing else was
  * written, so the row lands under the tenant GUC with no null-tx question.
@@ -152,6 +154,19 @@ export async function approveBroadcast(
     input.decision.mode === 'send_now' ? now : input.decision.scheduledFor;
 
   try {
+    // F119 T166 follow-up — the halt / access reads go through the members
+    // bridges, each on its OWN pool connection, so they are made BEFORE the
+    // tx, never while it holds the row lock (the R-L3 class: ~10 concurrent
+    // approvals would starve the pool). `requested_by_member_id` is immutable
+    // after submit, so a non-locking pre-read of the row names the member the
+    // locked row will; a missing row falls through to the not-found handling
+    // below. Only a `submitted` row can be approved, so only it is read for.
+    const preRead = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+    const standing =
+      preRead?.status === 'submitted'
+        ? await readMemberSendStanding(deps.sendStanding, deps.tenant, preRead.requestedByMemberId)
+        : null;
+
     return await deps.broadcastsRepo.withTx(async (tx) => {
       const lockedStatus = await deps.broadcastsRepo.lockForUpdate(
         tx,
@@ -172,10 +187,12 @@ export async function approveBroadcast(
       }
 
       // F119 T166 S-H1 — approving makes the row dispatchable, so the owning
-      // member's halt flag and F8 membership access are re-read here, under
-      // the row lock, exactly as submit reads them. This is the LAST read on
-      // this path: dispatch does not re-check standing (quickstart § 3.6). Refusals return BEFORE any write
-      // (a `return err()` inside the tx commits nothing written so far).
+      // member's halt flag and F8 membership access (read just before this tx,
+      // exactly as submit reads them) are applied here, once the lock confirms
+      // the row is still `submitted`. This is the LAST check on this path:
+      // dispatch does not re-check standing (quickstart § 3.6). Refusals
+      // return BEFORE any write (a `return err()` inside the tx commits
+      // nothing written so far).
       const row = await deps.broadcastsRepo.findByIdInTx(
         tx,
         deps.tenant.slug,
@@ -187,11 +204,9 @@ export async function approveBroadcast(
           broadcastId: input.broadcastId as string,
         });
       }
-      const standing = await readMemberSendStanding(
-        deps.sendStanding,
-        deps.tenant,
-        row.requestedByMemberId,
-      );
+      // The row reached `submitted` between the pre-read and the lock, so no
+      // standing was read for it: fail CLOSED rather than approve unchecked.
+      if (standing === null) throw new Error('member send standing not read before the lock');
       switch (standing.kind) {
         case 'halted':
         case 'not_in_good_standing': {

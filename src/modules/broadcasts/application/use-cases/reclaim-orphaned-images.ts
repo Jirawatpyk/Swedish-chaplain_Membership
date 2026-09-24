@@ -84,7 +84,7 @@ export const IMAGE_SWEEP_BATCH = 200;
  * Neither of the two waits inside that transaction ends on its own. The
  * advisory lock blocks until its holder commits, and
  * `isBlobReferencedByContent` is a sequential `position()` scan of
- * `broadcasts` + `broadcast_templates` executed once per swept row — up to 400
+ * `broadcasts`, `broadcast_versions` and `broadcast_templates` executed once per swept row — up to 400
  * a tick. `src/lib/db.ts` asks the connection for 5 s, but the pooled Neon
  * endpoint drops it and reports 0, so the real ceiling today is the route's
  * `maxDuration = 300`: the tick is killed part way through, with the blob

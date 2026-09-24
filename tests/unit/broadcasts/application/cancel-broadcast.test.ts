@@ -555,6 +555,28 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     },
   );
 
+  // T166 R-H1, the cancel's share — `approved` but already handed over (the
+  // dispatch leg commits its lock before calling Resend, so the status has not
+  // moved yet). Every other exit from `approved` refuses here; a cancel that
+  // did not would read `cancelled` and free the allowance while the email went
+  // out. Same refusal + audit as the status cut-off, nothing written.
+  it.each([
+    { leg: 'legacy leg', ids: { resendBroadcastId: 'rb-live-1' } },
+    { leg: 'import leg', ids: { audienceImportId: 'imp-live-1' } },
+  ])('approved once dispatch has begun ($leg) → sending_started + broadcast_cancel_too_late audit, nothing transitioned', async ({ ids }) => {
+    const audit = makeAudit();
+    const images = makeFakeBroadcastImagesRepo();
+    const repo = makeRepo({ existing: { ...makeBroadcast('approved'), ...ids } });
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), imagesRepo: images, audit: audit.port, clock },
+      baseInput,
+    );
+    expect(result.ok ? null : result.error).toEqual({ kind: 'sending_started', observedStatus: 'approved' });
+    expect(audit.emits.map((e) => e.eventType)).toEqual(['broadcast_cancel_too_late']);
+    expect(repo.transitions).toHaveLength(0);
+    expect(images.markDeletedByOwner).not.toHaveBeenCalled();
+  });
+
   it.each<BroadcastStatus>([
     'rejected',
     'cancelled',

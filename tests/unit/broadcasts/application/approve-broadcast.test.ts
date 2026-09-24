@@ -96,6 +96,11 @@ interface RepoOpts {
    * member). Default: a `submitted` row; `null` = it vanished.
    */
   readonly row?: Broadcast | null;
+  /**
+   * T166 follow-up — the NON-locking pre-read the standing read keys on
+   * (`findById`, before the tx). Default: the same row as `row`.
+   */
+  readonly preRead?: Broadcast | null;
   readonly applyTransitionThrows?: boolean;
   readonly refreshAfterRace?: Broadcast | null;
   readonly withTxThrows?: Error | string;
@@ -184,7 +189,8 @@ function makeRepo(opts: RepoOpts): {
         throw new Error('not used in approve-broadcast fixture');
       },
       async findById() {
-        return null;
+        if (opts.preRead !== undefined) return opts.preRead;
+        return opts.row === undefined ? makeBroadcast('submitted') : opts.row;
       },
       async findByIdInTx() {
         // The first read is the approval's own (T166 S-H1); a later one is the
@@ -727,6 +733,47 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const { audit, result } = approveWith({ halted: ['m-1'] }, { lockedStatus: 'submitted' }, { ...baseInput, actorRole: null });
     await result;
     expect(audit.emits[0]!.payload).toMatchObject({ actor_role: null });
+  });
+
+  // T166 follow-up — the halt / access reads go through the members bridges,
+  // each on its OWN pool connection. Made inside the tx they held a second
+  // connection per call while the row lock sat on the first (the R-L3 class);
+  // they are read before the tx now, keyed on the immutable owning member.
+  it('T166 follow-up: the standing is read with NO transaction open', async () => {
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    let open = false;
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) =>
+      inner(async (tx) => {
+        open = true;
+        try {
+          return await fn(tx);
+        } finally {
+          open = false;
+        }
+      })) as BroadcastsRepo['withTx'];
+    const sendStanding = makeFakeSendStanding();
+    const seen: boolean[] = [];
+    sendStanding.membersBridge.getMembersHaltedInTenant.mockImplementation(async () => {
+      seen.push(open);
+      return [];
+    });
+    sendStanding.membershipAccess.getMembershipAccess.mockImplementation(async () => {
+      seen.push(open);
+      return { ok: true as const, value: { access: 'full' as const, reason: 'in_good_standing' as const } };
+    });
+    const r = await approveBroadcast({ tenant, broadcastsRepo: repo.port, sendStanding, audit: makeAudit().port, clock }, baseInput);
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([false, false]);
+  });
+
+  it('T166 follow-up: a row that reached submitted after the non-locking pre-read → approve.server_error (fail closed), nothing written', async () => {
+    const { repo, audit, sendStanding, result } = approveWith({}, { lockedStatus: 'submitted', preRead: makeBroadcast('draft') });
+    const r = await result;
+    expect(r.ok ? null : r.error.kind).toBe('approve.server_error');
+    expect(sendStanding.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toEqual([]);
   });
 
   it('T166 S-H1: the row vanishing under the lock → broadcast_not_found, no standing read, no transition', async () => {

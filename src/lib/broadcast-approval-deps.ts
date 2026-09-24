@@ -11,8 +11,9 @@
  *   - the member company's ACTIVE portal contacts for the send (T059) and the
  *     schedule confirmation (T060) — the members barrel's contact repo on the
  *     caller's tenant tx (contacts are RLS-scoped), then the auth barrel's
- *     `listActiveUserIdsWithRole` for the linked logins (`users` is
- *     cross-tenant, read on the plain client), adapted to
+ *     `listActiveUserIdsWithRole` for the linked logins on the SAME tx
+ *     (`users` is cross-tenant with no RLS; the caller holds a row lock, so a
+ *     second pool connection is not taken), adapted to
  *     `MemberPortalRecipientPort`;
  *   - the marketing hand-off roster for the member's decision (T078) and the
  *     day-23 / day-30 lifecycle notices (T130) —
@@ -80,9 +81,12 @@ export const memberPortalRecipients: MemberPortalRecipientPort = {
     const linked = listed.value.flatMap((c) =>
       c.removedAt === null && c.linkedUserId !== null ? [{ contact: c, userId: c.linkedUserId as string }] : [],
     );
+    // T166 follow-up — on the SAME tx: the callers hold the broadcast row lock,
+    // and a second pool connection per call starves the pool under load.
     const active = await listActiveUserIdsWithRole(
       linked.map((l) => l.userId),
       'member',
+      tx as TenantTx,
     );
     return linked
       .filter((l) => active.has(l.userId))

@@ -33,7 +33,7 @@ import {
   makeRecordMemberDecisionDeps,
   makeStartFormattedVersionDeps,
 } from '@/lib/broadcast-approval-deps';
-import { asBroadcastId, dispatchScheduledBroadcast } from '@/modules/broadcasts';
+import { asBroadcastId, cancelBroadcast, dispatchScheduledBroadcast, makeCancelBroadcastDeps } from '@/modules/broadcasts';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
@@ -142,7 +142,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
     it.each([
       { leg: 'legacy leg — resend_broadcast_id set', ids: { resendAudienceId: 'aud-exit-1', resendBroadcastId: `rb-exit-${randomUUID().slice(0, 8)}` } },
       { leg: 'import leg — audience_import_id set', ids: { resendAudienceId: 'aud-exit-2', audienceImportId: `imp-exit-${randomUUID().slice(0, 8)}`, audienceImportSubmittedAt: new Date() } },
-    ])('$leg: withdraw, cancel, re-time and a new working copy are all refused; the row is untouched', async ({ ids }) => {
+    ])('$leg: withdraw, cancel, re-time, a new working copy and a member or staff cancel are all refused; the row is untouched', async ({ ids }) => {
       const { id, v1 } = await seedApprovedRound(ids);
       const before = await readRow(id);
 
@@ -163,6 +163,26 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
         staff,
       );
       expect(restarted.ok ? restarted.value.stage : restarted.error).toEqual({ kind: 'sending_started', status: 'approved' });
+
+      // The whole-E-Blast cancel (member withdrawal and staff cancel) is an exit
+      // from `approved` too: it must refuse once the row was handed over, or the
+      // row reads `cancelled` and frees the allowance while the email goes out.
+      for (const actor of [
+        { kind: 'member' as const, memberId, userId: portalUser.userId },
+        { kind: 'admin' as const, userId: MARKETER },
+      ]) {
+        const cancelledWhole = await cancelBroadcast(makeCancelBroadcastDeps(tenant.ctx.slug, roster), {
+          broadcastId: asBroadcastId(id),
+          actor,
+          actorRole: actor.kind === 'member' ? 'member' : 'marketing',
+          cancellationReason: null,
+          requestId: null,
+        });
+        expect(cancelledWhole.ok ? cancelledWhole.value.broadcast.status : cancelledWhole.error).toEqual({
+          kind: 'sending_started',
+          observedStatus: 'approved',
+        });
+      }
 
       expect(await readRow(id)).toEqual(before);
     });

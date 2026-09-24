@@ -146,6 +146,47 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
       expect(sendStanding.membersBridge.getMembersHaltedInTenant).toHaveBeenCalledTimes(1);
     });
 
+    // T166 follow-up — the bridges each take their OWN pool connection; read
+    // inside the tx they held a second one while the row lock sat on the first
+    // (the R-L3 class). Read before the tx now, keyed on the immutable owner.
+    it('the standing is read with NO transaction open', async () => {
+      const { store, run, sendStanding } = setup(promotable());
+      let open = false;
+      const inner = store.broadcastsRepo.withTx.getMockImplementation()!;
+      store.broadcastsRepo.withTx.mockImplementation((async (fn: (tx: unknown) => Promise<unknown>) =>
+        inner(async (tx: unknown) => {
+          open = true;
+          try {
+            return await fn(tx);
+          } finally {
+            open = false;
+          }
+        })) as never);
+      const seen: boolean[] = [];
+      sendStanding.membersBridge.getMembersHaltedInTenant.mockImplementation(async () => {
+        seen.push(open);
+        return [];
+      });
+      sendStanding.membershipAccess.getMembershipAccess.mockImplementation(async () => {
+        seen.push(open);
+        return { ok: true as const, value: { access: 'full' as const, reason: 'in_good_standing' as const } };
+      });
+      const r = await run();
+      expect(r.ok ? r.value.stage : r.error).toBe('approved');
+      expect(seen).toEqual([false, false]);
+    });
+
+    it('a row that reached member_approved after the non-locking pre-read → server_error (fail closed), nothing written', async () => {
+      const { store, audit, run, sendStanding } = setup(promotable());
+      store.broadcastsRepo.findById.mockResolvedValueOnce(
+        makeApprovalBroadcast({ status: 'awaiting_member_approval', currentRound: 1 }),
+      );
+      expect(await run()).toEqual({ ok: false, error: { kind: 'server_error', errKind: 'Error' } });
+      expect(sendStanding.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
+      expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+      expect(audit.events).toEqual([]);
+    });
+
     it('a re-time of an already approved row does not re-read standing (the promotion is the send-time edge)', async () => {
       const { run, sendStanding } = setup(makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id }), { halted: [MEMBER] });
       const r = await run({ mode: { mode: 'schedule', scheduledFor: new Date('2026-10-05T03:00:00Z') } });

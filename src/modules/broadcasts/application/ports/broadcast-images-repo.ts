@@ -178,8 +178,10 @@ export interface BroadcastImagesRepo {
   lockContentHash(tenantId: TenantSlug, contentHash: string, tx: BroadcastImagesTx): Promise<void>;
   /**
    * F119 review finding F2-10(b) — does any LIVE content of this tenant still
-   * embed this blob URL? A tenant-scoped `EXISTS` over `broadcasts.body_html`
-   * and the templates' body.
+   * embed this blob URL? A tenant-scoped `EXISTS` over `broadcasts.body_html`,
+   * the version bodies (`broadcast_versions`) and the templates' body. An
+   * E-Blast that is closed and never sent (Domain `holdsImageReferences`) holds
+   * nothing, through its own body or its versions (T081 follow-up).
    *
    * The `broadcast_images` table was NOT backfilled, so every image uploaded
    * before migration 0304 is referenced by `body_html` with no row to show for
@@ -215,7 +217,7 @@ export interface BroadcastImagesRepo {
    * The sweep's per-row transaction needs it because both of its waits are
    * otherwise unbounded: `lockContentHash` blocks until the holder commits,
    * and `isBlobReferencedByContent` is a sequential `position()` scan over
-   * `broadcasts` + `broadcast_templates` run once per swept row (up to 400 a
+   * `broadcasts`, `broadcast_versions` and `broadcast_templates` run once per swept row (up to 400 a
    * tick). `src/lib/db.ts` asks for 5 s at connect, but the pooled Neon
    * endpoint DROPS it and reports 0 — so without this the tick has no
    * database-side bound at all and is killed by `maxDuration` instead, part

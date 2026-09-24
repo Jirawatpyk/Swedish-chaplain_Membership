@@ -15,8 +15,14 @@ import { getBrandSettings } from '@/modules/broadcasts/application/use-cases/get
 import { sendTestCopy } from '@/modules/broadcasts/application/use-cases/send-test-copy';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { holdsImageReferences } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
+import { BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import {
   FAKE_TX,
+  makeApprovalBroadcast,
+  makeApprovalVersion,
+  makeFakeApprovalStore,
   makeFakeBrandChromePort,
   makeFakeBrandSettingsRepo,
   makeFakeBroadcastImagesRepo,
@@ -124,5 +130,42 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
     );
     expect(r2).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable' } });
     expect(failing.sent).toHaveLength(0);
+  });
+});
+
+/**
+ * T081 follow-up — the images fake searches the content it is given with the
+ * SQL's rule (`holdsImageReferences`): an owner that is closed and never sent
+ * does not hold its images, through its own body OR its versions; templates
+ * always do. It used to answer `false` for everything, which is how a sweep
+ * that restored every stamped image passed.
+ */
+describe('eblast-approval-fakes — isBlobReferencedByContent searches the content it holds', () => {
+  const URL = 'https://assets.swecham.zyncdata.app/broadcasts/images/test-tenant/h.png';
+  const embed = `<p><img src="${URL}"></p>`;
+  const id = (n: number) => asBroadcastId(`11111111-1111-4111-8111-${String(n).padStart(12, '0')}`);
+
+  it.each(BROADCAST_STATUSES.map((status, i) => ({ status, i })))('an owner at $status embedding the URL', async ({ status, i }) => {
+    const store = makeFakeApprovalStore({ broadcasts: [makeApprovalBroadcast({ broadcastId: id(i), status, bodyHtml: embed })] });
+    const repo = makeFakeBroadcastImagesRepo([], { store });
+    const expected = holdsImageReferences({ status, sendingStartedAt: null, resendBroadcastId: null, audienceImportId: null });
+    expect(await repo.isBlobReferencedByContent('test-tenant' as never, URL, FAKE_TX)).toBe(expected);
+  });
+
+  it('a version body counts through its owner: in progress → held, rejected → released; another tenant → never', async () => {
+    const live = makeApprovalBroadcast({ broadcastId: id(1), status: 'in_design' });
+    const closed = makeApprovalBroadcast({ broadcastId: id(2), status: 'rejected' });
+    const version = (b: typeof live) => makeApprovalVersion({ broadcastId: b.broadcastId, bodySource: URL });
+    const held = makeFakeBroadcastImagesRepo([], { store: makeFakeApprovalStore({ broadcasts: [live], versions: [version(live)] }) });
+    const released = makeFakeBroadcastImagesRepo([], { store: makeFakeApprovalStore({ broadcasts: [closed], versions: [version(closed)] }) });
+    expect(await held.isBlobReferencedByContent('test-tenant' as never, URL, FAKE_TX)).toBe(true);
+    expect(await held.isBlobReferencedByContent('other-tenant' as never, URL, FAKE_TX)).toBe(false);
+    expect(await released.isBlobReferencedByContent('test-tenant' as never, URL, FAKE_TX)).toBe(false);
+  });
+
+  it('a template body is an unconditional reference; with no content the answer is false', async () => {
+    const withTemplate = makeFakeBroadcastImagesRepo([], { templates: [{ tenantId: 'test-tenant', bodyHtml: embed }] });
+    expect(await withTemplate.isBlobReferencedByContent('test-tenant' as never, URL, FAKE_TX)).toBe(true);
+    expect(await makeFakeBroadcastImagesRepo().isBlobReferencedByContent('test-tenant' as never, URL, FAKE_TX)).toBe(false);
   });
 });

@@ -8,7 +8,11 @@
  * neither set. The assertion below states the true partition and names both.
  */
 import { describe, expect, it } from 'vitest';
-import { IN_PROGRESS_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
+import {
+  CLOSED_NEVER_SENT_BROADCAST_STATUSES,
+  holdsImageReferences,
+  IN_PROGRESS_BROADCAST_STATUSES,
+} from '@/modules/broadcasts/domain/stage/in-progress-statuses';
 import {
   BROADCAST_STATUSES,
   RETIRED_BROADCAST_STATUSES,
@@ -51,5 +55,38 @@ describe('IN_PROGRESS_BROADCAST_STATUSES (data-model § 9)', () => {
   it('frees the allowance on expiry — `expired_no_member_response` is terminal, not in progress', () => {
     expect(IN_PROGRESS_BROADCAST_STATUSES).not.toContain('expired_no_member_response');
     expect(TERMINAL_BROADCAST_STATUSES).toContain('expired_no_member_response');
+  });
+});
+
+/**
+ * T081 follow-up — the image sweep's last-reference rule. A rejected /
+ * withdrawn E-Blast's images are stamped, but its body keeps the URL (the
+ * immutability trigger forbids redacting it), so while its own content still
+ * counted as a reference the sweep put every such image back in the live set
+ * and the `broadcast_image_removed` audit row was false.
+ */
+describe('holdsImageReferences — which E-Blasts keep their embedded images alive', () => {
+  const NO_HAND_OVER = { sendingStartedAt: null, resendBroadcastId: null, audienceImportId: null };
+
+  it('is exactly the three closed-never-sent statuses that let go', () => {
+    expect(CLOSED_NEVER_SENT_BROADCAST_STATUSES).toEqual(['rejected', 'cancelled', 'expired_no_member_response']);
+  });
+
+  // Decided for EVERY status: a new status is a reference until someone says
+  // otherwise (fail-safe — a delivered email still loads its images).
+  it.each(BROADCAST_STATUSES.map((status) => ({ status })))(
+    '$status with nothing handed over',
+    ({ status }) => {
+      const closed: ReadonlyArray<BroadcastStatus> = CLOSED_NEVER_SENT_BROADCAST_STATUSES;
+      expect(holdsImageReferences({ status, ...NO_HAND_OVER })).toBe(!closed.includes(status));
+    },
+  );
+
+  it.each([
+    { evidence: { sendingStartedAt: new Date('2026-09-20T08:00:00Z') } },
+    { evidence: { resendBroadcastId: 'rb-1' } },
+    { evidence: { audienceImportId: 'imp-1' } },
+  ])('a closed row the dispatcher had already handed over ($evidence) still holds them', ({ evidence }) => {
+    expect(holdsImageReferences({ status: 'cancelled', ...NO_HAND_OVER, ...evidence })).toBe(true);
   });
 });
