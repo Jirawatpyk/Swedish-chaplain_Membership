@@ -469,6 +469,77 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     );
   });
 
+  // ── Online-payment guard (manual credit note) ────────────────────────────
+  //
+  // A manual CN moves no money but consumes the headroom the F5 refund
+  // pre-flight caps refunds at. Refused unless acknowledged; FAIL-CLOSED when
+  // the payments read fails; the override is recorded on the audit row.
+  it('fails CLOSED: an unreadable payment state refuses a manual CN before any write', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const deps = makeDeps(invoice, makeSettings(), {
+      onlinePaymentRefundGuard: {
+        readRefundableOnlinePayment: vi.fn(async () => ({ kind: 'unknown' as const })),
+      },
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 25_000n,
+      reason: 'manual credit, payments read down',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('online_payment_refundable');
+    expect(deps.invoiceRepo.withTx).not.toHaveBeenCalled();
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  it('an acknowledged override proceeds and the credit_note_issued audit records it', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const deps = makeDeps(invoice, makeSettings(), {
+      onlinePaymentRefundGuard: {
+        readRefundableOnlinePayment: vi.fn(async () => ({
+          kind: 'refundable' as const,
+          remainingSatang: 25_000n,
+        })),
+      },
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 25_000n,
+      reason: 'refunded by bank transfer',
+      onlinePaymentRefundAcknowledged: true,
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    const cnEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, ev]) => ev.eventType === 'credit_note_issued',
+    );
+    const payload = cnEmit![1].payload as Record<string, unknown>;
+    expect(payload.online_payment_refund_acknowledged).toBe(true);
+    expect(payload.online_refundable_satang_at_issue).toBe('25000');
+  });
+
+  it('a manual CN with no refundable online payment carries no override keys in its audit', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 25_000n,
+      reason: 'document correction',
+      onlinePaymentRefundAcknowledged: true,
+    });
+
+    expect(r.ok).toBe(true);
+    const cnEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, ev]) => ev.eventType === 'credit_note_issued',
+    );
+    const payload = cnEmit![1].payload as Record<string, unknown>;
+    expect('online_payment_refund_acknowledged' in payload).toBe(false);
+  });
+
   it('full credit on NON-member event invoice → succeeds, NON-timeline audit (no member_id, has event_registration_id), VAT reconciles to stored split', async () => {
     const invoice = makeIssuedEventInvoice(); // memberId null, total 25000, vat 1636
     const deps = makeDeps(invoice, makeSettings());

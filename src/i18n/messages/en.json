@@ -2290,10 +2290,12 @@
         },
         "onlinePayment": {
           "title": "Paid online — a credit note does not refund the member",
+          "unknownTitle": "Check how this invoice was paid before crediting it",
           "body": "Issuing a credit note here returns no money. To refund this card or PromptPay payment, use Issue refund on the invoice — it refunds the member and issues the credit note itself. A manual credit note also reduces the amount that can still be refunded online by the same amount; after a full credit note the payment can no longer be refunded through the system.",
           "unknownBody": "The payment channel for this invoice could not be checked. If it was paid online by card or PromptPay, use Issue refund on the invoice instead — a manual credit note returns no money and reduces the amount that can still be refunded online.",
           "refundAction": "Go to Issue refund",
-          "acknowledge": "I understand this credit note returns no money and reduces what can still be refunded online"
+          "acknowledge": "I understand this credit note returns no money and reduces what can still be refunded online",
+          "ackRequiredHint": "Tick the acknowledgement in the online-payment warning above to continue."
         },
         "amountLabel": "Credit amount (incl. VAT)",
         "amountHelp": "Enter the gross amount to credit, inclusive of VAT. VAT is split proportionally to the original invoice.",
@@ -2314,11 +2316,11 @@
           "legend": "What should happen to the membership?",
           "keep": {
             "label": "Keep membership — document correction",
-            "description": "Records the credit note only — the membership and its renewal cycles stay as they are. No money is returned by this action."
+            "description": "Records the credit note only — the membership and its renewal cycles stay as they are. No money is returned by this action; any amount owed back to the member must be settled separately."
           },
           "cancelMembership": {
             "label": "Cancel membership — refund handled separately",
-            "description": "Records the credit note and cancels the member's active renewal cycles. No money is returned. Paid online? Use Issue refund on the invoice instead — it refunds the member and issues the credit note itself."
+            "description": "Records the credit note and cancels the member's active renewal cycles. No money is returned. Paid online? Use Issue refund on the invoice instead — it refunds the member and issues the credit note itself, but does not cancel the membership, so then cancel it from the Renewals page."
           }
         },
         "errors": {
@@ -3002,7 +3004,7 @@
           "resolve": "Mark as reconciled",
           "resolveConfirm": {
             "title": "Mark this auto-refund as reconciled?",
-            "body": "Do this only after you have returned the funds to the member out-of-band (a Stripe Dashboard refund or a manual credit note). It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
+            "body": "Do this only after you have returned the funds to the member out-of-band (e.g. a Stripe Dashboard refund or a bank transfer) — a credit note alone returns no money. It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
             "cancel": "Cancel",
             "confirm": "Yes, mark as reconciled",
             "pending": "Recording…"

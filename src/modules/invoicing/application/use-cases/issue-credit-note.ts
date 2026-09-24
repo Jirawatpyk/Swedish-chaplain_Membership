@@ -420,18 +420,24 @@ export async function issueCreditNote(
   // would silently make that much of the payment unrefundable. Require the
   // staff acknowledgement (see the `online_payment_refundable` arm). Any
   // amount, not just a full credit: a partial CN of X locks X out the same
-  // way. Above the withTx for the same reason as the 8A guard.
-  if (
-    input.sourceRefundId === undefined &&
-    input.onlinePaymentRefundAcknowledged !== true
-  ) {
+  // way. Above the withTx for the same reason as the 8A guard. Read even when
+  // acknowledged, so the audit row records what the staff overrode.
+  let onlineRefundOverride: { readonly refundableSatang: string | null } | null =
+    null;
+  if (input.sourceRefundId === undefined) {
     const online =
       await deps.onlinePaymentRefundGuard.readRefundableOnlinePayment(
         input.tenantId,
         invoiceId,
       );
     if (online.kind !== 'none') {
-      return err({ code: 'online_payment_refundable' });
+      if (input.onlinePaymentRefundAcknowledged !== true) {
+        return err({ code: 'online_payment_refundable' });
+      }
+      onlineRefundOverride = {
+        refundableSatang:
+          online.kind === 'refundable' ? online.remainingSatang.toString() : null,
+      };
     }
   }
 
@@ -1222,6 +1228,15 @@ export async function issueCreditNote(
         reason: input.reason,
         document_number: docNum.value.raw,
         pdf_sha256: rendered.sha256,
+        // Present only when staff acknowledged issuing this manual CN over a
+        // refundable online payment (the `online_payment_refundable` override).
+        // `null` satang = the payments read failed (fail-closed `unknown`).
+        ...(onlineRefundOverride !== null
+          ? {
+              online_payment_refund_acknowledged: true,
+              online_refundable_satang_at_issue: onlineRefundOverride.refundableSatang,
+            }
+          : {}),
       };
       if (memberId !== null) {
         await deps.audit.emit(tx, {

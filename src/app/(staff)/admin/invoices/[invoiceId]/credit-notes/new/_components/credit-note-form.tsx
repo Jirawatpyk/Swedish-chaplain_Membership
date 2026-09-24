@@ -37,6 +37,7 @@ import {
   InlineAlertTitle,
 } from '@/components/ui/inline-alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { cn } from '@/lib/utils';
 import { routeCreditNoteError } from './credit-note-error-routing';
 
 /** F-2 (2026-07-08) — membership-effect intent, mirrors the use-case's enum. */
@@ -319,7 +320,11 @@ export function CreditNoteForm({
       {requiresOnlineAck && (
         <InlineAlert tone="warning" role="note" data-testid="cn-online-payment-warning">
           <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          <InlineAlertTitle>{t('onlinePayment.title')}</InlineAlertTitle>
+          <InlineAlertTitle>
+            {onlineRefundState === 'unknown'
+              ? t('onlinePayment.unknownTitle')
+              : t('onlinePayment.title')}
+          </InlineAlertTitle>
           <InlineAlertDescription className="flex flex-col items-start gap-3 text-foreground">
             <p>
               {onlineRefundState === 'unknown'
@@ -328,11 +333,16 @@ export function CreditNoteForm({
             </p>
             <Link
               href={`/admin/invoices/${invoiceId}?refund=1`}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={cn(
+                buttonVariants({ variant: 'outline', size: 'sm' }),
+                'min-h-[44px]',
+              )}
             >
               {t('onlinePayment.refundAction')}
             </Link>
-            <div className="flex items-start gap-2">
+            {/* A real <label> so the sentence is clickable too (44px row); the
+                visible text stays aria-hidden so the name isn't read twice. */}
+            <label className="flex min-h-[44px] cursor-pointer items-start gap-2">
               <Checkbox
                 className="mt-0.5"
                 // Base UI's visible role=checkbox element carries its own
@@ -347,7 +357,7 @@ export function CreditNoteForm({
               <span aria-hidden="true" className="text-sm">
                 {t('onlinePayment.acknowledge')}
               </span>
-            </div>
+            </label>
           </InlineAlertDescription>
         </InlineAlert>
       )}
@@ -526,6 +536,12 @@ export function CreditNoteForm({
           {t('cancel')}
         </Button>
       </div>
+      {/* A disabled button can't take focus, so say why it is disabled. */}
+      {requiresOnlineAck && !onlineRefundAcknowledged && (
+        <p className="-mt-4 text-xs text-muted-foreground" data-testid="cn-ack-required-hint">
+          {t('onlinePayment.ackRequiredHint')}
+        </p>
+      )}
     </form>
   );
 }

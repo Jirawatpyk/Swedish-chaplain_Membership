@@ -23,7 +23,7 @@
  *   pnpm test:integration tests/integration/invoicing/credit-note-online-payment-guard.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { issueCreditNote, makeIssueCreditNoteDeps } from '@/modules/invoicing';
@@ -34,6 +34,7 @@ import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoi
 import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { payments } from '@/modules/payments/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -337,6 +338,23 @@ describe('manual credit note vs a refundable online payment', () => {
       credited: INVOICE_TOTAL,
       cnCount: 1,
     });
+
+    // The override is on the (10-year) audit trail, with what was refundable.
+    const [audit] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'credit_note_issued'),
+            sql`${auditLog.payload}->>'original_invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    const payload = audit!.payload as Record<string, unknown>;
+    expect(payload.online_payment_refund_acknowledged).toBe(true);
+    expect(payload.online_refundable_satang_at_issue).toBe(INVOICE_TOTAL.toString());
   }, 60_000);
 
   it('does not require the acknowledgement for a bank-transfer-paid invoice (no online payment to refund)', async () => {

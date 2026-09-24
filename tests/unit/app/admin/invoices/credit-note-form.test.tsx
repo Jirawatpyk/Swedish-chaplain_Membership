@@ -335,9 +335,9 @@ describe('<CreditNoteForm> — online-payment steering (a credit note moves no m
 
   it('an unverifiable payment state (read failed) still warns and requires the acknowledgement', () => {
     renderForm({ paymentChannel: null, onlineRefundState: 'unknown' });
-    expect(screen.getByTestId('cn-online-payment-warning')).toHaveTextContent(
-      cnMessages.onlinePayment.unknownBody,
-    );
+    const warning = screen.getByTestId('cn-online-payment-warning');
+    expect(warning).toHaveTextContent(cnMessages.onlinePayment.unknownTitle);
+    expect(warning).toHaveTextContent(cnMessages.onlinePayment.unknownBody);
     expect(
       screen.getByRole('checkbox', { name: cnMessages.onlinePayment.acknowledge }),
     ).toBeInTheDocument();
@@ -360,6 +360,20 @@ describe('<CreditNoteForm> — online-payment steering (a credit note moves no m
     fireEvent.click(submit);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(sentBody(fetchMock).onlinePaymentRefundAcknowledged).toBe(true);
+  });
+
+  it('online-paid: the acknowledgement sentence itself is clickable, and a hint explains the disabled submit', async () => {
+    renderForm({ paymentChannel: 'card', onlineRefundState: 'refundable' });
+    expect(screen.getByTestId('cn-ack-required-hint')).toHaveTextContent(
+      cnMessages.onlinePayment.ackRequiredHint,
+    );
+    fireEvent.click(screen.getByText(cnMessages.onlinePayment.acknowledge));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('checkbox', { name: cnMessages.onlinePayment.acknowledge }),
+      ).toBeChecked(),
+    );
+    expect(screen.queryByTestId('cn-ack-required-hint')).toBeNull();
   });
 
   it('bank-transfer-paid: submits without the acknowledgement field', async () => {

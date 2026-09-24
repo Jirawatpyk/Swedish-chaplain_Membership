@@ -2290,10 +2290,12 @@
         },
         "onlinePayment": {
           "title": "Betalt online — en kreditnota återbetalar inte medlemmen",
+          "unknownTitle": "Kontrollera hur fakturan betalades innan du krediterar den",
           "body": "Att utfärda en kreditnota här återbetalar inga pengar. För att återbetala denna kort- eller PromptPay-betalning, använd Utfärda återbetalning på fakturan — den återbetalar medlemmen och utfärdar kreditnotan själv. En manuell kreditnota minskar också det belopp som fortfarande kan återbetalas online med samma belopp; efter en fullständig kreditnota kan betalningen inte längre återbetalas via systemet.",
           "unknownBody": "Betalningskanalen för denna faktura kunde inte kontrolleras. Om den betalades online med kort eller PromptPay, använd Utfärda återbetalning på fakturan i stället — en manuell kreditnota återbetalar inga pengar och minskar det belopp som fortfarande kan återbetalas online.",
           "refundAction": "Gå till Utfärda återbetalning",
-          "acknowledge": "Jag förstår att denna kreditnota inte återbetalar några pengar och minskar det som fortfarande kan återbetalas online"
+          "acknowledge": "Jag förstår att denna kreditnota inte återbetalar några pengar och minskar det som fortfarande kan återbetalas online",
+          "ackRequiredHint": "Bekräfta med kryssrutan i varningen om onlinebetalning ovan för att fortsätta."
         },
         "amountLabel": "Kreditbelopp (inkl. moms)",
         "amountHelp": "Ange bruttobeloppet att kreditera, inkl. moms. Moms fördelas proportionellt mot originalfakturan.",
@@ -2314,11 +2316,11 @@
           "legend": "Vad ska hända med medlemskapet?",
           "keep": {
             "label": "Behåll medlemskapet — dokumentkorrigering",
-            "description": "Registrerar endast kreditnotan — medlemskapet och dess förnyelsecykler förblir oförändrade. Inga pengar återbetalas genom denna åtgärd."
+            "description": "Registrerar endast kreditnotan — medlemskapet och dess förnyelsecykler förblir oförändrade. Inga pengar återbetalas genom denna åtgärd; eventuellt belopp som ska återföras till medlemmen hanteras separat."
           },
           "cancelMembership": {
             "label": "Avsluta medlemskapet — återbetalning hanteras separat",
-            "description": "Registrerar kreditnotan och avbryter medlemmens aktiva förnyelsecykler. Inga pengar återbetalas. Betalt online? Använd Utfärda återbetalning på fakturan i stället — den återbetalar medlemmen och utfärdar kreditnotan själv."
+            "description": "Registrerar kreditnotan och avbryter medlemmens aktiva förnyelsecykler. Inga pengar återbetalas. Betalt online? Använd Utfärda återbetalning på fakturan i stället — den återbetalar medlemmen och utfärdar kreditnotan själv, men avslutar inte medlemskapet, så avsluta det sedan från sidan Förnyelser."
           }
         },
         "errors": {
@@ -3002,7 +3004,7 @@
           "resolve": "Markera som avstämd",
           "resolveConfirm": {
             "title": "Markera denna automatiska återbetalning som avstämd?",
-            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (en återbetalning via Stripe Dashboard eller en manuell kreditnota). Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
+            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (t.ex. en återbetalning via Stripe Dashboard eller en banköverföring) — en kreditnota i sig återbetalar inga pengar. Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
             "cancel": "Avbryt",
             "confirm": "Ja, markera som avstämd",
             "pending": "Registrerar…"
