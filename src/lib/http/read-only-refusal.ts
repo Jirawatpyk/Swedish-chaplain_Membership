@@ -103,3 +103,17 @@ export function retryAfterMinutes(headers: Pick<Headers, 'get'> | null | undefin
   const seconds = Number.parseInt(raw, 10);
   return seconds > 0 ? Math.ceil(seconds / 60) : null;
 }
+
+/**
+ * {@link isReadOnlyRefusal}, read off a live `Response` — for callers that
+ * decide before parsing the body, or parse it through a helper of their own
+ * (`readErrorCode`, the resend button's 409 branch).
+ *
+ * Reads a CLONE, and only of a 503, so the caller's body is still unread
+ * whatever the answer. A body that is not JSON is simply not the refusal.
+ */
+export async function isReadOnlyResponse(res: Response): Promise<boolean> {
+  if (res.status !== 503) return false;
+  const body: unknown = await res.clone().json().catch(() => null);
+  return isReadOnlyRefusal(res.status, body);
+}

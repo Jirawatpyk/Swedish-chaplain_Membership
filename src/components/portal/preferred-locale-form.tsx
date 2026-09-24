@@ -19,6 +19,8 @@ import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -47,6 +49,7 @@ export function PreferredLocaleForm({
   initialValue,
 }: PreferredLocaleFormProps = {}): ReactElement {
   const t = useTranslations('portal.preferredLocale');
+  const readOnlyToast = useReadOnlyToast();
   const tLang = useTranslations('common');
   const seeded = initialValue !== undefined;
   const [state, setState] = useState<LoadState>(seeded ? 'ready' : 'loading');
@@ -88,6 +91,8 @@ export function PreferredLocaleForm({
       if (res.ok) {
         toast.success(t('savedToast'));
         announce(t('savedToast'));
+      } else if (await isReadOnlyResponse(res)) {
+        announce(readOnlyToast());
       } else {
         toast.error(t('errorToast'));
         announce(t('errorToast'));

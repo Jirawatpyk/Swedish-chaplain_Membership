@@ -18,6 +18,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 
 /**
  * F119 T099 — the editor's toolbar Image / Banner controls collect the
@@ -138,6 +139,15 @@ export function ComposeInlineImageUploader({
         // premise that "next-intl throws on missing keys by default". It does
         // NOT: it returns the key PATH, so the catch was dead and the raw path
         // was shown. `t.has()` is the guard that actually runs.
+        // The write freeze arrives as either spelling (flat `read-only-mode`
+        // from the proxy, nested `read_only_mode` from a route guard); one key
+        // answers both, as a warning — nothing is wrong with the image.
+        if (isReadOnlyRefusal(res.status, body)) {
+          const msg = t('errors.read_only_mode');
+          setError(msg);
+          toast.warning(msg);
+          return;
+        }
         const key = `errors.${code}` as Parameters<typeof t>[0];
         const msg = t.has(key) ? t(key) : t('errors.unknown');
         setError(msg);

@@ -23,6 +23,8 @@ import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -61,6 +63,7 @@ export function ChangePasswordForm() {
   const tReset = useTranslations('auth.resetPassword');
   const tErrors = useTranslations('errors');
   const tv = useTranslations('shared.validation');
+  const readOnlyToast = useReadOnlyToast();
   const [submitting, setSubmitting] = useState(false);
 
   const {
@@ -118,6 +121,11 @@ export function ChangePasswordForm() {
         error?: string;
         issues?: string[];
       };
+
+      if (isReadOnlyRefusal(response.status, body)) {
+        readOnlyToast();
+        return;
+      }
 
       switch (body.error) {
         case 'wrong-current-password':

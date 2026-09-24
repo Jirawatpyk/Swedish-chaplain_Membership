@@ -23,6 +23,8 @@ import { Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 
 export interface AcknowledgementBannerClientProps {
   readonly title: string;
@@ -51,6 +53,7 @@ export function AcknowledgementBannerClient({
   privacyPolicyLinkLabel,
 }: AcknowledgementBannerClientProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.banner.acknowledgement');
+  const readOnlyToast = useReadOnlyToast();
   const [hidden, setHidden] = useState<boolean>(false);
   const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
@@ -74,6 +77,11 @@ export function AcknowledgementBannerClient({
           body: JSON.stringify({ locale }),
         });
         if (!res.ok) {
+          // The write freeze: nothing was recorded, and the banner stays.
+          if (await isReadOnlyResponse(res)) {
+            readOnlyToast();
+            return;
+          }
           toast.error(t('toastAcknowledgeFailed'), {
             description: t('toastAcknowledgeFailedHint'),
           });

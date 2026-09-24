@@ -17,10 +17,21 @@
  * toasts and its own i18n namespace — they are genuinely different copy, and a
  * hook that owned them would take more parameters than it saved lines.
  */
+import { isReadOnlyRefusal, retryAfterMinutes } from '@/lib/http/read-only-refusal';
 
 export type ComposeDraftSaveResult =
   | { readonly ok: true; readonly broadcastId: string | null }
-  | { readonly ok: false; readonly code: string };
+  | {
+      readonly ok: false;
+      /**
+       * The refusal's code. The READ_ONLY_MODE freeze is normalised to
+       * `read_only_mode` whichever envelope carried it — the proxy's flat
+       * `{ error: 'read-only-mode' }` has no `error.code` to read.
+       */
+      readonly code: string;
+      /** `Retry-After` in whole minutes on the read-only refusal; else `null`. */
+      readonly retryAfterMinutes: number | null;
+    };
 
 export async function saveComposeDraft(input: {
   readonly endpoint: string;
@@ -44,8 +55,15 @@ export async function saveComposeDraft(input: {
       const refusal = (await res.json().catch(() => null)) as {
         error?: { code?: unknown };
       } | null;
+      if (isReadOnlyRefusal(res.status, refusal)) {
+        return { ok: false, code: 'read_only_mode', retryAfterMinutes: retryAfterMinutes(res.headers) };
+      }
       const code = refusal?.error?.code;
-      return { ok: false, code: typeof code === 'string' ? code : 'internal_error' };
+      return {
+        ok: false,
+        code: typeof code === 'string' ? code : 'internal_error',
+        retryAfterMinutes: null,
+      };
     }
 
     const saved = (await res.json().catch(() => null)) as {
@@ -64,6 +82,6 @@ export async function saveComposeDraft(input: {
       { err: e instanceof Error ? e.message : String(e), endpoint: input.endpoint },
       'broadcasts.save_draft.fetch_failed',
     );
-    return { ok: false, code: 'internal_error' };
+    return { ok: false, code: 'internal_error', retryAfterMinutes: null };
   }
 }

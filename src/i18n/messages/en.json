@@ -185,6 +185,7 @@
     "forbidden": "You don't have permission to see this.",
     "readOnlyMode": "The system is currently in read-only mode for maintenance.",
     "errorId": "Error ID: {id}",
+    "readOnlyNothingChanged": "Nothing was changed. Try again in a few minutes.",
     "notFoundHint": "The link may be old, or the page was moved.",
     "backToDashboard": "Back to dashboard"
   },
@@ -6168,6 +6169,7 @@
             "feature_disabled": "Image embedding is not currently available.",
             "invalid_body": "Upload request was malformed.",
             "internal_error": "An unexpected error occurred during upload.",
+            "read_only_mode": "Uploads are paused while the system is in read-only mode for maintenance. Try again in a few minutes.",
             "unknown": "Upload failed. Please try again."
           }
         },
@@ -6178,7 +6180,10 @@
         "readOnly": {
           "title": "Not submitted — the system is in read-only mode for maintenance.",
           "body": "Nothing was sent and no E-Blast slot was used. Your message is still on this page — keep it open and try again in about {minutes, plural, one {# minute} other {# minutes}}.",
-          "bodyShortly": "Nothing was sent and no E-Blast slot was used. Your message is still on this page — keep it open and try again shortly."
+          "bodyShortly": "Nothing was sent and no E-Blast slot was used. Your message is still on this page — keep it open and try again shortly.",
+          "draftTitle": "Draft not saved — the system is in read-only mode for maintenance.",
+          "draftBody": "Your message is still on this page — keep it open and try again in about {minutes, plural, one {# minute} other {# minutes}}.",
+          "draftBodyShortly": "Your message is still on this page — keep it open and try again shortly."
         }
       },
       "quota": {
@@ -6751,6 +6756,7 @@
         "errorCycleNotPayable": "This renewal cycle has already been processed.",
         "errorPlanUnavailable": "The selected plan is no longer available.",
         "errorInvoiceFailed": "We couldn't generate your invoice. Please try again or contact support.",
+        "errorReadOnly": "Renewal is paused while the system is in read-only mode for maintenance. Nothing was charged or changed — try again in a few minutes.",
         "errorRateLimited": "Too many renewal attempts. Please wait a few minutes and try again.",
         "errorNetwork": "Connection issue. Please check your internet and try again.",
         "errorDowngradeNotAcknowledged": "Please confirm the lower-priced plan change before continuing."

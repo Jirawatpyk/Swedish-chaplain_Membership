@@ -15,6 +15,8 @@
 import { useTransition, useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { Mail, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -37,6 +39,7 @@ export function ResendInvoiceButton({
   className,
 }: ResendInvoiceButtonProps) {
   const t = useTranslations('portal.invoices');
+  const readOnlyToast = useReadOnlyToast();
   const [isPending, startTransition] = useTransition();
   // Lock out the button after success for the same 5-minute window the
   // API enforces so the user isn't tempted to spam the toast; purely
@@ -71,6 +74,10 @@ export function ResendInvoiceButton({
         }
         if (res.status === 429) {
           toast.warning(t('toast.resendRateLimited'));
+          return;
+        }
+        if (await isReadOnlyResponse(res)) {
+          readOnlyToast();
           return;
         }
         if (res.status === 409) {

@@ -45,7 +45,7 @@ import {
   InlineAlertDescription,
   InlineAlertTitle,
 } from '@/components/ui/inline-alert';
-import { isReadOnlyRefusal, retryAfterMinutes } from '@/lib/http/read-only-refusal';
+import { isReadOnlyCode, isReadOnlyRefusal, retryAfterMinutes } from '@/lib/http/read-only-refusal';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
@@ -118,6 +118,20 @@ const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {
   broadcast_custom_recipient_empty: 'customList',
   broadcast_custom_recipient_too_many: 'customList',
 };
+
+/** The read-only alert's copy per refused action (portal error states). */
+const READ_ONLY_COPY = {
+  submit: {
+    title: 'readOnly.title',
+    body: 'readOnly.body',
+    bodyShortly: 'readOnly.bodyShortly',
+  },
+  draft: {
+    title: 'readOnly.draftTitle',
+    body: 'readOnly.draftBody',
+    bodyShortly: 'readOnly.draftBodyShortly',
+  },
+} as const;
 
 /**
  * Simplify-S4 (round-3) — switch instead of nested ternary
@@ -237,8 +251,10 @@ export function ComposeForm({
   // `serverError`: it names no field, says nothing about the message itself,
   // and is the one refusal whose advice is "wait", so it gets the warning
   // tone and its `Retry-After` rather than a red toast. `minutes: null` =
-  // the response carried no usable hint.
+  // the response carried no usable hint. `kind` picks the copy: a refused
+  // draft save must not talk about sending or E-Blast slots.
   const [readOnlyRefusal, setReadOnlyRefusal] = useState<{
+    readonly kind: 'submit' | 'draft';
     readonly minutes: number | null;
   } | null>(null);
 
@@ -438,7 +454,7 @@ export function ComposeForm({
       // The write freeze is refused BEFORE the route runs, so nothing was
       // created and no quota reserved — the member only needs to wait.
       if (isReadOnlyRefusal(res.status, responseBody)) {
-        setReadOnlyRefusal({ minutes: retryAfterMinutes(res.headers) });
+        setReadOnlyRefusal({ kind: 'submit', minutes: retryAfterMinutes(res.headers) });
         return;
       }
 
@@ -509,6 +525,12 @@ export function ComposeForm({
         payload: body,
       });
       if (!saved.ok) {
+        // The write freeze: the same focused alert as a refused submit, in
+        // its draft wording, and no toast.
+        if (isReadOnlyCode(saved.code)) {
+          setReadOnlyRefusal({ kind: 'draft', minutes: saved.retryAfterMinutes });
+          return;
+        }
         // T155 finding U8 — the `try/catch` that stood here was unreachable:
         // next-intl returns the key path rather than throwing, so a draft-save
         // code with no key toasted the raw path. This file already SAID so
@@ -757,11 +779,11 @@ export function ComposeForm({
                 data-testid="compose-read-only-alert"
                 className="outline-none"
               >
-                <InlineAlertTitle>{t('readOnly.title')}</InlineAlertTitle>
+                <InlineAlertTitle>{t(READ_ONLY_COPY[readOnlyRefusal.kind].title)}</InlineAlertTitle>
                 <InlineAlertDescription>
                   {readOnlyRefusal.minutes !== null
-                    ? t('readOnly.body', { minutes: readOnlyRefusal.minutes })
-                    : t('readOnly.bodyShortly')}
+                    ? t(READ_ONLY_COPY[readOnlyRefusal.kind].body, { minutes: readOnlyRefusal.minutes })
+                    : t(READ_ONLY_COPY[readOnlyRefusal.kind].bodyShortly)}
                 </InlineAlertDescription>
               </InlineAlert>
             ) : null}

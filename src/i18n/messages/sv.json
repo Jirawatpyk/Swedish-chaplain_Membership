@@ -185,6 +185,7 @@
     "forbidden": "Du har inte behörighet att se det här.",
     "readOnlyMode": "Systemet är i skrivskyddat läge för underhåll.",
     "errorId": "Fel-ID: {id}",
+    "readOnlyNothingChanged": "Ingenting ändrades. Försök igen om några minuter.",
     "notFoundHint": "Länken kan vara gammal, eller så har sidan flyttats.",
     "backToDashboard": "Tillbaka till översikten"
   },
@@ -6168,6 +6169,7 @@
             "feature_disabled": "Bildinbäddning är inte tillgänglig just nu.",
             "invalid_body": "Uppladdningsbegäran var felaktig.",
             "internal_error": "Ett oväntat fel inträffade under uppladdningen.",
+            "read_only_mode": "Uppladdningar är pausade medan systemet är i skrivskyddat läge för underhåll. Försök igen om några minuter.",
             "unknown": "Uppladdningen misslyckades. Försök igen."
           }
         },
@@ -6178,7 +6180,10 @@
         "readOnly": {
           "title": "Inte skickat — systemet är i skrivskyddat läge för underhåll.",
           "body": "Ingenting skickades och ingen E-Blast-plats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
-          "bodyShortly": "Ingenting skickades och ingen E-Blast-plats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om en stund."
+          "bodyShortly": "Ingenting skickades och ingen E-Blast-plats användes. Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om en stund.",
+          "draftTitle": "Utkastet sparades inte — systemet är i skrivskyddat läge för underhåll.",
+          "draftBody": "Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
+          "draftBodyShortly": "Ditt meddelande finns kvar på sidan — låt den vara öppen och försök igen om en stund."
         }
       },
       "quota": {
@@ -6751,6 +6756,7 @@
         "errorCycleNotPayable": "Den här förnyelsecykeln har redan behandlats.",
         "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
         "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
+        "errorReadOnly": "Förnyelsen är pausad medan systemet är i skrivskyddat läge för underhåll. Ingenting debiterades eller ändrades — försök igen om några minuter.",
         "errorRateLimited": "För många förnyelseförsök. Vänta en stund och försök igen.",
         "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen.",
         "errorDowngradeNotAcknowledged": "Bekräfta bytet till en plan med lägre pris innan du fortsätter."
