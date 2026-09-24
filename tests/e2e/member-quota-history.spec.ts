@@ -167,15 +167,26 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   }) => {
     await signIn(page);
     await page.goto('/portal/benefits?tab=broadcasts');
-    const firstRow = historyView(page).rows.first();
-    if ((await firstRow.count()) === 0) {
+    // F119 — the detail page renders the delivery card only once sending has
+    // begun, so the FIRST row (newest, often a draft or one awaiting review)
+    // cannot carry the breakdown. Pick a row whose status BADGE reads Sent, in
+    // any of the three locales. Scoped to the badge (`data-slot="badge"`, the
+    // admin-erasure-log precedent) because the phone card also carries a
+    // "Sent" / "Skickad" <dt> column label on every row; the exact match keeps
+    // "Partially sent" and a subject containing "Sent" out.
+    const sentRow = historyView(page)
+      .rows.filter({
+        has: page.locator('[data-slot="badge"]', { hasText: /^(Sent|ส่งแล้ว|Skickad)$/ }),
+      })
+      .first();
+    if ((await sentRow.count()) === 0) {
       test.info().annotations.push({
         type: 'skip-reason',
-        description: 'No broadcasts in seed — AS3 needs at least one sent.',
+        description: 'No sent broadcast on the first history page — AS3 needs at least one sent.',
       });
       return;
     }
-    await firstRow.locator('a').first().click();
+    await sentRow.locator('a').first().click();
     await page.waitForURL(/\/portal\/broadcasts\/[^/]+/);
 
     await expect(page.getByTestId('delivery-breakdown')).toBeVisible();

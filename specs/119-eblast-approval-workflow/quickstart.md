@@ -204,9 +204,12 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    approval** (FR-022a).
 5. **SC-004 measurement**: "notified within 5 minutes" means the notification email has been
    **handed to the delivery service**, measured from the hand-off event — not delivered, not opened.
-   Measure `enqueued_at` on the outbox row against the `sent_at` the dispatcher stamps when Resend
-   accepts it; the 1-minute outbox tick plus the provider call is the whole budget. A provider
-   failure is an `email_dispatch_failed` row, not an SC-004 breach.
+   Measure `created_at` on the outbox row against its `updated_at` once `status = 'sent'` —
+   `notifications_outbox` has no `enqueued_at` or `sent_at` column; the dispatcher's flip to `sent`
+   when Resend accepts the message is the row's last write. The 1-minute outbox tick plus the
+   provider call is the whole budget. A provider failure is an `email_dispatch_failed` row, not an
+   SC-004 breach, and a row enqueued while the flag was off measures the dark period, not the
+   dispatcher (`docs/observability.md` § 28.6).
 6. The nav badge counts the E-Blasts waiting on marketing, from anywhere in the staff portal.
 
 ### US6 — the screens
@@ -1031,8 +1034,14 @@ step 5's flip safe to take immediately after this merge.
      `0304` in PR-1, ten land here) and the five
      `notification_type` values (`ADD VALUE` is irreversible — not even a revert undoes these);
    - the two amended trigger functions (a reversal is a new migration);
-   - `proposed_send_at` now recorded at submit for **every** E-Blast, and the backfill of rows
-     currently in `submitted`;
+   - the `0305` backfill of `proposed_send_at` for rows in `submitted` at the deploy. **Code
+     differs from this plan (T154 walk, `1b06c1cd1`)**: nothing writes `proposed_send_at` at
+     submit — `insertDraft` / `updateDraft` write `scheduled_for` only and `applyTransition`'s
+     passthrough list does not carry the column — so every E-Blast submitted after `0305` has
+     `proposed_send_at = NULL`. The member's time survives in `scheduled_for` until marketing
+     decides, but "keep the member's proposed time" is refused (409 `no_proposal`), both sides see
+     "no proposed time", and FR-018's "not the time you proposed" line never fires. An open
+     defect, not a design choice; the UAT (§ 4) works round it with "Choose another time";
    - the widened allowance bucket and cancel cascade — they read the same set, which currently
      contains no rows in the new stages, so behaviour is unchanged until the flag is on;
    - `stage_entered_at` stamped on every status change;
@@ -1046,6 +1055,67 @@ step 5's flip safe to take immediately after this merge.
      `confirmedSendAt`, `expiresAt`, and the "latest **sent** version while awaiting" body rule) on
      `GET /api/broadcasts/[id]` and `/portal/broadcasts/[id]` — members see the widened detail on
      merge. Code-revert-only.
+
+   Added by the T154 walk (2026-09-24, against `1b06c1cd1` — each read from the code or a commit
+   body, all code-revert-only):
+   - **the portal detail page redesign** (T086, `dffa9af63`, `1b06c1cd1`): a stage banner (the
+     page's one live region), the proposed and confirmed send times, the **compare view only
+     once a version has been sent** (otherwise the single preview), the History list when there
+     is history, and the **Delivery card only once sending has begun** (`sending`, `sent`,
+     `partially_sent`, `partial_delivery_accepted`, `failed_to_dispatch`) — before PR-2 it
+     rendered on every E-Blast. `tests/e2e/member-quota-history.spec.ts` AS3 now picks a Sent row
+     for that reason;
+   - **the portal's member-held stage labels** (`1b06c1cd1` M4) in `portal.broadcasts.list.status`
+     — "Awaiting your approval", "Changes requested", "Approved — awaiting schedule";
+   - **the staff detail page rebuilt as the formatting surface** (T063): the approval-round card,
+     the version history, the test-copy button and the standing warnings render for every row;
+     only "Start formatted version" on a `submitted` row is hidden while the flag is off. Approve
+     stays `submitted`-only; Reject now follows `canTransition(status, 'rejected')` (identical for
+     today's rows);
+   - **the widened reject and cancel stage set** (T081) — reachable only with new-stage rows — and
+     a new refusal code: a cancel (staff or member) from `sending` onward now answers 409
+     **`sending_started`** where it answered `broadcast_cancel_too_late`, for today's rows too;
+   - **the staff reject and cancel routes consume the 30 / 60 s staff write bucket** (T081), a new
+     limit on an existing action. The cancel route's permission is **unchanged** —
+     `broadcasts.write` was already the gate on `main`; PR-2 only names it in the route header and
+     records the session role on the cancel. The portal cancel consumes the member bucket
+     (60 / min, T081a);
+   - **reject / cancel stamp the E-Blast's images** in the same transaction
+     (`broadcast_image_removed { reason: 'rejected' | 'withdrawn' }` — a staff cancel uses
+     `withdrawn`), so the next daily sweep deletes the bytes of a rejected or cancelled E-Blast in
+     **today's** flow as well;
+   - **the lapsed-member exemption** (`7c7973c52`): five exact, uuid-anchored paths —
+     `GET /api/broadcasts/<id>`, `GET …/versions`, `POST …/decision`, `POST …/cancel` and the page
+     `/portal/broadcasts/<id>` — are no longer refused for a lapsed member, so a lapsed member can
+     open and cancel their own E-Blast today; submit, drafts, image upload, preview, test copy and
+     quota stay refused;
+   - **the F9 needs-attention count is the marketing-turn set** (T132): the approval counter counts
+     `submitted`, `in_design`, `changes_requested`, `member_approved` — identical to before while
+     no row is in a new stage; the staff nav badge reads the same set and stays hidden while the
+     flag is off unless a row is in an approval-round stage;
+   - **every submit enqueues `eblast_submitted_marketing`** (member and proxy, one row per roster
+     recipient, T129), and a member's whole-E-Blast withdrawal enqueues
+     `eblast_member_decided_marketing { decision: 'withdrawn' }`. Held by the drainer (see below);
+     the rows accumulate from the merge and, on the flip, only rows whose E-Blast is still
+     `submitted` are delivered — the rest close silently as `request_superseded`. An empty roster
+     counts `broadcasts_no_marketing_recipient_total` on submit whatever the flag says;
+   - **the staff image route's stage refusal is 409 `stage_changed`** (was
+     `broadcast_invalid_state_transition`; T106a) and it also accepts `in_design`; the member route
+     keeps its code;
+   - **the shared `ReasonConfirmationDialog`** (`1b06c1cd1` H2): every caller now keeps focus on the
+     confirm while pending (`focusableWhenDisabled`, `aria-busy`, spinner, read-only fields),
+     refuses to close while pending, focuses the refusal or the reason field, and skips the
+     blank-reason error when focus leaves for Cancel; the opt-in props `announceBlankReason`,
+     `refusal`, `confirmTone` and a read-only `TypedPhraseField` are new. The portal cancel dialog
+     renders a 5xx / network refusal inside the open dialog;
+   - **the member erasure's reach and the DSAR archive** (T082, T083): the erasure scrub redacts
+     versions and decision reasons and deletes the member's pending `eblast_*` outbox rows (which
+     exist from the merge — the submit enqueue above), `broadcast_content_redacted` gains three
+     counts, and every member archive carries `broadcast-versions.json` (empty until a round
+     exists);
+   - **the four stage gauges** (T121) — `broadcasts_marketing_turn_count` is non-zero on merge
+     because it counts `submitted` rows — and Block 3 of the daily prune tick (runs, and finds
+     nothing, until a row awaits the member).
 
    **Not on this list, deliberately: the staff "new submission" email.** `eblast_submitted_marketing`
    is enqueued from the moment PR-2 merges, but the outbox drainer **skips the five new
@@ -1142,47 +1212,47 @@ every preview, so changing it never voids a pending or given approval (FR-041c).
 
 | Layer | Action | In-flight rows | Time |
 |---|---|---|---|
-| 1 — platform flag off | remove `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel + redeploy | kept; no **new** E-Blast can enter the round; rows already in a new stage stay completable and cancellable, and the reminder/expiry clock keeps running so nothing sits forever. **Hand-off emails stop being delivered** — the drainer skips the five types again and the rows queue up, so a re-flip resumes them rather than losing them (round 4 H2) | one deploy |
-| 2 — code revert of PR-2 | revert the PR | rows in a new stage become unreachable by the application until the code returns — **cancel them first** (`/admin/broadcasts` → Cancel), because the enum values and the triggers stay | one deploy |
+| 1 — platform flag off | remove `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel + redeploy | kept; no **new** E-Blast can enter the round — **only the `submitted → in_design` edge is gated** (`POST …/version` on a `submitted` row → 404, nothing written, no probe audit; "Start formatted version" hidden on submitted rows). Rows already in a new stage stay completable and cancellable: save and send a working copy, re-entry from Changes requested / Member approved / Scheduled at round ≥ 1, the member's decisions, confirm schedule, reject and cancel. The reminder/expiry clock keeps running, so nothing sits forever. **The five `eblast_*` emails are held at the drainer** — still enqueued, not selected: `pending`, `attempts = 0`, no `last_error`, never the `no_template_handler` ladder; they drain on the first tick after the flip (round 4 H2). **Consequence**: a version sent, and its reminders, while the flag is off do **not** email the member, yet the 30-day clock runs — tell the member by hand or cancel. On the re-flip each arm re-reads the E-Blast and closes a stale row silently as `request_superseded`, except `eblast_member_decided_marketing`, which has no staleness check and is delivered late (runbook § After a re-flip). **Evidence** (no env can be flipped on prod from here): `tests/contract/broadcasts/eblast-flag-matrix.test.ts` — the entry edge in both flag states, the in-flight arms (save/send from `in_design`, decide from `awaiting_member_approval`, schedule from `member_approved`, re-entry from `changes_requested`), the drainer's rendered SQL excluding all five types off and none on (with a positive control), and a flag-off submit writing its outbox row; `tests/integration/broadcasts/eblast-send-and-promote.test.ts` "flag off: the rows are enqueued and NOT delivered — pending, attempts 0, no last_error; after the flip the version-ready row is sent …" on live Neon | one deploy |
+| 2 — code revert of PR-2 | revert the PR | rows in a new stage become unreachable by the application until the code returns — **cancel them first** (`/admin/broadcasts/<id>` → Cancel, typed phrase + reason), because the enum values and the triggers stay and the pre-PR-2 code has no label, action or transition for them. **Also close the pending `eblast_*` outbox rows first**: the pre-PR-2 drainer has neither the skip nor an arm for them, so each would walk the `no_template_handler` ladder (5 attempts, ~3.6 h) into `permanently_failed` with an `email_dispatch_failed` row, paging `outbox_permanent_failures_total` (SQL in `docs/runbooks/eblast-approval.md` § Layer 2). Scheduled rows that went through a round already hold the promoted content and are sent normally by the old dispatcher; the member loses the ability to withdraw them. `stage_entered_at` stops being stamped, so a later re-merge reads stale "time in stage" on rows that moved in between. PR-2's unflagged changes (§ 3.2 step 3) are undone by this layer only | one deploy |
 | 3 — code revert of PR-1 | revert the PR | the wrapper returns to today's and the staff detail page returns to the raw-body view; brand columns and `broadcast_images` rows are orphaned but harmless. **What does NOT come back**: the pre-`sharp` upload path (already-uploaded images stay re-encoded — the originals were never stored), the image sweep (stamped rows stop being reclaimed and their bytes stay in Blob until the code returns), the erasure cascade's image reach (an erasure run after the revert will NOT stamp images again) and the four enum values. The full inventory is § 3.1's "Unflagged and live" list; every line of it is undone by this layer and by nothing else | one deploy |
 
 Migrations `0304` and `0305` are **not** undone by any layer; reversing them is a new migration, and
-`ALTER TYPE … ADD VALUE` cannot be reversed at all.
+`ALTER TYPE … ADD VALUE` cannot be reversed at all (5 `broadcast_status`, 14 `audit_event_type` —
+four in `0304`, ten in `0305` — and 5 `notification_type` values). Layer 3 needs layer 2 first:
+PR-2 builds on PR-1.
 
 ---
 
 ## 4. SweCham UAT (FR-035, US7, SC-005)
 
-The walkthrough is delivered as a written EN + TH document; this section is its precondition list.
+The walkthrough is delivered as a written EN + TH document —
+`uat-walkthrough-en.md` and `uat-walkthrough-th.md` (T153) — and this section is its precondition
+list. **The two walkthroughs repeat P1–P11 verbatim in meaning; change them together.**
 
-**Precondition — the staff-only recipient list must actually resolve.**
-`validateCustomRecipients` accepts any **contact email in the tenant graph**, so a "staff only"
-custom recipient list works **only if each staff address exists as a contact of the designated test
-member**. Before the trial:
+**The staff-only recipient list must actually resolve.** `validateCustomRecipients` accepts any
+**contact email in the tenant graph**, so a "staff only" custom recipient list works **only if each
+staff address exists as a contact of the designated test member**. Without P2 the recipient
+validation refuses the list and the trial stalls at submit — the single most likely way the UAT
+fails on day one.
 
-1. Create (or designate) a test member company in prod, e.g. "SweCham Internal Test".
-2. Add each participating SweCham staff address as a **contact of that member**, marketing-opted-in.
-3. Give that member a plan with at least 3 E-Blasts of allowance so the walkthrough's rounds and
-   rejections do not exhaust it.
-4. Use the **custom recipient list** audience on every trial E-Blast and name only those addresses.
-
-Without step 2 the recipient validation refuses the list and the trial stalls at submit — this is
-the single most likely way the UAT fails on day one.
-
-**Other preconditions**
-
-- The Resend account is on the **Free** plan (1,000 contacts, 3 segments), so at most **two**
-  broadcasts can be in flight at once; the audience ceiling is 500 recipients per tick. Sequence the
-  walkthrough accordingly.
-- The approval round itself makes **no** Resend Broadcasts call until the schedule is confirmed, so a
-  long design round consumes no Resend capacity.
-- Brand settings (§ 3.3) set, so the trial exercises the logo header, the brand-coloured button and
-  the real footer address.
-- `FEATURE_EBLAST_MEMBER_APPROVAL` on, and the RoPA updated (§ 3.2 step 4).
+| # | Precondition | Why — what fails without it |
+|---|---|---|
+| P1 | A designated **test member company** in prod (e.g. "SweCham Internal Test"), **in good standing** | A lapsed member can open and decide on its own E-Blast but **cannot submit** one |
+| P2 | Each participating SweCham staff address added as a **contact of that member**, marketing-opted-in | `validateCustomRecipients` refuses the list; the trial stalls at submit |
+| P3 | An **ACTIVE member-role portal login** for the test member, on an address that is **not already a Chamber-OS staff sign-in** (one address holds one account — `users_email_lower_unique`), e.g. a mailbox alias a participant reads. That address is also a contact of the member (P2) and is on the recipient list (P5) | "Send to member" is refused 409 `no_portal_user`. The member-side emails (version ready, reminders, the confirmed time) go to the **approval contact** — the contact linked to the login that submitted, else the primary contact, else the lowest-id active portal contact — so that contact must be this address, or a member email leaves the list |
+| P4 | A plan with **≥ 3 E-Blasts of allowance** for that member | Each trial E-Blast holds a place from submit until it is sent, rejected, withdrawn or expired; a second trial run needs a free place |
+| P5 | The **custom recipient list** audience on **every** trial E-Blast, naming only P2/P3 addresses | Any other audience reaches real members |
+| P6 | The participants include **every ACTIVE `marketing`-role user** of the tenant (or, if there is none, every active admin / super-admin) | Every hand-off email goes to that whole roster, not only to the person running the trial |
+| P7 | **Brand settings** (§ 3.3) set — colour and postal address | The trial should exercise the logo header, the brand-coloured button and the real footer address |
+| P8 | The **RoPA updated** (§ 3.2 step 4, T162) | It is the precondition of P9 |
+| P9 | `FEATURE_EBLAST_MEMBER_APPROVAL=true` in Vercel, with `FEATURE_F7_BROADCASTS` on | Setting it **is a production deploy** — only the maintainer does it. From then on every real submission emails the marketing roster, and "Start formatted version" is offered on every submitted E-Blast, not only the trial's |
+| P10 | **Resend Free plan**: at most **two** broadcasts in flight, 1,000 contacts, 3 segments; the audience ceiling is 500 recipients per tick | Run the trial E-Blasts one at a time. The approval round makes **no** Resend Broadcasts call until the send, so a long design round costs nothing |
+| P11 | Know the open gap: **`proposed_send_at` has no writer** (§ 3.2 step 3) | At "Confirm schedule" the member's time is not offered — use **Choose another time** (a few minutes ahead, ≥ 5 min) |
 
 **Walkthrough** (the SC-005 path): submit → format → request changes → re-format → approve → confirm
-schedule → sent, with **zero** emails delivered outside the staff-only list. Verify after each send
-that the delivery report names only those addresses.
+schedule → sent, with **zero** emails delivered outside the staff-only list. Verify after the send
+that the delivery report names only those addresses, and after each hand-off that the email
+arrived in the expected inbox and nowhere else.
 
 ---
 
@@ -1201,8 +1271,10 @@ own:
 nobody):
 
 - `email_dispatch_failed` audit rows whose `notification_type` starts `eblast_` — in particular
-  `no_template_handler`, which would mean a notification type shipped without its dispatcher arm and
-  has been retrying silently for up to 16 hours.
+  `no_template_handler`, which means the payload builder returned null: a transient read (logged
+  `M119.outbox_dispatch.eblast.read_failed`), malformed `context_data`, or a type with no arm. The
+  row retries after 60 s, 5 min, 30 min and 3 h and the fifth failure is terminal — about 3.6 hours,
+  not the "up to 16 hours" this line used to say (the 12 h step is never waited).
 - `broadcasts_marketing_turn_count` versus the nav badge — a divergence means the gauge and the live
   count are reading different predicates.
 - The first week's `broadcast_schedule_confirmed` rows with `differs: true` — if marketing is

@@ -588,6 +588,11 @@ has the counter moved, logged as `M119.cron.approval_lifecycle.no_member_recipie
 `broadcast_approval_expired { days_waiting, allowance_released: true }`. Each
 expiry increments `broadcasts_approval_expired_total{tenant}`.
 
+**Stuck rows, the flag rollback and the held emails** are in
+`docs/runbooks/eblast-approval.md` (§ The expiry clock, § Stuck stage, § Flag
+rollback); the metrics, alerts and `M119.*` errorIds in `docs/observability.md`
+§ 28.
+
 Members are NOT notified of impending draft expiry in MVP — a "your
 draft will expire in N days" toast remains in scope for a future
 polish iteration but is intentionally not part of F7 MVP.
