@@ -83,6 +83,8 @@ type AccessStub =
 function makeDeps(accessStub: AccessStub): InviteColleagueDeps {
   const contactRepo = {
     findById: vi.fn(async () => ok(makePrimaryContact())),
+    // No live contact with the invited address yet (invite proceeds).
+    findByEmail: vi.fn(async () => err({ code: 'repo.not_found' as const })),
     addInTx: vi.fn(async () => ok(makeLinkedContact())),
     linkUserInTx: vi.fn(async () => ok(makeLinkedContact())),
   };

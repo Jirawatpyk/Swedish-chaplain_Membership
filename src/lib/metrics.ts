@@ -6318,11 +6318,34 @@ export type ChangeRequestRefusedReason =
   | 'not_owner';
 
 /**
+ * Bounded refusal reasons for `members_portal_invite_refused_total` — the
+ * portal "Invite colleague" route's neutral `invite_unavailable` answers plus
+ * its per-member attempt bucket. The member only ever sees one neutral code;
+ * this counter is where staff see the real cause (account-enumeration guard).
+ */
+export type PortalInviteRefusedReason =
+  | 'rate_limited'
+  | 'email_registered_elsewhere'
+  | 'contact_of_other_member'
+  | 'contact_check_failed';
+
+/**
  * F114 (contracts/notifications-and-audit.md § 4; docs/observability.md § 14.1
  * "F114 rows"). Labels are bounded enums + `tenant`; never a user id, an
  * email or a value.
  */
 export const membersMetrics = {
+  portalInvite: {
+    /** `members_portal_invite_refused_total{tenant,reason}` — a portal colleague invite refused with a neutral answer (or throttled). */
+    refused(tenantId: string, reason: PortalInviteRefusedReason): void {
+      safeMetric(() => {
+        counter(
+          'members_portal_invite_refused_total',
+          'Portal colleague invites refused with the neutral answer or throttled, by bounded reason',
+        ).add(1, { tenant: tenantId, reason });
+      });
+    },
+  },
   changeRequests: {
     /**
      * `members_change_requests_pending_count{tenant}` — async gauge over

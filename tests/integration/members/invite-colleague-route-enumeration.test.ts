@@ -20,7 +20,11 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { sha256Hex } from '@/lib/crypto';
+import { users } from '@/modules/auth/infrastructure/db/schema';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { seedPortalMemberWithContact, seedPortalPlan } from '../helpers/portal-seed';
@@ -43,6 +47,10 @@ let otherMemberUser: TestUser;
 let foreignTenantUser: TestUser;
 /** A colleague already on the inviter's own member (linked secondary contact). */
 let ownColleague: TestUser;
+/** Live contact of ANOTHER member that has NO F1 account (no user row). */
+let otherMemberContactOnlyEmail: string;
+/** Primary contact of a separate member, used only by the rate-limit test. */
+let throttledInviter: TestUser;
 
 function sessionAs(user: TestUser): void {
   getCurrentSessionMock.mockResolvedValue({
@@ -70,6 +78,7 @@ beforeAll(async () => {
   otherMemberUser = await createActiveTestUser('member');
   foreignTenantUser = await createActiveTestUser('member');
   ownColleague = await createActiveTestUser('member');
+  throttledInviter = await createActiveTestUser('member');
 
   tenant = await createTestTenant('test-swecham');
   const planId = `enum-${randomUUID().slice(0, 6)}`;
@@ -107,6 +116,20 @@ beforeAll(async () => {
     contactEmail: otherMemberUser.rawEmail,
   });
 
+  // Another member whose primary contact has no portal account at all.
+  otherMemberContactOnlyEmail = `enum-contact-only-${randomUUID().slice(0, 8)}@example.test`;
+  await seedPortalMemberWithContact(tenant, planId, {
+    linkedUserId: null,
+    contactEmail: otherMemberContactOnlyEmail,
+  });
+
+  // A separate member for the rate-limit test, so its bucket starts empty.
+  await seedPortalMemberWithContact(tenant, planId, {
+    linkedUserId: throttledInviter.userId,
+    contactEmail: throttledInviter.rawEmail,
+    isPrimary: true,
+  });
+
   // A member in another tenant (users are global; members/contacts are not).
   otherTenant = await createTestTenant('test-chamber');
   const otherPlanId = `enum-o-${randomUUID().slice(0, 6)}`;
@@ -121,7 +144,7 @@ afterAll(async () => {
   await tenant.cleanup().catch(() => {});
   await otherTenant.cleanup().catch(() => {});
   await Promise.all(
-    [admin, inviter, otherMemberUser, foreignTenantUser, ownColleague].map((u) =>
+    [admin, inviter, otherMemberUser, foreignTenantUser, ownColleague, throttledInviter].map((u) =>
       deleteTestUser(u).catch(() => {}),
     ),
   );
@@ -142,7 +165,14 @@ describe('POST /api/portal/contacts/invite — no account-existence oracle', () 
   it('staff, another tenant’s member and another member all get a byte-identical answer', async () => {
     sessionAs(inviter);
     const answers = await Promise.all(
-      [otherMemberUser.rawEmail, foreignTenantUser.rawEmail, admin.rawEmail].map(async (email) => {
+      [
+        otherMemberUser.rawEmail,
+        foreignTenantUser.rawEmail,
+        admin.rawEmail,
+        // a contact of another member with NO account — used to be a distinct
+        // 500 link_failed (contacts_tenant_email_uniq) after minting a user
+        otherMemberContactOnlyEmail,
+      ].map(async (email) => {
         const res = await invitePost(inviteRequest(email));
         return { status: res.status, text: await res.text() };
       }),
@@ -154,15 +184,19 @@ describe('POST /api/portal/contacts/invite — no account-existence oracle', () 
     sessionAs(inviter);
     const warn = vi.spyOn(logger, 'warn');
     try {
-      await invitePost(inviteRequest(otherMemberUser.rawEmail));
+      // A staff account: registered, but not a contact of any member.
+      await invitePost(inviteRequest(admin.rawEmail));
       const call = warn.mock.calls.find(
         (c) => c[1] === 'portal.contacts.invite.unavailable',
       );
       expect(call).toBeDefined();
       const fields = call?.[0] as Record<string, unknown>;
       expect(fields.reason).toBe('email_registered_elsewhere');
-      expect(typeof fields.emailHash).toBe('string');
-      expect(JSON.stringify(call)).not.toContain(otherMemberUser.rawEmail);
+      // docs/observability.md § 3 — `hashed:sha256(email)[0..8]`.
+      expect(fields.emailHash).toBe(
+        `hashed:${sha256Hex(admin.rawEmail.toLowerCase()).slice(0, 8)}`,
+      );
+      expect(JSON.stringify(call)).not.toContain(admin.rawEmail);
     } finally {
       warn.mockRestore();
     }
@@ -175,4 +209,42 @@ describe('POST /api/portal/contacts/invite — no account-existence oracle', () 
     const body = await res.json();
     expect(body.error?.code).toBe('email_taken');
   });
+
+  it('a contact of another member with no account gets the neutral answer and mints no F1 user', async () => {
+    sessionAs(inviter);
+    const res = await invitePost(inviteRequest(otherMemberContactOnlyEmail));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: { code: 'invite_unavailable' } });
+    const minted = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, otherMemberContactOnlyEmail as never));
+    expect(minted).toEqual([]);
+  });
+
+  it('attempts are capped per member (10/h), counted before any account is created', async () => {
+    sessionAs(throttledInviter);
+    for (let i = 0; i < 10; i += 1) {
+      const res = await invitePost(inviteRequest(otherMemberUser.rawEmail));
+      expect(res.status).toBe(409);
+    }
+    // 11th: throttled whether or not the address has an account …
+    const registered = await invitePost(inviteRequest(otherMemberUser.rawEmail));
+    const freshEmail = `enum-fresh-${randomUUID().slice(0, 8)}@example.test`;
+    const fresh = await invitePost(inviteRequest(freshEmail));
+    expect(registered.status).toBe(429);
+    expect(fresh.status).toBe(429);
+    // Same code for both (retry-after seconds are time-based, so not compared).
+    const [a, b] = await Promise.all([registered.json(), fresh.json()]);
+    expect(a.error.code).toBe('rate_limited');
+    expect(b.error.code).toBe(a.error.code);
+    // … and a throttled fresh address never reached createUser.
+    const minted = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, freshEmail as never));
+    expect(minted).toEqual([]);
+    // 12 sequential requests; with Upstash unreachable (local / CI placeholder
+    // creds) each limiter call waits for the in-memory fallback.
+  }, 180_000);
 });

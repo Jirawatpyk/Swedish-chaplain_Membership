@@ -223,6 +223,8 @@ function makeInviteColleagueDeps(options: {
     tenant,
     contactRepo: {
       findById: vi.fn().mockResolvedValue(ok(actorContact)),
+      // No live contact with the invited address yet (invite proceeds).
+      findByEmail: vi.fn().mockResolvedValue(err({ code: 'repo.not_found' as const })),
       addInTx: vi.fn().mockResolvedValue(options.addInTxResult),
       linkUserInTx: vi.fn().mockResolvedValue(options.linkUserInTxResult),
     } as unknown as InviteColleagueDeps['contactRepo'],
