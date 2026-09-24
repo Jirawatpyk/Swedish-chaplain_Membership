@@ -299,12 +299,18 @@ export interface InvoiceRepo {
    * refuse accidental duplicates on their paths; two concurrent automated
    * issues here remain a soft residual (no member/plan_year unique index for
    * membership, by design).
+   *
+   * Each row also carries its printed `SC` bill number (non-null by the shape
+   * filter above) so a failed supersede can name the bill to staff instead of
+   * its internal UUID.
    */
   listSupersedableMembershipBills(
     tenantId: string,
     memberId: string,
     bound: { readonly excludeInvoiceId: string; readonly createdAt: Date; readonly invoiceId: string },
-  ): Promise<ReadonlyArray<{ readonly invoiceId: string }>>;
+  ): Promise<
+    ReadonlyArray<{ readonly invoiceId: string; readonly billDocumentNumberRaw: string }>
+  >;
 
   /** Apply post-issue UPDATE: status=issued + set snapshots + seq + document_number + pdf. */
   applyIssue(

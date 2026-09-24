@@ -812,7 +812,10 @@ export function makeDrizzleInvoiceRepo(
     async listSupersedableMembershipBills(tenantIdArg, memberId, bound) {
       return runInTenant(ctx, async (tx) => {
         const rows = await (tx as TenantTx)
-          .select({ invoiceId: invoices.invoiceId })
+          .select({
+            invoiceId: invoices.invoiceId,
+            billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+          })
           .from(invoices)
           .where(
             and(
@@ -830,7 +833,13 @@ export function makeDrizzleInvoiceRepo(
             ),
           )
           .orderBy(invoices.createdAt, invoices.invoiceId);
-        return rows.map((r) => ({ invoiceId: r.invoiceId }));
+        // `isNotNull(billDocumentNumberRaw)` above makes a NULL unreachable;
+        // the flatMap only narrows the column's nullable Drizzle type.
+        return rows.flatMap((r) =>
+          r.billDocumentNumberRaw === null
+            ? []
+            : [{ invoiceId: r.invoiceId, billDocumentNumberRaw: r.billDocumentNumberRaw }],
+        );
       });
     },
 

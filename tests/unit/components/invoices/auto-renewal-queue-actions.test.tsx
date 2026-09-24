@@ -284,7 +284,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
         t.toast.issuedAndSent.replace('{number}', 'SC2026-00099'),
-        undefined,
       ),
     );
     const [, init] = fetchSpy.mock.calls[0]!;
@@ -344,7 +343,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
         t.toast.issuedAndSent.replace('{number}', 'SC2026-00101'),
-        undefined,
       ),
     );
     expect(toast.warning).toHaveBeenCalledWith(

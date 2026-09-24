@@ -187,6 +187,7 @@ import { deriveMembershipAccess } from '../../domain/renewal-cycle';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { RenewalInvoiceErrorCode } from '../ports/f4-invoicing-bridge';
+import type { SupersedeWarning } from '@/modules/invoicing';
 import { InvoiceLinkConflictError } from '../ports/renewal-cycle-repo';
 
 export const issueAutoDraftedRenewalInputSchema = z.object({
@@ -216,7 +217,7 @@ export interface IssueAutoDraftedRenewalOutput {
   readonly invoiceId: string;
   readonly invoiceNumber: string;
   /** 106-void-on-reissue supersede-void warnings, threaded verbatim from F4. */
-  readonly supersedeWarnings: readonly string[];
+  readonly supersedeWarnings: readonly SupersedeWarning[];
   /**
    * Non-null when the bill was issued but the cycle could NOT be flipped/linked
    * even after the idempotent retry. The bill is valid and payable; the cycle

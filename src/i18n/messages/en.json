@@ -2439,6 +2439,12 @@
             "issuedSilently": "Bill {number} issued.",
             "discarded": "Draft discarded."
           },
+          "supersedeWarning": {
+            "title": "Bill issued — an older unpaid bill is still open",
+            "voidFailed": "The older bill {number} could not be voided automatically. Void it manually.",
+            "listFailed": "We couldn't confirm that this member's older unpaid bills were voided. Check their invoices and void any duplicate manually.",
+            "openBill": "Open bill {number}"
+          },
           "errors": {
             "draftNotFound": "This draft could not be found — it may have already been issued or discarded. Refresh the page.",
             "cycleNotFound": "We couldn't find this draft's renewal record. The draft itself hasn't changed — refresh the page and try again.",

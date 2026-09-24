@@ -2439,6 +2439,12 @@
             "issuedSilently": "Faktura {number} utfärdad.",
             "discarded": "Utkastet togs bort."
           },
+          "supersedeWarning": {
+            "title": "Fakturan utfärdades — en äldre obetald faktura är fortfarande öppen",
+            "voidFailed": "Den äldre fakturan {number} kunde inte annulleras automatiskt. Annullera den manuellt.",
+            "listFailed": "Vi kunde inte bekräfta att medlemmens äldre obetalda fakturor annullerades. Gå igenom medlemmens fakturor och annullera eventuella dubbletter manuellt.",
+            "openBill": "Öppna faktura {number}"
+          },
           "errors": {
             "draftNotFound": "Utkastet kunde inte hittas — det kan redan ha utfärdats eller tagits bort. Uppdatera sidan.",
             "cycleNotFound": "Vi kunde inte hitta förnyelseposten för det här utkastet. Själva utkastet är oförändrat — uppdatera sidan och försök igen.",

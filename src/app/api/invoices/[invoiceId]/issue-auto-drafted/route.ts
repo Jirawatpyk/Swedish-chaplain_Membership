@@ -53,6 +53,7 @@ import {
   makeIssueAutoDraftedRenewalDeps,
   type IssueAutoDraftError,
 } from '@/modules/renewals';
+import type { SupersedeWarning } from '@/modules/invoicing';
 import { issueErrorStatus, isIssuanceServerFault } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -132,6 +133,67 @@ function serialiseError(error: IssueAutoDraftError): Record<string, unknown> {
     // exercised Art.17 onto the wire.
     case 'member_erased':
       return { code: error.kind };
+  }
+}
+
+/**
+ * 106-void-on-reissue follow-up — wire shape of one supersede-void failure
+ * (`supersede_issues[]`). Structured, never prose: the admin UI translates
+ * each `kind` and names the old bill by `bill_document_number` (its printed
+ * `SC` number), linking to it via `invoice_id`. `error_code` is the closed
+ * `VoidInvoiceError` code, forwarded for diagnostics only.
+ *
+ * An unknown kind (a variant added upstream without updating this switch)
+ * degrades to `list_failed` — "check this member's older bills by hand" —
+ * rather than being dropped: under-reporting a still-open duplicate bill is
+ * the unsafe direction.
+ */
+function serialiseSupersedeIssue(warning: SupersedeWarning): Record<string, unknown> {
+  switch (warning.kind) {
+    case 'list_failed':
+      return { kind: warning.kind };
+    case 'void_failed':
+      return {
+        kind: warning.kind,
+        invoice_id: warning.invoiceId,
+        bill_document_number: warning.billDocumentNumber,
+        error_code: warning.errorCode,
+      };
+    case 'void_threw':
+      return {
+        kind: warning.kind,
+        invoice_id: warning.invoiceId,
+        bill_document_number: warning.billDocumentNumber,
+      };
+    default: {
+      const _exhaustive: never = warning;
+      void _exhaustive;
+      return { kind: 'list_failed' };
+    }
+  }
+}
+
+/**
+ * DEPRECATED `supersede_warnings[]` — the pre-structured English strings,
+ * byte-identical to what `issueMembershipBill` used to return, kept ONLY so a
+ * queue page still open from before this deploy (old client bundle, which
+ * joins these into its toast) keeps warning instead of going silent. The
+ * current UI reads `supersede_issues` and never renders these. Remove once
+ * no pre-106-follow-up bundle can still be open.
+ */
+function legacySupersedeWarningText(warning: SupersedeWarning): string {
+  switch (warning.kind) {
+    case 'list_failed':
+      return 'supersede: failed to list prior bills';
+    case 'void_failed':
+      return `supersede: void of ${warning.invoiceId} failed (${warning.errorCode})`;
+    case 'void_threw':
+      return `supersede: void of ${warning.invoiceId} threw`;
+    default: {
+      const _exhaustive: never = warning;
+      void _exhaustive;
+      return 'supersede: failed to list prior bills';
+    }
   }
 }
 
@@ -226,7 +288,8 @@ export async function POST(
     {
       invoice_id: result.value.invoiceId,
       invoice_number: result.value.invoiceNumber,
-      supersede_warnings: result.value.supersedeWarnings,
+      supersede_issues: result.value.supersedeWarnings.map(serialiseSupersedeIssue),
+      supersede_warnings: result.value.supersedeWarnings.map(legacySupersedeWarningText),
       link_warning: result.value.linkWarning,
       discarded_invoice_ids: result.value.discardedInvoiceIds,
     },

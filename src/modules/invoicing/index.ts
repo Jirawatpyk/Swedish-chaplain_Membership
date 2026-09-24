@@ -373,6 +373,7 @@ export {
   issueMembershipBill,
   type IssueMembershipBillDeps,
   type IssueMembershipBillSuccess,
+  type SupersedeWarning,
 } from './application/use-cases/issue-membership-bill';
 
 export {
