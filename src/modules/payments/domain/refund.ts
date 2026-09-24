@@ -35,6 +35,14 @@
 export const REFUND_STATUSES = ['pending', 'succeeded', 'failed'] as const;
 export type RefundStatus = (typeof REFUND_STATUSES)[number];
 
+/**
+ * 0306 — staff's declared membership intent for a refund of a membership
+ * invoice, in F4's `membershipEffect` vocabulary. Mirrors the DB CHECK
+ * `refunds_membership_effect_check`.
+ */
+export const REFUND_MEMBERSHIP_EFFECTS = ['keep', 'cancel_membership'] as const;
+export type RefundMembershipEffect = (typeof REFUND_MEMBERSHIP_EFFECTS)[number];
+
 export const TERMINAL_REFUND_STATUSES = ['succeeded', 'failed'] as const;
 export type TerminalRefundStatus = (typeof TERMINAL_REFUND_STATUSES)[number];
 
@@ -101,6 +109,11 @@ export interface Refund {
    * exclusive with `creditNoteId` (DB CHECK `refunds_cn_xor_waived`).
    */
   readonly creditNoteWaivedAt: Date | null;
+  /**
+   * 0306 — Keep / End membership, pinned in Phase A; NULL when not declared
+   * (partial refunds, event invoices, the F8 reject bridge, pre-0306 rows).
+   */
+  readonly membershipEffect: RefundMembershipEffect | null;
 
   readonly initiatedAt: Date;
   readonly completedAt: Date | null;         // NULL iff status='pending'

@@ -58,6 +58,12 @@ export interface ErrorResponseExtra {
    * keyed by JSONPath. Surfaces only on 400 `invalid_input`.
    */
   readonly fieldErrors?: Record<string, string[]>;
+  /**
+   * `refund_exceeds_remaining` only — the server's authoritative refundable
+   * cap (min(payment remainder, invoice headroom)) as a decimal satang
+   * string, so the client quotes it instead of its possibly-stale figure.
+   */
+  readonly remainingSatang?: string;
 }
 
 /**
@@ -87,6 +93,9 @@ export function errorResponse(
       message,
       messageThai,
       ...(extra?.fieldErrors ? { fieldErrors: extra.fieldErrors } : {}),
+      ...(extra?.remainingSatang !== undefined
+        ? { remainingSatang: extra.remainingSatang }
+        : {}),
     },
     correlationId,
   };

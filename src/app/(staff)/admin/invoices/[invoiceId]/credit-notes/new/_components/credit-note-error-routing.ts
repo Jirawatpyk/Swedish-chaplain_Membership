@@ -68,6 +68,10 @@ const DEDICATED_MESSAGE_KEYS: Readonly<Record<string, string>> = {
   // copy is misleading: the invoice is still creditable, just temporarily
   // blocked). Dedicated "a refund is in progress — retry once it settles".
   refund_in_progress: 'errors.refundInProgress',
+  // The invoice's online (card / PromptPay) payment is still refundable and the
+  // request lacked the staff acknowledgement (a stale render, or a non-form
+  // caller). Point at Issue refund / the acknowledgement, not a raw code.
+  online_payment_refundable: 'errors.onlinePaymentRefundable',
 };
 
 export function routeCreditNoteError(

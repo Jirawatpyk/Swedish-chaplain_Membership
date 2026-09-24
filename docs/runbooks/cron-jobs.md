@@ -71,6 +71,7 @@ gone on Pro.
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
 | **auto-invoice auto-draft (coordinator)** (107 Task 8) | **`POST /api/cron/renewals/auto-draft-coordinator`** | **`0 5 * * *`** (daily 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — pre-fills renewal invoice **drafts**; also feeds the 3 auto-invoice gauges. Ships dark (3 keys, all default-off) |
 | **auto-invoice prune-auto-drafts** (107 Task 11) | **`POST /api/cron/renewals/prune-auto-drafts`** | **`15 7 * * *`** (daily 07:15 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — discards auto-drafts whose cycle left the eligibility window (self-renewed / lapsed) |
+| **renewals reconcile-coverage-ends** (0306) | **`POST /api/cron/renewals/reconcile-coverage-ends`** | **`37 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | Ends a refunded member's coverage once their refund settles `succeeded` (keeps it if the refund failed), retries a failed inline end, and recovers "End membership" decisions whose route call was lost. Heartbeat: `renewals_coverage_end_reconcile_runs_total{outcome="success"}` must tick hourly. **Roll-forward only** — see "Rolling back 0306" below and `docs/observability.md` § 28 |
 | **auto-invoice reconcile-issued-orphans** (107 Task 11) | **`POST /api/cron/renewals/reconcile-issued-orphans`** | **`30 7 * * *`** (daily 07:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — re-links an `issued` auto-drafted invoice whose `linked_invoice_id` never got stamped |
 | **F6 idempotency sweep** | **`POST /api/internal/retention/sweep-eventcreate-idempotency`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
 | **F6 PII pseudonymisation sweep** | **`POST /api/internal/retention/pseudonymise-eventcreate`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
@@ -850,6 +851,7 @@ not at review.
 | `/api/cron/renewals/reconcile-pending-reactivations-coordinator` | `0 0 * * *` | **07:00 ICT** | GET+POST |
 | `/api/cron/renewals/prune-auto-drafts` | `15 0 * * *` | **07:15 ICT** (107-auto-invoice Task 11 — after the 07:00 ICT chain so a same-day self-renew/lapse has already flipped its cycle before the sweep runs) | GET+POST |
 | `/api/cron/renewals/reconcile-issued-orphans` | `30 0 * * *` | **07:30 ICT** (107-auto-invoice Task 11) | GET+POST |
+| `/api/cron/renewals/reconcile-coverage-ends` | `37 * * * *` | hourly at :37 (0306 — its own route so the daily reactivation pass can never skip it) | GET+POST |
 | `/api/cron/renewals/at-risk-recompute-coordinator` | `0 19 * * 6` | **Sun 02:00 ICT** (Sat 19:00 UTC) | GET+POST |
 | `/api/cron/renewals/tier-upgrade-evaluate-coordinator` | `0 20 * * 6` | **Sun 03:00 ICT** (Sat 20:00 UTC) | GET+POST |
 | `/api/cron/renewals/prune-consumed-tokens` | `0 21 * * 5` | **Sat 04:00 ICT** (Fri 21:00 UTC) | GET+POST |
@@ -1852,3 +1854,30 @@ download proxy `src/app/api/internal/exports/[jobId]/download/route.ts`.
 
 Platform on-call (default: maintainer). Per-feature ownership escalates
 via the linked detail runbooks for the affected job.
+
+## Rolling back 0306 (reconcile-coverage-ends)
+
+The 0306 migration is additive, but the APPLICATION change is roll-forward
+only: pre-0306 code treats `closed_reason = 'coverage_ended'` as a plain
+cancellation (member keeps access until `expires_at`) and has no cron to
+converge pending end-membership requests. Prefer a forward fix. If a code
+rollback is unavoidable, capture both sets BEFORE rolling back and re-apply
+them once 0306 code is redeployed (or end those memberships by hand):
+
+```sql
+-- Members whose coverage was ended but whose cycle still reads as paid-through
+SELECT tenant_id, member_id, cycle_id, closed_at, expires_at
+FROM renewal_cycles
+WHERE closed_reason = 'coverage_ended' AND expires_at > now();
+
+-- End-membership requests still waiting (orphaned while the cron is absent)
+SELECT tenant_id, member_id, cycle_id, end_coverage_requested_at,
+       end_coverage_refund_id, end_coverage_actor_user_id
+FROM renewal_cycles
+WHERE end_coverage_requested_at IS NOT NULL
+  AND status IN ('upcoming', 'reminded', 'awaiting_payment');
+```
+
+After redeploying 0306 code, the hourly pass converges the second set on its
+own; the backstop also re-reads staff decisions from the last 7 days.
+

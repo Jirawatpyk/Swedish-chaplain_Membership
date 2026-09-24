@@ -38,6 +38,7 @@ const makeIssueCreditNoteDepsMock: (...args: unknown[]) => unknown = vi.fn(
 // F8) to call `cancelInFlightCyclesForMember` after a full membership credit
 // with `membershipEffect: 'cancel_membership'`.
 const cancelInFlightCyclesForMemberMock = vi.fn();
+const endMembershipCoverageNowMock = vi.fn();
 const makeRenewalsDepsMock: (...args: unknown[]) => unknown = vi.fn(() => ({}));
 
 vi.mock('@/lib/rbac', () => ({
@@ -74,6 +75,8 @@ vi.mock('@/modules/renewals', async () => {
     ...actual,
     cancelInFlightCyclesForMember: (...args: unknown[]) =>
       cancelInFlightCyclesForMemberMock(...args),
+    endMembershipCoverageNow: (...args: unknown[]) =>
+      endMembershipCoverageNowMock(...args),
     makeRenewalsDeps: (...args: unknown[]) => makeRenewalsDepsMock(...args),
   };
 });
@@ -197,8 +200,8 @@ describe('POST /api/credit-notes — contract', () => {
     // can show a non-blocking notice on skip.
     expect(body.email_delivery).toBe('skipped_no_recipient');
     // F-2 — no cascade requested → no warning field, and F8 was never called.
-    expect(body.membership_cancellation_failed).toBeUndefined();
-    expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
+    expect(body.membership_end).toBeUndefined();
+    expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
   }, 30_000);
 
   it('016 C1 — super_admin issues a credit note (baseline pins allow; post-Migration-C every human is one)', async () => {
@@ -320,6 +323,9 @@ describe('POST /api/credit-notes — contract', () => {
     // 8A — a refund is in flight on this invoice → 409 Conflict (transient,
     // retriable once the refund settles).
     ['refund_in_progress', 409],
+    // A manual CN on a still-refundable online payment without the staff
+    // acknowledgement → 422 (the use-case needs declared intent).
+    ['online_payment_refundable', 422],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {
     requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
@@ -369,47 +375,52 @@ describe('POST /api/credit-notes — contract', () => {
     expect(body.error.remainingSatang).toBe('53500');
   });
 
-  // ---- F-2 (2026-07-08) — F8 membership-cancellation cascade orchestration --
+  // ---- F8 "end membership coverage" orchestration (0306) -------------------
   //
   // The route (presentation) orchestrates BOTH module barrels: it commits the
   // credit note first (§86/10 numbering never depends on F8), THEN — only when
-  // `membershipCancellationRequested` is true — calls F8's
-  // `cancelInFlightCyclesForMember`. A cascade failure never retroactively
-  // fails the already-committed credit note; it surfaces as a non-blocking
-  // `membership_cancellation_failed: true` warning field alongside the normal
-  // 201 body.
-  describe('F-2 — F8 membership-cancellation cascade orchestration', () => {
-    it('membershipCancellationRequested=true + cascade succeeds → 201, no warning field, F8 called with correlationId=credit-note:<id>', async () => {
+  // `membershipCancellationRequested` is true — calls the shared
+  // `endMembershipCoverageNow` (the SAME operation the refund route uses). Its
+  // outcome rides on the 201 body as `membership_end`; a failure never
+  // retroactively fails the already-committed credit note.
+  describe('end membership coverage orchestration', () => {
+    function cancelRequested(memberId: string | null = 'member-42') {
       requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
-          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
+          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: memberId }),
           emailDelivery: 'not_requested',
           membershipCancellationRequested: true,
         }),
       );
-      cancelInFlightCyclesForMemberMock.mockResolvedValueOnce(
-        ok({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0 }),
-      );
+    }
+
+    it('ends coverage now → 201 + membership_end:"ended", F8 called with trigger=credit_note + correlationId=credit-note:<id>', async () => {
+      cancelRequested();
+      endMembershipCoverageNowMock.mockResolvedValueOnce(ok({ outcome: 'ended', cycleId: 'c-1' }));
       const POST = await loadHandler();
       const res = await POST(makeReq());
       expect(res.status).toBe(201);
       const body = await res.json();
+      expect(body.membership_end).toBe('ended');
       expect(body.membership_cancellation_failed).toBeUndefined();
 
-      expect(cancelInFlightCyclesForMemberMock).toHaveBeenCalledTimes(1);
-      const [, cascadeInput] = cancelInFlightCyclesForMemberMock.mock.calls[0]!;
-      expect(cascadeInput).toMatchObject({
+      expect(endMembershipCoverageNowMock).toHaveBeenCalledTimes(1);
+      const [, input] = endMembershipCoverageNowMock.mock.calls[0]!;
+      expect(input).toMatchObject({
         memberId: 'member-42',
-        cascadeReason: 'credit_note_refund',
+        trigger: 'credit_note',
         initiatedByUserId: 'admin-1',
         requestId: 'req-cn-1',
         correlationId: 'credit-note:cn-1',
       });
+      expect(input.awaitRefund).toBeUndefined();
+      // The retired F-2 cascade is no longer used.
+      expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
     });
 
-    it('membershipCancellationRequested=false → F8 is never called', async () => {
+    it('membershipCancellationRequested=false → F8 is never called, no membership_end field', async () => {
       requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
@@ -422,87 +433,54 @@ describe('POST /api/credit-notes — contract', () => {
       const POST = await loadHandler();
       const res = await POST(makeReq());
       expect(res.status).toBe(201);
-      expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
+      expect((await res.json()).membership_end).toBeUndefined();
+      expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
     });
 
-    it('cascade Result.ok but outcome="cascade_partial_failure" → 201 + membership_cancellation_failed:true (credit note unaffected)', async () => {
-      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
-      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
-      issueCreditNoteMock.mockResolvedValueOnce(
-        ok({
-          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
-          emailDelivery: 'not_requested',
-          membershipCancellationRequested: true,
-        }),
-      );
-      cancelInFlightCyclesForMemberMock.mockResolvedValueOnce(
-        ok({ outcome: 'cascade_partial_failure', cancelledCount: 0, skippedConcurrentCount: 1 }),
-      );
+    it.each([
+      ['deferred', ok({ outcome: 'deferred', cycleId: 'c-1' })],
+      ['no_open_cycle', ok({ outcome: 'no_open_cycle' })],
+    ] as const)('outcome %s → 201 + membership_end carries it (credit note unaffected)', async (outcome, result) => {
+      cancelRequested();
+      endMembershipCoverageNowMock.mockResolvedValueOnce(result);
       const POST = await loadHandler();
       const res = await POST(makeReq());
-      // The credit note is fully issued regardless — status stays 201.
       expect(res.status).toBe(201);
       const body = await res.json();
       expect(body.credit_note_id).toBe('cn-1');
-      expect(body.membership_cancellation_failed).toBe(true);
+      expect(body.membership_end).toBe(outcome);
     });
 
-    it('cascade Result.err → 201 + membership_cancellation_failed:true', async () => {
-      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
-      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
-      issueCreditNoteMock.mockResolvedValueOnce(
-        ok({
-          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
-          emailDelivery: 'not_requested',
-          membershipCancellationRequested: true,
-        }),
-      );
-      cancelInFlightCyclesForMemberMock.mockResolvedValueOnce(
-        err({ kind: 'cascade.server_error', message: 'boom', errName: 'TestError' }),
+    it('Result.err → 201 + membership_end:"failed"', async () => {
+      cancelRequested();
+      endMembershipCoverageNowMock.mockResolvedValueOnce(
+        err({ kind: 'coverage_end.server_error', errName: 'TestError' }),
       );
       const POST = await loadHandler();
       const res = await POST(makeReq());
       expect(res.status).toBe(201);
-      const body = await res.json();
-      expect(body.membership_cancellation_failed).toBe(true);
+      expect((await res.json()).membership_end).toBe('failed');
     });
 
-    it('cascade THROWS → 201 + membership_cancellation_failed:true, credit note still returned', async () => {
-      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
-      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
-      issueCreditNoteMock.mockResolvedValueOnce(
-        ok({
-          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
-          emailDelivery: 'not_requested',
-          membershipCancellationRequested: true,
-        }),
-      );
-      cancelInFlightCyclesForMemberMock.mockRejectedValueOnce(new Error('network down'));
+    it('THROWS → 201 + membership_end:"failed", credit note still returned', async () => {
+      cancelRequested();
+      endMembershipCoverageNowMock.mockRejectedValueOnce(new Error('network down'));
       const POST = await loadHandler();
       const res = await POST(makeReq());
       // The already-committed credit note is NEVER retroactively failed.
       expect(res.status).toBe(201);
       const body = await res.json();
       expect(body.credit_note_id).toBe('cn-1');
-      expect(body.membership_cancellation_failed).toBe(true);
+      expect(body.membership_end).toBe('failed');
     });
 
-    it('membershipCancellationRequested=true but originalInvoiceMemberId is null (unreachable-in-practice) → 201 + warning, F8 never called', async () => {
-      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
-      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
-      issueCreditNoteMock.mockResolvedValueOnce(
-        ok({
-          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: null }),
-          emailDelivery: 'not_requested',
-          membershipCancellationRequested: true,
-        }),
-      );
+    it('originalInvoiceMemberId null (unreachable-in-practice) → 201 + membership_end:"failed", F8 never called', async () => {
+      cancelRequested(null);
       const POST = await loadHandler();
       const res = await POST(makeReq());
       expect(res.status).toBe(201);
-      const body = await res.json();
-      expect(body.membership_cancellation_failed).toBe(true);
-      expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
+      expect((await res.json()).membership_end).toBe('failed');
+      expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
     });
   });
 });

@@ -140,6 +140,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
   }));
   const deps: IssueCreditNoteDeps = {
     pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
+    onlinePaymentRefundGuard: { readRefundableOnlinePayment: async () => ({ kind: 'none' }) },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

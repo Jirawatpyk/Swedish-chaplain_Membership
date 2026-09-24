@@ -110,6 +110,7 @@ function makeLockedRefund(overrides: Partial<Refund> = {}): Refund {
     failureReasonCode: null,
     creditNoteId: null,
     creditNoteWaivedAt: null,
+    membershipEffect: null,
     creditNoteWaiverReason: null,
     initiatedAt: new Date(NOW_MS - 30 * HOUR_MS),
     completedAt: null,

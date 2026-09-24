@@ -75,6 +75,7 @@ import type {
 import { asPaymentId } from '../../domain/payment';
 import { retentionFor } from '../ports/audit-port';
 import { paymentsMetrics } from '@/lib/metrics';
+import type { RefundMembershipEffect } from '../../domain/refund';
 
 /**
  * The triggers that flow through the shared finaliser. Matches the
@@ -116,6 +117,12 @@ export interface FinalizeSucceededRefundInput {
    * so it is a compile error instead.
    */
   readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
+  /**
+   * 0306 — staff's Keep / End membership choice, read off the refund row
+   * (pinned in Phase A). REQUIRED for the same reason as the waiver: every
+   * caller states it, so an async settle cannot silently drop it.
+   */
+  readonly membershipEffect: RefundMembershipEffect | null;
   /**
    * A.11 DUAL-MODE discriminator for the payment flip:
    *
@@ -305,6 +312,9 @@ export async function finalizeSucceededRefund(
       amountSatang: input.amountSatang,
       reason: input.reason,
       actorUserId: input.actorUserId,
+      ...(input.membershipEffect !== null
+        ? { membershipEffect: input.membershipEffect }
+        : {}),
       // 018 — the CN records WHICH path minted it. `path` is already the
       // caller's own discriminator, so the two non-human paths state
       // themselves without any new plumbing; the admin path forwards the

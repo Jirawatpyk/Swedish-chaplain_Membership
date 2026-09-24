@@ -19,8 +19,10 @@ import {
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
-import { cancelInFlightCyclesForMember, makeRenewalsDeps } from '@/modules/renewals';
-import { asMemberId } from '@/modules/members';
+import {
+  requestMembershipEnd,
+  type MembershipEndOutcome,
+} from '@/lib/membership-coverage-end';
 import { stripReason } from '../invoices/_serialise';
 import { serialiseCreditNote } from './_serialise';
 import type {
@@ -47,16 +49,12 @@ const _assertNoEmailDeliveryCollision: false = false as HasEmailDeliveryKey;
 interface CreditNoteResponseBody extends SerialisedCreditNote {
   readonly email_delivery: CreditNoteEmailDelivery;
   /**
-   * F-2 (2026-07-08) — present (and `true`) ONLY when the credit note
-   * requested an F8 membership-cancellation cascade (full membership
-   * credit + `membershipEffect: 'cancel_membership'`) AND that cascade
-   * failed to run to completion. The credit note itself is ALWAYS fully
-   * committed regardless (§86/10 numbering never depends on F8) — this is
-   * a non-blocking warning so the admin knows to retry the cancellation
-   * manually from the renewals UI (idempotent). Absent on success / when
-   * no cascade was requested.
+   * 0306 — present ONLY when the credit note was a full membership credit
+   * with `membershipEffect: 'cancel_membership'`: the outcome of ending the
+   * member's coverage (see `MembershipEndOutcome`). The credit note itself is
+   * ALWAYS fully committed regardless (§86/10 numbering never depends on F8).
    */
-  readonly membership_cancellation_failed?: true;
+  readonly membership_end?: MembershipEndOutcome;
 }
 
 // SG-7 — error-code → HTTP status lookup. Cleaner than a nested
@@ -93,6 +91,11 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   // 8A — a refund is in flight on this invoice. 409 Conflict: transient, the
   // admin retries once the refund settles.
   refund_in_progress: 409,
+  // A manual CN on an invoice whose online (Stripe) payment is still
+  // refundable, sent without the staff acknowledgement. 422, like
+  // `membership_effect_required`: well-formed, but the use-case needs the
+  // staff's declared intent. Not transient — retrying without it changes nothing.
+  online_payment_refundable: 422,
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -157,6 +160,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // F-2 (2026-07-08) — optional; the schema itself enforces the
     // enum shape + the membership_effect_required gate.
     membershipEffect: rawBody.membershipEffect,
+    // Optional; the use-case refuses a manual CN on a refundable online
+    // payment unless this is `true` (see `online_payment_refundable`).
+    onlinePaymentRefundAcknowledged: rawBody.onlinePaymentRefundAcknowledged,
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -199,75 +205,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
-  // F-2 (2026-07-08) — the credit note is FULLY COMMITTED at this point
-  // (§86/10 numbering never depends on F8). When the caller declared
-  // `cancel_membership` on a full membership credit, orchestrate the F8
-  // cascade HERE — the ROUTE (presentation), never F4 Application
-  // (Principle III: F4 never imports F8). A cascade failure does NOT
-  // retroactively fail the credit note — it surfaces as a non-blocking
-  // `membership_cancellation_failed` warning field; staff retry via the
-  // renewals UI (`cancelInFlightCyclesForMember` is idempotent).
-  let membershipCancellationFailed = false;
+  // The credit note is FULLY COMMITTED at this point (§86/10 numbering never
+  // depends on F8). When staff chose `cancel_membership` on a full membership
+  // credit, end the member's coverage NOW via the shared F8 operation (the
+  // SAME one the refund route uses) — orchestrated HERE in presentation, never
+  // from F4 Application (Principle III). The outcome rides on the 201 body as
+  // `membership_end`; a failure never retroactively fails the credit note
+  // (`deferred` = the hourly pass retries it).
+  let membershipEnd: MembershipEndOutcome | undefined;
   if (result.value.membershipCancellationRequested) {
-    const memberId = result.value.creditNote.originalInvoiceMemberId;
-    if (memberId === null) {
-      // Unreachable under normal state — `membershipCancellationRequested`
-      // is only true for invoiceSubject==='membership', which the DB CHECK
-      // `invoices_subject_fields_ck` guarantees carries a non-null
-      // member_id. Log loudly rather than silently skip; the credit note
-      // itself is unaffected.
-      logger.error(
-        {
-          requestId,
-          tenantId: tenantCtx.slug,
-          creditNoteId: result.value.creditNote.creditNoteId,
-        },
-        'POST /api/credit-notes: membershipCancellationRequested true but originalInvoiceMemberId is null (unreachable — investigate)',
-      );
-      membershipCancellationFailed = true;
-    } else {
-      try {
-        const cascade = await cancelInFlightCyclesForMember(
-          makeRenewalsDeps(tenantCtx.slug),
-          {
-            tenant: tenantCtx,
-            memberId: asMemberId(memberId),
-            // F-2 — distinct from the F3 archival cascade's default reason:
-            // the member is NOT archived here, they were refunded.
-            cascadeReason: 'credit_note_refund',
-            initiatedByUserId: ctx.current.user.id,
-            requestId,
-            correlationId: `credit-note:${result.value.creditNote.creditNoteId}`,
-          },
-        );
-        if (!cascade.ok || cascade.value.outcome !== 'ok') {
-          membershipCancellationFailed = true;
-          logger.error(
-            {
-              requestId,
-              tenantId: tenantCtx.slug,
-              creditNoteId: result.value.creditNote.creditNoteId,
-              memberId,
-              cascadeOutcome: cascade.ok ? cascade.value.outcome : undefined,
-              cascadeErrName: cascade.ok ? undefined : cascade.error.errName,
-            },
-            'POST /api/credit-notes: F8 membership-cancellation cascade did not complete cleanly',
-          );
-        }
-      } catch (e) {
-        membershipCancellationFailed = true;
-        logger.error(
-          {
-            requestId,
-            tenantId: tenantCtx.slug,
-            creditNoteId: result.value.creditNote.creditNoteId,
-            memberId,
-            err: e instanceof Error ? e.message : String(e),
-          },
-          'POST /api/credit-notes: F8 membership-cancellation cascade threw',
-        );
-      }
-    }
+    membershipEnd = await requestMembershipEnd({
+      tenant: tenantCtx,
+      memberId: result.value.creditNote.originalInvoiceMemberId,
+      trigger: 'credit_note',
+      initiatedByUserId: ctx.current.user.id,
+      // rbac-narrow-ok: stamps the LITERAL role into the renewals audit row;
+      // the `credit_notes.write` gate above decided admission.
+      ...(ctx.current.user.role === 'admin' || ctx.current.user.role === 'super_admin'
+        ? { initiatedByRole: ctx.current.user.role }
+        : {}),
+      requestId,
+      correlationId: `credit-note:${result.value.creditNote.creditNoteId}`,
+    });
   }
 
   // MEDIUM-5 — surface the email-delivery signal alongside the serialised CN so
@@ -279,9 +238,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const responseBody: CreditNoteResponseBody = {
     ...serialiseCreditNote(result.value.creditNote),
     email_delivery: result.value.emailDelivery,
-    // F-2 — omitted (not `false`) when no cascade was requested or it
-    // succeeded; present as `true` only on a genuine cascade failure.
-    ...(membershipCancellationFailed ? { membership_cancellation_failed: true } : {}),
+    // Present only when staff chose to end the membership.
+    ...(membershipEnd !== undefined ? { membership_end: membershipEnd } : {}),
   };
   return NextResponse.json(responseBody, { status: 201 });
 }

@@ -224,6 +224,13 @@ function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
     rejectRefundId: null,
     rejectActorUserId: null,
     rejectActorRole: null,
+    // Migration 0306 — the end-coverage request columns are not projected and
+    // `rowToDomain` never reads them (they have their own port); structural
+    // filler for `RenewalCycleRow`'s shape.
+    endCoverageRequestedAt: null,
+    endCoverageRefundId: null,
+    endCoverageInvoiceId: null,
+    endCoverageActorUserId: null,
     closedAt: r.cycleClosedAt,
     closedReason: r.cycleClosedReason,
     createdAt: r.cycleCreatedAt,

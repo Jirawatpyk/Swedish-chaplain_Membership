@@ -166,7 +166,7 @@ describe('CycleId brand', () => {
 });
 
 describe('CLOSED_REASONS', () => {
-  it('contains the 9 canonical reasons (T115a extended catch-all `lapsed` with `grace_expired` + `payment_failed`)', () => {
+  it('contains the 10 canonical reasons (T115a extended catch-all `lapsed` with `grace_expired` + `payment_failed`; 0306 added `coverage_ended`)', () => {
     expect(CLOSED_REASONS).toEqual([
       'paid',
       'cancelled',
@@ -177,6 +177,7 @@ describe('CLOSED_REASONS', () => {
       'admin_reactivated',
       'admin_rejected_with_refund',
       'pending_reactivation_timed_out',
+      'coverage_ended',
     ]);
   });
 

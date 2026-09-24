@@ -14,12 +14,12 @@
  * `tests/contract/credit-notes-route.test.ts`).
  *
  * Covers:
- *   1. `cancel_membership` on a full credit → the member's open renewal
- *      cycle transitions to `cancelled` (`closed_reason='cancelled'`) +
- *      a `renewal_cycle_cancelled` audit row with
- *      `payload.reason='credit_note_refund'` (F-2's dedicated cascade
- *      discriminator — distinct from the F3 archival cascade's default,
- *      since the member is NOT archived, only refunded) + `request_id`
+ *   1. `cancel_membership` on a full credit → the shared 0306
+ *      `endMembershipCoverageNow` closes the member's open renewal cycle
+ *      `cancelled` / `closed_reason='coverage_ended'` (access ends NOW — a
+ *      plain `cancelled` close would keep paid-through access) + a
+ *      `renewal_cycle_cancelled` audit row with
+ *      `payload.reason='coverage_ended:credit_note'` + `request_id`
  *      matching the `credit-note:{creditNoteId}` correlation format —
  *      AND the credit note itself is intact (status flips to `credited`).
  *   2. `keep` on an otherwise-identical full credit → the cycle is
@@ -45,7 +45,11 @@ import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audi
 import { issueCreditNote } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import type { IssueCreditNoteDeps } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
-import { cancelInFlightCyclesForMember, makeRenewalsDeps } from '@/modules/renewals';
+import {
+  deriveMembershipAccess,
+  endMembershipCoverageNow,
+  makeRenewalsDeps,
+} from '@/modules/renewals';
 import { asMemberId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -176,6 +180,7 @@ async function seedMemberWithCycleAndPaidInvoice(
 function makeCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
   return {
     pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
+    onlinePaymentRefundGuard: { readRefundableOnlinePayment: async () => ({ kind: 'none' }) },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
@@ -245,7 +250,7 @@ describe('F-2 — credit-note membership-effect cascade (Task 13, live Neon)', (
     await tenant.cleanup().catch(() => {});
   }, 60_000);
 
-  it('cancel_membership + full credit → cycle cancelled + renewal_cycle_cancelled audit (reason=credit_note_refund) + credit note intact', async () => {
+  it('cancel_membership + full credit → coverage ended now (cancelled/coverage_ended) + renewal_cycle_cancelled audit + credit note intact', async () => {
     const { memberId, cycleId, invoiceId } = await seedMemberWithCycleAndPaidInvoice(
       tenant,
       user,
@@ -276,18 +281,16 @@ describe('F-2 — credit-note membership-effect cascade (Task 13, live Neon)', (
 
     // Orchestrate the SAME F8 call the route makes after commit.
     const correlationId = `credit-note:${cn.value.creditNote.creditNoteId}`;
-    const cascade = await cancelInFlightCyclesForMember(makeRenewalsDeps(tenant.ctx.slug), {
+    const ended = await endMembershipCoverageNow(makeRenewalsDeps(tenant.ctx.slug), {
       tenant: tenant.ctx,
       memberId: asMemberId(memberId),
-      cascadeReason: 'credit_note_refund',
+      trigger: 'credit_note',
       initiatedByUserId: user.userId,
+      initiatedByRole: 'admin',
       requestId: null,
       correlationId,
     });
-    expect(cascade.ok).toBe(true);
-    if (!cascade.ok) throw new Error('cascade failed');
-    expect(cascade.value.outcome).toBe('ok');
-    expect(cascade.value.cancelledCount).toBe(1);
+    expect(ended.ok && ended.value).toEqual({ outcome: 'ended', cycleId });
 
     // Cycle transitioned to cancelled.
     const [cycleRow] = await db
@@ -295,7 +298,15 @@ describe('F-2 — credit-note membership-effect cascade (Task 13, live Neon)', (
       .from(renewalCycles)
       .where(and(eq(renewalCycles.tenantId, tenant.ctx.slug), eq(renewalCycles.cycleId, cycleId)));
     expect(cycleRow!.status).toBe('cancelled');
-    expect(cycleRow!.closedReason).toBe('cancelled');
+    expect(cycleRow!.closedReason).toBe('coverage_ended');
+    // The period has not ended, yet access is terminated now.
+    const latest = await makeRenewalsDeps(tenant.ctx.slug).cyclesRepo.findLatestCycleForMember(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(deriveMembershipAccess(latest, new Date('2026-04-18T10:00:00Z')).access).toBe(
+      'terminated',
+    );
 
     // F8 audit row carries the F-2 cascade discriminator + the credit-note
     // correlation id (forensic chain).
@@ -311,7 +322,7 @@ describe('F-2 — credit-note membership-effect cascade (Task 13, live Neon)', (
       );
     expect(auditRows).toHaveLength(1);
     const payload = auditRows[0]!.payload as { reason: string; cycle_id: string; member_id: string };
-    expect(payload.reason).toBe('credit_note_refund');
+    expect(payload.reason).toBe('coverage_ended:credit_note');
     expect(payload.cycle_id).toBe(cycleId);
     expect(payload.member_id).toBe(memberId);
   }, 90_000);

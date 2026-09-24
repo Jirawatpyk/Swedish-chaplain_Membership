@@ -52,6 +52,10 @@ describe('deriveMembershipAccess', () => {
     ['lapsed, FUTURE expiry (065 born-awaiting)', { status: 'lapsed', expiresAt: FUTURE, closedAt: PAST, closedReason: 'lapsed' }, 'terminated', 'grace_expired'],
     ['cancelled, PAST expiry',        { status: 'cancelled', expiresAt: PAST, closedAt: PAST, closedReason: 'cancelled' }, 'terminated', 'cancelled'],
     ['cancelled, FUTURE expiry',      { status: 'cancelled', expiresAt: FUTURE, closedAt: PAST, closedReason: 'cancelled' }, 'full', 'in_good_standing'],
+    // 0306 — a refund / full credit note that ENDED coverage: terminated NOW,
+    // even though the cancelled cycle's period runs into the future (a plain
+    // `cancelled` close honours paid-through access; this one returned it).
+    ['cancelled coverage_ended, FUTURE expiry', { status: 'cancelled', expiresAt: FUTURE, closedAt: PAST, closedReason: 'coverage_ended' }, 'terminated', 'cancelled'],
   ] as const)('%s', (_label, over, access, reason) => {
     const d = deriveMembershipAccess(cycle(over), NOW);
     expect(d.access).toBe(access);

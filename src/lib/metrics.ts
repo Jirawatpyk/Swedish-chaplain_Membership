@@ -3189,7 +3189,8 @@ export const renewalsMetrics = {
       | 'prune_consumed_tokens'
       | 'auto_draft'
       | 'prune_auto_drafts'
-      | 'reconcile_issued_orphans',
+      | 'reconcile_issued_orphans'
+      | 'reconcile_coverage_ends',
   ): void {
     safeMetric(() => {
       counter(
@@ -3315,6 +3316,93 @@ export const renewalsMetrics = {
         'renewals_prune_auto_drafts_errors_total',
         'F8 prune-auto-drafts cron — per-row prune failures within an otherwise-successful pass',
       ).add(rowCount, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_coverage_end_reconcile_runs_total{tenant, outcome}` — 0306.
+   * Heartbeat: ONE per invocation of the hourly reconcile-coverage-ends cron,
+   * including the skipped ones. ALERT when no `success` has been counted for
+   * > 2h — without this, a cron that stops running (or is skipped by the flag
+   * / read-only mode) leaves every other 0306 metric flat and scheduled
+   * membership ends silently stall.
+   */
+  coverageEndReconcileRunCompleted(
+    tenantId: string,
+    outcome: 'success' | 'failure' | 'skipped_flag_disabled' | 'skipped_read_only',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coverage_end_reconcile_runs_total',
+        'F8 reconcile-coverage-ends cron pass result (1 per invocation, 0306)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_coverage_end_reconcile_total{tenant, outcome}` — 0306. Row
+   * counts from the hourly reconcile-coverage-ends pass. ALERT on any
+   * non-zero `expired`, `stranded_cleared`, `backstop_applied` or `errored`:
+   *   - expired: a refund stayed unsettled past the expiry → request dropped,
+   *     membership kept (investigate the refund);
+   *   - stranded_cleared: a request's cycle closed some other way before it
+   *     converged (a staff End decision may not have taken effect);
+   *   - backstop_applied: a route's post-commit end call was LOST and the
+   *     durable source row recovered it;
+   *   - errored: per-item / per-step failures.
+   * `ended` / `refund_failed_kept` are informational. No-op at 0.
+   */
+  coverageEndReconciled(
+    tenantId: string,
+    outcome:
+      | 'ended'
+      | 'refund_failed_kept'
+      | 'expired'
+      | 'stranded_cleared'
+      | 'backstop_applied'
+      | 'lookup_unresolved'
+      | 'errored',
+    count: number,
+  ): void {
+    if (count <= 0) return;
+    safeMetric(() => {
+      counter(
+        'renewals_coverage_end_reconcile_total',
+        'F8 reconcile-coverage-ends pass — per-outcome row counts (0306)',
+      ).add(count, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_coverage_end_oldest_waiting_hours{tenant}` — 0306. Age of the
+   * oldest end-membership request still waiting on its refund. Warn > 24,
+   * page > 72 (a refund stuck that long is itself an incident).
+   */
+  coverageEndOldestWaitingHours(tenantId: string, hours: number): void {
+    observeTenantGauge(
+      'renewals_coverage_end_oldest_waiting_hours',
+      'F8 oldest end-membership request still waiting on its refund, in hours (0306)',
+      tenantId,
+      hours,
+    );
+  },
+
+  /**
+   * `renewals_membership_end_requests_total{tenant, trigger, outcome}` — 0306.
+   * The routes' post-commit "end membership" call (credit note / refund).
+   * ALERT on `outcome="failed"` (could neither end nor schedule — the
+   * reconcile backstop is the remaining safety net).
+   */
+  membershipEndRequested(
+    tenantId: string,
+    trigger: 'credit_note' | 'refund',
+    outcome: 'ended' | 'scheduled' | 'deferred' | 'no_open_cycle' | 'failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_membership_end_requests_total',
+        'F8 route-orchestrated end-membership calls by outcome (0306)',
+      ).add(1, { tenant: tenantId, trigger, outcome });
     });
   },
 
@@ -4589,7 +4677,8 @@ export const renewalsMetrics = {
       | 'prune_consumed_tokens'
       | 'auto_draft'
       | 'prune_auto_drafts'
-      | 'reconcile_issued_orphans',
+      | 'reconcile_issued_orphans'
+      | 'reconcile_coverage_ends',
   ): void {
     safeMetric(() => {
       counter(

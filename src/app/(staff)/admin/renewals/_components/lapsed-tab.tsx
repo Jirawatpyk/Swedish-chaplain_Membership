@@ -60,7 +60,8 @@ type LapsedReasonKey =
   | 'completed_offline'
   | 'admin_reactivated'
   | 'admin_rejected_with_refund'
-  | 'pending_reactivation_timed_out';
+  | 'pending_reactivation_timed_out'
+  | 'coverage_ended';
 
 export interface LapsedTabProps {
   readonly rows: ReadonlyArray<PipelineRow>;

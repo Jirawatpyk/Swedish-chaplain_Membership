@@ -948,6 +948,20 @@ export type {
   PlanCatalogPort,
 } from './application/ports/plan-catalog-port';
 
+// --- 0306 — end membership coverage now (refund / full credit note) -------
+// The ONE operation both the credit-note and refund ROUTES orchestrate after
+// their money work commits; the hourly reconcile-coverage-ends cron converges requests that wait
+// on an async refund's settlement (or retry a failed inline end).
+export {
+  endMembershipCoverageNow,
+  reconcileMembershipCoverageEnds,
+  type EndMembershipCoverageNowInput,
+  type EndMembershipCoverageNowOutput,
+  type EndMembershipCoverageError,
+  type ReconcileMembershipCoverageEndsOutput,
+  type CoverageEndTrigger,
+} from './application/use-cases/end-membership-coverage';
+
 // --- Phase 9 / T238 — F3 archival/erasure cascade -------------------------
 // Cancel in-flight renewal cycles owned by an archived/erased member.
 // Invoked from F3's `archive-member` use-case via the

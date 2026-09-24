@@ -259,6 +259,10 @@ const PERMANENT_CN_DECLINE: Readonly<Record<IssueCreditNoteError['code'], boolea
   // so `issueCreditNoteFromRefund` never returns this. Classified transient
   // (conservative default) purely to keep the Record exhaustive.
   refund_in_progress: false,
+  // UNREACHABLE on the refund path for the same reason: the online-payment
+  // guard is gated on `sourceRefundId === undefined`. Transient (conservative
+  // default) purely to keep the Record exhaustive.
+  online_payment_refundable: false,
 };
 
 function isPermanentCreditNoteDecline(code: string): boolean {
@@ -550,6 +554,8 @@ export async function processRefundUpdated(
             // forever and blocking every future refund on the payment. That is
             // the F-3 shape, recreated. A compile error is the cheaper failure.
             creditNoteWaiverReason: refund.creditNoteWaiverReason,
+            // 0306 — pinned in Phase A; forwarded to the F4 credit note.
+            membershipEffect: refund.membershipEffect,
             processorRefundId: input.processorRefundId,
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
             requestId: input.requestId,

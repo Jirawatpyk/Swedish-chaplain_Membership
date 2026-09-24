@@ -80,6 +80,20 @@ vi.mock('@/modules/invoicing', () => ({
   },
 }));
 
+// The page also reads the invoice's payment activity (payment channel + the
+// online-refund steering). Stubbed to "no online payment" — this suite covers
+// the §105 fail-fast guard; the steering itself is covered by
+// credit-note-form.test.tsx and the online-payment-guard integration test.
+vi.mock('@/app/(staff)/admin/invoices/[invoiceId]/_lib/cached-payment-activity', () => ({
+  getInvoicePaymentActivity: vi.fn().mockResolvedValue({
+    ok: true,
+    value: { payments: [], refunds: [] },
+  }),
+}));
+vi.mock('@/modules/payments', () => ({
+  computeRemainingRefundable: () => null,
+}));
+
 // Presentation stubs — the guard runs before render; the form marker echoes the
 // resolved documentNumber so the render-path cases can assert the page reached
 // the form (not a fail-fast 404).

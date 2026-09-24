@@ -40,6 +40,8 @@ function renderForm() {
           memberCompanyName="Acme AB"
           remainingRefundableSatang={535000n}
           currencyCode="THB"
+          invoiceSubject="event"
+          invoiceHeadroomSatang={535000n}
           onClose={() => undefined}
         />
       </AlertDialog>
@@ -115,6 +117,40 @@ describe('RefundForm — localised validation messages', () => {
       // Never the raw message key / developer token.
       expect(errorBox.textContent).not.toContain('refund_exceeds_remaining');
       expect(errorBox.textContent).not.toContain('admin.refund.error');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('RefundForm — refund_exceeds_remaining quotes the SERVER cap', () => {
+  it('shows the remaining figure from the 409 body, not the stale page-load prop', async () => {
+    // The dialog was rendered with 5,350.00 refundable; a manual credit note
+    // since shrank the invoice headroom, so the server caps at 2,000.00.
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: { code: 'refund_exceeds_remaining', remainingSatang: '200000' },
+      }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      fireEvent.change(screen.getByTestId('refund-form-amount'), {
+        target: { value: '3000' },
+      });
+      fireEvent.change(screen.getByTestId('refund-form-reason'), {
+        target: { value: 'duplicate charge' },
+      });
+      fireEvent.blur(screen.getByTestId('refund-form-reason'));
+      const confirm = screen.getByTestId('refund-form-confirm');
+      await waitFor(() => expect(confirm.hasAttribute('disabled')).toBe(false));
+      fireEvent.click(confirm);
+
+      const errorBox = await screen.findByTestId('refund-form-error');
+      expect(errorBox.textContent).toContain('2,000.00');
+      expect(errorBox.textContent).not.toContain('5,350.00');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -206,6 +242,8 @@ describe('RefundForm — I6: f4_bridge_deferred is a settled refund, not a failu
               memberCompanyName="Acme AB"
               remainingRefundableSatang={535000n}
               currencyCode="THB"
+              invoiceSubject="event"
+              invoiceHeadroomSatang={535000n}
               onClose={onClose}
             />
           </AlertDialog>
@@ -244,6 +282,8 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
             memberCompanyName="Acme AB"
             remainingRefundableSatang={535000n}
             currencyCode="THB"
+            invoiceSubject="event"
+            invoiceHeadroomSatang={535000n}
             onClose={onClose}
           />
         </AlertDialog>

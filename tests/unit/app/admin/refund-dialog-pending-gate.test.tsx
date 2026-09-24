@@ -34,6 +34,8 @@ function renderDialog(pendingRefundExists: boolean) {
         memberCompanyName="Acme AB"
         remainingRefundableSatang={535000n}
         currencyCode="THB"
+        invoiceSubject="event"
+        invoiceHeadroomSatang={535000n}
         pendingRefundExists={pendingRefundExists}
       />
     </NextIntlClientProvider>,

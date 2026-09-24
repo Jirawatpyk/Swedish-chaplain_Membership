@@ -382,6 +382,14 @@ export {
   type GetCreditNoteError,
 } from './application/use-cases/get-credit-note';
 
+// 0306 — renewals reconcile backstop: recent manual credit notes whose staff
+// chose "End membership" (the durable record of that decision).
+export {
+  listManualCreditNotesEndingMembership,
+  type ManualCreditNoteEndingMembershipRow,
+  type ListManualCreditNotesEndingMembershipDeps,
+} from './application/use-cases/list-manual-credit-notes-ending-membership';
+
 export {
   listCreditNotes,
   type ListCreditNotesInput,
@@ -514,6 +522,7 @@ export {
   makeIssueCreditNoteDeps,
   makeGetCreditNoteDeps,
   makeListCreditNotesDeps,
+  makeListManualCreditNotesEndingMembershipDeps,
   makeGetCreditNotePdfSignedUrlDeps,
   makeUpdateInvoiceDraftDeps,
   makeUpdateTenantInvoiceSettingsDeps,

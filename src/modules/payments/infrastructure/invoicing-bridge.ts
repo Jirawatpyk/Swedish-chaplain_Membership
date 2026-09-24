@@ -331,6 +331,9 @@ export const invoicingBridge: InvoicingBridgePort = {
       actorUserId: input.actorUserId,
       ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
       ...(input.requestId !== null ? { requestId: input.requestId } : {}),
+      ...(input.membershipEffect !== undefined
+        ? { membershipEffect: input.membershipEffect }
+        : {}),
     });
     if (!cn.ok) {
       // Reuse the same scalar-only summariser used for
@@ -524,7 +527,12 @@ export const invoicingBridge: InvoicingBridgePort = {
       );
     }
 
-    return ok({ creditedTotalSatang, totalSatang, creditNoteRequirement });
+    return ok({
+      creditedTotalSatang,
+      totalSatang,
+      creditNoteRequirement,
+      invoiceSubject: inv.invoiceSubject,
+    });
   },
 
   /**

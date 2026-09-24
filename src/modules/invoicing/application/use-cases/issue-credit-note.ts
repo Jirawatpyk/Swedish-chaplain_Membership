@@ -62,6 +62,7 @@ import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
 import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
+import type { OnlinePaymentRefundGuardPort } from '../ports/online-payment-refund-guard-port';
 import {
   auditAutoEmailSkippedNoRecipient,
   resolveMoneyRecipient,
@@ -160,6 +161,16 @@ export const issueCreditNoteSchema = z.object({
    *                          imports F8 directly).
    */
   membershipEffect: z.enum(['keep', 'cancel_membership']).optional(),
+  /**
+   * Staff's explicit acknowledgement that this MANUAL credit note returns no
+   * money although the invoice has a refundable online (card / PromptPay)
+   * payment — and that it reduces what can still be refunded online by the
+   * same amount. Without it the use-case refuses with
+   * `online_payment_refundable` (see that error arm). Ignored for a
+   * refund-origin CN (`sourceRefundId` set) and when no online money is
+   * refundable.
+   */
+  onlinePaymentRefundAcknowledged: z.boolean().optional(),
 });
 
 export type IssueCreditNoteInput = z.infer<typeof issueCreditNoteSchema>;
@@ -276,7 +287,19 @@ export type IssueCreditNoteError =
    * settles. NOT raised for a refund-origin CN (`sourceRefundId` set) — that CN
    * IS the refund's own, so blocking it on its own pending row is nonsensical.
    */
-  | { code: 'refund_in_progress' };
+  | { code: 'refund_in_progress' }
+  /**
+   * The invoice has a succeeded online (Stripe) payment with money still
+   * refundable, and this MANUAL credit note (no `sourceRefundId`) was sent
+   * without `onlinePaymentRefundAcknowledged: true`. A credit note moves no
+   * money but consumes the invoice headroom the F5 refund pre-flight caps
+   * refunds at, so issuing it would lock that much of the payment out of
+   * refund (all of it, for a full credit). Staff either use the payment's
+   * Issue refund action (which issues its own CN) or acknowledge. Returned
+   * BEFORE `allocateNext` — no §87 number burned. Also returned when the
+   * payments read failed (fail-closed; the acknowledgement still unblocks).
+   */
+  | { code: 'online_payment_refundable' };
 
 class IssueCreditNoteInternalError extends TxAbort<IssueCreditNoteError> {
   override readonly name = 'IssueCreditNoteInternalError';
@@ -351,6 +374,8 @@ export interface IssueCreditNoteDeps {
   readonly currentTemplateVersion: number;
   /** 8A — non-locking count of in-flight refunds (guards a manual CN). */
   readonly pendingRefundGuard: PendingRefundGuardPort;
+  /** Non-locking read of a refundable online payment (guards a manual CN). */
+  readonly onlinePaymentRefundGuard: OnlinePaymentRefundGuardPort;
 }
 
 export async function issueCreditNote(
@@ -387,6 +412,32 @@ export async function issueCreditNote(
       );
     if (pendingRefunds > 0) {
       return err({ code: 'refund_in_progress' });
+    }
+  }
+
+  // A manual credit note moves no money but consumes the headroom the F5
+  // refund pre-flight caps Stripe refunds at, so on an online-paid invoice it
+  // would silently make that much of the payment unrefundable. Require the
+  // staff acknowledgement (see the `online_payment_refundable` arm). Any
+  // amount, not just a full credit: a partial CN of X locks X out the same
+  // way. Above the withTx for the same reason as the 8A guard. Read even when
+  // acknowledged, so the audit row records what the staff overrode.
+  let onlineRefundOverride: { readonly refundableSatang: string | null } | null =
+    null;
+  if (input.sourceRefundId === undefined) {
+    const online =
+      await deps.onlinePaymentRefundGuard.readRefundableOnlinePayment(
+        input.tenantId,
+        invoiceId,
+      );
+    if (online.kind !== 'none') {
+      if (input.onlinePaymentRefundAcknowledged !== true) {
+        return err({ code: 'online_payment_refundable' });
+      }
+      onlineRefundOverride = {
+        refundableSatang:
+          online.kind === 'refundable' ? online.remainingSatang.toString() : null,
+      };
     }
   }
 
@@ -908,6 +959,11 @@ export async function issueCreditNote(
           // M1 (plan-change-ux, Option 1b) — coverage-retention intent derived
           // above (sourceRefundId-first). Write-once at INSERT.
           retainsCoverage,
+          // 0306 — the declared Keep / End intent, only on a FULL membership
+          // credit (the renewals backstop re-reads End decisions from here).
+          ...(isMembershipInvoice && isFullCredit && input.membershipEffect !== undefined
+            ? { membershipEffect: input.membershipEffect }
+            : {}),
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),
@@ -1177,6 +1233,20 @@ export async function issueCreditNote(
         reason: input.reason,
         document_number: docNum.value.raw,
         pdf_sha256: rendered.sha256,
+        // 0306 — the staff's declared Keep / End membership intent on a FULL
+        // membership credit (manual or refund-origin), for the forensic chain.
+        ...(isMembershipInvoice && isFullCredit && input.membershipEffect !== undefined
+          ? { membership_effect: input.membershipEffect }
+          : {}),
+        // Present only when staff acknowledged issuing this manual CN over a
+        // refundable online payment (the `online_payment_refundable` override).
+        // `null` satang = the payments read failed (fail-closed `unknown`).
+        ...(onlineRefundOverride !== null
+          ? {
+              online_payment_refund_acknowledged: true,
+              online_refundable_satang_at_issue: onlineRefundOverride.refundableSatang,
+            }
+          : {}),
       };
       if (memberId !== null) {
         await deps.audit.emit(tx, {

@@ -2278,6 +2278,25 @@
         "backToInvoice": "Back to invoice",
         "againstInvoice": "Against invoice",
         "remainingLabel": "Creditable remainder:",
+        "paidViaLabel": "Paid via:",
+        "paymentChannel": {
+          "card": "Card (online)",
+          "promptpay": "PromptPay (online)",
+          "bank_transfer": "Bank transfer",
+          "cheque": "Cheque",
+          "cash": "Cash",
+          "other": "Other",
+          "unknown": "Could not be determined"
+        },
+        "onlinePayment": {
+          "title": "Paid online — a credit note does not refund the member",
+          "unknownTitle": "Check how this invoice was paid before crediting it",
+          "body": "Issuing a credit note here returns no money. To refund this card or PromptPay payment, use Issue refund on the invoice — it refunds the member and issues the credit note itself. A manual credit note also reduces the amount that can still be refunded online by the same amount; after a full credit note the payment can no longer be refunded through the system.",
+          "unknownBody": "The payment channel for this invoice could not be checked. If it was paid online by card or PromptPay, use Issue refund on the invoice instead — a manual credit note returns no money and reduces the amount that can still be refunded online.",
+          "refundAction": "Go to Issue refund",
+          "acknowledge": "I understand this credit note returns no money and reduces what can still be refunded online",
+          "ackRequiredHint": "Tick the acknowledgement in the online-payment warning above to continue."
+        },
         "amountLabel": "Credit amount (incl. VAT)",
         "amountHelp": "Enter the gross amount to credit, inclusive of VAT. VAT is split proportionally to the original invoice.",
         "exceedsRemainder": "Amount exceeds remainder ({remaining}).",
@@ -2292,16 +2311,21 @@
         "success": "Credit note issued.",
         "successWithNumber": "Credit note {number} issued.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
-        "membershipCancellationFailedNotice": "Credit note issued, but the membership cancellation could not be completed automatically — cancel it manually from the Renewals page.",
+        "membershipEnd": {
+          "ended": "The membership has ended — the member's access stops now.",
+          "deferred": "Ending the membership did not complete right away; it will be retried automatically within the hour.",
+          "noOpenCycle": "The member has no open renewal cycle, so there was no coverage to end. Check their renewal status.",
+          "failed": "Credit note issued, but the membership could not be ended. Report this to support with the credit note number."
+        },
         "membershipEffect": {
           "legend": "What should happen to the membership?",
           "keep": {
             "label": "Keep membership — document correction",
-            "description": "The member was NOT refunded for this period, so their membership coverage is retained."
+            "description": "Records the credit note only — the membership and its renewal cycles stay as they are. No money is returned by this action; any amount owed back to the member must be settled separately."
           },
           "cancelMembership": {
-            "label": "Refund and cancel membership",
-            "description": "The member is refunded and their active renewal cycles are cancelled."
+            "label": "Cancel membership — refund handled separately",
+            "description": "Records the credit note and ends the member's coverage now — their access stops today, even though the period has not run out. No money is returned by this action. Paid online? Use Issue refund on the invoice instead — it refunds the member and issues the credit note itself."
           }
         },
         "errors": {
@@ -2313,7 +2337,8 @@
           "receiptNotRendered": "The tax receipt PDF is still being generated, or failed to render. A credit note can only be issued once the §86/4 receipt has rendered. Wait a moment and retry — if it still fails, contact support to regenerate it.",
           "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note. Reload the page and try again.",
           "codeFallback": "Error code: {code}",
-          "refundInProgress": "A refund is currently being processed on this invoice's payment. Issuing a credit note now could conflict with it — wait until the refund settles, then try again."
+          "refundInProgress": "A refund is currently being processed on this invoice's payment. Issuing a credit note now could conflict with it — wait until the refund settles, then try again.",
+          "onlinePaymentRefundable": "This invoice has an online (card or PromptPay) payment that can still be refunded. To return the money, use Issue refund on the invoice. To issue a credit note without a refund, reload this page and tick the acknowledgement."
         }
       },
       "list": {
@@ -2871,6 +2896,7 @@
           "pay": "Record payment…",
           "void": "Void…",
           "issueCreditNote": "Issue credit note…",
+          "issueCreditNoteRefundSettling": "Unavailable while a refund is settling — try again once it completes.",
           "resendInvoice": "Resend invoice email",
           "resendReceipt": "Resend receipt email",
           "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
@@ -2984,7 +3010,7 @@
           "resolve": "Mark as reconciled",
           "resolveConfirm": {
             "title": "Mark this auto-refund as reconciled?",
-            "body": "Do this only after you have returned the funds to the member out-of-band (a Stripe Dashboard refund or a manual credit note). It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
+            "body": "Do this only after you have returned the funds to the member out-of-band (e.g. a Stripe Dashboard refund or a bank transfer) — a credit note alone returns no money. It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
             "cancel": "Cancel",
             "confirm": "Yes, mark as reconciled",
             "pending": "Recording…"
@@ -3666,7 +3692,8 @@
         "completed_offline": "Paid offline",
         "admin_reactivated": "Reactivated",
         "admin_rejected_with_refund": "Refunded",
-        "pending_reactivation_timed_out": "Reactivation timed out"
+        "pending_reactivation_timed_out": "Reactivation timed out",
+        "coverage_ended": "Membership ended early"
       },
       "terminationBasis": {
         "due_plus_60": "Unpaid more than 60 days after the due date",
@@ -4567,6 +4594,26 @@
       }
     },
     "refund": {
+      "membership": {
+        "warningTitle": "A full refund withdraws this paid membership period",
+        "warningBody": "Renewals will stop counting this period as paid, but the member keeps portal access and benefits until their current membership period ends; renewal reminders then follow the normal schedule. If the member is leaving, choose End membership.",
+        "legend": "What should happen to the membership?",
+        "keep": {
+          "label": "Keep membership until the period ends",
+          "description": "Access continues until the current period ends; renewal reminders follow as usual."
+        },
+        "end": {
+          "label": "End membership",
+          "description": "Access ends once the refund completes — straight away for most card refunds; a pending refund is checked every hour, so access ends within an hour of it being confirmed. If the refund fails, the membership is kept."
+        },
+        "outcome": {
+          "ended": "The membership has ended — the member's access stops now.",
+          "scheduled": "The membership will end within an hour of the refund completing. If the refund fails, the membership is kept.",
+          "deferred": "Ending the membership did not complete right away; it will be retried automatically within the hour.",
+          "no_open_cycle": "The member has no open renewal cycle, so there was no coverage to end. Check their renewal status.",
+          "failed": "The refund went through, but the membership could not be ended. Report this to support with the refund reference."
+        }
+      },
       "title": "Issue refund",
       "button": {
         "label": "Issue refund…",
@@ -4626,6 +4673,7 @@
         "payment_not_found": "Payment not found.",
         "payment_not_refundable": "This payment cannot be refunded in its current state.",
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
+        "membership_effect_not_applicable": "Ending the membership only applies to a full refund of a membership invoice. Refund the full remaining amount, or choose Keep membership.",
         "refund_in_progress": "A refund is already settling for this payment — no action is needed. It finishes on its own once the payment processor confirms.",
         "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
