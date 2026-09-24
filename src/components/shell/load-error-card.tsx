@@ -1,6 +1,10 @@
 /**
- * `LoadErrorCard` — shared "couldn't load" chrome for the `/admin/renewals`
- * pipeline sub-cards (Task 8).
+ * `LoadErrorCard` — the ONE "couldn't load" chrome for staff surfaces. Born on
+ * the `/admin/renewals` pipeline sub-cards (Task 8); promoted to the shell so
+ * the audit log, invoices list and invoice payment-activity panel render a
+ * load FAILURE with the same skin instead of a benign empty/invalid state
+ * (admin design review). Pair with `ErrorCardActions` for retry / go back /
+ * reference id.
  *
  * Extracted from the page-local copy (which the pipeline load-failure + the
  * pending-review load-failure already used) so every best-effort sub-card —

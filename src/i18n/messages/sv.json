@@ -187,7 +187,14 @@
     "errorId": "Fel-ID: {id}",
     "readOnlyNothingChanged": "Ingenting ändrades. Försök igen om några minuter.",
     "notFoundHint": "Länken kan vara gammal, eller så har sidan flyttats.",
-    "backToDashboard": "Tillbaka till översikten"
+    "backToDashboard": "Tillbaka till översikten",
+    "loadError": {
+      "retry": "Försök igen",
+      "retrying": "Försöker igen…",
+      "retryFailed": "Försöket misslyckades — servern returnerade ett nytt fel",
+      "goBack": "Gå tillbaka",
+      "referenceLabel": "Referens-ID"
+    }
   },
   "buttons": {
     "cancel": "Avbryt",
@@ -323,9 +330,18 @@
       "forbidden": "Du har inte behörighet till granskningsloggen.",
       "export": "Exportera CSV",
       "resultCount": "{count, plural, =0 {Inga revisionshändelser} one {# revisionshändelse} other {# revisionshändelser}}",
+      "loadFailed": "Det gick inte att ladda granskningsloggen. Försök igen.",
       "invalidRange": {
         "title": "Ogiltigt filter",
-        "body": "Kontrollera datumintervallet och filtren och försök igen."
+        "body": "Kontrollera datumintervallet och filtren och försök igen.",
+        "field": {
+          "from": "Datumet i ”Från” är inte ett giltigt datum. Välj ett med datumväljaren.",
+          "to": "Datumet i ”Till” är inte ett giltigt datum. Välj ett med datumväljaren.",
+          "range": "”Från”-datumet ligger efter ”Till”-datumet. Byt plats på dem eller välj ett nytt intervall.",
+          "target": "”Målpost” måste vara ett post-ID. Namn och medlemsnummer kan inte sökas här.",
+          "eventType": "Den valda ”Händelsetyp” känns inte igen. Välj en i listan.",
+          "cursor": "Länken till den här sidan har gått ut. Börja om från de senaste posterna."
+        }
       },
       "filters": {
         "legend": "Filtrera revisionshändelser",
@@ -1315,7 +1331,8 @@
         "zero": {
           "title": "Inga medlemmar ännu",
           "description": "Lägg till din första medlem för att komma igång.",
-          "cta": "Lägg till första medlem"
+          "cta": "Lägg till första medlem",
+          "adminOnlyHint": "Medlemmar visas här när en administratör har lagt till dem."
         },
         "filtered": {
           "title": "Inga medlemmar matchar filtren",
@@ -2538,6 +2555,7 @@
         "searchLabel": "Sök fakturor",
         "loadMore": "Ladda fler",
         "filteredEmpty": "Inga fakturor matchar filtren.",
+        "loadFailed": "Det gick inte att ladda fakturorna. Försök igen.",
         "resultCount": "{count, plural, =0 {Inga fakturor matchar filtren} one {# faktura matchar filtren} other {# fakturor matchar filtren}}",
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
@@ -4752,7 +4770,8 @@
         "emptyPaidManual": {
           "title": "Betald via manuell registrering",
           "body": "Denna faktura markerades som betald via dialogen Registrera betalning (kontant, banköverföring, check eller annat). Manuellt registrerade betalningsuppgifter visas i avsnittet Betalningsdetaljer ovan — tidslinjen följer endast onlinebetalningshändelser."
-        }
+        },
+        "loadFailed": "Det gick inte att ladda betalningshändelserna. Försök igen."
       }
     },
     "paymentSettings": {
@@ -4806,14 +4825,16 @@
           "noIntegration": {
             "title": "Inga evenemang ännu",
             "body": "Konfigurera din EventCreate-integration för att automatiskt importera deltagare.",
-            "cta": "Konfigurera EventCreate-integration"
+            "cta": "Konfigurera EventCreate-integration",
+            "adminOnlyHint": "Evenemang visas här när en administratör har konfigurerat EventCreate-integrationen."
           },
           "noDeliveries": {
             "title": "Väntar på första evenemanget",
             "body": "Din Zap ska leverera nya deltagardata inom cirka 15 minuter efter en EventCreate-registrering. Du kan också skicka en testwebhook för att bekräfta anslutningen.",
             "primaryCta": "Skicka en testhändelse",
             "cta": "Visa integrationsinställningar",
-            "illustrationAlt": "Illustration av tom inkorg"
+            "illustrationAlt": "Illustration av tom inkorg",
+            "adminOnlyHint": "Nya deltagardata bör komma in inom cirka 15 minuter efter en EventCreate-registrering. Om inget kommer in, be en administratör att kontrollera integrationen."
           },
           "allArchived": {
             "title": "Alla evenemang är arkiverade",

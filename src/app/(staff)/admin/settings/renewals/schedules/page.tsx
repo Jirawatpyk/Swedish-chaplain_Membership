@@ -41,7 +41,7 @@ import {
   makeRenewalsDeps,
   reminderStepToJson,
 } from '@/modules/renewals';
-import { ErrorCardActions } from '../../../renewals/_components/error-card-actions';
+import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import {
   ScheduleEditor,
   type SchedulePolicyWire,

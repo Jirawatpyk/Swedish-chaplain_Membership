@@ -392,7 +392,7 @@ export async function MembersDirectoryBody({
         ) : hasFilters ? (
           <MembersFilteredEmptyState />
         ) : (
-          <MembersZeroState />
+          <MembersZeroState canAddMember={isAdmin} />
         )}
       </>
     );
