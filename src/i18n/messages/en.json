@@ -2989,8 +2989,12 @@
             "bank_transfer": "Bank transfer",
             "cheque": "Cheque",
             "cash": "Cash",
-            "other": "Other"
-          }
+            "other": "Other",
+            "card_online": "Card (online)",
+            "promptpay_online": "PromptPay (online)",
+            "online": "Online payment"
+          },
+          "recordedBySystem": "System (Stripe webhook)"
         },
         "voidDetails": {
           "title": "Voided",

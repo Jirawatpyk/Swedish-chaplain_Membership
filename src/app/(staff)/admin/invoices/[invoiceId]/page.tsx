@@ -112,6 +112,9 @@ import { computeRemainingRefundable } from '@/modules/payments';
 // a tenant-scoped infra read (RLS+FORCE), no Application use-case needed.
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { getInvoicePaymentActivity } from './_lib/cached-payment-activity';
+import { describePaymentDetails } from './_lib/payment-details';
+import { isSystemActor } from './_lib/system-actor';
+import { latestSucceededPayment } from './_components/payment-timeline-format';
 
 // F5 UX D2 — the out-of-band-refund reconciliation runbook (repo-relative doc
 // path, same literal the `auto_refund_failed_needs_manual_reconcile` forensic
@@ -279,8 +282,12 @@ export default async function InvoiceDetailPage({
   // paid / void sections. Showing a raw UUID in "Recorded by" tells
   // the admin nothing — email is the smallest humane identifier we
   // have today (TODO: add display_name when F1 user profile lands).
+  // A system actor (the Stripe webhook's reserved UUID) is labelled as such —
+  // looking it up returns the seeded internal e-mail, which means nothing to
+  // staff. Mirrors the payment timeline's `isSystemActor()` mapping.
   async function resolveUserEmail(userId: string | null): Promise<string> {
     if (!userId) return '—';
+    if (isSystemActor(userId)) return t('payment.recordedBySystem');
     const row = await userRepo.findById(asUserId(userId));
     return row?.email ?? userId;
   }
@@ -288,6 +295,24 @@ export default async function InvoiceDetailPage({
     resolveUserEmail(invoice.paymentRecordedByUserId),
     resolveUserEmail(invoice.voidedByUserId),
   ]);
+
+  // Payment details for a Stripe-paid invoice: the rail comes from the
+  // invoice's succeeded F5 payment (the F4 row only says 'other'). Shares the
+  // request-cached activity read with the refund button + timeline below; a
+  // failed read falls back to the rail named in the processor note.
+  let onlineMethod: 'card' | 'promptpay' | null = null;
+  if (invoice.paymentMethod === 'other' && invoice.paidAt !== null) {
+    const activity = await getInvoicePaymentActivity(tenantCtx.slug, invoiceId);
+    if (activity.ok) {
+      onlineMethod = latestSucceededPayment(activity.value.payments)?.method ?? null;
+    }
+  }
+  const paymentDetails = describePaymentDetails({
+    paymentMethod: invoice.paymentMethod,
+    paymentNotes: invoice.paymentNotes,
+    paymentRecordedByUserId: invoice.paymentRecordedByUserId,
+    onlineMethod,
+  });
 
   // Phase-10 polish — load any credit notes attached to this invoice
   // so the detail page can surface the CN list inline. Cheap: no CN
@@ -918,8 +943,8 @@ export default async function InvoiceDetailPage({
                 <div>
                   <dt className="text-muted-foreground">{t('payment.method')}</dt>
                   <dd>
-                    {invoice.paymentMethod
-                      ? t(`payment.methods.${invoice.paymentMethod}`)
+                    {paymentDetails.methodKey
+                      ? t(`payment.methods.${paymentDetails.methodKey}`)
                       : '—'}
                   </dd>
                 </div>
@@ -933,11 +958,11 @@ export default async function InvoiceDetailPage({
                   <dt className="text-muted-foreground">{t('payment.recordedBy')}</dt>
                   <dd>{paymentRecordedByEmail}</dd>
                 </div>
-                {invoice.paymentNotes && (
+                {paymentDetails.notes && (
                   <div className="col-span-2">
                     <dt className="text-muted-foreground">{t('payment.notes')}</dt>
                     <dd className="whitespace-pre-wrap">
-                      {invoice.paymentNotes}
+                      {paymentDetails.notes}
                     </dd>
                   </div>
                 )}

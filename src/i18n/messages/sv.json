@@ -2989,8 +2989,12 @@
             "bank_transfer": "Banköverföring",
             "cheque": "Check",
             "cash": "Kontant",
-            "other": "Övrigt"
-          }
+            "other": "Övrigt",
+            "card_online": "Kort (online)",
+            "promptpay_online": "PromptPay (online)",
+            "online": "Onlinebetalning"
+          },
+          "recordedBySystem": "System (Stripe webhook)"
         },
         "voidDetails": {
           "title": "Annullerad",

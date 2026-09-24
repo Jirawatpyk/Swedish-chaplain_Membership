@@ -2989,8 +2989,12 @@
             "bank_transfer": "โอนเงิน",
             "cheque": "เช็ค",
             "cash": "เงินสด",
-            "other": "อื่น ๆ"
-          }
+            "other": "อื่น ๆ",
+            "card_online": "บัตร (ออนไลน์)",
+            "promptpay_online": "พร้อมเพย์ (ออนไลน์)",
+            "online": "ชำระออนไลน์"
+          },
+          "recordedBySystem": "ระบบ (Stripe webhook)"
         },
         "voidDetails": {
           "title": "ยกเลิกแล้ว",
