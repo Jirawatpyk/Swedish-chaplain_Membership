@@ -114,14 +114,8 @@ describe('findMissingKeyRefs — keys that MUST be flagged', () => {
   });
 
   it('reports the 1-based line of the call', () => {
-    const src = [
-      "const t = useTranslations('shell.nav');",
-      "t('home');",
-      "t('nope');",
-    ].join('\n');
-    expect(findMissingKeyRefs(src, EN_KEYS)).toEqual([
-      { key: 'shell.nav.nope', line: 3 },
-    ]);
+    const src = ["const t = useTranslations('shell.nav');", "t('home');", "t('nope');"].join('\n');
+    expect(findMissingKeyRefs(src, EN_KEYS)).toEqual([{ key: 'shell.nav.nope', line: 3 }]);
   });
 
   it('checks a backtick key with no interpolation', () => {
@@ -196,6 +190,65 @@ describe('findMissingKeyRefs — shapes that must NOT be flagged', () => {
       at('x');
     `;
     expect(missing(src)).toEqual([]);
+  });
+
+  it('treats a typed parameter declared after a binding as shadowing it', () => {
+    // The live shape in renewals/row-actions.tsx: a component binds `t`, and a
+    // helper BELOW it takes a differently-scoped `t` as a parameter. Resolving
+    // to the component's binding flagged six correct keys.
+    const src = `
+      function PipelineEmptyMessage() {
+        const t = useTranslations('shell.nav');
+        return t('home');
+      }
+      function toastLabel(
+        reason: string,
+        t: ReturnType<typeof useTranslations<'admin.renewals.toast'>>,
+      ): string {
+        return t('skipped.generic', { reason });
+      }
+    `;
+    expect(missing(src)).toEqual([]);
+  });
+
+  it('treats an untyped arrow parameter as shadowing', () => {
+    const src = `
+      const t = useTranslations('shell.nav');
+      t('home');
+      const render = (row, t) => t('fromParam');
+      items.map((t) => t('alsoParam'));
+    `;
+    expect(missing(src)).toEqual([]);
+  });
+
+  it('treats a later non-translator declaration of the name as shadowing', () => {
+    const src = `
+      function A() {
+        const t = useTranslations('shell.nav');
+        return t('home');
+      }
+      function B(props: Props) {
+        const t = props.translate;
+        return t('fromProps');
+      }
+      async function C() {
+        const [deps, t] = await Promise.all([load(), getTranslations('buttons')]);
+        return t('destructured');
+      }
+    `;
+    expect(missing(src)).toEqual([]);
+  });
+
+  it('re-arms checking once a later translator binding follows a shadow', () => {
+    const src = `
+      const t = useTranslations('shell.nav');
+      const f = (t: Fn) => t('fromParam');
+      function D() {
+        const t = useTranslations('buttons');
+        return t('nope');
+      }
+    `;
+    expect(missing(src)).toEqual(['buttons.nope']);
   });
 
   it('ignores a call that appears before any binding of that name', () => {
