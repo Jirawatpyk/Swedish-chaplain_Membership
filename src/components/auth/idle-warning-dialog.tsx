@@ -12,7 +12,9 @@
  *   - Fires at **29 minutes** of inactivity (IDLE_TIMEOUT_MS - 1 min).
  *   - Modal shows a live countdown from 60 → 0.
  *   - "Stay signed in" → POST /api/auth/heartbeat → resets local clock.
- *   - "Sign out now" → POST /api/auth/sign-out.
+ *   - "Sign out now" → POST /api/auth/sign-out and redirect with NO toast
+ *     (a voluntary sign-out, same as the user-menu one — the member must
+ *     not be told they were inactive).
  *   - Countdown reaches 0 with no action → client-side POST to sign-out
  *     and redirect to the appropriate sign-in page with a friendly
  *     "signed out due to inactivity" toast.
@@ -74,6 +76,8 @@ const WARNING_AFTER_MS = IDLE_TIMEOUT_MS - WARNING_WINDOW_MS;
  */
 const HEARTBEAT_TIMEOUT_MS = 10 * 1000;
 
+type SignOutReason = 'inactive' | 'voluntary';
+
 const ACTIVITY_EVENTS = [
   'mousemove',
   'keydown',
@@ -115,11 +119,13 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   const signInPath = portalSignInPath(portal);
 
   /**
-   * Involuntarily sign the user out. Called when the 60-second
-   * countdown hits zero. Tolerates the sign-out POST failing (if the
-   * session is already dead the server returns 200 anyway).
+   * Sign the user out. `'inactive'` is the involuntary path (countdown hit
+   * zero, or the heartbeat found the session gone); `'voluntary'` is the
+   * "Sign out now" button. Only the reason decides the toast — the POST,
+   * redirect and refresh are identical. Tolerates the sign-out POST failing
+   * (if the session is already dead the server returns 200 anyway).
    */
-  const forceSignOut = useCallback(async () => {
+  const forceSignOut = useCallback(async (reason: SignOutReason) => {
     setOpen(false);
     try {
       await fetch('/api/auth/sign-out', {
@@ -131,7 +137,7 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     }
     // Dedicated past-tense reason — NOT the countdown copy (which reads
     // "signed out in 0 seconds" and never states the inactivity reason).
-    toast.info(t('signedOutInactive'));
+    if (reason === 'inactive') toast.info(t('signedOutInactive'));
     router.replace(signInPath);
     // Force a server round-trip so the layout guard re-runs.
     router.refresh();
@@ -190,7 +196,7 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
       // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT mean
       // the session died.
       if (response.status === 401) {
-        await forceSignOut();
+        await forceSignOut('inactive');
         return;
       }
       if (response.ok) {
@@ -326,7 +332,7 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     // poll, and reWarn, which all bail while paused.)
     if (pausedAtRef.current !== null) return;
     if (open && remaining === 0 && !stayPendingRef.current) {
-      void forceSignOut();
+      void forceSignOut('inactive');
     }
   }, [open, remaining, forceSignOut]);
 
@@ -347,7 +353,7 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
           <AlertDialogCancel
             onClick={(event) => {
               event.preventDefault();
-              void forceSignOut();
+              void forceSignOut('voluntary');
             }}
           >
             {t('signOut')}

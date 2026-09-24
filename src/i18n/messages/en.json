@@ -106,6 +106,8 @@
       "submitting": "Reverting…",
       "successMessage": "Email change reverted. Complete the password reset to regain access.",
       "completePasswordReset": "Complete password reset",
+      "goToSignIn": "Go to sign in",
+      "successNextStep": "Every session on this account was signed out. On the next page, enter your original email address.",
       "errors": {
         "invalidToken": "This revert link has expired or has already been used.",
         "conflict": "The previous email is no longer available. Contact your chamber administrator.",
