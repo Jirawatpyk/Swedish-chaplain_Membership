@@ -40,6 +40,8 @@ export function PlanDetailActions({ plan }: PlanDetailActionsProps) {
               {...props}
               variant="outline"
               size="icon"
+              // PageHeader stretches actions on mobile; an icon button stays square.
+              className="flex-none"
               aria-label={t('columns.actionsFor', { planName: plan.plan_name.en })}
             >
               <MoreHorizontal className="size-4" aria-hidden="true" />

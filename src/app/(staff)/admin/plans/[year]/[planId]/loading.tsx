@@ -27,11 +27,12 @@ import {
   SkeletonBlock,
 } from '@/components/shell/page-skeletons';
 
-function DlPairSkeleton() {
+function DlPairSkeleton({ wraps = false }: { wraps?: boolean }) {
   return (
     <div>
       <Skeleton className="h-3 w-24 mb-2" />
-      <Skeleton className="h-6 w-32" />
+      {/* The "fee + VAT = total" value wraps to two lines below md. */}
+      <Skeleton className={wraps ? 'h-12 w-64 md:h-6' : 'h-6 w-32'} />
     </div>
   );
 }
@@ -94,7 +95,7 @@ export default async function Loading() {
           <CardContent>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <DlPairSkeleton />
-              <DlPairSkeleton />
+              <DlPairSkeleton wraps />
               <DlPairSkeleton />
               <DlPairSkeleton />
             </div>

@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { isReadOnlyCode, problemCode } from '@/lib/http/read-only-refusal';
 import { PlanEditForm } from '@/components/plans/plan-edit-form';
+import type { CurrentYearPlanStatus } from '@/components/plans/prior-year-lock-banner';
 import type { PlanSchemaInput } from '@/modules/plans';
 
 export interface EditPlanClientProps {
@@ -21,7 +22,7 @@ export interface EditPlanClientProps {
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
   readonly currencyPrefix: string;
-  readonly currentYearPlanExists: boolean;
+  readonly currentYearStatus: CurrentYearPlanStatus;
   readonly vatRatePercent: number | null;
 }
 
@@ -61,7 +62,7 @@ export function EditPlanClient({
   initialValues,
   currentYear,
   currencyPrefix,
-  currentYearPlanExists,
+  currentYearStatus,
   vatRatePercent,
 }: EditPlanClientProps) {
   const router = useRouter();
@@ -125,7 +126,7 @@ export function EditPlanClient({
       initialValues={initialValues}
       currentYear={currentYear}
       currencyPrefix={currencyPrefix}
-      currentYearPlanExists={currentYearPlanExists}
+      currentYearStatus={currentYearStatus}
       vatRatePercent={vatRatePercent}
       submitting={submitting}
       onSubmit={handleSubmit}

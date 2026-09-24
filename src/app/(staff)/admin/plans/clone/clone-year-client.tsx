@@ -255,7 +255,9 @@ export function CloneYearClient({
       </div>
       <section aria-labelledby="clone-preview-title" className="space-y-2">
         <h3 id="clone-preview-title" className="text-sm font-medium">
-          {tClone('preview.title', { sourceYear })}
+          {sourceYear >= 2000 && sourceYear <= 2100
+            ? tClone('preview.title', { sourceYear })
+            : tClone('preview.titleNoYear')}
         </h3>
         {sourcePlans === null ? (
           <p className="text-muted-foreground text-sm" role="status">

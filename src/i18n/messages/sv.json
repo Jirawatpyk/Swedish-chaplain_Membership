@@ -800,7 +800,9 @@
       "priorYearLock": {
         "banner": "Historiskt paket — pris, behörighet och förmåner för {year} är låsta.",
         "explanation": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket. Ändra dem i {currentYear} års version av paketet. Namn, beskrivning och sortering kan fortfarande redigeras här.",
-        "explanationNoCurrentVersion": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ännu ingen version av paketet. Klona {year} års paket till {currentYear} (det går bara så länge {currentYear} saknar paket) och redigera sedan kopian. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "explanationNoCurrentVersion": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ännu ingen version av paketet. Klona {year} års paket till {currentYear} och redigera sedan kopian. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "explanationCreateInCurrentYear": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ingen version av paketet. Lägg till det i {currentYear} som ett nytt paket med samma paket-ID. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "createCta": "Skapa {currentYear} års paket",
         "openCurrentCta": "Öppna {currentYear} års version",
         "cloneCta": "Klona {year} års paket till {currentYear}",
         "fieldTooltip": "Låst på föregående års paket. Ändra det i innevarande års version."
@@ -982,6 +984,7 @@
         },
         "preview": {
           "title": "Paket som kopieras från {sourceYear}",
+          "titleNoYear": "Paket som kopieras",
           "loading": "Läser in paket…",
           "failed": "Det gick inte att läsa in årets paket. Kloningen kopierar dem ändå.",
           "empty": "Inga paket för {sourceYear}.",

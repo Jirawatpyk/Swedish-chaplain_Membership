@@ -800,7 +800,9 @@
       "priorYearLock": {
         "banner": "Historical plan — pricing, eligibility, and benefits are locked for {year}.",
         "explanation": "Fees, eligibility and benefits can't change on a past year's plan. Change them on the {currentYear} version of this plan. Name, description and sort order stay editable here.",
-        "explanationNoCurrentVersion": "Fees, eligibility and benefits can't change on a past year's plan, and {currentYear} has no version of this plan yet. Clone the {year} plans into {currentYear} (this works only while {currentYear} has no plans), then edit the copy. Name, description and sort order stay editable here.",
+        "explanationNoCurrentVersion": "Fees, eligibility and benefits can't change on a past year's plan, and {currentYear} has no version of this plan yet. Clone the {year} plans into {currentYear} then edit the copy. Name, description and sort order stay editable here.",
+        "explanationCreateInCurrentYear": "Fees, eligibility and benefits can't change on a past year's plan, and {currentYear} has no version of this plan. Add it to {currentYear} as a new plan with the same plan ID. Name, description and sort order stay editable here.",
+        "createCta": "Create the {currentYear} plan",
         "openCurrentCta": "Open the {currentYear} version",
         "cloneCta": "Clone {year} plans to {currentYear}",
         "fieldTooltip": "Locked on prior-year plans. Change it on the current year's version."
@@ -982,6 +984,7 @@
         },
         "preview": {
           "title": "Plans to copy from {sourceYear}",
+          "titleNoYear": "Plans to copy",
           "loading": "Loading plans…",
           "failed": "Couldn't load the plans for this year. Cloning still copies them.",
           "empty": "No plans in {sourceYear}.",

@@ -203,6 +203,26 @@ export function PlanFormWizard({
     };
   }, [fieldErrors]);
 
+  // After a failed Next / Save, move focus to the first invalid field of the
+  // step (WCAG 3.3.1): it announces its message via aria-describedby, so the
+  // messages don't need role="alert" (several at once would talk over each
+  // other, and they would re-fire on every keystroke while fixing a value).
+  const [focusErrorRequest, setFocusErrorRequest] = useState(0);
+  useEffect(() => {
+    if (focusErrorRequest === 0) return;
+    const refForStep: Record<StepKey, React.RefObject<HTMLElement | null>> = {
+      basics: basicsRef,
+      fees: feesRef,
+      benefits: benefitsRef,
+      review: reviewRef,
+    };
+    refForStep[step].current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"], [data-field-error]')
+      ?.focus();
+    // Only a new request re-runs this; `step` is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusErrorRequest]);
+
   // Messages show only on the step whose Next / Save failed.
   function fieldError(field: PlanFormField): string | undefined {
     const key = fieldErrors[field];
@@ -213,6 +233,7 @@ export function PlanFormWizard({
   function goNext(): void {
     if (stepHasErrors[step]) {
       setFailedStep(step);
+      setFocusErrorRequest((n) => n + 1);
       return;
     }
     navigateToStep(STEPS[stepIndex + 1]!);
@@ -252,6 +273,7 @@ export function PlanFormWizard({
         'basics';
       setFailedStep(targetStep);
       setStep(targetStep);
+      setFocusErrorRequest((n) => n + 1);
       return;
     }
     await onSubmit(parsed.data);
@@ -494,7 +516,12 @@ export function PlanFormWizard({
           className="space-y-4 focus-visible:outline-none"
         >
           <h2 className="text-lg font-semibold">{t('steps.benefits')}</h2>
-          <FieldError field="benefit_matrix" message={fieldError('benefit_matrix')} />
+          {/* No control owns the matrix-level message, so it takes focus itself. */}
+          <FieldError
+            field="benefit_matrix"
+            message={fieldError('benefit_matrix')}
+            focusable
+          />
           <BenefitMatrixEditor
             value={draft.benefit_matrix}
             onChange={(next) => update('benefit_matrix', next)}
@@ -625,13 +652,20 @@ function optionalError(message: string | undefined): { error?: string } {
 function FieldError({
   field,
   message,
+  focusable = false,
 }: {
   readonly field: string;
   readonly message: string | undefined;
+  /** For a message no input points at — it receives the error focus itself. */
+  readonly focusable?: boolean;
 }) {
   if (!message) return null;
   return (
-    <p id={`${field}-error`} className="text-destructive text-sm" role="alert">
+    <p
+      id={`${field}-error`}
+      className="text-destructive text-sm"
+      {...(focusable ? { tabIndex: -1, 'data-field-error': true } : {})}
+    >
       {message}
     </p>
   );

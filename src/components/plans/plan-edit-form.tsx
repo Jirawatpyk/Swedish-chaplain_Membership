@@ -33,7 +33,10 @@ import { Separator } from '@/components/ui/separator';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
-import { PriorYearLockBanner } from './prior-year-lock-banner';
+import {
+  PriorYearLockBanner,
+  type CurrentYearPlanStatus,
+} from './prior-year-lock-banner';
 import { usePlanOptions } from './use-plan-options';
 import {
   LOCKED_FIELDS_ON_PRIOR_YEAR,
@@ -44,9 +47,9 @@ export interface PlanEditFormProps {
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
   readonly currencyPrefix: string;
-  /** A non-deleted plan with this plan ID exists in `currentYear` — picks
-   *  the prior-year banner's CTA (open it vs. clone the year). */
-  readonly currentYearPlanExists?: boolean;
+  /** What `currentYear` holds relative to this plan — picks the prior-year
+   *  banner's CTA (open that version / clone the year / create the plan). */
+  readonly currentYearStatus?: CurrentYearPlanStatus;
   /** Tenant VAT rate in percent (7 for 7 %) for the fee hint; `null` when unknown. */
   readonly vatRatePercent?: number | null;
   readonly submitting?: boolean;
@@ -93,7 +96,7 @@ export function PlanEditForm({
   initialValues,
   currentYear,
   currencyPrefix,
-  currentYearPlanExists = false,
+  currentYearStatus = 'other_plans',
   vatRatePercent = null,
   submitting = false,
   onSubmit,
@@ -130,7 +133,7 @@ export function PlanEditForm({
           planId={draft.plan_id}
           planYear={draft.plan_year}
           currentYear={currentYear}
-          currentYearPlanExists={currentYearPlanExists}
+          currentYearStatus={currentYearStatus}
         />
       ) : null}
 
