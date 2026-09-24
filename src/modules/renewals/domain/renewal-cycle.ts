@@ -130,6 +130,16 @@ interface RenewalCycleBase {
   readonly anchorInvoiceId: string | null;
 
   /**
+   * Migration 0308. Set when the cycle was FLIPPED `upcoming|reminded →
+   * awaiting_payment`, i.e. a renewal bill was issued against a period the
+   * member already paid for (or was grandfathered into). Null on a cycle
+   * born `awaiting_payment` (065 §5.3 new member / admin lapsed-comeback),
+   * which has no paid period behind it. Meaningful only while
+   * `status === 'awaiting_payment'`; see `deriveMembershipAccess`.
+   */
+  readonly awaitingEnteredAt: string | null;
+
+  /**
    * F8-RP follow-up (migration 0243) — async reject-with-refund marker.
    * `rejectRefundInitiatedAt` is the discriminator: non-null ONLY on a cycle
    * whose admin REJECT initiated an F5 refund that is settling asynchronously

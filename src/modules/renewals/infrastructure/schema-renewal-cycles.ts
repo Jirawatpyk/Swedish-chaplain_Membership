@@ -90,6 +90,13 @@ export const renewalCycles = pgTable(
     // renewal can still link cleanly through the `linkInvoice` I1 guard.
     anchoredAt: timestamp('anchored_at', { withTimezone: true }),
     anchorInvoiceId: uuid('anchor_invoice_id'),
+    // Migration 0308 — stamped by `transitionStatus` on `upcoming|reminded →
+    // awaiting_payment` (a bill issued against a PAID or grandfathered
+    // period), cleared on every other transition into or out of
+    // `awaiting_payment`. NULL on a cycle BORN `awaiting_payment` (065 §5.3).
+    // `deriveMembershipAccess` keeps access `full` while such a cycle's
+    // `expires_at` is still ahead. No CHECK — read only under that status.
+    awaitingEnteredAt: timestamp('awaiting_entered_at', { withTimezone: true }),
     linkedCreditNoteId: uuid('linked_credit_note_id'),
 
     // F8-RP follow-up (migration 0243) — async reject-with-refund marker.

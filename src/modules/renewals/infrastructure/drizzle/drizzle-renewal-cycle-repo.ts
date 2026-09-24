@@ -277,6 +277,10 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     // conversion pattern as closedAt/enteredPendingAt below.
     anchoredAt: row.anchoredAt ? row.anchoredAt.toISOString() : null,
     anchorInvoiceId: row.anchorInvoiceId ?? null,
+    // Migration 0308 — early-flip discriminator (Date-or-null, as above).
+    awaitingEnteredAt: row.awaitingEnteredAt
+      ? row.awaitingEnteredAt.toISOString()
+      : null,
     // F8-RP follow-up (migration 0243) — async reject-with-refund marker.
     // Same Date-or-null conversion as anchoredAt/closedAt; the id + actor
     // are plain text columns.

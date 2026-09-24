@@ -220,6 +220,7 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
       linkedCreditNoteId: null,
       anchoredAt: null,
       anchorInvoiceId: null,
+      awaitingEnteredAt: null,
       rejectRefundInitiatedAt: null,
       rejectRefundId: null,
       rejectActorUserId: null,
