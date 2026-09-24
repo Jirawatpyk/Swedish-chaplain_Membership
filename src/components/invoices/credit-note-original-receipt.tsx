@@ -17,10 +17,16 @@ import { Badge } from '@/components/ui/badge';
 export function CreditNoteOriginalReceipt({
   original,
   invoiceHref,
+  size = 'compact',
 }: {
   readonly original: CreditNoteOriginalDocuments;
   /** In-app invoice page for the second line (admin or portal). */
   readonly invoiceHref: string;
+  /**
+   * `touch` — the member portal, where this link is the way to the invoice:
+   * readable size and a 44px target (ux-standards.md tap-target rule).
+   */
+  readonly size?: 'compact' | 'touch';
 }) {
   const t = useTranslations('shared.creditNoteOriginal');
   if (original.receiptNumberRaw === null) {
@@ -41,9 +47,16 @@ export function CreditNoteOriginalReceipt({
       {relatedLabel !== null ? (
         <Link
           href={invoiceHref}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+          className={
+            size === 'touch'
+              ? 'inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground underline-offset-2 hover:underline'
+              : 'inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline'
+          }
         >
           {relatedLabel}
+          {/* Visible text stays first (WCAG 2.5.3); the receipt number makes
+              each link unique in a screen reader's links list. */}
+          <span className="sr-only"> — {original.receiptNumberRaw}</span>
           <ArrowUpRightIcon className="size-3.5" aria-hidden="true" />
         </Link>
       ) : null}
@@ -55,8 +68,10 @@ export function CreditNoteOriginalReceipt({
 export function CreditNoteRefundBadge() {
   const t = useTranslations('shared.creditNoteOriginal');
   return (
-    <Badge variant="outline" title={t('refundHint')}>
+    // `font-sans` — the list renders this inside the mono Number cell.
+    <Badge variant="outline" className="font-sans">
       {t('refund')}
+      <span className="sr-only"> — {t('refundHint')}</span>
     </Badge>
   );
 }

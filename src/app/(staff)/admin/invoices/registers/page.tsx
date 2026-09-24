@@ -34,6 +34,8 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
+import { TriangleAlertIcon } from 'lucide-react';
 import { TaxRegisterForm } from './_components/tax-register-form';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -163,7 +165,10 @@ export default async function TaxRegistersPage({
                       BigInt(result.value.periodOutputVat.reVatSatang),
                     locale,
                   )}
-                  {' − '}
+                  {/* The minus carries the meaning; some screen-reader
+                      punctuation levels skip U+2212, so say it too. */}
+                  <span aria-hidden="true">{' − '}</span>
+                  <span className="sr-only"> {t('outputVat.less')} </span>
                   {t('outputVat.creditNote')}{' '}
                   {formatSatangThb(
                     BigInt(result.value.periodOutputVat.creditNoteVatSatang),
@@ -173,17 +178,31 @@ export default async function TaxRegistersPage({
                 {/* Only a closed calendar month is "the figure to report" —
                     the current month can still take receipts, and a range
                     that is not one month is not a ภ.พ.30 period at all. */}
-                <p className="mt-2 text-sm font-medium" data-testid="period-output-vat-status">
-                  {result.value.periodStatus === 'closed_month'
-                    ? t('outputVat.status.closedMonth')
-                    : result.value.periodStatus === 'closed_month_incomplete'
-                      ? t('outputVat.status.closedMonthIncomplete', {
-                          count: result.value.legacyCombinedCount,
-                        })
-                      : result.value.periodStatus === 'month_to_date'
-                        ? t('outputVat.status.monthToDate')
-                        : t('outputVat.status.notAMonth')}
-                </p>
+                {result.value.periodStatus === 'closed_month' ? (
+                  <p className="mt-2 text-sm font-medium" data-testid="period-output-vat-status">
+                    {t('outputVat.status.closedMonth')}
+                  </p>
+                ) : (
+                  // Every other status is a caution against filing this figure
+                  // as-is — styled as a warning so it cannot be mistaken for
+                  // the closed-month confirmation above.
+                  <InlineAlert
+                    tone="warning"
+                    className="mt-2"
+                    data-testid="period-output-vat-status"
+                  >
+                    <TriangleAlertIcon className="size-4" aria-hidden="true" />
+                    <InlineAlertDescription>
+                      {result.value.periodStatus === 'closed_month_incomplete'
+                        ? t('outputVat.status.closedMonthIncomplete', {
+                            count: result.value.legacyCombinedCount,
+                          })
+                        : result.value.periodStatus === 'month_to_date'
+                          ? t('outputVat.status.monthToDate')
+                          : t('outputVat.status.notAMonth')}
+                    </InlineAlertDescription>
+                  </InlineAlert>
+                )}
                 <p className="mt-1 text-xs text-muted-foreground">{t('outputVat.note')}</p>
               </section>
 

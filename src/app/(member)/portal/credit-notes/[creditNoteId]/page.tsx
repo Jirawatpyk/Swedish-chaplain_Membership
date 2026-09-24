@@ -138,7 +138,11 @@ export default async function PortalCreditNoteDetailPage({
             <dt className="text-muted-foreground">{t('fields.originalReceipt')}</dt>
             <dd>
               {cn.originalDocuments ? (
-                <CreditNoteOriginalReceipt original={cn.originalDocuments} invoiceHref={invoiceHref} />
+                <CreditNoteOriginalReceipt
+                  original={cn.originalDocuments}
+                  invoiceHref={invoiceHref}
+                  size="touch"
+                />
               ) : (
                 <span className="text-muted-foreground">—</span>
               )}

@@ -2535,7 +2535,8 @@
           "buyer": "Buyer",
           "method": "Method",
           "receiptNumber": "Receipt No.",
-          "queue": "Queue"
+          "queue": "Queue",
+          "totalPending": "Not calculated until issued"
         },
         "subjectChip": {
           "event": "Event",
@@ -2695,7 +2696,8 @@
             "monthToDate": "Month to date — the period is not closed.",
             "notAMonth": "Not a single calendar month — ภ.พ.30 is filed per calendar month.",
             "closedMonthIncomplete": "Not the full month — {count, plural, one {# combined tax invoice/receipt} other {# combined tax invoices/receipts}} (no RC/RE number) in this period {count, plural, one {is} other {are}} not in this figure. Check the CSV export before filing ภ.พ.30."
-          }
+          },
+          "less": "minus"
         },
         "summary": {
           "count": "{count, plural, one {# receipt} other {# receipts}}",
@@ -7270,7 +7272,7 @@
     "creditNoteOriginal": {
       "bill": "Bill {number}",
       "invoice": "Invoice {number}",
-      "combined": "Combined tax invoice/receipt",
+      "combined": "Combined tax invoice + receipt",
       "refund": "Refund",
       "refundHint": "Issued by a card or PromptPay refund"
     }

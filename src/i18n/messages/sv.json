@@ -2535,7 +2535,8 @@
           "buyer": "Köpare",
           "method": "Metod",
           "receiptNumber": "Skattekvittonr.",
-          "queue": "Kö"
+          "queue": "Kö",
+          "totalPending": "Beräknas vid utfärdande"
         },
         "subjectChip": {
           "event": "Evenemang",
@@ -2695,7 +2696,8 @@
             "monthToDate": "Månaden hittills — perioden är inte stängd.",
             "notAMonth": "Inte en enskild kalendermånad — ภ.พ.30 lämnas per kalendermånad.",
             "closedMonthIncomplete": "Inte hela månaden — {count, plural, one {# kombinerad skattefaktura/kvitto} other {# kombinerade skattefakturor/kvitton}} (utan RC/RE-nummer) i perioden ingår inte i beloppet. Kontrollera CSV-exporten innan ภ.พ.30 lämnas."
-          }
+          },
+          "less": "minus"
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",
@@ -7270,7 +7272,7 @@
     "creditNoteOriginal": {
       "bill": "Räkning {number}",
       "invoice": "Faktura {number}",
-      "combined": "Kombinerad skattefaktura/kvitto",
+      "combined": "Kombinerad faktura + kvitto",
       "refund": "Återbetalning",
       "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay"
     }

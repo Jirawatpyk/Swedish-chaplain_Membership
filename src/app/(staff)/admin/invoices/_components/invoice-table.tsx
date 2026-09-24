@@ -723,7 +723,12 @@ export function InvoicesTable({
                 data-testid="invoice-total"
               >
                 {r.totalSatang === null ? (
-                  <span className="text-muted-foreground">—</span>
+                  <>
+                    <span className="text-muted-foreground" aria-hidden="true">
+                      —
+                    </span>
+                    <span className="sr-only">{t('columns.totalPending')}</span>
+                  </>
                 ) : (
                   <>{formatSatang(r.totalSatang)} THB</>
                 )}

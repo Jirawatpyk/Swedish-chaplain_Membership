@@ -44,7 +44,7 @@ describe('<CreditNoteOriginalReceipt>', () => {
     );
     const link = screen.getByRole('link');
     // Visible text first (WCAG 2.5.3), then the receipt number for SR users.
-    expect(link.textContent).toMatch(/^Combined tax invoice\/receipt/);
+    expect(link.textContent).toMatch(/^Combined tax invoice \+ receipt/);
     expect(link.textContent).toContain('INV-2026-000052');
   });
 
