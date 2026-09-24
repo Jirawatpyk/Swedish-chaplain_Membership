@@ -2073,6 +2073,13 @@
       "when": 1798543700000,
       "tag": "0304_eblast_images_and_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1798543800000,
+      "tag": "0305_audit_log_invoice_supersede_idx",
+      "breakpoints": true
     }
   ]
 }

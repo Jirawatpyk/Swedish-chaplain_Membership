@@ -2911,7 +2911,8 @@
           "receiptNumber": "Receipt No.",
           "subtotal": "Subtotal",
           "vat": "VAT",
-          "total": "Total"
+          "total": "Total",
+          "replaces": "Replaces"
         },
         "lines": {
           "title": "Line items",
@@ -2941,7 +2942,9 @@
           "voidedAt": "Voided at",
           "voidedBy": "Voided by",
           "reason": "Reason",
-          "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required."
+          "creditNoteHint": "This invoice is permanently voided. Its sequential tax-document number is retired and will not be reused. The VOID-stamped PDF above is the authoritative record; no further action is required.",
+          "replacedBy": "Replaced by <link>{number}</link>",
+          "replacedByIssued": "issued {date}"
         },
         "creditNotesSection": {
           "title": "Credit notes ({count})",
@@ -5903,7 +5906,8 @@
           "dueDate": "Due",
           "paidDate": "Paid",
           "receiptNumber": "Receipt No.",
-          "planYear": "Plan year"
+          "planYear": "Plan year",
+          "replaces": "Replaces"
         },
         "lines": {
           "description": "Description",
@@ -5935,7 +5939,9 @@
           "autoRefundFailedHeading": "We're reconciling your payment",
           "autoRefundFailedBody": "Your payment was recorded, and a refund is being reconciled by our team. We'll follow up with you as soon as it's resolved.",
           "autoRefundFailedContact": "If you have any questions in the meantime, please contact your chamber administrator with the reference below.",
-          "autoRefundRef": "Refund reference: {ref}"
+          "autoRefundRef": "Refund reference: {ref}",
+          "replacedBy": "This bill was replaced by <link>{number}</link>",
+          "replacedByIssued": "issued {date}"
         }
       }
     },

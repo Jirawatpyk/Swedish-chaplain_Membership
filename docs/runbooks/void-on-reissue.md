@@ -163,6 +163,27 @@ auto-voided while the flag was on stays voided (void is not reversible
 by the flag flip — that is expected; a wrongly-voided bill is corrected
 through the normal admin re-issue flow, same as any other void).
 
+## Where staff and members see the link (121-void-supersede-links)
+
+The `superseded_by_invoice_id` audit payload (snake_case in storage; the
+use-case input field is `supersededByInvoiceId`) is read back by
+`getInvoiceSupersession` (`src/modules/invoicing`):
+
+- **Admin** `/admin/invoices/[id]` — a dashed "Replaced by SC-… · issued
+  {date}" row inside the Voided section of the old bill; a "Replaces SC-…"
+  field on the new bill.
+- **Portal** `/portal/invoices/[id]` — "This bill was replaced by SC-…" inside
+  the void block, and "Replaces SC-…" on the new bill. Member-scoped: a link
+  whose other end is not the viewing member's own invoice is dropped and
+  logged (`getInvoiceSupersession: supersede link member mismatch`). That
+  should never happen; if it does, investigate the audit row.
+
+A manual void carries no `superseded_by_invoice_id`, so it shows nothing new.
+The audit row stays the single source of truth; migration `0305` only adds two
+partial expression indexes on `audit_log` for the forward and reverse lookups.
+Flipping the flag off stops new links being written; links already written
+keep rendering.
+
 ## Related
 
 - `docs/superpowers/plans/2026-07-18-void-on-reissue.md` — full plan (§4

@@ -25,6 +25,8 @@ import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/recei
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { recipientLocaleAdapter } from '../infrastructure/adapters/recipient-locale-adapter';
 import type { GetMemberMoneyRecipientStatusDeps } from './use-cases/get-member-money-recipient-status';
+import { invoiceSupersessionAdapter } from '../infrastructure/adapters/invoice-supersession-adapter';
+import type { GetInvoiceSupersessionDeps } from './use-cases/get-invoice-supersession';
 import { makeClamavVirusScanner } from '../infrastructure/adapters/clamav-virus-scanner';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { eventRegistrationLookupAdapter } from '../infrastructure/adapters/event-registration-lookup-adapter';
@@ -562,6 +564,15 @@ export function makeF4AuditPort() {
  */
 export function makeMemberMoneyRecipientStatusDeps(): GetMemberMoneyRecipientStatusDeps {
   return { recipientLocale: recipientLocaleAdapter };
+}
+
+/**
+ * 121-void-supersede-links — deps for the "Replaced by" / "Replaces" read on
+ * the admin + portal invoice detail pages. The adapter self-scopes each read
+ * via `runInTenant`, so the factory takes no tenant argument.
+ */
+export function makeGetInvoiceSupersessionDeps(): GetInvoiceSupersessionDeps {
+  return { supersession: invoiceSupersessionAdapter };
 }
 
 export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {

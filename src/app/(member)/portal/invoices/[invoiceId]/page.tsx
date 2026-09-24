@@ -39,6 +39,9 @@ import {
   displayDocumentNumber,
   invoiceStatusHasReceipt,
   resolveTaxDocumentKind,
+  getInvoiceSupersession,
+  isSupersessionLinkLive,
+  makeGetInvoiceSupersessionDeps,
 } from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
@@ -271,6 +274,24 @@ export default async function PortalInvoiceDetailPage({
           .catch(() => null)
       : null;
 
+  // 121-void-supersede-links — "replaced by" / "replaces" for a void-on-reissue
+  // supersede. MEMBER-SCOPED: `restrictToMemberId` drops any link whose other
+  // end is not this member's invoice (the supersede only ever links one
+  // member's own bills, so a mismatch is an anomaly the use case logs). The
+  // link target is still gated by this same page's ownership check when the
+  // member follows it. Best-effort: a failed read hides the link.
+  const supersession = await getInvoiceSupersession(makeGetInvoiceSupersessionDeps(), {
+    tenantId: tenantCtx.slug,
+    invoice: {
+      invoiceId: invoice.invoiceId,
+      status: invoice.status,
+      memberId: invoice.memberId,
+    },
+    restrictToMemberId: member.memberId,
+  });
+  const replacedBy = supersession.ok ? supersession.value.replacedBy : null;
+  const replaces = supersession.ok ? supersession.value.replaces : [];
+
   return (
     <DetailContainer>
       <PageHeader
@@ -469,6 +490,42 @@ export default async function PortalInvoiceDetailPage({
               </>
             ) : null}
           </dl>
+          {replacedBy && (
+            <p
+              className="mt-3 rounded-md border border-dashed border-destructive/40 px-3 py-2 text-sm text-foreground"
+              data-testid="portal-invoice-replaced-by"
+            >
+              {t.rich('void.replacedBy', {
+                number: replacedBy.displayNumber,
+                link: (chunks) => (
+                  // Persistent underline — the link's only non-colour
+                  // affordance inside body text (WCAG 1.4.1).
+                  <Link
+                    href={`/portal/invoices/${replacedBy.invoiceId}`}
+                    className="rounded-xs font-mono font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    {chunks}
+                  </Link>
+                ),
+              })}
+              {replacedBy.issueDate && (
+                <span className="text-muted-foreground">
+                  {' · '}
+                  {t('void.replacedByIssued', {
+                    date: formatDate(replacedBy.issueDate, userLocale),
+                  })}
+                </span>
+              )}
+              {!isSupersessionLinkLive(replacedBy) && (
+                <span className="ml-2 inline-block align-middle">
+                  <InvoiceStatusBadge
+                    status={replacedBy.status}
+                    label={tStatus(replacedBy.status)}
+                  />
+                </span>
+              )}
+            </p>
+          )}
           <p className="mt-3 text-sm text-destructive">{t('void.notPayable')}</p>
           {autoRefund && (
             // Reassuring-news block. Outer <section aria-labelledby>
@@ -600,6 +657,24 @@ export default async function PortalInvoiceDetailPage({
               {invoice.paidAt ? formatDate(invoice.paidAt, userLocale) : '—'}
             </p>
           </div>
+          {replaces.length > 0 && (
+            <div data-testid="portal-invoice-replaces">
+              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+                {t('fields.replaces')}
+              </p>
+              <p className="text-body flex flex-wrap gap-x-3 gap-y-1">
+                {replaces.map((r) => (
+                  <Link
+                    key={r.invoiceId}
+                    href={`/portal/invoices/${r.invoiceId}`}
+                    className="rounded-xs font-mono underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    {r.displayNumber}
+                  </Link>
+                ))}
+              </p>
+            </div>
+          )}
           {/* Round 6 portal-harden — surface receipt document number to
               members in separate-mode. Thai RD requires receipt holders to
               keep the document; admins see this on the admin detail page.
