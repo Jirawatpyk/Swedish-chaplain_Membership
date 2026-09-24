@@ -9,6 +9,12 @@
  * (notFound when dark). Server-rendered: the client `<AuditFilters>` syncs
  * filters to the URL, pagination is a cursor link, and the header carries the
  * CSV export download link.
+ *
+ * Two failure states, never conflated (admin design review): a VALIDATION
+ * failure (malformed URL param, From after To, stale cursor) renders "Invalid
+ * filter" naming the offending field; an INFRASTRUCTURE failure (the read
+ * throws) renders the shared load-error card with retry + a reference id that
+ * matches the `F9.ADMIN.AUDIT_LOAD` log line.
  */
 import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
@@ -20,16 +26,24 @@ import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { EmptyState } from '@/components/shell/empty-state';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import { ShieldAlertIcon } from 'lucide-react';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
 import { buildAuditPaginationLinks } from './_lib/pagination-links';
-import { isValidTargetRef, isValidEventTypeFilter } from '@/lib/audit-filter-validation';
+import {
+  invalidAuditFilterField,
+  invalidRangeField,
+  type AuditInvalidFilterField,
+} from './_lib/invalid-filter-field';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { humanizeEventType, resolveEventLabel } from '@/lib/audit-event-label';
-import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
+import { tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { ALL_AUDIT_EVENT_TYPES } from '@/modules/auth';
 import { RETIRED_F7_AUDIT_EVENT_TYPES } from '@/modules/broadcasts';
@@ -129,21 +143,43 @@ export default async function AuditLogPage({
   // (enum column) — member number / name / typo / stale bookmark / tampered URL
   // — would throw a 22P02 invalid-cast error → uncaught 500. Guard all up front
   // and render the same graceful UI.
+  // A From after To is caught here too, so the state can name the field.
   const tz = env.tenant.timezone;
-  if (
-    (from !== '' && !isYmd(from)) ||
-    (to !== '' && !isYmd(to)) ||
-    !isValidTargetRef(targetRef) ||
-    !isValidEventTypeFilter(eventType, ALL_AUDIT_EVENT_TYPES)
-  ) {
+  const filterParams = { from, to, targetRef, eventType, cursor };
+  // Static `t()` keys (not a template) so `check:i18n` can resolve each one.
+  const invalidFilterDescription = (field: AuditInvalidFilterField | null): string => {
+    switch (field) {
+      case 'from':
+        return t('invalidRange.field.from');
+      case 'to':
+        return t('invalidRange.field.to');
+      case 'range':
+        return t('invalidRange.field.range');
+      case 'target':
+        return t('invalidRange.field.target');
+      case 'eventType':
+        return t('invalidRange.field.eventType');
+      case 'cursor':
+        return t('invalidRange.field.cursor');
+      case null:
+        return t('invalidRange.body');
+    }
+  };
+  const invalidFilterState = (field: AuditInvalidFilterField | null) => (
+    <>
+      <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
+      <DashboardErrorState
+        title={t('invalidRange.title')}
+        description={invalidFilterDescription(field)}
+      />
+    </>
+  );
+  const invalidField = invalidAuditFilterField(filterParams, ALL_AUDIT_EVENT_TYPES);
+  if (invalidField !== null) {
     return (
       <TableContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
-        <DashboardErrorState
-          title={t('invalidRange.title')}
-          description={t('invalidRange.body')}
-        />
+        {invalidFilterState(invalidField)}
       </TableContainer>
     );
   }
@@ -169,7 +205,42 @@ export default async function AuditLogPage({
     requestId: randomUUID(),
   };
 
-  const result = await auditQuery(input, meta, tenant, makeAuditQueryDeps());
+  // The use-case's Result channel carries only validation/authz outcomes; a
+  // repo failure THROWS. Catch it here so it renders as a load failure with
+  // audit context — never as "Invalid filter", never the generic boundary.
+  let result: Awaited<ReturnType<typeof auditQuery>>;
+  try {
+    result = await auditQuery(input, meta, tenant, makeAuditQueryDeps());
+  } catch (e) {
+    const correlationId = randomUUID();
+    logger.error(
+      {
+        errorId: 'F9.ADMIN.AUDIT_LOAD',
+        errKind: errKind(e),
+        tenantId: tenant.slug,
+        requestId: meta.requestId,
+        correlationId,
+      },
+      '[admin/audit] audit log load failed',
+    );
+    const tError = await getTranslations('errors.loadError');
+    return (
+      <TableContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <LoadErrorCard message={t('loadFailed')}>
+          <ErrorCardActions
+            correlationId={correlationId}
+            goBackHref="/admin"
+            retryLabel={tError('retry')}
+            pendingLabel={tError('retrying')}
+            retryFailedLabel={tError('retryFailed')}
+            goBackLabel={tError('goBack')}
+            referenceLabel={tError('referenceLabel')}
+          />
+        </LoadErrorCard>
+      </TableContainer>
+    );
+  }
 
   // The export link preserves the active filters (never the page cursor — it
   // streams the whole filtered set).
@@ -203,13 +274,7 @@ export default async function AuditLogPage({
         {result.error === 'forbidden' ? (
           <EmptyState icon={ShieldAlertIcon} title={t('forbidden')} />
         ) : (
-          <>
-            <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
-            <DashboardErrorState
-              title={t('invalidRange.title')}
-              description={t('invalidRange.body')}
-            />
-          </>
+          invalidFilterState(invalidRangeField(filterParams))
         )}
       </TableContainer>
     );

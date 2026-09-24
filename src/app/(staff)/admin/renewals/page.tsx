@@ -72,10 +72,10 @@ import {
   PipelineMoneyBandSkeleton,
 } from './_components/pipeline-money-band';
 import { PipelineWithBulk } from './_components/pipeline-with-bulk';
-import { LoadErrorCard } from './_components/load-error-card';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
-import { ErrorCardActions } from './_components/error-card-actions';
+import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import { AtRiskWidget } from './_components/at-risk-widget';
 import { WorkQueueTabs } from './_components/work-queue-tabs';
 import {

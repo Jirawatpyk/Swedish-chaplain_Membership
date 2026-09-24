@@ -12,11 +12,15 @@
  *     "View in Stripe" dashboard click-through (target=_blank +
  *     rel=noopener,noreferrer).
  *   - Empty-state when there is no payment activity.
+ *   - Inline load-error (shared `LoadErrorCard` + retry + reference id) when
+ *     the activity read FAILS — never the empty state, which would read as
+ *     "no payment yet" during an outage (admin design review).
  *
  * Manager + admin both render the timeline (read-only RBAC); the
  * mutating triggers (record-payment / void / refund) are gated
  * elsewhere by `isAdmin` checks on the parent page.
  */
+import { randomUUID } from 'node:crypto';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { formatTimestamp } from './payment-timeline-format';
 import {
@@ -32,6 +36,8 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import {
   SYSTEM_ACTOR_STRIPE_WEBHOOK,
   SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
@@ -51,7 +57,7 @@ import { getInvoicePaymentActivity } from '../_lib/cached-payment-activity';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';
-import { hashId } from '@/lib/log-id';
+import { errKind, hashId } from '@/lib/log-id';
 import { CopyChargeIdButton } from './copy-charge-id-button';
 import { RefundPendingAnnouncer } from './refund-pending-announcer';
 
@@ -318,30 +324,50 @@ export async function PaymentTimeline({
   );
   const userLocale = await getLocale();
 
-  const result = await getInvoicePaymentActivity(tenantId, invoiceId);
-  // R2-fix C1 (2026-04-26): post verify-fix C2 the use-case CAN return
-  // `Result.err({kind:'repo_unavailable', cause})` when the underlying
-  // F5 repo throws (DB outage, RLS misconfiguration, schema drift). The
-  // previous comment claimed `error: never` which became stale after
-  // C2 — and the fallback silently degraded to an empty timeline,
-  // making a DB outage look identical to "no payment activity yet" to
-  // the admin. Now: structured pino warn so the operator sees the
-  // outage in observability, plus the empty fallback so the page
-  // continues to render rather than 500-ing the whole detail view.
-  let activity: LoadInvoicePaymentActivityOutput;
-  if (result.ok) {
-    activity = result.value;
-  } else {
-    logger.warn(
+  // R2-fix C1 (2026-04-26): the use-case returns
+  // `Result.err({kind:'repo_unavailable', cause})` when the underlying F5
+  // repo throws (DB outage, RLS misconfiguration, schema drift). That used to
+  // degrade to an EMPTY timeline — an outage read as "no payment activity
+  // yet". Now it (and a loader that throws outright) renders an inline error
+  // with retry INSIDE the panel, so the rest of the detail page still renders.
+  let activity: LoadInvoicePaymentActivityOutput | null = null;
+  let failure: { kind: string; cause: unknown } | null = null;
+  try {
+    const result = await getInvoicePaymentActivity(tenantId, invoiceId);
+    if (result.ok) activity = result.value;
+    else failure = result.error;
+  } catch (cause) {
+    failure = { kind: 'threw', cause };
+  }
+  if (activity === null) {
+    const correlationId = randomUUID();
+    logger.error(
       {
-        kind: result.error.kind,
-        cause: result.error.cause,
+        errorId: 'F5.ADMIN.PAYMENT_TIMELINE_LOAD',
+        kind: failure?.kind,
+        errKind: errKind(failure?.cause),
         invoiceId,
         tenantId,
+        correlationId,
       },
-      'payment-timeline: repo unavailable, rendering empty state',
+      'payment-timeline: activity load failed',
     );
-    activity = { payments: [], refunds: [] };
+    const tError = await getTranslations('errors.loadError');
+    return (
+      <TimelinePanel title={t('title')}>
+        <LoadErrorCard card={false} message={t('loadFailed')}>
+          <ErrorCardActions
+            correlationId={correlationId}
+            goBackHref="/admin/invoices"
+            retryLabel={tError('retry')}
+            pendingLabel={tError('retrying')}
+            retryFailedLabel={tError('retryFailed')}
+            goBackLabel={tError('goBack')}
+            referenceLabel={tError('referenceLabel')}
+          />
+        </LoadErrorCard>
+      </TimelinePanel>
+    );
   }
 
   const events = buildEvents(
@@ -409,6 +435,159 @@ export async function PaymentTimeline({
       : null;
 
   return (
+    <TimelinePanel title={t('title')}>
+      {/* Gap B — polite, delta-scoped live announcement for the pending
+          state. The Card itself stays `role="region"` only (announcing
+          the whole timeline on every soft-nav remount is noisy); this
+          small client wrapper announces just the short settling line. */}
+      {hasPendingRefund && (
+        <RefundPendingAnnouncer message={tEvents('refund_pending')} />
+      )}
+      {/* processor charge id chip + copy + dashboard link.
+          Hidden when no succeeded payment exists. */}
+      {processorRef && dashboardUrl && latestSucceeded && (
+        // Verify-fix S8 (2026-04-26): on narrow viewports (<sm) the chip
+        // + copy + external-link wrap onto 3 lines unevenly. Stack
+        // vertically below sm; revert to row at sm+. The chip itself
+        // gets `select-text` (S6) so power users can triple-click the
+        // charge id without hitting the copy button.
+        <div className="flex flex-col items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
+          <Badge
+            variant="outline"
+            data-testid="processor-charge-id"
+            // R2-fix N4 (2026-04-26): on 320px viewports the 27-char
+            // pi_/ch_ ids overflow the Badge horizontally even with
+            // flex-wrap. `break-all` lets the value wrap mid-token
+            // so the chip stays inside the row container.
+            className="font-mono text-xs select-text break-all"
+          >
+            <span className="text-muted-foreground mr-1">
+              {tCharge('label')}:
+            </span>
+            {processorRef}
+          </Badge>
+          {/* Verify-fix S10 (2026-04-26): test-mode chip surfaces test
+              vs live unambiguously to admins reconciling on prod. */}
+          {latestSucceeded.processorEnvironment === 'test' && (
+            <Badge variant="secondary" className="text-[10px] uppercase">
+              {t('testModeBadge')}
+            </Badge>
+          )}
+          <CopyChargeIdButton chargeId={processorRef} />
+          <a
+            href={dashboardUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="view-in-stripe-link"
+            // Verify-fix M-3 (2026-04-26): `outline-2 outline-ring` was
+            // not valid Tailwind v4 + diverged from shadcn pattern.
+            // Switched to `ring-2 ring-ring ring-offset-2` (ux-standards
+            // § 7.5).
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+            aria-label={t('viewInStripeAria')}
+          >
+            <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
+            {t('viewInStripe')}
+          </a>
+        </div>
+      )}
+
+      {/* empty state.
+          Verify-fix S4 (2026-04-26): admin viewers get a secondary
+          "Record payment manually" CTA when the invoice is still
+          `issued` — it's the most likely next action when no online
+          payment has settled (chamber admin reconciling a wire). */}
+      {events.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <BanknoteIcon
+            className="size-12 text-muted-foreground"
+            aria-hidden="true"
+          />
+          {/* F5R1-UX4 — distinguish two empty-state semantics:
+                (a) Invoice not paid yet (issued/overdue) — current
+                    copy "no online payment activity yet" + record-
+                    manually CTA. Bookkeeper expects this when they
+                    first issue an invoice.
+                (b) Invoice paid via manual record (cash, bank xfer,
+                    cheque) — no F5 events were emitted (manual
+                    record-payment bypasses the F5 webhook pipeline).
+                    Previously the timeline showed the "no online
+                    payment activity yet" copy here, suggesting the
+                    record-payment action had silently failed. Show
+                    a paid-manually copy instead so the bookkeeper
+                    sees the action took effect. */}
+          {invoicePaidAt !== null ? (
+            <>
+              <p className="text-sm font-medium">{t('emptyPaidManual.title')}</p>
+              <p className="text-xs text-muted-foreground max-w-md">
+                {t('emptyPaidManual.body')}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium">{t('empty.title')}</p>
+              <p className="text-xs text-muted-foreground max-w-md">
+                {t('empty.body')}
+              </p>
+              {isAdmin && invoiceStatus === 'issued' && (
+                <a
+                  href={`/admin/invoices/${invoiceId}#record-payment`}
+                  data-testid="empty-state-record-payment-link"
+                  className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+                >
+                  {t('empty.recordManualLink')}
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <ol className="flex flex-col gap-3">
+          {events.map((event) => {
+            const visual = EVENT_VISUAL[event.type];
+            const Icon = visual.icon;
+            return (
+              <li
+                key={event.id}
+                data-testid={`timeline-event-${event.type}`}
+                className="flex items-start gap-3 rounded-md border bg-card px-3 py-2.5"
+              >
+                <Icon
+                  className={`mt-0.5 size-4 shrink-0 ${visual.cls}`}
+                  aria-hidden="true"
+                />
+                <div className="flex-1 text-sm">
+                  <div className="font-medium">{tEvents(event.type)}</div>
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    {formatTimestamp(event.timestamp, userLocale)} ·{' '}
+                    {resolveActor(event.actorUserId)}
+                  </div>
+                  {/* Gap B — reassure the admin the credit note is not
+                      missing; it is booked once the async refund settles. */}
+                  {event.type === 'refund_pending' && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('refundPendingHint')}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </TimelinePanel>
+  );
+}
+
+/** The panel chrome shared by the timeline and its load-error state. */
+function TimelinePanel({
+  title,
+  children,
+}: {
+  readonly title: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
     // `role="region"` only — `aria-live="polite"` on a Server Component
     // re-announces the whole timeline on every soft-nav remount. Proper
     // delta-aware announcer needs a Client Component (post-MVP).
@@ -419,150 +598,10 @@ export async function PaymentTimeline({
     >
       <CardHeader>
         <CardTitle id="payment-timeline-heading" className="text-base">
-          {t('title')}
+          {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {/* Gap B — polite, delta-scoped live announcement for the pending
-            state. The Card itself stays `role="region"` only (announcing
-            the whole timeline on every soft-nav remount is noisy); this
-            small client wrapper announces just the short settling line. */}
-        {hasPendingRefund && (
-          <RefundPendingAnnouncer message={tEvents('refund_pending')} />
-        )}
-        {/* processor charge id chip + copy + dashboard link.
-            Hidden when no succeeded payment exists. */}
-        {processorRef && dashboardUrl && latestSucceeded && (
-          // Verify-fix S8 (2026-04-26): on narrow viewports (<sm) the chip
-          // + copy + external-link wrap onto 3 lines unevenly. Stack
-          // vertically below sm; revert to row at sm+. The chip itself
-          // gets `select-text` (S6) so power users can triple-click the
-          // charge id without hitting the copy button.
-          <div className="flex flex-col items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
-            <Badge
-              variant="outline"
-              data-testid="processor-charge-id"
-              // R2-fix N4 (2026-04-26): on 320px viewports the 27-char
-              // pi_/ch_ ids overflow the Badge horizontally even with
-              // flex-wrap. `break-all` lets the value wrap mid-token
-              // so the chip stays inside the row container.
-              className="font-mono text-xs select-text break-all"
-            >
-              <span className="text-muted-foreground mr-1">
-                {tCharge('label')}:
-              </span>
-              {processorRef}
-            </Badge>
-            {/* Verify-fix S10 (2026-04-26): test-mode chip surfaces test
-                vs live unambiguously to admins reconciling on prod. */}
-            {latestSucceeded.processorEnvironment === 'test' && (
-              <Badge variant="secondary" className="text-[10px] uppercase">
-                {t('testModeBadge')}
-              </Badge>
-            )}
-            <CopyChargeIdButton chargeId={processorRef} />
-            <a
-              href={dashboardUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="view-in-stripe-link"
-              // Verify-fix M-3 (2026-04-26): `outline-2 outline-ring` was
-              // not valid Tailwind v4 + diverged from shadcn pattern.
-              // Switched to `ring-2 ring-ring ring-offset-2` (ux-standards
-              // § 7.5).
-              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-              aria-label={t('viewInStripeAria')}
-            >
-              <ExternalLinkIcon className="size-3.5" aria-hidden="true" />
-              {t('viewInStripe')}
-            </a>
-          </div>
-        )}
-
-        {/* empty state.
-            Verify-fix S4 (2026-04-26): admin viewers get a secondary
-            "Record payment manually" CTA when the invoice is still
-            `issued` — it's the most likely next action when no online
-            payment has settled (chamber admin reconciling a wire). */}
-        {events.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-8 text-center">
-            <BanknoteIcon
-              className="size-12 text-muted-foreground"
-              aria-hidden="true"
-            />
-            {/* F5R1-UX4 — distinguish two empty-state semantics:
-                  (a) Invoice not paid yet (issued/overdue) — current
-                      copy "no online payment activity yet" + record-
-                      manually CTA. Bookkeeper expects this when they
-                      first issue an invoice.
-                  (b) Invoice paid via manual record (cash, bank xfer,
-                      cheque) — no F5 events were emitted (manual
-                      record-payment bypasses the F5 webhook pipeline).
-                      Previously the timeline showed the "no online
-                      payment activity yet" copy here, suggesting the
-                      record-payment action had silently failed. Show
-                      a paid-manually copy instead so the bookkeeper
-                      sees the action took effect. */}
-            {invoicePaidAt !== null ? (
-              <>
-                <p className="text-sm font-medium">{t('emptyPaidManual.title')}</p>
-                <p className="text-xs text-muted-foreground max-w-md">
-                  {t('emptyPaidManual.body')}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-medium">{t('empty.title')}</p>
-                <p className="text-xs text-muted-foreground max-w-md">
-                  {t('empty.body')}
-                </p>
-                {isAdmin && invoiceStatus === 'issued' && (
-                  <a
-                    href={`/admin/invoices/${invoiceId}#record-payment`}
-                    data-testid="empty-state-record-payment-link"
-                    className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-                  >
-                    {t('empty.recordManualLink')}
-                  </a>
-                )}
-              </>
-            )}
-          </div>
-        ) : (
-          <ol className="flex flex-col gap-3">
-            {events.map((event) => {
-              const visual = EVENT_VISUAL[event.type];
-              const Icon = visual.icon;
-              return (
-                <li
-                  key={event.id}
-                  data-testid={`timeline-event-${event.type}`}
-                  className="flex items-start gap-3 rounded-md border bg-card px-3 py-2.5"
-                >
-                  <Icon
-                    className={`mt-0.5 size-4 shrink-0 ${visual.cls}`}
-                    aria-hidden="true"
-                  />
-                  <div className="flex-1 text-sm">
-                    <div className="font-medium">{tEvents(event.type)}</div>
-                    <div className="text-xs text-muted-foreground tabular-nums">
-                      {formatTimestamp(event.timestamp, userLocale)} ·{' '}
-                      {resolveActor(event.actorUserId)}
-                    </div>
-                    {/* Gap B — reassure the admin the credit note is not
-                        missing; it is booked once the async refund settles. */}
-                    {event.type === 'refund_pending' && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {t('refundPendingHint')}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </CardContent>
+      <CardContent className="flex flex-col gap-4">{children}</CardContent>
     </Card>
   );
 }

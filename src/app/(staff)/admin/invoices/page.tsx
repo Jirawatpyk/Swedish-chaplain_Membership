@@ -5,12 +5,18 @@
  * `listInvoicesPaged` with offset pagination so we can render a proper
  * numbered `<TablePagination />` (parity with members directory).
  * Default filter excludes drafts (R2-P2); `?status=draft` opts in.
+ *
+ * A failed invoice read renders the shared load-error card (retry + a
+ * reference id matching the `F4.ADMIN.INVOICES_LIST_LOAD` log line) — never
+ * the "No invoices yet" empty state (admin design review).
  */
 import type { Metadata } from 'next';
+import { randomUUID } from 'node:crypto';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
@@ -49,6 +55,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
+import { LoadErrorCard } from '@/components/shell/load-error-card';
+import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import { InvoicesTable, type InvoicesTableRow } from './_components/invoice-table';
 import { isAutoRenewalQueueView } from './_components/queue-view';
 import { InvoiceFilters } from './_components/invoice-filters';
@@ -332,44 +340,83 @@ export default async function AdminInvoicesPage({
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
   const offset = (page - 1) * PAGE_SIZE;
 
+  // `listInvoicesPaged` is `Result<…, never>` — a DB/RLS failure THROWS out of
+  // the repo. Both that throw and a (defensive) `!ok` render the load-error
+  // card: an empty list here would tell the admin "no invoices" during an
+  // outage.
+  const renderLoadError = async (cause: unknown) => {
+    const correlationId = randomUUID();
+    logger.error(
+      {
+        errorId: 'F4.ADMIN.INVOICES_LIST_LOAD',
+        errKind: errKind(cause),
+        tenantId: tenantCtx.slug,
+        correlationId,
+      },
+      '[admin-invoices-list] listInvoicesPaged failed',
+    );
+    const tError = await getTranslations('errors.loadError');
+    return (
+      <TableContainer>
+        <PageHeader title={t('list.title')} subtitle={t('list.description')} />
+        <LoadErrorCard message={t('list.loadFailed')}>
+          <ErrorCardActions
+            correlationId={correlationId}
+            goBackHref="/admin"
+            retryLabel={tError('retry')}
+            pendingLabel={tError('retrying')}
+            retryFailedLabel={tError('retryFailed')}
+            goBackLabel={tError('goBack')}
+            referenceLabel={tError('referenceLabel')}
+          />
+        </LoadErrorCard>
+      </TableContainer>
+    );
+  };
   // W6 fix — `directorySearch` is only used to resolve member names
   // for DRAFT invoices (which have no memberIdentitySnapshot yet per
   // FR-038). Non-draft rows all carry the frozen snapshot, so the
   // 500-row member scan is wasted work on the default view. We skip
   // it unless drafts could appear in the result set — keeping SC-005
   // (p95 < 500ms @ 5k invoices) achievable on the hot path.
-  const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
-    tenantId: tenantCtx.slug,
-    offset,
-    pageSize: PAGE_SIZE,
-    includeDrafts,
-    // BUG-015: forward the status for EVERY filter, including 'draft'. The
-    // repo needs BOTH includeDrafts:true AND status:'draft' to return
-    // drafts-only (it applies eq(status,'draft') AND skips the draft-exclusion
-    // guard). Previously 'draft' was excluded here, so the repo got
-    // includeDrafts:true with no positive status predicate and the query
-    // degenerated to "all invoices for the tenant".
-    ...(statusFilter
-      ? {
-          status: statusFilter as
-            | 'draft'
-            | 'issued'
-            | 'paid'
-            | 'void'
-            | 'credited'
-            | 'partially_credited'
-            | 'overdue',
-        }
-      : {}),
-    ...(qTrim ? { search: qTrim } : {}),
-    ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
-    ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
-    ...(documentTypeFilter ? { documentType: documentTypeFilter } : {}),
-    ...(taxPointFilter ? { taxPointState: taxPointFilter } : {}),
-    ...(vatTreatmentFilter ? { vatTreatment: vatTreatmentFilter } : {}),
-    ...(originFilter ? { origin: originFilter } : {}),
-    ...(dueBeforeFilter ? { dueBefore: dueBeforeFilter } : {}),
-  });
+  let invoicesResult: Awaited<ReturnType<typeof listInvoicesPaged>>;
+  try {
+    invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
+      tenantId: tenantCtx.slug,
+      offset,
+      pageSize: PAGE_SIZE,
+      includeDrafts,
+      // BUG-015: forward the status for EVERY filter, including 'draft'. The
+      // repo needs BOTH includeDrafts:true AND status:'draft' to return
+      // drafts-only (it applies eq(status,'draft') AND skips the draft-exclusion
+      // guard). Previously 'draft' was excluded here, so the repo got
+      // includeDrafts:true with no positive status predicate and the query
+      // degenerated to "all invoices for the tenant".
+      ...(statusFilter
+        ? {
+            status: statusFilter as
+              | 'draft'
+              | 'issued'
+              | 'paid'
+              | 'void'
+              | 'credited'
+              | 'partially_credited'
+              | 'overdue',
+          }
+        : {}),
+      ...(qTrim ? { search: qTrim } : {}),
+      ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
+      ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
+      ...(documentTypeFilter ? { documentType: documentTypeFilter } : {}),
+      ...(taxPointFilter ? { taxPointState: taxPointFilter } : {}),
+      ...(vatTreatmentFilter ? { vatTreatment: vatTreatmentFilter } : {}),
+      ...(originFilter ? { origin: originFilter } : {}),
+      ...(dueBeforeFilter ? { dueBefore: dueBeforeFilter } : {}),
+    });
+  } catch (e) {
+    return renderLoadError(e);
+  }
+  if (!invoicesResult.ok) return renderLoadError(invoicesResult.error);
 
   // G-2 — batched CN count per invoice on the current page. Single
   // GROUP BY query keyed by original_invoice_id so we avoid N+1
@@ -557,19 +604,8 @@ export default async function AdminInvoicesPage({
   // (issued + Bangkok-today > dueDate) fires, so recording payment
   // or voiding immediately returns the row to its stored status on
   // the next fetch.
-  // R8-H1-SF — was: `invoicesResult.ok ? ... : []` silent fallback.
-  // Empty rows fallback is indistinguishable from "tenant has no
-  // invoices" — admins saw the empty-state copy on backend failures
-  // (DB outage, RLS drift, repo bug) instead of an explicit error
-  // signal. Mirror the R7-M3 portal fix: log + render the standard
-  // empty-state with a logger.warn diagnostic so operators see the
-  // failure in pino structured logs.
-  if (!invoicesResult.ok) {
-    logger.warn(
-      { tenantId: tenantCtx.slug, err: invoicesResult.error },
-      '[admin-invoices-list] listInvoicesPaged failed — rendering empty list with diagnostic',
-    );
-  }
+  // R8-H1-SF — a failed read no longer reaches here: it returns the
+  // load-error card right after `listInvoicesPaged` above.
   const nowUtcIso = new Date().toISOString();
   // 088 (T065 / FR-016) — `f088TaxAtPayment` (hoisted to the filter-parse block
   // above) gates the SC-bill ↔ RC-tax-receipt disambiguation, baked into each
