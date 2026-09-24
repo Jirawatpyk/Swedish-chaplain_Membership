@@ -860,3 +860,31 @@ describe('QueueBulkActionBar — Task 2 hotfix (2026-08-05-broadcast-crosspr-hot
     expect(document.activeElement).not.toBe(approveBtn);
   });
 });
+
+/**
+ * T086a V2 — the Clear fallback. Below `md` the queue table (and its select-all
+ * checkbox) is `display: none`, so `.focus()` on it does nothing; jsdom has no
+ * CSS, so the two shapes the phone produces are modelled directly: no select-all
+ * in the document, and one that refuses focus (a disabled control, which jsdom
+ * will not focus either). Both land on `#main-content`, never `<body>`.
+ */
+describe('QueueBulkActionBar — Clear focus fallback (T086a V2)', () => {
+  it.each([
+    ['no select-all is rendered', null],
+    ['the select-all cannot take focus', <button key="sa" type="button" disabled data-testid="queue-select-all" />],
+  ])('%s → Clear lands on #main-content and still clears', async (_, selectAll) => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+    render(
+      <Provider>
+        <main id="main-content" tabIndex={-1}>
+          {selectAll}
+          <QueueBulkActionBar selectedIds={['b1']} onClear={onClear} readOnly={false} recipientByIdRows={[]} />
+        </main>
+      </Provider>,
+    );
+    await user.click(within(screen.getByRole('toolbar')).getByRole('button', { name: /clear/i }));
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(document.getElementById('main-content'));
+  });
+});

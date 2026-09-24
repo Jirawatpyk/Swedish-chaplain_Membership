@@ -9,9 +9,9 @@
  * below come from the same tuples the strip derives from.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { cleanup as cleanupRender, render } from '@testing-library/react';
 
-const flag = vi.hoisted(() => ({ on: false }));
+const flag = vi.hoisted(() => ({ on: false, templates: true }));
 
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn(async () => (key: string) => key),
@@ -19,6 +19,7 @@ vi.mock('next-intl/server', () => ({
 vi.mock('@/modules/broadcasts', async () => ({
   ...(await import('@/modules/broadcasts/domain/value-objects/broadcast-status')),
   isEblastMemberApprovalEnabled: () => flag.on,
+  isF71aUs7Enabled: () => flag.templates,
 }));
 
 import AdminBroadcastsLoading from '@/app/(staff)/admin/broadcasts/loading';
@@ -33,6 +34,7 @@ async function renderSkeleton() {
 
 beforeEach(() => {
   flag.on = false;
+  flag.templates = true;
 });
 
 describe('the queue loading skeleton (UX review M2)', () => {
@@ -55,5 +57,47 @@ describe('the queue loading skeleton (UX review M2)', () => {
     const slot = container.querySelector('[data-skeleton="upcoming-sends"]');
     expect(slot).not.toBeNull();
     expect(slot!.className).toContain('h-9');
+  });
+});
+
+/**
+ * T086a V3 (PR-1's U12) — the rest of the page's regions. The skeleton drew
+ * seven full-width bars at every width: no eight-column table from `md`, no
+ * card list below it, no header actions (the real Templates + New E-Blast
+ * links share the header's action row, a full-width row below `sm` — ~80 px
+ * of shift on every phone load), no order hint, and no `aria-busy`.
+ */
+describe('the queue loading skeleton mirrors the page (T086a V3)', () => {
+  it('announces itself as busy', async () => {
+    const { container } = await renderSkeleton();
+    expect(container.querySelector('[data-slot="layout-container"]')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('reserves the header actions the page renders — Templates only while its flag is on', async () => {
+    const { container } = await renderSkeleton();
+    const actions = container.querySelector('[data-slot="page-header-actions"]');
+    expect(actions?.querySelectorAll('[data-skeleton="header-action"]')).toHaveLength(2);
+
+    cleanupRender();
+    flag.templates = false;
+    const off = await renderSkeleton();
+    expect(off.container.querySelectorAll('[data-skeleton="header-action"]')).toHaveLength(1);
+  });
+
+  it('reserves the order hint, the eight-column table from md and the card list below it', async () => {
+    const { container } = await renderSkeleton();
+    expect(container.querySelector('[data-skeleton="order-hint"]')).not.toBeNull();
+
+    const table = container.querySelector('[data-skeleton="queue-table"]');
+    expect(table?.className).toMatch(/(?:^|\s)hidden(?:\s|$)/);
+    expect(table?.className).toContain('md:block');
+    expect(table?.querySelectorAll('[data-skeleton="queue-column"]')).toHaveLength(8);
+    // Real rows are two-line (a value over its secondary line) in every column.
+    const firstRow = table?.querySelector('[data-skeleton="queue-row"]');
+    expect(firstRow?.querySelectorAll('[data-skeleton="queue-cell"]')).toHaveLength(8);
+
+    const cards = container.querySelector('[data-skeleton="queue-card-list"]');
+    expect(cards?.className).toContain('md:hidden');
+    expect(cards?.querySelectorAll('[data-slot="card"]').length).toBeGreaterThan(0);
   });
 });

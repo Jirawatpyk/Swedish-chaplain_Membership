@@ -258,4 +258,20 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
+
+  // T086a V9 — send-now is the least reversible mode; its confirm button names
+  // the action instead of the generic "Confirm".
+  it('V9: send-now confirms with "Send now", not the generic "Confirm"', async () => {
+    renderAction({
+      status: 'member_approved',
+      proposedSendAt: new Date(Date.now() + 2 * HOUR_MS).toISOString(),
+    });
+    open();
+    await screen.findByRole('alertdialog');
+    const submit = screen.getByTestId('schedule-confirm-submit');
+    expect(submit).toHaveTextContent(tSchedule.confirm);
+
+    await chooseSendNow();
+    expect(submit.textContent).toBe('Send now');
+  });
 });

@@ -50,6 +50,8 @@ export interface QueueTableProps {
   readonly viewTotal?: number | null;
   /** UX review H4 — the view's identity (its URL query). */
   readonly viewKey?: string;
+  /** T086a V10 — see `QueueWithBulkProps.pagination`. */
+  readonly pagination?: React.ReactNode;
 }
 
 export async function QueueTable({
@@ -59,6 +61,7 @@ export async function QueueTable({
   order = 'longest_in_stage',
   viewTotal = null,
   viewKey = '',
+  pagination,
 }: QueueTableProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
@@ -156,6 +159,7 @@ export async function QueueTable({
       order={order}
       viewTotal={viewTotal}
       viewKey={viewKey}
+      pagination={pagination}
       emptyState={
         // UX-C5: empty state with title + body + visual anchor (no CTA —
         // admin can't manufacture submissions; queue empties when members

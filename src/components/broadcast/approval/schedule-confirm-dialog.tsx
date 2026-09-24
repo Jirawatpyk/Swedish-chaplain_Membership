@@ -354,7 +354,8 @@ export function ScheduleConfirmAction({
               }}
             >
               {pending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
-              {mode === 'cancel' ? t('confirmCancel') : t('confirm')}
+              {/* T086a V9 — send-now, the least reversible mode, names its action. */}
+              {mode === 'cancel' ? t('confirmCancel') : mode === 'send_now' ? t('confirmSendNow') : t('confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -420,33 +420,38 @@ export default async function AdminBroadcastsPage({
         order={queueOrderOf(sort)}
         viewTotal={viewTotal}
         viewKey={viewKey}
+        // T086a V10 — rendered by the queue between the list and the bulk
+        // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
+        // visually last and must come last in Tab order too (it came first).
+        pagination={
+          nextPageHref !== null || firstPageHref !== null ? (
+            <nav
+              aria-label={t('pagination.label')}
+              className="flex flex-wrap items-center justify-between gap-3"
+            >
+              <p className="text-sm tabular-nums">
+                {/* On the first page only: keyset pages have no offset, so on page 2
+                    "Showing 50 of 132" would read as the same first 50. */}
+                {viewTotal !== null && firstPageHref === null
+                  ? t('pagination.summary', { shown: rows.length, total: viewTotal })
+                  : null}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {firstPageHref !== null ? (
+                  <Link href={firstPageHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.first')}
+                  </Link>
+                ) : null}
+                {nextPageHref !== null ? (
+                  <Link href={nextPageHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.next')}
+                  </Link>
+                ) : null}
+              </div>
+            </nav>
+          ) : null
+        }
       />
-      {nextPageHref !== null || firstPageHref !== null ? (
-        <nav
-          aria-label={t('pagination.label')}
-          className="flex flex-wrap items-center justify-between gap-3"
-        >
-          <p className="text-sm tabular-nums">
-            {/* On the first page only: keyset pages have no offset, so on page 2
-                "Showing 50 of 132" would read as the same first 50. */}
-            {viewTotal !== null && firstPageHref === null
-              ? t('pagination.summary', { shown: rows.length, total: viewTotal })
-              : null}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {firstPageHref !== null ? (
-              <Link href={firstPageHref} className={buttonVariants({ variant: 'outline' })}>
-                {t('pagination.first')}
-              </Link>
-            ) : null}
-            {nextPageHref !== null ? (
-              <Link href={nextPageHref} className={buttonVariants({ variant: 'outline' })}>
-                {t('pagination.next')}
-              </Link>
-            ) : null}
-          </div>
-        </nav>
-      ) : null}
     </TableContainer>
   );
 }

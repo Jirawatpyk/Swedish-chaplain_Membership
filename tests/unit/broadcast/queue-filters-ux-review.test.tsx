@@ -161,3 +161,39 @@ describe('chip counts under a filter they do not see (FR-030)', () => {
     expect(screen.queryByText(/every e-blast in each stage/i)).toBeNull();
   });
 });
+
+/**
+ * T086a V4 (PR-1's U14) — the chip is a 44 px pill around a 16 px checkbox. The
+ * focus ring was the checkbox's own, drawn on the 16 px box; the pill wore
+ * nothing. The pill (the `<label>`) now wears the Button's ring tokens while its
+ * checkbox has keyboard focus, and the checkbox's own outline is dropped so
+ * there is one ring, not two. The checkbox stays the focusable control (Tab,
+ * Space and the accessible name are unchanged). jsdom has no CSS, so this pins
+ * the classes that draw it.
+ */
+describe('chip focus ring (T086a V4)', () => {
+  it('the pill wears the focus ring while its checkbox has keyboard focus', () => {
+    render(filters());
+    const checkbox = firstStageCheckbox();
+    const pill = checkbox.closest('label')!;
+    expect(pill.className).toContain('has-[:focus-visible]:ring-3');
+    expect(pill.className).toContain('has-[:focus-visible]:ring-ring/50');
+    expect(pill.className).toContain('has-[:focus-visible]:border-ring');
+    expect(checkbox.className).toContain('focus-visible:outline-none');
+    // Keyboard semantics unchanged: a native checkbox inside its label.
+    expect(checkbox.tagName).toBe('INPUT');
+    expect(checkbox.type).toBe('checkbox');
+  });
+});
+
+/**
+ * T086a follow-on — From / To filter on the SUBMIT date, and said only "From"
+ * and "To". The labels now name the date they filter on.
+ */
+describe('date range labels (T086a follow-on)', () => {
+  it('the From / To inputs say they filter on the submitted date', () => {
+    render(filters());
+    expect(screen.getByLabelText(/^submitted from$/i)).toHaveAttribute('name', 'fromDate');
+    expect(screen.getByLabelText(/^submitted to$/i)).toHaveAttribute('name', 'toDate');
+  });
+});

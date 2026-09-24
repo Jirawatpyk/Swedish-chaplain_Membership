@@ -9,6 +9,9 @@
  *       (`role="alert"`), not by a toast the modal hides from AT.
  *   H2  the trigger turns unavailable while it holds focus, so it is
  *       `aria-disabled` (`focusableWhenDisabled`), never native `disabled`.
+ *   V1  (T086a) on the no-confirm path the trigger unmounts with the stage
+ *       once the page refreshes, and nothing handed focus on — it fell to
+ *       `<body>`. It now lands on `#main-content`, as the dialog paths do.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -38,7 +41,9 @@ afterEach(() => {
 function renderStart(confirm: StartConfirm) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <StartFormattedVersionAction broadcastId={ID} confirm={confirm} round={1} />
+      <main id="main-content" tabIndex={-1}>
+        <StartFormattedVersionAction broadcastId={ID} confirm={confirm} round={1} />
+      </main>
     </NextIntlClientProvider>,
   );
 }
@@ -97,5 +102,16 @@ describe('F119 T063 — Start formatted version (UX review)', () => {
     expect(trigger()).not.toHaveAttribute('disabled');
     expect(document.activeElement).toBe(trigger());
     resolve(new Response('{}', { status: 201 }));
+  });
+
+  it.each([
+    ['a successful start', 201],
+    ['a stage that moved under the page', 409],
+  ])('V1: from changes_requested, %s hands focus to #main-content before the trigger unmounts', async (_, status) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status })));
+    renderStart('none');
+    trigger().focus();
+    fireEvent.click(trigger());
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('main-content')));
   });
 });

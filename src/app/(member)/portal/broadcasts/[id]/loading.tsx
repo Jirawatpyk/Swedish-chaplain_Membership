@@ -24,6 +24,14 @@
  * fields, the first frame (and the second beside it on a wide screen) — and
  * leaves the stage-dependent sections below (decision controls, history) to
  * arrive under the fold.
+ *
+ * T086a V5 — it still reserved the delivery card, which the page renders only
+ * once sending has begun (`DELIVERY_STATUSES`); on the sign-off stages the
+ * decision controls and the history sit in that slot, so it was the wrong
+ * card. It is no longer reserved: the stage-dependent sections below the
+ * compare grid all arrive under the fold. And the fields card now has the
+ * page's `CardHeader` (the "Subject" overline over the subject heading); the
+ * skeleton drew both bars inside its content.
  */
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -54,13 +62,16 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
         </Link>
         {/* F119 T086 — the stage banner (status badge + whose turn + expiry). */}
         <SkeletonBlock data-testid="detail-stage-banner-skeleton" className="h-16 w-full" />
-        {/* Fields card: heading + subject + the dl grid (recipients, submitted,
-            sent, proposed and confirmed send time). */}
+        {/* Fields card: the header (the "Subject" overline over the subject
+            heading), then the dl grid (recipients, submitted, sent, proposed
+            and confirmed send time). */}
         <Card>
-          <CardContent className="flex flex-col gap-3">
-            <SkeletonBlock className="h-5 w-24" />
-            <SkeletonBlock className="h-5 w-2/3" />
-            <div className="grid grid-cols-2 gap-3 pt-2">
+          <CardHeader className="space-y-1">
+            <SkeletonBlock className="h-4 w-16" />
+            <SkeletonBlock className="h-5.5 w-2/3" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-1.5">
                   <SkeletonBlock className="h-3 w-20" />
@@ -93,20 +104,6 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
             </Card>
           ))}
         </div>
-        {/* Delivery breakdown card: heading + 6-stat grid (2-col, 3-col ≥sm). */}
-        <Card>
-          <CardContent className="flex flex-col gap-3">
-            <SkeletonBlock className="h-5 w-40" />
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="flex flex-col gap-1.5">
-                  <SkeletonBlock className="h-3 w-20" />
-                  <SkeletonBlock className="h-8 w-16" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </DetailContainer>
     </PageSkeletonShell>
   );

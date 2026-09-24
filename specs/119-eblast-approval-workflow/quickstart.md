@@ -683,7 +683,8 @@ design-block keys added to `admin.broadcasts.templates.errors` in EN + TH + SV.
 **STILL OPEN**, unchanged and deliberately not touched: **U9** (queue pagination) · **U12**
 (skeleton drift on the six files outside this record's PR-1 screens) · **U13** (no template
 delete UI) · **U14** (chip focus ring) · **U15** (toolbar Arrow Up/Down + `aria-orientation`) ·
-**U20**–**U26**.
+**U20**–**U26**. (2026-09-24: U14 and U12's `/admin/broadcasts/loading.tsx` part were closed by
+T086a V4 / V3 — see the T086a record; U12's other five files are still open.)
 
 Two measurement debts remain from the record above and are NOT discharged by this round: the three
 member-portal surfaces were walked from code only (the `E2E_MEMBER_EMAIL_EMPTY` persona does not
@@ -1025,7 +1026,8 @@ sign-off view of `/portal/broadcasts/[id]` (T086) · **SQ** the rebuilt staff qu
 edited** (`page.tsx`, `_lib/*`, the API route and `admin-broadcast-queue.ts` uncommitted), so re-run
 screen 3 / U2 / B1 / H4 on the committed tree before quoting the SQ rows. All runs were against the
 maintainer's dev server on :3100 with `FEATURE_EBLAST_MEMBER_APPROVAL=true`.
-**Nothing below was fixed; every finding is OPEN.**
+**2026-09-24 (later the same day): V1–V10 are FIXED** (commit to follow) — each item below says
+how and names the test that went RED first; the § 15 cells they graded are re-graded in place.
 
 ##### axe at 320 px — the run
 
@@ -1057,17 +1059,17 @@ runs in a second browser context without the fixture's `pageerror` net.
 | 1920 × 1080, no ugly stretch | c PASS | c PASS | c PASS |
 | axe WCAG 2.1 AA | L PASS | L PASS | L PASS |
 | EN + TH + SV on every string | c PASS | c PASS | c PASS |
-| Shimmer skeleton matches the page | **c PART** (V7) | **c PART** (V5) | **c FAIL** (V3 — U12 still open) |
-| Empty state designed | N/A | N/A (not-found: V6) | c PASS (shared `EmptyState`) |
+| Shimmer skeleton matches the page | c PASS (V7 fixed) | c PASS (V5 fixed) | c PASS (V3 fixed — U12's queue file) |
+| Empty state designed | N/A | N/A (not-found: V6 fixed) | c PASS (shared `EmptyState`) |
 | Error states (field / form / page) | c PASS | c PASS | c PASS |
 | Toast on success | c PASS | waived — the stage banner's live region replaces it | c PASS |
-| Confirmation dialog on destructive | c PASS (V9 low) | c PASS | c PASS |
+| Confirmation dialog on destructive | c PASS (V9 fixed) | c PASS | c PASS |
 | Auto-focus on the primary input | N/A (mid-page editor; see V1) | N/A | N/A |
-| Enter submits the form | **c FAIL** (V8) | N/A (textareas) | N/A (filters apply on change) |
+| Enter submits the form | c PASS (V8 fixed) | N/A (textareas) | N/A (filters apply on change) |
 | Escape closes modal / popover | c PASS | c PASS | c PASS |
-| Focus-visible ring on every control | c PASS | c PASS | **c PART** (V4 — U14 still open) |
+| Focus-visible ring on every control | c PASS | c PASS | c PASS (V4 fixed — U14 closed) |
 | Dark mode renders correctly | c PASS¹ | c PASS¹ | c PASS |
-| SR: landmarks, errors, navigable | c PASS | c PASS | c PASS (V10 low) |
+| SR: landmarks, errors, navigable | c PASS | c PASS | c PASS (V10 fixed) |
 | `prefers-reduced-motion` honoured | c PASS | c PASS | c PASS |
 | Session user menu on the shell | c PASS | c PASS | c PASS |
 | Idle-warning modal | c PASS | N/A | c PASS |
@@ -1084,49 +1086,101 @@ reject / cancel. MS: approve (`member-sign-off-actions.tsx:250,293`), request ch
 approval (`ReasonAction`, `:383,423`), withdraw E-Blast (`cancel-broadcast-dialog.tsx:92`). SQ:
 row approve/reject, `bulk-approve-confirm-dialog.tsx:183,208`, and `ClearHaltDialog`
 (`clear-halt-dialog.tsx:67,110`) — **PR-1's U3 is fixed**. The member `Select` omits it
-legitimately (its trigger survives). Focus is still lost OUTSIDE a dialog in two places — V1, V2.
+legitimately (its trigger survives). Focus was also lost OUTSIDE a dialog in two places — V1, V2,
+both fixed below.
 
-##### Defects found — V1–V10, all OPEN, nothing was fixed
+##### Defects found — V1–V10, all FIXED 2026-09-24 (commit to follow)
 
-1. **V1 [SD] Focus drops to `<body>` on the no-dialog Start path.**
-   `start-formatted-version-action.tsx:89-94` (and the 409/404 arm `:96-103`): from
-   `changes_requested` the Start button needs no confirm, and on success `router.refresh()` moves
-   the page to `in_design`, where the button no longer renders — the focused trigger unmounts with
-   nothing to hand focus to. The "trigger unmounts" class, outside a dialog. Fix: focus
-   `#eblast-format-subject` after the refresh (which also answers auto-focus), else `#main-content`.
-2. **V2 [SQ] Clear drops focus to `<body>`.** `queue-bulk-action-bar.tsx:452-461`: Clear empties the
-   selection, the bar returns `null` (`:395`) and the focused button is gone. Fix: move focus to the
-   select-all checkbox before clearing.
-3. **V3 [SQ] The queue skeleton does not match the rebuilt table (U12 still open).**
-   `(staff)/admin/broadcasts/loading.tsx:101-107` draws seven full-width `h-9/h-10` bars at every
-   width — no eight-column table at `md+`, no card list below `md`, and real rows are two-line. The
-   skeleton `PageHeader` (`:61`) has no actions while the real one has Templates + New E-Blast, which
-   stack full-width below `sm` (~80 px shift on every mobile load). Nothing is reserved for the
-   order hint or the stalled line (`queue-table-client.tsx:612-622`), and there is no `aria-busy`.
-4. **V4 [SQ] The chip focus ring is on the 16 px checkbox, not the 44 px pill (U14 still open).**
-   `queue-filters.tsx:366` — add `has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring` to the
-   chip `<label>`. (Not fixed here: the file was being edited by the date-filter work.)
-5. **V5 [MS] The sign-off skeleton reserves the wrong card.** `(member)/portal/broadcasts/[id]/loading.tsx:97-109`
-   always reserves the delivery card, which `page.tsx:490` renders only for delivery stages; on the
-   sign-off stages the decision card and history sit there. The fields-card skeleton (`:59-72`) has
-   no `CardHeader`, the real card has one (`page.tsx:343-350`).
-6. **V6 [MS] `not-found.tsx:44-47` prints the same string twice** — `tErrors('notFound')` is both
-   the `<h2>` and the `<p>`. Needs a distinct title and body key (EN + TH + SV).
-7. **V7 [SD] The staff detail skeleton reserves only the round-0 shape** (`[id]/loading.tsx:77-84`,
-   one body card) while `in_design` renders the two-column workspace and later stages the
-   comparison + thread. The docblock records the trade-off; graded PART. Fix: reserve the `lg`
-   two-column grid, as MS's skeleton does.
-8. **V8 [SD] Enter does nothing in the workspace** — the subject `Input`
-   (`formatted-version-workspace.tsx:370-383`) is not inside a `<form>`. Wrap the fields in
-   `<form onSubmit={onSave}>`, or record a waiver.
-9. **V9 [SD] LOW — send-now confirms with the generic "Confirm"** (`schedule-confirm-dialog.tsx:357`),
-   the least reversible mode. Use a "Send now" label.
-10. **V10 [SQ] LOW — Tab order**: the fixed bulk toolbar precedes the pagination `<nav>` in the DOM
-    (`page.tsx:398-431`), so Tab visits the bottom toolbar before the pagination above it.
+Each fix went RED first (a captured failing run; nothing here is committed red) and GREEN after;
+where a test was a guard that could not go red before the fix, a mutation proved it.
+
+1. **V1 [SD] Focus dropped to `<body>` on the no-dialog Start path — FIXED.**
+   `start-formatted-version-action.tsx`: from `changes_requested` the Start button needs no confirm,
+   and on success (or a 409/404 stage move) `router.refresh()` takes the button away with nothing to
+   hand focus to. Now the no-confirm path moves focus to `#main-content` itself before the refresh
+   (the confirm paths already land there through `finalFocus`). `#eblast-format-subject` was the
+   first choice but does not exist at that moment — the writing tool mounts only when the refreshed
+   page lands. Test: `start-formatted-version-action.test.tsx` "V1" ×2 (201 and 409).
+2. **V2 [SQ] Clear dropped focus to `<body>` — FIXED.** `queue-bulk-action-bar.tsx` Clear now
+   focuses the table's select-all checkbox (`data-testid="queue-select-all"`) BEFORE clearing, while
+   both are mounted; below `md` that table is `display: none`, `.focus()` does nothing, and it falls
+   back to `#main-content`. A bulk-approve success also clears, but its focus stays the confirm
+   dialog's `finalFocus`. Tests: `queue-with-bulk.test.tsx` "V2" (went RED), and the fallback in
+   `queue-bulk-action-bar.test.tsx` "T086a V2" ×2 — jsdom has no CSS, so the phone's two shapes are
+   modelled directly (no select-all; one that refuses focus); mutation-proved. The members bulk bar's Clear (`admin/members/_components/bulk-action-bar.tsx`) has the same
+   shape and is out of this PR's scope.
+3. **V3 [SQ] The queue skeleton did not match the rebuilt table (U12's queue file) — FIXED.**
+   `(staff)/admin/broadcasts/loading.tsx` now reserves the header actions (Templates only while its
+   flag is on, New E-Blast always — a manager, who sees no New E-Blast, is the rarer reader), the
+   order hint, the eight-column table from `md` (an h-10 header row and two-line rows), the card list
+   below `md`, and `aria-busy` — U12's other five files are untouched. The stalled line is still
+   not reserved (it renders only when a shown row stalled). Test: `queue-loading-skeleton.test.tsx`
+   "T086a V3" ×3. Side effect: the skeleton now renders the page's own action row, so
+   `eblast-a11y.spec.ts` U2 resolved `[data-slot="page-header-actions"]` to the SKELETON's row,
+   which detached mid-swap (`boundingBox()` null — failed once). U2 now anchors on the filter bar's
+   `role="search"` (the skeleton's bar is an `aria-hidden` box) and scopes the row to `:visible`.
+   Screen 3 gets the same anchor as hardening — it could already scan the skeleton, whose h1
+   predates this change; its one failure in the same run was a `page.goto` load timeout (4.3 min, a
+   dev-server compile stall after the edits), not the anchor. Re-run: 16 passed.
+4. **V4 [SQ] The chip focus ring was on the 16 px checkbox, not the 44 px pill (U14) — FIXED.**
+   `queue-filters.tsx`: the chip `<label>` wears the Button's ring tokens under
+   `has-[:focus-visible]:` (`border-ring`, `ring-3`, `ring-ring/50`) and the checkbox drops its own
+   outline (`focus-visible:outline-none`) so there is one ring, not two. The checkbox stays the
+   focusable control — Tab, Space and its name are unchanged. Test: `queue-filters-ux-review.test.tsx`
+   "T086a V4" (class pins; jsdom has no CSS).
+5. **V5 [MS] The sign-off skeleton reserved the wrong card — FIXED.**
+   `(member)/portal/broadcasts/[id]/loading.tsx` no longer reserves the delivery card (the page
+   renders it only once sending has begun; the sign-off stages put the decision controls and history
+   there, below the fold), and the fields card has the page's `CardHeader` (overline + subject
+   heading). Test: `portal-eblast-detail-skeleton.test.tsx` (3 cards, not 4) + "T086a V5" (header;
+   mutation-proved — moving the bars back into `CardContent` turns it red).
+6. **V6 [MS] `not-found.tsx` printed the same string twice — FIXED.** New keys
+   `portal.broadcasts.detail.notFound.{title,body}` in EN + TH + SV; the body names no reason, so
+   "absent" and "someone else's" still read alike. Test: `portal-eblast-not-found.test.tsx` (new).
+7. **V7 [SD] The staff detail skeleton reserved only the round-0 shape — FIXED.** `[id]/loading.tsx`
+   reserves the `lg` two-column content grid (first card at every width, the second `hidden lg:flex`,
+   each with the page's `DETAIL_PREVIEW_FRAME_HEIGHT` frame), as MS's skeleton does. The choice,
+   recorded in the docblock: every stage after a version exists renders two columns; only
+   `submitted` renders one card. The read-only comparison's `lg:grid-cols-2` was chosen over the
+   writing tool's `[1fr_600px]` because every reader sees the comparison, a manager included; the
+   writer's taller first column differs below the fold. Test: `admin-eblast-detail-skeleton.test.tsx`
+   "T086a V7" ×2.
+8. **V8 [SD] Enter did nothing in the workspace — FIXED.** `formatted-version-workspace.tsx`: the
+   fields are one `<form onSubmit>`; Save is its `type="submit"` (its `onClick` removed, so a click
+   and Enter both reach `onSave` once). Enter in the subject saves; with nothing changed Save is
+   `aria-disabled`, which cancels the implicit click. Enter in the note (`<textarea>`) and the body
+   (contenteditable) is a new line; the editor's dialogs are portaled out of the form. Tests:
+   `formatted-version-workspace.test.tsx` "V8" ×3 — the subject case went RED; the two guards were
+   mutation-proved (an Enter-submits `onKeyDown` on the form; dropping both `!dirty` gates).
+9. **V9 [SD] LOW — send-now confirmed with the generic "Confirm" — FIXED.** `schedule-confirm-dialog.tsx`:
+   new key `admin.broadcasts.approval.schedule.confirmSendNow` ("Send now" / "ส่งทันที" /
+   "Skicka nu"). Test: `schedule-confirm-dialog.test.tsx` "V9".
+10. **V10 [SQ] LOW — Tab order — FIXED.** The page's pagination `<nav>` is now handed to `QueueTable`
+    (`pagination` prop → `QueueWithBulk`), which renders it between the list and the bulk toolbar.
+    Decision: the toolbar is `position: fixed` at the bottom of the viewport, so it is visually LAST,
+    and the pagination sits in the flow above it — DOM order now matches (list → pagination →
+    toolbar), and the toolbar's spacer moves below the pagination, which is where it belongs. Test:
+    `queue-with-bulk.test.tsx` "V10".
+
+**Follow-on, same day.**
+
+- **The `chipCountsScope` note** (`text-xs text-muted-foreground` on the `bg-muted/20` filter panel,
+  `aria-describedby` on the Stage fieldset — kept): contrast computed from `globals.css`, compositing
+  `--muted` at 20 % over `SidebarInset`'s `bg-background` — **light 5.53:1** (`#676767` on `#fdfdfd`),
+  **dark 7.36:1** (`#a1a1a1` on `#101010`). Both clear 4.5:1; no change.
+- **From / To relabelled** "Submitted from" / "Submitted to" (TH "ส่งเมื่อ ตั้งแต่" / "ส่งเมื่อ ถึง",
+  SV "Inskickad från" / "Inskickad till" — the queue's own term for the submit date), so the date the
+  range filters on is visible. Test: `queue-filters-ux-review.test.tsx` "date range labels".
+
+**Verification (2026-09-24, working tree on `56591c6c4`).** Unit + contract + architecture
+(`tests/unit/broadcast tests/unit/broadcasts tests/contract/broadcasts tests/unit/architecture`):
+276 files / 3,210 tests passed. `eblast-a11y.spec.ts` chromium: **16 passed / 0 skipped / 0 failed**
+(both personas set); `eblast-approval.spec.ts` chromium: **3 passed**. `check:i18n`, `check:layout`,
+`check:staff-page-guard`, `check:portal-guard`, `check:strict-aria`, `check:fixme`, `typecheck` and
+full `lint` all exit 0.
 
 **Verdict**: the automated bar (zero serious/critical at 320 px, no horizontal scroll, SV/TH chip
-strip) is **met on all three screens**. The § 15 hand-walk is **not clean**: V1–V8 are open, the
-worst being the two focus losses (V1, V2) and the queue skeleton (V3, carried from PR-1's U12).
+strip) is **met on all three screens**, and the § 15 hand-walk is now **clean**: V1–V10 are fixed.
 
 ### 3.2 PR-2 — the approval round, the dashboard and the trial (ships DARK)
 

@@ -269,6 +269,9 @@ export function QueueTableClient({
           const someSelected = selectedActionable.length > 0 && !allSelected;
           return (
             <Checkbox
+              // T086a V2 — the bulk bar's Clear hands focus here (the bar
+              // unmounts with the selection it clears).
+              data-testid="queue-select-all"
               aria-label={columnLabels.select}
               checked={allSelected}
               indeterminate={someSelected}

@@ -12,12 +12,16 @@
  *   M7  a refusal renders UNDER the field it names (ux-standards § 4.1), with
  *       the field pointing at it; an unattributed one at the end of the form.
  *   LOW one feedback channel: a failed send is inline only (no toast).
+ *   V8  (T086a) Enter in the subject saves the version, as Save does — the
+ *       fields are a `<form>`; Enter in the body editor or the note never
+ *       submits it.
  *
  * The editor, the live preview and the unsaved-changes guard are doubled —
  * this file pins the workspace's own wiring.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { toast } from 'sonner';
@@ -190,5 +194,33 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     });
     const reload = await screen.findByRole('button', { name: t.workspace.reload });
     await waitFor(() => expect(document.activeElement).toBe(reload));
+  });
+  it('V8: Enter in the subject field saves the version, as the Save button does', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { version: { updatedAt: '2026-09-20T09:00:00.000Z' } }));
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.type(screen.getByLabelText(t.workspace.subjectLabel), ' edited{Enter}');
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t.workspace.saved));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    expect(url).toBe(`/api/admin/broadcasts/${ID}/version`);
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body)).subject).toBe('Formatted subject edited');
+  });
+
+  it('V8: Enter with nothing changed saves nothing (Save is unavailable)', async () => {
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.type(screen.getByLabelText(t.workspace.subjectLabel), '{Enter}');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('V8: Enter inside the body editor or the note never submits', async () => {
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.type(screen.getByTestId('tiptap-editor'), 'more{Enter}');
+    await user.type(screen.getByLabelText(t.workspace.noteLabel), 'a note{Enter}');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

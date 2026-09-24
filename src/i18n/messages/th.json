@@ -3286,8 +3286,8 @@
           "statusLabel": "ขั้นตอน",
           "memberLabel": "สมาชิก",
           "memberAll": "สมาชิกทั้งหมด",
-          "fromDate": "จาก",
-          "toDate": "ถึง",
+          "fromDate": "ส่งเมื่อ ตั้งแต่",
+          "toDate": "ส่งเมื่อ ถึง",
           "reset": "รีเซ็ตเป็นค่าเริ่มต้น",
           "upcomingSends": "กำหนดส่งที่จะถึง",
           "chipCount": "{count} รายการ",
@@ -3502,6 +3502,7 @@
           "close": "ปิด",
           "confirm": "ยืนยัน",
           "confirmCancel": "ยกเลิกเวลา",
+          "confirmSendNow": "ส่งทันที",
           "confirmed": "ยืนยันเวลาส่งแล้ว ระบบจะแจ้งให้สมาชิกทราบ",
           "cancelled": "ยกเลิกเวลาส่งที่ยืนยันไว้แล้ว"
         },
@@ -6398,6 +6399,10 @@
         },
         "back": "กลับไปหน้า E-Blast",
         "backToDashboard": "กลับไปแดชบอร์ด",
+        "notFound": {
+          "title": "ไม่พบ E-Blast นี้",
+          "body": "ลิงก์อาจไม่เป็นปัจจุบัน หรือ E-Blast นี้ไม่ได้อยู่ในบัญชีของคุณ ดูรายการ E-Blast ทั้งหมดของคุณได้ที่หน้าสิทธิประโยชน์"
+        },
         "cancelButton": "ยกเลิก E-Blast",
         "cancelDialog": {
           "title": "ยกเลิก E-Blast นี้?",

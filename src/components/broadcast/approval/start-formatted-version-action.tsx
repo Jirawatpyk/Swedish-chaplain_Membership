@@ -29,6 +29,11 @@
  *
  * Focus: on success the trigger unmounts with the stage, so the shared
  * resolver lands on `#main-content`; on Cancel/ESC it returns to the trigger.
+ * The no-confirm path (`none`) has no dialog to hand focus on, so it moves
+ * focus to `#main-content` itself before the refresh takes the trigger away —
+ * otherwise it fell to `<body>` (T086a V1). The writing tool's subject field
+ * does not exist yet at that moment: it mounts only when the refreshed page
+ * lands.
  */
 import { useRef, useState, useTransition } from 'react';
 import { Loader2Icon, PenLine } from 'lucide-react';
@@ -77,6 +82,11 @@ export function StartFormattedVersionAction({
   const asks = confirm !== 'none';
   const voids = confirm === 'voids_approval';
 
+  /** T086a V1 — see the docblock: the dialog paths get this from `finalFocus`. */
+  function handFocusOnBeforeUnmount(): void {
+    if (!asks) document.getElementById('main-content')?.focus({ preventScroll: true });
+  }
+
   function start(): void {
     if (pending) return;
     setDialogError(null);
@@ -89,6 +99,7 @@ export function StartFormattedVersionAction({
         if (res.ok) {
           closedViaSuccessRef.current = true;
           setConfirmOpen(false);
+          handFocusOnBeforeUnmount();
           toast.success(t('started'));
           router.refresh();
           return;
@@ -98,6 +109,7 @@ export function StartFormattedVersionAction({
           // The stage moved (or the entry closed) under the page — refresh it.
           closedViaSuccessRef.current = true;
           setConfirmOpen(false);
+          handFocusOnBeforeUnmount();
           toast.error(message);
           router.refresh();
           return;

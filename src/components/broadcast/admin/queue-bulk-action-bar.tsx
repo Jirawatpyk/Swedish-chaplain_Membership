@@ -392,6 +392,22 @@ export function QueueBulkActionBar({
     }
   }, [cappedIds, executing, onClear, onPartialFailure, router, t, tUndo]);
 
+  // T086a V2 — Clear empties the selection, so this bar returns null and the
+  // focused Clear button goes with it: focus fell to `<body>`. Hand it to the
+  // table's select-all checkbox FIRST, while both are mounted (it survives the
+  // clear). Below `md` the table is `display: none`, where `.focus()` does
+  // nothing — then the `#main-content` landmark. Only the explicit Clear moves
+  // focus: a bulk-approve success also clears, but its focus belongs to the
+  // confirm dialog's `finalFocus`.
+  const handleClearClick = useCallback(() => {
+    const selectAll = document.querySelector<HTMLElement>('[data-testid="queue-select-all"]');
+    selectAll?.focus();
+    if (selectAll === null || document.activeElement !== selectAll) {
+      document.getElementById('main-content')?.focus({ preventScroll: true });
+    }
+    onClear();
+  }, [onClear]);
+
   if (readOnly || selectedIds.length === 0) return null;
 
   // Task 7 fix round 1 — see the module docstring's "Fix round 1" note.
@@ -452,7 +468,7 @@ export function QueueBulkActionBar({
             <Button
               variant="ghost"
               size="sm"
-              onClick={onClear}
+              onClick={handleClearClick}
               disabled={executing}
               className="min-h-11"
             >

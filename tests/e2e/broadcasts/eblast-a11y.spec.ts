@@ -214,9 +214,11 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       page,
     }, testInfo) => {
       await signInAsAdmin(page);
-      await scanScreen(page, testInfo, '/admin/broadcasts', (p) =>
-        p.getByRole('heading', { level: 1 }),
-      );
+      // The filter bar's `role="search"`, not the h1: since T086a V3 the
+      // loading skeleton carries the page's own header (title AND actions),
+      // so the h1 is on screen before the queue is — the scan would read the
+      // skeleton. The skeleton's filter bar is an `aria-hidden` box.
+      await scanScreen(page, testInfo, '/admin/broadcasts', (p) => p.getByRole('search'));
     });
 
     test('screen 4 — staff compose-on-behalf /admin/broadcasts/new', async ({
@@ -301,9 +303,9 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       await signInAsAdmin(page);
       await page.setViewportSize(REFLOW_VIEWPORT);
       await page.goto('/admin/broadcasts');
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible({
-        timeout: 120_000,
-      });
+      // The settled queue, not its skeleton (see screen 3): both have the h1
+      // and the header's action row, and the skeleton's is replaced mid-read.
+      await expect(page.getByRole('search')).toBeVisible({ timeout: 120_000 });
 
       const scrollWidth = await page.evaluate(
         () => document.documentElement.scrollWidth,
@@ -315,7 +317,7 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
 
       // …and the two header actions are on separate rows rather than one
       // overflowing line: the wrap is the mechanism, not a side effect.
-      const actions = page.locator('[data-slot="page-header-actions"]');
+      const actions = page.locator('[data-slot="page-header-actions"]:visible');
       await expect(actions).toBeVisible();
       const actionBox = await actions.boundingBox();
       expect(actionBox).not.toBeNull();

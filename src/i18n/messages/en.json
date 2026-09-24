@@ -3286,8 +3286,8 @@
           "statusLabel": "Stage",
           "memberLabel": "Member",
           "memberAll": "All members",
-          "fromDate": "From",
-          "toDate": "To",
+          "fromDate": "Submitted from",
+          "toDate": "Submitted to",
           "reset": "Reset filters",
           "upcomingSends": "Upcoming sends",
           "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}",
@@ -3502,6 +3502,7 @@
           "close": "Close",
           "confirm": "Confirm",
           "confirmCancel": "Cancel the time",
+          "confirmSendNow": "Send now",
           "confirmed": "Send time confirmed. The member will be notified.",
           "cancelled": "Confirmed send time cancelled."
         },
@@ -6398,6 +6399,10 @@
         },
         "back": "Back to broadcasts",
         "backToDashboard": "Back to dashboard",
+        "notFound": {
+          "title": "We couldn't find this E-Blast",
+          "body": "The link may be out of date, or the E-Blast is not on your account. Your E-Blasts are listed under Benefits."
+        },
         "cancelButton": "Cancel E-Blast",
         "cancelDialog": {
           "title": "Cancel this broadcast?",

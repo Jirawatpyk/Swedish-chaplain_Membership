@@ -370,10 +370,14 @@ export function QueueFilters({
   const renderChip = (s: BroadcastStatus): React.ReactElement => {
     const label = tStatus(s);
     const count = stageCounts === null ? null : stageCounts[s];
+    // T086a V4 (PR-1's U14) — the 44 px pill wears the focus ring (the
+    // Button's own tokens) while its checkbox has keyboard focus; the 16 px
+    // checkbox drops its outline so there is one ring, not two. The checkbox
+    // stays the focusable control: Tab, Space and its name are unchanged.
     return (
       <label
         key={s}
-        className="flex min-h-[44px] max-w-full cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40"
+        className="flex min-h-[44px] max-w-full cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs transition-[color,box-shadow] hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
       >
         <input
           type="checkbox"
@@ -381,7 +385,7 @@ export function QueueFilters({
           value={s}
           checked={isStatusChecked(s)}
           onChange={(e) => toggleStatus(s, e.target.checked)}
-          className="h-4 w-4 shrink-0 accent-primary"
+          className="h-4 w-4 shrink-0 accent-primary focus-visible:outline-none"
         />
         {/* SV runs up to +28 %: below `sm` the label truncates inside its chip
             (the full text in the tooltip) instead of reflowing the strip at

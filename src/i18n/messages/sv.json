@@ -3286,8 +3286,8 @@
           "statusLabel": "Steg",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
-          "fromDate": "Från",
-          "toDate": "Till",
+          "fromDate": "Inskickad från",
+          "toDate": "Inskickad till",
           "reset": "Återställ filter",
           "upcomingSends": "Kommande utskick",
           "chipCount": "{count, plural, one {# utskick} other {# utskick}}",
@@ -3502,6 +3502,7 @@
           "close": "Stäng",
           "confirm": "Bekräfta",
           "confirmCancel": "Avbryt tiden",
+          "confirmSendNow": "Skicka nu",
           "confirmed": "Sändningstiden är bekräftad. Medlemmen kommer att meddelas.",
           "cancelled": "Den bekräftade sändningstiden har avbrutits."
         },
@@ -6398,6 +6399,10 @@
         },
         "back": "Tillbaka till utskick",
         "backToDashboard": "Tillbaka till instrumentpanelen",
+        "notFound": {
+          "title": "Vi hittar inte det här utskicket",
+          "body": "Länken kan vara inaktuell, eller så hör utskicket inte till ditt konto. Dina utskick finns under Förmåner."
+        },
         "cancelButton": "Avbryt utskick",
         "cancelDialog": {
           "title": "Avbryta detta utskick?",

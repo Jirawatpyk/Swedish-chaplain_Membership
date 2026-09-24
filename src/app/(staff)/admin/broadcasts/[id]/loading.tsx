@@ -18,6 +18,19 @@
  * UX review M9: `aria-busy` like every other admin loading state; header bars
  * are capped (`w-full max-w-*`) so they fit 320 px; card-heading bars are
  * `h-5.5` — the real `<h2>` (`text-base leading-snug`) is ~22 px, not 20.
+ *
+ * T086a V7 — the content slot. The skeleton cannot know the stage, so it
+ * reserves the most common shape: the TWO-COLUMN grid from `lg`. Once a
+ * version exists — `in_design`, and every stage after a version was sent —
+ * the page renders its content that way: the writing tool (`in_design`, for
+ * a writer) or the read-only version, with the member's original beside it.
+ * Only `submitted` (and an E-Blast that never entered the round) renders the
+ * one-card round-0 shape. As the member's sign-off skeleton does, the first
+ * card is reserved at every width (below `lg` every shape starts with one
+ * card over a preview frame) and the second from `lg` only. Chosen over the
+ * writing tool's `[1fr_600px]` template because the read-only comparison is
+ * the shape every reader sees, a manager included; the writer's first column
+ * is taller than a frame, and that difference lands below the fold.
  */
 import { DetailContainer } from '@/components/layout';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -73,15 +86,25 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
         </CardContent>
       </Card>
 
-      {/* The message — heading + the sandboxed frame's fixed height. */}
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5.5 w-24" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="w-full" style={{ height: DETAIL_PREVIEW_FRAME_HEIGHT }} />
-        </CardContent>
-      </Card>
+      {/* The content (V7 above): the version, the member's original beside it
+          from lg — a heading, the subject line, the sandboxed frame. */}
+      <div data-skeleton="content-grid" className="grid gap-6 lg:grid-cols-2">
+        {Array.from({ length: 2 }, (_, i) => (
+          <Card key={i} className={i === 1 ? 'hidden lg:flex' : undefined}>
+            <CardHeader>
+              <Skeleton className="h-5.5 w-40 max-w-full" />
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton
+                data-skeleton="preview-frame"
+                className="w-full"
+                style={{ height: DETAIL_PREVIEW_FRAME_HEIGHT }}
+              />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       {/* Audit timeline. */}
       <Skeleton className="h-40 w-full" />

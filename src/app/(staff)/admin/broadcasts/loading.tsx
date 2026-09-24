@@ -35,7 +35,20 @@
  *     more than reserved — the rare case, and the chips wrap onto the line the
  *     strip already has.
  *   - The Upcoming sends button (h-9), which the skeleton did not reserve.
- *   - Table: header row + 6 body rows
+ *
+ * T086a V3 (PR-1's U12) — below the filter bar it drew seven full-width bars at
+ * every width, and the header had no actions. It now mirrors the rebuilt page:
+ *   - the header's action row: Templates (only while its flag is on, as the
+ *     page decides) and New E-Blast. Below `sm` they share a full-width row
+ *     under the title, which the skeleton did not reserve — ~80 px of shift on
+ *     every phone load. A manager sees no New E-Blast; the skeleton cannot know
+ *     the role, so it reserves the admin's row (the common reader);
+ *   - the order hint line above the list;
+ *   - from `md`: the eight-column table — a header row and two-line rows (a
+ *     value over its secondary line, as every real column renders);
+ *   - below `md`: the card list the page renders there instead;
+ *   - `aria-busy` on the container, like the other admin loading states.
+ * The stalled line is not reserved: it renders only when a shown row stalled.
  *
  * Bulk-action bar is omitted intentionally — it only renders when the
  * admin selects ≥1 row, so reserving space pre-data would itself cause
@@ -45,11 +58,18 @@ import { getTranslations } from 'next-intl/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   APPROVAL_ROUND_ONLY_STATUSES,
   OFFERED_BROADCAST_STATUSES,
   isEblastMemberApprovalEnabled,
+  isF71aUs7Enabled,
 } from '@/modules/broadcasts';
+
+/** The table's eight columns (select is the admin's extra, narrow one). */
+const QUEUE_COLUMNS = 8;
+const TABLE_ROWS = 6;
+const CARDS = 4;
 
 export default async function AdminBroadcastsLoading(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
@@ -57,8 +77,19 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
     ? OFFERED_BROADCAST_STATUSES.length
     : OFFERED_BROADCAST_STATUSES.filter((s) => !APPROVAL_ROUND_ONLY_STATUSES.has(s)).length;
   return (
-    <TableContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+    <TableContainer aria-busy="true">
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={
+          <>
+            {isF71aUs7Enabled() ? (
+              <Skeleton data-skeleton="header-action" className="h-9 w-36" aria-hidden="true" />
+            ) : null}
+            <Skeleton data-skeleton="header-action" className="h-9 w-32" aria-hidden="true" />
+          </>
+        }
+      />
       {/* SLA banner placeholder */}
       <Skeleton className="h-16 w-full" aria-hidden="true" />
       {/* Filter bar: one status chip per OFFERED status + member combobox + date×2 */}
@@ -98,11 +129,46 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
         {/* The Upcoming sends button — no label above it. */}
         <Skeleton data-skeleton="upcoming-sends" className="h-9 w-40" />
       </div>
-      {/* Table: header + 6 rows */}
-      <div className="space-y-2" aria-hidden="true">
-        <Skeleton className="h-10 w-full" />
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-full" />
+      {/* The order hint (`text-xs`) above the list. */}
+      <Skeleton data-skeleton="order-hint" className="h-4 w-48" aria-hidden="true" />
+      {/* From md: the eight-column table — an h-10 header row and two-line rows. */}
+      <div data-skeleton="queue-table" className="hidden md:block" aria-hidden="true">
+        <div className="grid grid-cols-8 gap-3 border-b px-2 py-3">
+          {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
+            <Skeleton key={i} data-skeleton="queue-column" className="h-4 w-3/4" />
+          ))}
+        </div>
+        {Array.from({ length: TABLE_ROWS }).map((_, row) => (
+          <div key={row} data-skeleton="queue-row" className="grid grid-cols-8 gap-3 border-b px-2 py-3">
+            {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
+              <div key={i} data-skeleton="queue-cell" className="space-y-1.5">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {/* Below md: the card list — subject + member beside the stage badge,
+          the labelled rows, and the actions. */}
+      <div data-skeleton="queue-card-list" className="flex flex-col gap-3 md:hidden" aria-hidden="true">
+        {Array.from({ length: CARDS }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+                <Skeleton className="h-5 w-20 rounded-4xl" />
+              </div>
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-1/2" />
+              <div className="flex justify-end">
+                <Skeleton className="h-9 w-40" />
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </TableContainer>
