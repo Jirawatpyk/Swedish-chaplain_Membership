@@ -21,7 +21,7 @@ import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { exportPaidInvoicesCsv } from '@/modules/invoicing';
-import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
+import { makeDrizzleTaxRegisterRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import type { ExportPaidInvoicesCsvDeps } from '@/modules/invoicing';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -43,7 +43,7 @@ describe('exportPaidInvoicesCsv — integration (live Neon)', () => {
   it('emits invoices_csv_exported with retention_years=5 + correct payload', async () => {
     const requestId = `int-csv-${randomUUID()}`;
     const deps: ExportPaidInvoicesCsvDeps = {
-      invoiceRepo: makeDrizzleInvoiceRepo(tenant.ctx.slug),
+      registerRepo: makeDrizzleTaxRegisterRepo(tenant.ctx.slug),
       audit: f4AuditAdapter,
       paymentMethodLookup: async () =>
         new Map<string, 'card' | 'promptpay'>(),
