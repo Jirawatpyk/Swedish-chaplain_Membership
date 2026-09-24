@@ -202,6 +202,45 @@ describe('InvoiceMoreMenu — 088 paid bill SC-vs-RC naming (T065 review fix)', 
   });
 });
 
+describe('InvoiceMoreMenu — paid 088 bill: bill actions name the SC, receipt actions the RC', () => {
+  function renderPaid088() {
+    render(
+      <InvoiceMoreMenu
+        {...BASE}
+        documentNumber="RC-2026-000123"
+        invoiceDownloadNumber="SC-2026-000045"
+        showDownload
+        showDownloadReceipt
+        showResendInvoice
+        showResendReceipt
+      />,
+    );
+  }
+
+  it('the ⋯ trigger names the bill (SC), the page identity', () => {
+    renderPaid088();
+    expect(
+      screen.getByRole('button', { name: 'actions.moreAria {"number":"SC-2026-000045"}' }),
+    ).toBeInTheDocument();
+  });
+
+  it('"Resend invoice email" resends the SC bill, so it names the SC', () => {
+    renderPaid088();
+    expect(screen.getByTestId('resend-invoice-trigger')).toHaveAttribute(
+      'aria-label',
+      'actions.resendInvoiceAria {"number":"SC-2026-000045"}',
+    );
+  });
+
+  it('receipt actions keep the RC', () => {
+    renderPaid088();
+    expect(screen.getByTestId('resend-receipt-trigger')).toHaveAttribute(
+      'aria-label',
+      'actions.resendReceiptAria {"number":"RC-2026-000123"}',
+    );
+  });
+});
+
 describe('InvoiceMoreMenu — pre-064 matrix pinned (regression net)', () => {
   it('bill-first combined-mode paid: receipt item carries the combined label, main download hidden', () => {
     // combinedModeReceipt is derived inside the menu from
