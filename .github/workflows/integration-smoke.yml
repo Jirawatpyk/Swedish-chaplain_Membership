@@ -91,6 +91,16 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      # Node's happy-eyeballs connect (autoSelectFamily, on by default since
+      # Node 20) gives each resolved address 250 ms. This runner is in the US and
+      # Neon is in ap-southeast-1 (~200 ms RTT, see header), so a TCP handshake
+      # can overrun the window on all three IPv4 addresses while IPv6 is
+      # unreachable on runners — the connect then fails as `AggregateError
+      # ETIMEDOUT … internalConnectMultipleTimeout`. Seen twice on PR #379
+      # (2026-09-24): the first connection of the vitest process failed one
+      # second after `db:migrate` had connected fine. 1 s per address keeps the
+      # fallback and stops a slow handshake from being treated as unreachable.
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
       # Kill-switches the exercised paths sit behind. Everything else comes
       # from .env.example via the composite action below.
       FEATURE_F7_BROADCASTS: 'true'

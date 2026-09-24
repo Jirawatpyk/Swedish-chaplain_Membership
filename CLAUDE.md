@@ -56,7 +56,7 @@ User prefers **Thai** for conversational turns. Code, specs, commit messages, an
 - **Auth**: custom session-based (Lucia v3 guide pattern), argon2id via `@node-rs/argon2`
 - **Storage**: Neon Postgres + Drizzle ORM; Upstash Redis for rate limiting — **both Singapore region**
 - **UI**: shadcn/ui + Tailwind CSS v4 + lucide-react + Radix primitives; `next-themes` for light/dark; `sonner` for toasts
-- **i18n**: next-intl — **EN default + TH + SV**. Missing EN key fails the build; missing TH/SV falls back to EN with a dev warning and CI failure on release branches. **TH is mandatory for Thai tax-compliant invoices/receipts** (F4).
+- **i18n**: next-intl — **EN default + TH + SV**. A literal `t('key')` whose key is missing from en.json fails `check:i18n` on every branch (statically resolvable calls only — dynamic keys and a `t` received as a parameter are skipped; see `scripts/lib/i18n-key-refs.ts`); missing TH/SV falls back to EN with a dev warning and CI failure on release branches. **TH is mandatory for Thai tax-compliant invoices/receipts** (F4).
 - **Forms**: react-hook-form + zod (zod also validates every system boundary and `process.env` via `src/lib/env.ts`)
 - **Email**: Resend (transactional), `@react-email/components` for templates
 - **Payments**: Stripe `^22` + Elements / Payment Intents (SAQ-A preserved) + PromptPay QR — **live in prod** (F5, PR #16). `STRIPE_API_VERSION` is env-pinned.
