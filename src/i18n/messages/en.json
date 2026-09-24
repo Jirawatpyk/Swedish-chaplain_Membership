@@ -2291,7 +2291,6 @@
         "cancel": "Cancel",
         "success": "Credit note issued.",
         "successWithNumber": "Credit note {number} issued.",
-        "successWithNumberNoNotice": "Invoice {number} was cancelled, but no cancellation notice was sent — this member has no primary contact.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "membershipCancellationFailedNotice": "Credit note issued, but the membership cancellation could not be completed automatically — cancel it manually from the Renewals page.",
         "membershipEffect": {
@@ -3181,6 +3180,7 @@
         "cancel": "Cancel",
         "success": "Invoice voided.",
         "successWithNumber": "Invoice {number} voided.",
+        "successWithNumberNoNotice": "Invoice {number} voided, but no cancellation notice was sent — this member has no primary contact.",
         "errors": {
           "failed": "Invoice could not be voided.",
           "unknown": "An unknown error occurred. Please try again.",
