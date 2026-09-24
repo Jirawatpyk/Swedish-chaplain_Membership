@@ -1043,9 +1043,11 @@ step 5's flip safe to take immediately after this merge.
    - **T120's stage-vocabulary relabel**: `approved` reads **"Scheduled"** in **both** live
      namespaces — `admin.broadcasts.queue.status` and `portal.broadcasts.list.status` — so every
      staff and member reader sees the new word on merge, before any flag. Code-revert-only;
-   - **T117's seven new queue columns** (Stage, Whose turn, Time in stage, Round, Proposed,
-     Confirmed, Last activity) and the `ageBadge` re-based on `stage_entered_at` — the live queue
-     changes shape for every staff user on merge. Code-revert-only;
+   - **T117's queue rebuild** — eight columns after the dashboard UX review (Member · Subject ·
+     Stage with Round and the delivery line · Whose turn · Time in stage with "since" · Send time
+     · Audience · Actions; Submitted moved to the detail page), the `ageBadge` re-based on
+     `stage_entered_at`, per-chip counts, Next/First page links, and non-waiting views sorted most
+     recent first — the live queue changes shape for every staff user on merge. Code-revert-only;
    - **T141a's portal detail fields** (`stage`, `whoseTurn`, `round`, `proposedSendAt`,
      `confirmedSendAt`, `expiresAt`, and the "latest **sent** version while awaiting" body rule) on
      `GET /api/broadcasts/[id]` and `/portal/broadcasts/[id]` — members see the widened detail on

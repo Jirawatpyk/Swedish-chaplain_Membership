@@ -39,6 +39,15 @@ URL remains the source of truth (every view is a link); `status_all=1` sentinel 
 | **Last activity** | `stage_entered_at` | FR-026 |
 | Delivery results | `recipients / delivered / bounced / complained` from the existing `broadcast_deliveries` aggregate, on `sent` rows | FR-029 |
 
+**Layout as built (amended after the 2026-09-24 dashboard UX review).** The fields above are all
+kept, but twelve separate columns pushed the Actions column off screen at 1280 px, so the table
+groups them into eight: Member · Subject · **Stage** (badge, "Round N" and, on `sent` rows, the
+delivery line) · Whose turn · **Time in stage** (with "since {date}", which is Last activity) ·
+**Send time** (the confirmed time; the proposal shown beneath it when it differs, or marked
+"Proposed" before confirmation) · **Audience** (segment and recipient count) · Actions. Submitted
+moves to the detail page. The sorted column carries `aria-sort` and a visible hint; a view whose
+every stage is someone's turn sorts longest-in-stage first, any other view most recent first.
+
 **At phone width** (`QueueCardList`, < md) the card shows **member, subject, stage, whose turn and
 time in stage** only; **round, proposed and confirmed send times move to the detail page** (FR-026).
 No horizontal scroll and no hidden-column menu.
