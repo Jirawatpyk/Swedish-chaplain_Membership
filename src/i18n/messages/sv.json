@@ -2313,9 +2313,9 @@
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "membershipEnd": {
           "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
-          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt i natt.",
+          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt inom en timme.",
           "noOpenCycle": "Medlemmen har ingen öppen förnyelsecykel, så det fanns ingen täckning att avsluta. Kontrollera medlemmens förnyelsestatus.",
-          "failed": "Medlemskapet kunde inte avslutas. Rapportera detta till supporten med kreditnotans nummer."
+          "failed": "Kreditnotan utfärdades, men medlemskapet kunde inte avslutas. Rapportera detta till supporten med kreditnotans nummer."
         },
         "membershipEffect": {
           "legend": "Vad ska hända med medlemskapet?",
@@ -4609,7 +4609,7 @@
         "outcome": {
           "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
           "scheduled": "Medlemskapet avslutas när återbetalningen är klar. Om återbetalningen misslyckas behålls medlemskapet.",
-          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt i natt.",
+          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt inom en timme.",
           "no_open_cycle": "Medlemmen har ingen öppen förnyelsecykel, så det fanns ingen täckning att avsluta. Kontrollera medlemmens förnyelsestatus.",
           "failed": "Återbetalningen genomfördes, men medlemskapet kunde inte avslutas. Rapportera detta till supporten med återbetalningsreferensen."
         }

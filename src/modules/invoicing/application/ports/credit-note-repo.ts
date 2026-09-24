@@ -57,6 +57,12 @@ export interface CreditNoteRepo {
        * full-vs-partial / subject and threads it here.
        */
       readonly retainsCoverage: boolean;
+      /**
+       * 0305 — staff's Keep / End membership intent, set ONLY on a FULL
+       * membership credit (omitted otherwise). Durable source for the renewals
+       * reconcile backstop.
+       */
+      readonly membershipEffect?: 'keep' | 'cancel_membership';
     },
   ): Promise<CreditNote>;
 

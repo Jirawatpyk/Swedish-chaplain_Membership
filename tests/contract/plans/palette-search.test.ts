@@ -257,6 +257,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
             {
               invoiceId: 'inv-1',
               total: { satang: 250000 },
+              creditedTotal: { satang: 0n },
               currency: 'THB',
               memberIdentitySnapshot: { legal_name: 'Fogmaker AB' },
               documentNumber: { raw: 'SC-2026-000123' },
@@ -284,6 +285,12 @@ describe('contract: GET /api/plans/search (T064)', () => {
       const body = await res.json();
       expect(body.results.refundableInvoices).toHaveLength(1);
       expect(body.results.refundableInvoices[0].invoice_id).toBe('inv-1');
+      // The palette offers the SAME cap the refund pre-flight enforces:
+      // min(payment remainder, invoice total − credited).
+      expect(computeRemainingRefundableMock).toHaveBeenCalledWith(expect.anything(), {
+        totalSatang: 250000,
+        creditedTotalSatang: 0n,
+      });
     });
 
     it('manager never receives the section — the arm must not even query', async () => {
@@ -385,6 +392,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
       documentNumber: null,
       receiptDocumentNumberRaw: 'RC-2026-000015',
       total: { satang: 53_500n },
+      creditedTotal: { satang: 0n },
       currency: 'THB',
       memberIdentitySnapshot: null,
     };
@@ -394,6 +402,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
       documentNumber: { raw: 'IN-2026-000002' },
       receiptDocumentNumberRaw: null,
       total: { satang: 10_000n },
+      creditedTotal: { satang: 0n },
       currency: 'THB',
       memberIdentitySnapshot: null,
     };

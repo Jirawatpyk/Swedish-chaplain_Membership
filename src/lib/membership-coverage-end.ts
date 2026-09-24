@@ -12,13 +12,18 @@
  * Outcomes (the `membership_end` response field):
  *   - `ended`         access ended now.
  *   - `scheduled`     the refund is still settling; coverage ends once it
- *                     settles `succeeded` (nightly reconcile). A `failed`
+ *                     settles `succeeded` (hourly reconcile). A `failed`
  *                     settle keeps the membership — no money came back.
- *   - `deferred`      the end failed inline; the nightly pass retries it.
+ *   - `deferred`      the end failed inline; the hourly pass retries it.
  *   - `no_open_cycle` the member has no open renewal cycle — nothing to end.
- *   - `failed`        could not end or schedule; the admin must follow up.
+ *   - `failed`        could not end or schedule. The decision is still on the
+ *                     refund / credit-note row, so the hourly reconcile's
+ *                     backstop recovers it; the admin is told to report it.
+ *
+ * Also named in metrics: `renewals_membership_end_requests_total`.
  */
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { asMemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -34,7 +39,7 @@ export type MembershipEndOutcome =
   | 'no_open_cycle'
   | 'failed';
 
-export async function endMembershipAfterMoneyReturned(args: {
+export async function requestMembershipEnd(args: {
   readonly tenant: TenantContext;
   /** Null only on a corrupt row (a membership invoice always has a member). */
   readonly memberId: string | null;
@@ -46,6 +51,12 @@ export async function endMembershipAfterMoneyReturned(args: {
   readonly requestId: string | null;
   readonly correlationId: string;
 }): Promise<MembershipEndOutcome> {
+  const outcome = await run(args);
+  renewalsMetrics.membershipEndRequested(args.tenant.slug, args.trigger, outcome);
+  return outcome;
+}
+
+async function run(args: Parameters<typeof requestMembershipEnd>[0]): Promise<MembershipEndOutcome> {
   const logBase = {
     tenantId: args.tenant.slug,
     trigger: args.trigger,

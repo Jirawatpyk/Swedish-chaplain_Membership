@@ -13,7 +13,7 @@
 --    of `expires_at`), written only by `endMembershipCoverageNow`.
 --
 -- 2. `renewal_cycles.end_coverage_*` — a durable "end this member's coverage"
---    request on their OPEN cycle, converged by the nightly reconcile cron:
+--    request on their OPEN cycle, converged by the hourly reconcile cron:
 --      * refund-backed (refund_id + invoice_id set): end only once the F5
 --        refund SETTLES `succeeded`; a `failed` settle clears the request and
 --        the member keeps coverage (no money came back);
@@ -67,7 +67,7 @@ ALTER TABLE "renewal_cycles"
   ADD COLUMN "end_coverage_actor_user_id" text;
 --> statement-breakpoint
 
--- The nightly reconcile scans only the (rare) requested rows.
+-- The hourly reconcile scans only the (rare) requested rows.
 CREATE INDEX IF NOT EXISTS "renewal_cycles_end_coverage_requested_idx"
   ON "renewal_cycles" ("tenant_id")
   WHERE "end_coverage_requested_at" IS NOT NULL;
@@ -80,3 +80,29 @@ ALTER TABLE "refunds"
 ALTER TABLE "refunds"
   ADD CONSTRAINT "refunds_membership_effect_check"
     CHECK ("membership_effect" IS NULL OR "membership_effect" IN ('keep', 'cancel_membership'));
+--> statement-breakpoint
+
+-- 4. `credit_notes.membership_effect` — the staff's Keep / End membership
+--    intent on a FULL membership credit ('keep' | 'cancel_membership'),
+--    written in the credit note's own tx. With `refunds.membership_effect`
+--    it is the DURABLE record the renewals reconcile backstop re-reads when a
+--    route's post-commit "end membership" call was lost. NULL on partial /
+--    event credits and pre-0305 rows.
+ALTER TABLE "credit_notes"
+  ADD COLUMN "membership_effect" text;
+--> statement-breakpoint
+
+ALTER TABLE "credit_notes"
+  ADD CONSTRAINT "credit_notes_membership_effect_check"
+    CHECK ("membership_effect" IS NULL OR "membership_effect" IN ('keep', 'cancel_membership'));
+--> statement-breakpoint
+
+-- The backstop reads only recent End decisions — a tiny partial index.
+CREATE INDEX IF NOT EXISTS "credit_notes_membership_end_idx"
+  ON "credit_notes" ("tenant_id", "created_at")
+  WHERE "membership_effect" = 'cancel_membership';
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS "refunds_membership_end_idx"
+  ON "refunds" ("tenant_id", "initiated_at")
+  WHERE "membership_effect" = 'cancel_membership';

@@ -20,7 +20,7 @@ import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 import {
-  endMembershipAfterMoneyReturned,
+  requestMembershipEnd,
   type MembershipEndOutcome,
 } from '@/lib/membership-coverage-end';
 import { stripReason } from '../invoices/_serialise';
@@ -211,10 +211,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // SAME one the refund route uses) — orchestrated HERE in presentation, never
   // from F4 Application (Principle III). The outcome rides on the 201 body as
   // `membership_end`; a failure never retroactively fails the credit note
-  // (`deferred` = the nightly pass retries it).
+  // (`deferred` = the hourly pass retries it).
   let membershipEnd: MembershipEndOutcome | undefined;
   if (result.value.membershipCancellationRequested) {
-    membershipEnd = await endMembershipAfterMoneyReturned({
+    membershipEnd = await requestMembershipEnd({
       tenant: tenantCtx,
       memberId: result.value.creditNote.originalInvoiceMemberId,
       trigger: 'credit_note',

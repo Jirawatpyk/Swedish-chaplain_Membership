@@ -46,7 +46,7 @@ import {
 } from '@/lib/stripe-webhook-deps';
 import { errKind } from '@/lib/log-id';
 import {
-  endMembershipAfterMoneyReturned,
+  requestMembershipEnd,
   type MembershipEndOutcome,
 } from '@/lib/membership-coverage-end';
 
@@ -350,13 +350,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // 0305 — End membership: the refund has committed; now end the member's
       // coverage through the SAME renewals operation the credit-note route
       // uses (orchestrated HERE, never from F5 Application). A settled refund
-      // ends it now; an async (202) one only SCHEDULES it — the nightly
+      // ends it now; an async (202) one only SCHEDULES it — the hourly
       // reconcile ends coverage once the refund settles `succeeded`, and keeps
       // the membership if it settles `failed` (no money came back). A failure
       // here never fails the already-committed refund.
       const membershipEnd: MembershipEndOutcome | undefined =
         parsedBody.membershipEffect === 'cancel_membership'
-          ? await endMembershipAfterMoneyReturned({
+          ? await requestMembershipEnd({
               tenant: tenantCtx,
               memberId: v.refund.memberId,
               trigger: 'refund',

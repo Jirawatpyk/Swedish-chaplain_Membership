@@ -6,7 +6,7 @@
  * every row touched, even on paths that forget a WHERE tenant_id
  * filter.
  */
-import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, isNull, sql } from 'drizzle-orm';
 import { asSatang } from '@/lib/money';
 import type { CreditNoteRepo } from '../../application/ports/credit-note-repo';
 import {
@@ -196,6 +196,9 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           pdfTemplateVersion: input.pdf.templateVersion,
           // M1 (plan-change-ux, Option 1b) — write-once coverage-retention intent.
           retainsCoverage: input.retainsCoverage,
+          ...(input.membershipEffect !== undefined
+            ? { membershipEffect: input.membershipEffect }
+            : {}),
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),
@@ -491,4 +494,48 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       });
     },
   };
+}
+
+/**
+ * 0305 — reader behind `listManualCreditNotesEndingMembership`: MANUAL credit
+ * notes (no `source_refund_id`) whose staff chose End membership, issued
+ * at/after `since`, with the invoice's member. Standalone tenant scope +
+ * explicit tenant predicate (Principle I two-layer).
+ */
+export function makeDrizzleManualCreditNotesEndingMembershipReader(tenantId: string) {
+  const ctx = asTenantContext(tenantId);
+  return async (tid: string, since: Date) =>
+    runInTenant(ctx, async (tx) => {
+      const rows = await tx
+        .select({
+          creditNoteId: creditNotes.creditNoteId,
+          invoiceId: creditNotes.originalInvoiceId,
+          memberId: invoices.memberId,
+          issuedAt: creditNotes.createdAt,
+        })
+        .from(creditNotes)
+        .innerJoin(
+          invoices,
+          and(
+            eq(invoices.tenantId, creditNotes.tenantId),
+            eq(invoices.invoiceId, creditNotes.originalInvoiceId),
+          ),
+        )
+        .where(
+          and(
+            eq(creditNotes.tenantId, tid),
+            eq(creditNotes.membershipEffect, 'cancel_membership'),
+            isNull(creditNotes.sourceRefundId),
+            gte(creditNotes.createdAt, since),
+          ),
+        );
+      return rows
+        .filter((r): r is typeof r & { memberId: string } => r.memberId !== null)
+        .map((r) => ({
+          creditNoteId: r.creditNoteId,
+          invoiceId: r.invoiceId,
+          memberId: r.memberId,
+          issuedAt: r.issuedAt,
+        }));
+    });
 }

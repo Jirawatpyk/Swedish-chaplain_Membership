@@ -959,6 +959,11 @@ export async function issueCreditNote(
           // M1 (plan-change-ux, Option 1b) — coverage-retention intent derived
           // above (sourceRefundId-first). Write-once at INSERT.
           retainsCoverage,
+          // 0305 — the declared Keep / End intent, only on a FULL membership
+          // credit (the renewals backstop re-reads End decisions from here).
+          ...(isMembershipInvoice && isFullCredit && input.membershipEffect !== undefined
+            ? { membershipEffect: input.membershipEffect }
+            : {}),
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),

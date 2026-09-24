@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -645,3 +645,43 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
  * tests + composition roots that need to drive the repo directly.
  */
 export { runInTenant as _runInTenantForRefundsRepo };
+
+/**
+ * 0305 — reader behind `listRefundsEndingMembership`: refunds whose staff
+ * chose End membership, initiated at/after `since`, with the paying member.
+ * Standalone tenant scope (`runInTenant`) + explicit tenant predicate
+ * (Principle I two-layer).
+ */
+export function makeDrizzleRefundsEndingMembershipReader(tenantId: string) {
+  const ctx = asTenantContext(tenantId);
+  return async (tid: string, since: Date) =>
+    runInTenant(ctx, async (tx) => {
+      const rows = await tx
+        .select({
+          refundId: refunds.id,
+          invoiceId: refunds.invoiceId,
+          memberId: payments.memberId,
+          status: refunds.status,
+          initiatedAt: refunds.initiatedAt,
+        })
+        .from(refunds)
+        .innerJoin(
+          payments,
+          and(eq(payments.tenantId, refunds.tenantId), eq(payments.id, refunds.paymentId)),
+        )
+        .where(
+          and(
+            eq(refunds.tenantId, tid),
+            eq(refunds.membershipEffect, 'cancel_membership'),
+            gte(refunds.initiatedAt, since),
+          ),
+        );
+      return rows.map((r) => ({
+        refundId: r.refundId,
+        invoiceId: r.invoiceId,
+        memberId: r.memberId,
+        status: assertRefundStatus(r.status, r.refundId),
+        initiatedAt: r.initiatedAt,
+      }));
+    });
+}

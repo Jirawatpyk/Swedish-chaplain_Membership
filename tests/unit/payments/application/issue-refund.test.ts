@@ -1736,6 +1736,29 @@ describe('issueRefund — membership effect (0305)', () => {
     if (r.ok) expect(r.value.refund.memberId).toBe('mbr-1');
   });
 
+  it('refuses cancel_membership on a WAIVED refund (voided invoice) — its period was never a paid, creditable one', async () => {
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: {
+          kind: 'waive' as const,
+          reason: 'invoice_voided' as const,
+          invoiceStatus: 'void' as const,
+        },
+        invoiceSubject: 'membership' as const,
+      }),
+    );
+    const r = await issueRefund(
+      deps,
+      baseInput({ amountSatang: PAYMENT_AMOUNT_SATANG, membershipEffect: 'cancel_membership' }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('membership_effect_not_applicable');
+    expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+  });
+
   it('no declared effect → nothing pinned (null) and nothing forwarded beyond F4\'s own default', async () => {
     const deps = makeDeps();
     const r = await issueRefund(deps, baseInput());

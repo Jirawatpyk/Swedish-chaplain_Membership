@@ -22,7 +22,7 @@
  *   pnpm test:integration tests/integration/renewals/end-membership-coverage.test.ts
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -265,6 +265,14 @@ describe('end membership coverage now (shared by credit-note + refund paths)', (
     return deriveMembershipAccess(latest, new Date()).access;
   }
 
+  async function cycleMember(cycleId: string) {
+    const [row] = await db
+      .select({ memberId: renewalCycles.memberId })
+      .from(renewalCycles)
+      .where(eq(renewalCycles.cycleId, cycleId));
+    return row?.memberId;
+  }
+
   async function cycleRow(cycleId: string) {
     const [row] = await db
       .select({
@@ -443,6 +451,200 @@ describe('end membership coverage now (shared by credit-note + refund paths)', (
       });
       expect(again.ok).toBe(true);
       expect(await cycleRow(c2)).toMatchObject({ status: 'cancelled', closedReason: 'coverage_ended' });
+    }, 60_000);
+  });
+
+  describe('reliability guards', () => {
+    async function seedMemberWithCycle(
+      status: 'pending_admin_reactivation' | 'lapsed' | 'upcoming',
+    ): Promise<{ memberId: string; cycleId: string }> {
+      const memberId = randomUUID();
+      const cycleId = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'Guard Co',
+          country: 'TH',
+          planId,
+          planYear: 2026,
+        });
+        await tx.insert(renewalCycles).values({
+          tenantId: tenant.ctx.slug,
+          cycleId,
+          memberId,
+          status,
+          periodFrom: C1_FROM,
+          periodTo: C1_TO,
+          expiresAt: C1_TO,
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: planId,
+          frozenPlanPriceThb: '1070.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          ...(status === 'pending_admin_reactivation' ? { enteredPendingAt: new Date() } : {}),
+          ...(status === 'lapsed'
+            ? { closedAt: new Date(), closedReason: 'lapsed' }
+            : {}),
+        });
+      });
+      return { memberId, cycleId };
+    }
+
+    it('never ends a pending_admin_reactivation cycle (its held payment belongs to the reactivation review)', async () => {
+      const { memberId, cycleId } = await seedMemberWithCycle('pending_admin_reactivation');
+      const r = await endMembershipCoverageNow(makeRenewalsDeps(tenant.ctx.slug), {
+        ...base(),
+        memberId: asMemberId(memberId),
+        trigger: 'credit_note',
+        correlationId: `credit-note:${randomUUID()}`,
+      });
+      expect(r.ok && r.value).toEqual({ outcome: 'no_open_cycle' });
+      expect((await cycleRow(cycleId)).status).toBe('pending_admin_reactivation');
+    }, 60_000);
+
+    it('clears a request stranded on a cycle that left the open states (so a lapsed→comeback can never revive it) and counts it', async () => {
+      const { cycleId } = await seedMemberWithCycle('lapsed');
+      await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .update(renewalCycles)
+          .set({ endCoverageRequestedAt: new Date(), endCoverageActorUserId: user.userId })
+          .where(eq(renewalCycles.cycleId, cycleId)),
+      );
+      const pass = await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), {
+        tenant: tenant.ctx,
+      });
+      expect(pass.ok && pass.value.strandedCleared).toBeGreaterThanOrEqual(1);
+      expect(await cycleRow(cycleId)).toMatchObject({ status: 'lapsed', endCoverageRequestedAt: null });
+    }, 60_000);
+
+    it('expires a request whose refund has not settled in 14 days: cleared, counted, membership kept', async () => {
+      const { memberId, c2, invoiceId, paymentId } = await seedPaidRenewal();
+      const refundId = await seedPendingRefund(invoiceId, paymentId);
+      await endMembershipCoverageNow(makeRenewalsDeps(tenant.ctx.slug), {
+        ...base(),
+        memberId: asMemberId(memberId),
+        trigger: 'refund',
+        awaitRefund: { refundId, invoiceId },
+        correlationId: `refund:${refundId}`,
+      });
+      // Realistic: the marker and its refund are both 15 days old (the
+      // backstop window is shorter than the expiry, so it never re-stamps).
+      const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 3600 * 1000);
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx
+          .update(renewalCycles)
+          .set({ endCoverageRequestedAt: fifteenDaysAgo })
+          .where(eq(renewalCycles.cycleId, c2));
+        await tx.update(refunds).set({ initiatedAt: fifteenDaysAgo }).where(eq(refunds.id, refundId));
+      });
+      const pass = await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), {
+        tenant: tenant.ctx,
+      });
+      expect(pass.ok && pass.value.expired).toBeGreaterThanOrEqual(1);
+      expect(await cycleRow(c2)).toMatchObject({ status: 'upcoming', endCoverageRequestedAt: null });
+      expect(await access(memberId)).toBe('full');
+    }, 60_000);
+  });
+
+  describe('backstop — a lost route call never drops the staff decision', () => {
+    it('refund SUCCEEDED with End chosen, but the route never ended coverage → the pass ends it', async () => {
+      const { memberId, c2, invoiceId, paymentId } = await seedPaidRenewal();
+      const refundId = await seedPendingRefund(invoiceId, paymentId); // effect = cancel_membership
+      await settleRefund(refundId, 'succeeded'); // no marker was ever stamped
+      expect(await access(memberId)).toBe('full');
+
+      const pass = await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), {
+        tenant: tenant.ctx,
+      });
+      expect(pass.ok && pass.value.backstopApplied).toBeGreaterThanOrEqual(1);
+      expect(await cycleRow(c2)).toMatchObject({ status: 'cancelled', closedReason: 'coverage_ended' });
+      expect(await access(memberId)).toBe('terminated');
+    }, 60_000);
+
+    it('refund still PENDING with End chosen and no request → the pass only stamps the request (membership kept for now)', async () => {
+      const { memberId, c2, invoiceId, paymentId } = await seedPaidRenewal();
+      const refundId = await seedPendingRefund(invoiceId, paymentId);
+      await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), { tenant: tenant.ctx });
+      expect(await cycleRow(c2)).toMatchObject({ status: 'upcoming', endCoverageRefundId: refundId });
+      expect(await access(memberId)).toBe('full');
+    }, 60_000);
+
+    it('manual credit note with End chosen, route call lost → the pass ends coverage', async () => {
+      const { memberId, c2, invoiceId } = await seedPaidRenewal();
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.execute(sql`
+          INSERT INTO credit_notes (
+            tenant_id, credit_note_id, original_invoice_id, fiscal_year, sequence_number,
+            document_number, issue_date, issued_by_user_id, reason, credit_amount_satang,
+            vat_satang, total_satang, tenant_identity_snapshot, member_identity_snapshot,
+            pdf_blob_key, pdf_sha256, pdf_template_version, membership_effect,
+            created_at, updated_at
+          ) VALUES (
+            ${tenant.ctx.slug}, ${randomUUID()}, ${invoiceId}, 2026,
+            ${Math.floor(Math.random() * 900_000) + 1}, ${'ECC-' + randomUUID().slice(0, 8)},
+            '2026-09-10', ${user.userId}, 'withdrawal', 100000, 7000, 107000,
+            '{}'::jsonb, '{}'::jsonb, 'k', ${'b'.repeat(64)}, 1, 'cancel_membership',
+            NOW(), NOW()
+          )
+        `),
+      );
+      await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), { tenant: tenant.ctx });
+      expect(await cycleRow(c2)).toMatchObject({ status: 'cancelled', closedReason: 'coverage_ended' });
+      expect(await access(memberId)).toBe('terminated');
+    }, 60_000);
+
+    it('never touches an open cycle created AFTER the decision (e.g. a later comeback)', async () => {
+      const { c2, invoiceId, paymentId } = await seedPaidRenewal();
+      const refundId = await seedPendingRefund(invoiceId, paymentId);
+      await settleRefund(refundId, 'succeeded');
+      // The open cycle post-dates the refund decision.
+      await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .update(renewalCycles)
+          .set({ createdAt: new Date(Date.now() + 60_000) })
+          .where(eq(renewalCycles.cycleId, c2)),
+      );
+      await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), { tenant: tenant.ctx });
+      expect((await cycleRow(c2)).status).toBe('upcoming');
+    }, 60_000);
+  });
+
+  describe('tenant isolation (Principle I) — the request writes', () => {
+    it("another tenant's repo can neither stamp nor clear this tenant's cycle", async () => {
+      const other = await createTestTenant('test-chamber');
+      try {
+        const { c2, invoiceId, paymentId } = await seedPaidRenewal();
+        const refundId = await seedPendingRefund(invoiceId, paymentId);
+        await endMembershipCoverageNow(makeRenewalsDeps(tenant.ctx.slug), {
+          ...base(),
+          memberId: asMemberId((await cycleMember(c2))!),
+          trigger: 'refund',
+          awaitRefund: { refundId, invoiceId },
+          correlationId: `refund:${refundId}`,
+        });
+        const otherRepo = makeRenewalsDeps(other.ctx.slug).coverageEndRequests;
+        const stamped = await runInTenant(other.ctx, (tx) =>
+          otherRepo.stampInTx(tx, other.ctx.slug, c2 as never, {
+            requestedAt: new Date().toISOString(),
+            refundId: null,
+            invoiceId: null,
+            actorUserId: null,
+          }),
+        );
+        const cleared = await runInTenant(other.ctx, (tx) =>
+          otherRepo.clearInTx(tx, other.ctx.slug, c2 as never, refundId),
+        );
+        expect(stamped).toBe(false);
+        expect(cleared).toBe(false);
+        expect(await cycleRow(c2)).toMatchObject({ endCoverageRefundId: refundId });
+        const otherPending = await otherRepo.listPending(other.ctx.slug, 50);
+        expect(otherPending.find((r) => r.cycleId === c2)).toBeUndefined();
+      } finally {
+        await other.cleanup().catch(() => {});
+      }
     }, 60_000);
   });
 });

@@ -78,6 +78,8 @@ import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
 import type { ResendPdfDeps } from './use-cases/resend-pdf';
 import type { BlobStoragePort } from './ports/blob-storage-port';
+import type { ListManualCreditNotesEndingMembershipDeps } from './use-cases/list-manual-credit-notes-ending-membership';
+import { makeDrizzleManualCreditNotesEndingMembershipReader } from '../infrastructure/repos/drizzle-credit-note-repo';
 
 /**
  * The one seam for swapping an EXTERNAL service out of a composition.
@@ -700,4 +702,14 @@ export function makeRenderReceiptPdfDeps(
     audit: f4AuditAdapter,
     clock: systemClock,
   };
+}
+
+/**
+ * 0305 — the renewals reconcile backstop reads recent manual "End
+ * membership" credit notes through this facade.
+ */
+export function makeListManualCreditNotesEndingMembershipDeps(
+  tenantId: string,
+): ListManualCreditNotesEndingMembershipDeps {
+  return { read: makeDrizzleManualCreditNotesEndingMembershipReader(tenantId) };
 }

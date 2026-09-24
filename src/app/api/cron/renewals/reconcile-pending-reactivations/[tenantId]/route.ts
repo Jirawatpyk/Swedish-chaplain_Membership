@@ -29,7 +29,6 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import {
   reconcilePendingReactivations,
-  reconcileMembershipCoverageEnds,
   makeRenewalsDeps,
 } from '@/modules/renewals';
 
@@ -105,23 +104,7 @@ export async function POST(
           { status: 400 },
         );
       }
-      // 0305 — converge "end membership coverage" requests: end coverage once
-      // the refund it waits on settles `succeeded`, keep it when the refund
-      // failed, retry an inline end that failed. Independent of the
-      // reactivation pass above; its failure never fails this response.
-      const coverageEnds = await reconcileMembershipCoverageEnds(deps, {
-        tenant: tenantCtx,
-      });
       return NextResponse.json({
-        coverage_ends: coverageEnds.ok
-          ? {
-              ended: coverageEnds.value.ended,
-              // Refund settled `failed` — no money back, membership kept.
-              refund_failed_kept: coverageEnds.value.abandonedRefundFailed,
-              waiting: coverageEnds.value.waiting,
-              errored: coverageEnds.value.errored,
-            }
-          : { error: coverageEnds.error.kind },
         skipped: false,
         cycles_processed: result.value.cyclesProcessed,
         reminders_t7: result.value.remindersT7,

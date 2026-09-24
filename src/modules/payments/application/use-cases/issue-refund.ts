@@ -781,12 +781,16 @@ async function issueRefundBody(
     }
 
     // 0305 — `cancel_membership` only applies when THIS refund fully credits a
-    // MEMBERSHIP invoice (that is what withdraws the paid period). Above the
+    // MEMBERSHIP invoice (that is what withdraws the paid period) — and only
+    // when a credit note will actually be issued: a WAIVED refund (voided
+    // invoice) never covered a period, so its money is an orphan / duplicate
+    // and ending a paid-up member's coverage for it would be wrong. Above the
     // insert + `refund_initiated` emit for the same reason as every guard
     // here: `err()` inside `runInTenant` COMMITS.
     if (
       input.membershipEffect === 'cancel_membership' &&
       (invoiceCredited.value.invoiceSubject !== 'membership' ||
+        requirement.kind !== 'issue' ||
         input.amountSatang !==
           invoiceCredited.value.totalSatang - invoiceCredited.value.creditedTotalSatang)
     ) {
