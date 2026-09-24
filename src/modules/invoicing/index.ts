@@ -410,6 +410,7 @@ export {
   parseCreditNoteId,
   type CreditNote,
   type CreditNoteId,
+  type CreditNoteOriginalDocuments,
 } from './domain/credit-note';
 
 export {

@@ -18,6 +18,10 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
+import {
+  resolveCreditNoteOriginalDocuments,
+  type CreditNoteOriginalDocuments,
+} from '../../domain/credit-note';
 
 export interface ListCreditNotesInput {
   readonly tenantId: string;
@@ -34,7 +38,10 @@ export interface ListCreditNotesRow {
   readonly documentNumberRaw: string;
   readonly issueDate: string;
   readonly originalInvoiceId: string;
-  readonly originalInvoiceNumberRaw: string | null;
+  /** The receipt this note reduces + the bill / invoice behind it. */
+  readonly original: CreditNoteOriginalDocuments;
+  /** Issued by the F5 refund flow (`source_refund_id` set). */
+  readonly isRefund: boolean;
   readonly memberLegalName: string;
   readonly totalSatang: string;
   readonly reason: string;
@@ -82,7 +89,12 @@ export async function listCreditNotes(
     documentNumberRaw: r.documentNumberRaw,
     issueDate: r.issueDate,
     originalInvoiceId: r.originalInvoiceId,
-    originalInvoiceNumberRaw: r.originalInvoiceNumberRaw,
+    original: resolveCreditNoteOriginalDocuments({
+      receiptDocumentNumberRaw: r.originalReceiptDocumentNumberRaw,
+      documentNumberRaw: r.originalDocumentNumberRaw,
+      billDocumentNumberRaw: r.originalBillDocumentNumberRaw,
+    }),
+    isRefund: r.sourceRefundId !== null,
     memberLegalName: r.memberLegalName,
     totalSatang: r.totalSatang.toString(),
     reason: r.reason,

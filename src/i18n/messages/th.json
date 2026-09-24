@@ -2374,11 +2374,11 @@
         "columns": {
           "documentNumber": "เลขที่",
           "issueDate": "วันที่ออก",
-          "originalInvoice": "ใบแจ้งหนี้อ้างอิง",
           "member": "สมาชิก",
           "reason": "เหตุผล",
           "total": "ยอดรวม",
-          "actions": "การดำเนินการ"
+          "actions": "การดำเนินการ",
+          "originalReceipt": "ใบเสร็จรับเงินอ้างอิง"
         },
         "filters": {
           "search": "ค้นหาเลขที่เอกสาร",
@@ -2419,11 +2419,10 @@
         "fields": {
           "issueDate": "วันที่ออกเอกสาร",
           "issuedBy": "ออกโดย",
-          "originalInvoice": "ใบแจ้งหนี้อ้างอิง",
-          "originalInvoiceLinkLabel": "เปิดใบแจ้งหนี้",
           "creditAmount": "จำนวนเงินที่ลดหนี้ (ไม่รวม VAT)",
           "vat": "ภาษีมูลค่าเพิ่ม",
-          "total": "ยอดรวมที่ลดหนี้ (รวม VAT)"
+          "total": "ยอดรวมที่ลดหนี้ (รวม VAT)",
+          "originalReceipt": "ใบเสร็จรับเงินอ้างอิง"
         },
         "reason": {
           "heading": "เหตุผล"
@@ -6042,11 +6041,10 @@
         },
         "fields": {
           "issueDate": "วันที่ออกเอกสาร",
-          "originalInvoice": "ใบแจ้งหนี้อ้างอิง",
-          "originalInvoiceLinkLabel": "เปิดใบแจ้งหนี้",
           "creditAmount": "จำนวนเงินที่ลดหนี้ (ไม่รวม VAT)",
           "vat": "ภาษีมูลค่าเพิ่ม",
-          "total": "ยอดรวมที่ลดหนี้ (รวม VAT)"
+          "total": "ยอดรวมที่ลดหนี้ (รวม VAT)",
+          "originalReceipt": "ใบเสร็จรับเงินอ้างอิง"
         },
         "reason": {
           "heading": "เหตุผล"
@@ -7262,6 +7260,13 @@
           "generic": "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"
         }
       }
+    },
+    "creditNoteOriginal": {
+      "bill": "ใบแจ้งหนี้ {number}",
+      "invoice": "ใบกำกับภาษี {number}",
+      "combined": "ใบกำกับภาษี/ใบเสร็จรับเงิน",
+      "refund": "คืนเงิน",
+      "refundHint": "ออกจากการคืนเงินผ่านบัตรหรือพร้อมเพย์"
     }
   },
   "email": {

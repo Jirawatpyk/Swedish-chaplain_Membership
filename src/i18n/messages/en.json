@@ -2374,11 +2374,11 @@
         "columns": {
           "documentNumber": "Number",
           "issueDate": "Issued",
-          "originalInvoice": "Original invoice",
           "member": "Member",
           "reason": "Reason",
           "total": "Total",
-          "actions": "Actions"
+          "actions": "Actions",
+          "originalReceipt": "Original receipt"
         },
         "filters": {
           "search": "Search document number",
@@ -2419,11 +2419,10 @@
         "fields": {
           "issueDate": "Issue date",
           "issuedBy": "Issued by",
-          "originalInvoice": "Original invoice",
-          "originalInvoiceLinkLabel": "Open invoice",
           "creditAmount": "Credit amount (excl. VAT)",
           "vat": "VAT",
-          "total": "Total credit (incl. VAT)"
+          "total": "Total credit (incl. VAT)",
+          "originalReceipt": "Original receipt"
         },
         "reason": {
           "heading": "Reason"
@@ -6042,11 +6041,10 @@
         },
         "fields": {
           "issueDate": "Issue date",
-          "originalInvoice": "Original invoice",
-          "originalInvoiceLinkLabel": "Open invoice",
           "creditAmount": "Credit amount (excl. VAT)",
           "vat": "VAT",
-          "total": "Total credit (incl. VAT)"
+          "total": "Total credit (incl. VAT)",
+          "originalReceipt": "Original receipt"
         },
         "reason": {
           "heading": "Reason"
@@ -7262,6 +7260,13 @@
           "generic": "Something went wrong. Please try again."
         }
       }
+    },
+    "creditNoteOriginal": {
+      "bill": "Bill {number}",
+      "invoice": "Invoice {number}",
+      "combined": "Combined tax invoice/receipt",
+      "refund": "Refund",
+      "refundHint": "Issued by a card or PromptPay refund"
     }
   },
   "email": {

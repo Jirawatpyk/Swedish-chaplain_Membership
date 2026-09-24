@@ -2374,11 +2374,11 @@
         "columns": {
           "documentNumber": "Nummer",
           "issueDate": "Utfärdad",
-          "originalInvoice": "Ursprungsfaktura",
           "member": "Medlem",
           "reason": "Orsak",
           "total": "Totalt",
-          "actions": "Åtgärder"
+          "actions": "Åtgärder",
+          "originalReceipt": "Ursprungligt kvitto"
         },
         "filters": {
           "search": "Sök dokumentnummer",
@@ -2419,11 +2419,10 @@
         "fields": {
           "issueDate": "Utfärdandedatum",
           "issuedBy": "Utfärdad av",
-          "originalInvoice": "Ursprunglig faktura",
-          "originalInvoiceLinkLabel": "Öppna faktura",
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
-          "total": "Totalt krediterat (inkl. moms)"
+          "total": "Totalt krediterat (inkl. moms)",
+          "originalReceipt": "Ursprungligt kvitto"
         },
         "reason": {
           "heading": "Anledning"
@@ -6042,11 +6041,10 @@
         },
         "fields": {
           "issueDate": "Utfärdandedatum",
-          "originalInvoice": "Ursprunglig faktura",
-          "originalInvoiceLinkLabel": "Öppna faktura",
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
-          "total": "Totalt kredit (inkl. moms)"
+          "total": "Totalt kredit (inkl. moms)",
+          "originalReceipt": "Ursprungligt kvitto"
         },
         "reason": {
           "heading": "Anledning"
@@ -7262,6 +7260,13 @@
           "generic": "Något gick fel. Försök igen."
         }
       }
+    },
+    "creditNoteOriginal": {
+      "bill": "Räkning {number}",
+      "invoice": "Faktura {number}",
+      "combined": "Kombinerad skattefaktura/kvitto",
+      "refund": "Återbetalning",
+      "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay"
     }
   },
   "email": {
