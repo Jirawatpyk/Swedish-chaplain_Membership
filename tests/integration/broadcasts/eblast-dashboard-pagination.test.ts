@@ -164,7 +164,7 @@ describe('SC-008 — the dashboard at 1,000 E-Blasts (T114, live Neon)', () => {
     await tenant?.cleanup().catch(() => {});
   }, 120_000);
 
-  it('1,000 seeded rows across all stages: the budget holds and `broadcasts_stage_queue_idx` appears in `EXPLAIN`', async () => {
+  it('1,000 seeded rows across all stages: the budget holds; under RLS each waiting stage\'s first page is an index read (its own partial index where it has one); only outside RLS does it narrow on status via `broadcasts_stage_queue_idx` or its peer — RLS enum_eq, see FINDING', async () => {
     // Correctness first — the counts ARE the seeded tally, stage by stage.
     const chips = await readEblastStageChips(tenant.ctx, 'T114.test');
     expect(chips.kind).toBe('ok');

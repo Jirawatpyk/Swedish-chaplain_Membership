@@ -6,8 +6,9 @@
  *   submit (member) → start a formatted version → save it → send it to the
  *   member → the member approves → marketing confirms the send time
  *
- * and then the row is DISPATCHABLE — it matches the dispatch cron's own
- * eligibility predicate — and `broadcasts.subject` / `body_html` /
+ * and then the row is DISPATCHED — the REAL `dispatchScheduledBroadcast`, with
+ * only the Resend gateway faked, hands Resend the approved subject and body
+ * (US1-AS6) — and `broadcasts.subject` / `body_html` /
  * `body_source` equal the approved version byte-for-byte (FR-012a: the
  * promotion is the only write of content after submit, and it copies from
  * `approved_version_id`). SC-002's audit chain is walked too: the approved
@@ -39,7 +40,19 @@ import { saveFormattedVersion } from '@/modules/broadcasts/application/use-cases
 import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/approval/send-version-to-member';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
 import { submitBroadcast } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
+import { dispatchScheduledBroadcast } from '@/modules/broadcasts';
+import type {
+  BroadcastsGatewayPort,
+  CreateBroadcastInput,
+} from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeSubmitBroadcastDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
+import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
+import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/email-transactional-bridge';
+import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
+import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
+import { plansBridge } from '@/modules/broadcasts/infrastructure/plans-bridge';
 import { broadcastMemberDecisions, broadcasts, broadcastVersions } from '@/modules/broadcasts/infrastructure/schema';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
@@ -72,9 +85,12 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
   }, 120_000);
 
   afterAll(async () => {
+    // The decision's hand-off rows (FR-016 describe precedent): the tenant helper does not sweep the outbox.
+    const slug = tenant?.ctx.slug;
+    if (slug !== undefined) await db.execute(sql`DELETE FROM notifications_outbox WHERE tenant_id = ${slug}`).catch(() => {});
     await tenant?.cleanup().catch(() => {});
     if (portalUser) await deleteTestUser(portalUser).catch(() => {});
-  });
+  }, 120_000);
 
   it('the delivered content equals the version the member approved', async () => {
     // 1. The member submits (the real submit: membership access, quota, rate limit, audience).
@@ -143,18 +159,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
     const confirmed = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { broadcastId, ...actor, mode: { mode: 'send_now' } });
     expect(confirmed.ok ? confirmed.value.stage : confirmed.error).toBe('approved');
 
-    // The row is dispatchable: the dispatch cron's own eligibility predicate selects it.
-    const eligible = await runInTenant(tenant.ctx, (tx) =>
-      tx.execute(sql`
-        SELECT broadcast_id::text AS broadcast_id FROM broadcasts
-        WHERE tenant_id = ${tenant.ctx.slug} AND status = 'approved'
-          AND scheduled_for IS NOT NULL AND scheduled_for <= now()
-          AND broadcast_id = ${broadcastId as string}
-      `),
-    );
-    expect((eligible as unknown as Array<{ broadcast_id: string }>).map((r) => r.broadcast_id)).toEqual([broadcastId]);
-
-    // …and it carries the approved version byte-for-byte.
+    // The row carries the approved version byte-for-byte.
     const [row] = await runInTenant(tenant.ctx, (tx) => tx.select().from(broadcasts).where(eq(broadcasts.broadcastId, broadcastId)));
     const [approved] = await runInTenant(tenant.ctx, (tx) =>
       tx.select().from(broadcastVersions).where(eq(broadcastVersions.id, row!.approvedVersionId!)),
@@ -174,6 +179,81 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
       .from(auditLog)
       .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.eventType, 'broadcast_schedule_confirmed')));
     expect(promoted.map((a) => (a.payload as { version_id: string }).version_id)).toEqual([approved!.id]);
+
+    // US1-AS6 — what DISPATCH hands Resend is the approved version. The cron's
+    // eligibility SELECT is inline in `dispatch-scheduled/route.ts` (not
+    // exported), so the row is checked against its two conditions and then
+    // driven through the REAL `dispatchScheduledBroadcast` — real repo, real
+    // members bridge (both seeded members), real audit — with only the Resend
+    // gateway faked. `htmlBody` is the use case's argument, BEFORE the adapter
+    // wraps the brand chrome.
+    expect(row!.status).toBe('approved');
+    expect(row!.scheduledFor!.getTime()).toBeLessThanOrEqual(Date.now());
+    const created: CreateBroadcastInput[] = [];
+    let added = 0;
+    let sends = 0;
+    const gateway: BroadcastsGatewayPort = {
+      async createAudience() {
+        return { audienceId: `aud-happy-${randomUUID().slice(0, 8)}` };
+      },
+      async addContactsToAudience(_audienceId, contacts) {
+        added += contacts.length;
+      },
+      async createContactImport() {
+        throw new Error('not used on the primary_only leg');
+      },
+      async getContactImport() {
+        throw new Error('not used on the primary_only leg');
+      },
+      async createBroadcast(input) {
+        created.push(input);
+        return { broadcastId: `rb-happy-${randomUUID().slice(0, 8)}` };
+      },
+      async sendBroadcast() {
+        sends += 1;
+      },
+      async retrieveBroadcast() {
+        return { kind: 'not_found' as const };
+      },
+      async getAudienceContactCount() {
+        return { count: added, complete: true };
+      },
+      async removeContactFromAudience() {
+        return { kind: 'detached' as const };
+      },
+      async deleteContactGlobally() {},
+      async deleteAudience() {},
+      async deleteBroadcast() {},
+      async listAudiences() {
+        return [];
+      },
+    };
+    const dispatched = await dispatchScheduledBroadcast(
+      {
+        tenant: tenant.ctx,
+        broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gateway,
+        membersBridge,
+        marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
+        eventAttendees: eventAttendeesStub,
+        audit: f7AuditAdapter,
+        clock: { now: () => new Date() },
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge,
+        emailTransactional: emailTransactionalBridge,
+        brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
+      },
+      { broadcastId },
+    );
+    expect(dispatched.ok ? 'dispatched' : dispatched.error).toBe('dispatched');
+    expect(created.map((c) => [c.subject, c.htmlBody])).toEqual([[APPROVED_SUBJECT, APPROVED_BODY]]);
+    expect(sends).toBe(1);
+    const [afterDispatch] = await runInTenant(tenant.ctx, (tx) => tx.select().from(broadcasts).where(eq(broadcasts.broadcastId, broadcastId)));
+    expect(afterDispatch!.status).not.toBe('approved');
   });
 });
 

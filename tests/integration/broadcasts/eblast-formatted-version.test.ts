@@ -199,4 +199,39 @@ describe('F119 formatting round — real repos on live Postgres', () => {
     expect(thread.ok && thread.value.decisions.map((d) => [d.versionId, d.decision])).toEqual([[v1Id, 'approved']]);
     expect(thread.ok && thread.value.workingCopy?.version.versionNo).toBe(2);
   });
+
+  it('`broadcast_versions_one_unsent_idx`: a second UNSENT version for the same E-Blast is a unique violation; a second SENT one is not (positive control)', async () => {
+    const row = seed({ status: 'in_design' });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const version = (versionNo: number, sentToMemberAt: Date | null) => ({
+      tenantId: tenant.ctx.slug,
+      broadcastId: row.broadcastId!,
+      versionNo,
+      subject: `v${versionNo}`,
+      bodyHtml: `<p>v${versionNo}</p>`,
+      bodySource: `v${versionNo}`,
+      authoredByUserId: MARKETER,
+      authoredByRole: 'admin_proxy' as const,
+      sentToMemberAt,
+    });
+    // The working copy.
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcastVersions).values(version(1, null)));
+
+    const insert = (v: ReturnType<typeof version>) =>
+      runInTenant(tenant.ctx, (tx) => tx.insert(broadcastVersions).values(v)).then(
+        () => 'ok',
+        (e: unknown) => {
+          const code = (e as { cause?: { code?: string } }).cause?.code ?? (e as { code?: string }).code;
+          return `${code ?? '?'} ${errorChainMessage(e)}`;
+        },
+      );
+
+    // A distinct version_no, so the (tenant, broadcast, version_no) unique index is not what answers.
+    const second = await insert(version(2, null));
+    expect(second).toContain('broadcast_versions_one_unsent_idx');
+    expect(second.startsWith('23505')).toBe(true);
+    // Only the unsent predicate is constrained: a sent sibling lands beside the working copy.
+    expect(await insert(version(3, SUBMITTED_AT))).toBe('ok');
+    expect((await readVersions(row.broadcastId!)).map((v) => v.versionNo).sort()).toEqual([1, 3]);
+  });
 });

@@ -25,10 +25,15 @@ import { IN_PROGRESS_BROADCAST_STATUSES } from '@/modules/broadcasts/domain/stag
 import { cancelBroadcast } from '@/modules/broadcasts/application/use-cases/cancel-broadcast';
 import { computeQuotaCounter, currentQuotaYear } from '@/modules/broadcasts/application/use-cases/compute-quota-counter';
 import { rejectBroadcast } from '@/modules/broadcasts/application/use-cases/reject-broadcast';
+import { submitBroadcast } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
 import { expireStaleMemberApprovals } from '@/modules/broadcasts/application/use-cases/approval/expire-stale-member-approvals';
 import { makeExpireStaleMemberApprovalsDeps } from '@/lib/broadcast-approval-deps';
 import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/plans-bridge-port';
-import { makeCancelBroadcastDeps, makeRejectBroadcastDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
+import {
+  makeCancelBroadcastDeps,
+  makeRejectBroadcastDeps,
+  makeSubmitBroadcastDeps,
+} from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { asMemberId } from '@/modules/members';
@@ -100,6 +105,41 @@ describe('F119 T075 — one allowance place per in-progress E-Blast, whatever th
     expect(c).toMatchObject({ reserved: CAP, used: 0, cap: CAP, remaining: 0 });
     // The under-lock recheck the submit tx runs reads the SAME set (bug #4).
     expect((await underLock()).submittedOrApproved).toBe(CAP);
+
+    // …and the next submit IS refused: the REAL `submitBroadcast` over the real
+    // repo and the real halt read. Three deps are stubbed, all BEFORE the quota
+    // gate and none of them the variable under test: membership access (the
+    // member id is a phantom with no renewal cycle — it would be refused as
+    // not-in-good-standing first), the Redis rate limiter, and the plan cap.
+    const submitAt = (cap: number) =>
+      submitBroadcast(
+        {
+          ...makeSubmitBroadcastDeps(tenant.ctx.slug, makeFakeMarketingDirectory([])),
+          membershipAccess: { getMembershipAccess: async () => ok({ access: 'full' as const, reason: 'in_good_standing' as const }) },
+          rateLimiter: { checkLimit: async () => ok(true as const) },
+          plansBridge: { getPlanForMember: async () => ok({ planCode: 'test', planId: 'plan-t075', eblastPerYear: cap }) },
+        },
+        {
+          memberId,
+          submittedByUserId: randomUUID(),
+          actorRole: 'member_self_service',
+          tenantDisplayName: 'Test Chamber',
+          memberDisplayName: 'Allowance Co',
+          subject: 'One more',
+          bodySource: 'plain',
+          bodyHtml: '<p>One more.</p>',
+          segment: { kind: 'all_members' },
+          scheduledFor: null,
+          requestId: null,
+        },
+      );
+    const refused = await submitAt(CAP);
+    expect(refused.ok ? 'accepted' : refused.error).toEqual({ kind: 'broadcast_quota_blocked', used: 0, reserved: CAP, cap: CAP });
+    // Positive control: one more place and the quota gate lets it past (it stops
+    // later — the phantom member has no primary contact — but NOT on quota).
+    const roomier = await submitAt(CAP + 1);
+    expect(roomier.ok ? 'accepted' : roomier.error.kind).not.toBe('broadcast_quota_blocked');
+    expect(await counter()).toMatchObject({ reserved: CAP });
   });
 
   it('the erasure / cancel cascade sees the same set — every in-progress row, and nothing else', async () => {

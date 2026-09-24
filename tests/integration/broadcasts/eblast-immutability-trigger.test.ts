@@ -22,8 +22,25 @@
  * read-only (including `authored_by_role`), a decision refuses a direct
  * DELETE, and the E-Blast's ON DELETE CASCADE still reaches both — the
  * append-only trigger admits a DELETE only at `pg_trigger_depth() > 1`.
+ *
+ * T166 — the erasure GUC (`app.allow_broadcast_redaction = 'on'`) arms, run
+ * as `chamber_app` inside `runInTenant` so RLS passes and the trigger is the
+ * thing that answers. Each probe targets ONE line of an arm in
+ * `0305_eblast_member_approval.sql`, and each has a positive control showing
+ * the GUC really took effect (a whitelisted column still moves), so "refused"
+ * cannot come from a GUC that was never set:
+ *
+ *   broadcasts        GUC arm :425–472 — the six 0305 columns (:466–471)
+ *                     → `broadcast_redaction_only_pii_cols`; control: subject.
+ *   broadcast_versions GUC arm :182–195 — version_no / authored_by_* /
+ *                     sent_to_member_at (:186–189) → `…_immutable_after_send`;
+ *                     control: subject.
+ *   broadcast_member_decisions :300–314 — without the GUC every UPDATE falls
+ *                     to the RAISE; with it, `decision` / `round` break the
+ *                     `IS NOT DISTINCT FROM` conjuncts (:307–308); control:
+ *                     reason only.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, runInTenant } from '@/lib/db';
@@ -91,6 +108,9 @@ const AUDIENCE: ReadonlyArray<readonly [string, Patch]> = [
 
 class Rollback extends Error {}
 
+type Want = 'ok' | 'immutable' | 'redaction';
+const REDACTION_GUC = sql`SET LOCAL app.allow_broadcast_redaction = 'on'`;
+
 describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0305 (FR-012a)', () => {
   let tenant: TestTenant;
   const ids = new Map<Status, string>();
@@ -139,16 +159,23 @@ describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0305 (FR-012a
       if (e instanceof Rollback) return 'ok';
       const message = errorChainMessage(e);
       if (message.includes('broadcast_immutable_after_submit')) return 'immutable';
+      if (message.includes('broadcast_redaction_only_pii_cols')) return 'redaction';
       return `other: ${message.slice(0, 160)}`;
     }
     return 'unreachable';
   }
 
-  /** Runs every case in one tenant tx; returns "from→to col: got X" for each miss. */
+  /**
+   * Runs every case in one tenant tx; returns "from→to col: got X" for each
+   * miss. `guc` sets the erasure GUC for that tx (SET LOCAL — it survives the
+   * probes' savepoints).
+   */
   async function sweep(
-    cases: ReadonlyArray<readonly [Status, Status, string, Patch, 'ok' | 'immutable']>,
+    cases: ReadonlyArray<readonly [Status, Status, string, Patch, Want]>,
+    guc = false,
   ): Promise<string[]> {
     return runInTenant(tenant.ctx, async (tx) => {
+      if (guc) await tx.execute(REDACTION_GUC);
       const misses: string[] = [];
       for (const [from, to, col, set, want] of cases) {
         const got = await probe(tx, from, to, set);
@@ -242,6 +269,47 @@ describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0305 (FR-012a
     expect(await sweep(cases)).toEqual([]);
   });
 
+  /**
+   * T166 — the GUC arm's whitelist (0305 :466–471). The erasure scrub may
+   * rewrite PII content, never move a row through the workflow: each of the six
+   * 0305 columns is refused under the GUC, on a no-status-change write in four
+   * post-draft stages. Remove any one of those lines and the arm falls through
+   * to `RETURN NEW` — that probe reads 'ok' and the test fails. A random
+   * `approved_version_id` would also trip the FK, but that check runs at
+   * statement end, AFTER this BEFORE trigger: only the trigger can answer
+   * 'redaction'.
+   */
+  it('under the erasure GUC, each of the six 0305 columns → broadcast_redaction_only_pii_cols; subject still moves (positive control)', async () => {
+    const SIX: ReadonlyArray<readonly [string, Patch]> = [
+      ['proposed_send_at', { proposedSendAt: LATER }],
+      ['stage_entered_at', { stageEnteredAt: LATER }],
+      ['current_round', { currentRound: 7 }],
+      ['approved_version_id', { approvedVersionId: randomUUID() }],
+      ['member_reminder_stage', { memberReminderStage: 2 }],
+      ['member_expiry_notified_at', { memberExpiryNotifiedAt: LATER }],
+    ];
+    const stages: readonly Status[] = ['submitted', 'awaiting_member_approval', 'approved', 'sent'];
+    const cases: Array<readonly [Status, Status, string, Patch, Want]> = [
+      ...stages.flatMap((s) => SIX.map(([col, set]) => [s, s, col, set, 'redaction'] as const)),
+      // positive control: the GUC is live — a whitelisted PII column moves
+      ...stages.map((s) => [s, s, 'subject', { subject: 'redacted' }, 'ok'] as const),
+    ];
+    expect(await sweep(cases, true)).toEqual([]);
+  });
+
+  it('the GUC is what refuses the five new workflow columns: without it the non-GUC arm does not guard them (proposed_send_at excepted)', async () => {
+    // Proves the case above measures the GUC arm and not the ordinary one:
+    // outside the erasure path these five are ordinary workflow writes.
+    const cases: Array<readonly [Status, Status, string, Patch, Want]> = [
+      ['awaiting_member_approval', 'awaiting_member_approval', 'stage_entered_at', { stageEnteredAt: LATER }, 'ok'],
+      ['awaiting_member_approval', 'awaiting_member_approval', 'current_round', { currentRound: 7 }, 'ok'],
+      ['awaiting_member_approval', 'awaiting_member_approval', 'member_reminder_stage', { memberReminderStage: 2 }, 'ok'],
+      ['awaiting_member_approval', 'awaiting_member_approval', 'member_expiry_notified_at', { memberExpiryNotifiedAt: LATER }, 'ok'],
+      ['awaiting_member_approval', 'awaiting_member_approval', 'proposed_send_at', { proposedSendAt: LATER }, 'immutable'],
+    ];
+    expect(await sweep(cases)).toEqual([]);
+  });
+
   // --- the two child tables' own triggers (data-model §§ 1–2) --------------
   describe('broadcast_versions + broadcast_member_decisions triggers', () => {
     /** One E-Blast awaiting the member, with a sent version and a decision on it. */
@@ -284,6 +352,81 @@ describe('F119 T036 — broadcasts_immutable_after_submit_fn after 0305 (FR-012a
       }
       return 'no error';
     }
+
+    /**
+     * One UPDATE as `chamber_app` inside `runInTenant` (RLS passes, so the
+     * trigger is what answers), in a savepoint that is always rolled back.
+     * 'ok' when exactly one row changed; otherwise the refusal's message.
+     */
+    async function attempt(guc: boolean, write: (tx: Tx) => Promise<unknown[]>): Promise<string> {
+      return runInTenant(tenant.ctx, async (tx) => {
+        if (guc) await tx.execute(REDACTION_GUC);
+        try {
+          await tx.transaction(async (sp) => {
+            const rows = await write(sp);
+            if (rows.length !== 1) throw new Error(`probe matched ${rows.length} rows`);
+            throw new Rollback();
+          });
+        } catch (e) {
+          if (e instanceof Rollback) return 'ok';
+          return errorChainMessage(e);
+        }
+        return 'unreachable';
+      });
+    }
+
+    const updateDecision = (decisionId: string, set: Partial<typeof broadcastMemberDecisions.$inferInsert>) => (tx: Tx) =>
+      tx
+        .update(broadcastMemberDecisions)
+        .set(set)
+        .where(and(eq(broadcastMemberDecisions.tenantId, tenant.ctx.slug), eq(broadcastMemberDecisions.id, decisionId)))
+        .returning({ id: broadcastMemberDecisions.id });
+
+    const updateVersion = (versionId: string, set: Partial<typeof broadcastVersions.$inferInsert>) => (tx: Tx) =>
+      tx
+        .update(broadcastVersions)
+        .set(set)
+        .where(and(eq(broadcastVersions.tenantId, tenant.ctx.slug), eq(broadcastVersions.id, versionId)))
+        .returning({ id: broadcastVersions.id });
+
+    it('a same-tenant UPDATE of a decision WITHOUT the redaction GUC → broadcast_decision_append_only (as chamber_app, RLS passing)', async () => {
+      const { decisionId } = await seedChain();
+      // Only the GUC arm (0305 :300–311) returns NEW; without it every UPDATE
+      // falls to the RAISE (:314). Drop the no_update trigger and chamber_app's
+      // UPDATE grant lets this through — 'ok', and the test fails.
+      expect(await attempt(false, updateDecision(decisionId, { reason: 'rewritten after the fact' }))).toContain(
+        'broadcast_decision_append_only',
+      );
+    });
+
+    it('WITH the GUC, a reason-only change is admitted (positive control) but changing `decision` or `round` still → broadcast_decision_append_only', async () => {
+      const { decisionId } = await seedChain();
+      const got = {
+        reasonOnly: await attempt(true, updateDecision(decisionId, { reason: '[redacted]' })),
+        decision: await attempt(true, updateDecision(decisionId, { decision: 'approval_withdrawn' })),
+        round: await attempt(true, updateDecision(decisionId, { round: 2 })),
+      };
+      expect(got.reasonOnly).toBe('ok');
+      expect(got.decision).toContain('broadcast_decision_append_only');
+      expect(got.round).toContain('broadcast_decision_append_only');
+    });
+
+    it('WITH the GUC, a sent version\'s subject may be redacted (positive control) but sent_to_member_at / version_no / authored_by_* still → broadcast_version_immutable_after_send', async () => {
+      const { versionId } = await seedChain();
+      const probes: ReadonlyArray<readonly [string, Partial<typeof broadcastVersions.$inferInsert>]> = [
+        ['sent_to_member_at', { sentToMemberAt: LATER }],
+        ['version_no', { versionNo: 9 }],
+        ['authored_by_user_id', { authoredByUserId: randomUUID() }],
+        ['authored_by_role', { authoredByRole: 'system' }],
+      ];
+      expect(await attempt(true, updateVersion(versionId, { subject: '[redacted]' }))).toBe('ok');
+      const misses: string[] = [];
+      for (const [col, set] of probes) {
+        const got = await attempt(true, updateVersion(versionId, set));
+        if (!got.includes('broadcast_version_immutable_after_send')) misses.push(`${col}: ${got.slice(0, 160)}`);
+      }
+      expect(misses).toEqual([]);
+    });
 
     it('`authored_by_role` is refused after send → broadcast_version_immutable_after_send', async () => {
       const { versionId } = await seedChain();

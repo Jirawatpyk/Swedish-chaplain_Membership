@@ -854,6 +854,28 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F119 T166 — the working-copy save (sanitise + optimistic-concurrency
+        // token + image allowlist). Measured 100/100/100/100 under the unit +
+        // contract broadcasts suites.
+        'src/modules/broadcasts/application/use-cases/approval/save-formatted-version.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F119 T166 — the daily approval-lifecycle tick. Branch measured 96.42%
+        // (2026-09-24, with the tick-level roster read): the two uncovered arms
+        // are post-lock re-reads the fakes' single-writer state cannot reach —
+        // `findByIdInTx` → null after `lockForUpdate` said awaiting, and the
+        // "no sent version for its round" throw (unreachable by construction).
+        // Pinned at the measured floor; the live day-3 / expiry paths are in
+        // eblast-approval-lifecycle-scan / eblast-allowance-bucket.
+        'src/modules/broadcasts/application/use-cases/approval/expire-stale-member-approvals.ts': {
+          lines: 100,
+          branches: 96,
+          functions: 100,
+          statements: 100,
+        },
         // The count endpoints' shared core. The `_exhaustive: never` arm is
         // unreachable by construction, so 100% line is not honest here; the
         // floor is what the unit + contract suites measured (parse, rate key,

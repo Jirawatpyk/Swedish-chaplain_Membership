@@ -387,6 +387,37 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
     expect(EBLAST_TYPES.filter((t) => stuckExcluded.has(t))).toEqual([]);
   });
 
+  /**
+   * T166 — the exclusion list is ONLY what the flags say. The two cases above
+   * pin that the five are in it; neither notices a sixth type sneaking in
+   * (a whole feature's mail silently never sent, and never "stuck" either,
+   * since the stuck count reads the same list). The expected set is derived
+   * from the SAME env the route reads, so it holds whatever the local flags
+   * are; and every `notification_type` predicate in the WHERE must be one the
+   * parser read, so an exclusion in another SQL form cannot hide from it.
+   */
+  it('flag off: the candidate SELECT excludes exactly the five eblast_* types plus the known flag-gated sets (F4 / F114 / F5-async) — nothing else', async () => {
+    const { env } = await import('@/lib/env');
+    const expected = new Set<string>([
+      ...EBLAST_TYPES,
+      ...(env.features.f4Invoicing ? [] : ['invoice_auto_email']),
+      ...(env.features.memberChangeApproval
+        ? []
+        : ['member_change_request_submitted_staff', 'member_change_request_decided_member']),
+      ...(env.features.f5AsyncReceiptPdf ? [] : ['receipt_pdf_render']),
+    ]);
+    const excluded = await tick(false);
+    expect([...excluded].sort()).toEqual([...expected].sort());
+
+    const { sql } = new PgDialect().sqlToQuery(drainer.wheres[0] as SQL);
+    const predicates = sql.match(/"notification_type"/g)?.length ?? 0;
+    const parsed =
+      (sql.match(/"notification_type" <> \$\d+/g)?.length ?? 0) +
+      (sql.match(/"notification_type" not in \(/g)?.length ?? 0);
+    expect(parsed).toBeGreaterThan(0); // the parse is not blind
+    expect(predicates).toBe(parsed);
+  });
+
   it('positive control: a type dropped from the skip set is reported (the check reads the SQL the route built)', async () => {
     const dropped = drainer.skipTypes.pop()!;
     try {
