@@ -42,6 +42,8 @@ import {
   resolveTaxDocumentKind,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
+  getInvoiceSupersession,
+  makeGetInvoiceSupersessionDeps,
 } from '@/modules/invoicing';
 // Direct infra import for the settings read — same escape-hatch as
 // the B2 settings page. This is a READ against the public port
@@ -297,6 +299,22 @@ export default async function InvoiceDetailPage({
   );
 
   const isDraft = invoice.status === 'draft';
+
+  // 121-void-supersede-links — the void-on-reissue link, read back from the
+  // `invoice_voided` audit payload: "Replaced by" on a supersede-voided bill,
+  // "Replaces" on the bill that superseded it. A manual void has no link, so
+  // nothing renders. Best-effort: a failed read (logged in the use case) hides
+  // the link rather than 500-ing the page.
+  const supersession = await getInvoiceSupersession(makeGetInvoiceSupersessionDeps(), {
+    tenantId: tenantCtx.slug,
+    invoice: {
+      invoiceId: invoice.invoiceId,
+      status: invoice.status,
+      memberId: invoice.memberId,
+    },
+  });
+  const replacedBy = supersession.ok ? supersession.value.replacedBy : null;
+  const replaces = supersession.ok ? supersession.value.replaces : [];
   // 016 re-review D — evaluator-derived ('invoicing.write'; OFF leg legacyAdminOnly
   // reproduces the admin-only affordance and admits a promoted super_admin).
   const isAdmin = canPerform(currentUser.role, 'invoicing.write');
@@ -793,6 +811,25 @@ export default async function InvoiceDetailPage({
                 </dd>
               </div>
             )}
+            {replaces.length > 0 && (
+              <div>
+                <dt className="text-muted-foreground">{t('fields.replaces')}</dt>
+                <dd
+                  className="flex flex-wrap gap-x-3 gap-y-1"
+                  data-testid="invoice-replaces"
+                >
+                  {replaces.map((r) => (
+                    <Link
+                      key={r.invoiceId}
+                      href={`/admin/invoices/${r.invoiceId}`}
+                      className="rounded-xs font-mono underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      {r.displayNumber}
+                    </Link>
+                  ))}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-muted-foreground">{t('fields.subtotal')}</dt>
               <dd>{formatSatang(displaySubtotalSatang)} THB</dd>
@@ -913,6 +950,42 @@ export default async function InvoiceDetailPage({
                   </div>
                 )}
               </dl>
+              {/* 121-void-supersede-links — this bill was auto-voided because a
+                  reactivation bill superseded it. Dashed = a pointer, not a
+                  second status; the persistent underline carries the link
+                  affordance (WCAG 1.4.1). "Voided by" above already names who. */}
+              {replacedBy && (
+                <p
+                  className="mt-3 rounded-md border border-dashed border-destructive/40 px-3 py-2 text-sm"
+                  data-testid="invoice-replaced-by"
+                >
+                  {t.rich('voidDetails.replacedBy', {
+                    number: replacedBy.displayNumber,
+                    link: (chunks) => (
+                      <Link
+                        href={`/admin/invoices/${replacedBy.invoiceId}`}
+                        className="rounded-xs font-mono font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      >
+                        {chunks}
+                      </Link>
+                    ),
+                  })}
+                  {replacedBy.issueDate && (
+                    <span className="text-muted-foreground">
+                      {' · '}
+                      {t('voidDetails.replacedByIssued', {
+                        // issue_date is a Postgres `date` — UTC-pin so the day never shifts.
+                        date: formatLocalisedDate(replacedBy.issueDate, userLocale, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          timeZone: 'UTC',
+                        }),
+                      })}
+                    </span>
+                  )}
+                </p>
+              )}
               {/* Next-step hint (M6) — voided invoices are terminal in
                   §87 terms but finance almost always wants to issue a
                   credit note as the legal undo. F4 US6 ships the flow;

@@ -2905,7 +2905,8 @@
           "receiptNumber": "Kvittonummer",
           "subtotal": "Delsumma",
           "vat": "Moms",
-          "total": "Totalt"
+          "total": "Totalt",
+          "replaces": "Ersätter"
         },
         "lines": {
           "title": "Rader",
@@ -2935,7 +2936,9 @@
           "voidedAt": "Annullerad",
           "voidedBy": "Annullerad av",
           "reason": "Orsak",
-          "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs."
+          "creditNoteHint": "Denna faktura är permanent annullerad. Dess sekventiella skattedokumentnummer är pensionerat och kommer inte att återanvändas. Den VOID-stämplade PDF:en ovan är det officiella dokumentet; inga fler åtgärder krävs.",
+          "replacedBy": "Ersatt av <link>{number}</link>",
+          "replacedByIssued": "utfärdad {date}"
         },
         "creditNotesSection": {
           "title": "Kreditnotor ({count})",
@@ -5897,7 +5900,8 @@
           "dueDate": "Förfaller",
           "paidDate": "Betald",
           "receiptNumber": "Kvittonummer",
-          "planYear": "Paketår"
+          "planYear": "Paketår",
+          "replaces": "Ersätter"
         },
         "lines": {
           "description": "Beskrivning",
@@ -5929,7 +5933,9 @@
           "autoRefundFailedHeading": "Vi stämmer av din betalning",
           "autoRefundFailedBody": "Din betalning har registrerats och en återbetalning håller på att stämmas av av vårt team. Vi återkommer så snart det är löst.",
           "autoRefundFailedContact": "Om du har frågor under tiden, kontakta din kammaradministratör med referensen nedan.",
-          "autoRefundRef": "Återbetalningsreferens: {ref}"
+          "autoRefundRef": "Återbetalningsreferens: {ref}",
+          "replacedBy": "Den här fakturan har ersatts av <link>{number}</link>",
+          "replacedByIssued": "utfärdad {date}"
         }
       }
     },

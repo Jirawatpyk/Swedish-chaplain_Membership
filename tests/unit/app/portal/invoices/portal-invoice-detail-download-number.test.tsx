@@ -69,6 +69,9 @@ const getInvoiceMock = vi.fn();
 vi.mock('@/modules/invoicing', () => ({
   getInvoice: (...args: unknown[]) => getInvoiceMock(...args),
   makeGetInvoiceDeps: () => ({}),
+  // 121 — no supersede link on these fixtures (its own tests cover the read).
+  getInvoiceSupersession: async () => ({ ok: true, value: { replacedBy: null, replaces: [] } }),
+  makeGetInvoiceSupersessionDeps: () => ({}),
   computeIsOverdue: () => false,
   asInvoiceId: (id: string) => id,
   // 092 — faithful reimpl (the real barrel pulls in Drizzle infra). Matches

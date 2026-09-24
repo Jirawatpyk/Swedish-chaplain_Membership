@@ -596,6 +596,17 @@ export {
 } from './application/use-cases/get-member-money-recipient-status';
 export { makeMemberMoneyRecipientStatusDeps } from './application/invoicing-deps';
 /**
+ * 121-void-supersede-links — the void-on-reissue supersede link, read back from
+ * the `invoice_voided` audit payload in both directions. Presentation imports
+ * this pair; the audit-log adapter stays internal.
+ */
+export {
+  getInvoiceSupersession,
+  type InvoiceSupersession,
+  type InvoiceSupersessionLink,
+} from './application/use-cases/get-invoice-supersession';
+export { makeGetInvoiceSupersessionDeps } from './application/invoicing-deps';
+/**
  * `recipientLocaleAdapter` is deliberately NOT exported here (round-5 #10).
  *
  * It was, with a comment saying "not for pages or server components" — but a
