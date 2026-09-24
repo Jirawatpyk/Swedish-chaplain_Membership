@@ -147,6 +147,7 @@ function setUp({ status, round, approvedVersionId = null }: Case): void {
         subject: 'Original subject',
         bodyHtml: '<p>original</p>',
         status,
+        currentRound: round,
         estimatedRecipientCount: 42,
         submittedAt: new Date('2026-09-01T03:00:00Z'),
         sentAt: status === 'sent' ? new Date('2026-10-01T03:00:00Z') : null,
@@ -263,6 +264,29 @@ describe('F119 T086 — the member sign-off compare view', () => {
     const html = renderToStaticMarkup((await Page({ params: Promise.resolve({ id: ID }) })) as ReactElement);
     expect(html).toContain('data-testid="eblast-thread-unavailable"');
     expect(attr(html, 'data-decide')).not.toBe('true');
+  });
+
+  // PR #392 review D3 — awaiting the member with NO version sent to them is an
+  // invariant breach (the send stamps the version and moves the stage in one
+  // tx). The page used to render the member's ORIGINAL as the content to sign
+  // off, under a banner naming the round as a "version". It fails closed, as
+  // `readMemberEblastView` does for the route: the history alert with Refresh,
+  // no turn line, no content, and the invariant logged (ids only).
+  it('D3: awaiting the member with no sent version → fails closed: alert + Refresh, no turn line, no content, logged', async () => {
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.error).mockClear();
+    const html = await renderPage({ status: 'awaiting_member_approval', round: 0 });
+    const alert = html.indexOf('data-testid="eblast-thread-unavailable"');
+    expect(alert).toBeGreaterThan(-1);
+    expect(html.indexOf('data-testid="refresh-page-button"', alert)).toBeGreaterThan(alert);
+    expect(html).not.toContain('banner.turn.member');
+    expect(html).not.toContain('doc:Original subject');
+    expect(html).not.toContain('data-testid="preview-surface"');
+    expect(attr(html, 'data-decide')).not.toBe('true');
+    expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+      { tenantId: 'tenant-a', broadcastId: ID, round: 0, errorId: 'M119.portal.detail.missing_sent_version' },
+      'broadcasts.detail_page.missing_sent_version',
+    );
   });
 
   // F119 round-4 B10 — the failed thread read logged only `reason: kind`; a

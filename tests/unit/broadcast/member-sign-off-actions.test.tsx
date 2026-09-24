@@ -199,7 +199,7 @@ describe('PR #392 review C3 — a repeated decision after a lost response', () =
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        stageChanged({ id: 'd-1', versionId: VERSION.id, decision: 'changes_requested', decidedAt: '2026-09-24T03:00:00.000Z' }),
+        stageChanged({ id: 'd-1', versionId: VERSION.id, decision: 'changes_requested', decidedAt: '2026-09-24T03:00:00.000Z', byCaller: true }),
       ),
     );
     renderActions();
@@ -216,6 +216,9 @@ describe('PR #392 review C3 — a repeated decision after a lost response', () =
     ['a different decision', { id: 'd-1', versionId: VERSION.id, decision: 'approved', decidedAt: '2026-09-24T03:00:00.000Z' }],
     ['the same decision on an earlier version', { id: 'd-0', versionId: '33333333-3333-4333-8333-333333333333', decision: 'changes_requested', decidedAt: '2026-09-20T03:00:00.000Z' }],
     ['no recorded decision', null],
+    // D6 — a colleague at the same member recorded the same decision on the
+    // same version: this user's retry (and their typed reason) was NOT recorded.
+    ['the same decision on the same version, recorded by a colleague', { id: 'd-1', versionId: VERSION.id, decision: 'changes_requested', decidedAt: '2026-09-24T03:00:00.000Z', byCaller: false }],
   ])('%s keeps the "already moved on" error', async (_label, recorded) => {
     vi.stubGlobal('fetch', vi.fn(async () => stageChanged(recorded)));
     renderActions();
@@ -237,22 +240,41 @@ describe('PR #392 review C1 — a decision refused by the read-only proxy', () =
       headers: { 'Content-Type': 'application/json', 'Retry-After': '300' },
     });
 
-  it('says the system is read-only — as the #390 warning AND inside the open dialog — never the generic error', async () => {
+  // D4/D5 — the dialog stays open (nothing changed; a retry after the freeze
+  // is still valid), so it is the ONE channel: the whole #390 warning (title
+  // AND "nothing was changed") inside it, in the warning tone, focused. The
+  // toast used to fire too — behind the modal, hidden from AT.
+  it.each([
+    [
+      'Approve',
+      async () => {
+        fireEvent.click(screen.getByTestId('eblast-approve'));
+        const dialog = await screen.findByRole('alertdialog');
+        fireEvent.click(within(dialog).getByTestId('eblast-approve-confirm'));
+        return dialog;
+      },
+    ],
+    [
+      'Request changes',
+      async () => {
+        const { dialog, reason } = await openRequestChanges();
+        fireEvent.change(reason, { target: { value: 'The date is wrong.' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.confirm }));
+        return dialog;
+      },
+    ],
+  ])('%s: says the system is read-only inside the open dialog only — the warning, not the generic error, and no toast', async (_label, act) => {
     vi.stubGlobal('fetch', vi.fn(async () => readOnly503()));
     renderActions();
-    fireEvent.click(screen.getByTestId('eblast-approve'));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByTestId('eblast-approve-confirm'));
+    const dialog = await act();
 
-    await waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
-        description: enMessages.errors.readOnlyNothingChanged,
-      }),
-    );
-    // The toast renders outside the modal (hidden from AT while it is open):
-    // the dialog says the same words itself, and stays open for a retry.
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(enMessages.errors.readOnlyMode);
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(enMessages.errors.readOnlyMode);
+    expect(alert).toHaveTextContent(enMessages.errors.readOnlyNothingChanged);
+    expect(alert).toHaveAttribute('data-tone', 'warning');
+    await waitFor(() => expect(alert).toHaveFocus());
     expect(within(dialog).queryByText(t.errors.generic)).toBeNull();
+    expect(toast.warning).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });

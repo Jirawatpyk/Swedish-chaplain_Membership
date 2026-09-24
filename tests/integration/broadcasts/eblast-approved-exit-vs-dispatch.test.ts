@@ -24,16 +24,23 @@
  *   (b) each exit refuses `sending_started` once the dispatcher has handed the
  *       row over (`resend_broadcast_id` or `audience_import_id` set).
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import {
   makeConfirmScheduleDeps,
   makeRecordMemberDecisionDeps,
   makeStartFormattedVersionDeps,
 } from '@/lib/broadcast-approval-deps';
-import { asBroadcastId, cancelBroadcast, dispatchScheduledBroadcast, makeCancelBroadcastDeps } from '@/modules/broadcasts';
+import {
+  asBroadcastId,
+  cancelBroadcast,
+  cancelInFlightBroadcastsForMember,
+  dispatchScheduledBroadcast,
+  makeCancelBroadcastDeps,
+  makeCancelInFlightBroadcastsForMemberDeps,
+} from '@/modules/broadcasts';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
@@ -183,6 +190,17 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
           observedStatus: 'approved',
         });
       }
+
+      // PR #392 review D2 — the refusal audit now rides the cancel's tx, which
+      // the use case ENDS with `err(...)` (a normal return). The row must be
+      // committed, once per refused cancel.
+      const tooLate = (await db.execute(sql`
+        SELECT count(*)::int AS n FROM audit_log
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND event_type = 'broadcast_cancel_too_late'::audit_event_type
+           AND payload->>'broadcastId' = ${id}
+      `)) as unknown as Array<{ n: number }>;
+      expect(tooLate[0]?.n).toBe(2);
 
       expect(await readRow(id)).toEqual(before);
     });
@@ -348,6 +366,49 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
         kind: 'sending_started',
         observedStatus: 'approved',
       });
+      expect(await readRow(id)).toMatchObject({ status: 'approved', resendBroadcastId: resendId, cancelledAt: null });
+    }, 60_000);
+  });
+
+  // PR #392 review D1 — the F3 erasure/archival cascade is an exit from
+  // `approved` too, and it ran its own status-only CAS with no lock and no
+  // hand-over check: an attach committing under it left the row `cancelled`
+  // WITH a Resend id (the email went out, the allowance was freed). It now
+  // locks, reads, and skips a handed-over row. Its own member, so the cascade
+  // never sweeps the rows the cases above leave for `memberId`.
+  describe('(d) the erasure cascade racing an in-flight attach', () => {
+    it('the attach commits while the cascade is waiting → the row is skipped and stays approved with its id', async () => {
+      const { memberId: erasedMemberId } = await seedPortalMemberWithContact(tenant, planId, { companyName: 'Cascade Race Co' });
+      const { id } = await seedApprovedRound({ requestedByMemberId: erasedMemberId });
+      const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+      const bid = asBroadcastId(id);
+      const resendId = `rb-cascade-race-${randomUUID().slice(0, 8)}`;
+
+      let attached!: () => void;
+      const attachedP = new Promise<void>((resolve) => (attached = resolve));
+      let release!: () => void;
+      const releaseP = new Promise<void>((resolve) => (release = resolve));
+      const attach = repo.withTx(async (tx) => {
+        await repo.attachBroadcastId(tx, tenant.ctx.slug, bid, resendId);
+        attached();
+        await releaseP;
+      });
+      await attachedP;
+
+      const cascadeP = cancelInFlightBroadcastsForMember(makeCancelInFlightBroadcastsForMemberDeps(tenant.ctx.slug), {
+        tenant: tenant.ctx,
+        memberId: erasedMemberId,
+        cancellationReason: 'gdpr_erasure_request',
+        requestId: null,
+      });
+      // Long enough for the cascade to have listed the row and reached its
+      // CAS (unfixed) or to be waiting on the lock (fixed).
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      release();
+      await attach;
+
+      const cascaded = await cascadeP;
+      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0 } });
       expect(await readRow(id)).toMatchObject({ status: 'approved', resendBroadcastId: resendId, cancelledAt: null });
     }, 60_000);
   });

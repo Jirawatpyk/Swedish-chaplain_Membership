@@ -249,18 +249,14 @@ export async function cancelBroadcast(
           ? err({ code: 'sending_started' as const, status: existing.status })
           : authorizeCancel(existing.status, false);
       if (!policyResult.ok) {
-        // R7 staff-review MED-R2 — `null` tx is intentional here: the
-        // policy reject branch performs NO state mutation (no UPDATE,
-        // no INSERT into broadcasts), so emitting the audit on
-        // auto-commit is safe — there is no broadcasts-row write that
-        // could roll back independently. This DIVERGES from the
-        // F5/F4 in-tx-audit pattern but the F5/F4 patterns wrap a
-        // mutation; here the audit is the sole side effect of a
-        // policy reject. If a future change adds a write to this
-        // branch (unlikely — it would conflict with FR-004a's
-        // "cancellation rejected" semantic), promote `null` → `tx`.
+        // PR #392 review D2 — the refusal audit rides THIS tx. It used to be
+        // emitted on `null` (auto-commit on a SECOND pool connection) while
+        // this tx held the row lock (round-4 B4). The branch writes nothing
+        // else, so the `err(...)` below — a normal return — commits exactly
+        // the audit row. A failed emit is swallowed (logged) and aborts the
+        // tx, whose COMMIT then rolls back: nothing else was written.
         try {
-          await deps.audit.emit(null, {
+          await deps.audit.emit(tx, {
             tenantId: deps.tenant.slug,
             eventType: 'broadcast_cancel_too_late',
             actorUserId,

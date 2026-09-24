@@ -206,6 +206,26 @@ export default async function BroadcastDetailPage(props: {
   const summary = thread?.summary ?? null;
   const original = thread?.versions.find((v) => v.versionNo === 0) ?? null;
   const latestSent = thread === null ? null : latestSentVersion(thread.versions);
+  // PR #392 review D3 — awaiting the member with no version SENT to them. The
+  // record's own content is the member's ORIGINAL, never what they are asked
+  // to sign off, so none is shown (the route's `readMemberEblastView` refuses
+  // the same state). With the thread read it is an invariant breach — the
+  // send stamps the version and moves the stage in one tx — so it is logged
+  // (ids only) and the page fails closed behind the history alert; with the
+  // thread unread, that alert is already up.
+  const awaitingWithoutSent = status === 'awaiting_member_approval' && latestSent === null;
+  const missingSent = awaitingWithoutSent && thread !== null;
+  if (missingSent) {
+    logger.error(
+      {
+        tenantId: tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+        round: broadcast.currentRound,
+        errorId: 'M119.portal.detail.missing_sent_version',
+      },
+      'broadcasts.detail_page.missing_sent_version',
+    );
+  }
 
   const t = await getTranslations('portal.broadcasts.detail');
   const tStatus = await getTranslations('portal.broadcasts.list.status');
@@ -238,7 +258,8 @@ export default async function BroadcastDetailPage(props: {
           originalPreview: await render(original.subject, original.bodyHtml),
         }
       : null;
-  const previewState = compare === null ? await render(broadcast.subject, broadcast.bodyHtml) : null;
+  const previewState =
+    compare === null && !awaitingWithoutSent ? await render(broadcast.subject, broadcast.bodyHtml) : null;
 
   // ---- Which decisions exist (the SERVER decides; the island performs) ----
   // Approve / Request changes: the member's turn, on a sent version.
@@ -301,11 +322,11 @@ export default async function BroadcastDetailPage(props: {
         </InlineAlertTitle>
         {summary !== null && summary.whoseTurn !== null ? (
           <InlineAlertDescription className="text-foreground">
-            <span className="block">
-              {summary.whoseTurn === 'member'
-                ? tApproval('banner.turn.member', { version: latestSent?.versionNo ?? summary.round })
-                : tApproval('banner.turn.marketing')}
-            </span>
+            {summary.whoseTurn === 'marketing' ? (
+              <span className="block">{tApproval('banner.turn.marketing')}</span>
+            ) : latestSent !== null ? (
+              <span className="block">{tApproval('banner.turn.member', { version: latestSent.versionNo })}</span>
+            ) : null}
             {summary.expiresAt !== null ? (
               <span className="block">
                 {tApproval('banner.expires', { date: dateFormatter.format(summary.expiresAt) })}
@@ -315,7 +336,7 @@ export default async function BroadcastDetailPage(props: {
         ) : null}
       </InlineAlert>
 
-      {thread === null ? (
+      {thread === null || missingSent ? (
         <InlineAlert tone="destructive" data-testid="eblast-thread-unavailable">
           <InlineAlertTitle>{tApproval('threadUnavailable.title')}</InlineAlertTitle>
           <InlineAlertDescription>

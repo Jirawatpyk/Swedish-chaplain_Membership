@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
 import { RelativeTime } from '@/components/ui/relative-time';
+import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
@@ -86,6 +87,7 @@ export default async function AdminBroadcastDetailPage({
   const tContent = await getTranslations('admin.broadcasts.approval.content');
   const tFeedback = await getTranslations('admin.broadcasts.approval.feedback');
   const tThread = await getTranslations('admin.broadcasts.approval.thread');
+  const tButtons = await getTranslations('buttons');
   const session = await requirePagePermission('broadcasts.read');
   // 016 re-review D — evaluator-derived, never ROLE_BUNDLES: a `manager` holds
   // `broadcasts.read` only, so every action control below is ABSENT for them
@@ -273,7 +275,19 @@ export default async function AdminBroadcastDetailPage({
       {threadUnavailable ? (
         <InlineAlert tone="destructive" data-testid="eblast-thread-unavailable">
           <InlineAlertTitle>{tContent('threadUnavailableTitle')}</InlineAlertTitle>
-          <InlineAlertDescription>{tContent('threadUnavailableBody')}</InlineAlertDescription>
+          <InlineAlertDescription>
+            {/* PR #392 review D7 — the working copy / original / formatting
+                claim holds only on a versioned stage; elsewhere (approved,
+                sent, closed) only the history is missing. */}
+            <span className="block">
+              {VERSIONED_STATUSES.has(status)
+                ? tContent('threadUnavailableBody')
+                : tContent('threadUnavailableHistoryBody')}
+            </span>
+            <span className="mt-2 block">
+              <RefreshPageButton label={tButtons('retry')} />
+            </span>
+          </InlineAlertDescription>
         </InlineAlert>
       ) : null}
       {showNoPortalUser ? (

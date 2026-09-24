@@ -7,8 +7,13 @@
  * `{ error: 'read-only-mode' }`. These controls read only the NESTED
  * `error.code`, found nothing, and said "Something went wrong. Please try
  * again." — advice that cannot work until the freeze lifts. Each now says the
- * system is read-only (main #390's `useReadOnlyToast` warning); a control
- * whose dialog is open also says it inside the dialog, where AT can hear it.
+ * system is read-only (main #390's `useReadOnlyToast` warning).
+ *
+ * PR #392 review D4/D5 — a control whose dialog STAYS open says it inside the
+ * dialog ONLY: the whole warning (title AND "nothing was changed"), in the
+ * warning tone, focused. A toast there sat behind the modal, hidden from AT,
+ * and said the same thing twice. Where no dialog stays open, the toast is the
+ * one channel.
  *
  * Table-driven like `read-only-member-surfaces.test.tsx`: the defect and the
  * fix have the same shape at every site. The workspace's save and send are
@@ -16,7 +21,7 @@
  * there).
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { toast } from 'sonner';
 import en from '@/i18n/messages/en.json';
@@ -50,8 +55,8 @@ interface Surface {
   readonly name: string;
   readonly ui: () => React.ReactElement;
   readonly act: () => Promise<void>;
-  /** A dialog stays open over the refusal, so it must say it inside itself too. */
-  readonly inDialog: boolean;
+  /** `dialog` — a dialog stays open over the refusal and is the ONE channel; `toast` — nothing stays open. */
+  readonly channel: 'dialog' | 'toast';
 }
 
 const SURFACES: readonly Surface[] = [
@@ -70,7 +75,7 @@ const SURFACES: readonly Surface[] = [
       await screen.findByRole('alertdialog');
       fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
     },
-    inDialog: true,
+    channel: 'dialog',
   },
   {
     name: 'start a formatted version (asks first)',
@@ -79,7 +84,7 @@ const SURFACES: readonly Surface[] = [
       fireEvent.click(screen.getByTestId('eblast-start-version'));
       fireEvent.click(await screen.findByTestId('eblast-start-version-confirm'));
     },
-    inDialog: true,
+    channel: 'dialog',
   },
   {
     name: 'start a formatted version (immediate)',
@@ -87,7 +92,7 @@ const SURFACES: readonly Surface[] = [
     act: async () => {
       fireEvent.click(screen.getByTestId('eblast-start-version'));
     },
-    inDialog: false,
+    channel: 'toast',
   },
   {
     name: 'send a test copy',
@@ -95,7 +100,7 @@ const SURFACES: readonly Surface[] = [
     act: async () => {
       fireEvent.click(screen.getByTestId('eblast-test-copy'));
     },
-    inDialog: false,
+    channel: 'toast',
   },
 ];
 
@@ -132,15 +137,22 @@ describe('an F119 staff approval write refused by the read-only proxy', () => {
     );
     await s.act();
 
-    await waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(en.errors.readOnlyMode, {
-        description: en.errors.readOnlyNothingChanged,
-      }),
-    );
-    expect(toast.error, 'a freeze is not a failure a retry now can fix').not.toHaveBeenCalled();
-    if (s.inDialog) {
-      expect(await screen.findByRole('alert')).toHaveTextContent(en.errors.readOnlyMode);
+    if (s.channel === 'dialog') {
+      const dialog = screen.getByRole('alertdialog');
+      const alert = await within(dialog).findByRole('alert');
+      expect(alert).toHaveTextContent(en.errors.readOnlyMode);
+      expect(alert).toHaveTextContent(en.errors.readOnlyNothingChanged);
+      expect(alert).toHaveAttribute('data-tone', 'warning');
+      await waitFor(() => expect(alert).toHaveFocus());
+      expect(toast.warning, 'the dialog is the one channel — a toast would sit behind the modal').not.toHaveBeenCalled();
+    } else {
+      await waitFor(() =>
+        expect(toast.warning).toHaveBeenCalledWith(en.errors.readOnlyMode, {
+          description: en.errors.readOnlyNothingChanged,
+        }),
+      );
     }
+    expect(toast.error, 'a freeze is not a failure a retry now can fix').not.toHaveBeenCalled();
     expect(screen.queryByText(en.admin.broadcasts.approval.errors.generic)).toBeNull();
   });
 });

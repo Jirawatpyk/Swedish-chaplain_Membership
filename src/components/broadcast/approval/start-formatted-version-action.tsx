@@ -26,8 +26,10 @@
  * renders outside the modal, which hides everything outside itself from AT
  * (H1). The trigger turns unavailable while it holds focus, so it is
  * `focusableWhenDisabled` (H2). The READ_ONLY_MODE write freeze (PR #392
- * review C1) is main #390's read-only warning — and, when the confirmation
- * is open, the same words inside it.
+ * review C1) is main #390's read-only warning: inside the confirmation ONLY
+ * when one is open — title and "nothing was changed", warning tone (review
+ * D4/D5; a toast would sit behind the modal) — else the #390 toast. A refusal
+ * inside the confirmation is focused when it lands (review D8, § 6.4).
  *
  * Focus: on success the trigger unmounts with the stage, so the shared
  * resolver lands on `#main-content`; on Cancel/ESC it returns to the trigger.
@@ -58,6 +60,13 @@ import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { approvalErrorMessage, readErrorCode } from './approval-error';
 import { InlineError } from './inline-error';
+import { InlineWarning } from './inline-warning';
+import { useFocusRefusal } from './use-focus-refusal';
+
+const DIALOG_ERROR_ID = 'eblast-start-version-error';
+
+/** A refusal inside the confirmation — a fresh object each time, so the focus hook refires. */
+type DialogRefusal = { readonly kind: 'error'; readonly message: string } | { readonly kind: 'read_only' };
 
 /** What starting a formatted version costs from the page's stage — and so whether it asks first. */
 export type StartConfirm = 'none' | 'leaves_submitted' | 'voids_approval';
@@ -78,12 +87,14 @@ export function StartFormattedVersionAction({
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
   const router = useRouter();
   const readOnlyToast = useReadOnlyToast();
+  const tReadOnly = useTranslations('errors');
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<DialogRefusal | null>(null);
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
+  useFocusRefusal(dialogError, DIALOG_ERROR_ID);
   const asks = confirm !== 'none';
   const voids = confirm === 'voids_approval';
 
@@ -110,8 +121,9 @@ export function StartFormattedVersionAction({
           return;
         }
         if (await isReadOnlyResponse(res)) {
-          const title = readOnlyToast();
-          if (asks) setDialogError(title);
+          // D5 — one channel: the open confirmation, else the #390 toast.
+          if (asks) setDialogError({ kind: 'read_only' });
+          else readOnlyToast();
           return;
         }
         const message = approvalErrorMessage(tErrors, await readErrorCode(res));
@@ -124,11 +136,11 @@ export function StartFormattedVersionAction({
           router.refresh();
           return;
         }
-        if (asks) setDialogError(message);
+        if (asks) setDialogError({ kind: 'error', message });
         else toast.error(message);
       } catch {
         const message = approvalErrorMessage(tErrors, null);
-        if (asks) setDialogError(message);
+        if (asks) setDialogError({ kind: 'error', message });
         else toast.error(message);
       }
     });
@@ -172,7 +184,15 @@ export function StartFormattedVersionAction({
               <AlertDialogTitle>{voids ? t('voidTitle') : t('submittedTitle')}</AlertDialogTitle>
               <AlertDialogDescription>{voids ? t('voidBody', { round }) : t('submittedBody')}</AlertDialogDescription>
             </AlertDialogHeader>
-            {dialogError !== null ? <InlineError id="eblast-start-version-error" message={dialogError} /> : null}
+            {dialogError === null ? null : dialogError.kind === 'read_only' ? (
+              <InlineWarning
+                id={DIALOG_ERROR_ID}
+                title={tReadOnly('readOnlyMode')}
+                description={tReadOnly('readOnlyNothingChanged')}
+              />
+            ) : (
+              <InlineError id={DIALOG_ERROR_ID} message={dialogError.message} />
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={pending}>{voids ? t('voidCancel') : t('submittedCancel')}</AlertDialogCancel>
               <AlertDialogAction

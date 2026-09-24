@@ -57,6 +57,23 @@
  *     complete, and the US2 reconciler re-drives it. Skipping it would leave
  *     an erased member's E-Blast in the round, or dispatched with
  *     `[redacted]` content after the scrub.
+ *
+ * Each attempt LOCKS the row and reads it inside its tx before the CAS (PR
+ * #392 review D1, the pattern `cancel-broadcast.ts` took in round-4 B4). The
+ * dispatch leg commits its own lock, then attaches the Resend id in a later
+ * tx and calls `sendBroadcast` with no lock held — possibly not until the
+ * next tick after a retryable failure. A status-only CAS on `approved`
+ * matched such a row, so it read `cancelled` and freed the allowance while
+ * the email went out. Under the lock the read sees the attach, and an
+ * `approved` row that already has a Resend broadcast (`resend_broadcast_id`)
+ * is left to deliver: skipped and audited `broadcast_concurrent_action_blocked`
+ * (`dispatchBegun: true`), exactly like a row that moved on to `sending`.
+ *
+ * Narrower than `hasDispatchBegun` on purpose: an import-leg row with ONLY
+ * `audience_import_id` has no email minted yet, and every audience tick
+ * re-checks `approved` under its own lock before `createBroadcast`. Cancelling
+ * it is safe, and skipping it would let that tick mint the email from the
+ * row the erasure scrub has just redacted (`[redacted]` content).
  * Any other exception is treated as
  * unexpected-error: the broadcast remains in flight, the cascade
  * continues to the next broadcast (best-effort), and the
@@ -187,8 +204,10 @@ export async function cancelInFlightBroadcastsForMember(
     let unexpectedErrorCount = 0;
 
     /**
-     * One cancel attempt in its own tx. `lost` = the CAS matched nothing (the
-     * caller re-reads); every other outcome is final and already counted.
+     * One cancel attempt in its own tx. `lost` = the CAS matched nothing, or
+     * the row is gone (the caller re-reads); `dispatch_begun` = the locked row
+     * is `approved` and already handed over (D1 — the caller skips it); every
+     * other outcome is final and already counted.
      *
      * F119 round-4 B6 — every throw LEAVES the tx, so the tx rolls back. The
      * attempt used to catch inside `withTx` and return normally, which
@@ -198,9 +217,17 @@ export async function cancelInFlightBroadcastsForMember(
     const cancelOnce = async (
       broadcast: Broadcast,
       fromStatus: BroadcastStatus,
-    ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'unexpected' }> => {
+    ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'dispatch_begun' | 'unexpected' }> => {
       try {
-        await deps.broadcastsRepo.withTx(async (tx) => {
+        const handedOver = await deps.broadcastsRepo.withTx(async (tx) => {
+          // D1 — lock, THEN read: an in-flight attach commits before this read
+          // returns, so its id is seen. Nothing is written on the skip, so the
+          // tx ends clean. The CAS below stays on `fromStatus`; a locked row
+          // at any other status fails it and takes the caller's re-read.
+          await deps.broadcastsRepo.lockForUpdate(tx, input.tenant.slug, broadcast.broadcastId);
+          const locked = await deps.broadcastsRepo.findByIdInTx(tx, input.tenant.slug, broadcast.broadcastId);
+          if (locked === null) throw new BroadcastConcurrentMutationError(input.tenant.slug, broadcast.broadcastId, fromStatus);
+          if (locked.status === 'approved' && locked.resendBroadcastId !== null) return true;
           const cancelled = await deps.broadcastsRepo.applyTransition(
             tx,
             input.tenant.slug,
@@ -238,7 +265,9 @@ export async function cancelInFlightBroadcastsForMember(
             },
             requestId: input.requestId,
           });
+          return false;
         });
+        if (handedOver) return { kind: 'dispatch_begun' as const };
       } catch (e) {
         // The CAS matched nothing: another writer moved the row. Where to
         // is the caller's re-read, not this error's `observedStatus`.
@@ -280,7 +309,11 @@ export async function cancelInFlightBroadcastsForMember(
      * The row left the in-progress set under us (or is gone): it delivers or
      * closes on its own. Skip + audit (best-effort) + continue.
      */
-    const skipConcurrent = async (broadcast: Broadcast, observedStatus: BroadcastStatus | null): Promise<void> => {
+    const skipConcurrent = async (
+      broadcast: Broadcast,
+      observedStatus: BroadcastStatus | null,
+      dispatchBegun = false,
+    ): Promise<void> => {
       skippedConcurrentCount += 1;
       broadcastsMetrics.cascadeOutcome(
         input.tenant.slug,
@@ -293,6 +326,7 @@ export async function cancelInFlightBroadcastsForMember(
           memberId: input.memberId as string,
           previousStatus: broadcast.status,
           observedStatus,
+          dispatchBegun,
           useCase: 'cancel-in-flight-broadcasts-for-member',
         },
         'broadcasts.cascade.concurrent_skip',
@@ -303,13 +337,16 @@ export async function cancelInFlightBroadcastsForMember(
           eventType: 'broadcast_concurrent_action_blocked',
           actorUserId:
             input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
-          summary: `Cancel cascade skipped broadcast ${broadcast.broadcastId} — concurrent transition`,
+          summary: dispatchBegun
+            ? `Cancel cascade skipped broadcast ${broadcast.broadcastId} — the send was already handed over`
+            : `Cancel cascade skipped broadcast ${broadcast.broadcastId} — concurrent transition`,
           payload: {
             broadcastId: broadcast.broadcastId,
             memberId: input.memberId as string,
             cascade: 'f3_member_archival_or_erasure',
             snapshotStatus: broadcast.status,
             observedStatus,
+            dispatchBegun,
           },
           requestId: input.requestId,
         });
@@ -337,6 +374,10 @@ export async function cancelInFlightBroadcastsForMember(
       let fromStatus: BroadcastStatus = broadcast.status;
       for (let retries = 0; ; retries += 1) {
         const attempt = await cancelOnce(broadcast, fromStatus);
+        if (attempt.kind === 'dispatch_begun') {
+          await skipConcurrent(broadcast, 'approved', true);
+          break;
+        }
         if (attempt.kind !== 'lost') break;
         let current: Broadcast | null;
         try {

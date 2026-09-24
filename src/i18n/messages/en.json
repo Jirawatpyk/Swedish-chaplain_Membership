@@ -3509,7 +3509,8 @@
           "sentVersionTitle": "Version {version} sent to the member",
           "noteLabel": "Note to the member",
           "threadUnavailableTitle": "The version history could not be loaded",
-          "threadUnavailableBody": "The working copy and the member's original are not shown, and no formatting action is available until the page loads them. Refresh the page in a moment."
+          "threadUnavailableBody": "The working copy and the member's original are not shown, and no formatting action is available until the page loads them. Refresh the page in a moment.",
+          "threadUnavailableHistoryBody": "The rest of this page is not affected. Try again in a moment."
         },
         "feedback": {
           "changesRequestedTitle": "The member asked for changes to version {version}",

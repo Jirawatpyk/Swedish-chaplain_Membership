@@ -31,6 +31,10 @@ vi.mock('next/navigation', () => ({
     throw new Error('NEXT_NOT_FOUND');
   },
 }));
+// PR #392 review D7 — the thread-unavailable alert's Refresh (a client island).
+vi.mock('@/components/shell/refresh-page-button', () => ({
+  RefreshPageButton: ({ label }: { label: string }) => <button data-testid="refresh-page-button">{label}</button>,
+}));
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockResolvedValue(
     Object.assign((key: string) => key, { has: () => true }),

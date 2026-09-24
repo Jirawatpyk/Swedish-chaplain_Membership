@@ -240,6 +240,19 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     await waitFor(() => expect(within(dialog).getByRole('alert')).not.toBe(first));
   });
 
+  // PR #392 review D8 — ux-standards § 6.4: an inline refusal is FOCUSED, so
+  // a keyboard / screen-reader user lands on why the dialog did not close.
+  it('D8: a refusal that keeps the dialog open is focused', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => refusal(429, 'broadcast_rate_limit_exceeded')));
+    renderAction({ status: 'approved', proposedSendAt: null });
+    open();
+    const dialog = await screen.findByRole('alertdialog');
+    await chooseSendNow();
+    fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
+    const alert = await within(dialog).findByRole('alert');
+    await waitFor(() => expect(alert).toHaveFocus());
+  });
+
   it('H1: a network failure is said inside the dialog too', async () => {
     vi.stubGlobal(
       'fetch',

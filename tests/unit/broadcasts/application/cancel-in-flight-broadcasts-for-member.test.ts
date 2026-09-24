@@ -54,6 +54,8 @@ function makeBroadcastRow(opts: {
     broadcastId: opts.broadcastId as never,
     tenantId: 'test-tenant' as never,
     status: opts.status,
+    resendBroadcastId: null,
+    audienceImportId: null,
   } as never;
 }
 
@@ -66,12 +68,21 @@ function makeDeps(overrides: {
    * `sending` (the benign race the cascade was written for).
    */
   findByIdImpl?: (broadcastId: string) => Promise<{ status: string } | null>;
+  /**
+   * D1 — the row as read UNDER the lock inside the cancel's tx. Default: the
+   * listed snapshot (no dispatch ids), i.e. nothing moved since the list.
+   */
+  lockedRowImpl?: (broadcastId: string) => Promise<Record<string, unknown> | null>;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
   // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
   // one that throws ROLLS BACK (and the throw leaves withTx). Recorded per tx,
   // so a test can prove what each attempt left behind.
   const txOutcomes: Array<'committed' | 'rolled_back'> = [];
+  /** D1 — the repo calls in order, so a test can prove the lock precedes the read. */
+  const calls: string[] = [];
+  const snapshot = (broadcastId: string) =>
+    (rows as Array<{ broadcastId: string }>).find((r) => r.broadcastId === broadcastId) ?? null;
   const broadcastsRepo = {
     listInFlightOwnedByMember: vi.fn(async () => rows),
     withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -84,7 +95,16 @@ function makeDeps(overrides: {
         throw e;
       }
     }),
+    lockForUpdate: vi.fn(async (_tx: unknown, _t: unknown, broadcastId: string) => {
+      calls.push(`lock:${broadcastId}`);
+      return null;
+    }),
+    findByIdInTx: vi.fn(async (_tx: unknown, _t: unknown, broadcastId: string) => {
+      calls.push(`read:${broadcastId}`);
+      return overrides.lockedRowImpl ? overrides.lockedRowImpl(broadcastId) : snapshot(broadcastId);
+    }),
     applyTransition: vi.fn(async (_tx, _t, broadcastId, _to, _fields, expectedFrom) => {
+      calls.push(`cas:${broadcastId as string}`);
       if (overrides.applyTransitionImpl) {
         return overrides.applyTransitionImpl({ broadcastId, expectedFrom });
       }
@@ -107,6 +127,7 @@ function makeDeps(overrides: {
     audit,
     clock,
     txOutcomes,
+    calls,
   } as never;
 }
 
@@ -303,6 +324,86 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
     expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error', 'cancelled']);
     expect(auditEmitCountSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // PR #392 review D1 — the cascade's status-only CAS cancelled an `approved`
+  // row the dispatcher had already handed over (`attachResendIds` committed,
+  // `sendBroadcast` not yet out — possibly not until the next tick): the row
+  // read `cancelled` and freed the allowance while the email went out. It now
+  // locks the row, reads it, and leaves a handed-over row to deliver — the
+  // same skip as a row that moved on to `sending`.
+  describe('D1 — an approved row the dispatcher already handed over is never cancelled', () => {
+    it('locks the row BEFORE it reads it, then transitions — all inside the cancel tx', async () => {
+      const deps = makeDeps({ inFlightRows: [{ broadcastId: broadcastIdA, status: 'submitted' }] }) as {
+        calls: string[];
+        broadcastsRepo: { lockForUpdate: ReturnType<typeof vi.fn>; findByIdInTx: ReturnType<typeof vi.fn> };
+      };
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0 } });
+      expect(deps.calls).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, `cas:${broadcastIdA}`]);
+      // The same tx handle for the lock and the read.
+      expect(deps.broadcastsRepo.lockForUpdate.mock.calls[0]?.[0]).toBe(deps.broadcastsRepo.findByIdInTx.mock.calls[0]?.[0]);
+    });
+
+    it.each([
+      ['legacy leg — resend_broadcast_id set', { resendBroadcastId: 'rb-live-1', audienceImportId: null }],
+      ['import leg — both ids set', { resendBroadcastId: 'rb-live-2', audienceImportId: 'imp-live-1' }],
+    ])('%s under the lock → skipped (concurrent_skip + broadcast_concurrent_action_blocked), no transition, the next row still cancels', async (_leg, ids) => {
+      const deps = makeDeps({
+        inFlightRows: [
+          { broadcastId: broadcastIdA, status: 'approved' },
+          { broadcastId: broadcastIdB, status: 'submitted' },
+        ],
+        lockedRowImpl: async (id) =>
+          id === broadcastIdA
+            ? { broadcastId: id, status: 'approved', ...ids }
+            : { broadcastId: id, status: 'submitted', resendBroadcastId: null, audienceImportId: null },
+      }) as {
+        calls: string[];
+        txOutcomes: string[];
+        audit: { emit: ReturnType<typeof vi.fn> };
+      };
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 1, unexpectedErrorCount: 0 } });
+      expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
+      // The skipped attempt wrote nothing; its tx ends without a transition.
+      expect(deps.txOutcomes).toEqual(['committed', 'committed']);
+      expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['concurrent_skip', 'cancelled']);
+      expect(deps.audit.emit).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          eventType: 'broadcast_concurrent_action_blocked',
+          payload: expect.objectContaining({ broadcastId: broadcastIdA, observedStatus: 'approved', dispatchBegun: true }),
+        }),
+      );
+      expect(
+        deps.audit.emit.mock.calls.some(
+          (c) => (c[1] as { eventType: string; payload: { broadcastId: string } }).eventType === 'broadcast_cancelled' &&
+            (c[1] as { payload: { broadcastId: string } }).payload.broadcastId === broadcastIdA,
+        ),
+      ).toBe(false);
+    });
+
+    it('import leg with ONLY audience_import_id (no Resend broadcast yet) → cancelled: the next audience tick sees `cancelled` under its lock, and skipping would let it mint the email from the scrubbed `[redacted]` row', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        lockedRowImpl: async (id) => ({ broadcastId: id, status: 'approved', resendBroadcastId: null, audienceImportId: 'imp-live-1' }),
+      }) as { calls: string[] };
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0 } });
+      expect(deps.calls).toContain(`cas:${broadcastIdA}`);
+    });
+
+    it('the row is gone under the lock → no transition; the re-read confirms it and it is a benign skip', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'submitted' }],
+        lockedRowImpl: async () => null,
+        findByIdImpl: async () => null,
+      }) as { calls: string[] };
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0 } });
+      expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
+    });
   });
 
   it('non-concurrent throw: emits cascadeOutcome="unexpected_error" + cascade continues', async () => {

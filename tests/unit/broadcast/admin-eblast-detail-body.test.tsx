@@ -91,6 +91,9 @@ vi.mock('@/lib/broadcast-approval-deps', () => ({
   makeReadFormattingWarningsDeps: () => ({}),
 }));
 vi.mock('@/components/ui/relative-time', () => ({ RelativeTime: () => null }));
+vi.mock('@/components/shell/refresh-page-button', () => ({
+  RefreshPageButton: ({ label }: { label: string }) => <button data-testid="refresh-page-button">{label}</button>,
+}));
 vi.mock('@/components/broadcast/approval/start-formatted-version-action', () => ({
   StartFormattedVersionAction: () => null,
 }));
@@ -251,6 +254,26 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
     const html = await renderPage();
     expect(vi.mocked(listBroadcastVersions)).toHaveBeenCalledTimes(1);
     expect(html).toContain('data-testid="eblast-thread-unavailable"');
+  });
+
+  // PR #392 review D7 — on a stage with no working copy (approved / sent /
+  // cancelled …) the alert claimed "the working copy and the member's
+  // original are not shown, and no formatting action is available", none of
+  // which applies there; and it offered no way to retry. It says only what
+  // failed there, and both variants carry a Refresh button, as the portal's.
+  it.each([
+    ['a sent E-Blast (no working copy)', { status: 'sent', currentRound: 1, approvedAt: null }, 'threadUnavailableHistoryBody'],
+    ['an E-Blast in design (a working copy)', { status: 'in_design', currentRound: 1 }, 'threadUnavailableBody'],
+  ] as const)('D7: %s — the unavailable alert names what failed there and offers Refresh', async (_label, row, bodyKey) => {
+    findByIdMock.mockResolvedValue(makeBroadcast(row));
+    const { listBroadcastVersions } = await import('@/modules/broadcasts');
+    vi.mocked(listBroadcastVersions).mockResolvedValueOnce({ ok: false, error: { kind: 'server_error', errKind: 'TypeError' } } as never);
+    const html = await renderPage();
+    const alert = html.indexOf('data-testid="eblast-thread-unavailable"');
+    expect(alert).toBeGreaterThan(-1);
+    const alertHtml = html.slice(alert, html.indexOf('data-testid="refresh-page-button"', alert));
+    expect(alertHtml).toContain(`>${bodyKey}<`);
+    expect(html.indexOf('data-testid="refresh-page-button"', alert)).toBeGreaterThan(alert);
   });
 
   it('a submitted broadcast that renders keeps its Approve / Reject actions', async () => {

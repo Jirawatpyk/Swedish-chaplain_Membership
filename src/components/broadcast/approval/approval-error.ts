@@ -52,7 +52,9 @@ export async function readRouteError(res: Response): Promise<RouteError> {
  * retry is answered with the decision on file (contract § decision,
  * "Idempotency"). It was recorded when it names the same decision on the same
  * version; `recordedDecision` is the LATEST decision on the E-Blast, so a
- * same-kind decision from an earlier round must not count.
+ * same-kind decision from an earlier round must not count. And it must be the
+ * caller's own (`byCaller`, review D6): a colleague at the same member who
+ * recorded the same decision did not record THIS user's (or their reason).
  */
 export function isRecordedDecision(
   details: RouteError['details'],
@@ -60,7 +62,9 @@ export function isRecordedDecision(
   versionId: string,
 ): boolean {
   const recorded = details?.recordedDecision;
-  return isRecord(recorded) && recorded.decision === decision && recorded.versionId === versionId;
+  return (
+    isRecord(recorded) && recorded.decision === decision && recorded.versionId === versionId && recorded.byCaller === true
+  );
 }
 
 /** Just the `error.code`, or null when the body is not the envelope. */

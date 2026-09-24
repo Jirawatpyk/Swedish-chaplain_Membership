@@ -222,6 +222,12 @@ the E-Blast now stands **and a way back to their E-Blast list** without a second
 Idempotency: a repeat of an identical body after the transition answers **409 `stage_changed`**
 carrying the decision already recorded — the correct answer, not a replay (research R19).
 
+`details.recordedDecision` is `{ id, versionId, decision, decidedAt, byCaller }` (or `null` when
+none is on file). `byCaller` is `true` when the session user recorded it and `false` when another
+portal user of the same member did (PR #392 review D6) — the other user's id is never exposed. A
+client treats the 409 as its own retry succeeding only when the decision and version match **and**
+`byCaller` is `true`; otherwise the page is stale and the typed reason was not recorded.
+
 ## `POST /api/broadcasts/[id]/cancel` — withdraw the whole E-Blast (existing route, widened)
 
 Unchanged contract. The accepted stage set widens from `('submitted','approved')` to

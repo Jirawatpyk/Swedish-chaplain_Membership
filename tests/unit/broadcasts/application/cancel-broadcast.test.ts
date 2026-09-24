@@ -70,16 +70,23 @@ const tenant: TenantContext = asTenantContext('test-tenant');
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 const broadcastId = asBroadcastId('22222222-2222-2222-2222-222222222222');
 
-function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
+/** The tx handle the fake `withTx` passes its callback — what an in-tx write must receive. */
+const TX = { fake: 'cancel-tx' };
+
+function makeAudit(): { emits: Array<AuditEmitInput>; txs: unknown[]; port: AuditPort } {
   const emits: Array<AuditEmitInput> = [];
+  const txs: unknown[] = [];
   return {
     emits,
+    txs,
     port: {
-      async emit(_tx, e) {
+      async emit(tx, e) {
         emits.push(e);
+        txs.push(tx);
       },
-      async emitTyped(_tx, e) {
+      async emitTyped(tx, e) {
         emits.push(e as AuditEmitInput);
+        txs.push(tx);
       },
     },
   };
@@ -172,7 +179,7 @@ function makeRepo(opts: RepoOpts): {
         // Mimic db.transaction: commit on normal return, rollback + rethrow
         // on throw. Lets the bug #5 test distinguish the two outcomes.
         try {
-          const result = await fn(null);
+          const result = await fn(TX);
           opts.onTxOutcome?.('committed');
           return result;
         } catch (e) {
@@ -808,6 +815,24 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       cancelledAt: FROZEN_NOW.toISOString(),
     });
     expect(evt?.actorUserId).toBe('admin-7');
+  });
+
+  // PR #392 review D2 — the refusal audit rode a null tx (a SECOND pool
+  // connection) while this tx held the row lock. It is the branch's only
+  // write, so it goes on the tx: committing just the audit row is correct.
+  it.each([
+    ['a closed E-Blast', makeBroadcast('rejected')],
+    ['an approved row the dispatcher already handed over', { ...makeBroadcast('approved'), resendBroadcastId: 'rb-live-2' }],
+  ] as const)('D2: %s — the broadcast_cancel_too_late audit is emitted on the cancel tx, not a second connection', async (_label, existing) => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing });
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    expect(audit.emits.map((e) => e.eventType)).toEqual(['broadcast_cancel_too_late']);
+    expect(audit.txs).toEqual([TX]);
   });
 
   it('cancel_too_late audit best-effort โ€” failed audit does NOT mask the error', async () => {

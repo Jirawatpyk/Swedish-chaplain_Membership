@@ -36,8 +36,10 @@
  * turns unavailable while it holds focus (H2).
  *
  * The READ_ONLY_MODE write freeze (PR #392 review C1) is main #390's read-only
- * warning AND the same words inside the dialog, which stays open: nothing
- * changed, and the choice is still valid once the freeze lifts.
+ * warning — its title AND "nothing was changed" — said INSIDE the dialog only,
+ * in the warning tone (review D4/D5): the dialog stays open (the choice is
+ * still valid once the freeze lifts), and a toast would sit behind the modal.
+ * Every form-level refusal is focused when it lands (review D8, § 6.4).
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { CalendarClock, Loader2Icon } from 'lucide-react';
@@ -65,16 +67,21 @@ import {
   isoToBangkokInput,
 } from '@/components/broadcast/bangkok-datetime';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { approvalErrorMessage, readErrorCode, STANDING_REFUSAL_CODES } from './approval-error';
 import { InlineError } from './inline-error';
+import { InlineWarning } from './inline-warning';
+import { useFocusRefusal } from './use-focus-refusal';
 
 /** The route's floor (`approve-broadcast.ts` / `confirm-schedule.ts`). */
 const MIN_LEAD_MS = 5 * 60 * 1000;
 
 const WHEN_ID = 'schedule-confirm-when';
 const PROPOSAL_ID = 'schedule-confirm-proposal';
+const FORM_ERROR_ID = 'schedule-confirm-error';
+
+/** A form-level refusal on screen — a fresh object each time, so the focus hook refires. */
+type FormRefusal = { readonly kind: 'error'; readonly message: string } | { readonly kind: 'read_only' };
 
 export type ScheduleConfirmStatus = 'member_approved' | 'approved';
 export type ScheduleConfirmMode = 'keep_proposal' | 'schedule' | 'send_now' | 'cancel';
@@ -110,20 +117,21 @@ export function ScheduleConfirmAction({
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
   const tStatus = useTranslations('admin.broadcasts.queue.status');
   const locale = useLocale();
+  const tReadOnly = useTranslations('errors');
   const router = useRouter();
-  const readOnlyToast = useReadOnlyToast();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<ScheduleConfirmMode>('schedule');
   const [when, setWhen] = useState('');
   const [minWhen, setMinWhen] = useState('');
   const [proposalUsable, setProposalUsable] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<FormRefusal | null>(null);
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef(false);
   const focusWhenRef = useRef(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
+  useFocusRefusal(formError, FORM_ERROR_ID);
 
   // M4 — a too-soon refusal makes the picker the answer: focus it once it is
   // mounted and no longer inside the `pending`-disabled fieldset.
@@ -202,7 +210,7 @@ export function ScheduleConfirmAction({
           return;
         }
         if (await isReadOnlyResponse(res)) {
-          setFormError(readOnlyToast());
+          setFormError({ kind: 'read_only' });
           return;
         }
         const code = await readErrorCode(res);
@@ -219,7 +227,7 @@ export function ScheduleConfirmAction({
         if (res.status === 409 && code !== null && STANDING_REFUSAL_CODES.has(code)) {
           // T166 follow-up — the member's standing refused the promotion; the
           // row did not move, so say it here and keep the trigger's focus.
-          setFormError(message);
+          setFormError({ kind: 'error', message });
           return;
         }
         if (res.status === 409 || res.status === 404) {
@@ -231,9 +239,9 @@ export function ScheduleConfirmAction({
           return;
         }
         // The dialog stays open: say it inside it (H1).
-        setFormError(message);
+        setFormError({ kind: 'error', message });
       } catch {
-        setFormError(approvalErrorMessage(tErrors, null));
+        setFormError({ kind: 'error', message: approvalErrorMessage(tErrors, null) });
       }
     });
   }
@@ -353,9 +361,16 @@ export function ScheduleConfirmAction({
               ) : null}
             </div>
           </fieldset>
-          {formError !== null ? (
-            <InlineError id="schedule-confirm-error" data-testid="schedule-confirm-error" message={formError} />
-          ) : null}
+          {formError === null ? null : formError.kind === 'read_only' ? (
+            <InlineWarning
+              id={FORM_ERROR_ID}
+              data-testid="schedule-confirm-error"
+              title={tReadOnly('readOnlyMode')}
+              description={tReadOnly('readOnlyNothingChanged')}
+            />
+          ) : (
+            <InlineError id={FORM_ERROR_ID} data-testid="schedule-confirm-error" message={formError.message} />
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="schedule-confirm-cancel" disabled={pending}>
               {t('close')}

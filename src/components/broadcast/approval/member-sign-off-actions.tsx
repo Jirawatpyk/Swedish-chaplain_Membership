@@ -28,10 +28,12 @@
  * A retry after a lost response is answered 409 `stage_changed` carrying the
  * decision already recorded (contract § decision, "Idempotency"): when that is
  * THIS decision on THIS version it was recorded, and the success path runs
- * (PR #392 review C3). While the READ_ONLY_MODE write freeze is on, the
- * proxy's 503 is said as main #390's read-only warning AND inside the open
- * dialog (the toast is hidden from AT behind the modal), which stays open —
- * nothing changed and a retry after the freeze is still valid (review C1).
+ * (PR #392 review C3) — when the member recorded it themselves (`byCaller`,
+ * review D6). While the READ_ONLY_MODE write freeze is on, the proxy's 503 is
+ * main #390's read-only warning — its title AND "nothing was changed" — said
+ * INSIDE the open dialog only, in the warning tone and focused (review C1,
+ * D4/D5): the dialog stays open (nothing changed, a retry after the freeze is
+ * still valid), and a toast would sit behind the modal, hidden from AT.
  *
  * Refusals: a 409 (`stage_changed`, `stale_version`, `sending_started`) or a
  * 404 means the page is stale — the dialog closes FIRST, then a toast says
@@ -50,7 +52,7 @@
  * `focusableWhenDisabled` — they turn unavailable while they hold focus — and
  * the fields turn read-only, never `disabled`, for the same reason.
  */
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { CircleCheck, Loader2Icon, MessageSquareWarning, Undo2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -74,11 +76,12 @@ import {
   ReasonConfirmationDialog,
   useDialogFinalFocus,
 } from '@/components/broadcast/reason-confirmation-dialog';
-import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { cn } from '@/lib/utils';
 import { approvalErrorMessage, isRecordedDecision, readRouteError } from './approval-error';
 import { InlineError } from './inline-error';
+import { InlineWarning } from './inline-warning';
+import { useFocusRefusal } from './use-focus-refusal';
 
 /** FR-009 — the approval's optional note. */
 const NOTE_MAX = 500;
@@ -101,10 +104,16 @@ export interface MemberSignOffActionsProps {
   readonly canWithdrawEblast: boolean;
 }
 
-/** What a refused decision shows: a message, and whether it belongs to the reason/note field. */
+/**
+ * What a refused decision shows: a message, and whether it belongs to the
+ * reason/note field. `tone: 'warning'` + `description` — the read-only freeze
+ * (D4), a form-level warning rather than an error.
+ */
 interface RouteRefusal {
   readonly message: string;
   readonly field: 'reason' | null;
+  readonly tone?: 'warning' | undefined;
+  readonly description?: string | undefined;
 }
 
 /** A refusal on screen; `seq` makes a repeat a new node, announced again. */
@@ -122,8 +131,9 @@ export function MemberSignOffActions({
 }: MemberSignOffActionsProps): React.ReactElement | null {
   const t = useTranslations('portal.broadcasts.approval.actions');
   const tErrors = useTranslations('portal.broadcasts.approval.errors');
+  // D4 — main #390's read-only warning, word for word (root `errors`).
+  const tReadOnly = useTranslations('errors');
   const router = useRouter();
-  const readOnlyToast = useReadOnlyToast();
 
   const decide = version !== null && canDecide;
   const withdraw = version !== null && canWithdrawApproval;
@@ -146,7 +156,16 @@ export function MemberSignOffActions({
         body: JSON.stringify({ versionId: version.id, decision, reason }),
       });
       if (await isReadOnlyResponse(res)) {
-        return { kind: 'refused', refusal: { message: readOnlyToast(), field: null } };
+        // D5 — the dialog stays open, so it is the ONE channel (no toast).
+        return {
+          kind: 'refused',
+          refusal: {
+            message: tReadOnly('readOnlyMode'),
+            description: tReadOnly('readOnlyNothingChanged'),
+            field: null,
+            tone: 'warning',
+          },
+        };
       }
       const { code, fields, details } = await readRouteError(res);
       if (res.ok || (res.status === 409 && code === 'stage_changed' && isRecordedDecision(details, decision, version.id))) {
@@ -233,22 +252,6 @@ export function MemberSignOffActions({
 
 type Post = (decision: Decision, reason: string | null, close: () => void) => Promise<Outcome>;
 
-/**
- * ux-standards § 6.4 — a refusal is focused: the field it names, else the
- * form-level line (an `InlineError`, focusable via `tabIndex={-1}`).
- */
-function useFocusRefusal(
-  refusal: Refusal,
-  field: React.RefObject<HTMLTextAreaElement | null>,
-  formErrorId: string,
-): void {
-  useEffect(() => {
-    if (refusal === null) return;
-    if (refusal.field === 'reason') field.current?.focus();
-    else document.getElementById(formErrorId)?.focus();
-  }, [refusal, field, formErrorId]);
-}
-
 function ApproveAction({ versionNo, post }: { readonly versionNo: number; readonly post: Post }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.approval.approveDialog');
   const tActions = useTranslations('portal.broadcasts.approval.actions');
@@ -262,7 +265,7 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
   const seqRef = useRef(0);
   const closedViaSuccessRef = useRef(false);
   const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
-  useFocusRefusal(refusal, noteRef, 'eblast-approve-error');
+  useFocusRefusal(refusal, 'eblast-approve-error', noteRef);
 
   const overCap = note.length > NOTE_MAX;
   const noteError = overCap ? t('noteTooLong') : refusal?.field === 'reason' ? refusal.message : null;
@@ -344,9 +347,16 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
               {note.length} / {NOTE_MAX}
             </p>
           </div>
-          {formError !== null ? (
+          {formError === null ? null : refusal?.tone === 'warning' ? (
+            <InlineWarning
+              key={`refusal-${refusal.seq}`}
+              id="eblast-approve-error"
+              title={formError}
+              description={refusal.description}
+            />
+          ) : (
             <InlineError key={`refusal-${refusal?.seq ?? 0}`} id="eblast-approve-error" message={formError} />
-          ) : null}
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel ref={cancelRef} disabled={pending}>
               {t('cancel')}

@@ -104,6 +104,17 @@ describe('F119 T063 — Start formatted version (UX review)', () => {
     resolve(new Response('{}', { status: 201 }));
   });
 
+  // PR #392 review D8 — ux-standards § 6.4: an inline refusal is FOCUSED.
+  it('D8: a refusal that keeps the confirmation open is focused', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })));
+    renderStart('voids_approval');
+    fireEvent.click(trigger());
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByTestId('eblast-start-version-confirm'));
+    const alert = await within(dialog).findByRole('alert');
+    await waitFor(() => expect(alert).toHaveFocus());
+  });
+
   it.each([
     ['a successful start', 201],
     ['a stage that moved under the page', 409],

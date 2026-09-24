@@ -301,6 +301,23 @@ describe('races and stale views (FR-033, spec § Edge Cases "act at the same mom
     expect(harness.store.outbox.rows()).toHaveLength(2);
   });
 
+  // PR #392 review D6 — `recordedDecision` named no actor, so a colleague's
+  // identical decision on the same version closed THIS user's retry as their
+  // own success (their typed reason dropped). `byCaller` says whether the
+  // session user recorded it; the colleague's id is never exposed.
+  it.each([
+    ['the session user recorded it → byCaller true', PORTAL_USER_ID, true],
+    ['a colleague at the same member recorded it → byCaller false', '99999999-9999-4999-8999-999999999999', false],
+  ] as const)('the 409 stage_changed recordedDecision says %s', async (_label, retryUserId, byCaller) => {
+    expect((await decide({ versionId: V1.id, decision: 'approved' })).status).toBe(200);
+    harness.member.userId = retryUserId;
+    const again = await decide({ versionId: V1.id, decision: 'approved' });
+    expect(again.status).toBe(409);
+    const recorded = (await again.json()).error.details.recordedDecision;
+    expect(recorded).toMatchObject({ decision: 'approved', versionId: V1.id, byCaller });
+    expect(Object.keys(recorded).sort()).toEqual(['byCaller', 'decidedAt', 'decision', 'id', 'versionId']);
+  });
+
   it('approve while changes_requested → 409 stage_changed', async () => {
     resetVersionHarness({ broadcasts: [awaiting({ status: 'changes_requested' })], versions: [V0, V1] });
     const res = await decide({ versionId: V1.id, decision: 'approved' });

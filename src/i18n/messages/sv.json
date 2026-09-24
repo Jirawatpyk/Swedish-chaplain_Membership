@@ -3509,7 +3509,8 @@
           "sentVersionTitle": "Version {version} skickad till medlemmen",
           "noteLabel": "Anteckning till medlemmen",
           "threadUnavailableTitle": "Versionshistoriken kunde inte läsas in",
-          "threadUnavailableBody": "Arbetskopian och medlemmens original visas inte, och ingen formatering är möjlig förrän sidan har läst in dem. Uppdatera sidan om en stund."
+          "threadUnavailableBody": "Arbetskopian och medlemmens original visas inte, och ingen formatering är möjlig förrän sidan har läst in dem. Uppdatera sidan om en stund.",
+          "threadUnavailableHistoryBody": "Resten av sidan påverkas inte. Försök igen om en stund."
         },
         "feedback": {
           "changesRequestedTitle": "Medlemmen begärde ändringar i version {version}",

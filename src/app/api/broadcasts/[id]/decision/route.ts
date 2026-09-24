@@ -107,7 +107,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     (decided) => ({ stage: stageOf(decided.stage), round: decided.round }),
   );
   broadcastsMetrics.memberDecideMs(ctx.tenant.slug, performance.now() - started);
-  if (!result.ok) return decisionErrorResponse(result.error, correlationId);
+  if (!result.ok) return decisionErrorResponse(result.error, ctx.current.user.id, correlationId);
 
   const { stage, round, decision } = result.value;
   return NextResponse.json(
@@ -126,7 +126,13 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   );
 }
 
-function decisionErrorResponse(error: RecordMemberDecisionError, correlationId: string): NextResponse {
+/**
+ * `callerUserId` — the session user. A 409 `stage_changed` says whether THEY
+ * recorded the decision on file (`byCaller`, PR #392 review D6): a colleague at
+ * the same member may have recorded the same decision on the same version, and
+ * that is not this user's retry succeeding. The colleague's id never leaves.
+ */
+function decisionErrorResponse(error: RecordMemberDecisionError, callerUserId: string, correlationId: string): NextResponse {
   switch (error.kind) {
     case 'reason_required':
       return errorResponse(422, 'reason_required', correlationId, { fieldErrors: { reason: ['reason_required'] } });
@@ -154,6 +160,7 @@ function decisionErrorResponse(error: RecordMemberDecisionError, correlationId: 
                   versionId: error.recorded.versionId,
                   decision: error.recorded.decision,
                   decidedAt: error.recorded.decidedAt.toISOString(),
+                  byCaller: error.recorded.decidedByUserId === callerUserId,
                 },
         },
       });

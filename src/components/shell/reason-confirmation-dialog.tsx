@@ -60,6 +60,7 @@ import {
 } from '@/components/shell/typed-phrase-field';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { InlineError } from '@/components/broadcast/approval/inline-error';
+import { InlineWarning } from '@/components/broadcast/approval/inline-warning';
 
 /** What the typed-phrase gate asks for, resolved from the caller's text. */
 interface PhraseGate {
@@ -192,11 +193,18 @@ export interface ReasonConfirmationDialogProps {
    * component's transition, so a caller's "clear at the start" never commits
    * before the next refusal lands; the error node is keyed on `seq`, so an
    * identical refusal repeated is a NEW node and is announced again.
+   *
+   * `tone: 'warning'` (PR #392 review D4) — a form-level refusal that is
+   * nobody's error (the read-only write freeze): `message` is the title and
+   * `description` the line under it, in the warning tone. Default: the red
+   * `InlineError`, as before.
    */
   readonly refusal?: {
     readonly message: string;
     readonly field: 'reason' | null;
     readonly seq?: number;
+    readonly tone?: 'warning' | undefined;
+    readonly description?: string | undefined;
   } | null;
   /**
    * ux-standards § 6.2 — the Confirm tier. `destructive` (the default: red)
@@ -412,7 +420,11 @@ export function ReasonConfirmationDialog({
           />
         ) : null}
 
-        {formError !== null ? <InlineError key={refusalKey} id={formErrorId} message={formError} /> : null}
+        {formError === null ? null : refusal?.tone === 'warning' ? (
+          <InlineWarning key={refusalKey} id={formErrorId} title={formError} description={refusal.description} />
+        ) : (
+          <InlineError key={refusalKey} id={formErrorId} message={formError} />
+        )}
 
         <AlertDialogFooter>
           <AlertDialogCancel ref={cancelRef} disabled={pending}>
