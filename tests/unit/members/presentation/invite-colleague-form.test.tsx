@@ -69,4 +69,28 @@ describe('InviteColleagueForm', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it('shows the neutral invite_unavailable message inline — never "already registered"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: { code: 'invite_unavailable' } }),
+      }),
+    );
+
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#first_name')!, { target: { value: 'Jane' } });
+    fireEvent.change(container.querySelector('#last_name')!, { target: { value: 'Doe' } });
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'x@other.example' } });
+    fireEvent.submit(container.querySelector('form')!);
+
+    const msg = await screen.findByText((_t, node) => node?.id === 'email-error');
+    expect(msg.textContent).toBe(enMessages.portal.invite.inviteUnavailable);
+    expect(msg.textContent).not.toMatch(/registered|already/i);
+    expect(toastError).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
 });

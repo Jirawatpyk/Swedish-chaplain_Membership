@@ -59,7 +59,23 @@ export type InviteColleagueInput = {
 export type InviteColleagueError =
   | { type: 'not_primary'; reason: string }
   | { type: 'validation_error'; issues: z.ZodIssue[] }
+  /**
+   * The address already belongs to a live contact of the INVITER'S OWN member —
+   * information the inviter can already see on /portal/profile, so it may be
+   * named specifically.
+   */
   | { type: 'email_taken' }
+  /**
+   * The invite cannot proceed for a reason the member must NOT learn: the
+   * address is registered to an account outside their member (`users.email` is
+   * unique across every member, staff user and tenant). Returning `email_taken`
+   * here made the portal an account-existence oracle (PDPA/GDPR). `reason` is
+   * for the staff log only — the route never puts it in the response.
+   */
+  | {
+      type: 'invite_unavailable';
+      reason: 'email_registered_elsewhere' | 'same_member_check_failed';
+    }
   | { type: 'invalid_email' }
   // 059-membership-suspension Task 6 — a suspended/terminated member (F8
   // `deriveMembershipAccess`) cannot invite a colleague: every invite mints
@@ -166,7 +182,19 @@ export async function inviteColleague(
       return err({ type: 'invalid_email' });
     }
     if (created.error.code === 'email-taken') {
-      return err({ type: 'email_taken' });
+      // Only an address already on the inviter's OWN member may be named: that
+      // contact list is visible to them. Anything else (another member's user,
+      // a staff account, another tenant's user) gets the neutral answer.
+      const own = await deps.contactRepo.listByMember(deps.tenant, input.memberId);
+      if (!own.ok) {
+        // Can't tell → fail towards privacy, never towards the specific answer.
+        return err({ type: 'invite_unavailable', reason: 'same_member_check_failed' });
+      }
+      const onOwnMember = own.value.some(
+        (c) => c.removedAt === null && String(c.email).toLowerCase() === emailResult.value,
+      );
+      if (onOwnMember) return err({ type: 'email_taken' });
+      return err({ type: 'invite_unavailable', reason: 'email_registered_elsewhere' });
     }
     // `invitation-create-failed` — F1 create-user already ran its
     // compensating `users.deletePending`, so no state leaks here.

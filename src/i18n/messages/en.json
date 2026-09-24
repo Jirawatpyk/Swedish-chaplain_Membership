@@ -6566,7 +6566,8 @@
       "sending": "Sending…",
       "sendSuccess": "Invitation sent successfully.",
       "sendError": "Could not send invitation. Please try again.",
-      "emailTaken": "This email is already registered.",
+      "emailTaken": "This person is already one of your company's contacts.",
+      "inviteUnavailable": "We couldn't invite this address. Please contact the chamber for help.",
       "invalidEmail": "Enter a valid email address.",
       "validationError": "Please check the form and try again.",
       "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again."

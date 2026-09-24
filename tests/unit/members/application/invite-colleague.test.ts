@@ -76,10 +76,17 @@ type DepsOverrides = {
   auditFail?: boolean;
   /** go-live #12-13 follow-up — force the SAGA compensation to fail. */
   compensationFails?: boolean;
+  /** The inviter's own member's contacts (email-taken same-member check). */
+  ownContacts?: Contact[] | Error;
 };
 
 function makeDeps(overrides: DepsOverrides = {}): InviteColleagueDeps {
   const contactRepo = {
+    listByMember: vi.fn(async () => {
+      const r = overrides.ownContacts;
+      if (r instanceof Error) return err({ code: 'repo.unexpected' as const });
+      return ok(r ?? [makeContact()]);
+    }),
     findById: vi.fn(async () => {
       const r = overrides.findByIdResult;
       if (r instanceof Error) return err({ code: 'repo.unexpected' as const });
@@ -184,11 +191,53 @@ describe('inviteColleague use case', () => {
     if (!result.ok) expect(result.error.type).toBe('invalid_email');
   });
 
-  it('returns email_taken when createUser returns email-taken', async () => {
+  // Account-enumeration guard: `email-taken` from F1 means "an account exists
+  // SOMEWHERE". Only an address already on the inviter's own member may be
+  // named; everything else gets the neutral `invite_unavailable`.
+  it('email-taken for an address NOT on my member → invite_unavailable (neutral), not email_taken', async () => {
     const deps = makeDeps({ createUserResult: { code: 'email-taken' } });
     const result = await inviteColleague(deps, baseInput);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.type).toBe('email_taken');
+    expect(result).toEqual({
+      ok: false,
+      error: { type: 'invite_unavailable', reason: 'email_registered_elsewhere' },
+    });
+  });
+
+  it('email-taken for an address already a live contact of MY member → email_taken (case-insensitive)', async () => {
+    const deps = makeDeps({
+      createUserResult: { code: 'email-taken' },
+      ownContacts: [
+        makeContact(),
+        makeContact({ contactId: newContactId, isPrimary: false, email: 'Jane.Doe@Example.com' as never }),
+      ],
+    });
+    const result = await inviteColleague(deps, baseInput);
+    expect(result).toEqual({ ok: false, error: { type: 'email_taken' } });
+  });
+
+  it('a REMOVED contact of my member does not unlock the specific answer', async () => {
+    const deps = makeDeps({
+      createUserResult: { code: 'email-taken' },
+      ownContacts: [
+        makeContact({
+          contactId: newContactId,
+          isPrimary: false,
+          email: 'jane.doe@example.com' as never,
+          removedAt: new Date('2026-02-01'),
+        }),
+      ],
+    });
+    const result = await inviteColleague(deps, baseInput);
+    expect(result.ok || result.error.type).toBe('invite_unavailable');
+  });
+
+  it('a failed same-member lookup fails towards privacy (invite_unavailable)', async () => {
+    const deps = makeDeps({ createUserResult: { code: 'email-taken' }, ownContacts: new Error('db') });
+    const result = await inviteColleague(deps, baseInput);
+    expect(result).toEqual({
+      ok: false,
+      error: { type: 'invite_unavailable', reason: 'same_member_check_failed' },
+    });
   });
 
   it('returns server_error when createUser returns other error', async () => {

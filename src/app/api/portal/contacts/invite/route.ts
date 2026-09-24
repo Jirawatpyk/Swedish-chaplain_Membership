@@ -16,6 +16,7 @@ import {
 } from '@/modules/members';
 import { parseIdempotencyKey } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
+import { hashId } from '@/lib/log-id';
 import { createUser as f1CreateUser } from '@/modules/auth';
 
 export async function POST(request: NextRequest) {
@@ -25,8 +26,9 @@ export async function POST(request: NextRequest) {
   // Idempotency-Key required — format validation only. Full
   // classify/reserve/remember flow is intentionally deferred to F9
   // (idempotency layer). Domain-level duplicate protection: inviting
-  // the same email twice hits the `email-taken` branch of
-  // `invitePortal` → returns 409 without creating a second invitation.
+  // the same email twice hits the `email-taken` branch of F1 createUser;
+  // the address is then a contact of this member, so the use case answers
+  // `email_taken` → 409 without creating a second invitation.
   // Tracked: F9 idempotency layer.
   const idemResult = parseIdempotencyKey(request.headers);
   if (!idemResult.ok) {
@@ -118,8 +120,30 @@ export async function POST(request: NextRequest) {
           { status: 403 },
         );
       case 'email_taken':
+        // The address is already a live contact of THIS member — visible to
+        // the inviter on /portal/profile, so naming it leaks nothing.
         return NextResponse.json(
-          { error: { code: 'email_taken', message: 'Email already registered' } },
+          { error: { code: 'email_taken', message: 'Already a contact of your member' } },
+          { status: 409 },
+        );
+      case 'invite_unavailable':
+        // Account-enumeration guard: the address is registered outside this
+        // member (another member, staff, another tenant) or we could not tell.
+        // One neutral, cause-free body for every such case — the real cause
+        // goes to the staff log only, with the address hashed (CLAUDE.md
+        // § Secrets: no raw email in logs).
+        logger.warn(
+          {
+            requestId: ctx.requestId,
+            tenantId: ctx.tenant.slug,
+            memberId: ctx.memberId,
+            reason: result.error.reason,
+            emailHash: hashId(parsed.data.email.trim().toLowerCase()),
+          },
+          'portal.contacts.invite.unavailable',
+        );
+        return NextResponse.json(
+          { error: { code: 'invite_unavailable' } },
           { status: 409 },
         );
       case 'invalid_email':
