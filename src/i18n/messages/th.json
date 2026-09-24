@@ -962,7 +962,7 @@
       },
       "detail": {
         "titleGeneric": "รายละเอียดแพ็กเกจ",
-        "totalWithVat": "ยอดรวมภาษีมูลค่าเพิ่ม",
+        "totalWithVat": "ค่าธรรมเนียมรายปีรวมภาษีมูลค่าเพิ่ม",
         "feeWithVat": "{fee} + ภาษีมูลค่าเพิ่ม {rate}% = {total}",
         "members": "สมาชิกในแพ็กเกจนี้",
         "memberCount": "{count, plural, =0 {ไม่มีสมาชิก} other {สมาชิก # ราย}}"

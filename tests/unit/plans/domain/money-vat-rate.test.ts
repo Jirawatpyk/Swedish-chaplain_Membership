@@ -31,6 +31,17 @@ describe('grossWithVatMinorUnits', () => {
 
   it('returns the fee unchanged for a zero rate', () => {
     expect(grossWithVatMinorUnits(3_600_000, '0.0000')).toBe(3_600_000);
+    expect(grossWithVatMinorUnits(3_600_000, '0')).toBe(3_600_000);
+  });
+
+  it('rounds an exact .5 satang up (half-up, not banker\'s)', () => {
+    // 50 × 1.01 = 50.5 → 51 (banker's rounding would give 50)
+    expect(grossWithVatMinorUnits(50, '0.0100')).toBe(51);
+  });
+
+  it('handles the edges: a zero fee and the 30 % ceiling F4 allows', () => {
+    expect(grossWithVatMinorUnits(0, '0.0700')).toBe(0);
+    expect(grossWithVatMinorUnits(1_000_000, '0.3000')).toBe(1_300_000);
   });
 
   it.each(['', 'abc', '-0.07', '0.07000', '7%', '1.5'])(
@@ -43,6 +54,7 @@ describe('grossWithVatMinorUnits', () => {
   it('rejects a non-integer or negative fee', () => {
     expect(() => grossWithVatMinorUnits(1.5, '0.0700')).toThrow(InvalidMoneyError);
     expect(() => grossWithVatMinorUnits(-1, '0.0700')).toThrow(InvalidMoneyError);
+    expect(() => grossWithVatMinorUnits(10_000_000_001, '0.0700')).toThrow(InvalidMoneyError);
   });
 });
 

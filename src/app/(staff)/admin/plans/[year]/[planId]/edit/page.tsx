@@ -130,10 +130,23 @@ export default async function EditPlanPage({
             currentYear={currentYear}
             currencyPrefix={currencyPrefix}
             currentYearPlanExists={currentYearPlanExists}
-            vatRatePercent={taxPolicy ? vatRatePercent(taxPolicy.vatRateRaw) : null}
+            vatRatePercent={feeHintVatPercent(taxPolicy)}
           />
         </CardContent>
       </Card>
     </FormContainer>
   );
+}
+
+// The fee hint's VAT rate; `null` (hint without a rate) when there is no tax
+// policy or its rate is one the domain rejects — never a failed page.
+function feeHintVatPercent(
+  taxPolicy: { readonly vatRateRaw: string } | null,
+): number | null {
+  if (!taxPolicy) return null;
+  try {
+    return vatRatePercent(taxPolicy.vatRateRaw);
+  } catch {
+    return null;
+  }
 }

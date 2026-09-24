@@ -15,8 +15,14 @@ vi.mock('next-intl/server', async () => {
   const { createTranslator } = await import('next-intl');
   const messages = (await import('@/i18n/messages/en.json')).default;
   return {
+    // `namespace` is a runtime string here; the typed overloads want a
+    // literal namespace key, so the config is passed untyped.
     getTranslations: vi.fn(async (namespace?: string) =>
-      createTranslator({ locale: 'en', messages, ...(namespace ? { namespace } : {}) }),
+      createTranslator({
+        locale: 'en',
+        messages,
+        ...(namespace ? { namespace } : {}),
+      } as never),
     ),
   };
 });
