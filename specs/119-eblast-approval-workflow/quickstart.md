@@ -1471,6 +1471,11 @@ PR-2 builds on PR-1.
   dispatch path reads standing before any Resend call; a refusal moves the row to
   `failed_to_dispatch` with its own reason, audits, and notifies; a failed read leaves the row
   `approved` for the next tick.
+- **Type seams and smaller follow-ups from the PR #392 review round 3** are tracked in issue #400:
+  the `applyTransition` field allowlist as a type, branded ids across the F119 ports, a typed
+  `contextData` per `eblast_*` type, a distinct `read_failed` outbox failure reason, the `stage`
+  key on the decision and send 200 responses, and read-only handling in the older F7 staff
+  approve/reject dialogs. None is a live defect.
 
 ---
 
