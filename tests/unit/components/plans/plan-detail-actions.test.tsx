@@ -81,6 +81,9 @@ function renderActions(state: { is_active: boolean; deleted: boolean }) {
 
 describe('PlanDetailActions', () => {
   beforeEach(() => {
+    // tests/setup.ts fakes setTimeout for the whole run; findBy*/waitFor
+    // poll on it, so this suite runs on real timers.
+    vi.useRealTimers();
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
     vi.stubGlobal('fetch', fetchMock);
   });

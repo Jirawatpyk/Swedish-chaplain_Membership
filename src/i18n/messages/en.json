@@ -961,7 +961,11 @@
         }
       },
       "detail": {
-        "titleGeneric": "Plan details"
+        "titleGeneric": "Plan details",
+        "totalWithVat": "Total incl. VAT",
+        "feeWithVat": "{fee} + {rate}% VAT = {total}",
+        "members": "Members on this plan",
+        "memberCount": "{count, plural, =0 {No members} one {# member} other {# members}}"
       },
       "clone": {
         "title": "Clone year",

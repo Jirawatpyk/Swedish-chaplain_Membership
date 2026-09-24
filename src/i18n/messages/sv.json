@@ -961,7 +961,11 @@
         }
       },
       "detail": {
-        "titleGeneric": "Paketdetaljer"
+        "titleGeneric": "Paketdetaljer",
+        "totalWithVat": "Totalt inkl. moms",
+        "feeWithVat": "{fee} + {rate} % moms = {total}",
+        "members": "Medlemmar på paketet",
+        "memberCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}"
       },
       "clone": {
         "title": "Klona år",
