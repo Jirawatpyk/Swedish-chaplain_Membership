@@ -33,7 +33,9 @@ const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, refresh: refreshMock, replace: vi.fn() }),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+}));
 
 // useTransition / async-transition interactions need real timers
 // (tests/setup.ts installs fakes).
@@ -216,6 +218,40 @@ describe('VoidConfirmDialog — success path (positive control)', () => {
       );
       // A success must never leave the FR-032 failure surface behind.
       expect(screen.queryByTestId('void-invoice-error')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('VoidConfirmDialog — 108 FR-004 no-primary-contact warning', () => {
+  // `voidInvoice` skips the §86/10 cancellation notice when the member has no
+  // live primary contact and the route reports `email_delivery:
+  // 'skipped_no_recipient'`. The void still succeeded, so this is a WARNING
+  // toast — but its copy is the admin's only signal that nobody was told. The
+  // key once lived solely under `admin.creditNotes.new`, so next-intl rendered
+  // the raw dotted `admin.invoices.void.successWithNumberNoNotice` path here.
+  it('warns with real copy that no cancellation notice was sent, then navigates', async () => {
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: true,
+      json: async () => ({ email_delivery: 'skipped_no_recipient' }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderDialog();
+      fillAndSubmit();
+
+      await waitFor(() =>
+        expect(pushMock).toHaveBeenCalledWith(DETAIL_ROUTE),
+      );
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(toast.warning).toHaveBeenCalledWith(
+        `Invoice ${DOC_NUMBER} voided, but no cancellation notice was sent — this member has no primary contact.`,
+      );
+      // The skipped notice must not ALSO read as a clean success.
+      expect(toast.success).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
