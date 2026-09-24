@@ -184,8 +184,9 @@ describe('ApproveDialog — send-now Undo toast (Task 5, 2026-08-02-broadcast-re
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }
       if (String(url).endsWith('/cancel')) {
+        // F119 T081 — the refusal for a row the cron already picked up.
         return new Response(
-          JSON.stringify({ error: { code: 'broadcast_cancel_too_late' } }),
+          JSON.stringify({ error: { code: 'sending_started' } }),
           { status: 409 },
         );
       }
@@ -221,6 +222,38 @@ describe('ApproveDialog — send-now Undo toast (Task 5, 2026-08-02-broadcast-re
     // pre-existing "Broadcast approved." call from before counts.
     expect(toastSuccess).toHaveBeenCalledTimes(successCallsBeforeUndo);
     expect(toastError).not.toHaveBeenCalled();
+  });
+
+  // Whole-branch review HIGH-3 (defence) — a 429 on the Undo cancel leaves
+  // the row approved; it must not read as "too late" or a bare failure.
+  it('a single send-now Undo answered 429 shows the rateLimited error — the E-Blast will still send', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        String(url).endsWith('/approve')
+          ? new Response(JSON.stringify({ ok: true }), { status: 200 })
+          : new Response(null, { status: 429 }),
+      ),
+    );
+
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ApproveDialog broadcastId="b1" open onOpenChange={() => {}} />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(toastFn).toHaveBeenCalledTimes(1));
+    const [, opts] = toastFn.mock.calls[0] as [string, { action?: { onClick: () => Promise<void> } }];
+
+    await opts.action!.onClick();
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        "Too many requests — couldn't undo 1 broadcast. It will still send unless you cancel it from the queue.",
+      ),
+    );
+    expect(toastWarning).not.toHaveBeenCalled();
   });
 
   it('a schedule success shows NO Undo toast', async () => {

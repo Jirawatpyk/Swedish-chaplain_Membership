@@ -202,7 +202,30 @@ describe('FR-021b — a staff body carries subject + company + stage + link, and
     expect(stages[0]).toContain('Member approved — awaiting schedule');
     expect(stages[1]).toContain('Changes requested by member');
     expect(stages[2]).toContain('Changes requested by member');
-    expect(stages[3]).toContain('Withdrawn');
+    expect(stages[3]).toContain('Cancelled');
+  });
+
+  /**
+   * Whole-branch review LOW-6 — a staff reader sees one word per stage on the
+   * queue and in the email. The queue's `submitted` said "Awaiting review"
+   * while FR-019, the contract and the email said "Awaiting marketing
+   * review", and the email's whole-E-Blast withdrawal said "Withdrawn" where
+   * the queue row reads "Cancelled". The portal list is member-facing and
+   * keeps its own words.
+   */
+  it.each([
+    ['en', enMessages],
+    ['th', thMessages],
+    ['sv', svMessages],
+  ] as const)('%s: the staff email stage words are the staff queue stage labels', (_locale, messages) => {
+    const queue = messages.admin.broadcasts.queue.status;
+    const stage = messages.email.eblastApproval.stage;
+    expect(stage.awaitingMarketingReview).toBe(queue.submitted);
+    expect(stage.withdrawn).toBe(queue.cancelled);
+    expect(stage.memberApproved).toBe(queue.member_approved);
+    expect(stage.changesRequested).toBe(queue.changes_requested);
+    expect(stage.awaitingMemberApproval).toBe(queue.awaiting_member_approval);
+    expect(stage.expired).toBe(queue.expired_no_member_response);
   });
 });
 

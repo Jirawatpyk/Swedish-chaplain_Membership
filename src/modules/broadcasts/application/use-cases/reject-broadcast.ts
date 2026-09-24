@@ -15,8 +15,9 @@
  * F119 T081, in the same tx: every live `broadcast_images` row of the E-Blast
  * is stamped and audited `broadcast_image_removed { reason: 'rejected' }`; the
  * bytes go on the sweep's next tick, under the last-reference rule. The
- * `broadcast_rejected` audit and the member notification gain the stage it
- * was rejected from.
+ * `broadcast_rejected` audit gains the stage it was rejected from
+ * (`previousStatus`); the member notification does not — no template reads it
+ * (whole-branch review LOW-5).
  *
  * Atomic: applyTransition('rejected') + audit emit + member-notification
  * outbox enqueue inside single tx; failure rolls all back.
@@ -247,7 +248,6 @@ export async function rejectBroadcast(
           variant: {
             templateKey: 'broadcast_rejected',
             rejectionReason: input.rejectionReason,
-            fromStatus: lockedStatus,
           },
           locale: memberPreferred ?? input.notificationLocale ?? 'en',
           tx,

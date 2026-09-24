@@ -244,3 +244,28 @@ describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => 
     expect(call![0]).toMatchObject({ err: 'TypeError' });
   });
 });
+
+/**
+ * F119 T132 — whole-branch review MEDIUM-4. The E-Blast count is the
+ * MARKETING-TURN set (`submitted`, `in_design`, `changes_requested`,
+ * `member_approved`), so its label says whose turn it is and its link opens
+ * exactly those four stages — the queue's default view is `submitted` only,
+ * so the bare `/admin/broadcasts` link hid three of the four stages counted.
+ */
+describe('StaffHomePage — Needs attention: E-Blasts waiting on marketing (F119 T132)', () => {
+  it('the count links to the four marketing-turn stages and says it is marketing’s turn', async () => {
+    h.count.mockResolvedValue({ ok: true, value: { count: 0, oldestAgeSeconds: null } });
+    const attention = SNAPSHOT.needsAttention as { broadcastsAwaitingApproval: number };
+    attention.broadcastsAwaitingApproval = 4;
+    try {
+      const html = await renderPage();
+      expect(html).toContain(
+        'href="/admin/broadcasts?status=submitted&amp;status=in_design&amp;status=changes_requested&amp;status=member_approved"',
+      );
+      expect(html).toContain('E-Blasts waiting on marketing');
+      expect(html).not.toContain('href="/admin/broadcasts"');
+    } finally {
+      attention.broadcastsAwaitingApproval = 0;
+    }
+  });
+});

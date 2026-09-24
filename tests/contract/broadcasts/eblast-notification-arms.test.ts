@@ -257,7 +257,7 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
     const email = rendered(out);
     expect(email.subject).toContain('Member original subject');
     expect(email.text).toContain(COMPANY);
-    expect(email.text).toContain('Withdrawn');
+    expect(email.text).toContain('Cancelled'); // the queue's label for the row (LOW-6)
     expect(email.text).toContain(`/admin/broadcasts/${BROADCAST_ID}`);
     expect(email.html).not.toMatch(/undefined|null|\{\w+\}/);
   });
@@ -322,7 +322,7 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
 
     it('a member withdrawal IS the terminal event: it renders on the cancelled row even after earlier decisions', async () => {
       const f = fixture({ broadcasts: [loaded({ status: 'cancelled', cancelledAt: new Date() })], decisions: [decision({ decision: 'approved' })] });
-      expect(rendered(await run(f, decided('withdrawn'))).text).toContain('Withdrawn');
+      expect(rendered(await run(f, decided('withdrawn'))).text).toContain('Cancelled');
     });
 
     /**

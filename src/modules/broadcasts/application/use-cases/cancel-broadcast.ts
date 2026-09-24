@@ -406,7 +406,6 @@ export async function cancelBroadcast(
           variant: {
             templateKey: 'broadcast_cancelled',
             cancellationReason: input.cancellationReason,
-            fromStatus: existing.status,
           },
           locale: memberPreferred ?? input.notificationLocale ?? 'en',
           tx,

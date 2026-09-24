@@ -106,6 +106,7 @@ import { clearE2ERateLimits } from './helpers/rate-limit';
 import {
   seedF7Broadcasts,
   seedBulkApproveFixtures,
+  wipeE2EMemberBroadcasts,
   type BulkApproveSeedResult,
 } from './helpers/broadcasts-seed';
 
@@ -160,7 +161,13 @@ function loadSeed(): {
   }
 }
 const SEED = loadSeed();
-const SEEDED_SUBMITTED_BROADCAST_ID = SEED.broadcastId;
+/**
+ * `let`, and re-pointed by every `reseed()`: the global-setup id is the
+ * starting value, but the afterAll wipe below runs whenever a failure tears
+ * the worker down, so a retry re-seeds a FRESH row under a new id — a test
+ * that kept the global-setup id then opened a 404 page.
+ */
+let SEEDED_SUBMITTED_BROADCAST_ID = SEED.broadcastId;
 const SEEDED_HALTED_MEMBER_DISPLAY_NAME = SEED.haltedMemberDisplayName;
 
 /**
@@ -199,8 +206,22 @@ if (REQUIRE_F7) {
  * instead of duplicated.
  */
 async function reseed(): Promise<void> {
-  await seedF7Broadcasts();
+  // F119 T166 S-H1 — approve-as-submitted refuses a member not in good
+  // standing, and the primary `e2e-member` is LAPSED by the F8 fixture; the
+  // rows the AS tests approve belong to the in-good-standing persona.
+  const seed = await seedF7Broadcasts(process.env.E2E_MEMBER_EMAIL_EMPTY);
+  if (seed) SEEDED_SUBMITTED_BROADCAST_ID = seed.broadcastId;
 }
+
+/**
+ * The seeded rows sit under the in-good-standing persona, which other specs
+ * submit E-Blasts as: left behind, they would hold its allowance places and
+ * show in its portal list until the next run (the `f89b7ebab` precedent).
+ */
+test.afterAll(async () => {
+  const persona = process.env.E2E_MEMBER_EMAIL_EMPTY;
+  if (persona) await wipeE2EMemberBroadcasts(persona);
+});
 
 async function signIn(
   page: Page,
@@ -700,7 +721,8 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
   );
 
   // Minor #1 fix (Fix round 1) — split into two tests. The default-view
-  // scan is seed-independent and covers the CORE PR1 a11y goal (overdue
+  // scan is not seed-GATED (it seeds one submitted row itself, below, so the
+  // table is real) and covers the CORE PR1 a11y goal (overdue
   // banner + SLA banner token colours); it must always run and report its
   // own pass/fail rather than being swallowed by a `test.skip` on the
   // (seed-gated) bulk-selected scan that used to share its test body.
@@ -710,6 +732,11 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
     const enabled = await isFeatureEnabled(page);
     test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+    // The default view is `submitted` only, and the serial suite above leaves
+    // its row approved / rejected: on a branch with no other submitted row the
+    // page renders the empty state and there is no table to scan (2026-09-24,
+    // after the dev reconciliation). One submitted row makes the table real.
+    await reseed();
 
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
@@ -943,7 +970,7 @@ test.describe(
     // serial suite's destructive AS2-AS6 tests each call `reseed()` at
     // their own start.
     test.beforeEach(async () => {
-      bulkSeed = await seedBulkApproveFixtures();
+      bulkSeed = await seedBulkApproveFixtures(process.env.E2E_MEMBER_EMAIL_EMPTY);
     });
 
     /** Signs in, opens the queue, and checks both seeded fixture rows. */

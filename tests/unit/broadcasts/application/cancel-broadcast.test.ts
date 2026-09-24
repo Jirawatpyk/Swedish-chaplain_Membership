@@ -303,6 +303,9 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     expect(call.templateKey).toBe('broadcast_cancelled');
     expect(call.locale).toBe('th');
     expect(call.payload['cancellationReason']).toBe(baseInput.cancellationReason);
+    // Whole-branch review LOW-5 — no template reads the prior stage; it lives
+    // on the audit row (`previousStatus`), never in the notification payload.
+    expect(call.payload).not.toHaveProperty('fromStatus');
   });
 
   it('T166 R-L3: a member withdrawal reads the roster BEFORE its tx and reports an empty one once, after the commit; a staff cancel reads none', async () => {

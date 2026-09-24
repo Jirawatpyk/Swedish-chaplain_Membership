@@ -28,9 +28,17 @@ interface SeedResult {
   readonly haltedMemberDisplayName: string;
 }
 
-export async function seedF7Broadcasts(): Promise<SeedResult | null> {
+/**
+ * `memberEmail` (F119 T166, 2026-09-24): the persona that owns the seeded row.
+ * Defaults to the primary `e2e-member` (global setup). The review-queue spec
+ * passes `E2E_MEMBER_EMAIL_EMPTY`: the primary persona is LAPSED by the F8
+ * fixture, and approve-as-submitted now refuses a member not in good standing
+ * (S-H1), so its rows can no longer be approved.
+ */
+export async function seedF7Broadcasts(
+  memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL,
+): Promise<SeedResult | null> {
   const dbUrl = process.env.DATABASE_URL;
-  const memberEmail = process.env.E2E_MEMBER_EMAIL;
   if (!dbUrl || !memberEmail) {
     console.warn(
       '[e2e seed broadcasts] skipped — DATABASE_URL or E2E_MEMBER_EMAIL missing',
@@ -240,9 +248,10 @@ export interface BulkApproveSeedResult {
  * are absent, or the e2e-member seed itself is missing — callers gate the
  * whole `@bulk` describe on this via `test.skip(!bulkSeed, …)`.
  */
-export async function seedBulkApproveFixtures(): Promise<BulkApproveSeedResult | null> {
+export async function seedBulkApproveFixtures(
+  memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL,
+): Promise<BulkApproveSeedResult | null> {
   const dbUrl = process.env.DATABASE_URL;
-  const memberEmail = process.env.E2E_MEMBER_EMAIL;
   if (!dbUrl || !memberEmail) {
     console.warn(
       '[e2e seed bulk-approve] skipped — DATABASE_URL or E2E_MEMBER_EMAIL missing',
@@ -292,11 +301,14 @@ export async function seedBulkApproveFixtures(): Promise<BulkApproveSeedResult |
       // `noUncheckedIndexedAccess` for the tagged-template calls below.
       if (subject === undefined || recipientCount === undefined) continue;
 
+      // Keyed on the SUBJECT alone, tenant-wide (the `seedF7Broadcasts`
+      // shape): a persona switch would otherwise leave the old owner's row
+      // beside the new one, and the spec's `tbody tr` subject filter would
+      // resolve to two rows (strict-mode violation).
       const existingRows = await sql<Array<{ broadcast_id: string }>>`
         SELECT broadcast_id::text AS broadcast_id
         FROM broadcasts
         WHERE tenant_id = ${TENANT_ID}
-          AND requested_by_member_id = ${member.member_id}::uuid
           AND subject = ${subject}
         ORDER BY created_at DESC
         LIMIT 1
@@ -309,11 +321,15 @@ export async function seedBulkApproveFixtures(): Promise<BulkApproveSeedResult |
         // DELETE + re-INSERT bypasses the "no update after draft" trigger.
         await sql`
           DELETE FROM broadcast_deliveries
-          WHERE tenant_id = ${TENANT_ID} AND broadcast_id = ${id}::uuid
+          WHERE tenant_id = ${TENANT_ID}
+            AND broadcast_id IN (
+              SELECT broadcast_id FROM broadcasts
+              WHERE tenant_id = ${TENANT_ID} AND subject = ${subject}
+            )
         `;
         await sql`
           DELETE FROM broadcasts
-          WHERE tenant_id = ${TENANT_ID} AND broadcast_id = ${id}::uuid
+          WHERE tenant_id = ${TENANT_ID} AND subject = ${subject}
         `;
       }
 

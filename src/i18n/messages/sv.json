@@ -480,7 +480,7 @@
         "empty": "Allt klart – inget behöver åtgärdas just nu.",
         "overdueInvoices": "Förfallna fakturor",
         "atRisk": "Medlemmar i riskzonen",
-        "broadcasts": "Utskick som väntar på godkännande",
+        "broadcasts": "E-Blasts som väntar på marknadsföring",
         "changeRequests": "Ändringsbegäranden som väntar (äldsta {days, plural, =0 {inkom idag} one {inkom för # dag sedan} other {inkom för # dagar sedan}})",
         "changeRequestsNoAge": "Ändringsbegäranden som väntar",
         "changeRequestsUnavailable": "Ändringsbegäranden som väntar kunde inte räknas. Ladda om sidan för att försöka igen, eller öppna kön."
@@ -3306,7 +3306,8 @@
             "reason": "Ångrat av administratör från granskningskön",
             "success": "Avbröt {count, plural, one {# utskick} other {# utskick}}.",
             "tooLate": "Skickar redan — för sent att ångra {count, plural, one {# utskick} other {# utskick}}.",
-            "failed": "Kunde inte ångra {count, plural, one {# utskick} other {# utskick}} — fortfarande godkända."
+            "failed": "Kunde inte ångra {count, plural, one {# utskick} other {# utskick}} — fortfarande godkända.",
+            "rateLimited": "För många förfrågningar — kunde inte ångra {count, plural, one {# utskick} other {# utskick}}. {count, plural, one {Det} other {De}} skickas ändå om du inte avbryter i kön."
           },
           "progress": {
             "label": "Godkänner…"
@@ -3342,7 +3343,7 @@
         },
         "status": {
           "draft": "Utkast",
-          "submitted": "Inväntar granskning",
+          "submitted": "Väntar på granskning av marknadsföring",
           "approved": "Schemalagd",
           "sending": "Skickar",
           "sent": "Skickad",
@@ -7619,11 +7620,11 @@
       },
       "stage": {
         "awaitingMarketingReview": "Väntar på granskning av marknadsföring",
-        "memberApproved": "Godkänd av medlemmen — väntar på schemaläggning",
-        "changesRequested": "Medlemmen har begärt ändringar",
-        "withdrawn": "Återkallad",
-        "awaitingMemberApproval": "Väntar på medlemmens godkännande",
-        "expired": "Utgången — inget svar från medlemmen"
+        "memberApproved": "Godkänd av medlem — inväntar schemaläggning",
+        "changesRequested": "Medlemmen begär ändringar",
+        "withdrawn": "Avbruten",
+        "awaitingMemberApproval": "Inväntar medlemmens godkännande",
+        "expired": "Utgången — inget svar från medlem"
       },
       "submittedMarketing": {
         "subject": "Ny E-Blast att granska: {subject}",

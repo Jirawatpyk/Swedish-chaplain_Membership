@@ -7,9 +7,13 @@
  *
  * F119 T081 — cancellable at every in-progress stage; 409 `sending_started`
  * from `sending` onward; 409 `broadcast_cancel_too_late` for a closed E-Blast
- * that never started sending. The E-Blast's images are stamped in the same tx,
- * and the 30 / 60 s per-(tenant, actor) staff write bucket is consumed after
- * the id parse and BEFORE the body is read or anything is written.
+ * that never started sending. The E-Blast's images are stamped in the same tx.
+ *
+ * NO staff write bucket here, deliberately (whole-branch review HIGH-3;
+ * contracts/admin-eblast-formatting-api.md § Rate limits): the bulk send-now
+ * Undo fans out one cancel per approved row (`BULK_CAP` 100) from one actor,
+ * and a 30 / 60 s bucket answered rows 31+ with 429 — they then dispatched
+ * although the admin had clicked Undo. `…/reject` has no fan-out and keeps it.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -27,7 +31,6 @@ import {
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
-import { consumeStaffWriteBucket } from '@/lib/broadcasts-staff-write-bucket';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -51,10 +54,6 @@ export async function POST(
     return errorResponse(404, 'broadcast_not_found', correlationId);
   }
 
-  const tenantCtx = resolveTenantFromRequest(request);
-  const limited = await consumeStaffWriteBucket(tenantCtx.slug, ctx.current.user.id, correlationId);
-  if (limited !== null) return limited;
-
   let raw: unknown;
   try {
     raw = await request.json();
@@ -68,6 +67,7 @@ export async function POST(
     });
   }
 
+  const tenantCtx = resolveTenantFromRequest(request);
   const deps = makeCancelBroadcastDeps(tenantCtx.slug, makeMarketingDirectory(tenantCtx.slug));
 
   try {

@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  MARKETING_TURN_QUEUE_HREF,
   queueOrderOf,
   queuePageHref,
   queueViewKey,
@@ -21,6 +22,7 @@ import {
   BROADCAST_STATUSES,
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts/domain/stage/whose-turn';
 
 const counts = (overrides: Partial<Record<BroadcastStatus, number>>) =>
   Object.fromEntries(BROADCAST_STATUSES.map((s) => [s, overrides[s] ?? 0])) as Record<BroadcastStatus, number>;
@@ -134,5 +136,20 @@ describe('queueViewNarrowed (FR-030 + UX review H3)', () => {
   it('a date-ranged view never announces the chip total', () => {
     const narrowed = queueViewNarrowed({ submitted: { fromInclusive: day } });
     expect(queueViewTotal({ ...base, statusFilter: ['submitted'], narrowed })).toBeNull();
+  });
+});
+
+/**
+ * Whole-branch review MEDIUM-4 — the link behind the "waiting on marketing"
+ * count opens exactly the stages that count counts. The href is a literal (the
+ * staff home imports this file, and a value import of the broadcasts barrel
+ * boots its infrastructure there), so this pins it to the Domain set.
+ */
+describe('MARKETING_TURN_QUEUE_HREF', () => {
+  it('is the queue filtered to exactly MARKETING_TURN_STATUSES, as repeated status params', () => {
+    const url = new URL(MARKETING_TURN_QUEUE_HREF, 'http://x');
+    expect(url.pathname).toBe('/admin/broadcasts');
+    expect(url.searchParams.getAll('status')).toEqual([...MARKETING_TURN_STATUSES]);
+    expect([...url.searchParams.keys()].every((k) => k === 'status')).toBe(true);
   });
 });

@@ -15,7 +15,8 @@
  *   - reasonRequired=true  (admin) → textarea auto-focus; reason required 1–500.
  *   - reasonRequired=false (member) → Cancel button initial focus; reason ≤500.
  *   - 409 split by body.error.code:
- *       'broadcast_cancel_too_late'           → ${toastNamespace}.cancelTooLate
+ *       'sending_started' (F119 T081, `sending` onward) or
+ *       'broadcast_cancel_too_late' (closed) → ${toastNamespace}.cancelTooLate
  *       'broadcast_concurrent_action_blocked' → ${toastNamespace}.concurrentRace
  *       anything else                         → ${toastNamespace}.cancelError
  *   - 404 / 403 (broadcast gone / not permitted) → close + refresh; retrying a
@@ -123,7 +124,9 @@ export function CancelBroadcastDialog({
       if (res.status === 409) {
         closedViaSuccessRef.current = true;
         onOpenChange(false);
-        if (json.error?.code === 'broadcast_cancel_too_late') {
+        // F119 T081 — `sending_started` from `sending` onward; the legacy
+        // code still answers for a closed E-Blast that never started sending.
+        if (json.error?.code === 'sending_started' || json.error?.code === 'broadcast_cancel_too_late') {
           toast.error(tToast('cancelTooLate'));
         } else if (json.error?.code === 'broadcast_concurrent_action_blocked') {
           toast.error(tToast('concurrentRace'));

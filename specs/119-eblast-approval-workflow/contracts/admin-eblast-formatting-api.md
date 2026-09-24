@@ -38,14 +38,23 @@ bucket of **30 requests / 60 seconds**, refused
 as `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, over the existing
 `broadcastsRateLimiter` (`src/modules/broadcasts/infrastructure/rate-limiter.ts:14`) and the
 `RECIPIENT_COUNT_RATE_MAX` / `_WINDOW_SECONDS` shape (`src/lib/broadcasts-recipient-count.ts:30-31`),
-with an **atomic** check, never peek-then-act. **The two staff routes T081 widens —
-`POST …/[id]/reject` and `POST …/[id]/cancel` — take the same 30 / 60 s bucket** (round 4 M6): T081
-widens both to `IN_PROGRESS_BROADCAST_STATUSES`, and a state-changing staff route that carries no
-bucket at all is the gap this section exists to close, not one it may leave open.
+with an **atomic** check, never peek-then-act. **`POST …/[id]/reject`, which T081 widens, takes the
+same 30 / 60 s bucket** (round 4 M6): T081 widens it to `IN_PROGRESS_BROADCAST_STATUSES`, and a
+state-changing staff route that carries no bucket at all is the gap this section exists to close.
+**`POST …/[id]/cancel` is the one deliberate exception — it carries NO bucket** (whole-branch
+review HIGH-3, 2026-09-24). The rule above assumes one staff call per staff decision, and the cancel
+route breaks that assumption: the review queue's bulk send-now **Undo** fans out one cancel per
+approved row from one actor (`queue-bulk-action-bar.tsx`, `BULK_CAP` = 100). With the bucket, rows
+31 and up answered 429 inside the 60 s window, were reported to the admin as "still approved", and
+**dispatched although the admin had clicked Undo** — a regression of a capability that works on
+`main`. An unbucketed cancel costs little: it can only move an E-Blast toward a closed state, it
+needs `broadcasts.write`, and every call is audited. `…/reject` has no fan-out, so it keeps the
+bucket. The Undo client still classifies a 429 on its own (the row is still approved and will
+send), so a limiter added in front later cannot silently read as "too late".
 **Built by T026a in PR-1** (`…/brand` PATCH,
 `…/images`, `templates/[id]/images`), **T062a in PR-2** (`…/version` POST+PATCH,
-`…/version/send`, `…/schedule`) **and T081 in PR-2** (`…/reject`, `…/cancel`, in the same edit that
-widens their stage set): the bucket was stated here and in spec
+`…/version/send`, `…/schedule`) **and T081 in PR-2** (`…/reject`, in the same edit that
+widens its stage set): the bucket was stated here and in spec
 § Roles but no task built it until round 3 (`/speckit.analyze` round 3 H3).
 **"Keep the existing staff buckets" was wrong — checked against `main`
 (`/speckit.analyze` M14)**: `approve`, `reject` and `cancel` carry no rate limit at all today, so
@@ -271,18 +280,19 @@ named, not inferred (`/speckit.analyze` M8; task T081).
 
 Contracts otherwise unchanged. The accepted stage set widens to `IN_PROGRESS_BROADCAST_STATUSES` (FR-015 —
 marketing may reject with a reason at any stage before **sending begins**, i.e. before entry into
-`sending`; from `sending` onward the route answers **409 `sending_started`** and the send completes),
-and the member notification gains the stage it was rejected from. Reuses the existing
+`sending`; from `sending` onward the route answers **409 `sending_started`** and the send completes).
+The stage it was rejected / cancelled from is on the audit row (`previousStatus`), not in the member
+notification — no template reads it (whole-branch review LOW-5). Reuses the existing
 `broadcast_rejected` / `broadcast_cancelled` audit events and the existing
 `broadcast_rejected_notification` / `broadcast_cancelled_notification` outbox types. Rejecting is
 also FR-011's alternative when marketing disagrees with a change request and will not send another
 version.
 
-**Both gain the staff write bucket** — 30 requests / 60 seconds per (tenant, actor), atomic check,
-refused `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, exactly as the formatting
-routes above. Neither carries one today (`/speckit.analyze` M14), and widening their accepted stage
-set without one leaves the only two unbucketed state-changing staff routes in the feature
-(round 4 M6). Built by **T081** itself, in the same edit that widens the stage set.
+**`…/reject` gains the staff write bucket** — 30 requests / 60 seconds per (tenant, actor), atomic
+check, refused `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, exactly as the
+formatting routes above (round 4 M6). Built by **T081** itself, in the same edit that widens the
+stage set. **`…/cancel` does not** — the bulk send-now Undo fans out to it; see § Rate limits
+(whole-branch review HIGH-3).
 
 ## `POST /api/admin/broadcasts/[id]/images` — staff image on the E-Blast being formatted (FR-040)
 

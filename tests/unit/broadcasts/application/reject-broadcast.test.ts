@@ -274,6 +274,8 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     expect(call.locale).toBe('sv');
     // VERBATIM reason in payload (FR-012); audit retains hash-only
     expect(call.payload['rejectionReason']).toBe(baseInput.rejectionReason);
+    // Whole-branch review LOW-5 — the prior stage is on the audit row only.
+    expect(call.payload).not.toHaveProperty('fromStatus');
     const evt = audit.emits.find((e) => e.eventType === 'broadcast_rejected');
     expect((evt?.payload as { rejectionReasonHash?: string }).rejectionReasonHash).toBeTruthy();
     // Audit MUST NOT contain raw reason (FR-012)

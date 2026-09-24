@@ -745,15 +745,17 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
     const fetchMock = fetchMockOf(async (url) => {
       const u = String(url);
       if (u.endsWith('/approve')) return jsonResponse({ ok: true });
-      // /cancel — classify by id: b1 too-late, b2 hard-failed, b3 cancelled.
+      // /cancel — classify by id: b1 too-late (F119 T081's `sending_started`,
+      // the code for a row the cron already picked up), b2 hard-failed,
+      // b4 rate-limited (whole-branch review HIGH-3 defence), b3 cancelled.
       if (u.endsWith('/b1/cancel')) {
-        return jsonResponse(
-          { error: { code: 'broadcast_cancel_too_late' } },
-          409,
-        );
+        return jsonResponse({ error: { code: 'sending_started' } }, 409);
       }
       if (u.endsWith('/b2/cancel')) {
         return jsonResponse({ error: { code: 'internal_error' } }, 500);
+      }
+      if (u.endsWith('/b4/cancel')) {
+        return jsonResponse({ error: { code: 'broadcast_rate_limit_exceeded' } }, 429);
       }
       return jsonResponse({ status: 'cancelled' });
     });
@@ -762,7 +764,7 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
     render(
       <Provider>
         <QueueBulkActionBar
-          selectedIds={['b1', 'b2', 'b3']}
+          selectedIds={['b1', 'b2', 'b3', 'b4']}
           onClear={vi.fn()}
           readOnly={false}
           recipientByIdRows={[]}
@@ -790,9 +792,14 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
       'Already sending — too late to undo 1 broadcast.',
     );
     // failed → toast.error with the real ICU-resolved copy
-    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    // rateLimited → its OWN toast.error: the row is still approved and will
+    // send, which "still approved" alone did not say (HIGH-3 defence).
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(2));
     expect(toastError).toHaveBeenCalledWith(
       "Couldn't undo 1 broadcast — still approved.",
+    );
+    expect(toastError).toHaveBeenCalledWith(
+      "Too many requests — couldn't undo 1 broadcast. It will still send unless you cancel it from the queue.",
     );
   });
 });

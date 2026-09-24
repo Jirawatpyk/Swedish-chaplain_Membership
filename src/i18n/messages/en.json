@@ -480,7 +480,7 @@
         "empty": "All clear — nothing needs attention right now.",
         "overdueInvoices": "Overdue invoices",
         "atRisk": "At-risk members",
-        "broadcasts": "Broadcasts awaiting approval",
+        "broadcasts": "E-Blasts waiting on marketing",
         "changeRequests": "Change requests waiting (oldest {days, plural, =0 {today} one {# day} other {# days}})",
         "changeRequestsNoAge": "Change requests waiting",
         "changeRequestsUnavailable": "Change requests waiting could not be counted. Reload the page to try again, or open the queue."
@@ -3306,7 +3306,8 @@
             "reason": "Undone by admin from the review queue",
             "success": "Cancelled {count, plural, one {# broadcast} other {# broadcasts}}.",
             "tooLate": "Already sending — too late to undo {count, plural, one {# broadcast} other {# broadcasts}}.",
-            "failed": "Couldn't undo {count, plural, one {# broadcast} other {# broadcasts}} — still approved."
+            "failed": "Couldn't undo {count, plural, one {# broadcast} other {# broadcasts}} — still approved.",
+            "rateLimited": "Too many requests — couldn't undo {count, plural, one {# broadcast} other {# broadcasts}}. {count, plural, one {It} other {They}} will still send unless you cancel {count, plural, one {it} other {them}} from the queue."
           },
           "progress": {
             "label": "Approving…"
@@ -3342,7 +3343,7 @@
         },
         "status": {
           "draft": "Draft",
-          "submitted": "Awaiting review",
+          "submitted": "Awaiting marketing review",
           "approved": "Scheduled",
           "sending": "Sending",
           "sent": "Sent",
@@ -7621,7 +7622,7 @@
         "awaitingMarketingReview": "Awaiting marketing review",
         "memberApproved": "Member approved — awaiting schedule",
         "changesRequested": "Changes requested by member",
-        "withdrawn": "Withdrawn",
+        "withdrawn": "Cancelled",
         "awaitingMemberApproval": "Awaiting member approval",
         "expired": "Expired — no member response"
       },

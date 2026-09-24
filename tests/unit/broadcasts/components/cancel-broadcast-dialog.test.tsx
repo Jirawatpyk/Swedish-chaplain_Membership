@@ -177,11 +177,13 @@ describe('CancelBroadcastDialog (admin, reasonRequired=true)', () => {
     expect(refreshSpy).toHaveBeenCalled();
   });
 
-  it('409 broadcast_cancel_too_late → toasts cancelTooLate', async () => {
+  // Whole-branch review HIGH-2 — T081 answers `sending_started` for a row
+  // already sending; the legacy code still answers for a closed E-Blast.
+  it.each(['broadcast_cancel_too_late', 'sending_started'])('409 %s → toasts cancelTooLate', async (code) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ error: { code: 'broadcast_cancel_too_late' } }),
+      json: async () => ({ error: { code } }),
     } as unknown as Response);
     renderAdmin();
     fireEvent.change(
@@ -436,11 +438,11 @@ describe('CancelBroadcastDialog (member, reasonRequired=false)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('member 409 too_late → toasts cancelTooLate', async () => {
+  it.each(['broadcast_cancel_too_late', 'sending_started'])('member 409 %s → toasts cancelTooLate', async (code) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ error: { code: 'broadcast_cancel_too_late' } }),
+      json: async () => ({ error: { code } }),
     } as unknown as Response);
     renderMember();
     typePhrase(MEMBER);

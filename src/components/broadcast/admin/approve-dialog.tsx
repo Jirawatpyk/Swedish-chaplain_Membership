@@ -215,6 +215,9 @@ export function ApproveDialog({
                   if (r.failed > 0) {
                     toast.error(tUndo('failed', { count: r.failed }));
                   }
+                  if (r.rateLimited > 0) {
+                    toast.error(tUndo('rateLimited', { count: r.rateLimited }));
+                  }
                   router.refresh();
                 },
               },

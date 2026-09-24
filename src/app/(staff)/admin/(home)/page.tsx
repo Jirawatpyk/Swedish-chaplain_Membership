@@ -34,6 +34,7 @@ import { ShieldAlertIcon } from 'lucide-react';
 import { requirePagePermission, canPerform } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
+import { MARKETING_TURN_QUEUE_HREF } from '@/app/(staff)/admin/broadcasts/_lib/queue-view';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { resolveEventLabel } from '@/lib/audit-event-label';
@@ -361,7 +362,8 @@ export default async function StaffHomePage() {
         id: 'broadcasts',
         n: metrics.needsAttention.broadcastsAwaitingApproval,
         label: t('needsAttention.broadcasts'),
-        href: '/admin/broadcasts',
+        // F119 T132 — the count is the marketing-turn set; open exactly it.
+        href: MARKETING_TURN_QUEUE_HREF,
       },
       // F114 US6 (FR-033) — live pending change requests → the queue. Count
       // and age come from `readPendingChangeRequests` above; anything but

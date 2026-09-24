@@ -295,7 +295,7 @@ describe('POST | PATCH /api/admin/broadcasts/[id]/version — staff write bucket
    * T166 S-INFO — the PATCH body is up to 2 MB (`bodySource`), and parsing it
    * cost the server that much work BEFORE the bucket was consumed, so an
    * over-limit caller could keep making the route parse 2 MB for free. The
-   * bucket is consumed FIRST now, as cancel / reject already do: a malformed
+   * bucket is consumed FIRST now, as reject already does: a malformed
    * body still answers 400, but it spends one of the 30.
    */
   it('T166 S-INFO: the bucket is consumed BEFORE the PATCH body is parsed — an exhausted bucket answers 429 without reading the body', async () => {

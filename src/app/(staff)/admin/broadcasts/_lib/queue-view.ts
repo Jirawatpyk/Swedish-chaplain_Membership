@@ -13,6 +13,17 @@ export type QueueSearchParams = Readonly<Record<string, string | readonly string
 
 const QUEUE_PATH = '/admin/broadcasts';
 
+/**
+ * F119 T132 / whole-branch review MEDIUM-4 — the queue view behind the "waiting
+ * on marketing" count: exactly `MARKETING_TURN_STATUSES` (the set the count
+ * counts), as repeated `status` params. The default view is `submitted` only,
+ * so a bare `/admin/broadcasts` link hid three of the four stages counted. A
+ * literal, because this file has no runtime imports (the staff home imports
+ * it); `tests/unit/broadcast/queue-view.test.ts` pins it to the Domain set.
+ */
+export const MARKETING_TURN_QUEUE_HREF =
+  `${QUEUE_PATH}?status=submitted&status=in_design&status=changes_requested&status=member_approved`;
+
 export interface QueueViewNarrowingInput {
   readonly memberId?: string;
   /** The Upcoming sends preset's bound on `scheduled_for`. */

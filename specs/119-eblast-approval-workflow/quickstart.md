@@ -1238,12 +1238,20 @@ step 5's flip safe to take immediately after this merge.
      today's rows);
    - **the widened reject and cancel stage set** (T081) — reachable only with new-stage rows — and
      a new refusal code: a cancel (staff or member) from `sending` onward now answers 409
-     **`sending_started`** where it answered `broadcast_cancel_too_late`, for today's rows too;
-   - **the staff reject and cancel routes consume the 30 / 60 s staff write bucket** (T081), a new
-     limit on an existing action. The cancel route's permission is **unchanged** —
-     `broadcasts.write` was already the gate on `main`; PR-2 only names it in the route header and
-     records the session role on the cancel. The portal cancel consumes the member bucket
-     (60 / min, T081a);
+     **`sending_started`** where it answered `broadcast_cancel_too_late`, for today's rows too. The
+     cancel dialog (staff and portal) and the send-now Undo read **both** codes as "too late"
+     (whole-branch review HIGH-2 — before the fix an Undo that lost the race to the cron said
+     "Couldn't undo — still approved", and the dialog said "Please try again");
+   - **the staff reject route consumes the 30 / 60 s staff write bucket** (T081), a new limit on an
+     existing action. **The staff cancel route does NOT** (whole-branch review HIGH-3): the bulk
+     send-now Undo fans out one cancel per approved row (`BULK_CAP` = 100) from one actor, so a
+     30 / 60 s bucket made rows 31 and up answer 429, read "still approved", and **dispatch although
+     the admin clicked Undo** — a regression of what works on `main`. The contract records the
+     deviation (`admin-eblast-formatting-api.md` § Rate limits). The Undo now also reports a 429 on its
+     own ("Too many requests — … will still send unless you cancel it from the queue") instead of
+     "still approved". The cancel route's permission is **unchanged** — `broadcasts.write` was
+     already the gate on `main`; PR-2 only names it in the route header and records the session role
+     on the cancel. The portal cancel consumes the member bucket (60 / min, T081a);
    - **reject / cancel stamp the E-Blast's images** in the same transaction
      (`broadcast_image_removed { reason: 'rejected' | 'withdrawn' }` — a staff cancel uses
      `withdrawn`), so the next daily sweep deletes the bytes of a rejected or cancelled E-Blast in
@@ -1256,7 +1264,20 @@ step 5's flip safe to take immediately after this merge.
    - **the F9 needs-attention count is the marketing-turn set** (T132): the approval counter counts
      `submitted`, `in_design`, `changes_requested`, `member_approved` — identical to before while
      no row is in a new stage; the staff nav badge reads the same set and stays hidden while the
-     flag is off unless a row is in an approval-round stage;
+     flag is off unless a row is in an approval-round stage. The home item is relabelled **"E-Blasts
+     waiting on marketing"** (was "Broadcasts awaiting approval") and links to the queue filtered to
+     those four stages (was the bare `/admin/broadcasts`, whose default view is `submitted` only —
+     whole-branch review MEDIUM-4). The nav item still opens `/admin/broadcasts`: it is the section's
+     entry and the default view is where the overdue banner renders;
+   - **every `/admin/**` page runs one extra indexed `count(*)`** in the staff layout — the nav
+     badge read (T132), bounded at 1,500 ms — **even with the flag off**: the flag decides whether
+     the badge SHOWS, after the count (an in-flight approval-round row keeps it visible). Only
+     `FEATURE_F7_BROADCASTS` off or a role without `broadcasts.read` skips the query;
+   - **the staff queue's `submitted` label reads "Awaiting marketing review"** (was "Awaiting
+     review"), the FR-019 / contract / staff-email wording, and the staff emails' stage words are the
+     queue's labels — a member's whole-E-Blast withdrawal reads **"Cancelled"** in the email (was
+     "Withdrawn") because that is what the queue row says (whole-branch review LOW-6). The portal
+     list is member-facing and keeps "Awaiting review";
    - **every submit enqueues `eblast_submitted_marketing`** (member and proxy, one row per roster
      recipient, T129), and a member's whole-E-Blast withdrawal enqueues
      `eblast_member_decided_marketing { decision: 'withdrawn' }`. Held by the drainer (see below);
@@ -1266,6 +1287,12 @@ step 5's flip safe to take immediately after this merge.
    - **the staff image route's stage refusal is 409 `stage_changed`** (was
      `broadcast_invalid_state_transition`; T106a) and it also accepts `in_design`; the member route
      keeps its code;
+   - **the shared `TypedPhraseField` renders its error ABOVE its help text** for every caller
+     (ux-standards § 4.1 — the error sits directly under its input), and gains a `readOnly` prop;
+   - **`Button` gains the `data-disabled:` look app-wide** (`data-disabled:cursor-not-allowed
+     data-disabled:opacity-50`): a Base UI `focusableWhenDisabled` control now looks disabled while
+     it keeps focus. A natively disabled button also carries `data-disabled`, so its look is
+     unchanged — but every button that sets `data-disabled` any other way now dims;
    - **the shared `ReasonConfirmationDialog`** (`1b06c1cd1` H2): every caller now keeps focus on the
      confirm while pending (`focusableWhenDisabled`, `aria-busy`, spinner, read-only fields),
      refuses to close while pending, focuses the refusal or the reason field, and skips the
@@ -1279,26 +1306,41 @@ step 5's flip safe to take immediately after this merge.
      exists);
    - **the four stage gauges** (T121) — `broadcasts_marketing_turn_count` is non-zero on merge
      because it counts `submitted` rows — and Block 3 of the daily prune tick (runs, and finds
-     nothing, until a row awaits the member).
+     nothing, until a row awaits the member). **A Block 3 failure makes the prune-drafts cron tick
+     answer 500** (`approvalLifecycleOk`), where on `main` that route failed only on the draft
+     prune — a lifecycle fault now reads as a failed cron run on the dashboards, even with the flag
+     off.
 
    Added by T166 (2026-09-24 — the reliability and security follow-ups; each code-revert-only):
    - **the dispatcher's attach CAS checks `status = 'approved'`** (R-H1), so an admin cancel, a
      member withdrawal or a schedule cancel that lands during dispatch wins the race — the
      dispatcher reclaims the row and sends nothing;
    - **`outbox_stuck_rows_total` no longer counts the flag-skipped types** (R-H2), so the held
-     `eblast_*` rows cannot fire the "cron is down" alert;
+     `eblast_*` rows cannot fire the "cron is down" alert. The exclusion is the candidate pick's one
+     list (`flagSkippedTypeFilters`), so the count **also** stops counting rows held back by the
+     F4, F114 and F5 notification flags — a stuck row of one of those types while its flag is off
+     no longer pages;
    - **cancel / reject 500s are logged with an `errorId`** (`M119.admin.cancel.*`,
      `M119.admin.reject.*`, R-M4) — the error class, never the message; the approve route now
      does the same (`M119.admin.approve.unexpected` / `M119.admin.approve.server_error`);
    - **the erasure cascade retries a lost CAS three times**, then reports
      `cascade_partial_failure` (R-M3);
    - **submit and the member cancel read the marketing roster before their transaction** (R-L3);
-     the daily approval-lifecycle tick reads it once per tick, before any row lock;
+     the daily approval-lifecycle tick reads it once per tick, before any row lock. Both member
+     actions now **depend on that `users` read**: a throw there answers 500 and nothing is
+     submitted or withdrawn, a failure mode today's submit and cancel do not have;
    - **approve-as-submitted refuses a halted, suspended or terminated member with 409
      `member_halted` / `member_not_in_good_standing`** (S-H1) — the live, unflagged approve path,
      a deliberate behaviour change. The approve dialog names that reason **inside the open
      dialog** (every 409 used to read "already actioned by another administrator"), and a bulk
-     approve names each standing reason in its summary toast;
+     approve names each standing reason in its summary toast. "Not in good standing" is F8
+     access other than `full` — **lapsed**, suspended or terminated. **Consequence on deploy: any
+     E-Blast sitting in `submitted` whose member is halted or not in good standing becomes
+     unapprovable** — it can still be rejected or cancelled, and becomes approvable again once the
+     member's standing returns. Count those rows before the merge (each `submitted` row against its
+     member's F8 access) so marketing is not surprised. The e2e review-queue fixture moved to the
+     in-good-standing persona (`E2E_MEMBER_EMAIL_EMPTY`) for this reason: its old owner is the
+     lapsed persona, and AS2 correctly started refusing it;
    - **each standing refusal writes an audit row** under the types submit already writes —
      `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` — with
      `related_member_id`, `broadcast_id`, `surface` (`approve_as_submitted` | `schedule_confirm`)

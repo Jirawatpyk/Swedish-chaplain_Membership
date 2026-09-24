@@ -12,8 +12,10 @@
  *     E-Blast is stamped and audited `broadcast_image_removed` with reason
  *     `'rejected'` / `'withdrawn'` — the bytes go on the sweep's next tick
  *     under the last-reference rule;
- *   - both staff routes name `broadcasts.write` and take the 30 / 60 s staff
- *     bucket, consumed before anything is read.
+ *   - both staff routes name `broadcasts.write`; the staff reject takes the
+ *     30 / 60 s staff bucket, consumed before anything is read. The staff
+ *     cancel takes none — the bulk send-now Undo fans out one cancel per row
+ *     (contract § Rate limits, whole-branch review HIGH-3).
  *
  * The routes run the REAL `rejectBroadcast` / `cancelBroadcast` over the
  * in-memory approval store; the sweep is the REAL `reclaimOrphanedImages`.
@@ -226,7 +228,7 @@ describe('images of a rejected or withdrawn E-Blast stop being reachable (US2-AS
   });
 });
 
-describe('the staff write bucket on the two widened staff routes — 30 / 60 s per (tenant, actor)', () => {
+describe('the staff write bucket on the widened staff reject — 30 / 60 s per (tenant, actor); cancel carries none', () => {
   it('the 31st staff reject in a minute → 429 broadcast_rate_limit_exceeded with Retry-After, with no stage change and no image row stamped', async () => {
     seed('awaiting_member_approval', [image({})]);
     harness.checkLimit.mockResolvedValue(err({ retryAfterSeconds: 23 }));
@@ -242,15 +244,19 @@ describe('the staff write bucket on the two widened staff routes — 30 / 60 s p
     expect(harness.store.broadcastsRepo.withTx).not.toHaveBeenCalled();
   });
 
-  it('the 31st staff …/cancel likewise', async () => {
+  /**
+   * Whole-branch review HIGH-3 — the staff …/cancel carries NO bucket. The
+   * bulk send-now Undo fans out one cancel per approved row (`BULK_CAP` 100)
+   * from one actor, so a 30 / 60 s bucket answered rows 31+ with 429 and they
+   * dispatched although the admin had clicked Undo (contract § Rate limits).
+   */
+  it('the staff …/cancel is NOT bucketed: with the staff bucket exhausted it still cancels, and never consumes a call', async () => {
     seed('in_design', [image({})]);
     harness.checkLimit.mockResolvedValue(err({ retryAfterSeconds: 5 }));
     const res = await staffCancel();
-    expect(res.status).toBe(429);
-    expect(res.headers.get('Retry-After')).toBe('5');
-    expect(harness.checkLimit).toHaveBeenCalledWith(`broadcasts:staff-write:test-tenant:${MARKETING_USER_ID}`, 30, 60);
-    expect(row().status).toBe('in_design');
-    expect(harness.images.rows[0]!.deletedAt).toBeNull();
+    expect(res.status).toBe(200);
+    expect(harness.checkLimit).not.toHaveBeenCalled();
+    expect(row().status).toBe('cancelled');
   });
 
   it('a manager is refused by the gate before the bucket is touched', async () => {
