@@ -10,6 +10,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import type { ChangeRequestFormValues } from '@/lib/change-request-form-values';
+import { toast } from 'sonner';
 import { PortalChangeRequestForm } from '@/components/members/change-requests/portal-change-request-form';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -81,5 +82,37 @@ describe('PortalChangeRequestForm — server 422 issues map to per-rule copy (UX
     expect(screen.getByText(enMessages.shared.validation.required)).toBeTruthy();
     expect(screen.getByText(copy.errors.country)).toBeTruthy();
     expect(screen.getByText(enMessages.portal.changeRequests.errors.field)).toBeTruthy();
+  });
+});
+
+describe('PortalChangeRequestForm — the read-only 503 (portal error states #1)', () => {
+  it('says the system is read-only, keeps the form, and retries under the SAME Idempotency-Key', async () => {
+    // The proxy's flat refusal (`src/proxy.ts` build503) — no `error.code`.
+    const readOnly = () =>
+      new Response(
+        JSON.stringify({ error: 'read-only-mode', message: 'The system is currently in read-only mode for maintenance.', retryAfterSeconds: 300 }),
+        { status: 503, headers: { 'content-type': 'application/json', 'Retry-After': '300' } },
+      );
+    fetchMock.mockResolvedValueOnce(readOnly()).mockResolvedValueOnce(readOnly());
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <PortalChangeRequestForm initialValues={{ ...LIVE, phone: '+66899999999' }} canProposeCompanyFields pending={null} privacyNoticeHref={null} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.submit(screen.getByTestId('change-request-form'));
+    await waitFor(() =>
+      expect(screen.getByTestId('submit-status')).toHaveTextContent(enMessages.portal.changeRequests.status.readOnly),
+    );
+    expect(toast.error, 'the status line IS the message').not.toHaveBeenCalled();
+    expect((screen.getByLabelText(/phone/i) as HTMLInputElement).value).toBe('+66899999999');
+
+    fireEvent.submit(screen.getByTestId('change-request-form'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const keyOf = (call: number): string | undefined =>
+      (fetchMock.mock.calls[call]?.[1] as RequestInit | undefined)?.headers
+        ? ((fetchMock.mock.calls[call]![1] as RequestInit).headers as Record<string, string>)['Idempotency-Key']
+        : undefined;
+    expect(keyOf(0)).toBeTruthy();
+    expect(keyOf(1), 'a 503 is retryable — the route must see the same attempt').toBe(keyOf(0));
   });
 });

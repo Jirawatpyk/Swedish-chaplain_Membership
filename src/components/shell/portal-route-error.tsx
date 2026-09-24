@@ -13,13 +13,18 @@
  * `page.tsx` is the contract the per-route wrappers exist to enforce.
  *
  * `actions` appends extra recovery affordances after the Retry button (e.g. a
- * "back to …" link for the compose page).
+ * "back to …" link for the compose page); "Back to dashboard" always follows.
+ *
+ * ONE title (AURA canvas "Portal error"): the PageHeader carries it and the
+ * card carries only the Error ID and the way forward. It used to repeat
+ * `errors.generic` as the CardTitle, one line under the identical h1.
  */
 import { useEffect, type ComponentType, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { AlertCircleIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/page-header';
 
 export interface PortalRouteErrorProps {
@@ -51,18 +56,20 @@ export function PortalRouteError({
     <Container>
       <PageHeader title={t('generic')} />
       <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>
-              {error.digest ? t('errorId', { id: error.digest }) : null}
-            </CardDescription>
+        <CardContent className="flex flex-col gap-4">
+          {error.digest ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <AlertCircleIcon className="size-4 shrink-0 text-destructive" aria-hidden />
+              {t('errorId', { id: error.digest })}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={reset}>{tButtons('retry')}</Button>
+            {actions}
+            <Link href="/portal" className={buttonVariants({ variant: 'outline' })}>
+              {t('backToDashboard')}
+            </Link>
           </div>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-          {actions}
         </CardContent>
       </Card>
     </Container>

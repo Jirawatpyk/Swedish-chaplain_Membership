@@ -43,7 +43,7 @@ export default async function BroadcastNotFound(): Promise<React.ReactElement> {
         />
         <h2 className="text-lg font-semibold">{tErrors('notFound')}</h2>
         <p className="max-w-md text-sm text-muted-foreground">
-          {tErrors('notFound')}
+          {tErrors('notFoundHint')}
         </p>
         <Link
           href="/portal/benefits?tab=broadcasts"

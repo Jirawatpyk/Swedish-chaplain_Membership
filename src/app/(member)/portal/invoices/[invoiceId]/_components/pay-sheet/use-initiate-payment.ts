@@ -38,6 +38,7 @@ import { useEffect, useRef } from 'react';
 // the useEffect form satisfies React strict-mode auditors + future
 // lint rules (e.g. react-compiler) that flag render-phase mutations.
 
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import type { CachedInitiate } from './pay-sheet-internal';
 import type { TranslateFn } from './pay-sheet-translation-types';
 
@@ -197,9 +198,10 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
           // the honest "contact the chamber to reactivate" notice rather than
           // the generic "session expired" auth message.
           let bodyCode: string | null = null;
+          let body: unknown = null;
           try {
-            const body = (await response.json()) as { error?: { code?: string } };
-            bodyCode = body?.error?.code ?? null;
+            body = await response.json();
+            bodyCode = (body as { error?: { code?: string } } | null)?.error?.code ?? null;
           } catch {
             /* non-JSON body — fall through to status mapping */
           }
@@ -210,7 +212,13 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
           // contact invites a member to hammer a button that can only fail,
           // and reads as though the system is unsure what went wrong.
           let permanent = false;
-          if (response.status === 403 && bodyCode === 'membership_access_restricted') {
+          if (isReadOnlyRefusal(response.status, body)) {
+            // The write freeze: the proxy refused before the route ran, so no
+            // PaymentIntent exists and nothing was charged. Not PERMANENT —
+            // the freeze lifts, and Retry is the right next step then. Ahead
+            // of the `>= 500` arm, which would blame the payment service.
+            reason = t('retry.reasonReadOnly');
+          } else if (response.status === 403 && bodyCode === 'membership_access_restricted') {
             reason = t('retry.reasonMembershipTerminated');
             permanent = true;
           } else if (response.status === 409 && bodyCode === 'primary_contact_missing') {

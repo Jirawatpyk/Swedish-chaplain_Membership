@@ -67,6 +67,10 @@ vi.mock('@/components/ui/tiptap-loader', () => ({
 function renderFormWithShellLinks(): void {
   render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
+      {/* The portal `[...unknown]` catch-all makes every `/portal/*` href a
+          page to this rule; the anchor is a stand-in for the `<a>` a shell
+          `<Link>` renders, which is exactly what the guard listens for. */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a href="/portal/dashboard" onClick={(e) => e.preventDefault()}>
         Dashboard
       </a>
