@@ -68,6 +68,14 @@ export interface PeriodOutputVatSummary {
    * amount to SUBTRACT from gross output VAT for the net ภ.พ.30 figure.
    */
   readonly creditNoteVatSatang: string;
+  /**
+   * Non-void COMBINED-mode receipts with a tax point in the period — rows paid
+   * under their §87 invoice number with no RC/RE (`receipt_document_number_raw`
+   * NULL): before the tax-at-payment switch, or on a tenant with it off. They
+   * are outside both register streams, so a non-zero count means the net
+   * figure is not the whole period (the CSV export does include them).
+   */
+  readonly legacyCombinedCount: number;
 }
 
 export interface TaxRegisterRepo {
@@ -125,9 +133,11 @@ export interface TaxRegisterRepo {
    *     §86/4 RC and §105 RE streams, whatever the status (`credited` /
    *     `partially_credited` included: their reduction is a §86/10 credit
    *     note in the month the note is issued, not a missing sale);
-   *   - plus pre-088 combined-mode rows (paid under the §87 invoice number,
-   *     `receipt_document_number_raw` NULL) that the registers never listed,
-   *     so exporting an old period does not silently lose them.
+   *   - plus combined-mode rows (paid under the §87 invoice number,
+   *     `receipt_document_number_raw` NULL — before the tax-at-payment switch,
+   *     or on a tenant with `FEATURE_088_TAX_AT_PAYMENT` off) that the
+   *     registers never list, so the export does not silently lose them;
+   *     `sumPeriodOutputVat.legacyCombinedCount` counts the same rows.
    * Ordered by tax point, then receipt / invoice number. Rows carry
    * `lines: []`. RLS-scoped via `runInTenant`.
    */

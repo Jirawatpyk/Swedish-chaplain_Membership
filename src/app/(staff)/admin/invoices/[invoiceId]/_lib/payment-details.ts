@@ -31,8 +31,13 @@ export interface PaymentDetailsView {
   readonly notes: string | null;
 }
 
-/** Prefix of the note `markPaidFromProcessor` writes (`describeProcessorMethod`). */
-const PROCESSOR_NOTE = /^Paid online via Stripe (card|PromptPay) \(/;
+/**
+ * The exact note `markPaidFromProcessor` writes (`describeProcessorMethod`):
+ * "Paid online via Stripe card (intent=pi_… charge=ch_…)". Anchored end to end
+ * so a human note that merely starts the same way is never hidden.
+ */
+const PROCESSOR_NOTE =
+  /^Paid online via Stripe (card|PromptPay) \(intent=\S+(?: charge=\S+)?\)$/;
 
 const MANUAL_METHODS = new Set<string>(['bank_transfer', 'cheque', 'cash', 'other']);
 

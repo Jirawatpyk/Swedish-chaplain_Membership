@@ -105,19 +105,29 @@ export interface PeriodOutputVat {
  *   - 'closed_month'  — exactly one calendar month (1st → last day) that ended
  *                       before today (Asia/Bangkok). Only this is "the figure
  *                       to report".
+ *   - 'closed_month_incomplete' — a closed month that ALSO has combined-mode
+ *                       receipts outside the register (see
+ *                       `legacyCombinedCount`), so the net figure is not the
+ *                       whole month and must not be called the figure to report.
  *   - 'month_to_date' — starts on the 1st of a month that is not over yet, so
  *                       more receipts can still land in it.
  *   - 'not_a_month'   — any other range (several months, not starting on the
  *                       1st, or part of an ended month). The total is correct
  *                       for the range but it is not a ภ.พ.30 period.
  */
-export type RegisterPeriodStatus = 'closed_month' | 'month_to_date' | 'not_a_month';
+export type RegisterPeriodStatus =
+  | 'closed_month'
+  | 'closed_month_incomplete'
+  | 'month_to_date'
+  | 'not_a_month';
 
 export interface ListTaxDocumentRegisterOutput {
   readonly rows: readonly Invoice[];
   readonly summary: TaxDocumentRegisterSummary;
   readonly periodOutputVat: PeriodOutputVat;
   readonly periodStatus: RegisterPeriodStatus;
+  /** Combined-mode receipts in the period that no register lists. */
+  readonly legacyCombinedCount: number;
 }
 
 export interface ListTaxDocumentRegisterDeps {
@@ -151,6 +161,7 @@ export async function listTaxDocumentRegister(
     rcVatSatang: string;
     reVatSatang: string;
     creditNoteVatSatang: string;
+    legacyCombinedCount: number;
   };
   try {
     // The selected register's rows + the WHOLE-period output-VAT figure. The
@@ -229,8 +240,22 @@ export async function listTaxDocumentRegister(
       creditNoteVatSatang: outputVat.creditNoteVatSatang,
       combinedVatSatang: combinedVat.toString(),
     },
-    periodStatus: periodStatusOf(input.from, input.to, bangkokLocalDate(deps.clock.nowIso())),
+    periodStatus: withLegacyRows(
+      periodStatusOf(input.from, input.to, bangkokLocalDate(deps.clock.nowIso())),
+      outputVat.legacyCombinedCount,
+    ),
+    legacyCombinedCount: outputVat.legacyCombinedCount,
   });
+}
+
+/** A closed month with rows outside the register is not the figure to report. */
+function withLegacyRows(
+  status: RegisterPeriodStatus,
+  legacyCombinedCount: number,
+): RegisterPeriodStatus {
+  return status === 'closed_month' && legacyCombinedCount > 0
+    ? 'closed_month_incomplete'
+    : status;
 }
 
 /**

@@ -211,7 +211,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,manual\r?\n?$/);
+    expect(result.value.csv).toMatch(/,manual,2026-05-16\r?\n?$/);
   });
 
   it('labels F5-paid rows by their PaymentMethod', async () => {
@@ -227,7 +227,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,promptpay\r?\n?$/);
+    expect(result.value.csv).toMatch(/,promptpay,2026-05-16\r?\n?$/);
   });
 
   it('includes an AS-PAID event invoice with its paidAt + payment date rendered (064 T15 pin)', async () => {

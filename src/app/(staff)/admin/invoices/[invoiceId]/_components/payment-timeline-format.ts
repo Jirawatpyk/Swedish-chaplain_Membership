@@ -9,7 +9,7 @@
  * locale helper from `@/lib/format-date-localised`.
  */
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import type { Payment } from '@/modules/payments/domain/payment';
+import type { Payment } from '@/modules/payments';
 
 /**
  * A payment status that implies the payment SUCCEEDED (was captured) at some

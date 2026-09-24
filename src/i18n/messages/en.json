@@ -2691,9 +2691,10 @@
           "creditNote": "§86/10 credit notes",
           "note": "Net standard-rated output VAT for the period: §86/4 tax-receipt + §105 receipt streams (cancelled receipts excluded), less §86/10 credit notes issued this period. §80/1(5) zero-rate sales add 0. The table below shows only the selected register.",
           "status": {
-            "closedMonth": "The figure to report on ภ.พ.30 for this month.",
+            "closedMonth": "The figure to report on ภ.พ.30 for this month, as of today.",
             "monthToDate": "Month to date — the period is not closed.",
-            "notAMonth": "Not a single calendar month — ภ.พ.30 is filed per calendar month."
+            "notAMonth": "Not a single calendar month — ภ.พ.30 is filed per calendar month.",
+            "closedMonthIncomplete": "Not the full month — {count, plural, one {# combined tax invoice/receipt} other {# combined tax invoices/receipts}} (no RC/RE number) in this period {count, plural, one {is} other {are}} not in this figure. Check the CSV export before filing ภ.พ.30."
           }
         },
         "summary": {

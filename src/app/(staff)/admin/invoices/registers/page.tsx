@@ -176,9 +176,13 @@ export default async function TaxRegistersPage({
                 <p className="mt-2 text-sm font-medium" data-testid="period-output-vat-status">
                   {result.value.periodStatus === 'closed_month'
                     ? t('outputVat.status.closedMonth')
-                    : result.value.periodStatus === 'month_to_date'
-                      ? t('outputVat.status.monthToDate')
-                      : t('outputVat.status.notAMonth')}
+                    : result.value.periodStatus === 'closed_month_incomplete'
+                      ? t('outputVat.status.closedMonthIncomplete', {
+                          count: result.value.legacyCombinedCount,
+                        })
+                      : result.value.periodStatus === 'month_to_date'
+                        ? t('outputVat.status.monthToDate')
+                        : t('outputVat.status.notAMonth')}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">{t('outputVat.note')}</p>
               </section>

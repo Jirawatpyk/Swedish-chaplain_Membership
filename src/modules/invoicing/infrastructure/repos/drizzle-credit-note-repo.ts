@@ -487,8 +487,8 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         // 054-event-fee-invoices (Task 8 reviewer note) — intentionally NO
         // orphan-id filter here (unlike findByOriginalInvoice* which drop rows
         // where the joined invoice id is null). `listPaged` projects a NARROW
-        // DTO whose `originalInvoiceNumberRaw: string | null` field already
-        // gracefully surfaces an orphan as null in the admin list, so a future
+        // DTO whose nullable `original*DocumentNumberRaw` fields already
+        // gracefully surface an orphan as "—" in the admin list, so a future
         // hard-deleted-invoice edge case is visible rather than silently dropped.
         // The three aggregate-return paths (findById / findByOriginalInvoice /
         // findByOriginalInvoiceInTx) DO apply the orphan filter because they must

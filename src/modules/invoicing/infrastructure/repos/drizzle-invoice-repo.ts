@@ -1790,6 +1790,20 @@ function taxPointBetween(from: string, to: string) {
   return [sql`${TAX_POINT} >= ${from}`, sql`${TAX_POINT} <= ${to}`];
 }
 
+/**
+ * Combined-mode receipts on {@link TAX_POINT}: paid under the §87 invoice
+ * number with no RC/RE (`receipt_document_number_raw` NULL) — before the
+ * tax-at-payment switch or with `FEATURE_088_TAX_AT_PAYMENT` off. Paid-family
+ * statuses only (never an issued bill, never void). Outside both registers.
+ */
+function legacyCombinedInPeriod(from: string, to: string) {
+  return [
+    isNull(invoices.receiptDocumentNumberRaw),
+    sql`${invoices.status} IN ('paid', 'credited', 'partially_credited')`,
+    ...taxPointBetween(from, to),
+  ];
+}
+
 export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
   const ctx = asTenantContext(tenantId);
 
@@ -1878,10 +1892,18 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
             ),
           );
 
+        // (3) Combined-mode receipts in the period (outside both streams) —
+        // the same predicate as the legacy arm of `listForExport`.
+        const [legacyAgg] = await tx
+          .select({ n: sql<number>`COUNT(*)::int` })
+          .from(invoices)
+          .where(and(eq(invoices.tenantId, tenantIdArg), ...legacyCombinedInPeriod(opts.from, opts.to)));
+
         return {
           rcVatSatang: agg?.rcVat ?? '0',
           reVatSatang: agg?.reVat ?? '0',
           creditNoteVatSatang: cnAgg?.cnVat ?? '0',
+          legacyCombinedCount: Number(legacyAgg?.n ?? 0),
         };
       });
     },
@@ -1901,13 +1923,8 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
               or(
                 // §86/4 RC + §105 RE receipts (the two register streams).
                 isNotNull(invoices.receiptDocumentNumberRaw),
-                // Pre-088 combined mode: the §87 invoice number IS the receipt
-                // (no receipt raw). Paid-family statuses only, so an issued
-                // bill can never slip in.
-                and(
-                  isNull(invoices.receiptDocumentNumberRaw),
-                  sql`${invoices.status} IN ('paid', 'credited', 'partially_credited')`,
-                ),
+                // Combined mode: the §87 invoice number IS the receipt.
+                and(...legacyCombinedInPeriod(opts.from, opts.to)),
               ),
             ),
           )

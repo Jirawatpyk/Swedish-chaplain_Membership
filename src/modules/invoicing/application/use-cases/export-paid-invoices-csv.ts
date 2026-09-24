@@ -5,7 +5,7 @@
  * Pulls every receipt whose §78/1 tax point falls inside `[from, to]`
  * (both inclusive, ISO-date `YYYY-MM-DD` interpreted as Bangkok-local
  * day) and renders the bookkeeper-facing CSV per the plan's column
- * schema (12 columns, UTF-8 BOM, RFC-4180 escaping).
+ * schema (13 columns, UTF-8 BOM, RFC-4180 escaping).
  *
  * --- Same rows as the ภ.พ.30 register ----------------------------
  * Rows come from `TaxRegisterRepo.listForExport`, which buckets by the
@@ -36,7 +36,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
-import { isValidCalendarDate } from '@/lib/fiscal-year';
+import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import type { TaxRegisterRepo } from '../ports/tax-register-repo';
 import type { AuditPort } from '../ports/audit-port';
 import { billFirstDocumentNumber, type Invoice } from '../../domain/invoice';
@@ -111,6 +111,10 @@ const CSV_HEADERS: readonly string[] = [
   'Currency',
   'Paid At',
   'Payment Method',
+  // The §78/1 tax point the row is bucketed by (`payment_date`, else the
+  // Bangkok date of `paid_at`). Appended last so existing column positions
+  // stay put; it explains why a back-dated row sits in this month.
+  'Payment Date',
 ];
 
 // --- Public use-case ---------------------------------------------------
@@ -243,6 +247,7 @@ function buildRow(
     inv.currency,
     paidIso,
     method,
+    inv.paymentDate ?? (inv.paidAt !== null ? bangkokLocalDate(inv.paidAt) : ''),
   ];
   return cells.map(escapeCsv).join(',');
 }
