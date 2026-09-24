@@ -1,9 +1,9 @@
 /**
  * `MembersZeroState` × RBAC — the "Add your first member" CTA links to
- * `/admin/members/new`, which is gated on `members.write`. A manager
- * (`members.read` only) who followed it hit a 404, so the CTA must follow
- * the SAME evaluated permission as its target page and fall back to a
- * plain hint when the viewer cannot add members.
+ * `/admin/members/new`, which is gated on `members.write`. A manager or
+ * marketing viewer (`members.read` only) who followed it hit a 404, so the
+ * CTA must follow the SAME evaluated permission as its target page, and a
+ * viewer who cannot add members gets an admin-only hint instead.
  *
  * The permission comes from the evaluator, never from `ROLE_BUNDLES` —
  * super-admin keys are granted by the evaluator, not the bundle.
@@ -22,7 +22,9 @@ beforeEach(() => vi.useRealTimers());
 
 const copy = en.admin.members.emptyStates.zero;
 
-function renderAs(role: 'manager' | 'admin') {
+type Role = 'manager' | 'marketing' | 'admin';
+
+function renderAs(role: Role) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
       <MembersZeroState canAddMember={hasPermission(role, 'members.write')} />
@@ -31,13 +33,16 @@ function renderAs(role: 'manager' | 'admin') {
 }
 
 describe('MembersZeroState × members.write', () => {
-  it('manager: no "Add your first member" link — the admin-only hint replaces the description', () => {
-    renderAs('manager');
-    expect(screen.queryByRole('link', { name: copy.cta })).toBeNull();
-    expect(screen.getByText(copy.adminOnlyHint)).toBeInTheDocument();
-    // The description tells the viewer to add a member themselves.
-    expect(screen.queryByText(copy.description)).toBeNull();
-  });
+  it.each<Role>(['manager', 'marketing'])(
+    '%s: no "Add your first member" link — the admin-only hint replaces the description',
+    (role) => {
+      renderAs(role);
+      expect(screen.queryByRole('link', { name: copy.cta })).toBeNull();
+      expect(screen.getByText(copy.adminOnlyHint)).toBeInTheDocument();
+      // The description tells the viewer to add a member themselves.
+      expect(screen.queryByText(copy.description)).toBeNull();
+    },
+  );
 
   it('admin: the CTA links to /admin/members/new and no hint is shown', () => {
     renderAs('admin');

@@ -8,7 +8,8 @@
  *
  * (a) and (b) link to `/admin/settings/integrations/eventcreate`, gated on
  * `settings.integrations`. Manager and marketing read this list but lack
- * that key, so they get a plain admin-only hint instead of links that 404.
+ * that key, so they get no links, and an admin-only hint in place of the
+ * body copy that tells the viewer to act on the integration themselves.
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -52,7 +53,9 @@ export function EventsEmptyState({
       <div className="flex flex-col items-center gap-4 py-12 text-center">
         <h2 className="text-h3 font-semibold">{t('noIntegration.title')}</h2>
         <p className="max-w-md text-muted-foreground">
-          {t('noIntegration.body')}
+          {canManageIntegration
+            ? t('noIntegration.body')
+            : t('noIntegration.adminOnlyHint')}
         </p>
         {canManageIntegration ? (
           <Link
@@ -62,11 +65,7 @@ export function EventsEmptyState({
             <PlusIcon aria-hidden="true" className="size-4" />
             {t('noIntegration.cta')}
           </Link>
-        ) : (
-          <p className="max-w-md text-sm text-muted-foreground">
-            {t('noIntegration.adminOnlyHint')}
-          </p>
-        )}
+        ) : null}
       </div>
     );
   }
@@ -95,7 +94,9 @@ export function EventsEmptyState({
         />
         <h2 className="text-h3 font-semibold">{t('noDeliveries.title')}</h2>
         <p className="max-w-md text-muted-foreground">
-          {t('noDeliveries.body')}
+          {canManageIntegration
+            ? t('noDeliveries.body')
+            : t('noDeliveries.adminOnlyHint')}
         </p>
         {canManageIntegration ? (
           <div className="flex flex-wrap items-center justify-center gap-2">
@@ -113,11 +114,7 @@ export function EventsEmptyState({
               {t('noDeliveries.cta')}
             </Link>
           </div>
-        ) : (
-          <p className="max-w-md text-sm text-muted-foreground">
-            {t('noDeliveries.adminOnlyHint')}
-          </p>
-        )}
+        ) : null}
       </div>
     );
   }
