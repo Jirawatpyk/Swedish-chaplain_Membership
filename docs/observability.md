@@ -2281,6 +2281,18 @@ WHERE tenant_id = '<tenant>' AND member_id = '<member id>'
 
 Log events: `renewals.coverage_end.*` (pino), `membership_end.*` (routes).
 
+**Dead-man's switch (the alert that works today).** App metrics are not yet
+exported anywhere — `instrumentation.ts` registers `@vercel/otel` without a
+`metricReader`, so every `*_total` above is a no-op in production until a
+metrics backend is wired. The cron-is-alive signal therefore goes to an
+EXTERNAL check instead: set `HEALTHCHECK_URL_COVERAGE_END` to a
+healthchecks.io ping URL (check: period **1 hour**, grace **1 hour** → alerts
+after ~2h without a successful pass). The route pings it after every
+successful pass and `<url>/fail` on a failed one (alerts immediately);
+skipped passes (flag off / read-only) do not ping, so they alert too. The
+ping never fails the cron (`src/lib/cron-heartbeat.ts`, 5 s timeout; log
+events `cron.heartbeat.ping_failed` / `ping_rejected`).
+
 **Roll-forward only.** Pre-0306 code reads a `cancelled`/`coverage_ended`
 cycle as a plain cancellation (access until `expires_at`) and has no reconcile
 cron, so rolling the APP back restores access for members whose coverage was

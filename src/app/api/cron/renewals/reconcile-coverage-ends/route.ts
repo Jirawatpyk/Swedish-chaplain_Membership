@@ -19,6 +19,11 @@
  * Auth: Bearer via `CRON_SECRET` (`gateCronBearerOrRespond`). Env gate:
  * `FEATURE_F8_RENEWALS`. READ_ONLY_MODE → 200 skipped.
  *
+ * Heartbeat: pings `HEALTHCHECK_URL_COVERAGE_END` (dead-man's switch) after
+ * every successful pass and `<url>/fail` on a failed one. Skipped passes
+ * (flag off / read-only) do NOT ping, so the external check alerts when
+ * scheduled membership ends would silently stall.
+ *
  * Concurrency: every cycle write takes the per-cycle advisory lock
  * (`renewals:{tenant}:{cycle}`) + a status CAS, so an overlapping run is a
  * safe no-op.
@@ -29,11 +34,14 @@ import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
+import { pingCronHeartbeat } from '@/lib/cron-heartbeat';
 import { asTenantContext } from '@/modules/tenants';
 import { reconcileMembershipCoverageEnds, makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const CRON_NAME = 'reconcile-coverage-ends';
 
 // Vercel-native Cron invokes with GET; the Bearer-gated logic lives in POST.
 export const GET = POST;
@@ -71,6 +79,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
       renewalsMetrics.coverageEndReconciled(tenantId, 'errored', 1);
       renewalsMetrics.coverageEndReconcileRunCompleted(tenantId, 'failure');
+      await pingCronHeartbeat(env.cron.coverageEndHealthcheckUrl, 'fail', { cron: CRON_NAME });
       return NextResponse.json({ error: { code: 'server_error' }, tenant_id: tenantId }, { status: 500 });
     }
     const v = result.value;
@@ -83,6 +92,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     renewalsMetrics.coverageEndReconciled(tenantId, 'errored', v.errored);
     renewalsMetrics.coverageEndOldestWaitingHours(tenantId, v.oldestWaitingHours);
     renewalsMetrics.coverageEndReconcileRunCompleted(tenantId, 'success');
+    await pingCronHeartbeat(env.cron.coverageEndHealthcheckUrl, 'success', { cron: CRON_NAME });
     const body = {
       skipped: false as const,
       tenant_id: tenantId,
@@ -106,6 +116,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     renewalsMetrics.coverageEndReconciled(tenantId, 'errored', 1);
     renewalsMetrics.coverageEndReconcileRunCompleted(tenantId, 'failure');
+    await pingCronHeartbeat(env.cron.coverageEndHealthcheckUrl, 'fail', { cron: CRON_NAME });
     return NextResponse.json({ error: { code: 'server_error' }, tenant_id: tenantId }, { status: 500 });
   }
 }

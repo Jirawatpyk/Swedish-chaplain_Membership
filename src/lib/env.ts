@@ -233,6 +233,17 @@ const schema = z.object({
   // queued webhook triggers — coordinate with vercel.json updates.
   CRON_SECRET: z.string().min(16),
 
+  // Dead-man's-switch ping URL for the hourly reconcile-coverage-ends cron
+  // (e.g. a healthchecks.io check: period 1h, grace 1h). The cron pings it
+  // on every successful pass and `<url>/fail` on a failed one; the external
+  // service alerts when the pings STOP — the one failure the app cannot
+  // report itself (cron not running / skipped). Optional: unset = no ping.
+  HEALTHCHECK_URL_COVERAGE_END: z
+    .string()
+    .url()
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+
   // Kill-switch for F4 Invoicing. When FALSE every `/api/invoices/**`,
   // `/api/credit-notes/**`, `/api/tenant-invoice-settings/**`, and
   // `/api/portal/invoices/**` route returns 503 `read_only_mode` via
@@ -1163,6 +1174,7 @@ export const env = {
   },
   cron: {
     secret: raw.CRON_SECRET,
+    coverageEndHealthcheckUrl: raw.HEALTHCHECK_URL_COVERAGE_END,
   },
 
   // F5 Online Payment (Stripe)
