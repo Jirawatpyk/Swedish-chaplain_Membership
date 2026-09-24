@@ -15,6 +15,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import {
+  buildBreadcrumbStaticLabels,
   parseBreadcrumbPath,
   truncateForMobile,
   type BreadcrumbSegment,
@@ -39,7 +40,10 @@ export function BreadcrumbNav() {
   const tBreadcrumb = useTranslations('breadcrumb');
   const tLayout = useTranslations('layout');
 
-  const staticLabels = buildStaticLabels(tBreadcrumb, pathname);
+  const staticLabels = buildBreadcrumbStaticLabels(
+    (key) => tBreadcrumb(key as Parameters<typeof tBreadcrumb>[0]),
+    pathname,
+  );
   const segments = parseBreadcrumbPath({
     pathname,
     staticLabels,
@@ -121,147 +125,4 @@ function BreadcrumbFragment({
       {isLast ? null : <BreadcrumbSeparator />}
     </Fragment>
   );
-}
-
-// URL segment → i18n key under `breadcrumb.*`. Non-contextual segments go
-// here; verbs like `new` / `edit` / `clone` resolve contextually below
-// because their human label depends on the parent resource.
-const STATIC_LABEL_KEYS = {
-  admin: 'admin',
-  dashboard: 'dashboard',
-  users: 'users',
-  plans: 'plans',
-  members: 'members',
-  settings: 'settings',
-  fees: 'fees',
-  account: 'account',
-  invoices: 'invoices',
-  'credit-notes': 'credit-notes',
-  void: 'void',
-  pay: 'pay',
-  // F8 — `/admin/settings/renewals/schedules` breadcrumb segments.
-  // Renewals + schedules need labels so the trail reads as
-  // "Admin / Settings / Renewals / Reminder schedules" not as raw URL
-  // slugs.
-  renewals: 'renewals',
-  schedules: 'schedules',
-  // F4 — `/admin/settings/invoicing` breadcrumb segment. The URL slug
-  // is `invoicing` (gerund) not `invoices` (plural noun), so it
-  // doesn't collide with the standalone `/admin/invoices` list page's
-  // own `invoices` label above. Pre-existing gap from F4 ship —
-  // closed in F6 Phase 5 verify-fix together with the new
-  // `integrations`/`eventcreate` segments.
-  invoicing: 'invoicing',
-  // F7.1a US2 — `/admin/settings/broadcasts` breadcrumb
-  // segment. The URL slug `broadcasts` is shared with the top-level
-  // /admin/broadcasts queue page (which doesn't render breadcrumbs
-  // because it's only 1 level deep). The label override here lets
-  // the centralised-settings page render "Settings / Broadcasts"
-  // correctly.
-  broadcasts: 'broadcasts',
-  // F119 T028 — `/admin/settings/broadcasts/brand`. Without a label the trail
-  // renders the raw slug, which reads as an untranslated Latin word on the TH
-  // and SV surfaces (the `erasure-log` incident, 2026-07-18).
-  brand: 'brand',
-  // F7.1a US7 — `/admin/broadcasts/templates` breadcrumb segment +
-  // `new` + `edit` verb-overrides for /templates/new and /templates/
-  // [id]/edit. The `new`/`edit` keys also re-use the resource-aware
-  // CONTEXTUAL_VERBS map below so templates can have "New Template"
-  // instead of generic "New".
-  templates: 'templates',
-  // F6 — `/admin/integrations/eventcreate` breadcrumb segments.
-  // `integrations` is an organisational segment (no page.tsx at that
-  // level — handled by NON_ROUTE_BY_PARENT in breadcrumb-path.ts so
-  // the segment renders non-clickable). `eventcreate` is the wizard
-  // page itself (clickable / current page).
-  integrations: 'integrations',
-  eventcreate: 'eventcreate',
-  // COMP-1 — `/admin/compliance/erasure-log` breadcrumb segments. `compliance`
-  // is an organisational section whose only page is a redirect to its single
-  // child (handled by NON_ROUTE_BY_PARENT in breadcrumb-path.ts so the segment
-  // renders non-clickable). `erasure-log` is the DPO evidence log itself (the
-  // current page). Without these labels the trail showed raw slugs
-  // "compliance / erasure-log" (incident 2026-07-18, PR #223 follow-up).
-  compliance: 'compliance',
-  'erasure-log': 'erasureLog',
-  // 108 PR-D — `/admin/marketing/audience`. `marketing` is an organisational
-  // segment with no page of its own (NON_ROUTE_BY_PARENT under `admin` in
-  // breadcrumb-path.ts, like `compliance`); `audience` is the page itself.
-  marketing: 'marketing',
-  audience: 'audience',
-} as const;
-
-// Verb segments resolve by parent resource. The outer key is the parent
-// segment (e.g. `/admin/<parent>/<verb>`); the inner key is the verb; the
-// value is the `breadcrumb.*` i18n key.
-const CONTEXTUAL_VERBS: Record<string, Record<string, string>> = {
-  plans: { new: 'newPlan', edit: 'editPlan', clone: 'clonePlan' },
-  members: { new: 'newMember' },
-  invoices: { new: 'newInvoice' },
-  'credit-notes': { new: 'newCreditNote' },
-  templates: { new: 'newTemplate', edit: 'editTemplate' },
-};
-
-// Match a UUID v4 (32 hex with dashes). When we hit a UUID segment
-// underneath a known parent resource, we show the parent's "detail" label
-// rather than the raw ID — a server-side resolver for the real name
-// (company, plan, etc.) is the future upgrade path.
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const DETAIL_LABEL_KEYS_BY_PARENT: Record<string, string> = {
-  members: 'memberDetail',
-  invoices: 'invoiceDetail',
-};
-
-function buildStaticLabels(
-  t: ReturnType<typeof useTranslations<'breadcrumb'>>,
-  pathname: string,
-): Readonly<Record<string, string>> {
-  const result: Record<string, string> = {};
-
-  // 1. Non-contextual base segments.
-  for (const [segment, key] of Object.entries(STATIC_LABEL_KEYS)) {
-    try {
-      result[segment] = t(key as Parameters<typeof t>[0]);
-    } catch (err) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(`[BreadcrumbNav] missing i18n key: breadcrumb.${key}`, err);
-      }
-    }
-  }
-
-  // 2. Verb overrides + UUID-detail overrides — scan current path.
-  //    For each segment, if its parent is known and the segment matches a
-  //    verb or UUID pattern, override `result[segment]` with the contextual
-  //    label. Because the override is keyed by the decoded segment itself,
-  //    parseBreadcrumbPath picks it up without further changes.
-  const parts = pathname.split('?')[0]!.split('/').filter((p) => p.length > 0);
-  for (let i = 1; i < parts.length; i++) {
-    const segment = parts[i]!;
-    const parent = parts[i - 1]!;
-
-    const verbKey = CONTEXTUAL_VERBS[parent]?.[segment];
-    if (verbKey) {
-      try {
-        result[segment] = t(verbKey as Parameters<typeof t>[0]);
-      } catch {
-        /* fallthrough to default */
-      }
-      continue;
-    }
-
-    if (UUID_RE.test(segment)) {
-      const detailKey = DETAIL_LABEL_KEYS_BY_PARENT[parent];
-      if (detailKey) {
-        try {
-          result[segment] = t(detailKey as Parameters<typeof t>[0]);
-        } catch {
-          /* fallthrough */
-        }
-      }
-    }
-  }
-
-  return result;
 }

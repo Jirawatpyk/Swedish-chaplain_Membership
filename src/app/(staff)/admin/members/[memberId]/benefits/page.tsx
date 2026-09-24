@@ -38,6 +38,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
 
 const UUID_RE =
@@ -160,6 +161,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
 
   return (
     <DetailContainer>
+      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
       <PageHeader
         title={t('title')}
         subtitle={member.companyName}

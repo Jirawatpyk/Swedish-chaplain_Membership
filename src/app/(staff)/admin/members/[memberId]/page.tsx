@@ -61,6 +61,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { CopyButton } from '@/components/members/copy-button';
 import { DetailField } from '@/components/members/detail-field';
 import { MemberNumberField } from '@/components/members/member-number-field';
@@ -888,6 +889,7 @@ export default async function MemberDetailPage({
 
   return (
     <DetailContainer>
+      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
       <PageHeader
         title={member.companyName}
         /* 056 layout C — surface status + member number ABOVE the fold in the

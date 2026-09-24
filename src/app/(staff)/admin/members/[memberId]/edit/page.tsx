@@ -35,6 +35,7 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EditMemberClient } from '@/components/members/edit-member-client';
 import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
 import { buildPlanOptions, type PlanOption } from '@/components/members/member-form';
@@ -137,6 +138,7 @@ export default async function EditMemberPage({ params }: PageProps) {
 
   return (
     <FormContainer>
+      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
       <PageHeader
         title={t('title')}
         subtitle={member.companyName}
