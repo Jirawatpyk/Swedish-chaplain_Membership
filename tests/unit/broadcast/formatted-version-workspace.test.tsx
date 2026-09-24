@@ -69,6 +69,7 @@ beforeEach(() => {
   refresh.mockReset();
   vi.mocked(toast.error).mockReset();
   vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.warning).mockReset();
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -199,6 +200,48 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
   // screen cannot send content another marketing user saved unseen. When Send
   // saved first it is the token THAT save returned — the page-load token would
   // make the happy path answer 409 to itself.
+  // PR #392 review C1 — the READ_ONLY_MODE freeze: the proxy's FLAT 503
+  // `{ error: 'read-only-mode' }` is main #390's read-only warning, never the
+  // generic "Something went wrong" line (and nothing was saved or sent).
+  describe('PR #392 review C1 — the read-only proxy', () => {
+    const readOnly503 = () => jsonResponse(503, { error: 'read-only-mode', message: 'read-only', retryAfterSeconds: 300 });
+    const expectReadOnlyWarning = async () => {
+      await waitFor(() =>
+        expect(toast.warning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
+          description: enMessages.errors.readOnlyNothingChanged,
+        }),
+      );
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(screen.queryByText(t.errors.generic)).toBeNull();
+    };
+
+    it('Save says the system is read-only', async () => {
+      fetchMock.mockResolvedValueOnce(readOnly503());
+      renderWorkspace();
+      fireEvent.change(screen.getByLabelText(t.workspace.subjectLabel), { target: { value: 'Edited' } });
+      fireEvent.click(saveButton());
+      await expectReadOnlyWarning();
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it('Send — clean, the send itself refused — closes the dialog and says the system is read-only', async () => {
+      fetchMock.mockResolvedValueOnce(readOnly503());
+      renderWorkspace();
+      await sendAndConfirm();
+      await expectReadOnlyWarning();
+      expect(refresh).not.toHaveBeenCalled();
+    });
+
+    it('Send — dirty, its save refused — closes the dialog, says the system is read-only, and sends nothing', async () => {
+      fetchMock.mockResolvedValueOnce(readOnly503());
+      renderWorkspace();
+      fireEvent.change(screen.getByLabelText(t.workspace.subjectLabel), { target: { value: 'Edited' } });
+      await sendAndConfirm();
+      await expectReadOnlyWarning();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('round-4 B1 — the send carries expectedUpdatedAt', () => {
     const sendBody = (): Record<string, unknown> => {
       const call = fetchMock.mock.calls.find(([url]) => url === `/api/admin/broadcasts/${ID}/version/send`) as

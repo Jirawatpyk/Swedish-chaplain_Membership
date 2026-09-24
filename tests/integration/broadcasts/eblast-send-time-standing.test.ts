@@ -181,7 +181,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       requestId,
       mode: { mode: 'send_now' },
     });
-    expect(r.ok ? r.value.stage : r.error).toEqual({ kind, memberId });
+    expect(r.ok ? r.value.status : r.error).toEqual({ kind, memberId });
     expect(await readRow(id)).toEqual(before);
     expect(await readAudits(requestId)).toEqual([
       {

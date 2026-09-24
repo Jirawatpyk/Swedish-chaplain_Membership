@@ -90,3 +90,18 @@ describe('holdsImageReferences — which E-Blasts keep their embedded images ali
     expect(holdsImageReferences({ status: 'cancelled', ...NO_HAND_OVER, ...evidence })).toBe(true);
   });
 });
+
+// PR #392 review C4 — the two approval-round sets had near-identical names and
+// nothing tying them together. The 4-tuple is defined once (beside the chip
+// set, which a client component imports) and the 5-value chip set derives
+// from it; the stage module re-exports the same tuple.
+describe('APPROVAL_ROUND_STATUSES and APPROVAL_ROUND_ONLY_STATUSES', () => {
+  it('are one definition: the stage module re-exports the tuple, and the chip set is it plus expired_no_member_response', async () => {
+    const statusModule = await import('@/modules/broadcasts/domain/value-objects/broadcast-status');
+    const stageModule = await import('@/modules/broadcasts/domain/stage/in-progress-statuses');
+    expect(stageModule.APPROVAL_ROUND_STATUSES).toBe(statusModule.APPROVAL_ROUND_STATUSES);
+    expect(statusModule.APPROVAL_ROUND_ONLY_STATUSES).toEqual(
+      new Set([...statusModule.APPROVAL_ROUND_STATUSES, 'expired_no_member_response']),
+    );
+  });
+});

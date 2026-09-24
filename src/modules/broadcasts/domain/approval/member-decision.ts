@@ -12,9 +12,12 @@
  * Lengths count Unicode code points, as Postgres `char_length` does — not
  * UTF-16 units, which would refuse 250 emoji as 500 "characters".
  *
- * A whitespace-only reason is refused as empty: it satisfies the CHECK but
- * says nothing, and a mandatory reason that says nothing is not one. This is
- * stricter than the DB, never looser.
+ * A blank (empty or whitespace-only) reason is NO reason (PR #392 review
+ * C6 — one path, here, rather than a pre-trim in the use case): an approval
+ * note that says nothing is stored as NULL, never an empty string the CHECK
+ * would refuse, and a mandatory reason that says nothing is `reason_required`
+ * like a missing one. For the mandatory kinds this is stricter than the DB
+ * (whitespace passes `char_length >= 1`), never looser.
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */
@@ -61,22 +64,20 @@ export function reasonBounds(kind: MemberDecisionKind): ReasonBounds {
 
 export type DecisionReasonError =
   | { readonly code: 'reason_required' }
-  | { readonly code: 'reason_empty' }
   | { readonly code: 'reason_too_long'; readonly max: ReasonBounds['max'] };
 
 /**
  * Validate a decision reason against `reasonBounds(kind)`. Returns the reason
- * unchanged on success (null only for an approval without a note).
+ * unchanged on success; null for an approval without a note (absent or blank).
  */
 export function validateDecisionReason(
   kind: MemberDecisionKind,
   reason: string | null,
 ): Result<string | null, DecisionReasonError> {
   const bounds = reasonBounds(kind);
-  if (reason === null) {
+  if (reason === null || reason.trim() === '') {
     return bounds.nullable ? ok(null) : err({ code: 'reason_required' });
   }
-  if (reason.trim() === '') return err({ code: 'reason_empty' });
   if ([...reason].length > bounds.max) {
     return err({ code: 'reason_too_long', max: bounds.max });
   }

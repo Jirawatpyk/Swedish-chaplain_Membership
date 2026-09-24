@@ -4,7 +4,8 @@
  * FR-017, FR-018).
  *
  *   `broadcasts.send` (marketing / admin / super_admin) → 200
- *   { stage, confirmedSendAt, proposedSendAt, differs }
+ *   { status, confirmedSendAt, proposedSendAt, differs }   (`status` is the row's
+ *   new status; a 409's `details.stage` is the `stageOf` display stage)
  *
  *   { "mode": "keep_proposal" } | { "mode": "schedule", "scheduledFor": ISO }
  *   | { "mode": "send_now" } | { "mode": "cancel" }
@@ -93,13 +94,13 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         requestId: ctx.requestId ?? correlationId,
         mode,
       }),
-    (confirmed) => ({ stage: stageOf(confirmed.stage), round: confirmed.round }),
+    (confirmed) => ({ stage: stageOf(confirmed.status), round: confirmed.round }),
   );
   if (!result.ok) return scheduleErrorResponse(result.error, correlationId);
 
   return NextResponse.json(
     {
-      stage: result.value.stage,
+      status: result.value.status,
       confirmedSendAt: result.value.confirmedSendAt?.toISOString() ?? null,
       proposedSendAt: result.value.proposedSendAt?.toISOString() ?? null,
       differs: result.value.differs,

@@ -32,8 +32,19 @@ export type ApprovalReminder = keyof typeof MEMBER_APPROVAL_REMINDER_DAYS;
 /** What one tick does to one row. */
 export type ApprovalScheduleStep = ApprovalReminder | 'expire';
 
+/**
+ * `broadcasts.member_reminder_stage` — how many reminder thresholds were
+ * served: 0 none · 1 day-3 · 2 day-7 · 3 day-23 warning. The 0308 CHECK holds
+ * the column to exactly these values (PR #392 review C6).
+ */
+export type MemberReminderStage = 0 | 1 | 2 | 3;
+
 /** The `member_reminder_stage` each reminder advances the counter TO. */
-export const REMINDER_STAGE: Readonly<Record<ApprovalReminder, 1 | 2 | 3>> = { day3: 1, day7: 2, day23: 3 };
+export const REMINDER_STAGE: Readonly<Record<ApprovalReminder, Exclude<MemberReminderStage, 0>>> = {
+  day3: 1,
+  day7: 2,
+  day23: 3,
+};
 
 /** The whole timeline the member is told when the clock starts — day 3, 7, 23, 30. */
 export const MEMBER_APPROVAL_TIMELINE_DAYS = [
@@ -53,7 +64,11 @@ const LATEST_FIRST: readonly ApprovalReminder[] = ['day23', 'day7', 'day3'];
  * `stageEnteredAt`, at `now`, with `reminderStage` thresholds already served;
  * `null` when nothing is due.
  */
-export function nextReminder(stageEnteredAt: Date, now: Date, reminderStage: number): ApprovalScheduleStep | null {
+export function nextReminder(
+  stageEnteredAt: Date,
+  now: Date,
+  reminderStage: MemberReminderStage,
+): ApprovalScheduleStep | null {
   const elapsed = now.getTime() - stageEnteredAt.getTime();
   if (elapsed >= MEMBER_APPROVAL_EXPIRY_DAYS * DAY_MS) return 'expire';
   for (const reminder of LATEST_FIRST) {

@@ -157,7 +157,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
 
     // 6. Marketing confirms the send time — the promotion.
     const confirmed = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { broadcastId, ...actor, mode: { mode: 'send_now' } });
-    expect(confirmed.ok ? confirmed.value.stage : confirmed.error).toBe('approved');
+    expect(confirmed.ok ? confirmed.value.status : confirmed.error).toBe('approved');
 
     // The row carries the approved version byte-for-byte.
     const [row] = await runInTenant(tenant.ctx, (tx) => tx.select().from(broadcasts).where(eq(broadcasts.broadcastId, broadcastId)));
@@ -359,7 +359,7 @@ describe('F119 FR-016 — the proposal written at submit is kept, then survives 
 
     // 1. Keep the member's time — the promotion.
     const kept = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { broadcastId, ...actor, mode: { mode: 'keep_proposal' } });
-    expect(kept.ok ? { stage: kept.value.stage, differs: kept.value.differs } : kept.error).toEqual({ stage: 'approved', differs: false });
+    expect(kept.ok ? { status: kept.value.status, differs: kept.value.differs } : kept.error).toEqual({ status: 'approved', differs: false });
     const afterKeep = await readRow();
     expect(afterKeep.scheduledFor?.toISOString()).toBe(proposal.toISOString());
     expect(afterKeep.proposedSendAt?.toISOString()).toBe(proposal.toISOString());
@@ -370,8 +370,8 @@ describe('F119 FR-016 — the proposal written at submit is kept, then survives 
       ...actor,
       mode: { mode: 'schedule', scheduledFor: moved },
     });
-    expect(rescheduled.ok ? { stage: rescheduled.value.stage, differs: rescheduled.value.differs } : rescheduled.error).toEqual({
-      stage: 'approved',
+    expect(rescheduled.ok ? { status: rescheduled.value.status, differs: rescheduled.value.differs } : rescheduled.error).toEqual({
+      status: 'approved',
       differs: true,
     });
     const afterMove = await readRow();

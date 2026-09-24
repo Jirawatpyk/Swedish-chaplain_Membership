@@ -257,7 +257,7 @@ describe('F119 send + promotion + the stage clock — real composition on live P
       requestId: null,
       mode: { mode: 'send_now' },
     });
-    expect(r.ok ? r.value.stage : r.error).toBe('approved');
+    expect(r.ok ? r.value.status : r.error).toBe('approved');
 
     const after = await readRow(row.broadcastId!);
     expect([after.subject, after.bodyHtml, after.bodySource]).toEqual([approved.subject, approved.bodyHtml, approved.bodySource]);
@@ -286,13 +286,13 @@ describe('F119 send + promotion + the stage clock — real composition on live P
     // approved → approved: only the time moves, the stage clock does not.
     const later = new Date(Math.ceil((Date.now() + 2 * 3_600_000) / 1000) * 1000);
     const retime = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { ...input, mode: { mode: 'schedule', scheduledFor: later } });
-    expect(retime.ok ? retime.value.stage : retime.error).toBe('approved');
+    expect(retime.ok ? retime.value.status : retime.error).toBe('approved');
     const retimed = await readRow(row.broadcastId!);
     expect(retimed).toMatchObject({ status: 'approved', scheduledFor: later, approvedVersionId: approved.id, stageEnteredAt: LONG_AGO });
 
     // approved → changes_requested: off the dispatchable status, the approval out of force.
     const cancel = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { ...input, mode: { mode: 'cancel' } });
-    expect(cancel.ok ? cancel.value.stage : cancel.error).toBe('changes_requested');
+    expect(cancel.ok ? cancel.value.status : cancel.error).toBe('changes_requested');
     const after = await readRow(row.broadcastId!);
     expect(after).toMatchObject({ status: 'changes_requested', scheduledFor: null, approvedVersionId: null, proposedSendAt: row.proposedSendAt });
     expect(after.stageEnteredAt.getTime()).toBeGreaterThan(LONG_AGO.getTime());

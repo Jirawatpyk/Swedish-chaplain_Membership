@@ -378,7 +378,7 @@ describe('T130 — bounds, failure isolation', () => {
   });
 
   it(`T166 R-L1: ${APPROVAL_LIFECYCLE_BATCH} already-warned rows (stage 3) cannot starve a day-7 reminder — the reminder window skips what it has nothing left to send`, async () => {
-    const warned = many(APPROVAL_LIFECYCLE_BATCH + 5, -25).map((b) => ({ ...b, memberReminderStage: 3 }));
+    const warned = many(APPROVAL_LIFECYCLE_BATCH + 5, -25).map((b) => ({ ...b, memberReminderStage: 3 as const }));
     const due = awaitingRow({ broadcastId: '11111111-1111-4111-8111-999999999999' as Broadcast['broadcastId'], stageEnteredAt: at(-8), memberReminderStage: 1 });
     const rows = [...warned, due];
     const h = harness({ broadcasts: rows, versions: rows.map((b) => makeApprovalVersion({ id: V1, broadcastId: b.broadcastId, versionNo: 1, sentToMemberAt: b.stageEnteredAt })) });

@@ -146,7 +146,7 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
     it('a member in good standing is promoted (the gate is not over-eager)', async () => {
       const { run, sendStanding } = setup(promotable());
       const r = await run();
-      expect(r.ok ? r.value.stage : r.error).toBe('approved');
+      expect(r.ok ? r.value.status : r.error).toBe('approved');
       expect(sendStanding.membersBridge.getMembersHaltedInTenant).toHaveBeenCalledTimes(1);
     });
 
@@ -176,7 +176,7 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
         return { ok: true as const, value: { access: 'full' as const, reason: 'in_good_standing' as const } };
       });
       const r = await run();
-      expect(r.ok ? r.value.stage : r.error).toBe('approved');
+      expect(r.ok ? r.value.status : r.error).toBe('approved');
       expect(seen).toEqual([false, false]);
     });
 
@@ -197,7 +197,7 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
     it('a re-time of an already approved row does not re-read standing (the promotion is the send-time edge)', async () => {
       const { run, sendStanding } = setup(makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id }), { halted: [MEMBER] });
       const r = await run({ mode: { mode: 'schedule', scheduledFor: new Date('2026-10-05T03:00:00Z') } });
-      expect(r.ok ? r.value.stage : r.error).toBe('approved');
+      expect(r.ok ? r.value.status : r.error).toBe('approved');
       expect(sendStanding.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
     });
   });

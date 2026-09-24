@@ -31,6 +31,11 @@
  * cleared at the start of every request so a repeat is announced again, and
  * is the ONLY channel for it — no toast on top.
  *
+ * The READ_ONLY_MODE write freeze (PR #392 review C1) is not a refusal of the
+ * content: nothing was saved or sent and a retry now cannot help, so it is
+ * main #390's read-only warning toast — after the send dialog has closed back
+ * onto Send, so the toast is not born under the modal.
+ *
  * The page mounts this island with `key={updatedAt}`, so a reload after a
  * conflict remounts it from the server's current copy.
  *
@@ -71,6 +76,8 @@ import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-pr
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { SubjectCounter, SUBJECT_MAX_LENGTH } from '@/components/broadcast/compose/subject-counter';
 import { useComposeDirtyGuard } from '@/components/broadcast/compose/use-compose-dirty-guard';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { approvalErrorMessage, readRouteError, type RouteError } from './approval-error';
 import { InlineError } from './inline-error';
 import { TestCopyButton } from './test-copy-button';
@@ -116,7 +123,9 @@ type SaveOutcome =
   | { readonly kind: 'saved'; readonly updatedAt: string }
   | { readonly kind: 'conflict' }
   | { readonly kind: 'stale' }
-  | { readonly kind: 'refused'; readonly field: ErrorField };
+  | { readonly kind: 'refused'; readonly field: ErrorField }
+  /** The READ_ONLY_MODE freeze — nothing saved; the caller says so (#390). */
+  | { readonly kind: 'read_only' };
 
 const BODY_CODES: ReadonlySet<string> = new Set([
   'unsafe_content',
@@ -165,6 +174,7 @@ export function FormattedVersionWorkspace({
   const format = useFormatter();
   const locale = useLocale();
   const router = useRouter();
+  const readOnlyToast = useReadOnlyToast();
 
   const [subject, setSubject] = useState(workingCopy.subject);
   const [bodyHtml, setBodyHtml] = useState(workingCopy.bodyHtml);
@@ -244,6 +254,7 @@ export function FormattedVersionWorkspace({
       setSavedNote(note);
       return { kind: 'saved', updatedAt };
     }
+    if (await isReadOnlyResponse(res)) return { kind: 'read_only' };
     const refusal = await readRouteError(res);
     if (refusal.code === 'version_changed') {
       setConflict(true);
@@ -264,7 +275,9 @@ export function FormattedVersionWorkspace({
     setSaving(true);
     setError(null);
     try {
-      if ((await save()).kind === 'saved') toast.success(t('saved'));
+      const outcome = await save();
+      if (outcome.kind === 'saved') toast.success(t('saved'));
+      else if (outcome.kind === 'read_only') readOnlyToast();
     } catch {
       setError({ message: approvalErrorMessage(tErrors, null), field: null });
     } finally {
@@ -296,6 +309,12 @@ export function FormattedVersionWorkspace({
           setSendOpen(false);
           return;
         }
+        if (outcome.kind === 'read_only') {
+          // Close first (back onto Send, which survives), then say it.
+          setSendOpen(false);
+          readOnlyToast();
+          return;
+        }
         if (outcome.kind === 'conflict') {
           closeSendOnto('conflict');
           return;
@@ -317,6 +336,11 @@ export function FormattedVersionWorkspace({
         setSendOpen(false);
         toast.success(tSend('sent'));
         router.refresh();
+        return;
+      }
+      if (await isReadOnlyResponse(res)) {
+        setSendOpen(false);
+        readOnlyToast();
         return;
       }
       const refusal = await readRouteError(res);

@@ -28,7 +28,7 @@ import { MemberSignOffActions } from '@/components/broadcast/approval/member-sig
 
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const VERSION = { id: '22222222-2222-4222-8222-222222222222', versionNo: 2 };
@@ -41,6 +41,7 @@ beforeEach(() => {
   refresh.mockReset();
   vi.mocked(toast.error).mockReset();
   vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.warning).mockReset();
 });
 afterEach(() => {
   cleanup();
@@ -183,6 +184,77 @@ describe('F119 T084 — the member sign-off controls', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(refresh).toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith(t.errors.stage_changed);
+  });
+});
+
+// PR #392 review C3 — a decision whose response was lost is retried; the
+// retry answers 409 `stage_changed` carrying the decision ALREADY recorded
+// (contract § decision, "Idempotency"). When that is the member's own
+// decision on this version, it was recorded: the success path, not an error.
+describe('PR #392 review C3 — a repeated decision after a lost response', () => {
+  const stageChanged = (recordedDecision: unknown) =>
+    json(409, { error: { code: 'stage_changed', details: { stage: 'member_approved', status: 'member_approved', recordedDecision } } });
+
+  it('the same decision on the same version is recorded: the dialog closes and the page refreshes, with no error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        stageChanged({ id: 'd-1', versionId: VERSION.id, decision: 'changes_requested', decidedAt: '2026-09-24T03:00:00.000Z' }),
+      ),
+    );
+    renderActions();
+    const { dialog, reason } = await openRequestChanges();
+    fireEvent.change(reason, { target: { value: 'The date is wrong.' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.confirm }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(refresh).toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a different decision', { id: 'd-1', versionId: VERSION.id, decision: 'approved', decidedAt: '2026-09-24T03:00:00.000Z' }],
+    ['the same decision on an earlier version', { id: 'd-0', versionId: '33333333-3333-4333-8333-333333333333', decision: 'changes_requested', decidedAt: '2026-09-20T03:00:00.000Z' }],
+    ['no recorded decision', null],
+  ])('%s keeps the "already moved on" error', async (_label, recorded) => {
+    vi.stubGlobal('fetch', vi.fn(async () => stageChanged(recorded)));
+    renderActions();
+    const { dialog, reason } = await openRequestChanges();
+    fireEvent.change(reason, { target: { value: 'The date is wrong.' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.confirm }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.errors.stage_changed));
+    expect(refresh).toHaveBeenCalled();
+  });
+});
+
+// PR #392 review C1 — while READ_ONLY_MODE is on the proxy answers every
+// write 503 with a FLAT `{ error: 'read-only-mode' }` (main #390).
+describe('PR #392 review C1 — a decision refused by the read-only proxy', () => {
+  const readOnly503 = () =>
+    new Response(JSON.stringify({ error: 'read-only-mode', message: 'read-only', retryAfterSeconds: 300 }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': '300' },
+    });
+
+  it('says the system is read-only — as the #390 warning AND inside the open dialog — never the generic error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => readOnly503()));
+    renderActions();
+    fireEvent.click(screen.getByTestId('eblast-approve'));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByTestId('eblast-approve-confirm'));
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(enMessages.errors.readOnlyMode, {
+        description: enMessages.errors.readOnlyNothingChanged,
+      }),
+    );
+    // The toast renders outside the modal (hidden from AT while it is open):
+    // the dialog says the same words itself, and stays open for a retry.
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(enMessages.errors.readOnlyMode);
+    expect(within(dialog).queryByText(t.errors.generic)).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 

@@ -26,6 +26,7 @@ import {
   type BroadcastId,
 } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import { IN_PROGRESS_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
@@ -205,6 +206,17 @@ export function deriveTemplateProvenance(
 }
 
 /**
+ * PR #392 review C6 — `member_reminder_stage` is a SMALLINT the 0308 CHECK
+ * holds to 0–3 (`broadcasts_member_reminder_stage_check`). Narrowed here, never
+ * cast: a value outside the type means the CHECK and the Domain disagree, and
+ * the lifecycle tick must not read a stage it cannot reason about.
+ */
+function toMemberReminderStage(value: number): MemberReminderStage {
+  if (value === 0 || value === 1 || value === 2 || value === 3) return value;
+  throw new Error(`broadcasts.member_reminder_stage out of range: ${value}`);
+}
+
+/**
  * @internal — exported solely for the R8.5 end-to-end mapper test
  * (`tests/unit/broadcasts/infrastructure/drizzle-broadcasts-repo-mapper.test.ts`).
  * Production callers SHOULD invoke the repo's `findById` / other port
@@ -274,7 +286,7 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     stageEnteredAt: row.stageEnteredAt,
     currentRound: row.currentRound,
     approvedVersionId: row.approvedVersionId,
-    memberReminderStage: row.memberReminderStage,
+    memberReminderStage: toMemberReminderStage(row.memberReminderStage),
     memberExpiryNotifiedAt: row.memberExpiryNotifiedAt,
 
     createdAt: row.createdAt,

@@ -17,24 +17,50 @@ export interface RouteError {
   readonly code: string | null;
   /** zod's `flatten().fieldErrors` on a 400/422 — which field was refused. */
   readonly fields: readonly string[];
+  /** The envelope's `details` object (a 409's current stage, recorded decision, …), or null. */
+  readonly details: Readonly<Record<string, unknown>> | null;
 }
 
-/** The refusal envelope of a response, tolerating a body that is not one. */
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null;
+
+/**
+ * The refusal envelope of a response, tolerating a body that is not one.
+ *
+ * It reads only the NESTED `{ error: { code } }` envelope our routes answer.
+ * The proxy's read-only 503 is the FLAT `{ error: 'read-only-mode' }` and
+ * reads here as `code: null` — callers ask `isReadOnlyResponse(res)` (which
+ * reads a clone) BEFORE this, as main #390 does on every member mutation.
+ */
 export async function readRouteError(res: Response): Promise<RouteError> {
   try {
     const body: unknown = await res.json();
-    const error =
-      typeof body === 'object' && body !== null
-        ? (body as { error?: { code?: unknown; fieldErrors?: unknown } }).error
-        : undefined;
-    const code = typeof error?.code === 'string' ? error.code : null;
-    const fieldErrors = error?.fieldErrors;
-    const fields =
-      typeof fieldErrors === 'object' && fieldErrors !== null ? Object.keys(fieldErrors) : [];
-    return { code, fields };
+    const error = isRecord(body) ? body.error : undefined;
+    if (!isRecord(error)) return { code: null, fields: [], details: null };
+    const code = typeof error.code === 'string' ? error.code : null;
+    const fields = isRecord(error.fieldErrors) ? Object.keys(error.fieldErrors) : [];
+    const details = isRecord(error.details) ? error.details : null;
+    return { code, fields, details };
   } catch {
-    return { code: null, fields: [] };
+    return { code: null, fields: [], details: null };
   }
+}
+
+/**
+ * PR #392 review C3 — does a 409 `stage_changed` carry THIS decision as the
+ * one already recorded? A decision whose response was lost is retried, and the
+ * retry is answered with the decision on file (contract § decision,
+ * "Idempotency"). It was recorded when it names the same decision on the same
+ * version; `recordedDecision` is the LATEST decision on the E-Blast, so a
+ * same-kind decision from an earlier round must not count.
+ */
+export function isRecordedDecision(
+  details: RouteError['details'],
+  decision: string,
+  versionId: string,
+): boolean {
+  const recorded = details?.recordedDecision;
+  return isRecord(recorded) && recorded.decision === decision && recorded.versionId === versionId;
 }
 
 /** Just the `error.code`, or null when the body is not the envelope. */

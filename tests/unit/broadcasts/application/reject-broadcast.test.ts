@@ -114,8 +114,10 @@ function makeRepo(opts: RepoOpts = {}): {
     async updateDraftFromTemplate() {
       throw new Error('not used in reject-broadcast fixture');
     },
+    // PR #392 review C7 — the non-locking pre-read the locale read keys on:
+    // the row as the lock will see it (none when the row is gone).
     async findById() {
-      return null;
+      return opts.lockedStatus ? makeBroadcast(opts.lockedStatus, {}) : null;
     },
     async findByIdInTx() {
       return opts.findByIdInTxResult ?? null;
@@ -461,6 +463,68 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       baseInput,
     );
     expect(email.memberCalls[0]?.locale).toBe('en');
+  });
+
+  // PR #392 review C7 — the members-bridge locale read is a pool-global read
+  // on its own connection; made inside the tx it held a second connection
+  // while this one held the row lock (the approve / cancel fix, round-4 B5).
+  it('reads the member locale BEFORE the transaction, never while it holds the row lock', async () => {
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    let open = false;
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) =>
+      inner(async (tx) => {
+        open = true;
+        try {
+          return await fn(tx);
+        } finally {
+          open = false;
+        }
+      })) as BroadcastsRepo['withTx'];
+    const seen: boolean[] = [];
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(async () => {
+        seen.push(open);
+        return 'th' as const;
+      }),
+    } as unknown as NonNullable<Parameters<typeof rejectBroadcast>[0]['membersBridge']>;
+    const email = makeEmail();
+    const result = await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
+        audit: makeAudit().port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual([false]);
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(email.memberCalls[0]?.locale).toBe('th');
+  });
+
+  it('reads no locale for a row that is gone (the reject answers not-found)', async () => {
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(),
+    } as unknown as NonNullable<Parameters<typeof rejectBroadcast>[0]['membersBridge']>;
+    const result = await rejectBroadcast(
+      {
+        tenant,
+        broadcastsRepo: makeRepo({ lockedStatus: null }).port,
+        imagesRepo: makeFakeBroadcastImagesRepo(),
+        audit: makeAudit().port,
+        clock,
+        emailTransactional: makeEmail().port,
+        membersBridge,
+      },
+      baseInput,
+    );
+    expect(result.ok ? 'ok' : result.error.kind).toBe('broadcast_not_found');
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).not.toHaveBeenCalled();
   });
 
   it('locale chain: bridge throw is logged + falls through to input.notificationLocale (R5 Errors-H3)', async () => {

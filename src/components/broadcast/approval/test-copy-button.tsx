@@ -9,7 +9,8 @@
  * session's own address: the route has no `to` field, so there is nothing
  * here to choose. `broadcastId` / `versionId` only reference the audit row.
  * The route allows 10 per user per hour; a 429 reads as the localised
- * rate-limit line, never a raw code.
+ * rate-limit line, never a raw code. The READ_ONLY_MODE write freeze (PR #392
+ * review C1) is main #390's read-only warning, not the generic error.
  *
  * `focusableWhenDisabled` (UX review H2): the button turns unavailable while it
  * holds focus (its own request, or the workspace's save / send), and a native
@@ -22,6 +23,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { isLocale } from '@/i18n/config';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { approvalErrorMessage, readErrorCode } from './approval-error';
 
 export interface TestCopyButtonProps {
@@ -43,6 +46,7 @@ export function TestCopyButton({
 }: TestCopyButtonProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approval.testCopy');
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
+  const readOnlyToast = useReadOnlyToast();
   const locale = useLocale();
   const [pending, startTransition] = useTransition();
 
@@ -64,6 +68,10 @@ export function TestCopyButton({
         });
         if (res.ok) {
           toast.success(t('sent'));
+          return;
+        }
+        if (await isReadOnlyResponse(res)) {
+          readOnlyToast();
           return;
         }
         toast.error(approvalErrorMessage(tErrors, await readErrorCode(res)));

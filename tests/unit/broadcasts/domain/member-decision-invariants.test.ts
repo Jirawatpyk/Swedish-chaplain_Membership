@@ -35,17 +35,12 @@ describe('approval note — null or 1–500', () => {
     if (!refused.ok) expect(refused.error).toEqual({ code: 'reason_too_long', max: 500 });
   });
 
-  it('an empty-string approval note is refused, a null one is accepted', () => {
-    const refused = validateDecisionReason('approved', '');
-    expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.error).toEqual({ code: 'reason_empty' });
-    expect(validateDecisionReason('approved', null)).toEqual({ ok: true, value: null });
-  });
-
-  it('a whitespace-only approval note is refused as empty', () => {
-    const refused = validateDecisionReason('approved', '   ');
-    expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.error).toEqual({ code: 'reason_empty' });
+  // PR #392 review C6 — a blank note is no note: it is stored as NULL (never
+  // an empty string the CHECK would refuse), on one path, in the Domain.
+  it('a null, empty or whitespace-only approval note is accepted as no note (null)', () => {
+    for (const blank of [null, '', '   ']) {
+      expect(validateDecisionReason('approved', blank)).toEqual({ ok: true, value: null });
+    }
   });
 
   it('counts code points like char_length: 500 emoji pass, 501 do not', () => {
@@ -69,12 +64,12 @@ describe('changes requested / approval withdrawn — mandatory 1–2,000', () =>
   );
 
   it.each(['changes_requested', 'approval_withdrawn'] as const)(
-    '%s: empty and whitespace-only are refused as empty',
+    '%s: empty and whitespace-only are refused as required, like null',
     (kind) => {
       for (const blank of ['', ' \n\t ']) {
         const refused = validateDecisionReason(kind, blank);
         expect(refused.ok).toBe(false);
-        if (!refused.ok) expect(refused.error).toEqual({ code: 'reason_empty' });
+        if (!refused.ok) expect(refused.error).toEqual({ code: 'reason_required' });
       }
     },
   );

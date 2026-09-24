@@ -73,7 +73,8 @@ export type RejectBroadcastError =
 
 export interface RejectBroadcastDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'lockForUpdate' | 'findByIdInTx' | 'applyTransition'>;
+  /** `findById` (PR #392 review C7) — the non-locking pre-read the locale read keys on. */
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'findById' | 'lockForUpdate' | 'findByIdInTx' | 'applyTransition'>;
   /** F119 T081 — the E-Blast's image rows, stamped in the rejection's tx. */
   readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
   readonly audit: AuditPort;
@@ -126,6 +127,11 @@ export async function rejectBroadcast(
   const reasonHash = sha256Hex(input.rejectionReason);
 
   try {
+    // PR #392 review C7 — the member's preferred locale (for the rejection
+    // email) is a members-bridge read on its own pool connection, so it is
+    // made here, before the lock — never while this tx holds the row (the
+    // approve / cancel fix, round-4 B5).
+    const memberPreferred = await readPreferredLocaleBeforeTx(deps, input);
     return await deps.broadcastsRepo.withTx(async (tx) => {
       const lockedStatus = await deps.broadcastsRepo.lockForUpdate(
         tx,
@@ -220,27 +226,9 @@ export async function rejectBroadcast(
       // travels in the email payload (FR-012). Audit retains hash only.
       // Recipient = `replyToEmail` (immutable submit-time snapshot).
       // Verify-fix R4 (Simplify-#2 + Types-#6): shared helper +
-      // member-preferred-locale chain.
+      // member-preferred-locale chain (the locale was read before the tx —
+      // PR #392 review C7).
       if (deps.emailTransactional) {
-        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
-        if (deps.membersBridge) {
-          try {
-            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
-              deps.tenant,
-              rejected.requestedByMemberId,
-            );
-          } catch (e) {
-            logger.warn(
-              {
-                err: errKind(e),
-                tenantId: deps.tenant.slug,
-                memberId: rejected.requestedByMemberId,
-                useCase: 'reject-broadcast',
-              },
-              'broadcasts.locale_resolve_failed',
-            );
-          }
-        }
         await enqueueBroadcastMemberNotification({
           tenant: deps.tenant,
           emailTransactional: deps.emailTransactional,
@@ -261,6 +249,37 @@ export async function rejectBroadcast(
     });
   } catch (e) {
     return err({ kind: 'reject.server_error', errKind: errKind(e) });
+  }
+}
+
+/**
+ * PR #392 review C7 — the owning member's preferred locale, read before the tx
+ * and best-effort: a bridge throw is logged (R5 verify-fix Errors-H3, the error
+ * CLASS only) and answers null, so the chain falls through. Nothing is read
+ * when no email will be sent or for a row that is gone. `requested_by_member_id`
+ * is immutable after submit, so the non-locking pre-read names the member the
+ * locked row will.
+ */
+async function readPreferredLocaleBeforeTx(
+  deps: RejectBroadcastDeps,
+  input: RejectBroadcastInput,
+): Promise<'en' | 'th' | 'sv' | null> {
+  if (!deps.emailTransactional || !deps.membersBridge) return null;
+  const preRead = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  if (preRead === null) return null;
+  try {
+    return await deps.membersBridge.getMemberPreferredLocale(deps.tenant, preRead.requestedByMemberId);
+  } catch (e) {
+    logger.warn(
+      {
+        err: errKind(e),
+        tenantId: deps.tenant.slug,
+        memberId: preRead.requestedByMemberId,
+        useCase: 'reject-broadcast',
+      },
+      'broadcasts.locale_resolve_failed',
+    );
+    return null;
   }
 }
 

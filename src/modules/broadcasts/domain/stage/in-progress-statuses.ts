@@ -19,7 +19,10 @@
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */
-import type { BroadcastStatus } from '../value-objects/broadcast-status';
+import {
+  APPROVAL_ROUND_STATUSES as APPROVAL_ROUND_STATUSES_TUPLE,
+  type BroadcastStatus,
+} from '../value-objects/broadcast-status';
 
 export const IN_PROGRESS_BROADCAST_STATUSES = [
   'submitted',
@@ -126,20 +129,13 @@ export function holdsImageReferences(row: {
 
 /**
  * F119 T132 — the in-progress stages that exist ONLY inside the
- * member-approval round (migration 0308): a row in one of them is in flight
- * whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says. Research R18's "flag ON or
- * rows exist" rule reads this set — with the flag off, a surface that would
- * otherwise stay dark (the nav's waiting count) still shows while any row is
- * here, so an in-flight E-Blast is never invisible to the people who must act
- * on it. `expired_no_member_response` is not in it: it is closed, and nobody
- * acts on a closed row.
+ * member-approval round. Defined once in `value-objects/broadcast-status.ts`
+ * (PR #392 review C4 — the chip set `APPROVAL_ROUND_ONLY_STATUSES` derives from
+ * it there); re-exported here, where the in-progress set it must stay inside
+ * is declared, and the `satisfies` below is that check.
  */
-export const APPROVAL_ROUND_STATUSES = [
-  'in_design',
-  'awaiting_member_approval',
-  'changes_requested',
-  'member_approved',
-] as const satisfies readonly (typeof IN_PROGRESS_BROADCAST_STATUSES)[number][];
+export const APPROVAL_ROUND_STATUSES =
+  APPROVAL_ROUND_STATUSES_TUPLE satisfies readonly (typeof IN_PROGRESS_BROADCAST_STATUSES)[number][];
 
 const IN_PROGRESS_SET: ReadonlySet<BroadcastStatus> = new Set(IN_PROGRESS_BROADCAST_STATUSES);
 

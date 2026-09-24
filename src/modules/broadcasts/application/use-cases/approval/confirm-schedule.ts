@@ -139,7 +139,12 @@ export interface ConfirmScheduleInput {
 }
 
 export interface ConfirmScheduleOutput {
-  readonly stage: 'approved' | 'changes_requested';
+  /**
+   * The row's new STATUS (not the `stageOf` display stage — PR #392 review
+   * C5: the route's 409 `details.stage` carries that vocabulary, so this
+   * key is named for what it holds).
+   */
+  readonly status: 'approved' | 'changes_requested';
   /** null on `cancel`. */
   readonly confirmedSendAt: Date | null;
   /** The member's frozen proposal (FR-016); null when none was recorded. */
@@ -285,7 +290,7 @@ export async function confirmSchedule(
           }
         }
 
-        return { stage: target, confirmedSendAt: confirmed, proposedSendAt: proposed, differs, round: broadcast.currentRound };
+        return { status: target, confirmedSendAt: confirmed, proposedSendAt: proposed, differs, round: broadcast.currentRound };
       }),
     );
   } catch (e) {

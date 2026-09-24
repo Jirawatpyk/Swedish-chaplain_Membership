@@ -282,8 +282,12 @@ Rules:
   difference explicitly when `differs` (FR-018).
 
 ```jsonc
-200 { "stage": "approved", "confirmedSendAt": "…", "proposedSendAt": "…", "differs": true }
+200 { "status": "approved", "confirmedSendAt": "…", "proposedSendAt": "…", "differs": true }
 ```
+
+`status` is the row's new **status** (`approved`, or `changes_requested` after `cancel`). It is
+not named `stage`: on this endpoint a 409's `details.stage` carries the `stageOf` display vocabulary
+(`scheduled`, …), and one key must not carry two vocabularies (PR #392 review C5).
 
 **FR-012a proof**: the promotion is the *only* write of `subject`/`body_html` after submit, it
 happens on the *only* edge the trigger exempts, and it copies from `approved_version_id` — the row

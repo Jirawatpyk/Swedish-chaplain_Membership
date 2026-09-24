@@ -98,6 +98,27 @@ export const OFFERED_BROADCAST_STATUSES: ReadonlyArray<BroadcastStatus> =
   );
 
 /**
+ * F119 T132 — the in-progress stages that exist ONLY inside the
+ * member-approval round (migration 0308): a row in one of them is in flight
+ * whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says. Research R18's "flag ON or
+ * rows exist" rule reads this set — with the flag off, a surface that would
+ * otherwise stay dark (the nav's waiting count) still shows while any row is
+ * here, so an in-flight E-Blast is never invisible to the people who must act
+ * on it. `expired_no_member_response` is not in it: it is closed, and nobody
+ * acts on a closed row.
+ *
+ * Defined HERE (PR #392 review C4) so the chip set below derives from it and a
+ * client component may read both; `domain/stage/in-progress-statuses.ts`
+ * re-exports it and asserts it is a subset of the in-progress statuses.
+ */
+export const APPROVAL_ROUND_STATUSES = [
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+] as const satisfies readonly BroadcastStatus[];
+
+/**
  * F119 T116 / T151 (research R18) — the stages that exist only because of the
  * approval round (migration 0308). Their filter chip is offered while the round
  * is switched on OR while the tenant has a row in that stage: never a filter
@@ -110,12 +131,13 @@ export const OFFERED_BROADCAST_STATUSES: ReadonlyArray<BroadcastStatus> =
  * component that may import this file but not `domain/stage/**`) and the
  * queue's loading skeleton, which reserves 8 chips with the round off and 13
  * with it on. `queue-filters-flag-visibility.test.tsx` pins the five.
+ *
+ * PR #392 review C4 — derived from {@link APPROVAL_ROUND_STATUSES} (the four
+ * in-flight round stages) plus the round's own closed stage, so the two sets
+ * cannot drift apart.
  */
 export const APPROVAL_ROUND_ONLY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
-  'in_design',
-  'awaiting_member_approval',
-  'changes_requested',
-  'member_approved',
+  ...APPROVAL_ROUND_STATUSES,
   'expired_no_member_response',
 ]);
 

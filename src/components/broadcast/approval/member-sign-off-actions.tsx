@@ -25,6 +25,14 @@
  * Every decision names the latest version SENT to the member (`version`) —
  * the one the route compares against for `stale_version`.
  *
+ * A retry after a lost response is answered 409 `stage_changed` carrying the
+ * decision already recorded (contract § decision, "Idempotency"): when that is
+ * THIS decision on THIS version it was recorded, and the success path runs
+ * (PR #392 review C3). While the READ_ONLY_MODE write freeze is on, the
+ * proxy's 503 is said as main #390's read-only warning AND inside the open
+ * dialog (the toast is hidden from AT behind the modal), which stays open —
+ * nothing changed and a retry after the freeze is still valid (review C1).
+ *
  * Refusals: a 409 (`stage_changed`, `stale_version`, `sending_started`) or a
  * 404 means the page is stale — the dialog closes FIRST, then a toast says
  * why (so it is not born under the modal's aria-hidden outside) and the page
@@ -66,8 +74,10 @@ import {
   ReasonConfirmationDialog,
   useDialogFinalFocus,
 } from '@/components/broadcast/reason-confirmation-dialog';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { cn } from '@/lib/utils';
-import { approvalErrorMessage, readRouteError } from './approval-error';
+import { approvalErrorMessage, isRecordedDecision, readRouteError } from './approval-error';
 import { InlineError } from './inline-error';
 
 /** FR-009 — the approval's optional note. */
@@ -113,6 +123,7 @@ export function MemberSignOffActions({
   const t = useTranslations('portal.broadcasts.approval.actions');
   const tErrors = useTranslations('portal.broadcasts.approval.errors');
   const router = useRouter();
+  const readOnlyToast = useReadOnlyToast();
 
   const decide = version !== null && canDecide;
   const withdraw = version !== null && canWithdrawApproval;
@@ -134,13 +145,16 @@ export function MemberSignOffActions({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ versionId: version.id, decision, reason }),
       });
-      if (res.ok) {
+      if (await isReadOnlyResponse(res)) {
+        return { kind: 'refused', refusal: { message: readOnlyToast(), field: null } };
+      }
+      const { code, fields, details } = await readRouteError(res);
+      if (res.ok || (res.status === 409 && code === 'stage_changed' && isRecordedDecision(details, decision, version.id))) {
         // The refreshed stage banner announces the new stage (L2: no toast).
         close();
         router.refresh();
         return { kind: 'closed' };
       }
-      const { code, fields } = await readRouteError(res);
       const message = approvalErrorMessage(tErrors, code);
       if (res.status === 409 || res.status === 404) {
         // The page is stale — the stage moved, a newer version exists, or

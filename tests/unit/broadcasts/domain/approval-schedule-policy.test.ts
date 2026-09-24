@@ -19,6 +19,7 @@ import {
   daysWaiting,
   nextReminder,
   type ApprovalScheduleStep,
+  type MemberReminderStage,
 } from '@/modules/broadcasts/domain/approval/approval-schedule-policy';
 import { MEMBER_APPROVAL_EXPIRY_DAYS } from '@/modules/broadcasts/domain/approval/member-approval-expiry';
 
@@ -27,8 +28,8 @@ const T0 = new Date('2026-09-01T04:30:00.000Z');
 const at = (days: number, ms = 0) => new Date(T0.getTime() + days * DAY + ms);
 
 /** Run one tick a day for `days` days, advancing the counter the way the cron does. */
-function simulate(days: number, startStage = 0): Array<{ day: number; step: ApprovalScheduleStep }> {
-  let stage = startStage;
+function simulate(days: number, startStage: MemberReminderStage = 0): Array<{ day: number; step: ApprovalScheduleStep }> {
+  let stage: MemberReminderStage = startStage;
   const fired: Array<{ day: number; step: ApprovalScheduleStep }> = [];
   for (let day = 0; day <= days; day += 1) {
     // Two ticks the same day — the second must be a no-op.
@@ -87,7 +88,7 @@ describe('nextReminder — each stage advances at most once per threshold', () =
   });
 
   it('expiry is date-only: a row waiting 400 days closes on the first tick whatever its counter says', () => {
-    for (const stage of [0, 1, 2, 3]) expect(nextReminder(T0, at(400), stage)).toBe('expire');
+    for (const stage of [0, 1, 2, 3] as const) expect(nextReminder(T0, at(400), stage)).toBe('expire');
     expect(simulate(400).filter((f) => f.step === 'expire')).toEqual([{ day: 30, step: 'expire' }]);
   });
 

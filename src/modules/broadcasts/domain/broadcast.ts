@@ -12,6 +12,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { BroadcastStatus } from './value-objects/broadcast-status';
+import type { MemberReminderStage } from './approval/approval-schedule-policy';
 import type { BroadcastSegmentType } from './value-objects/segment-type';
 import { isUuid } from './value-objects/uuid';
 
@@ -201,7 +202,7 @@ export interface Broadcast {
   readonly stageEnteredAt: Date;
   readonly currentRound: number;
   readonly approvedVersionId: string | null;
-  readonly memberReminderStage: number;
+  readonly memberReminderStage: MemberReminderStage;
   readonly memberExpiryNotifiedAt: Date | null;
 
   readonly createdAt: Date;

@@ -241,6 +241,18 @@ describe('ROUND-3 #2 — the staff approval surface renders the DELIVERED docume
     );
   });
 
+  // PR #392 review C2 — the thread is read for a closed / approved E-Blast
+  // that ran a round too (its history), so a failed read there must say so,
+  // not show an empty history. `approvedAt: null` isolates the `round >= 1` arm.
+  it('a failed thread read on a sent E-Blast that ran a round shows the unavailable alert', async () => {
+    findByIdMock.mockResolvedValue(makeBroadcast({ status: 'sent', currentRound: 1, approvedAt: null }));
+    const { listBroadcastVersions } = await import('@/modules/broadcasts');
+    vi.mocked(listBroadcastVersions).mockResolvedValueOnce({ ok: false, error: { kind: 'server_error', errKind: 'TypeError' } } as never);
+    const html = await renderPage();
+    expect(vi.mocked(listBroadcastVersions)).toHaveBeenCalledTimes(1);
+    expect(html).toContain('data-testid="eblast-thread-unavailable"');
+  });
+
   it('a submitted broadcast that renders keeps its Approve / Reject actions', async () => {
     const html = await renderPage();
     expect(html).toContain('data-testid="approve-action"');

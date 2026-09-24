@@ -148,10 +148,8 @@ export default async function AdminBroadcastDetailPage({
   // approved, and T085's history list renders the rest — including, for an
   // E-Blast approved as submitted (no version row at all), its single
   // "approved as submitted" entry (FR-007), hence the `approvedAt` arm.
-  const thread =
-    VERSIONED_STATUSES.has(status) || round >= 1 || broadcast.approvedAt !== null
-      ? await readThread(tenant.slug, broadcast.broadcastId, session.user.id)
-      : null;
+  const readsThread = VERSIONED_STATUSES.has(status) || round >= 1 || broadcast.approvedAt !== null;
+  const thread = readsThread ? await readThread(tenant.slug, broadcast.broadcastId, session.user.id) : null;
   const original = thread?.memberOriginal?.version ?? null;
   const workingCopy = status === 'in_design' ? (thread?.workingCopy?.version ?? null) : null;
   const shownVersion = workingCopy ?? latestRelevantVersion(thread);
@@ -179,9 +177,11 @@ export default async function AdminBroadcastDetailPage({
     status === 'submitted' && !memberApprovalOn
       ? null
       : await readWarnings(tenant.slug, broadcastId, status, broadcast.requestedByMemberId, (shownVersion ?? broadcast).bodyHtml);
-  // A stage that carries versions whose thread could not be read: say so,
-  // rather than falling back to the record body as if nothing were wrong.
-  const threadUnavailable = VERSIONED_STATUSES.has(status) && thread === null;
+  // A thread that was read and could not be: say so, rather than falling back
+  // to the record body (or an empty history) as if nothing were wrong. Keyed
+  // on the SAME condition as the read (PR #392 review C2) — a closed or
+  // approved E-Blast that ran a round reads its history too.
+  const threadUnavailable = readsThread && thread === null;
   const showNoPortalUser = warnings !== null && !warnings.hasPortalUser && PORTAL_USER_STATUSES.has(status);
   const unsafeImages = warnings !== null && IMAGE_CHECK_STATUSES.has(status) ? warnings.unsafeImages : [];
 

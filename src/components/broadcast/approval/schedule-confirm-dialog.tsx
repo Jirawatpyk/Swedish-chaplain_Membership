@@ -34,6 +34,10 @@
  * "differs" callout sits in a live region that is mounted from the start, so
  * its appearance is announced (M4). Submit is `focusableWhenDisabled`: it
  * turns unavailable while it holds focus (H2).
+ *
+ * The READ_ONLY_MODE write freeze (PR #392 review C1) is main #390's read-only
+ * warning AND the same words inside the dialog, which stays open: nothing
+ * changed, and the choice is still valid once the freeze lifts.
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { CalendarClock, Loader2Icon } from 'lucide-react';
@@ -61,6 +65,8 @@ import {
   isoToBangkokInput,
 } from '@/components/broadcast/bangkok-datetime';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { approvalErrorMessage, readErrorCode, STANDING_REFUSAL_CODES } from './approval-error';
 import { InlineError } from './inline-error';
 
@@ -105,6 +111,7 @@ export function ScheduleConfirmAction({
   const tStatus = useTranslations('admin.broadcasts.queue.status');
   const locale = useLocale();
   const router = useRouter();
+  const readOnlyToast = useReadOnlyToast();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<ScheduleConfirmMode>('schedule');
   const [when, setWhen] = useState('');
@@ -192,6 +199,10 @@ export function ScheduleConfirmAction({
           toast.success(mode === 'cancel' ? t('cancelled') : t('confirmed'));
           setOpen(false);
           router.refresh();
+          return;
+        }
+        if (await isReadOnlyResponse(res)) {
+          setFormError(readOnlyToast());
           return;
         }
         const code = await readErrorCode(res);

@@ -25,7 +25,9 @@
  * cleared at the start of each request so a repeat is announced) — a toast
  * renders outside the modal, which hides everything outside itself from AT
  * (H1). The trigger turns unavailable while it holds focus, so it is
- * `focusableWhenDisabled` (H2).
+ * `focusableWhenDisabled` (H2). The READ_ONLY_MODE write freeze (PR #392
+ * review C1) is main #390's read-only warning — and, when the confirmation
+ * is open, the same words inside it.
  *
  * Focus: on success the trigger unmounts with the stage, so the shared
  * resolver lands on `#main-content`; on Cancel/ESC it returns to the trigger.
@@ -52,6 +54,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { approvalErrorMessage, readErrorCode } from './approval-error';
 import { InlineError } from './inline-error';
 
@@ -73,6 +77,7 @@ export function StartFormattedVersionAction({
   const t = useTranslations('admin.broadcasts.approval.start');
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
   const router = useRouter();
+  const readOnlyToast = useReadOnlyToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -102,6 +107,11 @@ export function StartFormattedVersionAction({
           handFocusOnBeforeUnmount();
           toast.success(t('started'));
           router.refresh();
+          return;
+        }
+        if (await isReadOnlyResponse(res)) {
+          const title = readOnlyToast();
+          if (asks) setDialogError(title);
           return;
         }
         const message = approvalErrorMessage(tErrors, await readErrorCode(res));

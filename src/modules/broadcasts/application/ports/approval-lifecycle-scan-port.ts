@@ -14,6 +14,7 @@
  */
 import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
+import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 
 /** One E-Blast awaiting the member, as the scan found it. */
 export interface AwaitingApprovalCandidate {
@@ -35,7 +36,7 @@ export interface AwaitingApprovalCandidate {
 export interface AwaitingApprovalScanQuery {
   readonly enteredAtOrBefore: Date;
   readonly enteredAfter?: Date;
-  readonly reminderStageBelow?: number;
+  readonly reminderStageBelow?: MemberReminderStage;
   readonly limit: number;
 }
 

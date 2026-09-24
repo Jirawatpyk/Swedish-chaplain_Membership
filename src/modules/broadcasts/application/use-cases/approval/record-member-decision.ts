@@ -59,6 +59,7 @@ import {
   validateDecisionReason,
   type MemberDecision,
   type MemberDecisionKind,
+  type ReasonBounds,
 } from '../../../domain/approval/member-decision';
 import { hasDispatchBegun, hasSendingStarted } from '../../../domain/stage/in-progress-statuses';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
@@ -109,7 +110,7 @@ export interface RecordMemberDecisionOutput {
 
 export type RecordMemberDecisionError =
   | { readonly kind: 'reason_required' }
-  | { readonly kind: 'reason_too_long'; readonly max: 500 | 2000 }
+  | { readonly kind: 'reason_too_long'; readonly max: ReasonBounds['max'] }
   | { readonly kind: 'not_found' }
   | { readonly kind: 'sending_started'; readonly status: BroadcastStatus }
   | {
@@ -134,9 +135,9 @@ export async function recordMemberDecision(
   input: RecordMemberDecisionInput,
 ): Promise<Result<RecordMemberDecisionOutput, RecordMemberDecisionError>> {
   const slug = deps.tenant.slug;
-  // A blank reason is no reason: NULL for an approval note (never an empty
-  // string the CHECK would refuse), `reason_required` for the other two.
-  const reason = validateDecisionReason(input.decision, input.reason?.trim() ? input.reason : null);
+  // A blank reason is no reason (the Domain decides): NULL for an approval
+  // note, `reason_required` for the other two.
+  const reason = validateDecisionReason(input.decision, input.reason);
   if (!reason.ok) {
     return err(reason.error.code === 'reason_too_long' ? { kind: 'reason_too_long', max: reason.error.max } : { kind: 'reason_required' });
   }

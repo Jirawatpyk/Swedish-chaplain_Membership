@@ -106,7 +106,7 @@ describe('T042 — the proposal, the floor and the difference (FR-016/017/018)',
     const res = await schedule({ mode: 'schedule', scheduledFor: confirmed.toISOString() });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      stage: 'approved',
+      status: 'approved',
       confirmedSendAt: confirmed.toISOString(),
       proposedSendAt: PROPOSED.toISOString(),
       differs: true,
@@ -148,7 +148,7 @@ describe('T060 — the promotion (FR-012a E1): member_approved → approved', ()
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      stage: 'approved',
+      status: 'approved',
       confirmedSendAt: NOW.toISOString(),
       proposedSendAt: PROPOSED.toISOString(),
       differs: true,
@@ -203,7 +203,7 @@ describe('T060 — from approved: change the time, or cancel it', () => {
     const res = await schedule({ mode: 'cancel' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      stage: 'changes_requested',
+      status: 'changes_requested',
       confirmedSendAt: null,
       proposedSendAt: PROPOSED.toISOString(),
       differs: false,

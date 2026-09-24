@@ -151,12 +151,12 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
 
       const staff = { broadcastId: asBroadcastId(id), actorUserId: MARKETER, actorRole: 'marketing', requestId: null };
       const cancelled = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { ...staff, mode: { mode: 'cancel' } });
-      expect(cancelled.ok ? cancelled.value.stage : cancelled.error).toEqual({ kind: 'sending_started', status: 'approved' });
+      expect(cancelled.ok ? cancelled.value.status : cancelled.error).toEqual({ kind: 'sending_started', status: 'approved' });
       const retimed = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), {
         ...staff,
         mode: { mode: 'schedule', scheduledFor: new Date(Date.now() + 2 * 3_600_000) },
       });
-      expect(retimed.ok ? retimed.value.stage : retimed.error).toEqual({ kind: 'sending_started', status: 'approved' });
+      expect(retimed.ok ? retimed.value.status : retimed.error).toEqual({ kind: 'sending_started', status: 'approved' });
 
       const restarted = await startFormattedVersion(
         { ...makeStartFormattedVersionDeps(tenant.ctx.slug), memberApprovalEnabled: true },

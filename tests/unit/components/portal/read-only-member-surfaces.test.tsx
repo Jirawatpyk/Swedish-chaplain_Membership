@@ -24,6 +24,7 @@ import { AcknowledgementBannerClient } from '@/app/(member)/portal/_components/m
 import { ResendInvoiceButton } from '@/app/(member)/portal/invoices/_components/resend-invoice-button';
 import { RenewalRemindersToggle } from '@/app/(member)/portal/preferences/renewals/_components/renewal-reminders-toggle';
 import { CancelBroadcastDialog } from '@/components/broadcast/cancel-broadcast-dialog';
+import { MemberSignOffActions } from '@/components/broadcast/approval/member-sign-off-actions';
 import { DataExportPanel, type DataExportLabels } from '@/components/data-export/data-export-panel';
 import { DirectoryLogoControl } from '@/components/directory/directory-logo-control';
 import { DirectoryVisibilityForm } from '@/components/directory/directory-visibility-form';
@@ -132,6 +133,26 @@ const SURFACES: readonly Surface[] = [
         target: { value: 'Spring mixer' },
       });
       fireEvent.click(byName(en.portal.broadcasts.detail.cancelDialog.confirm));
+    },
+  },
+  // F119 (PR #392 review C1) — the member's E-Blast decision: approve,
+  // request changes and withdraw approval share one POST, so one row covers
+  // the mapping all three go through.
+  {
+    name: 'E-Blast sign-off decision',
+    ui: () => (
+      <MemberSignOffActions
+        broadcastId="b1"
+        subject="Spring mixer"
+        version={{ id: 'v1', versionNo: 1 }}
+        canDecide
+        canWithdrawApproval={false}
+        canWithdrawEblast={false}
+      />
+    ),
+    act: async () => {
+      fireEvent.click(screen.getByTestId('eblast-approve'));
+      fireEvent.click(await screen.findByTestId('eblast-approve-confirm'));
     },
   },
   {
