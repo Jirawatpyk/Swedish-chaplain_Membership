@@ -25,9 +25,11 @@
  *   ┌───────────────────────────────────────────┐
  *   │ [ ] Q3 Newsletter               [Awaiting]  │  select checkbox (if actionable+!readOnly) · subject link · status badge
  *   │     Acme Co · Member                        │  memberDisplayName + actorRoleLabel, unlabelled subtitle (no i18n key — mirrors the bare subject)
+ *   │ Whose turn  Marketing                       │  F119 T117 — "—" when nobody is waiting
+ *   │ Time in stage  [30h waiting]                │  the SLA badge (stalled / aging) or the plain duration
  *   │ Audience  All members                       │
  *   │ Recipients  42                              │
- *   │ Submitted  1 Aug 2026, 07:00  [Waiting 30h] │  age badge only when SLA-flagged (Smart-3)
+ *   │ Submitted  1 Aug 2026, 07:00                │
  *   │ ─────────────────────────────────────────  │
  *   │                        [Approve] [Reject]  │  ReviewActions (unchanged), actionable + !readOnly only
  *   └───────────────────────────────────────────┘
@@ -55,13 +57,13 @@
 import Link from 'next/link';
 import type { Table as ReactTableInstance } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { Clock, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
 import type { EnrichedQueueRow } from './queue-table-client';
+import { EmptySentinel, TimeInStage } from './queue-row-cells';
 
 export interface QueueCardListProps {
   /** The SAME `useReactTable` instance `QueueTableClient` builds — see the module docstring. */
@@ -136,30 +138,26 @@ export function QueueCardList({
                       {original.statusBadgeLabel}
                     </Badge>
                   </div>
+                  {/* F119 T117 (FR-026) — at phone width the card carries
+                      whose turn and time in stage beside member, subject and
+                      stage; round and the two send times live on the detail
+                      page (T115). The SLA badge travels with time in stage. */}
+                  <LabeledRow label={t('whoseTurnLabel')}>
+                    {original.whoseTurnLabel !== null ? (
+                      <span className="text-foreground">{original.whoseTurnLabel}</span>
+                    ) : (
+                      <EmptySentinel />
+                    )}
+                  </LabeledRow>
+                  <LabeledRow label={t('timeInStageLabel')}>
+                    <TimeInStage row={original} />
+                  </LabeledRow>
                   <LabeledRow label={t('audienceLabel')}>{original.segmentLabel}</LabeledRow>
                   <LabeledRow label={t('recipientsLabel')}>
                     <span className="tabular-nums">{original.recipientCount}</span>
                   </LabeledRow>
                   <LabeledRow label={t('submittedLabel')}>
                     <span className="tabular-nums">{original.submittedAtFormatted}</span>
-                    {original.ageBadge ? (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'ml-2 inline-flex items-center gap-1 align-middle text-xs',
-                          original.ageBadge.variant === 'red'
-                            ? 'border-destructive/40 bg-destructive-surface text-destructive'
-                            : 'border-warning/40 bg-warning-surface text-warning',
-                        )}
-                      >
-                        {original.ageBadge.variant === 'red' ? (
-                          <AlertCircle className="h-3 w-3" aria-hidden="true" />
-                        ) : (
-                          <Clock className="h-3 w-3" aria-hidden="true" />
-                        )}
-                        {original.ageBadge.label}
-                      </Badge>
-                    ) : null}
                   </LabeledRow>
                   {showActions ? (
                     <div className="flex justify-end">

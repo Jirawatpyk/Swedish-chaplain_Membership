@@ -66,6 +66,13 @@ const base: EnrichedQueueRow = {
   statusBadgeVariant: 'secondary',
   statusBadgeLabel: 'Submitted',
   actionable: true,
+  whoseTurnLabel: 'Marketing',
+  timeInStageLabel: '3 h',
+  round: 0,
+  proposedSendAtFormatted: null,
+  confirmedSendAtFormatted: null,
+  lastActivityFormatted: '1 Aug 2026, 07:00',
+  deliverySummary: null,
 };
 const rows = [base, { ...base, broadcastId: 'b2', subject: 'Hi2' }];
 // columnLabels now omits the bulk.* strings (client translates them):
@@ -75,7 +82,13 @@ const columnLabels = {
   subject: 'Subject',
   segment: 'Audience',
   recipientCount: 'Recipients',
-  status: 'Status',
+  status: 'Stage',
+  whoseTurn: 'Whose turn',
+  timeInStage: 'Time in stage',
+  round: 'Round',
+  proposedSendAt: 'Proposed send',
+  confirmedSendAt: 'Confirmed send',
+  lastActivity: 'Last activity',
   actions: 'Actions',
   select: 'Select broadcast',
   tableAria: 'Broadcast review queue',

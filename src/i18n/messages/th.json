@@ -3201,9 +3201,22 @@
         "emptyTitle": "ไม่มีรายการรอตรวจสอบ",
         "totalPending": "{count} รายการรอตรวจ",
         "tableAria": "คิวตรวจสอบ E-Blast",
+        "whoseTurn": {
+          "marketing": "ฝ่ายการตลาด",
+          "member": "สมาชิก"
+        },
+        "timeInStage": {
+          "hours": "{hours} ชม.",
+          "days": "{days} วัน"
+        },
+        "delivery": {
+          "summary": "ผู้รับ {recipients} ราย · ส่งถึง {delivered} · ตีกลับ {bounced} · ร้องเรียน {complained}"
+        },
+        "resultsAnnouncement": "{count, plural, =0 {ไม่มี E-Blast ในมุมมองนี้} other {E-Blast # รายการในมุมมองนี้}}{stalled, plural, =0 {} other {, ค้าง # รายการ}}",
+        "stalledSummary": "ค้าง {count} รายการในมุมมองนี้",
         "ageBadge": {
           "aging": "รอ {hours} ชม.",
-          "overdue": "{hours} ชม. — เกินกำหนด"
+          "stalled": "ค้าง — {days} วัน"
         },
         "bulk": {
           "selectAria": "เลือก E-Blast",
@@ -3250,16 +3263,20 @@
           "audienceLabel": "กลุ่มผู้รับ",
           "recipientsLabel": "ผู้รับ",
           "submittedLabel": "ส่งเมื่อ",
-          "statusLabel": "สถานะ"
+          "statusLabel": "ขั้นตอน",
+          "whoseTurnLabel": "รอฝ่าย",
+          "timeInStageLabel": "อยู่ในขั้นตอนนี้"
         },
         "filters": {
           "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",
-          "statusLabel": "สถานะ",
+          "statusLabel": "ขั้นตอน",
           "memberLabel": "สมาชิก",
           "memberAll": "สมาชิกทั้งหมด",
           "fromDate": "จาก",
           "toDate": "ถึง",
-          "reset": "รีเซ็ตเป็นค่าเริ่มต้น"
+          "reset": "รีเซ็ตเป็นค่าเริ่มต้น",
+          "upcomingSends": "กำหนดส่งที่จะถึง",
+          "chipCount": "{count} รายการ"
         },
         "columns": {
           "submittedAt": "ส่งเมื่อ",
@@ -3267,7 +3284,13 @@
           "subject": "หัวข้อ",
           "segment": "ผู้รับ",
           "recipientCount": "จำนวนผู้รับ",
-          "status": "สถานะ",
+          "status": "ขั้นตอน",
+          "whoseTurn": "รอฝ่าย",
+          "timeInStage": "อยู่ในขั้นตอนนี้",
+          "round": "รอบ",
+          "proposedSendAt": "เวลาส่งที่เสนอ",
+          "confirmedSendAt": "เวลาส่งที่ยืนยัน",
+          "lastActivity": "ความเคลื่อนไหวล่าสุด",
           "actions": "การดำเนินการ"
         },
         "status": {

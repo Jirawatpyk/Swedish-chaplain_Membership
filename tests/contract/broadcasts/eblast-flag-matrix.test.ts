@@ -287,6 +287,10 @@ describe('the existing E-Blast suite runs flag-off, and nothing it exercises rea
       // T132 — the staff nav's E-Blast waiting count stays hidden while the
       // flag is off AND no row is in an approval-round stage (R18). Display
       // only: it gates no write and no email.
+      // T116 — `readEblastStageChips`, in the same file, hands the queue's
+      // chip strip the flag beside the per-stage counts, so a new-stage chip
+      // follows the same "flag ON or rows exist" rule. Also display only: a
+      // hidden chip filters nothing the URL cannot still ask for.
       'src/lib/eblast-waiting-count.ts',
       'src/modules/broadcasts/index.ts',
       'src/modules/broadcasts/infrastructure/feature-flags.ts',

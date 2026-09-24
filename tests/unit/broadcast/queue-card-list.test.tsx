@@ -74,6 +74,13 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     statusBadgeVariant: 'secondary',
     statusBadgeLabel: 'Awaiting review',
     actionable: true,
+    whoseTurnLabel: 'Marketing',
+    timeInStageLabel: '3 h',
+    round: 0,
+    proposedSendAtFormatted: null,
+    confirmedSendAtFormatted: null,
+    lastActivityFormatted: '1 Aug 2026, 07:00',
+    deliverySummary: null,
     ...overrides,
   };
 }

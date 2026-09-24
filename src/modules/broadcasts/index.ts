@@ -298,6 +298,20 @@ export {
   DELIVERABLE_RECIPIENTS_PER_TICK,
 } from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter, MarketingQueueCounts } from './application/ports/broadcast-approval-counter';
+// F119 T116 / T117 / T119 — the staff dashboard (contracts/dashboard-and-notifications.md § 1):
+// per-stage counts, batched delivery results, time in stage and the stalled flag.
+export type { BroadcastQueueReads, DeliveryResult } from './application/ports/broadcast-queue-reads';
+export { makeBroadcastQueueReads } from './infrastructure/broadcasts-deps';
+export type { ListByTenantStatusSort } from './application/ports/broadcasts-repo';
+export {
+  stageAgeOf,
+  SLA_AMBER_HOURS,
+  SLA_RED_HOURS,
+  MEMBER_STALLED_HOURS,
+  type StageAge,
+  type StageAgeLevel,
+} from './domain/stage/stage-age';
+export { hasConfirmedSendTime } from './domain/stage/broadcast-stage';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------
 export {

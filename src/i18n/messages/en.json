@@ -3201,9 +3201,22 @@
         "emptyTitle": "Queue is clear",
         "totalPending": "{count} pending",
         "tableAria": "Broadcast review queue",
+        "whoseTurn": {
+          "marketing": "Marketing",
+          "member": "Member"
+        },
+        "timeInStage": {
+          "hours": "{hours} h",
+          "days": "{days, plural, one {# day} other {# days}}"
+        },
+        "delivery": {
+          "summary": "{recipients, plural, one {# recipient} other {# recipients}} · {delivered} delivered · {bounced} bounced · {complained} complained"
+        },
+        "resultsAnnouncement": "{count, plural, =0 {No E-Blasts in this view} one {# E-Blast in this view} other {# E-Blasts in this view}}{stalled, plural, =0 {} other {, # stalled}}",
+        "stalledSummary": "{count, plural, one {# stalled in this view} other {# stalled in this view}}",
         "ageBadge": {
           "aging": "{hours}h waiting",
-          "overdue": "{hours}h — overdue"
+          "stalled": "Stalled — {days, plural, one {# day} other {# days}}"
         },
         "bulk": {
           "selectAria": "Select broadcast",
@@ -3250,16 +3263,20 @@
           "audienceLabel": "Audience",
           "recipientsLabel": "Recipients",
           "submittedLabel": "Submitted",
-          "statusLabel": "Status"
+          "statusLabel": "Stage",
+          "whoseTurnLabel": "Whose turn",
+          "timeInStageLabel": "Time in stage"
         },
         "filters": {
           "formAriaLabel": "Broadcast queue filters",
-          "statusLabel": "Status",
+          "statusLabel": "Stage",
           "memberLabel": "Member",
           "memberAll": "All members",
           "fromDate": "From",
           "toDate": "To",
-          "reset": "Reset filters"
+          "reset": "Reset filters",
+          "upcomingSends": "Upcoming sends",
+          "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}"
         },
         "columns": {
           "submittedAt": "Submitted",
@@ -3267,7 +3284,13 @@
           "subject": "Subject",
           "segment": "Audience",
           "recipientCount": "Recipients",
-          "status": "Status",
+          "status": "Stage",
+          "whoseTurn": "Whose turn",
+          "timeInStage": "Time in stage",
+          "round": "Round",
+          "proposedSendAt": "Proposed send",
+          "confirmedSendAt": "Confirmed send",
+          "lastActivity": "Last activity",
           "actions": "Actions"
         },
         "status": {

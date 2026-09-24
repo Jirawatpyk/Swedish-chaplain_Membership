@@ -31,7 +31,12 @@ import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { canPerform } from '@/lib/rbac';
 import type { Role } from '@/modules/auth/domain/role';
-import { isEblastMemberApprovalEnabled, makeBroadcastApprovalCounter } from '@/modules/broadcasts';
+import {
+  isEblastMemberApprovalEnabled,
+  makeBroadcastApprovalCounter,
+  makeBroadcastQueueReads,
+  type BroadcastStatus,
+} from '@/modules/broadcasts';
 import type { TenantContext } from '@/modules/tenants';
 
 export type EblastWaitingHiddenReason = 'feature_off' | 'not_permitted' | 'flag_off';
@@ -89,5 +94,38 @@ export async function readEblastWaitingCountForNav(
     return UNAVAILABLE;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * F119 T116 (FR-025; contracts/dashboard-and-notifications.md § 1.1, research
+ * R18) — the queue's per-stage chip counts, with the approval-round flag the
+ * chip strip needs to apply the SAME "flag ON or rows exist" rule as the nav
+ * badge above: a new-stage chip is offered while the flag is on, or while the
+ * tenant has a row in that stage. The rule is applied per chip by
+ * `queue-filters.tsx`, which is handed both inputs; this is the one place they
+ * are read.
+ *
+ * Discriminated like the nav read: `unavailable` is a failed read (logged
+ * under the caller's errorId), never "zero rows" — the page renders the chips
+ * without numbers and offers every stage, because hiding a stage an in-flight
+ * E-Blast sits in is the worse failure.
+ */
+export type EblastStageChips =
+  | {
+      readonly kind: 'ok';
+      readonly counts: Readonly<Record<BroadcastStatus, number>>;
+      readonly approvalRoundEnabled: boolean;
+    }
+  | { readonly kind: 'unavailable'; readonly approvalRoundEnabled: boolean };
+
+export async function readEblastStageChips(tenant: TenantContext, errorId: string): Promise<EblastStageChips> {
+  const approvalRoundEnabled = isEblastMemberApprovalEnabled();
+  try {
+    const counts = await makeBroadcastQueueReads(tenant.slug).countByStatus(tenant);
+    return { kind: 'ok', counts, approvalRoundEnabled };
+  } catch (e) {
+    logger.error({ errorId, tenantId: tenant.slug, err: errKind(e) }, 'broadcasts.stage-counts: read failed');
+    return { kind: 'unavailable', approvalRoundEnabled };
   }
 }

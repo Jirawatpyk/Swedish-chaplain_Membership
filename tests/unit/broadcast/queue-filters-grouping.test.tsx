@@ -56,7 +56,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('splits the status chips into an in-review group and a terminal group', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -90,7 +90,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('renders one checkbox per non-retired status across the two groups', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -104,8 +104,10 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
     // Positive controls: the count alone passes if the strip renders the wrong
     // eight, and it also passes if a live status were retired by mistake.
     // F119 (0305): 8 → 13 — the five approval-round statuses are live, so
-    // each is offered. Which GROUP they sit in is T116's (queue-filters
-    // `IN_REVIEW_STATUSES`); until then they derive into "Closed".
+    // each is offered (here with the round switched on; the flag-off rule is
+    // `queue-filters-flag-visibility.test.tsx`). T116: the four in-progress
+    // ones sit under "In review", `expired_no_member_response` under "Closed"
+    // — pinned in `tests/contract/broadcasts/eblast-dashboard-rows.test.ts`.
     expect(offered).toHaveLength(13);
     expect(offered).toContain('awaiting_member_approval');
     expect(offered).toContain('expired_no_member_response');
@@ -124,7 +126,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('renders exactly OFFERED_BROADCAST_STATUSES.length chips — the number the loading skeleton reserves', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -140,7 +142,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('keeps the Reset button adjacent to the chip strip, not pushed to the row edge', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} />
+        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 

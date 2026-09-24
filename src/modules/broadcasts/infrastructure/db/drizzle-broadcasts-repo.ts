@@ -15,7 +15,8 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
@@ -32,6 +33,7 @@ import type {
   BroadcastsRepo,
   ListByTenantStatusOpts,
   ListByTenantStatusResult,
+  ListByTenantStatusSort,
   NewBroadcastDraftInput,
 } from '../../application/ports/broadcasts-repo';
 import {
@@ -335,7 +337,85 @@ async function throwConcurrentMutation(
   throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probeRow.status);
 }
 
-// Cursor format: base64 of `submittedAt-iso|broadcast-id`
+/**
+ * The admin list's orders (F119 T117 / T119). Each names the column the keyset
+ * compares on, its direction, and how to read that column off the last row of
+ * a page — so the cursor always carries the value the ORDER BY sorts on. (It
+ * used to carry `submitted_at` for every sort, which made page 2 of
+ * `created_at_desc` compare on a column it was not ordered by.)
+ */
+const LIST_SORTS: Readonly<
+  Record<
+    ListByTenantStatusSort,
+    {
+      readonly column: AnyPgColumn;
+      readonly direction: 'asc' | 'desc';
+      readonly keyOf: (row: BroadcastRow) => Date | null;
+    }
+  >
+> = {
+  submitted_at_asc: { column: broadcasts.submittedAt, direction: 'asc', keyOf: (r) => r.submittedAt },
+  submitted_at_desc: { column: broadcasts.submittedAt, direction: 'desc', keyOf: (r) => r.submittedAt },
+  created_at_desc: { column: broadcasts.createdAt, direction: 'desc', keyOf: (r) => r.createdAt },
+  stage_entered_at_asc: { column: broadcasts.stageEnteredAt, direction: 'asc', keyOf: (r) => r.stageEnteredAt },
+  scheduled_for_asc: { column: broadcasts.scheduledFor, direction: 'asc', keyOf: (r) => r.scheduledFor },
+};
+
+function pageLimit(pageSize: number): number {
+  return Math.max(1, Math.min(pageSize, 100));
+}
+
+/**
+ * F119 T114 — the admin list statement (`/admin/broadcasts` and
+ * `GET /api/admin/broadcasts`), exported so the live EXPLAIN in
+ * `eblast-dashboard-pagination.test.ts` runs the statement
+ * `listByTenantStatus` runs — there is no second read path.
+ *
+ * The status filter compares the ENUM column (`inArray`), not `status::text`:
+ * a cast on the column hides it from every `(tenant_id, status, …)` index and
+ * from the per-status partial indexes' predicate proof. Caveat measured by
+ * T114: inside `runInTenant` (RLS) `enum_eq` is not LEAKPROOF, so Postgres
+ * will not use `status = …` as an index CONDITION behind the policy's
+ * security barrier — only a partial index (`WHERE status = '…'`, proven at
+ * plan time) narrows on the stage there; `broadcasts_stage_queue_idx` serves
+ * as a `tenant_id`-prefix index. At SC-008's 1,000 rows the budget holds.
+ */
+export function adminQueueListQuery(tx: TenantTx, tenantId: string, opts: ListByTenantStatusOpts) {
+  const conditions: SQL[] = [eq(broadcasts.tenantId, tenantId)];
+  if (opts.statusFilter !== undefined && opts.statusFilter.length > 0) {
+    conditions.push(inArray(broadcasts.status, [...opts.statusFilter]));
+  }
+  if (opts.memberIdFilter !== undefined) {
+    conditions.push(eq(broadcasts.requestedByMemberId, opts.memberIdFilter));
+  }
+  if (opts.scheduledFrom !== undefined) {
+    conditions.push(gte(broadcasts.scheduledFor, opts.scheduledFrom));
+  }
+  const sort = LIST_SORTS[opts.sort ?? 'created_at_desc'];
+  const cursor = opts.cursor !== undefined ? decodeCursor(opts.cursor) : null;
+  if (cursor !== null) {
+    // A raw `sql` param skips the column's driver mapping, and the driver
+    // refuses a `Date` for a timestamptz slot — so the key goes over as ISO
+    // text with an explicit cast. (Passing the Date made every second page
+    // of this list fail; nothing had paged it until T114.)
+    const key = sql`${cursor.submittedAt === null ? null : cursor.submittedAt.toISOString()}::timestamptz`;
+    conditions.push(
+      sort.direction === 'asc'
+        ? sql`(${sort.column}, ${broadcasts.broadcastId}) > (${key}, ${cursor.broadcastId})`
+        : sql`(${sort.column}, ${broadcasts.broadcastId}) < (${key}, ${cursor.broadcastId})`,
+    );
+  }
+  const order = sort.direction === 'asc' ? asc : desc;
+  return tx
+    .select()
+    .from(broadcasts)
+    .where(and(...conditions))
+    .orderBy(order(sort.column), order(broadcasts.broadcastId))
+    .limit(pageLimit(opts.pageSize) + 1);
+}
+
+// Cursor format: base64 of `<sort-key-iso>|broadcast-id` (the key is the
+// value of the column the list is ordered by — see `LIST_SORTS`).
 function encodeCursor(submittedAt: Date | null, broadcastId: string): string {
   const iso = submittedAt === null ? '' : submittedAt.toISOString();
   return Buffer.from(`${iso}|${broadcastId}`, 'utf8').toString('base64url');
@@ -1084,58 +1164,15 @@ export function makeDrizzleBroadcastsRepo(
       opts: ListByTenantStatusOpts,
     ): Promise<ListByTenantStatusResult> {
       return runInTenant(ctx, async (tx) => {
-        const conditions = [eq(broadcasts.tenantId, tenantIdArg)];
-        if (opts.statusFilter !== undefined && opts.statusFilter.length > 0) {
-          conditions.push(
-            sql`${broadcasts.status}::text = ANY(ARRAY[${sql.join(
-              opts.statusFilter.map((s) => sql`${s}`),
-              sql`, `,
-            )}]::text[])`,
-          );
-        }
-        if (opts.memberIdFilter !== undefined) {
-          conditions.push(
-            eq(broadcasts.requestedByMemberId, opts.memberIdFilter),
-          );
-        }
-
-        const sort = opts.sort ?? 'created_at_desc';
-        const cursor =
-          opts.cursor !== undefined ? decodeCursor(opts.cursor) : null;
-
-        if (cursor !== null) {
-          if (sort === 'submitted_at_asc') {
-            conditions.push(
-              sql`(${broadcasts.submittedAt}, ${broadcasts.broadcastId}) > (${cursor.submittedAt}, ${cursor.broadcastId})`,
-            );
-          } else {
-            conditions.push(
-              sql`(${broadcasts.submittedAt}, ${broadcasts.broadcastId}) < (${cursor.submittedAt}, ${cursor.broadcastId})`,
-            );
-          }
-        }
-
-        const orderBy =
-          sort === 'submitted_at_asc'
-            ? [asc(broadcasts.submittedAt), asc(broadcasts.broadcastId)]
-            : sort === 'submitted_at_desc'
-              ? [desc(broadcasts.submittedAt), desc(broadcasts.broadcastId)]
-              : [desc(broadcasts.createdAt), desc(broadcasts.broadcastId)];
-
-        const limit = Math.max(1, Math.min(opts.pageSize, 100));
-        const rows = await tx
-          .select()
-          .from(broadcasts)
-          .where(and(...conditions))
-          .orderBy(...orderBy)
-          .limit(limit + 1);
+        const limit = pageLimit(opts.pageSize);
+        const rows = await adminQueueListQuery(tx, tenantIdArg, opts);
 
         const hasNext = rows.length > limit;
         const trimmed = hasNext ? rows.slice(0, limit) : rows;
         const last = trimmed[trimmed.length - 1];
         const nextCursor =
           hasNext && last !== undefined
-            ? encodeCursor(last.submittedAt, last.broadcastId)
+            ? encodeCursor(LIST_SORTS[opts.sort ?? 'created_at_desc'].keyOf(last), last.broadcastId)
             : null;
 
         return {

@@ -19,6 +19,9 @@ export interface QueueViewParams {
   readonly memberId?: string;
   readonly fromDate?: string;
   readonly toDate?: string;
+  /** F119 T119 — the Upcoming sends preset (`sort=scheduled_for&from=now`). */
+  readonly sort?: string;
+  readonly from?: string;
 }
 
 /**
@@ -32,6 +35,8 @@ export function isDefaultBroadcastView(p: QueueViewParams): boolean {
     p.status === undefined &&
     p.memberId === undefined &&
     p.fromDate === undefined &&
-    p.toDate === undefined
+    p.toDate === undefined &&
+    p.sort === undefined &&
+    p.from === undefined
   );
 }

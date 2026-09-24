@@ -3201,9 +3201,22 @@
         "emptyTitle": "Kön är tom",
         "totalPending": "{count} väntar",
         "tableAria": "Granskningskö för utskick",
+        "whoseTurn": {
+          "marketing": "Marknadsföring",
+          "member": "Medlem"
+        },
+        "timeInStage": {
+          "hours": "{hours} h",
+          "days": "{days, plural, one {# dag} other {# dagar}}"
+        },
+        "delivery": {
+          "summary": "{recipients, plural, one {# mottagare} other {# mottagare}} · {delivered} levererade · {bounced} studsade · {complained} klagomål"
+        },
+        "resultsAnnouncement": "{count, plural, =0 {Inga utskick i den här vyn} one {# utskick i den här vyn} other {# utskick i den här vyn}}{stalled, plural, =0 {} other {, # har fastnat}}",
+        "stalledSummary": "{count, plural, one {# har fastnat i den här vyn} other {# har fastnat i den här vyn}}",
         "ageBadge": {
           "aging": "{hours} h väntar",
-          "overdue": "{hours} h — försenad"
+          "stalled": "Fastnat — {days, plural, one {# dag} other {# dagar}}"
         },
         "bulk": {
           "selectAria": "Välj utskick",
@@ -3250,16 +3263,20 @@
           "audienceLabel": "Målgrupp",
           "recipientsLabel": "Mottagare",
           "submittedLabel": "Skickat",
-          "statusLabel": "Status"
+          "statusLabel": "Steg",
+          "whoseTurnLabel": "Vems tur",
+          "timeInStageLabel": "Tid i steget"
         },
         "filters": {
           "formAriaLabel": "Filter för utskickskö",
-          "statusLabel": "Status",
+          "statusLabel": "Steg",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
           "fromDate": "Från",
           "toDate": "Till",
-          "reset": "Återställ filter"
+          "reset": "Återställ filter",
+          "upcomingSends": "Kommande utskick",
+          "chipCount": "{count, plural, one {# utskick} other {# utskick}}"
         },
         "columns": {
           "submittedAt": "Inskickad",
@@ -3267,7 +3284,13 @@
           "subject": "Ämne",
           "segment": "Mottagare",
           "recipientCount": "Mottagare",
-          "status": "Status",
+          "status": "Steg",
+          "whoseTurn": "Vems tur",
+          "timeInStage": "Tid i steget",
+          "round": "Runda",
+          "proposedSendAt": "Föreslagen sändning",
+          "confirmedSendAt": "Bekräftad sändning",
+          "lastActivity": "Senaste aktivitet",
           "actions": "Åtgärder"
         },
         "status": {

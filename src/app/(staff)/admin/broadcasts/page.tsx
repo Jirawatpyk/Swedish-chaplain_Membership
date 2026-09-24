@@ -6,7 +6,7 @@ import { LayoutTemplateIcon } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
-import { QueueTable, type QueueRow } from '@/components/broadcast/admin/queue-table';
+import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
@@ -20,10 +20,11 @@ import { isF71aUs7Enabled } from '@/modules/broadcasts';
 import {
   BROADCAST_STATUSES,
   type BroadcastStatus,
-  makeGetBroadcastDeps,
   membersBridge,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
+import { loadAdminBroadcastQueue, upcomingFrom } from '@/lib/admin-broadcast-queue';
+import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { unstable_cache } from 'next/cache';
@@ -107,6 +108,14 @@ interface SearchParams {
   readonly fromDate?: string;
   readonly toDate?: string;
   readonly cursor?: string;
+  /**
+   * F119 T119 — `sort=scheduled_for&from=now` is the Upcoming sends preset
+   * (with `status=approved`): scheduled E-Blasts from now on, in send-time
+   * order. Any other `sort` is the dashboard's default order (longest in
+   * stage first); any other `from` is no bound.
+   */
+  readonly sort?: string;
+  readonly from?: string;
 }
 
 export default async function AdminBroadcastsPage({
@@ -151,62 +160,28 @@ export default async function AdminBroadcastsPage({
     (BROADCAST_STATUSES as readonly string[]).includes(s),
   ) as BroadcastStatus[];
 
-  const deps = makeGetBroadcastDeps(tenant.slug);
-  const listResult = await deps.broadcastsRepo.listByTenantStatus(tenant.slug, {
-    pageSize: 50,
-    ...(status.length > 0 && {
-      statusFilter: status as ReadonlyArray<BroadcastStatus>,
+  // F119 T117 / T119 — ONE projection for the page and the list API
+  // (`loadAdminBroadcastQueue`): the FR-026 columns, the member name, and the
+  // delivery results of sent rows. Default order: longest in the current
+  // stage first (on the default Awaiting-review view that is the old
+  // submitted-first order — submit stamps `stage_entered_at`).
+  const scheduledFrom = upcomingFrom(params.from);
+  const [listResult, stageChips] = await Promise.all([
+    loadAdminBroadcastQueue(tenant, {
+      statusFilter: status,
+      pageSize: 50,
+      sort: params.sort === 'scheduled_for' ? 'scheduled_for_asc' : 'stage_entered_at_asc',
+      ...(params.memberId !== undefined && { memberId: params.memberId }),
+      ...(params.cursor !== undefined && { cursor: params.cursor }),
+      ...(scheduledFrom !== undefined && { scheduledFrom }),
     }),
-    ...(params.memberId !== undefined && { memberIdFilter: params.memberId }),
-    ...(params.cursor !== undefined && { cursor: params.cursor }),
-    sort: 'submitted_at_asc',
-  });
+    // F119 T116 (FR-025, R18) — the per-stage chip counts + the flag the chip
+    // strip's "flag ON or rows exist" rule needs. A failed read degrades to
+    // chips without numbers; it never fails the page.
+    readEblastStageChips(tenant, 'M119.admin.broadcasts.stage_counts_failed'),
+  ]);
 
-  // Member display-name map for queue rows.
-  //
-  // R6 staff-review W-P1 — The prior implementation issued a SECOND
-  // `runInTenant` round-trip after the queue list; for ≤50 rows the
-  // second RTT (~25–40ms Bangkok→Singapore) was negligible but
-  // structurally an N+1 design smell that did not scale to multi-
-  // tenant queues. We coalesce both queries into a single
-  // `runInTenant` callback so they share the connection acquisition +
-  // tenant context bind, eliminating the second round-trip even when
-  // we keep two separate SELECTs (one against `broadcasts`, one
-  // against `members` filtered by the just-fetched IDs). The
-  // `members` lookup is bounded by `MAX_PAGE_SIZE` (≤100 IDs) so the
-  // ANY-array + composite PK on `(tenant_id, member_id)` keeps it
-  // index-only.
-  const memberIds = Array.from(
-    new Set(listResult.rows.map((r) => r.requestedByMemberId)),
-  );
-  const memberDisplayMap = new Map<string, string>();
-  if (memberIds.length > 0) {
-    const memberRows = (await runInTenant(tenant, async (tx) =>
-      tx.execute(sql`
-        SELECT member_id, company_name FROM members
-        WHERE tenant_id = ${tenant.slug}
-          AND member_id::text = ANY(ARRAY[${sql.join(
-            memberIds.map((id) => sql`${id}`),
-            sql`, `,
-          )}]::text[])
-      `),
-    )) as unknown as Array<{ member_id: string; company_name: string }>;
-    for (const r of memberRows) memberDisplayMap.set(r.member_id, r.company_name);
-  }
-
-  const rows: ReadonlyArray<QueueRow> = listResult.rows.map((row) => ({
-    broadcastId: row.broadcastId as string,
-    status: row.status,
-    subject: row.subject,
-    requestedByMemberId: row.requestedByMemberId,
-    requestedByMemberDisplayName:
-      memberDisplayMap.get(row.requestedByMemberId) ?? row.requestedByMemberId,
-    actorRole: row.actorRole,
-    segmentType: row.segmentType,
-    estimatedRecipientCount: row.estimatedRecipientCount,
-    submittedAt: row.submittedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-  }));
+  const rows = listResult.items;
 
   // SLA stats — R6 W-P2: 5-min cached PERCENTILE_CONT aggregate (see
   // `computeSlaStatsForTenant` above). Result is per-tenant.
@@ -387,7 +362,11 @@ export default async function AdminBroadcastsPage({
         <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
       )}
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
-      <QueueFilters memberOptions={memberOptions} />
+      <QueueFilters
+        memberOptions={memberOptions}
+        stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
+        approvalRoundEnabled={stageChips.approvalRoundEnabled}
+      />
       {/* Round 2 (UX M-1): the warning travels to the decision point — the
           bulk-approve confirm dialog repeats it when the halt state is
           unknown. A NEW prop, not `readOnly`: "manager cannot approve" and

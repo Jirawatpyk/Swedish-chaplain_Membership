@@ -24,7 +24,8 @@
  * (TanStack needs somewhere to hold it), but a parent (`QueueWithBulk`)
  * now mirrors it via three new optional props:
  *   - `enableSelection` (defaults to `!readOnly`, the pre-Task-6 gate) —
- *     whether the `select` column + sr-only announcer render at all.
+ *     whether the `select` column renders at all. (F119 T109: the sr-only
+ *     announcer no longer follows it — it is mounted for every viewer.)
  *   - `onSelectionChange(ids)` — fired in an effect whenever the local
  *     `rowSelection` changes, so the parent always has the current
  *     broadcastId list. Cross-PR hotfix (broadcast-queue-crosspr-hotfix):
@@ -54,7 +55,7 @@
  * so the ICU-plural count interpolates correctly.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
@@ -77,6 +78,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
 import { QueueCardList } from './queue-card-list';
+import { EmptySentinel, TimeInStage } from './queue-row-cells';
 
 type BadgeVariant =
   | 'default'
@@ -95,8 +97,13 @@ export interface EnrichedQueueRow {
   readonly submittedAtFormatted: string;
   /**
    * Type-3 (round-3) — single nullable struct so `(label, variant)`
-   * cannot drift apart. Null = no badge to render. Populated for
-   * `submitted` rows ≥24 h old (Smart-3 / FR-013 SLA).
+   * cannot drift apart. Null = no badge to render.
+   *
+   * F119 T117 / T118 — re-based on `stage_entered_at` and applied to EVERY
+   * waiting stage (`stageAgeOf`): `red` IS the stalled flag (marketing-held
+   * ≥ 48 h, member-held ≥ 3 days) and its label reads "Stalled — N days";
+   * `amber` is the 24 h marketing pre-warning, never counted or announced
+   * as stalled.
    */
   readonly ageBadge: {
     readonly label: string;
@@ -104,8 +111,21 @@ export interface EnrichedQueueRow {
   } | null;
   readonly statusBadgeVariant: BadgeVariant;
   readonly statusBadgeClassName?: string;
+  /** The FR-019 stage label (`approved` reads "Scheduled"). */
   readonly statusBadgeLabel: string;
   readonly actionable: boolean;
+  /** F119 T117 (FR-026) — "Marketing" / "Member"; null = nobody is waiting ("—"). */
+  readonly whoseTurnLabel: string | null;
+  /** Time in the current stage on a waiting stage; null ("—") otherwise. */
+  readonly timeInStageLabel: string | null;
+  /** Versions sent to the member so far; 0 renders "—" (never formatted). */
+  readonly round: number;
+  readonly proposedSendAtFormatted: string | null;
+  readonly confirmedSendAtFormatted: string | null;
+  /** `stage_entered_at`, tenant time zone. */
+  readonly lastActivityFormatted: string;
+  /** F119 T119 (FR-029) — "N recipients · N delivered · …" on sent rows; null elsewhere. */
+  readonly deliverySummary: string | null;
 }
 
 export interface QueueTableClientProps {
@@ -117,13 +137,27 @@ export interface QueueTableClientProps {
     readonly segment: string;
     readonly recipientCount: string;
     readonly status: string;
+    readonly whoseTurn: string;
+    readonly timeInStage: string;
+    readonly round: string;
+    readonly proposedSendAt: string;
+    readonly confirmedSendAt: string;
+    readonly lastActivity: string;
     readonly actions: string;
     readonly select: string;
     readonly tableAria: string;
   };
   readonly readOnly?: boolean;
   /**
-   * Task 6 — whether the `select` column + selection announcer render.
+   * F119 T109 — rendered in place of the table AND the card list when there
+   * are no rows. It lives here, not in the server wrapper, so a stage change
+   * that empties the list keeps the one live region below mounted (and able
+   * to say so) instead of swapping the whole component out.
+   */
+  readonly emptyState?: React.ReactNode;
+  /**
+   * Task 6 — whether the `select` column renders (the announcer is always
+   * mounted since F119 T109).
    * Defaults to `!readOnly` (the pre-Task-6 gate) when omitted, so direct
    * callers that don't opt into the selection lift (e.g. unit tests) keep
    * the original behaviour unchanged.
@@ -160,9 +194,11 @@ export function QueueTableClient({
   clearSelectionNonce,
   reselectIds,
   reselectNonce,
+  emptyState,
 }: QueueTableClientProps): React.ReactElement {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const tBulk = useTranslations('admin.broadcasts.queue.bulk');
+  const tQueue = useTranslations('admin.broadcasts.queue');
   const selectionEnabled = enableSelection ?? !readOnly;
 
   const columns = useMemo<ColumnDef<EnrichedQueueRow>[]>(() => {
@@ -206,41 +242,12 @@ export function QueueTableClient({
       });
     }
 
+    // F119 T117 — the FR-026 columns, in the order a reviewer scans them:
+    // who and what, where it stands and whose move it is, how long it has
+    // waited, then the round, the two send times and the last activity. The
+    // SLA badge moved from the submitted date to Time in stage, which is what
+    // it now measures (`stage_entered_at`, every waiting stage).
     base.push(
-      {
-        id: 'submittedAt',
-        header: columnLabels.submittedAt,
-        accessorKey: 'submittedAtFormatted',
-        cell: (ctx) => {
-          const row = ctx.row.original;
-          return (
-            <div className="flex flex-col gap-0.5">
-              <span className="text-muted-foreground tabular-nums">
-                {row.submittedAtFormatted}
-              </span>
-              {row.ageBadge ? (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'inline-flex items-center gap-1 self-start text-xs',
-                    row.ageBadge.variant === 'red'
-                      ? 'border-destructive/40 bg-destructive-surface text-destructive'
-                      : 'border-warning/40 bg-warning-surface text-warning',
-                  )}
-                >
-                  {/* UX-R2-7 (round-3) — non-color signal for color-blind users */}
-                  {row.ageBadge.variant === 'red' ? (
-                    <AlertCircle className="h-3 w-3" aria-hidden="true" />
-                  ) : (
-                    <Clock className="h-3 w-3" aria-hidden="true" />
-                  )}
-                  {row.ageBadge.label}
-                </Badge>
-              ) : null}
-            </div>
-          );
-        },
-      },
       {
         id: 'member',
         header: columnLabels.member,
@@ -270,6 +277,78 @@ export function QueueTableClient({
         ),
       },
       {
+        id: 'status',
+        header: columnLabels.status,
+        cell: (ctx) => (
+          <div className="flex flex-col gap-1">
+            <Badge
+              variant={ctx.row.original.statusBadgeVariant}
+              className={cn('self-start', ctx.row.original.statusBadgeClassName)}
+            >
+              {ctx.row.original.statusBadgeLabel}
+            </Badge>
+            {/* FR-029 — delivery results travel with the Sent stage. */}
+            {ctx.row.original.deliverySummary !== null ? (
+              <span className="text-xs tabular-nums">
+                {ctx.row.original.deliverySummary}
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        id: 'whoseTurn',
+        header: columnLabels.whoseTurn,
+        cell: (ctx) =>
+          ctx.row.original.whoseTurnLabel !== null ? (
+            <span>{ctx.row.original.whoseTurnLabel}</span>
+          ) : (
+            <EmptySentinel />
+          ),
+      },
+      {
+        id: 'timeInStage',
+        header: columnLabels.timeInStage,
+        cell: (ctx) => <TimeInStage row={ctx.row.original} />,
+      },
+      {
+        id: 'round',
+        header: columnLabels.round,
+        cell: (ctx) =>
+          ctx.row.original.round > 0 ? (
+            <span className="tabular-nums">{ctx.row.original.round}</span>
+          ) : (
+            <EmptySentinel />
+          ),
+      },
+      {
+        id: 'proposedSendAt',
+        header: columnLabels.proposedSendAt,
+        cell: (ctx) =>
+          ctx.row.original.proposedSendAtFormatted !== null ? (
+            <span className="tabular-nums">{ctx.row.original.proposedSendAtFormatted}</span>
+          ) : (
+            <EmptySentinel />
+          ),
+      },
+      {
+        id: 'confirmedSendAt',
+        header: columnLabels.confirmedSendAt,
+        cell: (ctx) =>
+          ctx.row.original.confirmedSendAtFormatted !== null ? (
+            <span className="tabular-nums">{ctx.row.original.confirmedSendAtFormatted}</span>
+          ) : (
+            <EmptySentinel />
+          ),
+      },
+      {
+        id: 'lastActivity',
+        header: columnLabels.lastActivity,
+        cell: (ctx) => (
+          <span className="tabular-nums">{ctx.row.original.lastActivityFormatted}</span>
+        ),
+      },
+      {
         id: 'segment',
         header: columnLabels.segment,
         accessorKey: 'segmentLabel',
@@ -286,15 +365,13 @@ export function QueueTableClient({
         ),
       },
       {
-        id: 'status',
-        header: columnLabels.status,
+        id: 'submittedAt',
+        header: columnLabels.submittedAt,
+        accessorKey: 'submittedAtFormatted',
         cell: (ctx) => (
-          <Badge
-            variant={ctx.row.original.statusBadgeVariant}
-            className={cn(ctx.row.original.statusBadgeClassName)}
-          >
-            {ctx.row.original.statusBadgeLabel}
-          </Badge>
+          <span className="text-muted-foreground tabular-nums">
+            {ctx.row.original.submittedAtFormatted}
+          </span>
         ),
       },
     );
@@ -430,12 +507,42 @@ export function QueueTableClient({
   // announcer is the sole region covering every transition. Precedent:
   // `members-table.tsx` selected-count region + `renewals/result-count-
   // announcer.tsx`.
-  const selectionAnnouncement = selectedIds.length > 0 ? bulkSelectedLabel : '';
-  const selectionAnnouncer = selectionEnabled ? (
-    // `data-testid`: the bulk-action bar mounts a SECOND permanently-mounted
-    // polite `role="status"` announcer (`7465ae9be`), so a selector on the
-    // role alone resolves to two elements (e2e strict-mode violation,
-    // 2026-09-10). The hook is the stable way to name THIS one.
+  //
+  // F119 T109 (FR-025) — the SAME region also announces a change of the list
+  // itself (a stage selected, a row approved away): "N E-Blasts in this view,
+  // M stalled". Never a second region. So it is mounted for EVERY viewer —
+  // a read-only manager changes stage too — and it announces whichever
+  // happened last: the list changing, or the selection changing. Nothing is
+  // announced on the first paint. Derived during render from the previous
+  // values (React's "adjust state when a prop changes" pattern) rather than
+  // in an effect with a run-once ref, which StrictMode's double mount defeats.
+  // `stalled` counts ONLY the red (stalled) badges: the amber pre-warning is
+  // never announced as stalled (FR-027).
+  const stalledCount = rows.filter((r) => r.ageBadge?.variant === 'red').length;
+  const resultKey = rows.map((r) => r.broadcastId).join('|');
+  const [announced, setAnnounced] = useState({
+    resultKey,
+    selectedCount: selectedIds.length,
+    text: '',
+  });
+  if (announced.resultKey !== resultKey || announced.selectedCount !== selectedIds.length) {
+    const listChanged = announced.resultKey !== resultKey;
+    setAnnounced({
+      resultKey,
+      selectedCount: selectedIds.length,
+      text: listChanged
+        ? tQueue('resultsAnnouncement', { count: rows.length, stalled: stalledCount })
+        : selectedIds.length > 0
+          ? bulkSelectedLabel
+          : '',
+    });
+  }
+  // `data-testid`: the bulk-action bar mounts a SECOND permanently-mounted
+  // polite `role="status"` announcer (`7465ae9be`) while a selection exists,
+  // so a selector on the role alone resolves to two elements (e2e
+  // strict-mode violation, 2026-09-10). The hook is the stable way to name
+  // THIS one.
+  const announcer = (
     <div
       className="sr-only"
       role="status"
@@ -443,13 +550,30 @@ export function QueueTableClient({
       aria-atomic="true"
       data-testid="queue-selection-announcer"
     >
-      {selectionAnnouncement}
+      {announced.text}
     </div>
-  ) : null;
+  );
+
+  if (rows.length === 0) {
+    return (
+      <>
+        {announcer}
+        {emptyState}
+      </>
+    );
+  }
 
   return (
     <>
-      {selectionAnnouncer}
+      {announcer}
+      {/* F119 T118 — the stalled count of this view: icon + text, the same
+          number the announcer speaks; amber rows are not in it. */}
+      {stalledCount > 0 ? (
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+          {tQueue('stalledSummary', { count: stalledCount })}
+        </p>
+      ) : null}
       {/* Task 4 — dual-render: desktop `<table>` hidden below `md`, mobile
           `QueueCardList` hidden at/above `md`. Both read from the SAME
           `table` instance built above, so a selection made in one
@@ -492,12 +616,17 @@ export function QueueTableClient({
                   // `members-table.tsx` "057 overflow fix" (`whitespace-normal
                   // break-words` replacing `whitespace-nowrap`).
                   const wrapSubject = cell.column.id === 'subject';
+                  // F119 T119 — the Stage cell carries the delivery results on
+                  // a sent row; let that line wrap under the badge instead of
+                  // widening the whole table.
+                  const wrapStage = cell.column.id === 'status';
                   return (
                     <TableCell
                       key={cell.id}
                       className={cn(
                         alignRight && 'text-right',
                         wrapSubject && 'max-w-[40ch] whitespace-normal break-words',
+                        wrapStage && 'min-w-[10rem] max-w-[16rem] whitespace-normal',
                       )}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

@@ -1,0 +1,95 @@
+/**
+ * F119 T112 (US4-AS4, US4-AS5, FR-028, FR-029, FR-036; contracts/
+ * dashboard-and-notifications.md § 1.1 "Upcoming sends" and § 1.2 "Delivery
+ * results").
+ *
+ *   - The Upcoming sends preset, `?status=approved&sort=scheduled_for&from=now`,
+ *     asks the list for scheduled E-Blasts from now on, in send-time order.
+ *     (The ORDER BY itself runs against live Postgres in
+ *     `tests/integration/broadcasts/eblast-dashboard-pagination.test.ts`.)
+ *   - A sent row carries recipients / delivered / bounced / complained from the
+ *     existing `broadcast_deliveries` aggregate — read in ONE batch for the
+ *     page, never per row — and a row that has not been sent carries none.
+ *   - No contact-level data: not in the response, not in any statement the
+ *     route issues (FR-036).
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { makeApprovalBroadcast } from '../../helpers/eblast-approval-fakes';
+import { dash, getQueue, resetDashboard } from '../../helpers/eblast-dashboard-route-harness';
+
+vi.mock('@/lib/rbac', async () => (await import('../../helpers/eblast-dashboard-route-harness')).rbacMock());
+vi.mock('@/lib/tenant-context', async () => (await import('../../helpers/eblast-dashboard-route-harness')).tenantContextMock());
+vi.mock('@/lib/logger', async () => (await import('../../helpers/eblast-dashboard-route-harness')).loggerMock());
+vi.mock('@/lib/db', async () => (await import('../../helpers/eblast-dashboard-route-harness')).dbMock());
+vi.mock('@/modules/broadcasts', async () =>
+  (await import('../../helpers/eblast-dashboard-route-harness')).broadcastsBarrelMock(),
+);
+
+const SENT_ID = '11111111-1111-4111-8111-00000000000a';
+const APPROVED_ID = '11111111-1111-4111-8111-00000000000b';
+
+beforeEach(() => {
+  resetDashboard();
+});
+
+describe('the Upcoming sends preset (T112, FR-028)', () => {
+  it('the upcoming preset orders by `scheduled_for`', async () => {
+    dash.rows = [makeApprovalBroadcast({ broadcastId: asBroadcastId(APPROVED_ID), status: 'approved' })];
+    const before = Date.now();
+    const { status } = await getQueue('?status=approved&sort=scheduled_for&from=now');
+    const after = Date.now();
+    expect(status).toBe(200);
+    const opts = dash.listCalls.at(-1)!.opts;
+    expect(opts['statusFilter']).toEqual(['approved']);
+    expect(opts['sort']).toBe('scheduled_for_asc');
+    const from = opts['scheduledFrom'];
+    expect(from).toBeInstanceOf(Date);
+    expect((from as Date).getTime()).toBeGreaterThanOrEqual(before);
+    expect((from as Date).getTime()).toBeLessThanOrEqual(after);
+  });
+
+  it('without `from=now` there is no lower bound — the sort alone does not hide past sends', async () => {
+    await getQueue('?status=approved&sort=scheduled_for');
+    const opts = dash.listCalls.at(-1)!.opts;
+    expect(opts['sort']).toBe('scheduled_for_asc');
+    expect(opts['scheduledFrom']).toBeUndefined();
+  });
+
+  it('an unknown `from` value is refused, never read as "no bound"', async () => {
+    const { status } = await getQueue('?status=approved&sort=scheduled_for&from=yesterday');
+    expect(status).toBe(400);
+  });
+});
+
+describe('delivery results on sent rows (T112, FR-029, FR-036)', () => {
+  it('a sent row carries the four counts and no recipient address', async () => {
+    dash.rows = [
+      makeApprovalBroadcast({ broadcastId: asBroadcastId(SENT_ID), status: 'sent' }),
+      makeApprovalBroadcast({ broadcastId: asBroadcastId(APPROVED_ID), status: 'approved' }),
+    ];
+    dash.deliveries.set(SENT_ID, { recipients: 40, delivered: 37, bounced: 2, complained: 1 });
+    const { status, body } = await getQueue('?status=sent&status=approved');
+    expect(status).toBe(200);
+    const items = body['items'] as Array<Record<string, unknown>>;
+    const sent = items.find((i) => i['broadcastId'] === SENT_ID)!;
+    const approved = items.find((i) => i['broadcastId'] === APPROVED_ID)!;
+    expect(sent['delivery']).toEqual({ recipients: 40, delivered: 37, bounced: 2, complained: 1 });
+    expect(approved['delivery']).toBeNull();
+
+    // One batched read for the page, asked only for the rows that were sent.
+    expect(dash.deliveryCalls).toEqual([[SENT_ID]]);
+
+    // No contact-level data in the response: the fixture carries a reply-to and
+    // a custom recipient address, and neither may surface.
+    expect(JSON.stringify(body)).not.toContain('@');
+    // …nor in any statement the route issued.
+    for (const text of dash.sqlTexts) expect(text).not.toMatch(/email/i);
+  });
+
+  it('a page with no sent row does not read the aggregate at all', async () => {
+    dash.rows = [makeApprovalBroadcast({ status: 'submitted' })];
+    await getQueue('?status=submitted');
+    expect(dash.deliveryCalls).toEqual([]);
+  });
+});

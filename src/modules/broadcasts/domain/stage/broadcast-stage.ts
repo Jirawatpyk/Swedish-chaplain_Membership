@@ -57,3 +57,22 @@ const STAGE_OF: Readonly<Record<BroadcastStatus, BroadcastStage>> = {
 export function stageOf(status: BroadcastStatus): BroadcastStage {
   return STAGE_OF[status];
 }
+
+/**
+ * F119 T117 (FR-026) — the stages at which `scheduled_for` is a CONFIRMED
+ * send time. Before Scheduled it still holds the member's proposal (submit
+ * writes both columns, data-model § 8.1a), so showing it as "confirmed"
+ * there would state a decision nobody made. Failed was reached from a
+ * confirmed time; a Cancelled row may never have had one, so it shows none.
+ */
+const CONFIRMED_SEND_STAGES: ReadonlySet<BroadcastStage> = new Set<BroadcastStage>([
+  'scheduled',
+  'sending',
+  'sent',
+  'failed',
+  'historical',
+]);
+
+export function hasConfirmedSendTime(status: BroadcastStatus): boolean {
+  return CONFIRMED_SEND_STAGES.has(STAGE_OF[status]);
+}

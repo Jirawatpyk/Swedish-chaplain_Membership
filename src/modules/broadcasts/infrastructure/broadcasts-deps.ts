@@ -26,6 +26,8 @@ import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webh
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
 import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
 import { makeDrizzleBroadcastApprovalCounter } from './db/drizzle-broadcast-approval-counter';
+import { makeDrizzleBroadcastQueueReads } from './db/drizzle-broadcast-queue-reads';
+import type { BroadcastQueueReads } from '../application/ports/broadcast-queue-reads';
 import type { BroadcastApprovalCounter } from '../application/ports/broadcast-approval-counter';
 
 import type { ClockPort } from '../application/ports/clock-port';
@@ -102,6 +104,14 @@ export function makeBroadcastApprovalCounter(
   tenantId: string,
 ): BroadcastApprovalCounter {
   return makeDrizzleBroadcastApprovalCounter(tenantId);
+}
+
+/**
+ * F119 T116 / T119 — the staff dashboard's per-stage counts and batched
+ * delivery results (contracts/dashboard-and-notifications.md § 1.1, § 1.2).
+ */
+export function makeBroadcastQueueReads(tenantId: string): BroadcastQueueReads {
+  return makeDrizzleBroadcastQueueReads(tenantId);
 }
 
 export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {

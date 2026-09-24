@@ -42,12 +42,31 @@ export interface NewBroadcastDraftInput {
   readonly scheduledFor: Date | null;
 }
 
+/**
+ * F119 T117 / T119 — two orders join the list:
+ *   - `stage_entered_at_asc` — the staff dashboard's order: longest in the
+ *     current stage first, served by `broadcasts_stage_queue_idx`. On the
+ *     default Awaiting-marketing-review view it is the old submitted-first
+ *     order (submit stamps `stage_entered_at`).
+ *   - `scheduled_for_asc` — the Upcoming sends preset: send-time order,
+ *     served by `broadcasts_tenant_scheduled_idx`.
+ * The keyset cursor carries the value of whichever column the sort orders by.
+ */
+export type ListByTenantStatusSort =
+  | 'submitted_at_asc'
+  | 'submitted_at_desc'
+  | 'created_at_desc'
+  | 'stage_entered_at_asc'
+  | 'scheduled_for_asc';
+
 export interface ListByTenantStatusOpts {
   readonly cursor?: string;
   readonly pageSize: number;
   readonly statusFilter?: ReadonlyArray<BroadcastStatus>;
   readonly memberIdFilter?: string;
-  readonly sort?: 'submitted_at_asc' | 'submitted_at_desc' | 'created_at_desc';
+  readonly sort?: ListByTenantStatusSort;
+  /** F119 T119 — only rows whose `scheduled_for` is at or after this instant (the Upcoming sends preset). */
+  readonly scheduledFrom?: Date;
 }
 
 export interface ListByTenantStatusResult {

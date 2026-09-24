@@ -21,7 +21,7 @@
 import { useCallback, useMemo, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { XIcon } from 'lucide-react';
+import { CalendarClockIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -61,8 +61,21 @@ const DEFAULT_STATUS: ReadonlyArray<BroadcastStatus> = ['submitted'];
 // unless it is in-review OR retired, and both lists are named. Retired rows
 // remain visible under the explicit show-all view and still render their
 // badge; only the chip that could return nothing is withheld.
+//
+// F119 T116 — the four IN-PROGRESS approval-round stages join "In review":
+// each is waiting on somebody (marketing, or the member), so filing them under
+// "Closed" — where the derivation below would otherwise put them — would hide
+// live work among finished work. The fifth new status,
+// `expired_no_member_response`, is a closed outcome (in
+// `TERMINAL_BROADCAST_STATUSES`, nobody's turn) and derives into "Closed" on
+// purpose: listing it here would offer marketing a row nobody can act on
+// (/speckit.analyze H4).
 const IN_REVIEW_STATUSES: ReadonlyArray<BroadcastStatus> = [
   'submitted',
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
   'approved',
   'sending',
   'draft',
@@ -74,15 +87,46 @@ const IN_REVIEW_STATUSES: ReadonlyArray<BroadcastStatus> = [
 const TERMINAL_STATUSES: ReadonlyArray<BroadcastStatus> =
   OFFERED_BROADCAST_STATUSES.filter((s) => !IN_REVIEW_STATUSES.includes(s));
 
+/**
+ * F119 T116 / T151 (research R18) — the stages that exist only because of the
+ * approval round (migration 0305). Their chip is offered while the round is
+ * switched on OR while the tenant has a row in that stage: never a filter that
+ * can only return zero rows (the retired-status rule above), and never a stage
+ * an in-flight E-Blast is sitting in hidden from the people who must act on it.
+ * Hand-listed because a client component cannot import `domain/stage/**`
+ * (the barrel guard); `queue-filters-flag-visibility.test.tsx` pins the five.
+ */
+const APPROVAL_ROUND_ONLY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+  'expired_no_member_response',
+]);
+
+/** F119 T119 — the Upcoming sends preset's URL tokens (FR-028). */
+const UPCOMING_SORT = 'scheduled_for';
+const UPCOMING_FROM = 'now';
+
 export interface QueueFiltersProps {
   readonly memberOptions: ReadonlyArray<{
     readonly memberId: string;
     readonly displayName: string;
   }>;
+  /**
+   * F119 T116 (FR-025) — rows per status for the tenant, shown on each chip.
+   * `null` when the read failed: the chips render without numbers and every
+   * stage is offered (see `APPROVAL_ROUND_ONLY_STATUSES`).
+   */
+  readonly stageCounts: Readonly<Record<BroadcastStatus, number>> | null;
+  /** F119 T116 — `FEATURE_EBLAST_MEMBER_APPROVAL`, read on the server (`readEblastStageChips`). */
+  readonly approvalRoundEnabled: boolean;
 }
 
 export function QueueFilters({
   memberOptions,
+  stageCounts,
+  approvalRoundEnabled,
 }: QueueFiltersProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.queue.filters');
   const tStatus = useTranslations('admin.broadcasts.queue.status');
@@ -95,6 +139,10 @@ export function QueueFilters({
 
   const urlStatus = searchParams.getAll('status') as ReadonlyArray<BroadcastStatus>;
   const currentStatusAll = searchParams.get('status_all') === '1';
+  const currentSort = searchParams.get('sort');
+  const currentFrom = searchParams.get('from');
+  const upcomingActive =
+    currentSort === UPCOMING_SORT && currentFrom === UPCOMING_FROM;
 
   // VISUAL set — what the user sees ticked. When `status_all` sentinel
   // is active, every checkbox stays UNCHECKED so the user has an honest
@@ -140,6 +188,7 @@ export function QueueFilters({
       memberId?: string | null;
       fromDate?: string | null;
       toDate?: string | null;
+      upcoming?: boolean;
     }) => {
       const params = new URLSearchParams(searchParams.toString());
       if ('status' in patch) {
@@ -147,6 +196,15 @@ export function QueueFilters({
         if (patch.status && patch.status.length > 0) {
           for (const s of patch.status) params.append('status', s);
         }
+        // F119 T119 — a status change leaves the Upcoming sends preset: its
+        // `from=now` bound would otherwise silently hide every row without a
+        // future send time from the stages just ticked.
+        params.delete('sort');
+        params.delete('from');
+      }
+      if (patch.upcoming === true) {
+        params.set('sort', UPCOMING_SORT);
+        params.set('from', UPCOMING_FROM);
       }
       if ('statusAll' in patch) {
         if (patch.statusAll) params.set('status_all', '1');
@@ -217,13 +275,17 @@ export function QueueFilters({
       currentStatusAll ||
       Boolean(currentMemberId) ||
       Boolean(currentFromDate) ||
-      Boolean(currentToDate),
+      Boolean(currentToDate) ||
+      Boolean(currentSort) ||
+      Boolean(currentFrom),
     [
       urlStatus.length,
       currentStatusAll,
       currentMemberId,
       currentFromDate,
       currentToDate,
+      currentSort,
+      currentFrom,
     ],
   );
 
@@ -244,11 +306,70 @@ export function QueueFilters({
     });
   }, [router, pathname]);
 
+  // F119 T119 — the preset is a toggle: on, it is exactly
+  // `?status=approved&sort=scheduled_for&from=now` (member and date filters
+  // kept — "upcoming sends for this member" is a real question); off, the
+  // queue returns to its default view, as Reset does.
+  const toggleUpcoming = useCallback(() => {
+    if (upcomingActive) {
+      clearAll();
+      return;
+    }
+    pushUrl({ status: ['approved'], statusAll: null, upcoming: true });
+  }, [upcomingActive, clearAll, pushUrl]);
+
   // Visual check uses the separate `visualStatus` set so sentinel-mode
   // (`status_all=1`) renders ALL chips unchecked — matching the user's
   // mental model of "no filter, show everything".
   const isStatusChecked = (s: BroadcastStatus): boolean =>
     visualStatus.includes(s);
+
+  // F119 T116 / T151 — R18, per chip. A stage already in the URL keeps its
+  // chip, checked, so a filter that arrived by link can still be cleared.
+  const isOffered = (s: BroadcastStatus): boolean =>
+    !APPROVAL_ROUND_ONLY_STATUSES.has(s) ||
+    approvalRoundEnabled ||
+    stageCounts === null ||
+    stageCounts[s] > 0 ||
+    urlStatus.includes(s);
+
+  const renderChip = (s: BroadcastStatus): React.ReactElement => {
+    const label = tStatus(s);
+    const count = stageCounts === null ? null : stageCounts[s];
+    return (
+      <label
+        key={s}
+        className="flex min-h-[44px] max-w-full cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40"
+      >
+        <input
+          type="checkbox"
+          name="status"
+          value={s}
+          checked={isStatusChecked(s)}
+          onChange={(e) => toggleStatus(s, e.target.checked)}
+          className="h-4 w-4 shrink-0 accent-primary"
+        />
+        {/* SV runs up to +28 %: the label truncates inside its chip (the full
+            text in the tooltip) instead of reflowing the strip at 320 px. */}
+        <span className="min-w-0 max-w-[14rem] truncate" title={label}>
+          {label}
+        </span>
+        {count !== null ? (
+          <>
+            {' '}
+            {/* The number is visual; its words are in the accessible name. */}
+            <span
+              aria-hidden="true"
+              className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] leading-none tabular-nums"
+            >
+              {count}
+            </span>
+            <span className="sr-only">{t('chipCount', { count })}</span>
+          </>
+        ) : null}
+      </label>
+    );
+  };
 
   return (
     <div
@@ -266,44 +387,14 @@ export function QueueFilters({
             aria-label={tStatusGroup('inReview')}
             className="flex flex-wrap gap-2"
           >
-            {IN_REVIEW_STATUSES.map((s) => (
-              <label
-                key={s}
-                className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40"
-              >
-                <input
-                  type="checkbox"
-                  name="status"
-                  value={s}
-                  checked={isStatusChecked(s)}
-                  onChange={(e) => toggleStatus(s, e.target.checked)}
-                  className="h-4 w-4 accent-primary"
-                />
-                <span>{tStatus(s)}</span>
-              </label>
-            ))}
+            {IN_REVIEW_STATUSES.filter(isOffered).map(renderChip)}
           </div>
           <div
             role="group"
             aria-label={tStatusGroup('terminal')}
             className="flex flex-wrap gap-2"
           >
-            {TERMINAL_STATUSES.map((s) => (
-              <label
-                key={s}
-                className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40"
-              >
-                <input
-                  type="checkbox"
-                  name="status"
-                  value={s}
-                  checked={isStatusChecked(s)}
-                  onChange={(e) => toggleStatus(s, e.target.checked)}
-                  className="h-4 w-4 accent-primary"
-                />
-                <span>{tStatus(s)}</span>
-              </label>
-            ))}
+            {TERMINAL_STATUSES.filter(isOffered).map(renderChip)}
           </div>
         </div>
       </fieldset>
@@ -367,6 +458,17 @@ export function QueueFilters({
           className="w-40"
         />
       </div>
+
+      <Button
+        type="button"
+        variant={upcomingActive ? 'secondary' : 'outline'}
+        aria-pressed={upcomingActive}
+        onClick={toggleUpcoming}
+        className="whitespace-nowrap"
+      >
+        <CalendarClockIcon className="size-4" aria-hidden="true" />
+        {t('upcomingSends')}
+      </Button>
 
       {hasAnyFilter && (
         <Button
