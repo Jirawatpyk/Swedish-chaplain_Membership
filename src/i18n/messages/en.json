@@ -15,7 +15,8 @@
         "accountDisabled": "Your account has been disabled. Contact an administrator.",
         "accountLocked": "Too many failed attempts. Try again later.",
         "rateLimited": "Too many requests. Please wait and try again."
-      }
+      },
+      "linkInvalidBanner": "That link is no longer valid. Sign in to continue."
     },
     "signOut": {
       "label": "Sign out"

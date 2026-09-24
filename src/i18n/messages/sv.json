@@ -15,7 +15,8 @@
         "accountDisabled": "Ditt konto har inaktiverats. Kontakta en administratör.",
         "accountLocked": "För många misslyckade försök. Försök igen senare.",
         "rateLimited": "För många förfrågningar. Vänta och försök igen."
-      }
+      },
+      "linkInvalidBanner": "Länken är inte längre giltig. Logga in för att fortsätta."
     },
     "signOut": {
       "label": "Logga ut"
