@@ -243,6 +243,31 @@ describe('T060 — from approved: change the time, or cancel it', () => {
     expect(rowOf()).toEqual(MEMBER_APPROVED);
   });
 
+  it('T166 R-H1: once the dispatcher has handed the row to Resend, a re-time or a cancel → 409 sending_started, nothing changes', async () => {
+    const handedOver = { ...SCHEDULED_ALREADY, resendBroadcastId: 'rb-live-1' };
+    for (const body of [{ mode: 'cancel' }, { mode: 'send_now' }, { mode: 'schedule', scheduledFor: inMinutes(60).toISOString() }]) {
+      resetVersionHarness({ broadcasts: [handedOver], versions: [V0, APPROVED_VERSION] });
+      const res = await schedule(body);
+      expect(res.status).toBe(409);
+      expect((await res.json()).error.code).toBe('sending_started');
+      expect(rowOf()).toEqual(handedOver);
+      expect(harness.store.outbox.rows()).toHaveLength(0);
+    }
+  });
+
+  it.each([
+    { standing: { halted: [MEMBER_APPROVED.requestedByMemberId] }, code: 'member_halted' },
+    { standing: { access: 'terminated' as const }, code: 'member_not_in_good_standing' },
+  ])('T166 S-H1: promoting for a member who can no longer send → 409 $code, the row stays member_approved', async ({ standing, code }) => {
+    resetVersionHarness({ broadcasts: [MEMBER_APPROVED], versions: [V0, APPROVED_VERSION] });
+    harness.standing = standing;
+    const res = await schedule({ mode: 'send_now' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe(code);
+    expect(rowOf()).toEqual(MEMBER_APPROVED);
+    expect(harness.store.outbox.rows()).toHaveLength(0);
+  });
+
   it('an approve-as-submitted row (round 0) was never in a design round → 409 round_zero on every mode', async () => {
     const roundZero = makeApprovalBroadcast({ status: 'approved', currentRound: 0, approvedVersionId: null });
     for (const body of [{ mode: 'cancel' }, { mode: 'send_now' }, { mode: 'schedule', scheduledFor: inMinutes(60).toISOString() }]) {

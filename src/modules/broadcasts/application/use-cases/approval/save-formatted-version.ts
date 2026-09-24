@@ -7,7 +7,9 @@
  * (`_version-content.ts`) — the one rule set the send re-applies (T059), built
  * on the helpers the compose path uses, never a re-implementation. It runs
  * ABOVE the transaction, so a refused save writes nothing. The sanitised HTML
- * is what is stored; the raw body never is.
+ * is what is stored — as `body_html` AND as `body_source` (T166 S-LOW: the
+ * input's `bodySource` is the workspace's raw HTML, and it is not persisted);
+ * the raw body never is.
  *
  * Optimistic concurrency (FR-033, the "two marketing users" edge case): under
  * the broadcast row lock, the working copy's `updated_at` must equal
@@ -61,6 +63,11 @@ export interface SaveFormattedVersionInput {
   readonly requestId: string | null;
   readonly subject: string;
   readonly bodyHtml: string;
+  /**
+   * The workspace's source (today its raw HTML). Accepted by the route
+   * contract but NOT stored — `body_source` is written from the sanitised
+   * body (T166 S-LOW).
+   */
   readonly bodySource: string;
   /** ≤ 1,000 chars — bounded by the route's zod schema (FR-006). */
   readonly noteToMember: string | null;
@@ -135,7 +142,10 @@ export async function saveFormattedVersion(
       const updated = await deps.versionsRepo.updateWorkingCopy(
         slug,
         workingCopy.id,
-        { subject, bodyHtml, bodySource: input.bodySource, noteToMember, updatedAt },
+        // T166 S-LOW — `body_source` is the SANITISED body too, never the raw
+        // workspace HTML (the workspace sends its HTML as the source, and a
+        // stored raw copy is one renderer away from a stored-XSS sink).
+        { subject, bodyHtml, bodySource: bodyHtml, noteToMember, updatedAt },
         tx,
       );
       // Unreachable under the row lock (a send takes the same lock) — a

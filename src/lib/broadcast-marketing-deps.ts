@@ -62,5 +62,9 @@ export function makeMarketingDirectory(tenantId: string): MarketingDirectoryPort
       if (roster.length === 0) broadcastsMetrics.noMarketingRecipient(tenantId);
       return roster;
     },
+    readRoster: resolveMarketingRoster,
+    reportEmptyRoster() {
+      broadcastsMetrics.noMarketingRecipient(tenantId);
+    },
   };
 }

@@ -24,6 +24,7 @@
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { canTransition } from '../../domain/policies/broadcast-status-transitions';
@@ -62,7 +63,12 @@ export type RejectBroadcastError =
       readonly kind: 'broadcast_rejection_reason_too_long';
       readonly length: number;
     }
-  | { readonly kind: 'reject.server_error'; readonly message: string };
+  /**
+   * An infrastructure fault. `errKind` is the error CLASS only (T166 R-M4):
+   * the raw message can carry a Neon error's bound parameters, and the route
+   * logs what it is handed.
+   */
+  | { readonly kind: 'reject.server_error'; readonly errKind: string };
 
 export interface RejectBroadcastDeps {
   readonly tenant: TenantContext;
@@ -225,7 +231,7 @@ export async function rejectBroadcast(
           } catch (e) {
             logger.warn(
               {
-                err: e instanceof Error ? e.message : String(e),
+                err: errKind(e),
                 tenantId: deps.tenant.slug,
                 memberId: rejected.requestedByMemberId,
                 useCase: 'reject-broadcast',
@@ -254,10 +260,7 @@ export async function rejectBroadcast(
       });
     });
   } catch (e) {
-    return err({
-      kind: 'reject.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
+    return err({ kind: 'reject.server_error', errKind: errKind(e) });
   }
 }
 

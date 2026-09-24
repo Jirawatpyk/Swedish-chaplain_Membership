@@ -264,6 +264,12 @@ export interface BroadcastsRepo {
    * gateway call, so two overlapping ticks both saw NULL and both created an
    * audience — leaking one against a 3-audience Free-plan allowance. The
    * precondition now rides on the write itself (108 Phase 9 review S13).
+   *
+   * **And only while the row is `approved`** (F119 T166 R-H1): a row that
+   * left `approved` since the dispatcher's lock committed — withdrawn,
+   * cancelled, re-opened for a new version — throws
+   * `BroadcastConcurrentMutationError` naming its real status. The same holds
+   * for `attachBroadcastId` and `attachAudienceImport`.
    */
   attachAudienceId(
     tx: unknown,
@@ -292,8 +298,8 @@ export interface BroadcastsRepo {
    * rollback or the webhook cannot correlate the mail that already went out.
    *
    * Same CAS contract as `attachAudienceId`: idempotent on the SAME value,
-   * `BroadcastConcurrentMutationError` on a different one,
-   * `BroadcastNotFoundError` if the row is gone.
+   * `BroadcastConcurrentMutationError` on a different one or on a row no
+   * longer `approved`, `BroadcastNotFoundError` if the row is gone.
    */
   attachBroadcastId(
     tx: unknown,
@@ -318,6 +324,7 @@ export interface BroadcastsRepo {
    * one broadcast would let `(resend_audience_id, audience_import_id)` come from
    * different ticks, validating counts for one audience while sending to the
    * other. Overwrite was the documented behaviour until 108 Phase 9 review S13.
+   * A row no longer `approved` refuses it the same way (F119 T166 R-H1).
    *
    * Does NOT change status. The broadcast stays `approved` for the whole
    * build, which is what keeps it cancellable (`cancelBroadcast` accepts only

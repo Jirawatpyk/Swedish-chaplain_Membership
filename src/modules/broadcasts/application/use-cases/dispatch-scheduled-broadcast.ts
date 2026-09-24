@@ -933,10 +933,13 @@ export async function dispatchScheduledBroadcast(
         });
       } catch (persistErr) {
         if (persistErr instanceof BroadcastConcurrentMutationError) {
-          // A sibling tick attached first. It owns the row, the audience and the
-          // send. We touch nothing of THEIRS — and reclaim the resource we just
-          // minted, which nothing else references: the CAS told us the row
-          // carries a DIFFERENT id, so ours is orphaned by construction.
+          // A sibling tick attached first — or (F119 T166 R-H1) the row left
+          // `approved` since Step 1: the member withdrew their approval, the
+          // schedule was cancelled, a new working copy was opened, or an admin
+          // cancelled. Either way this tick must not send. We touch nothing of
+          // a sibling's — and reclaim the resource we just minted, which
+          // nothing else references: the CAS refused OUR id, so ours is
+          // orphaned by construction.
           // (2026-09-10 follow-up 2: this used to log "we leak … because the
           // gateway has no deleteBroadcast" at critical, every tick.)
           await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
@@ -1104,8 +1107,10 @@ export async function dispatchScheduledBroadcast(
     //
     // `attachAudienceId` is the only call in this try that throws
     // `BroadcastConcurrentMutationError`, so reaching here is unambiguous: a
-    // sibling tick attached a different audience first. Two overlapping ticks
-    // are reachable because `maxDuration` equals the cron cadence.
+    // sibling tick attached a different audience first (two overlapping ticks
+    // are reachable because `maxDuration` equals the cron cadence), or — F119
+    // T166 R-H1 — the row left `approved` since Step 1 (the CAS carries the
+    // status too). Either way the audience in hand is this tick's own mint.
     //
     // **That premise is load-bearing and it has to be RE-EARNED on every
     // change.** F4 briefly broke it: `attachBroadcastId` throws the same class,

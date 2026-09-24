@@ -25,7 +25,9 @@
  *      leak). Both audits run AFTER the rollback.
  *   2. The stage, from THAT read. A withdrawal is checked for the `sending`
  *      cut-off FIRST (`sending` also fails the stage rule, and the member must
- *      be told the send is under way, not that "the stage changed"). A stage
+ *      be told the send is under way, not that "the stage changed") — and so
+ *      is an `approved` row the dispatcher has already handed over
+ *      (`hasDispatchBegun`, T166 R-H1). A stage
  *      refusal carries the decision already recorded, so a repeated click is
  *      answered with what happened (research R19 — not a replay).
  *   3. The version: it must be the latest version SENT to the member, else
@@ -35,7 +37,9 @@
  *      trigger key; lengths, never text), and one
  *      `eblast_member_decided_marketing` outbox row PER marketing recipient
  *      (FR-021a), ids only, on the same tx. The enqueue is unconditional —
- *      the flag lives at the drainer (T152a).
+ *      the flag lives at the drainer (T152a). The roster itself is read
+ *      BEFORE the tx (T166 R-L3), and an empty one is reported after the
+ *      commit, so a refused decision is never counted.
  *
  * Membership standing is NOT consulted: reading and deciding on a pending
  * version are not benefit actions (spec § Edge Cases); the existing refusals
@@ -56,14 +60,14 @@ import {
   type MemberDecision,
   type MemberDecisionKind,
 } from '../../../domain/approval/member-decision';
-import { hasSendingStarted } from '../../../domain/stage/in-progress-statuses';
+import { hasDispatchBegun, hasSendingStarted } from '../../../domain/stage/in-progress-statuses';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastDecisionsRepo } from '../../ports/broadcast-decisions-repo';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
-import type { MarketingDirectoryPort } from '../../ports/marketing-directory-port';
+import type { MarketingDirectoryPort, MarketingRecipient } from '../../ports/marketing-directory-port';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
 import { safeAuditEmitTyped } from '../_safe-audit-emit';
 import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
@@ -138,7 +142,13 @@ export async function recordMemberDecision(
   }
 
   let decided: RecordMemberDecisionOutput;
+  let roster: readonly MarketingRecipient[];
   try {
+    // T166 R-L3 — the hand-off roster is read BEFORE the tx: a pool-global
+    // read (`users` is cross-tenant) must not hold a second connection while
+    // this tx holds the row lock. Its empty-roster count is paid below, only
+    // for a decision that committed.
+    roster = await deps.marketingDirectory.readRoster();
     decided = await deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.lockForUpdate(tx, slug, input.broadcastId);
       const broadcast =
@@ -148,6 +158,10 @@ export async function recordMemberDecision(
       const status = broadcast.status;
       if (input.decision === 'approval_withdrawn') {
         if (hasSendingStarted(status)) refuse({ kind: 'sending_started', status });
+        // T166 R-H1 — `approved` but already handed over: the dispatch leg
+        // commits its lock before calling Resend, so the send is under way
+        // although the status has not moved yet.
+        if (status === 'approved' && hasDispatchBegun(broadcast)) refuse({ kind: 'sending_started', status });
         if ((status !== 'member_approved' && status !== 'approved') || broadcast.currentRound < 1) {
           throw await stageChangedRefusal(deps, tx, input.broadcastId, status);
         }
@@ -227,10 +241,9 @@ export async function recordMemberDecision(
           break;
       }
 
-      // FR-021 — the hand-off to marketing, one row per recipient, ids only.
-      // The roster read is after every refusal, so an empty roster is counted
-      // (by the adapter) only for a decision that is really being recorded.
-      for (const recipient of await deps.marketingDirectory.listRecipients()) {
+      // FR-021 — the hand-off to marketing, one row per recipient, ids only,
+      // to the roster read before the tx (T166 R-L3).
+      for (const recipient of roster) {
         await deps.outbox.enqueueInTx(tx, deps.tenant, {
           type: 'eblast_member_decided_marketing',
           toEmail: recipient.email,
@@ -257,6 +270,7 @@ export async function recordMemberDecision(
   }
 
   broadcastsMetrics.memberDecision(slug, input.decision);
+  if (roster.length === 0) deps.marketingDirectory.reportEmptyRoster();
   return ok(decided);
 }
 

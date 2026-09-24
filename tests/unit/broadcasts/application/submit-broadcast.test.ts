@@ -2138,11 +2138,12 @@ describe('submitBroadcast — F119 T129 marketing hand-off on submit', () => {
     expect(eblastOutbox.rows()).toHaveLength(2);
   });
 
-  it('an empty roster enqueues nothing and the submit still succeeds (the roster counts the page, not this use case)', async () => {
+  it('an empty roster enqueues nothing and the submit still succeeds; the empty roster is reported ONCE, after the commit', async () => {
     const { deps, eblastOutbox, marketingDirectory } = ready([]);
     const result = await submitBroadcast(deps, baseInput);
     expect(result.ok).toBe(true);
-    expect(marketingDirectory.listRecipients).toHaveBeenCalledTimes(1);
+    expect(marketingDirectory.readRoster).toHaveBeenCalledTimes(1);
+    expect(marketingDirectory.reportEmptyRoster).toHaveBeenCalledTimes(1);
     expect(eblastOutbox.rows()).toHaveLength(0);
   });
 
@@ -2150,8 +2151,45 @@ describe('submitBroadcast — F119 T129 marketing hand-off on submit', () => {
     const { deps, eblastOutbox, marketingDirectory } = makeDeps({ primaryContact: 'me@example.com', roster: MARKETERS, rateLimit: { allow: false } });
     const result = await submitBroadcast(deps, baseInput);
     expect(result.ok).toBe(false);
+    expect(marketingDirectory.readRoster).not.toHaveBeenCalled();
     expect(marketingDirectory.listRecipients).not.toHaveBeenCalled();
     expect(eblastOutbox.rows()).toHaveLength(0);
+  });
+
+  /**
+   * T166 R-L3 — the roster is a pool-global read of the cross-tenant `users`
+   * table. Made INSIDE the submit tx it held a second connection while the tx
+   * held the per-member advisory lock. It is read before the tx now, and the
+   * empty-roster page is still raised only for a submit that committed.
+   */
+  it('T166 R-L3: the roster is read BEFORE the submit tx opens, never while it holds its locks', async () => {
+    const { deps, marketingDirectory } = ready(MARKETERS);
+    const order: string[] = [];
+    marketingDirectory.readRoster.mockImplementation(async () => {
+      order.push('readRoster');
+      return MARKETERS;
+    });
+    const repo = deps.broadcastsRepo as { withTx: BroadcastsRepo['withTx'] };
+    const inner = repo.withTx;
+    repo.withTx = async <T,>(fn: (tx: unknown) => Promise<T>) => {
+      order.push('withTx');
+      return inner(fn);
+    };
+    expect((await submitBroadcast(deps, baseInput)).ok).toBe(true);
+    expect(order).toEqual(['readRoster', 'withTx']);
+    expect(marketingDirectory.listRecipients).not.toHaveBeenCalled();
+    expect(marketingDirectory.reportEmptyRoster).not.toHaveBeenCalled();
+  });
+
+  it('T166 R-L3: an empty roster read before a submit whose tx then fails is NOT reported — nothing was handed off', async () => {
+    const { deps, marketingDirectory } = ready([]);
+    const repo = deps.broadcastsRepo as { withTx: BroadcastsRepo['withTx'] };
+    repo.withTx = async () => {
+      throw new Error('pool exhausted');
+    };
+    expect((await submitBroadcast(deps, baseInput)).ok).toBe(false);
+    expect(marketingDirectory.readRoster).toHaveBeenCalledTimes(1);
+    expect(marketingDirectory.reportEmptyRoster).not.toHaveBeenCalled();
   });
 
   it('an enqueue that throws fails the submit (the tx rolls back with it) — never a submit without its hand-off', async () => {

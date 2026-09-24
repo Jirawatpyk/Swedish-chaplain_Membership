@@ -63,7 +63,8 @@ describe('PATCH /api/admin/broadcasts/[id]/version — optimistic concurrency', 
     expect(body.error.code).toBe('version_changed');
     expect(body.error.details).toEqual({
       currentUpdatedAt: firstToken,
-      current: { subject: 'Anna wins', bodyHtml: '<p>Anna wins</p>', bodySource: '{"type":"doc"}', noteToMember: null },
+      // T166 S-LOW — `body_source` is stored sanitised (the checked body), not the raw source the client sent.
+      current: { subject: 'Anna wins', bodyHtml: '<p>Anna wins</p>', bodySource: '<p>Anna wins</p>', noteToMember: null },
     });
     // The loser overwrote nothing.
     expect(harness.store.versionsRepo.rows()[1]).toMatchObject({ subject: 'Anna wins', updatedAt: new Date(firstToken) });

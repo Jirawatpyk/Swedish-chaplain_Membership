@@ -313,6 +313,9 @@ export {
   type StageAgeLevel,
 } from './domain/stage/stage-age';
 export { hasConfirmedSendTime } from './domain/stage/broadcast-stage';
+// F119 T166 R-M1 — the notification arms tell "closed without sending" from
+// "handed over" (a confirmed-schedule email still renders for the latter).
+export { hasSendingStarted } from './domain/stage/in-progress-statuses';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------
 export {
@@ -492,6 +495,10 @@ export type {
 // MembersBridge instance — exposed for the admin queue server component
 // which reads halt-state inline.
 export { membersBridge } from './infrastructure/members-bridge';
+// F119 T166 S-H1 — the F8 membership-access read, for the approval-round
+// composition root (`src/lib/broadcast-approval-deps.ts`): the promotion
+// re-reads standing the way submit does.
+export { membershipAccessBridge } from './infrastructure/membership-access-bridge';
 export { makeTickMemoizedMembersBridge } from './infrastructure/tick-memoized-members-bridge';
 
 // F7 audit adapter — exposed at the barrel because the

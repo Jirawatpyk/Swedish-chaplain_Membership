@@ -18,6 +18,10 @@
  *         only dispatchable status (FR-017) and names no approval that no
  *         longer governs it (see below).
  *
+ * A row the dispatcher has already handed over (`hasDispatchBegun` —
+ * `resend_broadcast_id` or `audience_import_id` set while the status still
+ * reads `approved`, T166 R-H1) is refused `sending_started` on every mode.
+ *
  * Every other (stage, mode) pair is refused — `keep_proposal` on an already
  * scheduled row and `cancel` before anything is scheduled are not in the
  * contract table (`mode_not_allowed`); a round-0 row (approved as submitted,
@@ -31,6 +35,13 @@
  * is read — a proposal already in the past is refused the same way (the
  * "proposed time already passed" edge case). `send_now` is now, as in
  * `approveBroadcast`.
+ *
+ * The promotion re-reads the owning member's halt flag and F8 membership
+ * access under the row lock (T166 S-H1, the rules submit applies): halted →
+ * `member_halted`, suspended / terminated → `member_not_in_good_standing`, a
+ * read that cannot be answered → `server_error` (fail closed). A re-time of an
+ * already `approved` row does not re-read them — the promotion is the edge
+ * where the row becomes dispatchable.
  *
  * The promotion re-checks every image of the approved version against the
  * tenant allow-list (read before the tx, on its own connection): a host
@@ -62,6 +73,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../../domain/broadcast';
 import { scheduleDiffers } from '../../../domain/approval/member-decision';
+import { hasDispatchBegun } from '../../../domain/stage/in-progress-statuses';
 import {
   evaluateImageSources,
   type UnsafeImageSource,
@@ -76,6 +88,7 @@ import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipi
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
 import { MIN_SCHEDULE_LEAD_MS } from '../approve-broadcast';
 import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist';
+import { readMemberSendStanding, type MemberSendStandingDeps } from '../_member-send-standing';
 import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
 import { chooseApprovalRecipient } from './_approval-recipient';
 
@@ -94,6 +107,12 @@ export interface ConfirmScheduleDeps {
   readonly outbox: EblastNotificationOutboxPort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * T166 S-H1 — the send-time rules submit applies (halt flag + F8 membership
+   * access), re-read at the promotion. REQUIRED: a security gate is not
+   * optional in the composition.
+   */
+  readonly sendStanding: MemberSendStandingDeps;
 }
 
 export interface ConfirmScheduleInput {
@@ -121,7 +140,13 @@ export type ConfirmScheduleError =
   | { readonly kind: 'stage_changed'; readonly status: BroadcastStatus }
   | { readonly kind: 'mode_not_allowed'; readonly status: BroadcastStatus; readonly mode: ScheduleMode['mode'] }
   | { readonly kind: 'round_zero' }
+  /** T166 R-H1 — the dispatcher already handed the row to the provider (`hasDispatchBegun`). */
+  | { readonly kind: 'sending_started'; readonly status: BroadcastStatus }
   | { readonly kind: 'no_proposal' }
+  /** T166 S-H1 — the owning member's broadcasts are halted pending admin review. */
+  | { readonly kind: 'member_halted' }
+  /** T166 S-H1 — the owning member's membership is suspended or terminated (F8). */
+  | { readonly kind: 'member_not_in_good_standing' }
   | { readonly kind: 'schedule_too_soon'; readonly scheduledFor: Date }
   | { readonly kind: 'image_source_not_allowlisted'; readonly images: readonly UnsafeImageSource[] }
   /** An infrastructure fault; `errKind` is the error CLASS only (never `e.message` — F7-5). */
@@ -149,6 +174,12 @@ export async function confirmSchedule(
         await deps.broadcastsRepo.lockForUpdate(tx, slug, input.broadcastId);
         const broadcast = (await deps.broadcastsRepo.findByIdInTx(tx, slug, input.broadcastId)) ?? refuse({ kind: 'not_found' });
         const promoting = admit(broadcast, mode.mode);
+        // T166 R-H1 — the dispatch leg commits its lock BEFORE calling Resend,
+        // so an `approved` row can already be handed over while its status
+        // still says `approved`. A cancel or a re-time cannot recall that, and
+        // a promotion over an inherited id would let the next dispatch record
+        // this version as sent without sending it.
+        if (hasDispatchBegun(broadcast)) refuse({ kind: 'sending_started', status: broadcast.status });
         // A row the approval round produced always names the version the
         // member approved (only a void / withdrawal clears it, and both leave
         // these two stages). Missing ⇒ an invariant breach, not a refusal.
@@ -161,6 +192,11 @@ export async function confirmSchedule(
 
         let fields: Partial<Broadcast>;
         if (promoting) {
+          // T166 S-H1 — the promotion is the send-time edge of the round (the
+          // row becomes dispatchable here), so the rules that block sending
+          // are re-read now, under the row lock: a member halted, suspended or
+          // terminated since they submitted does not get the E-Blast sent.
+          await assertMemberMaySend(deps, broadcast.requestedByMemberId);
           const versions = await deps.versionsRepo.listByBroadcast(slug, input.broadcastId, tx);
           const approved = versions.find((v) => v.id === versionId);
           if (approved === undefined) throw new Error('approved version not found under the broadcast lock');
@@ -247,6 +283,25 @@ export async function confirmSchedule(
       });
     }
     return err(refusal);
+  }
+}
+
+/**
+ * T166 S-H1 — refuse the promotion for a member who may not send; a read that
+ * cannot be answered THROWS (→ `server_error`, the tx rolls back): fail closed.
+ */
+async function assertMemberMaySend(deps: ConfirmScheduleDeps, memberId: string): Promise<void> {
+  const standing = await readMemberSendStanding(deps.sendStanding, deps.tenant, memberId);
+  switch (standing.kind) {
+    case 'ok':
+      return;
+    case 'halted':
+      return refuse({ kind: 'member_halted' });
+    case 'not_in_good_standing':
+      return refuse({ kind: 'member_not_in_good_standing' });
+    case 'halt_read_failed':
+    case 'access_unavailable':
+      throw new Error(`member send standing unavailable: ${standing.kind}`);
   }
 }
 

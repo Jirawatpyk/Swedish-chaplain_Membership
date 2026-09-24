@@ -82,6 +82,7 @@ import { validateImageSourceAllowlist } from './validate-image-source-allowlist'
 import { validateCustomRecipients } from './validate-custom-recipients';
 import { isMissingAddressOrphan, resolveSegmentRecipients } from './resolve-segment-recipients';
 import { computeQuotaCounter } from './compute-quota-counter';
+import { readMemberSendStanding } from './_member-send-standing';
 
 const MAX_SUBJECT_LENGTH = 200;
 const SUBMIT_RATE_LIMIT = 10;
@@ -355,63 +356,60 @@ export async function submitBroadcast(
   deps: SubmitBroadcastDeps,
   input: SubmitBroadcastInput,
 ): Promise<Result<SubmitBroadcastOutput, SubmitBroadcastError>> {
-  // ---- Precondition (k): halt flag ---------------------------------
-  // Review 2026-09-07 — the bridge THROWS on a failed read (it used to answer
-  // `[]`, which let a halted member through during a Neon blip). A read that
-  // did not happen is a 500 with NO reject audit: the gate was never decided.
-  let haltedMembers: ReadonlyArray<{ readonly memberId: string }>;
-  try {
-    haltedMembers = await deps.membersBridge.getMembersHaltedInTenant(deps.tenant);
-  } catch (e) {
-    logger.error(
-      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
-      'broadcasts.submit.halt_read_failed',
-    );
-    return err({
-      kind: 'submit.server_error' as const,
-      message: 'halt state unavailable',
-    });
-  }
-  if (haltedMembers.some((h) => h.memberId === input.memberId)) {
-    await emitReject(deps, input, 'broadcast_member_halted_pending_review', {
-      memberId: input.memberId,
-    });
-    return err({
-      kind: 'broadcast_member_halted_pending_review',
-      memberId: input.memberId,
-    });
-  }
-
-  // ---- Precondition (l): membership access -------------------------
-  // 059-membership-suspension Task 5. A suspended/terminated member
-  // (F8 `deriveMembershipAccess`) cannot submit an e-blast — this is
-  // the enforcement that actually stops quota from being spent (a
-  // route-only guard would leak: use-cases are called from more than
-  // one route, e.g. proxy-submit delegates here too).
-  const access = await deps.membershipAccess.getMembershipAccess(
-    deps.tenant,
-    input.memberId,
-  );
-  if (!access.ok) {
-    // Infra error → fail CLOSED as a server_error (mirrors the quota
-    // counter's round-4 MED-D pattern at :349-357 below): a DB blip on
-    // the F8 lookup is NOT "member is fine, let it through". Returning
-    // a fake policy reject here would misreport an infra fault as a
-    // 422 user-fault; returning fake success would grant benefit access
-    // on an unexpected error. Neither is acceptable on a write path.
-    return err({
-      kind: 'submit.server_error',
-      message: `membership_access_error: ${access.error.kind}`,
-    });
-  }
-  if (access.value.access !== 'full') {
-    await emitReject(deps, input, 'broadcast_membership_suspended_blocked', {
-      memberId: input.memberId,
-    });
-    return err({
-      kind: 'broadcast_membership_suspended_blocked',
-      memberId: input.memberId,
-    });
+  // ---- Preconditions (k) halt flag + (l) membership access -----------
+  // Read through `readMemberSendStanding` — the SAME reading approve-as-
+  // submitted and the approval-round promotion apply at send time (F119 T166
+  // S-H1), so the three cannot drift.
+  //
+  // (k) Review 2026-09-07 — the bridge THROWS on a failed read (it used to
+  // answer `[]`, which let a halted member through during a Neon blip). A read
+  // that did not happen is a 500 with NO reject audit: the gate was never
+  // decided.
+  //
+  // (l) 059-membership-suspension Task 5. A suspended/terminated member
+  // (F8 `deriveMembershipAccess`) cannot submit an e-blast — this is the
+  // enforcement that actually stops quota from being spent (a route-only
+  // guard would leak: use-cases are called from more than one route, e.g.
+  // proxy-submit delegates here too). An infra error fails CLOSED as a
+  // server_error (mirrors the quota counter's round-4 MED-D pattern below): a
+  // DB blip on the F8 lookup is NOT "member is fine, let it through".
+  // Returning a fake policy reject would misreport an infra fault as a 422
+  // user-fault; returning fake success would grant benefit access on an
+  // unexpected error. Neither is acceptable on a write path.
+  const standing = await readMemberSendStanding(deps, deps.tenant, input.memberId);
+  switch (standing.kind) {
+    case 'halt_read_failed':
+      logger.error(
+        { tenantId: deps.tenant.slug, memberId: input.memberId, err: standing.errKind },
+        'broadcasts.submit.halt_read_failed',
+      );
+      return err({
+        kind: 'submit.server_error' as const,
+        message: 'halt state unavailable',
+      });
+    case 'halted':
+      await emitReject(deps, input, 'broadcast_member_halted_pending_review', {
+        memberId: input.memberId,
+      });
+      return err({
+        kind: 'broadcast_member_halted_pending_review',
+        memberId: input.memberId,
+      });
+    case 'access_unavailable':
+      return err({
+        kind: 'submit.server_error',
+        message: `membership_access_error: ${standing.errorKind}`,
+      });
+    case 'not_in_good_standing':
+      await emitReject(deps, input, 'broadcast_membership_suspended_blocked', {
+        memberId: input.memberId,
+      });
+      return err({
+        kind: 'broadcast_membership_suspended_blocked',
+        memberId: input.memberId,
+      });
+    case 'ok':
+      break;
   }
 
   // ---- Precondition (d, FR-002d): rate limit -----------------------
@@ -782,7 +780,12 @@ export async function submitBroadcast(
   );
 
   try {
-    return await deps.broadcastsRepo.withTx(async (tx) => {
+    // T166 R-L3 — the hand-off roster is read BEFORE the tx: it is a
+    // pool-global read (`users` is cross-tenant), and made inside it held a
+    // second connection while this tx holds the per-member advisory lock. The
+    // empty-roster count it owes is paid only once the submit has committed.
+    const roster = await deps.marketingDirectory.readRoster();
+    const submitted = await deps.broadcastsRepo.withTx<Result<SubmitBroadcastOutput, SubmitBroadcastError>>(async (tx) => {
       // ---- Bug #4 fix: TOCTOU-safe quota re-check under a per-member lock --
       // The pre-tx computeQuotaCounter read (line ~333) is a stale snapshot.
       // Two concurrent submits at remaining=1 both pass it and over-subscribe
@@ -951,8 +954,8 @@ export async function submitBroadcast(
       // THIS tx, so a rollback leaves none (SC-004). Unconditional — the flag
       // lives at the drainer (T152a), which holds the rows while it is off
       // (FR-034: today nobody is emailed on submit, and with the flag off
-      // nobody is). An empty roster is counted by the directory, not here.
-      for (const recipient of await deps.marketingDirectory.listRecipients()) {
+      // nobody is). The roster was read before the tx (T166 R-L3).
+      for (const recipient of roster) {
         await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
           type: 'eblast_submitted_marketing',
           toEmail: recipient.email,
@@ -985,6 +988,8 @@ export async function submitBroadcast(
         reviewSlaTargetHours: REVIEW_SLA_TARGET_HOURS,
       });
     });
+    if (submitted.ok && roster.length === 0) deps.marketingDirectory.reportEmptyRoster();
+    return submitted;
   } catch (e) {
     return err({
       kind: 'submit.server_error',

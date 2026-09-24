@@ -45,6 +45,7 @@ import {
   parseBroadcastId,
   type ApprovalBroadcastsRepo,
   drizzleBroadcastDecisionsRepo,
+  hasSendingStarted,
   isTerminalStatus,
   type BroadcastDecisionsRepo,
   type BroadcastId,
@@ -113,6 +114,18 @@ const isDecidedKind = (v: unknown): v is EblastMemberDecidedKind =>
   (EBLAST_MEMBER_DECIDED_KINDS as readonly unknown[]).includes(v);
 const isLifecycleKind = (v: unknown): v is EblastLifecycleKind =>
   (EBLAST_LIFECYCLE_KINDS as readonly unknown[]).includes(v);
+
+/**
+ * T166 R-M2 — how long a member's WITHDRAWAL (`decision: 'withdrawn'`, the
+ * self-cancel) stays news to marketing. Every self-cancel enqueues one of these
+ * rows unconditionally, including cancels from `submitted` (a live F7 path),
+ * and with FEATURE_EBLAST_MEMBER_APPROVAL off they all wait in the outbox. On
+ * the flip they would go out in one batch, weeks old. A withdrawal whose
+ * `cancelled_at` is older than this is superseded instead (the silent
+ * `request_superseded`); the E-Blast list still shows it as withdrawn.
+ */
+export const EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS = 7;
+const WITHDRAWN_NOTICE_MAX_AGE_MS = EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 
 const GONE: EblastPayloadMiss = { miss: 'request_gone' };
 const RECIPIENT_GONE: EblastPayloadMiss = { miss: 'recipient_gone' };
@@ -207,8 +220,12 @@ async function versionSentMember(
 
 /**
  * The send time is confirmed — to the approval contact. Stale when the time
- * was cancelled (`scheduled_for` cleared) or the approval it confirmed no
- * longer governs the row. A row that already went out still renders: a
+ * was cancelled (`scheduled_for` cleared), the approval it confirmed no
+ * longer governs the row, or the row CLOSED without sending (T166 R-M1: an
+ * admin cancel, a rejection, a failed dispatch or the expiry leave both
+ * columns set — trigger exemption E2 clears them on three targets only — so
+ * the columns alone let "cancelled" and "your time is confirmed" both
+ * arrive). A row that already went out, or is going out, still renders: a
  * "send now" can reach `sending` before this tick.
  */
 async function scheduleConfirmedMember(
@@ -229,6 +246,7 @@ async function scheduleConfirmedMember(
   if (read === null) return GONE;
   const { broadcast, recipient } = read;
   if (broadcast.scheduledFor === null || broadcast.approvedVersionId !== versionId) return SUPERSEDED;
+  if (isTerminalStatus(broadcast.status) && !hasSendingStarted(broadcast.status)) return SUPERSEDED;
   if (recipient === null) return RECIPIENT_GONE;
   const email = buildEblastScheduleConfirmedMemberEmail({
     locale: recipient.locale,
@@ -252,10 +270,12 @@ async function scheduleConfirmedMember(
  * Stale — the silent `request_superseded`, like every other arm — when the
  * member has decided again since (a later round, or a later decision in the
  * same round: an approval then its withdrawal), or when the E-Blast has closed
- * (sent, rejected, cancelled, failed, expired). A member WITHDRAWAL is exempt:
- * it IS the closing event (the row is `cancelled` by it) and nothing can follow
- * it, so it always renders. With the flag off these rows wait in the outbox and
- * drain on the re-flip, which is when the rule earns its keep.
+ * (sent, rejected, cancelled, failed, expired). A member WITHDRAWAL is exempt
+ * from that rule: it IS the closing event (the row is `cancelled` by it) and
+ * nothing can follow it. It has its own staleness instead (T166 R-M2): older
+ * than `EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS` since `cancelled_at`, it is
+ * superseded. With the flag off these rows wait in the outbox and drain on the
+ * re-flip, which is when both rules earn their keep.
  */
 async function memberDecidedMarketing(
   reads: EblastNotificationReads,
@@ -284,6 +304,8 @@ async function memberDecidedMarketing(
     const lastInRound = decisions.filter((d) => d.round === decidedIn).at(-1);
     const decidedSince = decisions.some((d) => d.round > decidedIn) || (lastInRound !== undefined && lastInRound.decision !== decision);
     if (decidedSince || isTerminalStatus(broadcast.status)) return SUPERSEDED;
+  } else if (broadcast.cancelledAt !== null && Date.now() - broadcast.cancelledAt.getTime() > WITHDRAWN_NOTICE_MAX_AGE_MS) {
+    return SUPERSEDED;
   }
   return staffHandoff(reads, broadcast, ctx, row, (companyName) =>
     buildEblastMemberDecidedMarketingEmail({

@@ -263,6 +263,22 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
     expect(res.status).toBe(409);
   });
 
+  it.each(['member_halted', 'member_not_in_good_standing'] as const)(
+    'T166 S-H1: 409 %s — the member can no longer send, so the E-Blast is not approved',
+    async (kind) => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
+      approveBroadcastMock.mockResolvedValueOnce(err({ kind, memberId: 'm-1' }));
+      const { POST } = await importRoute();
+      const { req, ctx } = makeRequest({ decision: 'send_now' });
+      const res = await POST(req, ctx);
+      expect(res.status).toBe(409);
+      const body = await res.json();
+      expect(body.error.code).toBe(kind);
+      expect(body.error.message).not.toBe('');
+      expect(body.error.messageThai).not.toBe('');
+    },
+  );
+
   it('422 broadcast_schedule_too_soon (use-case branch)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const tooSoon = new Date(Date.now() + 60_000);

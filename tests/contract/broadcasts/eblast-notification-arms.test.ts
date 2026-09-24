@@ -39,6 +39,7 @@ import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import {
+  EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS,
   buildEblastNotificationPayload,
   type EblastNotificationReads,
   type EblastOutboxRow,
@@ -51,6 +52,7 @@ import {
   makeFakeImageAllowlist,
   makeFakeMarketingDirectory,
   makeFakePortalRecipients,
+  makeFakeSendStanding,
   makeMarketingRecipient,
   makePortalContact,
   makeRecordingF7Audit,
@@ -319,8 +321,22 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
     });
 
     it('a member withdrawal IS the terminal event: it renders on the cancelled row even after earlier decisions', async () => {
-      const f = fixture({ broadcasts: [loaded({ status: 'cancelled' })], decisions: [decision({ decision: 'approved' })] });
+      const f = fixture({ broadcasts: [loaded({ status: 'cancelled', cancelledAt: new Date() })], decisions: [decision({ decision: 'approved' })] });
       expect(rendered(await run(f, decided('withdrawn'))).text).toContain('Withdrawn');
+    });
+
+    /**
+     * T166 R-M2 — the withdrawal arm had no staleness test at all. Every member
+     * self-cancel from merge until flag day (including cancels from `submitted`,
+     * a live F7 path) enqueues one of these, and they would all go out in one
+     * batch on the flip. A withdrawal older than the window is news to nobody.
+     */
+    it('T166 R-M2: a withdrawal whose cancellation is older than EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS → request_superseded; inside the window it still renders', async () => {
+      const days = (n: number) => new Date(Date.now() - n * 86_400_000);
+      const stale = fixture({ broadcasts: [loaded({ status: 'cancelled', cancelledAt: days(EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS + 1) })] });
+      expect(await run(stale, decided('withdrawn', null, null))).toEqual({ miss: 'request_superseded' });
+      const fresh = fixture({ broadcasts: [loaded({ status: 'cancelled', cancelledAt: days(EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS - 1) })] });
+      rendered(await run(fresh, decided('withdrawn', null, null)));
     });
 
     it('a decision row without its round is malformed (null — the retry ladder), never a throw', async () => {
@@ -510,6 +526,31 @@ describe('eblast_schedule_confirmed_member — both times when they differ', () 
     expect(await run(scheduled({ status: 'changes_requested', scheduledFor: null, approvedVersionId: null }))).toEqual({ miss: 'request_superseded' });
     expect(await run(scheduled({ approvedVersionId: 'aaaaaaaa-0000-4000-8000-000000000009' }))).toEqual({ miss: 'request_superseded' });
   });
+
+  /**
+   * T166 R-M1 — an admin cancel, a rejection, a failed dispatch or the expiry
+   * closes the row WITHOUT clearing `scheduled_for` / `approved_version_id`
+   * (trigger exemption E2 covers three targets only). The arm read only those
+   * two columns, so the member got "cancelled" AND "your send time is
+   * confirmed". A row that went out (or is going out) still renders.
+   */
+  it.each(['cancelled', 'rejected', 'failed_to_dispatch', 'expired_no_member_response'] as const)(
+    'T166 R-M1: the row closed as %s with its schedule columns intact → request_superseded',
+    async (status) => {
+      const { reads } = fixture({ broadcasts: [scheduled({ status })] });
+      expect(await buildEblastNotificationPayload(row('eblast_schedule_confirmed_member', { versionId: V1 }), () => reads)).toEqual({
+        miss: 'request_superseded',
+      });
+    },
+  );
+
+  it.each(['sending', 'sent', 'partially_sent', 'partial_delivery_accepted'] as const)(
+    'T166 R-M1: a row already handed over (%s) still renders — a "send now" can reach sending before this tick',
+    async (status) => {
+      const { reads } = fixture({ broadcasts: [scheduled({ status })] }, { contacts: [makePortalContact({ locale: 'en' })] });
+      rendered(await buildEblastNotificationPayload(row('eblast_schedule_confirmed_member', { versionId: V1 }), () => reads));
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -530,6 +571,7 @@ describe('SC-004 — every hand-off enqueues its outbox row inside the state-cha
     outbox: store.outbox,
     audit: makeRecordingF7Audit(),
     clock: { now: () => store.now },
+    sendStanding: makeFakeSendStanding(),
   });
   const actor = { actorUserId: '44444444-4444-4444-8444-444444444444', actorRole: 'marketing', requestId: 'req-sc004' };
 
@@ -594,14 +636,14 @@ describe('SC-004 — every hand-off enqueues its outbox row inside the state-cha
         broadcasts: [makeApprovalBroadcast({ status: 'awaiting_member_approval', currentRound: 1 })],
         versions: [makeApprovalVersion({ sentToMemberAt: SENT_AT })],
       });
-    const decide = () =>
+    const decide = (marketingDirectory = makeFakeMarketingDirectory(roster)) =>
       recordMemberDecision(
         {
           tenant,
           broadcastsRepo: store.broadcastsRepo,
           versionsRepo: store.versionsRepo,
           decisionsRepo: store.decisionsRepo,
-          marketingDirectory: makeFakeMarketingDirectory(roster),
+          marketingDirectory,
           outbox: store.outbox,
           audit: makeRecordingF7Audit(),
           clock: { now: () => store.now },
@@ -631,6 +673,20 @@ describe('SC-004 — every hand-off enqueues its outbox row inside the state-cha
         expect(Object.keys(r.contextData).filter((k) => !ID_ONLY_KEYS.has(k))).toEqual([]);
       }
       expect(JSON.stringify(rows)).not.toContain('SECRET-REASON');
+    });
+
+    it('T166 R-L3: the roster is read BEFORE the decision tx opens; an empty one is reported once after the commit, never for a refused decision', async () => {
+      store = seedAwaiting();
+      const empty = makeFakeMarketingDirectory([]);
+      expect((await decide(empty)).ok).toBe(true);
+      expect(empty.readRoster.mock.invocationCallOrder[0]).toBeLessThan(store.broadcastsRepo.withTx.mock.invocationCallOrder[0]!);
+      expect(empty.listRecipients).not.toHaveBeenCalled();
+      expect(empty.reportEmptyRoster).toHaveBeenCalledTimes(1);
+
+      // The same decision again is refused (stage_changed): read, never reported.
+      const again = makeFakeMarketingDirectory([]);
+      expect((await decide(again)).ok).toBe(false);
+      expect(again.reportEmptyRoster).not.toHaveBeenCalled();
     });
 
     it('a commit failure AFTER the enqueue → zero rows, no decision row, the stage unchanged', async () => {

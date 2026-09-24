@@ -161,7 +161,8 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
     );
     expect(approved!.id).toBe(sent.value.versionId);
     expect([row!.subject, row!.bodyHtml, row!.bodySource]).toEqual([approved!.subject, approved!.bodyHtml, approved!.bodySource]);
-    expect([row!.subject, row!.bodyHtml, row!.bodySource]).toEqual([APPROVED_SUBJECT, APPROVED_BODY, APPROVED_SOURCE]);
+    // T166 S-LOW — the save stores the SANITISED body as `body_source` too, never the raw source the workspace sent.
+    expect([row!.subject, row!.bodyHtml, row!.bodySource]).toEqual([APPROVED_SUBJECT, APPROVED_BODY, APPROVED_BODY]);
 
     // SC-002 — the chain a reviewer walks without reading content.
     const decisions = await runInTenant(tenant.ctx, (tx) =>

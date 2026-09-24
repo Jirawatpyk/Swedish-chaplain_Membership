@@ -31,6 +31,7 @@ import { consumeStaffWriteBucket } from '@/lib/broadcasts-staff-write-bucket';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 
 const AdminCancelBodySchema = z.object({
   cancellationReason: z.string().min(1).max(500),
@@ -96,7 +97,8 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
+        errorId: 'M119.admin.cancel.unexpected',
         correlationId,
         tenantId: tenantCtx.slug,
         broadcastId: parsedId.value as string,
@@ -112,6 +114,11 @@ function mapCancelError(
   correlationId: string,
 ): NextResponse {
   if (error.kind === 'cancel.server_error') {
+    // T166 R-M4 — this 500 used to leave no trace at all.
+    logger.error(
+      { err: error.errKind, correlationId, errorId: 'M119.admin.cancel.server_error' },
+      'broadcasts.admin.cancel.server_error',
+    );
     return errorResponse(500, 'internal_error', correlationId);
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);

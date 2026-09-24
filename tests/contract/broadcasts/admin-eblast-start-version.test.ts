@@ -147,6 +147,21 @@ describe('POST /api/admin/broadcasts/[id]/version — start a formatted version'
     expect((await res.json()).memberOriginal.id).toBe(v0.id);
   });
 
+  it('T166 R-H1: re-opening an approved row the dispatcher has already handed to Resend → 409 sending_started, nothing written', async () => {
+    const v0 = makeApprovalVersion({ id: 'aaaaaaaa-0000-4000-8000-000000000000', versionNo: 0, sentToMemberAt: new Date('2026-09-20T08:00:00Z') });
+    const v1 = makeApprovalVersion({ versionNo: 1, sentToMemberAt: new Date('2026-09-21T08:00:00Z') });
+    const approved = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: v1.id, resendBroadcastId: 'rb-live-1' });
+    resetVersionHarness({ broadcasts: [approved], versions: [v0, v1] });
+    const { POST } = await importVersionRoute();
+    const res = await POST(postVersionRequest(ID), routeParams(ID));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('sending_started');
+    expect(harness.store.versionsRepo.rows()).toHaveLength(2);
+    expect(harness.store.state.broadcasts.get(`test-tenant::${ID}`)).toEqual(approved);
+    expect(harness.audit.events).toHaveLength(0);
+  });
+
   it('a stage that does not accept a start → 409 stage_changed and nothing is written', async () => {
     resetVersionHarness({ broadcasts: [makeApprovalBroadcast({ status: 'awaiting_member_approval', currentRound: 1 })] });
     const { POST } = await importVersionRoute();

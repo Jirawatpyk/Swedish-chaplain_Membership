@@ -10,6 +10,7 @@ import { authorizeCancel, canCancel } from '@/modules/broadcasts/domain/policies
 import {
   IN_PROGRESS_BROADCAST_STATUSES,
   SENDING_STARTED_BROADCAST_STATUSES,
+  hasDispatchBegun,
   hasSendingStarted,
 } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
 import { BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
@@ -45,5 +46,11 @@ describe('canCancel / authorizeCancel — widened to IN_PROGRESS_BROADCAST_STATU
     for (const status of BROADCAST_STATUSES) {
       expect(hasSendingStarted(status)).toBe((SENDING_STARTED_BROADCAST_STATUSES as readonly string[]).includes(status));
     }
+  });
+
+  it('T166 R-H1: dispatch has begun once a Resend broadcast id OR an audience import is on the row — an audience alone is not a send', () => {
+    expect(hasDispatchBegun({ resendBroadcastId: null, audienceImportId: null })).toBe(false);
+    expect(hasDispatchBegun({ resendBroadcastId: 'rb-1', audienceImportId: null })).toBe(true);
+    expect(hasDispatchBegun({ resendBroadcastId: null, audienceImportId: 'imp-1' })).toBe(true);
   });
 });

@@ -291,7 +291,25 @@ describe('POST | PATCH /api/admin/broadcasts/[id]/version — staff write bucket
     expect(checkLimitMock.mock.invocationCallOrder.at(-1)!).toBeLessThan(startMock.mock.invocationCallOrder[0]!);
   });
 
-  it('a malformed PATCH body → 400 before the bucket is consumed (a bad request costs no quota)', async () => {
+  /**
+   * T166 S-INFO — the PATCH body is up to 2 MB (`bodySource`), and parsing it
+   * cost the server that much work BEFORE the bucket was consumed, so an
+   * over-limit caller could keep making the route parse 2 MB for free. The
+   * bucket is consumed FIRST now, as cancel / reject already do: a malformed
+   * body still answers 400, but it spends one of the 30.
+   */
+  it('T166 S-INFO: the bucket is consumed BEFORE the PATCH body is parsed — an exhausted bucket answers 429 without reading the body', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 17 }));
+    const { PATCH } = await import('@/app/api/admin/broadcasts/[id]/version/route');
+    const res = await PATCH(
+      new NextRequest(versionUrl, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"subject":1}' }),
+      params(),
+    );
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe('broadcast_rate_limit_exceeded');
+  });
+
+  it('T166 S-INFO: under the bucket, a malformed PATCH body is still 400 — and it spent one call', async () => {
     checkLimitMock.mockResolvedValue(ok(true));
     const { PATCH } = await import('@/app/api/admin/broadcasts/[id]/version/route');
     const res = await PATCH(
@@ -299,7 +317,7 @@ describe('POST | PATCH /api/admin/broadcasts/[id]/version — staff write bucket
       params(),
     );
     expect(res.status).toBe(400);
-    expect(checkLimitMock).not.toHaveBeenCalled();
+    expect(checkLimitMock).toHaveBeenCalledTimes(1);
   });
 });
 

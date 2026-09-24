@@ -101,6 +101,17 @@ describe('saveFormattedVersion — refusal arms', () => {
     expect(store.versionsRepo.rows()[1]!.noteToMember).toBeNull();
   });
 
+  it('T166 S-LOW: body_source is stored SANITISED (the checked body), never the raw workspace HTML', async () => {
+    const stripScripts: HtmlSanitizerPort = { sanitize: (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, '') };
+    const raw = '<p>Body</p><script>steal()</script>';
+    const { store, run } = setup({ sanitizer: stripScripts });
+    const r = await run({ bodyHtml: raw, bodySource: raw });
+    expect(r.ok).toBe(true);
+    const saved = store.versionsRepo.rows().find((v) => v.id === WORKING.id)!;
+    expect(saved.bodySource).toBe('<p>Body</p>');
+    expect(saved.bodySource).toBe(saved.bodyHtml);
+  });
+
   it('a working copy that vanished under the lock → server_error, never a phantom save', async () => {
     const { store, run } = setup();
     store.versionsRepo.updateWorkingCopy.mockResolvedValueOnce(null);

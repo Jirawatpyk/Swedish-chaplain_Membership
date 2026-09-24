@@ -148,6 +148,11 @@ export type F7RouteErrorCode =
   | 'reason_required'
   | 'stale_version'
   | 'sending_started'
+  // F119 T166 S-H1 — the send-time standing rules, re-read at approve-as-
+  // submitted and at the approval-round promotion (409 — the E-Blast is not
+  // approved; submit keeps its own 422 codes above).
+  | 'member_halted'
+  | 'member_not_in_good_standing'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -417,6 +422,18 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'This E-Blast is already being sent and can no longer be withdrawn or stopped.',
     messageThai: 'E-Blast นี้กำลังถูกส่งแล้ว จึงไม่สามารถถอนหรือหยุดได้อีก',
   },
+  member_halted: {
+    message:
+      "This member's E-Blasts are paused pending admin review, so it cannot be sent. Clear the pause first, or leave it unsent.",
+    messageThai:
+      'E-Blast ของสมาชิกรายนี้ถูกพักไว้รอผู้ดูแลตรวจสอบ จึงยังส่งไม่ได้ กรุณายกเลิกการพักก่อน หรือปล่อยไว้โดยไม่ส่ง',
+  },
+  member_not_in_good_standing: {
+    message:
+      "This member's membership is suspended or has ended, so this E-Blast cannot be sent. It can be sent once the membership is in good standing again.",
+    messageThai:
+      'สมาชิกภาพของสมาชิกรายนี้ถูกระงับหรือสิ้นสุดแล้ว จึงส่ง E-Blast นี้ไม่ได้ จะส่งได้เมื่อสมาชิกภาพกลับมาอยู่ในสถานะปกติ',
+  },
   broadcast_image_empty: {
     message: 'That file is empty. Please choose an image file with content.',
     messageThai: 'ไฟล์นี้ว่างเปล่า กรุณาเลือกไฟล์รูปภาพที่มีข้อมูล',
@@ -632,6 +649,8 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   reason_required: 422,
   stale_version: 409,
   sending_started: 409,
+  member_halted: 409,
+  member_not_in_good_standing: 409,
   internal_error: 500,
 };
 

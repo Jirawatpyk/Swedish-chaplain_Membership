@@ -69,7 +69,7 @@ vi.mock('@/lib/broadcast-approval-deps', async () =>
  * the skip set is a COPY of the port's `F119_NOTIFICATION_TYPES` the positive
  * control can drop a value from.
  */
-const drainer = vi.hoisted(() => ({ wheres: [] as unknown[], skipTypes: [] as string[] }));
+const drainer = vi.hoisted(() => ({ wheres: [] as unknown[], stuckWheres: [] as unknown[], skipTypes: [] as string[] }));
 vi.mock('@/modules/broadcasts', async () => {
   const h = await import('../../helpers/eblast-version-route-harness');
   const port = await import('@/modules/broadcasts/application/ports/eblast-notification-outbox-port');
@@ -83,7 +83,8 @@ vi.mock('@/modules/broadcasts', async () => {
 /**
  * `db` for the outbox-dispatch `GET`: the lock-less candidate SELECT
  * (`{ id }`) records its WHERE and finds nothing ready; the stuck-rows count
- * reads 0. No other query runs when nothing is ready.
+ * (`{ stuckCount }`) records its WHERE and reads 0. No other query runs when
+ * nothing is ready.
  */
 vi.mock('@/lib/db', () => {
   const select = (fields?: Record<string, unknown>) => {
@@ -91,6 +92,7 @@ vi.mock('@/lib/db', () => {
       from: () => query,
       where: (cond: unknown) => {
         if (fields !== undefined && Object.keys(fields).join() === 'id') drainer.wheres.push(cond);
+        if (fields !== undefined && Object.keys(fields).join() === 'stuckCount') drainer.stuckWheres.push(cond);
         return query;
       },
       limit: async () => [],
@@ -334,6 +336,7 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
 
   async function tick(flagOn: boolean): Promise<Set<string>> {
     drainer.wheres.length = 0;
+    drainer.stuckWheres.length = 0;
     harness.flagOn = flagOn;
     vi.stubEnv('CRON_SECRET', 'cron-secret-flag-matrix-0123456789');
     const { GET } = await import('@/app/api/cron/outbox-dispatch/route');
@@ -359,11 +362,38 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
     expect(EBLAST_TYPES.filter((t) => excluded.has(t))).toEqual([]);
   });
 
+  /**
+   * T166 R-H2 — `outbox_stuck_rows_total` is the "the cron is down" alarm. It
+   * counted `pending` rows of EVERY type, so an `eblast_*` row the drainer is
+   * deliberately not selecting (flag off) became "stuck" 30 minutes after the
+   * first post-merge submit and paged every tick until the flip — burying a
+   * real stuck F4/F5 row under it. The count must skip exactly what the
+   * candidate SELECT skips: one exclusion list, read by both queries.
+   */
+  it('T166 R-H2: the stuck-rows count skips exactly what the candidate SELECT skips — the five eblast_* types while the flag is off, and never an F4 row the drainer would send', async () => {
+    const readyExcluded = await tick(false);
+    expect(drainer.stuckWheres).toHaveLength(1);
+    const stuckExcluded = excludedTypes(drainer.stuckWheres[0]);
+    expect(EBLAST_TYPES.filter((t) => !stuckExcluded.has(t))).toEqual([]);
+    expect([...stuckExcluded].sort()).toEqual([...readyExcluded].sort());
+    // FEATURE_F4_INVOICING is on under tests/setup.ts: an F4 row the drainer
+    // selects is one the alarm must still count.
+    expect(stuckExcluded.has('invoice_auto_email')).toBe(false);
+  });
+
+  it('T166 R-H2: with the flag on, the stuck-rows count covers the eblast_* types again', async () => {
+    await tick(true);
+    const stuckExcluded = excludedTypes(drainer.stuckWheres[0]);
+    expect(EBLAST_TYPES.filter((t) => stuckExcluded.has(t))).toEqual([]);
+  });
+
   it('positive control: a type dropped from the skip set is reported (the check reads the SQL the route built)', async () => {
     const dropped = drainer.skipTypes.pop()!;
     try {
       const excluded = await tick(false);
       expect(EBLAST_TYPES.filter((t) => !excluded.has(t))).toEqual([dropped]);
+      // … and the stuck-rows count reads the same list (T166 R-H2).
+      expect(EBLAST_TYPES.filter((t) => !excludedTypes(drainer.stuckWheres[0]).has(t))).toEqual([dropped]);
     } finally {
       drainer.skipTypes.push(dropped);
     }

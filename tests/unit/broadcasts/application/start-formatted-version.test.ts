@@ -89,6 +89,19 @@ describe('startFormattedVersion — arms the route suites do not reach', () => {
     expect(audit.events).toHaveLength(0);
   });
 
+  it.each([
+    { leg: 'the legacy leg (a Resend broadcast id is on the row)', ids: { resendBroadcastId: 'rb-live-1' } },
+    { leg: 'the import leg (an audience import is on the row)', ids: { audienceImportId: 'imp-live-1' } },
+  ])('T166 R-H1: voiding an approved row once dispatch has begun on $leg → sending_started, nothing written', async ({ ids }) => {
+    const b = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: V1_SENT.id, ...ids });
+    const { store, audit, run } = setup(b);
+    expect(await run()).toEqual({ ok: false, error: { kind: 'sending_started', status: 'approved' } });
+    expect(store.versionsRepo.insert).not.toHaveBeenCalled();
+    expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+    expect(statusOf(store, b)).toBe('approved');
+    expect(audit.events).toHaveLength(0);
+  });
+
   it('a fault after the first write rolls the whole start back (throw-to-rollback) → server_error', async () => {
     const b = makeApprovalBroadcast();
     const { store, audit, run } = setup(b, []);

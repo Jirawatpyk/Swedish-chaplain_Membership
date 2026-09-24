@@ -34,6 +34,7 @@ import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { consumeMemberWriteBucket } from '@/lib/broadcasts-member-write-bucket';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 
 const MemberCancelBodySchema = z
   .object({
@@ -109,7 +110,8 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: errKind(e),
+        errorId: 'M119.portal.cancel.unexpected',
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,
@@ -126,6 +128,11 @@ function mapCancelError(
   correlationId: string,
 ): NextResponse {
   if (error.kind === 'cancel.server_error') {
+    // T166 R-M4 — this 500 used to leave no trace at all.
+    logger.error(
+      { err: error.errKind, correlationId, errorId: 'M119.portal.cancel.server_error' },
+      'broadcasts.portal.cancel.server_error',
+    );
     return errorResponse(500, 'internal_error', correlationId);
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);

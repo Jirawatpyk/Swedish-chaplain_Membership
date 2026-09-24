@@ -256,6 +256,19 @@ describe('withdraw an approval (US2-AS6, FR-015, FR-015a)', () => {
     expect(harness.store.decisionsRepo.rows()).toHaveLength(0);
   });
 
+  it.each([
+    { leg: 'a Resend broadcast id is on the row (legacy leg)', ids: { resendBroadcastId: 'rb-live-1' } },
+    { leg: 'an audience import is on the row (import leg)', ids: { audienceImportId: 'imp-live-1' } },
+  ])('T166 R-H1: withdraw from approved once dispatch has begun — $leg → 409 sending_started, nothing written', async ({ ids }) => {
+    resetVersionHarness({ broadcasts: [{ ...approved(), ...ids }], versions: [V0, V1] });
+    const res = await decide({ versionId: V1.id, decision: 'approval_withdrawn', reason: REASON });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('sending_started');
+    expect(row()).toMatchObject({ status: 'approved', approvedVersionId: V1.id, scheduledFor: CONFIRMED });
+    expect(harness.store.decisionsRepo.rows()).toHaveLength(0);
+    expect(harness.store.outbox.rows()).toHaveLength(0);
+  });
+
   it('no reason on approval_withdrawn → 422 reason_required', async () => {
     resetVersionHarness({ broadcasts: [approved()], versions: [V0, V1] });
     const res = await decide({ versionId: V1.id, decision: 'approval_withdrawn' });

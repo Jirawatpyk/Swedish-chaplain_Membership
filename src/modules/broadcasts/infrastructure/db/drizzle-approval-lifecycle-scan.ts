@@ -10,7 +10,7 @@
  * Principle I), and the caller's `runInTenant` tx — never the pool-global
  * `db`, which would read without `app.current_tenant`.
  */
-import { and, asc, eq, gt, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, lt, lte, sql, type SQL } from 'drizzle-orm';
 import type { TenantTx } from '@/lib/db';
 import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
@@ -36,6 +36,9 @@ export const drizzleApprovalLifecycleScan: ApprovalLifecycleScanPort = {
       lte(broadcasts.stageEnteredAt, query.enteredAtOrBefore),
     ];
     if (query.enteredAfter !== undefined) conditions.push(gt(broadcasts.stageEnteredAt, query.enteredAfter));
+    // T166 R-L1 — a filter on top of `broadcasts_awaiting_member_idx`, not a
+    // new index: the tenant has a handful of rows in this status.
+    if (query.reminderStageBelow !== undefined) conditions.push(lt(broadcasts.memberReminderStage, query.reminderStageBelow));
     const rows = await tx
       .select({ broadcastId: broadcasts.broadcastId, stageEnteredAt: broadcasts.stageEnteredAt })
       .from(broadcasts)

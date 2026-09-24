@@ -636,7 +636,9 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('reject.server_error');
       if (result.error.kind === 'reject.server_error') {
-        expect(result.error.message).toBe('tx-rolled-back');
+        // T166 R-M4 — the error CLASS, never the message.
+        expect(result.error.errKind).toBe('Error');
+        expect(JSON.stringify(result.error)).not.toContain('tx-rolled-back');
       }
     }
   });
@@ -653,8 +655,6 @@ describe('reject-broadcast โ€” Wave 6 GREEN (T101)', () => {
       { tenant, broadcastsRepo: repo, imagesRepo: makeFakeBroadcastImagesRepo(), audit: audit.port, clock },
       baseInput,
     );
-    if (!result.ok && result.error.kind === 'reject.server_error') {
-      expect(result.error.message).toBe('unknown error');
-    }
+    expect(result).toEqual({ ok: false, error: { kind: 'reject.server_error', errKind: 'unknown' } });
   });
 });

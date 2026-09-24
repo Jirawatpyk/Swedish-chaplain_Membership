@@ -1000,6 +1000,14 @@ export function makeDrizzleBroadcastsRepo(
               isNull(broadcasts.resendAudienceId),
               eq(broadcasts.resendAudienceId, resendAudienceId),
             ),
+            // F119 T166 R-H1 — and only while the row is still dispatchable.
+            // Step 1's lock is long committed by now, and F119 added exits from
+            // `approved` that are NOT terminal (a withdrawn approval, a
+            // cancelled schedule, a new working copy): a row that left
+            // `approved` mid-dispatch must refuse the attach, so the tick takes
+            // its lost-CAS arm (reclaim what it minted, send nothing) instead of
+            // sending a version nobody approves any more.
+            eq(broadcasts.status, 'approved'),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1039,6 +1047,12 @@ export function makeDrizzleBroadcastsRepo(
               isNull(broadcasts.resendBroadcastId),
               eq(broadcasts.resendBroadcastId, resendBroadcastId),
             ),
+            // F119 T166 R-H1 — the status CAS, as `attachAudienceId`. This is
+            // the last write before `sendBroadcast`: a row withdrawn, cancelled
+            // or re-opened since Step 1 fails it, the tick reclaims the resource
+            // it just minted and sends nothing, and no id is left behind for the
+            // next round to inherit (and mistake for "already sent").
+            eq(broadcasts.status, 'approved'),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1101,6 +1115,9 @@ export function makeDrizzleBroadcastsRepo(
               isNull(broadcasts.audienceImportId),
               eq(broadcasts.audienceImportId, importId),
             ),
+            // F119 T166 R-H1 — the status CAS, as `attachAudienceId`: the
+            // import leg's hand-over marker only lands on a row still `approved`.
+            eq(broadcasts.status, 'approved'),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });

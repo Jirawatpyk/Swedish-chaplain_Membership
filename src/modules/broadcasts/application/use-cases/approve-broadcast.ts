@@ -13,6 +13,9 @@
  *   - status='sending' transition (cron worker owns it)
  *
  * State-check: status must be `submitted`.
+ * Send-time standing (F119 T166 S-H1): the owning member must not be halted
+ * and must hold full F8 membership access — the rules submit applies, re-read
+ * under the row lock (`member_halted` / `member_not_in_good_standing`, 409).
  * Schedule defence: scheduledFor must be ≥ now+5min (Ultraplan AD8).
  *
  * Atomic: applyTransition('approved') + audit `broadcast_approved` +
@@ -28,6 +31,7 @@ import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
+import { readMemberSendStanding, type MemberSendStandingDeps } from './_member-send-standing';
 // Verify-fix R4 (Types-#1, 2026-05-02): re-export canonical `Locale`
 // from `@/i18n/config` instead of duplicating the union literal in
 // every use-case file. Single source of truth; adding a 4th locale
@@ -53,6 +57,10 @@ export type ApproveBroadcastError =
       readonly observedStatus: string;
     }
   | { readonly kind: 'broadcast_schedule_too_soon'; readonly scheduledFor: Date }
+  /** F119 T166 S-H1 — the owning member's broadcasts are halted pending admin review. */
+  | { readonly kind: 'member_halted'; readonly memberId: string }
+  /** F119 T166 S-H1 — the owning member's membership is suspended or terminated (F8). */
+  | { readonly kind: 'member_not_in_good_standing'; readonly memberId: string }
   | { readonly kind: 'approve.server_error'; readonly message: string };
 
 export interface ApproveBroadcastDeps {
@@ -77,6 +85,12 @@ export interface ApproveBroadcastDeps {
    * test back-compat.
    */
   readonly membersBridge?: MembersBridgePort;
+  /**
+   * F119 T166 S-H1 — the send-time rules submit applies (halt flag + F8
+   * membership access), re-read before the approval. REQUIRED: a security
+   * gate is never optional in the composition.
+   */
+  readonly sendStanding: MemberSendStandingDeps;
 }
 
 export interface ApproveBroadcastInput {
@@ -137,6 +151,40 @@ export async function approveBroadcast(
           kind: 'broadcast_invalid_state_transition',
           observedStatus: lockedStatus,
         });
+      }
+
+      // F119 T166 S-H1 — "the rules that block sending still apply at send
+      // time". Approving makes the row dispatchable, so the owning member's
+      // halt flag and F8 membership access are re-read here, under the row
+      // lock, exactly as submit reads them. Refusals return BEFORE any write
+      // (a `return err()` inside the tx commits nothing written so far).
+      const row = await deps.broadcastsRepo.findByIdInTx(
+        tx,
+        deps.tenant.slug,
+        input.broadcastId,
+      );
+      if (row === null) {
+        return err({
+          kind: 'broadcast_not_found',
+          broadcastId: input.broadcastId as string,
+        });
+      }
+      const standing = await readMemberSendStanding(
+        deps.sendStanding,
+        deps.tenant,
+        row.requestedByMemberId,
+      );
+      switch (standing.kind) {
+        case 'halted':
+          return err({ kind: 'member_halted', memberId: row.requestedByMemberId });
+        case 'not_in_good_standing':
+          return err({ kind: 'member_not_in_good_standing', memberId: row.requestedByMemberId });
+        case 'halt_read_failed':
+        case 'access_unavailable':
+          // Fail CLOSED: the gate was not decided → approve.server_error.
+          throw new Error(`member send standing unavailable: ${standing.kind}`);
+        case 'ok':
+          break;
       }
 
       let approved: Broadcast;

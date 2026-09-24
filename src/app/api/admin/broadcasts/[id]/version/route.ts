@@ -6,11 +6,12 @@
  *   PATCH  save the working copy         `broadcasts.write`   → 200
  *   GET    the version thread            `broadcasts.read`    → 200 (manager too)
  *
- * Order of checks is the contract: gate → id (a malformed id is a 404 before
- * any read) → [PATCH: body shape] → the 30 / 60 s per-(tenant, actor) staff
- * write bucket, an ATOMIC check consumed BEFORE the use case (429
- * `broadcast_rate_limit_exceeded` + `Retry-After`) → the use case. GET is a
- * read: no bucket.
+ * Order of checks: gate → id (a malformed id is a 404 before any read) → the
+ * 30 / 60 s per-(tenant, actor) staff write bucket, an ATOMIC check consumed
+ * BEFORE the body is read (429 `broadcast_rate_limit_exceeded` +
+ * `Retry-After`; T166 S-INFO — the PATCH body is up to 2 MB, and parsing it
+ * first let an over-limit caller make the route do that work for free) →
+ * [PATCH: body shape] → the use case. GET is a read: no bucket.
  *
  * Each state change is ONE `runInTenant` inside the use case, with
  * throw-to-rollback (a `return err()` inside the callback would COMMIT). No
@@ -131,6 +132,13 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
   if (!parsedId.ok) return errorResponse(404, 'broadcast_not_found', correlationId);
   const tenantCtx = resolveTenantFromRequest(request);
 
+  // T166 S-INFO — the bucket is consumed BEFORE the (up to 2 MB) body is
+  // read and parsed, as cancel / reject do: an over-limit caller must not be
+  // able to make this route parse 2 MB per request for free. A malformed body
+  // therefore spends one of the 30.
+  const limited = await consumeStaffWriteBucket(tenantCtx.slug, ctx.current.user.id, correlationId);
+  if (limited !== null) return limited;
+
   let raw: unknown;
   try {
     raw = await request.json();
@@ -146,9 +154,6 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
       ? errorResponse(422, 'validation_error', correlationId, { fieldErrors })
       : errorResponse(400, 'invalid_body', correlationId, { fieldErrors });
   }
-
-  const limited = await consumeStaffWriteBucket(tenantCtx.slug, ctx.current.user.id, correlationId);
-  if (limited !== null) return limited;
 
   const result = await saveFormattedVersion(makeSaveFormattedVersionDeps(tenantCtx.slug), {
     broadcastId: parsedId.value,
@@ -217,6 +222,10 @@ function startErrorResponse(error: StartFormattedVersionError, correlationId: st
       });
     case 'round_zero':
       return errorResponse(409, 'round_zero', correlationId);
+    case 'sending_started':
+      return errorResponse(409, 'sending_started', correlationId, {
+        details: { stage: stageOf(error.status), status: error.status },
+      });
     case 'server_error':
       return serverError(error.errKind, 'M119.admin.version.post.server_error', correlationId);
     default:

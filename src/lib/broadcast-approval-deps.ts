@@ -40,6 +40,8 @@ import {
   isEblastMemberApprovalEnabled,
   makeDrizzleBroadcastsRepo,
   makeValidateImageSourceAllowlistDeps,
+  membersBridge,
+  membershipAccessBridge,
   systemClock,
   type ActorNameDirectoryPort,
   type ConfirmScheduleDeps,
@@ -152,6 +154,8 @@ export function makeConfirmScheduleDeps(tenantId: string): ConfirmScheduleDeps {
     outbox: eblastNotificationOutbox,
     audit: f7AuditAdapter,
     clock: systemClock,
+    // T166 S-H1 — the send-time standing rules submit applies.
+    sendStanding: { membersBridge, membershipAccess: membershipAccessBridge },
   };
 }
 

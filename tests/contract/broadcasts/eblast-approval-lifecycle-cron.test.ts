@@ -205,6 +205,20 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
     expect([...h.store.state.broadcasts.values()][0]!.memberReminderStage).toBe(3);
   });
 
+  it('T166 R-L2: a day-23 warning that reaches nobody (no member contact, empty roster) still advances once, and says so in a warn — the same line as day 3 / 7', async () => {
+    const h = harness({ broadcasts: [awaitingRow({ memberReminderStage: 2 })] }, { contacts: false });
+    vi.mocked(h.deps.marketingDirectory.listRecipients).mockResolvedValue([]);
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.warn).mockClear();
+    expect(await h.tick(23)).toMatchObject({ warningsSent: 1 });
+    expect(h.store.outbox.rows()).toEqual([]);
+    expect(eventsOf(h.audit)).toEqual([]);
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ reminder: 'day23', tenantId: TENANT }),
+      'M119.cron.approval_lifecycle.no_member_recipient',
+    );
+  });
+
   it('the scan and every row transaction set their own statement timeout', async () => {
     const h = harness({ broadcasts: [awaitingRow()] });
     await h.tick(3);
@@ -264,6 +278,18 @@ describe('T130 — bounds, failure isolation', () => {
     const left = [...h.store.state.broadcasts.values()].filter((b) => b.status === 'awaiting_member_approval');
     expect(left.map((b) => b.broadcastId)).toEqual([rows.at(-1)!.broadcastId]); // the youngest waited
     expect((await h.tick(1)).expired).toBe(1);
+  });
+
+  it(`T166 R-L1: ${APPROVAL_LIFECYCLE_BATCH} already-warned rows (stage 3) cannot starve a day-7 reminder — the reminder window skips what it has nothing left to send`, async () => {
+    const warned = many(APPROVAL_LIFECYCLE_BATCH + 5, -25).map((b) => ({ ...b, memberReminderStage: 3 }));
+    const due = awaitingRow({ broadcastId: '11111111-1111-4111-8111-999999999999' as Broadcast['broadcastId'], stageEnteredAt: at(-8), memberReminderStage: 1 });
+    const rows = [...warned, due];
+    const h = harness({ broadcasts: rows, versions: rows.map((b) => makeApprovalVersion({ id: V1, broadcastId: b.broadcastId, versionNo: 1, sentToMemberAt: b.stageEnteredAt })) });
+    expect(await h.tick(0)).toMatchObject({ scanned: 1, remindersSent: 1 });
+    expect(h.store.outbox.rows().map((r) => r.contextData.kind)).toEqual(['reminder_day7']);
+    // The expiry list is NOT bounded by the stage: a warned row still closes on day 30.
+    const expiries = h.deps.lifecycleScan.listAwaitingMemberApprovalInTx.mock.calls.map((c) => c[2]);
+    expect(expiries.map((q) => q.reminderStageBelow)).toEqual([3, undefined]);
   });
 
   it('a row whose transaction throws is rolled back, counted and left for tomorrow; the other rows still go', async () => {

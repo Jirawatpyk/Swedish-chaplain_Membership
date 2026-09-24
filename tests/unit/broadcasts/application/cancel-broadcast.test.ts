@@ -305,6 +305,51 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     expect(call.payload['cancellationReason']).toBe(baseInput.cancellationReason);
   });
 
+  it('T166 R-L3: a member withdrawal reads the roster BEFORE its tx and reports an empty one once, after the commit; a staff cancel reads none', async () => {
+    const member = { kind: 'member', memberId: 'm-1', userId: 'u-1' } as const;
+    const order: string[] = [];
+    const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-1') });
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) => {
+      order.push('withTx');
+      return inner(fn as never);
+    }) as BroadcastsRepo['withTx'];
+    const directory = makeFakeMarketingDirectory([]);
+    directory.readRoster.mockImplementation(async () => {
+      order.push('readRoster');
+      return [];
+    });
+    const deps = { ...t081Deps(), marketingDirectory: directory };
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...deps, audit: makeAudit().port, clock },
+      { ...baseInput, actor: member, cancellationReason: null },
+    );
+    expect(result.ok).toBe(true);
+    expect(directory.readRoster).toHaveBeenCalledTimes(1);
+    expect(directory.listRecipients).not.toHaveBeenCalled();
+    expect(directory.reportEmptyRoster).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['readRoster', 'withTx']);
+
+    // A staff cancel is not a hand-off: no roster read at all.
+    const staffDir = makeFakeMarketingDirectory([]);
+    await cancelBroadcast(
+      { tenant, broadcastsRepo: makeRepo({ existing: makeBroadcast('submitted') }).port, ...t081Deps(), marketingDirectory: staffDir, audit: makeAudit().port, clock },
+      baseInput,
+    );
+    expect(staffDir.readRoster).not.toHaveBeenCalled();
+    expect(staffDir.reportEmptyRoster).not.toHaveBeenCalled();
+  });
+
+  it('T166 R-L3: a member withdrawal refused inside its tx (not the owner) reads the roster but never reports it', async () => {
+    const directory = makeFakeMarketingDirectory([]);
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: makeRepo({ existing: makeBroadcast('submitted', 'm-OTHER') }).port, ...t081Deps(), marketingDirectory: directory, audit: makeAudit().port, clock },
+      { ...baseInput, actor: { kind: 'member', memberId: 'm-1', userId: 'u-1' }, cancellationReason: null },
+    );
+    expect(result.ok).toBe(false);
+    expect(directory.reportEmptyRoster).not.toHaveBeenCalled();
+  });
+
   it('D1 G2: member self-cancel ALSO sends notification (gap fix)', async () => {
     const audit = makeAudit();
     // member-actor + matching requestedByMemberId
@@ -690,7 +735,9 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('cancel.server_error');
       if (result.error.kind === 'cancel.server_error') {
-        expect(result.error.message).toBe('db down');
+        // T166 R-M4 — the error CLASS, never the message.
+        expect(result.error.errKind).toBe('Error');
+        expect(JSON.stringify(result.error)).not.toContain('db down');
       }
     }
   });
@@ -702,8 +749,6 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
-    if (!result.ok && result.error.kind === 'cancel.server_error') {
-      expect(result.error.message).toBe('unknown error');
-    }
+    expect(result).toEqual({ ok: false, error: { kind: 'cancel.server_error', errKind: 'unknown' } });
   });
 });

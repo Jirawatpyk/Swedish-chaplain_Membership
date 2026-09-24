@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { approveBroadcast, type ApproveBroadcastDeps } from '@/modules/broadcasts/application/use-cases/approve-broadcast';
 import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { asTenantContext } from '@/modules/tenants';
-import { makeApprovalBroadcast } from '../../helpers/eblast-approval-fakes';
+import { makeApprovalBroadcast, makeFakeSendStanding } from '../../helpers/eblast-approval-fakes';
 import {
   ADMIN_USER_ID,
   getVersionRequest,
@@ -45,6 +45,7 @@ function approveDeps(): ApproveBroadcastDeps {
     broadcastsRepo: harness.store.broadcastsRepo as unknown as BroadcastsRepo,
     audit: harness.audit,
     clock: { now: () => harness.store.now },
+    sendStanding: makeFakeSendStanding(),
   };
 }
 
@@ -86,7 +87,7 @@ describe('approve as submitted (FR-007) — the thread without a formatting roun
     // Checked by `tsc` (pnpm typecheck): a versions/decisions port added to
     // `ApproveBroadcastDeps` changes this key set and fails the build.
     expectTypeOf<keyof ApproveBroadcastDeps>().toEqualTypeOf<
-      'tenant' | 'broadcastsRepo' | 'audit' | 'clock' | 'emailTransactional' | 'membersBridge'
+      'tenant' | 'broadcastsRepo' | 'audit' | 'clock' | 'emailTransactional' | 'membersBridge' | 'sendStanding'
     >();
   });
 

@@ -57,6 +57,27 @@ export function hasSendingStarted(status: BroadcastStatus): boolean {
 }
 
 /**
+ * F119 T166 R-H1 — has the dispatcher already handed an `approved` row over,
+ * although its status has not moved yet? The dispatch leg locks the row, then
+ * COMMITS and calls the provider with no lock held, persisting what it made as
+ * it goes: `resend_broadcast_id` before the send (legacy leg),
+ * `audience_import_id` before the import is sent (import leg). Either one set
+ * means a send is in flight or done — an exit from `approved` that is not
+ * terminal (a withdrawn approval, a cancelled or re-timed schedule, a new
+ * working copy) must then answer `sending_started`, or the next round would
+ * inherit the id and be recorded as sent without ever going out.
+ *
+ * `resend_audience_id` alone does NOT count: an audience is reused across a
+ * failed tick by design and carries no send.
+ */
+export function hasDispatchBegun(row: {
+  readonly resendBroadcastId: string | null;
+  readonly audienceImportId: string | null;
+}): boolean {
+  return row.resendBroadcastId !== null || row.audienceImportId !== null;
+}
+
+/**
  * F119 T132 — the in-progress stages that exist ONLY inside the
  * member-approval round (migration 0305): a row in one of them is in flight
  * whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says. Research R18's "flag ON or

@@ -70,6 +70,8 @@ import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
+import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
 import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -156,7 +158,13 @@ describe('F119 send + promotion + the stage clock — real composition on live P
     const before = Date.now();
 
     const r = await approveBroadcast(
-      { tenant: tenant.ctx, broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug), audit: f7AuditAdapter, clock: { now: () => new Date() } },
+      {
+        tenant: tenant.ctx,
+        broadcastsRepo: makeDrizzleBroadcastsRepo(tenant.ctx.slug),
+        audit: f7AuditAdapter,
+        clock: { now: () => new Date() },
+        sendStanding: { membersBridge, membershipAccess: membershipAccessBridge },
+      },
       {
         broadcastId: asBroadcastId(row.broadcastId!),
         actorUserId: MARKETER,

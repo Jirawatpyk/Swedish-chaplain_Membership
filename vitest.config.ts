@@ -845,6 +845,15 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F119 T166 S-H1 — the send-time standing gate (halt flag + F8
+        // membership access) that submit, approve-as-submitted and the
+        // promotion share. A security gate: 100% branch.
+        'src/modules/broadcasts/application/use-cases/_member-send-standing.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // The count endpoints' shared core. The `_exhaustive: never` arm is
         // unreachable by construction, so 100% line is not honest here; the
         // floor is what the unit + contract suites measured (parse, rate key,

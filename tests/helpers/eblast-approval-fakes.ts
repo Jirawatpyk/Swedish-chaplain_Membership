@@ -77,6 +77,7 @@ import type {
   AwaitingApprovalScanQuery,
 } from '@/modules/broadcasts/application/ports/approval-lifecycle-scan-port';
 import type { TenantContext, TenantSlug } from '@/modules/tenants';
+import type { MemberSendStandingDeps } from '@/modules/broadcasts/application/use-cases/_member-send-standing';
 
 /** The sentinel tx the fakes hand to `withTx` callbacks — assert on it to prove a write shared the tx. */
 export const FAKE_TX = 'fake-tx' as const;
@@ -754,7 +755,8 @@ export type FakeApprovalLifecycleScan = Mocked<ApprovalLifecycleScanPort>;
  * The daily lifecycle scan over the approval store: `awaiting_member_approval`
  * rows of the tenant inside the window, OLDEST FIRST, at most `limit` — the
  * same predicate the Drizzle adapter expresses in SQL (pinned against live
- * Postgres in `eblast-allowance-bucket.test.ts`).
+ * Postgres in `eblast-approval-lifecycle-scan.test.ts`), including the
+ * `reminderStageBelow` bound (T166 R-L1).
  */
 export function makeFakeApprovalLifecycleScan(store: FakeApprovalStore): FakeApprovalLifecycleScan {
   return {
@@ -766,7 +768,8 @@ export function makeFakeApprovalLifecycleScan(store: FakeApprovalStore): FakeApp
               b.tenantId === (tenantId as string) &&
               b.status === 'awaiting_member_approval' &&
               b.stageEnteredAt.getTime() <= query.enteredAtOrBefore.getTime() &&
-              (query.enteredAfter === undefined || b.stageEnteredAt.getTime() > query.enteredAfter.getTime()),
+              (query.enteredAfter === undefined || b.stageEnteredAt.getTime() > query.enteredAfter.getTime()) &&
+              (query.reminderStageBelow === undefined || b.memberReminderStage < query.reminderStageBelow),
           )
           .sort((a, b) => a.stageEnteredAt.getTime() - b.stageEnteredAt.getTime())
           .slice(0, query.limit)
@@ -783,10 +786,17 @@ export function makeMarketingRecipient(overrides: Partial<MarketingRecipient> = 
   return { userId: '44444444-4444-4444-8444-444444444444', email: 'marketing@swecham.test', locale: 'en', ...overrides };
 }
 
-/** The hand-off roster, fixed; an empty roster is `[]` (the real adapter counts it). */
+/**
+ * The hand-off roster, fixed; an empty roster is `[]`. `listRecipients` stands
+ * for the adapter's counting read; `readRoster` is the side-effect-free read a
+ * caller makes before its tx, and `reportEmptyRoster` the count it then owes
+ * (T166 R-L3).
+ */
 export function makeFakeMarketingDirectory(recipients: readonly MarketingRecipient[] = [makeMarketingRecipient()]): Mocked<MarketingDirectoryPort> {
   return {
     listRecipients: vi.fn(async () => recipients),
+    readRoster: vi.fn(async () => recipients),
+    reportEmptyRoster: vi.fn(),
   } satisfies MarketingDirectoryPort;
 }
 
@@ -922,6 +932,39 @@ export function makeRecordingF7Audit(): RecordingF7Audit {
     emit: vi.fn(record),
     emitTyped: vi.fn(record) as AuditPort['emitTyped'],
   };
+}
+
+// --- MemberSendStandingDeps (T166 S-H1 — the send-time standing rules) ------
+
+export interface FakeSendStandingOpts {
+  /** Member ids on the halt list (FR-002 precondition k). */
+  readonly halted?: readonly string[];
+  /** F8 membership access for every member; `lookup_error` = the port's err arm. Default `full`. */
+  readonly access?: 'full' | 'suspended' | 'terminated' | 'lookup_error';
+  /** The halt read THROWS (the bridge's failed-read contract). */
+  readonly haltReadThrows?: boolean;
+}
+
+/** The two reads submit, approve-as-submitted and the promotion share; default: in good standing. */
+export function makeFakeSendStanding(opts: FakeSendStandingOpts = {}): MemberSendStandingDeps & {
+  readonly membersBridge: { readonly getMembersHaltedInTenant: ReturnType<typeof vi.fn> };
+  readonly membershipAccess: { readonly getMembershipAccess: ReturnType<typeof vi.fn> };
+} {
+  return {
+    membersBridge: {
+      getMembersHaltedInTenant: vi.fn(async () => {
+        if (opts.haltReadThrows === true) throw new Error('halt read failed');
+        return (opts.halted ?? []).map((memberId) => ({ memberId, displayName: 'Halted Co', haltedSinceAt: APPROVAL_NOW }));
+      }),
+    },
+    membershipAccess: {
+      getMembershipAccess: vi.fn(async () =>
+        opts.access === 'lookup_error'
+          ? { ok: false as const, error: { kind: 'membership_access.lookup_error' as const } }
+          : { ok: true as const, value: { access: opts.access ?? 'full', reason: 'in_good_standing' as const } },
+      ),
+    },
+  } as never;
 }
 
 // --- ImageAllowlistPort (the per-tenant image-source allow-list) ------------

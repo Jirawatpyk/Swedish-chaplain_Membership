@@ -27,7 +27,8 @@
  * approve-as-submitted E-Blast was never in a design round). `in_design` is
  * the idempotent arm: the existing working copy is returned, nothing is
  * written ("201 … or the existing working copy returned"). Anything else is
- * `stage_changed`.
+ * `stage_changed`. A `member_approved` / `approved` row the dispatcher has
+ * already handed over (`hasDispatchBegun`, T166 R-H1) is `sending_started`.
  *
  * **T152 — the flag gates ONE edge, not the route** (research R18): with
  * `memberApprovalEnabled` false, a row whose RE-READ status is `submitted`
@@ -52,6 +53,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../../domain/broadcast';
 import type { BroadcastVersion } from '../../../domain/approval/broadcast-version';
+import { hasDispatchBegun } from '../../../domain/stage/in-progress-statuses';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
@@ -90,6 +92,8 @@ export type StartFormattedVersionError =
   | { readonly kind: 'not_found'; readonly reason: 'unknown' | 'flag_off' }
   | { readonly kind: 'stage_changed'; readonly status: BroadcastStatus }
   | { readonly kind: 'round_zero' }
+  /** T166 R-H1 — the dispatcher already handed the approved row to the provider (`hasDispatchBegun`). */
+  | { readonly kind: 'sending_started'; readonly status: BroadcastStatus }
   /** An infrastructure fault; `errKind` is the error CLASS only (never `e.message` — F7-5). */
   | { readonly kind: 'server_error'; readonly errKind: string };
 
@@ -245,6 +249,12 @@ function admitStage(broadcast: Broadcast, memberApprovalEnabled: boolean): boole
     case 'approved':
       if (broadcast.currentRound < 1) {
         throw new ApprovalRefusal<StartFormattedVersionError>({ kind: 'round_zero' });
+      }
+      // T166 R-H1 — voiding an approval the dispatcher has already handed
+      // over (its lock committed before the provider call) cannot stop that
+      // send, and would leave its id for the next round to inherit.
+      if (hasDispatchBegun(broadcast)) {
+        throw new ApprovalRefusal<StartFormattedVersionError>({ kind: 'sending_started', status: broadcast.status });
       }
       return true;
     default:

@@ -34,7 +34,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { createHash } from 'node:crypto';
-import { and, count, eq, lt, lte, ne, notInArray } from 'drizzle-orm';
+import { and, count, eq, lt, lte, ne, notInArray, type SQL } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
  
@@ -1324,6 +1324,63 @@ async function dispatchOne(
   });
 }
 
+/**
+ * The notification types a feature flag holds back from this tick — one list,
+ * read by the candidate pick AND the stuck-rows count (T166 R-H2). A type a
+ * flag holds back is waiting by design: it is neither dispatched nor "stuck".
+ * Any future "enqueue always, skip at the drainer" flag belongs HERE, or the
+ * stuck alarm fires for its rows the moment they are 30 minutes old.
+ */
+function flagSkippedTypeFilters(): SQL[] {
+  const filters: SQL[] = [];
+  // R7-B4 fix — FEATURE_F4_INVOICING kill-switch containment. When F4
+  // is disabled the dispatcher MUST NOT ship `invoice_auto_email`
+  // rows (which carry Blob download URLs to tax PDFs) while still
+  // draining F1 outbox rows. The previous proxy-layer gate on
+  // `/api/cron/auto-email-dispatch` was a path-mismatch (that route
+  // never existed) — flipping the kill-switch therefore had no
+  // containment power. Filter at query time so rows are skipped
+  // cleanly without racking up per-row retries or errors.
+  if (!env.features.f4Invoicing) {
+    filters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
+  }
+  // F114 — the same containment for the two change-request arms (whole-
+  // branch review F-1). With FEATURE_MEMBER_CHANGE_APPROVAL off the rows
+  // enqueued while it was on MUST NOT keep dispatching member PII to staff
+  // (or decisions to members) after the operator flips the switch: they
+  // stay `pending`, untouched, and drain when the flag returns
+  // (quickstart § 3, rollback matrix row 2).
+  if (!env.features.memberChangeApproval) {
+    filters.push(
+      ne(notificationsOutbox.notificationType, 'member_change_request_submitted_staff'),
+      ne(notificationsOutbox.notificationType, 'member_change_request_decided_member'),
+    );
+  }
+  // F119 T152a — the drainer arm of FEATURE_EBLAST_MEMBER_APPROVAL (maintainer
+  // decision, round 4 H2; contracts/dashboard-and-notifications.md § 3). The
+  // five approval-round types are ENQUEUED unconditionally — no use case reads
+  // the flag inside its tx — and are simply not selected while it is off: no
+  // send, no attempt, no `last_error`, never the `no_template_handler` ladder.
+  // That is what keeps FR-034's "behave as today" true for
+  // `eblast_submitted_marketing`, which rides the existing unflagged submit.
+  // The rows wait and drain on the first tick after the flip.
+  if (!isEblastMemberApprovalEnabled()) {
+    filters.push(notInArray(notificationsOutbox.notificationType, [...F119_NOTIFICATION_TYPES]));
+  }
+  // R1-I3 — kill-switch parity for the T166 async render branch.
+  // When `FEATURE_F5_ASYNC_RECEIPT_PDF` is off, the dispatcher must
+  // also stop picking up `receipt_pdf_render` rows. Without this
+  // filter, flipping the flag false (rollback path) wouldn't stop
+  // the worker — the dispatcher would keep invoking `renderReceiptPdf`
+  // on rows that were enqueued before the flip, defeating the
+  // kill-switch's purpose. The rows themselves remain in the outbox
+  // for manual recovery (see runbook receipt-pdf-async-rollback.md).
+  if (!env.features.f5AsyncReceiptPdf) {
+    filters.push(ne(notificationsOutbox.notificationType, 'receipt_pdf_render'));
+  }
+  return filters;
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
@@ -1360,57 +1417,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const now = new Date();
 
-  // R7-B4 fix — FEATURE_F4_INVOICING kill-switch containment. When F4
-  // is disabled the dispatcher MUST NOT ship `invoice_auto_email`
-  // rows (which carry Blob download URLs to tax PDFs) while still
-  // draining F1 outbox rows. The previous proxy-layer gate on
-  // `/api/cron/auto-email-dispatch` was a path-mismatch (that route
-  // never existed) — flipping the kill-switch therefore had no
-  // containment power. Filter at query time so rows are skipped
-  // cleanly without racking up per-row retries or errors.
+  // One exclusion list for BOTH queries below (T166 R-H2): what this tick
+  // deliberately does not drain is also not "stuck".
+  const flagSkipped = flagSkippedTypeFilters();
   const baseReadyFilters = [
     eq(notificationsOutbox.status, 'pending'),
     lte(notificationsOutbox.nextRetryAt, now),
+    ...flagSkipped,
   ];
-  if (!env.features.f4Invoicing) {
-    baseReadyFilters.push(ne(notificationsOutbox.notificationType, 'invoice_auto_email'));
-  }
-  // F114 — the same containment for the two change-request arms (whole-
-  // branch review F-1). With FEATURE_MEMBER_CHANGE_APPROVAL off the rows
-  // enqueued while it was on MUST NOT keep dispatching member PII to staff
-  // (or decisions to members) after the operator flips the switch: they
-  // stay `pending`, untouched, and drain when the flag returns
-  // (quickstart § 3, rollback matrix row 2).
-  if (!env.features.memberChangeApproval) {
-    baseReadyFilters.push(
-      ne(notificationsOutbox.notificationType, 'member_change_request_submitted_staff'),
-      ne(notificationsOutbox.notificationType, 'member_change_request_decided_member'),
-    );
-  }
-  // F119 T152a — the drainer arm of FEATURE_EBLAST_MEMBER_APPROVAL (maintainer
-  // decision, round 4 H2; contracts/dashboard-and-notifications.md § 3). The
-  // five approval-round types are ENQUEUED unconditionally — no use case reads
-  // the flag inside its tx — and are simply not selected while it is off: no
-  // send, no attempt, no `last_error`, never the `no_template_handler` ladder.
-  // That is what keeps FR-034's "behave as today" true for
-  // `eblast_submitted_marketing`, which rides the existing unflagged submit.
-  // The rows wait and drain on the first tick after the flip.
-  if (!isEblastMemberApprovalEnabled()) {
-    baseReadyFilters.push(notInArray(notificationsOutbox.notificationType, [...F119_NOTIFICATION_TYPES]));
-  }
-  // R1-I3 — kill-switch parity for the T166 async render branch.
-  // When `FEATURE_F5_ASYNC_RECEIPT_PDF` is off, the dispatcher must
-  // also stop picking up `receipt_pdf_render` rows. Without this
-  // filter, flipping the flag false (rollback path) wouldn't stop
-  // the worker — the dispatcher would keep invoking `renderReceiptPdf`
-  // on rows that were enqueued before the flip, defeating the
-  // kill-switch's purpose. The rows themselves remain in the outbox
-  // for manual recovery (see runbook receipt-pdf-async-rollback.md).
-  if (!env.features.f5AsyncReceiptPdf) {
-    baseReadyFilters.push(
-      ne(notificationsOutbox.notificationType, 'receipt_pdf_render'),
-    );
-  }
 
   // Lock-less candidate pick. Real per-row lock happens inside dispatchOne.
   const ready = await db
@@ -1425,6 +1439,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // is designed to catch (cron hasn't dispatched anything) produces zero
   // ready rows. Wrapped in try/catch so an observability failure never
   // breaks the dispatch summary.
+  //
+  // T166 R-H2 — the SAME flag exclusions as the candidate pick. A row a flag
+  // holds back is waiting by design, not stuck: counting it made every
+  // unflagged E-Blast submit (which enqueues `eblast_submitted_marketing`
+  // with FEATURE_EBLAST_MEMBER_APPROVAL off) fire the "cron is down" alert on
+  // every tick from 30 minutes after it until the flip — burying a real stuck
+  // F4 / F5 row under it.
   try {
     const stuckThreshold = new Date(Date.now() - 30 * 60_000);
     const [stuckResult] = await db
@@ -1434,6 +1455,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         and(
           eq(notificationsOutbox.status, 'pending'),
           lt(notificationsOutbox.nextRetryAt, stuckThreshold),
+          ...flagSkipped,
         ),
       );
     const stuckCount = stuckResult?.stuckCount ?? 0;

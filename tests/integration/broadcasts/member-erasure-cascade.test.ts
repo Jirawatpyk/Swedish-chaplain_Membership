@@ -125,7 +125,12 @@ function makeStubRepo(opts: {
     },
     insertDraft: () => Promise.reject(new Error('not used')),
     updateDraft: () => Promise.reject(new Error('not used')),
-    findById: () => Promise.resolve(null),
+    // T166 R-M3 — the cascade re-reads a row whose CAS it lost; the racer
+    // this stub throws for has moved on to `sending` (out of progress).
+    findById: (_tenant: unknown, broadcastId: unknown): Promise<Broadcast | null> => {
+      const original = opts.inFlight.find((b) => (b.broadcastId as unknown as string) === (broadcastId as string));
+      return Promise.resolve(original === undefined ? null : ({ ...original, status: 'sending' } as Broadcast));
+    },
     findByIdInTx: () => Promise.resolve(null),
     lockForUpdate: () => Promise.reject(new Error('not used')),
     async applyTransition(

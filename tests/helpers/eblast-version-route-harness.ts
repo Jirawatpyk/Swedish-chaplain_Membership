@@ -40,11 +40,13 @@ import {
   makeFakeImageAllowlist,
   makeFakeMarketingDirectory,
   makeFakePortalRecipients,
+  makeFakeSendStanding,
   makeMarketingRecipient,
   makePortalContact,
   makeRecordingF7Audit,
   type FakeApprovalStore,
   type FakeBroadcastImagesRepo,
+  type FakeSendStandingOpts,
   type RecordingF7Audit,
 } from './eblast-approval-fakes';
 
@@ -96,6 +98,8 @@ interface Harness {
   marketingRoster: MarketingRecipient[];
   /** The `broadcast_images` rows the widened cancel / reject stamp (T081). */
   images: FakeBroadcastImagesRepo;
+  /** T166 S-H1 — the member's standing at the promotion (default: good standing). */
+  standing: FakeSendStandingOpts;
   readonly requireApiPermission: ReturnType<typeof vi.fn>;
   readonly checkLimit: ReturnType<typeof vi.fn>;
 }
@@ -117,6 +121,7 @@ export const harness: Harness = {
   member: defaultMemberSession(),
   marketingRoster: [makeMarketingRecipient(), SECOND_MARKETER],
   images: makeFakeBroadcastImagesRepo(),
+  standing: {},
   requireApiPermission: vi.fn(),
   checkLimit: vi.fn(),
 };
@@ -154,6 +159,7 @@ export function resetVersionHarness(
   harness.member = defaultMemberSession();
   harness.marketingRoster = [makeMarketingRecipient(), SECOND_MARKETER];
   harness.images = makeFakeBroadcastImagesRepo();
+  harness.standing = {};
   harness.requireApiPermission.mockReset();
   harness.requireApiPermission.mockResolvedValue(staffCtx());
   harness.checkLimit.mockReset();
@@ -282,6 +288,7 @@ export function approvalDepsMock() {
       outbox: harness.store.outbox,
       audit: harness.audit,
       clock,
+      sendStanding: makeFakeSendStanding(harness.standing),
     }),
     makeRecordMemberDecisionDeps: () => ({
       tenant,

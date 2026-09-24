@@ -25,10 +25,17 @@ export interface AwaitingApprovalCandidate {
  * `status = 'awaiting_member_approval'` — and no other status, ever (FR-022a:
  * expiry applies only while awaiting the member) — with `stage_entered_at` in
  * `(enteredAfter, enteredAtOrBefore]`, OLDEST FIRST, at most `limit`.
+ *
+ * `reminderStageBelow` (T166 R-L1) keeps only rows whose
+ * `member_reminder_stage` is below it: the reminder window passes the day-23
+ * stage, so rows already warned — nothing left to send them before day 30 —
+ * cannot fill the batch and starve a row whose day-3 / day-7 step is due. The
+ * expiry scan passes none (a warned row must still close).
  */
 export interface AwaitingApprovalScanQuery {
   readonly enteredAtOrBefore: Date;
   readonly enteredAfter?: Date;
+  readonly reminderStageBelow?: number;
   readonly limit: number;
 }
 

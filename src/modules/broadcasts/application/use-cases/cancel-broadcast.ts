@@ -91,7 +91,12 @@ export type CancelBroadcastError =
       readonly kind: 'broadcast_cancel_reason_too_long';
       readonly length: number;
     }
-  | { readonly kind: 'cancel.server_error'; readonly message: string };
+  /**
+   * An infrastructure fault. `errKind` is the error CLASS only (T166 R-M4):
+   * the raw message can carry a Neon error's bound parameters, and the route
+   * logs what it is handed.
+   */
+  | { readonly kind: 'cancel.server_error'; readonly errKind: string };
 
 export interface CancelBroadcastDeps {
   readonly tenant: TenantContext;
@@ -149,7 +154,11 @@ export async function cancelBroadcast(
     input.actor.kind === 'member' ? 'member_self_service' : 'admin';
 
   try {
-    return await deps.broadcastsRepo.withTx(async (tx) => {
+    // T166 R-L3 — a member withdrawal hands off to marketing; the roster is a
+    // pool-global read and is made BEFORE the tx, never while it holds the row
+    // lock. Its empty-roster count is paid only once the withdrawal committed.
+    const roster = input.actor.kind === 'member' ? await deps.marketingDirectory.readRoster() : [];
+    const withdrawn = await deps.broadcastsRepo.withTx<Result<CancelBroadcastOutput, CancelBroadcastError>>(async (tx) => {
       const existing = await deps.broadcastsRepo.findByIdInTx(
         tx,
         deps.tenant.slug,
@@ -346,7 +355,7 @@ export async function cancelBroadcast(
 
       // F119 T081 — a member withdrawal is a hand-off to marketing (FR-021).
       if (input.actor.kind === 'member') {
-        for (const recipient of await deps.marketingDirectory.listRecipients()) {
+        for (const recipient of roster) {
           await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
             type: 'eblast_member_decided_marketing',
             toEmail: recipient.email,
@@ -406,6 +415,10 @@ export async function cancelBroadcast(
 
       return ok({ broadcast: cancelled, reservationReleased: true as const });
     });
+    if (withdrawn.ok && input.actor.kind === 'member' && roster.length === 0) {
+      deps.marketingDirectory.reportEmptyRoster();
+    }
+    return withdrawn;
   } catch (e) {
     // Bug #5: the concurrency signal was rethrown from inside withTx to force
     // the rollback (batch halts + never-applied transition reverted). Map it
@@ -416,10 +429,7 @@ export async function cancelBroadcast(
         observedStatus: e.observedStatus,
       });
     }
-    return err({
-      kind: 'cancel.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
+    return err({ kind: 'cancel.server_error', errKind: errKind(e) });
   }
 }
 

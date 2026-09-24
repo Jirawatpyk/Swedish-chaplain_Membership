@@ -133,6 +133,9 @@ export async function expireStaleMemberApprovals(
       const reminders = await deps.lifecycleScan.listAwaitingMemberApprovalInTx(tx, slug, {
         enteredAtOrBefore: new Date(now.getTime() - MEMBER_APPROVAL_REMINDER_DAYS.day3 * DAY_MS),
         enteredAfter: expiryCutoff,
+        // T166 R-L1 — a warned row has no step left before day 30; left in,
+        // a backlog of them fills the batch and starves a due day-3 / day-7.
+        reminderStageBelow: REMINDER_STAGE.day23,
         limit: APPROVAL_LIFECYCLE_BATCH,
       });
       const expiries = await deps.lifecycleScan.listAwaitingMemberApprovalInTx(tx, slug, {
@@ -240,6 +243,13 @@ async function processRow(
           summary: `E-Blast ${candidate.broadcastId as string} closes in 7 days without a member response`,
           payload: { ...common, days_waiting: waited },
         });
+      } else {
+        // T166 R-L2 — the warning reached nobody (no member contact and an
+        // empty roster): the counter still moves, so say so, as day 3 / 7 do.
+        logger.warn(
+          { tenantId: slug, broadcastId: candidate.broadcastId, reminder: step, requestId },
+          'M119.cron.approval_lifecycle.no_member_recipient',
+        );
       }
       return step;
     }

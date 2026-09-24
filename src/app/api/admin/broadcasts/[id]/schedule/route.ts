@@ -122,8 +122,16 @@ function scheduleErrorResponse(error: ConfirmScheduleError, correlationId: strin
       });
     case 'round_zero':
       return errorResponse(409, 'round_zero', correlationId);
+    case 'sending_started':
+      return errorResponse(409, 'sending_started', correlationId, {
+        details: { stage: stageOf(error.status), status: error.status },
+      });
     case 'no_proposal':
       return errorResponse(409, 'no_proposal', correlationId);
+    case 'member_halted':
+      return errorResponse(409, 'member_halted', correlationId);
+    case 'member_not_in_good_standing':
+      return errorResponse(409, 'member_not_in_good_standing', correlationId);
     case 'schedule_too_soon':
       return errorResponse(422, 'broadcast_schedule_too_soon', correlationId, {
         details: { scheduledFor: error.scheduledFor.toISOString() },

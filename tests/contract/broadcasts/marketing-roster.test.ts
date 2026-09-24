@@ -119,3 +119,18 @@ describe('listRecipients()', () => {
     expect(spy).toHaveBeenCalledWith('test-tenant');
   });
 });
+
+describe('readRoster() / reportEmptyRoster() — the pre-tx read (T166 R-L3)', () => {
+  it('readRoster returns the same roster and counts NOTHING, even when it is empty; reportEmptyRoster is the one count, labelled with the tenant', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'noMarketingRecipient');
+    const directory = makeMarketingDirectory('test-tenant');
+    expect(await directory.readRoster()).toEqual([]);
+    expect(spy).not.toHaveBeenCalled();
+    directory.reportEmptyRoster();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith('test-tenant');
+
+    stub.active = { marketing: [MARKETER] };
+    expect(await directory.readRoster()).toEqual(await directory.listRecipients());
+  });
+});

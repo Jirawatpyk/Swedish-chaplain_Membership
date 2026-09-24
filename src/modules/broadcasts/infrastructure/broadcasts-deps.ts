@@ -365,6 +365,8 @@ export function makeApproveBroadcastDeps(
     // R4 Types-#6 — member-preferred-locale lookup (today returns
     // null; future-extensibility for F12 white-label).
     membersBridge,
+    // F119 T166 S-H1 — the send-time standing rules submit applies.
+    sendStanding: { membersBridge, membershipAccess: membershipAccessBridge },
   };
 }
 
