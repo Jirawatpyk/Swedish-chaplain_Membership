@@ -1,11 +1,13 @@
 /**
  * T110 — /admin/plans/clone page (US2).
  *
- * Server component that loads the list of plans for the current year
- * (so the confirmation dialog can accurately quote the row count +
- * the target year defaults to `current + 1`), then hands off to the
- * client `<CloneYearClient>` shell for source/target pickers + the
- * CloneYearDialog confirmation.
+ * Server component that loads the list of plans for the source year
+ * (so the confirmation dialog can accurately quote the row count), then
+ * hands off to the client `<CloneYearClient>` shell for source/target
+ * pickers + the CloneYearDialog confirmation.
+ *
+ * Source/target default to the current year → next year. `?from=` /
+ * `?to=` (sent by the prior-year lock banner) override them when valid.
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
@@ -17,25 +19,38 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CloneYearClient } from './clone-year-client';
+import { parseCloneYearParam } from './clone-year-params';
+
+interface SearchParams {
+  readonly from?: string | string[];
+  readonly to?: string | string[];
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.plans.clone');
   return { title: t('title') };
 }
 
-export default async function CloneYearPage() {
+export default async function CloneYearPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   await requirePagePermission('plans.clone');
+  const query = await searchParams;
 
   const t = await getTranslations('admin.plans.clone');
 
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
   const currentYear = deps.clock.currentYear();
+  const sourceYear = parseCloneYearParam(query.from) ?? currentYear;
+  const targetYear = parseCloneYearParam(query.to) ?? currentYear + 1;
 
   // Load the default source year's catalogue so we can seed the
   // confirmation dialog with an accurate row count.
   const listResult = await listPlans(
-    { filter: { year: asPlanYear(currentYear) } },
+    { filter: { year: asPlanYear(sourceYear) } },
     {
       tenant: deps.tenant,
       planRepo: deps.planRepo,
@@ -43,7 +58,7 @@ export default async function CloneYearPage() {
       clock: deps.clock,
     },
   );
-  const currentYearPlanCount = listResult.ok ? listResult.value.data.length : 0;
+  const sourcePlanCount = listResult.ok ? listResult.value.data.length : 0;
 
   return (
     <FormContainer>
@@ -54,9 +69,9 @@ export default async function CloneYearPage() {
         </CardHeader>
         <CardContent>
           <CloneYearClient
-            defaultSourceYear={currentYear}
-            defaultTargetYear={currentYear + 1}
-            defaultSourcePlanCount={currentYearPlanCount}
+            defaultSourceYear={sourceYear}
+            defaultTargetYear={targetYear}
+            defaultSourcePlanCount={sourcePlanCount}
           />
         </CardContent>
       </Card>

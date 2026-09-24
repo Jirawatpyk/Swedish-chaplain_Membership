@@ -79,6 +79,20 @@ export default async function EditPlanPage({
   const currentYear = deps.clock.currentYear();
   const currencyPrefix = currencyCode === 'THB' ? '฿' : currencyCode;
 
+  // Prior-year plans: does the same plan ID exist (non-deleted) in the
+  // current year? The lock banner then links to that version instead of the
+  // clone page, which copies a whole year and refuses a populated target.
+  let currentYearPlanExists = false;
+  if (plan.plan_year < currentYear) {
+    const currentVersion = await deps.planRepo.findOne(
+      tenant,
+      asPlanSlug(plan.plan_id),
+      asPlanYear(currentYear),
+    );
+    currentYearPlanExists =
+      currentVersion !== undefined && currentVersion.deleted_at === null;
+  }
+
   // Convert the Domain Plan to a PlanSchemaInput-shaped initial value
   const initialValues: PlanSchemaInput = {
     plan_id: plan.plan_id,
@@ -109,6 +123,7 @@ export default async function EditPlanPage({
             initialValues={initialValues}
             currentYear={currentYear}
             currencyPrefix={currencyPrefix}
+            currentYearPlanExists={currentYearPlanExists}
           />
         </CardContent>
       </Card>

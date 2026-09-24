@@ -799,9 +799,11 @@
       },
       "priorYearLock": {
         "banner": "Historical plan — pricing, eligibility, and benefits are locked for {year}.",
-        "explanation": "To change fees or benefits, clone this plan into the current year and edit the copy. Cosmetic fields (name, description, sort order) remain editable here.",
-        "cloneCta": "Clone to {currentYear}",
-        "fieldTooltip": "Locked on prior-year plans. Clone to edit."
+        "explanation": "Fees, eligibility and benefits can't change on a past year's plan. Change them on the {currentYear} version of this plan. Name, description and sort order stay editable here.",
+        "explanationNoCurrentVersion": "Fees, eligibility and benefits can't change on a past year's plan, and {currentYear} has no version of this plan yet. Clone the {year} plans into {currentYear} (this works only while {currentYear} has no plans), then edit the copy. Name, description and sort order stay editable here.",
+        "openCurrentCta": "Open the {currentYear} version",
+        "cloneCta": "Clone {year} plans to {currentYear}",
+        "fieldTooltip": "Locked on prior-year plans. Change it on the current year's version."
       },
       "create": {
         "title": "New plan",

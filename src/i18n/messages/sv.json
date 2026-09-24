@@ -799,9 +799,11 @@
       },
       "priorYearLock": {
         "banner": "Historiskt paket — pris, behörighet och förmåner för {year} är låsta.",
-        "explanation": "För att ändra avgifter eller förmåner, klona detta paket till innevarande år och redigera kopian. Kosmetiska fält (namn, beskrivning, sortering) kan fortfarande redigeras här.",
-        "cloneCta": "Klona till {currentYear}",
-        "fieldTooltip": "Låst på föregående års paket. Klona för att redigera."
+        "explanation": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket. Ändra dem i {currentYear} års version av paketet. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "explanationNoCurrentVersion": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ännu ingen version av paketet. Klona {year} års paket till {currentYear} (det går bara så länge {currentYear} saknar paket) och redigera sedan kopian. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "openCurrentCta": "Öppna {currentYear} års version",
+        "cloneCta": "Klona {year} års paket till {currentYear}",
+        "fieldTooltip": "Låst på föregående års paket. Ändra det i innevarande års version."
       },
       "create": {
         "title": "Nytt paket",

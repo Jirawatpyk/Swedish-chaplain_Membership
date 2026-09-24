@@ -44,6 +44,9 @@ export interface PlanEditFormProps {
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
   readonly currencyPrefix: string;
+  /** A non-deleted plan with this plan ID exists in `currentYear` — picks
+   *  the prior-year banner's CTA (open it vs. clone the year). */
+  readonly currentYearPlanExists?: boolean;
   readonly submitting?: boolean;
   readonly onSubmit: (draft: PlanSchemaInput) => Promise<void> | void;
   readonly onCancel?: () => void;
@@ -88,6 +91,7 @@ export function PlanEditForm({
   initialValues,
   currentYear,
   currencyPrefix,
+  currentYearPlanExists = false,
   submitting = false,
   onSubmit,
   onCancel,
@@ -119,7 +123,12 @@ export function PlanEditForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {isPriorYear ? (
-        <PriorYearLockBanner planYear={draft.plan_year} currentYear={currentYear} />
+        <PriorYearLockBanner
+          planId={draft.plan_id}
+          planYear={draft.plan_year}
+          currentYear={currentYear}
+          currentYearPlanExists={currentYearPlanExists}
+        />
       ) : null}
 
       {/* Basics */}

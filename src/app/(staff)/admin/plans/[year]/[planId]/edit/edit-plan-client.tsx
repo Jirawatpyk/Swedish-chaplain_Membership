@@ -21,6 +21,7 @@ export interface EditPlanClientProps {
   readonly initialValues: PlanSchemaInput;
   readonly currentYear: number;
   readonly currencyPrefix: string;
+  readonly currentYearPlanExists: boolean;
 }
 
 function freshIdempotencyKey(): string {
@@ -59,6 +60,7 @@ export function EditPlanClient({
   initialValues,
   currentYear,
   currencyPrefix,
+  currentYearPlanExists,
 }: EditPlanClientProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -121,6 +123,7 @@ export function EditPlanClient({
       initialValues={initialValues}
       currentYear={currentYear}
       currencyPrefix={currencyPrefix}
+      currentYearPlanExists={currentYearPlanExists}
       submitting={submitting}
       onSubmit={handleSubmit}
       onCancel={() => router.push('/admin/plans')}
