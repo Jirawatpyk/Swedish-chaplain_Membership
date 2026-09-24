@@ -14,6 +14,12 @@ describe('routeSupersedeIssues', () => {
     },
   );
 
+  it('ignores the removed legacy `supersede_warnings` string array', () => {
+    expect(
+      routeSupersedeIssues({ supersede_warnings: ['supersede: void of inv-old-1 threw'] }),
+    ).toEqual([]);
+  });
+
   it('maps a void failure to its bill number + link target', () => {
     expect(
       routeSupersedeIssues({
