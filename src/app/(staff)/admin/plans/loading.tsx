@@ -12,7 +12,7 @@ import {
 /**
  * Skeleton mirrors the real /admin/plans page shape for CLS 0:
  *   - PageHeader with two action buttons (Clone + New plan)
- *   - Filter bar: search + category select + 2 switches
+ *   - Filter bar: search + category select + year select + 2 switches
  *   - Border-wrapped table (PlanListSkeleton)
  *   - Trailing total-count line
  */
@@ -35,12 +35,14 @@ export default async function Loading() {
         <Card>
           <CardContent className="flex flex-col gap-4">
             {/* Filter bar — matches PlansTable: search (with icon space)
-                + category select + 2 switch+label pairs */}
+                + category select + year select + 2 switch+label pairs */}
             <FilterBar aria-hidden>
               {/* Search with 🔍 icon indent */}
               <SkeletonBlock className="h-9 min-w-0 sm:flex-1" />
               {/* Category select */}
               <SkeletonBlock className="h-9 sm:w-[180px]" />
+              {/* Year select */}
+              <SkeletonBlock className="h-9 sm:w-[120px]" data-skeleton="year-select" />
               {/* Active only: switch (h-5 w-9) + label */}
               <div className="flex items-center gap-2">
                 <SkeletonBlock className="h-5 w-9 rounded-full" />

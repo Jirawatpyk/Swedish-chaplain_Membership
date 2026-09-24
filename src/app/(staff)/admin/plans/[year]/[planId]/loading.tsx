@@ -2,10 +2,14 @@
  * Route-level loading skeleton for /admin/plans/[year]/[planId].
  *
  * Mirrors the real plan detail page shape 1:1:
- *   - PageHeader: title skeleton + subtitle skeleton + 2 badge pills
- *   - Fee card: CardTitle + CardDescription + 2-col dl grid (2 dt/dd pairs)
- *   - Benefit matrix card: CardTitle + 3 sections (Brand Visibility 4 rows,
- *     Events 3 rows, Partnership 5 rows) separated by hr-style gaps
+ *   - PageHeader: title + subtitle + 2 badge pills + actions (Edit + "⋯",
+ *     shown to plans.write holders)
+ *   - Fee card: CardTitle + CardDescription + 2-col dl grid (fee, total
+ *     incl. VAT, members on the plan, member type)
+ *   - Benefit matrix card: CardTitle + the always-present sections (Brand
+ *     Visibility 4 rows, Events 3 rows, Additional 3 rows). The Partnership
+ *     section only exists for partnership plans, and loading.tsx cannot know
+ *     the category, so it is not reserved.
  */
 import { getTranslations } from 'next-intl/server';
 import {
@@ -41,9 +45,9 @@ function KvRowSkeleton() {
   );
 }
 
-function SectionSkeleton({ rows }: { rows: number }) {
+function SectionSkeleton({ rows, name }: { rows: number; name: string }) {
   return (
-    <section>
+    <section data-skeleton-section={name}>
       <Skeleton className="h-3 w-28 mb-2" />
       <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
         {Array.from({ length: rows }).map((_, i) => (
@@ -69,6 +73,12 @@ export default async function Loading() {
               <Skeleton className="h-5 w-16 rounded-full" />
             </div>
           }
+          actions={
+            <div className="flex gap-2" data-skeleton="header-actions">
+              <SkeletonBlock className="h-9 w-20" />
+              <SkeletonBlock className="size-9" />
+            </div>
+          }
         />
 
         {/* Fee card: title + description + 2-col grid */}
@@ -85,6 +95,8 @@ export default async function Loading() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <DlPairSkeleton />
               <DlPairSkeleton />
+              <DlPairSkeleton />
+              <DlPairSkeleton />
             </div>
           </CardContent>
         </Card>
@@ -98,11 +110,11 @@ export default async function Loading() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Brand Visibility — 4 KV rows */}
-            <SectionSkeleton rows={4} />
+            <SectionSkeleton name="brandVisibility" rows={4} />
             {/* Events — 3 KV rows */}
-            <SectionSkeleton rows={3} />
-            {/* Partnership — 5 KV rows */}
-            <SectionSkeleton rows={5} />
+            <SectionSkeleton name="events" rows={3} />
+            {/* Additional benefits — 3 KV rows */}
+            <SectionSkeleton name="additionalBenefits" rows={3} />
           </CardContent>
         </Card>
       </DetailContainer>
