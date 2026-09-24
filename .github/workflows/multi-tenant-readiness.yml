@@ -73,6 +73,9 @@ jobs:
     timeout-minutes: 10
     env:
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      # Happy-eyeballs gives each address 250 ms; US runner → Neon ap-southeast-1
+      # can overrun it on the first connect. Full reasoning: integration-smoke.yml.
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
     steps:
       - uses: actions/checkout@v4
@@ -106,6 +109,9 @@ jobs:
       # Disposable Neon branch URL (NOT production). Empty when the
       # operator has not yet configured the secret — DB steps skip.
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      # Happy-eyeballs gives each address 250 ms; US runner → Neon ap-southeast-1
+      # can overrun it on the first connect. Full reasoning: integration-smoke.yml.
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
       # Production-safety guard (tests/integration-setup.ts): refuse the suite
       # if CI_DATABASE_URL is ever mis-set to the prod endpoint. Repo variable.
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
@@ -164,6 +170,9 @@ jobs:
       # Disposable Neon branch URL (NOT production). Empty when the
       # operator has not yet configured the secret — DB steps skip.
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      # Happy-eyeballs gives each address 250 ms; US runner → Neon ap-southeast-1
+      # can overrun it on the first connect. Full reasoning: integration-smoke.yml.
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
       # Production-safety guard (tests/integration-setup.ts): refuse the suite
       # if CI_DATABASE_URL is ever mis-set to the prod endpoint. Repo variable.
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
@@ -231,6 +240,9 @@ jobs:
     timeout-minutes: 25
     env:
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      # Happy-eyeballs gives each address 250 ms; US runner → Neon ap-southeast-1
+      # can overrun it on the first connect. Full reasoning: integration-smoke.yml.
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
       FEATURE_F7_BROADCASTS: 'true'
       FEATURE_F8_RENEWALS: 'true'
