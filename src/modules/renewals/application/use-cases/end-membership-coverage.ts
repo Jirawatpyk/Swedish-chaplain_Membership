@@ -137,6 +137,11 @@ async function endOpenCycleInTx(
     readonly trigger: CoverageEndTrigger | 'retry';
     readonly actorUserId: string | null;
     readonly actorRole: RenewalActorRole;
+    /**
+     * The staff member whose decision this executes, when the actor is the
+     * cron (async refund / retry) — keeps the decision on the permanent trail.
+     */
+    readonly requestedByUserId?: string | null;
     readonly requestId: string | null;
     readonly correlationId: string;
   },
@@ -160,6 +165,7 @@ async function endOpenCycleInTx(
         member_id: args.memberId as MemberId,
         reason: `coverage_ended:${args.trigger}`,
         previous_status: locked.status,
+        ...(args.requestedByUserId ? { requested_by_user_id: args.requestedByUserId } : {}),
       },
     },
     {
@@ -183,6 +189,7 @@ export async function endMembershipCoverageNow(
 
   // Two attempts: the open cycle read outside the lock can close (and a new
   // one open) before we hold it; one re-lookup covers that race.
+  let stampMissedOn: CycleId | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let cycleId: CycleId;
     try {
@@ -212,6 +219,11 @@ export async function endMembershipCoverageNow(
           });
         });
         if (stamped) return ok({ outcome: 'scheduled', cycleId });
+        // Same cycle still open and still refusing the stamp → it already
+        // carries a PLAIN request (ends at the next pass, sooner). Report that
+        // honestly rather than `no_open_cycle`.
+        if (stampMissedOn === cycleId) return ok({ outcome: 'scheduled', cycleId });
+        stampMissedOn = cycleId;
         continue; // closed in the race window (or a plain request is due) — re-look
       } catch (e) {
         logger.error(
@@ -355,9 +367,11 @@ export async function reconcileMembershipCoverageEnds(
           refundId,
         });
         if (settlement.status === 'failed') {
-          await runInTenant(input.tenant, (tx) =>
+          const cleared = await runInTenant(input.tenant, (tx) =>
             deps.coverageEndRequests.clearInTx(tx, tenantId, req.cycleId, refundId),
           );
+          // CAS miss = a newer request replaced it in the read→clear window.
+          if (!cleared) continue;
           abandonedRefundFailed += 1;
           logger.warn(
             {
@@ -396,9 +410,10 @@ export async function reconcileMembershipCoverageEnds(
           memberId: req.memberId,
           trigger: req.refundId !== null ? 'refund' : 'retry',
           // The cron performs the transition; the requesting staff member is
-          // on the F5 refund / F4 credit-note trail.
+          // named in the payload (and on the F5 refund / F4 credit-note trail).
           actorUserId: null,
           actorRole: 'cron',
+          requestedByUserId: req.actorUserId,
           requestId: null,
           correlationId:
             req.refundId !== null ? `refund:${req.refundId}` : `coverage-end-retry:${req.cycleId}`,

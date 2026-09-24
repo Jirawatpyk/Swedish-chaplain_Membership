@@ -739,9 +739,10 @@ function monthBoundPredicate(key: string, nowIso: string): SQL {
 //   status IN (awaiting_payment, pending_admin_react) → 'suspended'
 //   expired non-terminal (upcoming/reminded)          → 'suspended'  (ELSE)
 //   not-yet-expired non-terminal (access = full)      → 't-*' countdown
-// COLUMN PARITY (the anti-drift contract): deriveMembershipAccess reads ONLY
+// COLUMN PARITY (the anti-drift contract): deriveMembershipAccess reads
 // `status` + `expiresAt` — the same two columns bound here — so this SQL can
-// mirror it faithfully. A live-Neon reconciliation test seeds a status×expiry
+// mirror it faithfully. (0306: it also reads `closedReason`, but only on the
+// `cancelled` arm, and `cancelled` rows never reach this urgency SQL.) A live-Neon reconciliation test seeds a status×expiry
 // matrix and asserts this CASE agrees with deriveMembershipAccess, locking the
 // two against silent drift (the CASE string literals are NOT type-checked).
 // NB: 'completed'/'cancelled' never reach this CASE — the pipeline baseFilters

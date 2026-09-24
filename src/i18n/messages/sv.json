@@ -4604,11 +4604,11 @@
         },
         "end": {
           "label": "Avsluta medlemskapet",
-          "description": "Åtkomsten upphör så snart återbetalningen är klar — direkt för de flesta kortåterbetalningar, eller när en väntande återbetalning bekräftas. Om återbetalningen misslyckas behålls medlemskapet."
+          "description": "Åtkomsten upphör när återbetalningen är klar — direkt för de flesta kortåterbetalningar; en väntande återbetalning kontrolleras varje timme, så åtkomsten upphör inom en timme efter att den bekräftats. Om återbetalningen misslyckas behålls medlemskapet."
         },
         "outcome": {
           "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
-          "scheduled": "Medlemskapet avslutas när återbetalningen är klar. Om återbetalningen misslyckas behålls medlemskapet.",
+          "scheduled": "Medlemskapet avslutas inom en timme efter att återbetalningen är klar. Om återbetalningen misslyckas behålls medlemskapet.",
           "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt inom en timme.",
           "no_open_cycle": "Medlemmen har ingen öppen förnyelsecykel, så det fanns ingen täckning att avsluta. Kontrollera medlemmens förnyelsestatus.",
           "failed": "Återbetalningen genomfördes, men medlemskapet kunde inte avslutas. Rapportera detta till supporten med återbetalningsreferensen."

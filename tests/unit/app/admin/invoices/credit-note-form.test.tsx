@@ -14,8 +14,8 @@
  *  - Selecting "cancel_membership" (via its label — Base UI Radio gotcha:
  *    the radio toggles via a click on its associated <label> text) changes
  *    what is submitted.
- *  - A `membership_cancellation_failed: true` response field surfaces as a
- *    toast description alongside the success toast.
+ *  - The `membership_end` response field (0306) surfaces as a toast
+ *    alongside the success toast.
  *
  * Base UI Radio gotcha (same as invoice-create-switcher.test /
  * event-fee-form.test): the radio toggles via a click on its associated

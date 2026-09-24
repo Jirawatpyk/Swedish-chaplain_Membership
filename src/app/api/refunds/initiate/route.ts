@@ -20,7 +20,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
-import { requireApiPermission } from '@/lib/rbac';
+import { canPerform, requireApiPermission } from '@/lib/rbac';
 import { asSatang } from '@/lib/money';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -319,6 +319,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return errorResponse(400, 'invalid_input', correlationId);
   }
 
+  // 0306 — ending a membership is a renewals decision, not only a money one:
+  // require `renewals.write` too (same holders today; defence against a future
+  // bundle that grants `refunds.write` alone). Checked BEFORE Stripe is called.
+  if (
+    parsedBody.membershipEffect === 'cancel_membership' &&
+    // rbac-subgate-ok: gates the optional End-membership effect of an already
+    // `refunds.write`-admitted refund, not admission to the surface.
+    !canPerform(adminCtx.current.user.role, 'renewals.write')
+  ) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   try {
     const deps = makeIssueRefundDeps(tenantCtx.slug);
     const result = await issueRefund(deps, {
@@ -364,10 +376,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 ? { awaitRefund: { refundId: v.refund.id, invoiceId: v.refund.invoiceId } }
                 : {}),
               initiatedByUserId: actorUserId,
-              // rbac-narrow-ok: stamps the LITERAL role into the renewals
-              // audit row; the `refunds.write` gate above decided admission.
-              initiatedByRole:
-                adminCtx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
+              // rbac-narrow-ok: audit truth — the LITERAL role; any other role
+              // falls back to 'system' in the op, never a guessed 'admin'.
+              ...(adminCtx.current.user.role === 'admin' ||
+              adminCtx.current.user.role === 'super_admin'
+                ? { initiatedByRole: adminCtx.current.user.role }
+                : {}),
               requestId,
               correlationId: `refund:${v.refund.id}`,
             })

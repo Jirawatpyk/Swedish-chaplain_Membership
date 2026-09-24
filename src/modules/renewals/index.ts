@@ -950,7 +950,7 @@ export type {
 
 // --- 0306 — end membership coverage now (refund / full credit note) -------
 // The ONE operation both the credit-note and refund ROUTES orchestrate after
-// their money work commits; the nightly reconcile converges requests that wait
+// their money work commits; the hourly reconcile-coverage-ends cron converges requests that wait
 // on an async refund's settlement (or retry a failed inline end).
 export {
   endMembershipCoverageNow,

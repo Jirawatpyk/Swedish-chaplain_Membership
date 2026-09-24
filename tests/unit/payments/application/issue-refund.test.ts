@@ -1734,6 +1734,12 @@ describe('issueRefund — membership effect (0306)', () => {
     });
     // The route needs the member to orchestrate the renewals end.
     if (r.ok) expect(r.value.refund.memberId).toBe('mbr-1');
+    // The staff decision is on the permanent audit trail (the async end is
+    // later performed by the cron actor).
+    const initiated = asMock(deps.audit.emit).mock.calls.find(
+      (c) => c[1].eventType === 'refund_initiated',
+    );
+    expect(initiated?.[1].payload).toMatchObject({ membership_effect: 'cancel_membership' });
   });
 
   it('refuses cancel_membership on a WAIVED refund (voided invoice) — its period was never a paid, creditable one', async () => {

@@ -2250,17 +2250,41 @@ call never drops one.
 | `renewals_membership_end_requests_total` | counter | `tenant`, `trigger` (`credit_note`/`refund`), `outcome` (`ended`/`scheduled`/`deferred`/`no_open_cycle`/`failed`) | **page** on any `outcome="failed"` (the backstop is the remaining safety net) |
 | `renewals_coverage_end_reconcile_total` | counter | `tenant`, `outcome` (`ended`/`refund_failed_kept`/`expired`/`stranded_cleared`/`backstop_applied`/`lookup_unresolved`/`errored`) | **warn** on any non-zero `expired`, `stranded_cleared`, `backstop_applied`, `errored`; `lookup_unresolved` > 0 for 3 successive runs |
 | `renewals_coverage_end_oldest_waiting_hours` | gauge | `tenant` | **warn** > 24, **page** > 72 |
+| `renewals_coverage_end_reconcile_runs_total` | counter | `tenant`, `outcome` (`success`/`failure`/`skipped_flag_disabled`/`skipped_read_only`) | **page** when no `outcome="success"` for > 2h (heartbeat — the cron stopped, or is skipped by the flag / read-only mode, so scheduled ends silently stall and every other row here stays flat) |
 
 Triage:
 - `expired` — a refund stayed unsettled for 14 days; the request was dropped
-  and the member KEPT coverage. Check the refund (`docs/runbooks/stale-pending-refund-sweep.md`),
-  then end the membership by hand if the money did go back.
+  and the member KEPT coverage. Check the refund (`docs/runbooks/stale-pending-refund-sweep.md`);
+  if the money did go back, end the membership with the procedure below.
 - `stranded_cleared` — the request's cycle closed some other way (paid, admin
   cancel, lapse) before it converged. Confirm with staff whether the member
-  should still lose access.
+  should still lose access; if so, use the procedure below on their current
+  OPEN cycle.
+
+**Ending a membership by hand.** Do NOT use Renewals → Cancel cycle: a plain
+`cancelled` keeps access until the period ends. Instead stamp a PLAIN request
+on the member's OPEN cycle; the next hourly pass ends it through
+`endMembershipCoverageNow` (`coverage_ended`, audited, `requested_by_user_id`
+in the payload):
+
+```sql
+UPDATE renewal_cycles
+SET end_coverage_requested_at = now(),
+    end_coverage_actor_user_id = '<your user id>'
+WHERE tenant_id = '<tenant>' AND member_id = '<member id>'
+  AND status IN ('upcoming', 'reminded', 'awaiting_payment')
+  AND end_coverage_requested_at IS NULL;
+```
 - `backstop_applied` — the route's post-commit call was lost (function killed,
   or `f4_bridge_deferred`). The decision took effect up to an hour late; look
   for the matching `membership_end.*` / `refunds.initiate.*` error log.
 
 Log events: `renewals.coverage_end.*` (pino), `membership_end.*` (routes).
+
+**Roll-forward only.** Pre-0306 code reads a `cancelled`/`coverage_ended`
+cycle as a plain cancellation (access until `expires_at`) and has no reconcile
+cron, so rolling the APP back restores access for members whose coverage was
+ended and orphans pending requests. Fix forward; if a code rollback is
+unavoidable, follow the remediation in `docs/runbooks/cron-jobs.md`
+(reconcile-coverage-ends).
 

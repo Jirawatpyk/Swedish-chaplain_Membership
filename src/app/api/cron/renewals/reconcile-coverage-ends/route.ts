@@ -47,10 +47,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (gateResponse) return gateResponse;
 
   if (!env.features.f8Renewals) {
+    renewalsMetrics.coverageEndReconcileRunCompleted(env.tenant.slug, 'skipped_flag_disabled');
     return NextResponse.json({ skipped: true, reason: 'feature_flag_disabled' }, { status: 200 });
   }
   if (env.flags.readOnlyMode) {
     renewalsMetrics.coordinatorSkippedReadOnly('reconcile_coverage_ends');
+    renewalsMetrics.coverageEndReconcileRunCompleted(env.tenant.slug, 'skipped_read_only');
     return NextResponse.json({ skipped: true, reason: 'read_only_mode' }, { status: 200 });
   }
 
@@ -68,6 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         'cron.renewals.reconcile_coverage_ends.failed',
       );
       renewalsMetrics.coverageEndReconciled(tenantId, 'errored', 1);
+      renewalsMetrics.coverageEndReconcileRunCompleted(tenantId, 'failure');
       return NextResponse.json({ error: { code: 'server_error' }, tenant_id: tenantId }, { status: 500 });
     }
     const v = result.value;
@@ -79,6 +82,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     renewalsMetrics.coverageEndReconciled(tenantId, 'lookup_unresolved', v.lookupUnresolved);
     renewalsMetrics.coverageEndReconciled(tenantId, 'errored', v.errored);
     renewalsMetrics.coverageEndOldestWaitingHours(tenantId, v.oldestWaitingHours);
+    renewalsMetrics.coverageEndReconcileRunCompleted(tenantId, 'success');
     const body = {
       skipped: false as const,
       tenant_id: tenantId,
@@ -101,6 +105,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       'cron.renewals.reconcile_coverage_ends.unexpected_error',
     );
     renewalsMetrics.coverageEndReconciled(tenantId, 'errored', 1);
+    renewalsMetrics.coverageEndReconcileRunCompleted(tenantId, 'failure');
     return NextResponse.json({ error: { code: 'server_error' }, tenant_id: tenantId }, { status: 500 });
   }
 }

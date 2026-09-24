@@ -3320,10 +3320,25 @@ export const renewalsMetrics = {
   },
 
   /**
-   * `renewals_reconcile_issued_orphans_runs_total{tenant, outcome}` —
-   * 107-auto-invoice Task 11. Run-count counter, one per cron pass.
-   * Label key `tenant` (unified 107 family — see `pruneAutoDraftsRunCompleted`).
+   * `renewals_coverage_end_reconcile_runs_total{tenant, outcome}` — 0306.
+   * Heartbeat: ONE per invocation of the hourly reconcile-coverage-ends cron,
+   * including the skipped ones. ALERT when no `success` has been counted for
+   * > 2h — without this, a cron that stops running (or is skipped by the flag
+   * / read-only mode) leaves every other 0306 metric flat and scheduled
+   * membership ends silently stall.
    */
+  coverageEndReconcileRunCompleted(
+    tenantId: string,
+    outcome: 'success' | 'failure' | 'skipped_flag_disabled' | 'skipped_read_only',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coverage_end_reconcile_runs_total',
+        'F8 reconcile-coverage-ends cron pass result (1 per invocation, 0306)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
   /**
    * `renewals_coverage_end_reconcile_total{tenant, outcome}` — 0306. Row
    * counts from the hourly reconcile-coverage-ends pass. ALERT on any
@@ -3391,6 +3406,11 @@ export const renewalsMetrics = {
     });
   },
 
+  /**
+   * `renewals_reconcile_issued_orphans_runs_total{tenant, outcome}` —
+   * 107-auto-invoice Task 11. Run-count counter, one per cron pass.
+   * Label key `tenant` (unified 107 family — see `pruneAutoDraftsRunCompleted`).
+   */
   reconcileIssuedOrphansRunCompleted(
     tenantId: string,
     outcome: 'success' | 'failure',

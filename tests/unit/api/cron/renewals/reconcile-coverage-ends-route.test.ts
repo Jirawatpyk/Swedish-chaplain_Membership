@@ -46,11 +46,13 @@ vi.mock('@/lib/rate-limit-helpers', () => ({ retryAfterSecondsFromRl: vi.fn(() =
 const reconciledMock = vi.hoisted(() => vi.fn());
 const oldestMock = vi.hoisted(() => vi.fn());
 const skippedReadOnlyMock = vi.hoisted(() => vi.fn());
+const runCompletedMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
     coverageEndReconciled: reconciledMock,
     coverageEndOldestWaitingHours: oldestMock,
     coordinatorSkippedReadOnly: skippedReadOnlyMock,
+    coverageEndReconcileRunCompleted: runCompletedMock,
     coordinatorAuditEmitFailed: vi.fn(),
     redisFallback: vi.fn(),
     cronBearerAuthRejected: vi.fn(),
@@ -87,6 +89,8 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).skipped).toBe(true);
     expect(reconcileMock).not.toHaveBeenCalled();
+    // Heartbeat still ticks, labelled — a disabled flag must not look healthy.
+    expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'skipped_flag_disabled');
   });
 
   it('200 skipped in READ_ONLY_MODE', async () => {
@@ -95,6 +99,7 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     expect(res.status).toBe(200);
     expect(skippedReadOnlyMock).toHaveBeenCalledWith('reconcile_coverage_ends');
     expect(reconcileMock).not.toHaveBeenCalled();
+    expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'skipped_read_only');
   });
 
   it('happy path → counts in the body + per-outcome metrics + oldest-waiting gauge', async () => {
@@ -124,6 +129,7 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     expect(reconciledMock).toHaveBeenCalledWith('tenanta', 'expired', 1);
     expect(reconciledMock).toHaveBeenCalledWith('tenanta', 'backstop_applied', 1);
     expect(oldestMock).toHaveBeenCalledWith('tenanta', 30);
+    expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'success');
   });
 
   it('use-case throws → 500 and an errored metric (never silent)', async () => {
@@ -131,5 +137,6 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     const res = await POST(makeRequest(VALID_AUTH));
     expect(res.status).toBe(500);
     expect(reconciledMock).toHaveBeenCalledWith('tenanta', 'errored', 1);
+    expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'failure');
   });
 });

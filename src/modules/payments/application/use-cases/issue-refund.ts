@@ -849,6 +849,11 @@ async function issueRefundBody(
         amount_satang: input.amountSatang.toString(),
         reason: input.reason,
         idempotency_key: idempotencyKey,
+        // Staff's Keep / End membership decision (0306) — on the permanent
+        // trail, since the async end is later performed by the cron actor.
+        ...(input.membershipEffect !== undefined
+          ? { membership_effect: input.membershipEffect }
+          : {}),
       },
       retentionYears: retentionFor('refund_initiated'),
     });

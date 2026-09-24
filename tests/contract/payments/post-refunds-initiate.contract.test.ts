@@ -37,10 +37,13 @@ import { ok, err } from '@/lib/result';
 // ---------------------------------------------------------------------------
 
 const requireApiPermissionMock = vi.fn();
+// 0306 — the End-membership sub-gate (`renewals.write`); admins hold it.
+const canPerformMock = vi.fn((..._args: unknown[]) => true);
 const issueRefundMock = vi.fn();
 
 vi.mock('@/lib/rbac', () => ({
   requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
+  canPerform: (...args: unknown[]) => canPerformMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -682,6 +685,17 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
 
   describe('0306 — Keep / End membership on a full membership refund', () => {
     const FULL_BODY = { ...VALID_BODY, membershipEffect: 'cancel_membership' };
+
+    it('End membership also requires renewals.write → 403 BEFORE any refund is attempted', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      canPerformMock.mockReturnValueOnce(false);
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(FULL_BODY));
+      expect(res.status).toBe(403);
+      expect(canPerformMock).toHaveBeenCalledWith(expect.anything(), 'renewals.write');
+      expect(issueRefundMock).not.toHaveBeenCalled();
+      expect(endMembershipCoverageNowMock).not.toHaveBeenCalled();
+    });
 
     it('forwards membershipEffect to issueRefund', async () => {
       requireApiPermissionMock.mockResolvedValueOnce(adminContext);

@@ -377,6 +377,27 @@ describe('end membership coverage now (shared by credit-note + refund paths)', (
   }, 60_000);
 
   describe('async refund — coverage ends at SETTLEMENT, never at submit', () => {
+    it('a PLAIN request already on the cycle → reports `scheduled` (not no_open_cycle) and keeps the plain one', async () => {
+      const { memberId, c2, invoiceId, paymentId } = await seedPaidRenewal();
+      await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .update(renewalCycles)
+          .set({ endCoverageRequestedAt: new Date(), endCoverageActorUserId: user.userId })
+          .where(eq(renewalCycles.cycleId, c2)),
+      );
+      const refundId = await seedPendingRefund(invoiceId, paymentId);
+      const r = await endMembershipCoverageNow(makeRenewalsDeps(tenant.ctx.slug), {
+        ...base(),
+        memberId: asMemberId(memberId),
+        trigger: 'refund',
+        awaitRefund: { refundId, invoiceId },
+        correlationId: `refund:${refundId}`,
+      });
+      expect(r.ok && r.value).toEqual({ outcome: 'scheduled', cycleId: c2 });
+      // The plain request (ends at the next pass) is never overwritten.
+      expect(await cycleRow(c2)).toMatchObject({ status: 'upcoming', endCoverageRefundId: null });
+    }, 60_000);
+
     it('a pending refund only schedules the end: the member stays Active until it settles', async () => {
       const { memberId, c2, invoiceId, paymentId } = await seedPaidRenewal();
       const refundId = await seedPendingRefund(invoiceId, paymentId);
@@ -393,7 +414,7 @@ describe('end membership coverage now (shared by credit-note + refund paths)', (
       expect(await cycleRow(c2)).toMatchObject({ status: 'upcoming', endCoverageRefundId: refundId });
       expect(await access(memberId)).toBe('full');
 
-      // Still pending at the nightly pass → nothing changes.
+      // Still pending at the hourly pass → nothing changes.
       await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), { tenant: tenant.ctx });
       expect(await cycleRow(c2)).toMatchObject({ status: 'upcoming', endCoverageRefundId: refundId });
       expect(await access(memberId)).toBe('full');
@@ -572,6 +593,22 @@ describe('end membership coverage now (shared by credit-note + refund paths)', (
       expect(await access(memberId)).toBe('full');
     }, 60_000);
 
+    it('refund with End chosen that settled FAILED, route call lost → the backstop does nothing (membership kept)', async () => {
+      const { memberId, c2, invoiceId, paymentId } = await seedPaidRenewal();
+      const refundId = await seedPendingRefund(invoiceId, paymentId);
+      await settleRefund(refundId, 'failed');
+      const pass = await reconcileMembershipCoverageEnds(makeRenewalsDeps(tenant.ctx.slug), {
+        tenant: tenant.ctx,
+      });
+      expect(pass.ok).toBe(true);
+      expect(await cycleRow(c2)).toMatchObject({
+        status: 'upcoming',
+        endCoverageRequestedAt: null,
+        endCoverageRefundId: null,
+      });
+      expect(await access(memberId)).toBe('full');
+    }, 60_000);
+
     it('manual credit note with End chosen, route call lost → the pass ends coverage', async () => {
       const { memberId, c2, invoiceId } = await seedPaidRenewal();
       await runInTenant(tenant.ctx, (tx) =>
@@ -642,6 +679,71 @@ describe('end membership coverage now (shared by credit-note + refund paths)', (
         expect(await cycleRow(c2)).toMatchObject({ endCoverageRefundId: refundId });
         const otherPending = await otherRepo.listPending(other.ctx.slug, 50);
         expect(otherPending.find((r) => r.cycleId === c2)).toBeUndefined();
+      } finally {
+        await other.cleanup().catch(() => {});
+      }
+    }, 60_000);
+
+    it("another tenant's backstop readers and clearStranded neither see nor touch this tenant's rows", async () => {
+      const other = await createTestTenant('test-chamber');
+      try {
+        const { c2, invoiceId, paymentId } = await seedPaidRenewal();
+        // A refund with End chosen (durable source row) + its request on c2 …
+        const refundId = await seedPendingRefund(invoiceId, paymentId);
+        await endMembershipCoverageNow(makeRenewalsDeps(tenant.ctx.slug), {
+          ...base(),
+          memberId: asMemberId((await cycleMember(c2))!),
+          trigger: 'refund',
+          awaitRefund: { refundId, invoiceId },
+          correlationId: `refund:${refundId}`,
+        });
+        // … and a manual credit note with End chosen on the same invoice.
+        const creditNoteId = randomUUID();
+        await runInTenant(tenant.ctx, (tx) =>
+          tx.execute(sql`
+            INSERT INTO credit_notes (
+              tenant_id, credit_note_id, original_invoice_id, fiscal_year, sequence_number,
+              document_number, issue_date, issued_by_user_id, reason, credit_amount_satang,
+              vat_satang, total_satang, tenant_identity_snapshot, member_identity_snapshot,
+              pdf_blob_key, pdf_sha256, pdf_template_version, membership_effect,
+              created_at, updated_at
+            ) VALUES (
+              ${tenant.ctx.slug}, ${creditNoteId}, ${invoiceId}, 2026,
+              ${Math.floor(Math.random() * 900_000) + 1}, ${'ECX-' + randomUUID().slice(0, 8)},
+              '2026-09-10', ${user.userId}, 'withdrawal', 1, 0, 1,
+              '{}'::jsonb, '{}'::jsonb, 'k', ${'c'.repeat(64)}, 1, 'cancel_membership',
+              NOW(), NOW()
+            )
+          `),
+        );
+        // … then strand the request: an admin plain-cancels the cycle.
+        await runInTenant(tenant.ctx, (tx) =>
+          tx
+            .update(renewalCycles)
+            .set({ status: 'cancelled', closedAt: new Date(), closedReason: 'cancelled' })
+            .where(eq(renewalCycles.cycleId, c2)),
+        );
+
+        const otherDeps = makeRenewalsDeps(other.ctx.slug);
+        const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        const seenByOther = await otherDeps.membershipEndRequestSource.listSince(other.ctx.slug, since);
+        expect(seenByOther.find((r) => r.kind === 'refund' && r.refundId === refundId)).toBeUndefined();
+        expect(
+          seenByOther.find((r) => r.kind === 'credit_note' && r.creditNoteId === creditNoteId),
+        ).toBeUndefined();
+
+        const clearedByOther = await otherDeps.coverageEndRequests.clearStranded(other.ctx.slug);
+        expect(clearedByOther).not.toContain(c2);
+        expect(await cycleRow(c2)).toMatchObject({ endCoverageRefundId: refundId });
+
+        // Positive control: the owning tenant does see / clear them.
+        const own = makeRenewalsDeps(tenant.ctx.slug);
+        const seenByOwn = await own.membershipEndRequestSource.listSince(tenant.ctx.slug, since);
+        expect(seenByOwn.find((r) => r.kind === 'refund' && r.refundId === refundId)).toBeDefined();
+        expect(
+          seenByOwn.find((r) => r.kind === 'credit_note' && r.creditNoteId === creditNoteId),
+        ).toBeDefined();
+        expect(await own.coverageEndRequests.clearStranded(tenant.ctx.slug)).toContain(c2);
       } finally {
         await other.cleanup().catch(() => {});
       }
