@@ -287,6 +287,10 @@ export default async function AdminEventsListPage({
                 <EventsEmptyState
                   emptyContext={result.value.emptyStateContext}
                   hasFilters={hasFilters}
+                  canManageIntegration={canPerform(
+                    currentUser.role,
+                    'settings.integrations',
+                  )}
                 />
               ) : (
                 <>

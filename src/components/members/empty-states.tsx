@@ -3,7 +3,10 @@
 /**
  * FR-034 — four distinct empty states for the members directory.
  *
- * (a) zero-members — onboarding CTA "Add your first member" + illustration
+ * (a) zero-members — onboarding CTA "Add your first member" + illustration.
+ *     The CTA targets `/admin/members/new` (`members.write`); a viewer
+ *     without that permission gets a plain admin-only hint instead of a
+ *     link that would 404.
  * (b) filtered — "No members match these filters" + Clear-filters CTA
  * (c) all-invited — needs-invite chip filtered to zero rows (design doc
  *     2026-07-23 §3.6/§3.7) — "Everyone has been invited" + a CTA that
@@ -28,7 +31,12 @@ import {
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 
-export function MembersZeroState() {
+export function MembersZeroState({
+  canAddMember,
+}: {
+  /** `canPerform(role, 'members.write')` — the gate on `/admin/members/new`. */
+  readonly canAddMember: boolean;
+}) {
   const t = useTranslations('admin.members.emptyStates.zero');
   return (
     <div
@@ -45,13 +53,17 @@ export function MembersZeroState() {
         <h2 className="text-h3 text-lg font-semibold">{t('title')}</h2>
         <p className="text-sm text-muted-foreground">{t('description')}</p>
       </div>
-      <Link
-        href="/admin/members/new"
-        className={buttonVariants({ size: 'sm' })}
-      >
-        <PlusIcon className="size-4" />
-        {t('cta')}
-      </Link>
+      {canAddMember ? (
+        <Link
+          href="/admin/members/new"
+          className={buttonVariants({ size: 'sm' })}
+        >
+          <PlusIcon className="size-4" />
+          {t('cta')}
+        </Link>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t('adminOnlyHint')}</p>
+      )}
     </div>
   );
 }

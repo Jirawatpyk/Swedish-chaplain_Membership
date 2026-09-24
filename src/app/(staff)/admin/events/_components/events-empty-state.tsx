@@ -5,6 +5,10 @@
  * (b) integrationConfigured && !everReceivedDelivery → "Waiting for first event…" hint
  * (c) items.length===0 && totalArchived>0 → "All events archived" with toggle
  * (d) hasFilters && items.length===0 → "No events match your filters" + clear
+ *
+ * (a) and (b) link to `/admin/settings/integrations/eventcreate`, gated on
+ * `settings.integrations`. Manager and marketing read this list but lack
+ * that key, so they get a plain admin-only hint instead of links that 404.
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -14,6 +18,7 @@ import { buttonVariants } from '@/components/ui/button';
 export function EventsEmptyState({
   emptyContext,
   hasFilters,
+  canManageIntegration,
 }: {
   emptyContext: {
     integrationConfigured: boolean;
@@ -21,6 +26,9 @@ export function EventsEmptyState({
     totalArchived: number;
   };
   hasFilters: boolean;
+  /** `canPerform(role, 'settings.integrations')` — the gate on the
+   *  EventCreate settings page variants (a) and (b) link to. */
+  canManageIntegration: boolean;
 }) {
   const t = useTranslations('admin.events.list.emptyState');
 
@@ -46,13 +54,19 @@ export function EventsEmptyState({
         <p className="max-w-md text-muted-foreground">
           {t('noIntegration.body')}
         </p>
-        <Link
-          href="/admin/settings/integrations/eventcreate"
-          className={buttonVariants({ variant: 'default' })}
-        >
-          <PlusIcon aria-hidden="true" className="size-4" />
-          {t('noIntegration.cta')}
-        </Link>
+        {canManageIntegration ? (
+          <Link
+            href="/admin/settings/integrations/eventcreate"
+            className={buttonVariants({ variant: 'default' })}
+          >
+            <PlusIcon aria-hidden="true" className="size-4" />
+            {t('noIntegration.cta')}
+          </Link>
+        ) : (
+          <p className="max-w-md text-sm text-muted-foreground">
+            {t('noIntegration.adminOnlyHint')}
+          </p>
+        )}
       </div>
     );
   }
@@ -83,21 +97,27 @@ export function EventsEmptyState({
         <p className="max-w-md text-muted-foreground">
           {t('noDeliveries.body')}
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Link
-            href="/admin/settings/integrations/eventcreate#test"
-            className={buttonVariants({ variant: 'default' })}
-          >
-            <SendIcon aria-hidden="true" data-icon="inline-start" />
-            {t('noDeliveries.primaryCta')}
-          </Link>
-          <Link
-            href="/admin/settings/integrations/eventcreate"
-            className={buttonVariants({ variant: 'outline' })}
-          >
-            {t('noDeliveries.cta')}
-          </Link>
-        </div>
+        {canManageIntegration ? (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Link
+              href="/admin/settings/integrations/eventcreate#test"
+              className={buttonVariants({ variant: 'default' })}
+            >
+              <SendIcon aria-hidden="true" data-icon="inline-start" />
+              {t('noDeliveries.primaryCta')}
+            </Link>
+            <Link
+              href="/admin/settings/integrations/eventcreate"
+              className={buttonVariants({ variant: 'outline' })}
+            >
+              {t('noDeliveries.cta')}
+            </Link>
+          </div>
+        ) : (
+          <p className="max-w-md text-sm text-muted-foreground">
+            {t('noDeliveries.adminOnlyHint')}
+          </p>
+        )}
       </div>
     );
   }

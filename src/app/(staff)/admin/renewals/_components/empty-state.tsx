@@ -5,7 +5,9 @@
  * link guides admins to schedule settings so they can verify the
  * tier-bucket reminder ladders are configured (a common cause of
  * "no upcoming renewals" being a config gap rather than a real
- * emptiness signal).
+ * emptiness signal). That link targets a `settings.renewal_schedules`
+ * page, so it only renders for a viewer holding that permission — a
+ * manager following it would 404.
  *
  * A2 (renewals-suspended-visibility-audit UX review) — the empty state
  * used to SWALLOW the suspended-population bridge: with
@@ -28,16 +30,20 @@ import { buttonVariants } from '@/components/ui/button';
 import { SuspendedBridgeStrip } from './suspended-bridge-strip';
 
 export function RenewalsEmptyState({
+  canManageSchedules,
   suspendedInWindowCount = 0,
   suspendedOutsideWindowCount = 0,
 }: {
+  /** `canPerform(role, 'settings.renewal_schedules')` — the gate on the
+   *  schedule-settings page the secondary link targets. */
+  readonly canManageSchedules: boolean;
   /** `summary.suspendedInWindowGlobalCount` (tenant-global, #292 A3) — 0 by
    *  definition when this card shows (it requires totalInWindow===0 with no
    *  tier filter, and the unfiltered badge equals the global count). */
   readonly suspendedInWindowCount?: number;
   /** `summary.suspendedOutsideWindowCount` — first-bill collection cases. */
   readonly suspendedOutsideWindowCount?: number;
-} = {}) {
+}) {
   const t = useTranslations('admin.renewals.empty');
   const card = (
     <EmptyState
@@ -57,12 +63,14 @@ export function RenewalsEmptyState({
           >
             {t('cta')}
           </Link>
-          <Link
-            href="/admin/settings/renewals/schedules"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            {t('settingsLink')}
-          </Link>
+          {canManageSchedules ? (
+            <Link
+              href="/admin/settings/renewals/schedules"
+              className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            >
+              {t('settingsLink')}
+            </Link>
+          ) : null}
         </div>
       }
     />
