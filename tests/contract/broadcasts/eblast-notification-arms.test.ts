@@ -164,6 +164,7 @@ function fixture(
   const reads: EblastNotificationReads = {
     broadcastsRepo: store.broadcastsRepo,
     versionsRepo: store.versionsRepo,
+    decisionsRepo: store.decisionsRepo,
     portalRecipients: makeFakePortalRecipients({ [MEMBER_ID]: opts.contacts ?? [makePortalContact({ email: 'owner-now@acme.test', locale: 'sv' })] }),
     companyName: vi.fn(async () => (opts.company === undefined ? COMPANY : opts.company)),
     marketingRoster: vi.fn(async () => {
@@ -274,6 +275,58 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({}).reads)).toEqual({ miss: 'request_gone' });
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { company: null }).reads)).toEqual({ miss: 'request_gone' });
     await expect(buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { roster: 'throws' }).reads)).resolves.toBeNull();
+  });
+
+  describe('stale rows are superseded — held while the flag was off, drained on the re-flip', () => {
+    const V2 = 'aaaaaaaa-0000-4000-8000-000000000002';
+    const LATER = new Date(SENT_AT.getTime() + 86_400_000);
+    const decided = (d: string, round: number | null = 1, versionId: string | null = V1) =>
+      row('eblast_member_decided_marketing', { versionId, round, decision: d, recipientUserId: MARKETER_ID });
+    const run = (f: ReadsFixture, r: EblastOutboxRow) => buildEblastNotificationPayload(r, () => f.reads);
+
+    it('a decision in a LATER round → request_superseded', async () => {
+      const f = fixture({
+        broadcasts: [loaded({ status: 'member_approved', currentRound: 2 })],
+        decisions: [decision({ decision: 'changes_requested' }), decision({ id: 'dec-2', versionId: V2, round: 2, decision: 'approved', decidedAt: LATER })],
+      });
+      expect(await run(f, decided('changes_requested'))).toEqual({ miss: 'request_superseded' });
+      // …and the newer one still renders.
+      rendered(await run(f, decided('approved', 2, V2)));
+    });
+
+    it('a LATER decision in the same round (approved, then the approval withdrawn) → the approval row is superseded, the withdrawal renders', async () => {
+      const f = fixture({
+        broadcasts: [loaded({ status: 'changes_requested', currentRound: 1 })],
+        decisions: [decision({ decision: 'approved' }), decision({ id: 'dec-2', decision: 'approval_withdrawn', decidedAt: LATER })],
+      });
+      expect(await run(f, decided('approved'))).toEqual({ miss: 'request_superseded' });
+      rendered(await run(f, decided('approval_withdrawn')));
+    });
+
+    it.each(['sent', 'rejected', 'cancelled', 'failed_to_dispatch', 'expired_no_member_response'] as const)(
+      'the E-Blast reached terminal %s → request_superseded',
+      async (status) => {
+        const f = fixture({ broadcasts: [loaded({ status })], decisions: [decision({ decision: 'approved' })] });
+        expect(await run(f, decided('approved'))).toEqual({ miss: 'request_superseded' });
+      },
+    );
+
+    it('a still-current decision on a live row renders (the rule is not over-eager)', async () => {
+      for (const status of ['member_approved', 'approved', 'sending'] as const) {
+        const f = fixture({ broadcasts: [loaded({ status })], decisions: [decision({ decision: 'approved' })] });
+        rendered(await run(f, decided('approved')));
+      }
+    });
+
+    it('a member withdrawal IS the terminal event: it renders on the cancelled row even after earlier decisions', async () => {
+      const f = fixture({ broadcasts: [loaded({ status: 'cancelled' })], decisions: [decision({ decision: 'approved' })] });
+      expect(rendered(await run(f, decided('withdrawn'))).text).toContain('Withdrawn');
+    });
+
+    it('a decision row without its round is malformed (null — the retry ladder), never a throw', async () => {
+      const f = fixture({ broadcasts: [loaded({ status: 'member_approved' })], decisions: [decision({ decision: 'approved' })] });
+      await expect(run(f, decided('approved', null))).resolves.toBeNull();
+    });
   });
 });
 

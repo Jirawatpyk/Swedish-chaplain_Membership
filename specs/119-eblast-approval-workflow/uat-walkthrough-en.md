@@ -2,7 +2,7 @@
 
 **Feature**: F119 E-Blast two-sided approval (FR-035, US7, SC-005). Thai version:
 `uat-walkthrough-th.md` — the two say the same thing; change them together.
-**Written against**: branch `119-eblast-approval-workflow` at `1b06c1cd1` (2026-09-24).
+**Written against**: branch `119-eblast-approval-workflow` at `328c4029f` plus the FR-016 proposed-time fix (2026-09-24).
 **Who runs it**: two or more SweCham staff — one plays the **member**, one plays **marketing** —
 with the maintainer on hand for the switch.
 
@@ -15,7 +15,7 @@ touch, so every stage has been seen at least once (US7-AS2).
 
 ## 1. Before you start — preconditions
 
-All eleven must be true before step 1. They are the same list as `quickstart.md` § 4.
+All ten must be true before step 1. They are the same list as `quickstart.md` § 4.
 
 | # | Precondition | Why it matters |
 |---|---|---|
@@ -29,7 +29,6 @@ All eleven must be true before step 1. They are the same list as `quickstart.md`
 | P8 | The **record of processing (RoPA)** has been updated | Required before the switch goes on |
 | P9 | The maintainer has turned on `FEATURE_EBLAST_MEMBER_APPROVAL` in Vercel | Turning it on **is a production deploy — only the maintainer does it**. From that moment the marketing team is emailed about every real submission too, and "Start formatted version" is offered on every submitted E-Blast |
 | P10 | Resend is on the Free plan: **at most two broadcasts in flight** at once | Run the trial E-Blasts one at a time. Formatting and approving use no Resend capacity — only the final send does |
-| P11 | **Known gap**: the member's proposed send time is not stored on new submissions | At "Confirm schedule" the dialog says "The member did not propose a time." Use **Choose another time**. Note it on the record sheet as a known issue, not a new finding |
 
 **How to tell who is who in this document**: **Member** = the P3 portal login. **Marketing** = a
 staff user with the marketing role. **Observer** = whoever watches the inboxes.
@@ -97,8 +96,8 @@ stage does not change.
 
 **Expect**: a banner saying it is your turn and the date to respond by; the formatted version
 **first**, the original beside it (on a phone: below it, on the same page); the note from the
-chamber; the proposed and confirmed send times (both read "Not set" at this point — the proposal
-because of P11, the confirmed time because marketing has not confirmed one yet).
+chamber; the proposed and confirmed send times (the proposed time is the one picked in step 1; the
+confirmed time reads "Not set" because marketing has not confirmed one yet).
 
 2. Click **Request changes** and leave the reason empty, then confirm.
 
@@ -142,16 +141,19 @@ the content cannot change without a new approval. The note is optional (up to 50
 
 1. Open the E-Blast and click **Confirm schedule**.
 
-**Expect**: the dialog offers the send options. Because of P11 it says "The member did not propose
-a time."
+**Expect**: the dialog shows "Member's proposed time: …" with the time picked in step 1, and
+offers **Keep the member's proposed time** among the send options.
 
-2. Choose **Choose another time**, set a time **at least 5 minutes ahead** (Bangkok time), and
-   click **Confirm**.
+2. Choose **Choose another time**, set a time **at least 5 minutes ahead** (Bangkok time) — so the
+   trial does not wait a week for the proposal — and click **Confirm**.
+
+**Expect**: before you confirm, the dialog warns "This is not the member's proposed time (…). The
+member will be told about the change."
 
 **Expect**
 - The stage is **Scheduled**.
-- The Member receives an email with the confirmed time. (Because of P11 it will not carry the "this
-  is not the time you proposed" line.)
+- The Member receives an email with the confirmed time, their proposed time beside it, and the line
+  "This is not the time you proposed."
 - Optional check for the maintainer — the sending record now holds exactly the approved version:
   `SELECT b.subject = v.subject AND b.body_html = v.body_html FROM broadcasts b JOIN broadcast_versions v ON v.tenant_id = b.tenant_id AND v.id = b.approved_version_id WHERE b.broadcast_id = '<id>';`
   returns `true`.
@@ -222,7 +224,7 @@ Copy this table and fill one row per step.
 | A4 Request changes | Changes requested | | | | | |
 | A5 Re-format + send | Awaiting member approval (round 2) | | | | | |
 | A6 Approve | Member approved — awaiting schedule | | | | | |
-| A7 Confirm schedule | Scheduled | | | | | P11 known gap |
+| A7 Confirm schedule | Scheduled | | | | | "not the time you proposed" line in the member email? |
 | A8 Sent | Sent | | | | | |
 | B1–B6 | as in § 3 | | | | | |
 

@@ -174,3 +174,143 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
     expect(promoted.map((a) => (a.payload as { version_id: string }).version_id)).toEqual([approved!.id]);
   });
 });
+
+/**
+ * FR-016 / FR-018 — the member's proposed time is WRITTEN AT SUBMIT and frozen.
+ * The suite above submits with no time and confirms `send_now`, so it could not
+ * see that nothing wrote `proposed_send_at` after the 0305 backfill: every new
+ * E-Blast then refused `keep_proposal` with 409 `no_proposal` and the "not the
+ * time you proposed" line never fired. This one submits WITH a time, keeps it,
+ * then moves it — and the proposal survives the move (the F1 freeze).
+ */
+describe('F119 FR-016 — the proposal written at submit is kept, then survives a reschedule (live Neon)', () => {
+  let tenant: TestTenant;
+  let portalUser: TestUser;
+  let memberId: string;
+  let contactId: string;
+  let broadcastId: BroadcastId;
+  const planId = `plan-f119-proposal-${randomUUID().slice(0, 8)}`;
+  const actor = { actorUserId: MARKETER.userId, actorRole: 'marketing' as const, requestId: null };
+  // Well past the 5-minute floor, whole seconds so the timestamptz round trip is exact.
+  const proposal = new Date(Math.floor((Date.now() + 86_400_000) / 1000) * 1000);
+  const moved = new Date(proposal.getTime() + 3_600_000);
+
+  beforeAll(async () => {
+    tenant = await createTestTenant('test-swecham');
+    portalUser = await createActiveTestUser('member');
+    await seedPortalPlan(tenant.ctx.slug, portalUser.userId, planId);
+    ({ memberId, contactId } = await seedPortalMemberWithContact(tenant, planId, {
+      linkedUserId: portalUser.userId,
+      companyName: 'Proposal Co',
+    }));
+    await seedPortalMemberWithContact(tenant, planId, { companyName: 'Recipient Co' });
+  }, 120_000);
+
+  afterAll(async () => {
+    const slug = tenant?.ctx.slug;
+    if (slug !== undefined) await db.execute(sql`DELETE FROM notifications_outbox WHERE tenant_id = ${slug}`).catch(() => {});
+    await tenant?.cleanup().catch(() => {});
+    if (portalUser) await deleteTestUser(portalUser).catch(() => {});
+  }, 120_000);
+
+  const readRow = async () => {
+    const [row] = await runInTenant(tenant.ctx, (tx) => tx.select().from(broadcasts).where(eq(broadcasts.broadcastId, broadcastId)));
+    return row!;
+  };
+
+  it('keep_proposal confirms the submitted time (differs: false); a different time then reports differs: true and leaves the proposal untouched', async () => {
+    const submitted = await submitBroadcast(makeSubmitBroadcastDeps(tenant.ctx.slug, { listRecipients: async () => [] }), {
+      memberId,
+      submittedByUserId: portalUser.userId,
+      actorRole: 'member_self_service',
+      tenantDisplayName: 'Test Chamber',
+      memberDisplayName: 'Proposal Co',
+      subject: 'Winter gala',
+      bodySource: 'plain',
+      bodyHtml: '<p>Save the date.</p>',
+      segment: { kind: 'all_members' },
+      scheduledFor: proposal,
+      requestId: null,
+    });
+    if (!submitted.ok) throw new Error(`submit refused: ${JSON.stringify(submitted.error)}`);
+    broadcastId = asBroadcastId(submitted.value.broadcastId);
+
+    // Written at submit: on a submitted row `scheduled_for` IS the proposal (data-model § 3).
+    const atSubmit = await readRow();
+    expect(atSubmit.status).toBe('submitted');
+    expect(atSubmit.proposedSendAt?.toISOString()).toBe(proposal.toISOString());
+    expect(atSubmit.scheduledFor?.toISOString()).toBe(proposal.toISOString());
+
+    const started = await startFormattedVersion(
+      { ...makeStartFormattedVersionDeps(tenant.ctx.slug), memberApprovalEnabled: true },
+      { broadcastId, ...actor },
+    );
+    if (!started.ok) throw new Error(`start refused: ${JSON.stringify(started.error)}`);
+    const saved = await saveFormattedVersion(makeSaveFormattedVersionDeps(tenant.ctx.slug), {
+      broadcastId,
+      actorUserId: MARKETER.userId,
+      requestId: null,
+      subject: APPROVED_SUBJECT,
+      bodyHtml: APPROVED_BODY,
+      bodySource: APPROVED_SOURCE,
+      noteToMember: null,
+      expectedUpdatedAt: started.value.version.updatedAt,
+    });
+    if (!saved.ok) throw new Error(`save refused: ${JSON.stringify(saved.error)}`);
+    const sent = await sendVersionToMember(makeSendVersionToMemberDeps(tenant.ctx.slug), { broadcastId, ...actor });
+    if (!sent.ok) throw new Error(`send refused: ${JSON.stringify(sent.error)}`);
+    const decided = await recordMemberDecision(
+      { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: { listRecipients: async () => [MARKETER] } },
+      {
+        broadcastId,
+        memberId,
+        actorUserId: portalUser.userId,
+        actorRole: 'member',
+        contactId,
+        versionId: sent.value.versionId,
+        decision: 'approved',
+        reason: null,
+        requestId: null,
+      },
+    );
+    expect(decided.ok ? decided.value.stage : decided.error).toBe('member_approved');
+
+    // 1. Keep the member's time — the promotion.
+    const kept = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { broadcastId, ...actor, mode: { mode: 'keep_proposal' } });
+    expect(kept.ok ? { stage: kept.value.stage, differs: kept.value.differs } : kept.error).toEqual({ stage: 'approved', differs: false });
+    const afterKeep = await readRow();
+    expect(afterKeep.scheduledFor?.toISOString()).toBe(proposal.toISOString());
+    expect(afterKeep.proposedSendAt?.toISOString()).toBe(proposal.toISOString());
+
+    // 2. Move it — `approved → approved` releases `scheduled_for` (E2), never the proposal (F1).
+    const rescheduled = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), {
+      broadcastId,
+      ...actor,
+      mode: { mode: 'schedule', scheduledFor: moved },
+    });
+    expect(rescheduled.ok ? { stage: rescheduled.value.stage, differs: rescheduled.value.differs } : rescheduled.error).toEqual({
+      stage: 'approved',
+      differs: true,
+    });
+    const afterMove = await readRow();
+    expect(afterMove.scheduledFor?.toISOString()).toBe(moved.toISOString());
+    expect(afterMove.proposedSendAt?.toISOString()).toBe(proposal.toISOString());
+
+    // The audit trail states both confirmations against the same frozen proposal.
+    const confirmations = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.eventType, 'broadcast_schedule_confirmed')))
+      .orderBy(auditLog.timestamp);
+    type Payload = { mode: string; proposed_send_at: string | null; confirmed_send_at: string | null; differs: boolean };
+    expect(
+      confirmations.map((a) => {
+        const p = a.payload as Payload;
+        return [p.mode, p.proposed_send_at, p.confirmed_send_at, p.differs];
+      }),
+    ).toEqual([
+      ['keep_proposal', proposal.toISOString(), proposal.toISOString(), false],
+      ['schedule', proposal.toISOString(), moved.toISOString(), true],
+    ]);
+  });
+});

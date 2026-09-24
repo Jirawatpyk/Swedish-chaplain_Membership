@@ -44,6 +44,9 @@ import {
   makeDrizzleBroadcastsRepo,
   parseBroadcastId,
   type ApprovalBroadcastsRepo,
+  drizzleBroadcastDecisionsRepo,
+  isTerminalStatus,
+  type BroadcastDecisionsRepo,
   type BroadcastId,
   type BroadcastVersionsRepo,
   type Broadcast,
@@ -73,6 +76,8 @@ export type EblastPayload = (BuiltEblastEmail & { readonly toEmail: string }) | 
 export interface EblastNotificationReads {
   readonly broadcastsRepo: Pick<ApprovalBroadcastsRepo, 'withTx' | 'findByIdInTx'>;
   readonly versionsRepo: Pick<BroadcastVersionsRepo, 'listByBroadcast'>;
+  /** The member's decisions, oldest first — the staleness test of a decided hand-off. */
+  readonly decisionsRepo: Pick<BroadcastDecisionsRepo, 'listByBroadcast'>;
   readonly portalRecipients: MemberPortalRecipientPort;
   /** The member company's name; `null` ⇒ the member row is gone. */
   readonly companyName: (memberId: string) => Promise<string | null>;
@@ -86,6 +91,7 @@ export function makeEblastNotificationReads(tenantId: string): EblastNotificatio
   return {
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     versionsRepo: drizzleBroadcastVersionsRepo,
+    decisionsRepo: drizzleBroadcastDecisionsRepo,
     portalRecipients: memberPortalRecipients,
     async companyName(memberId) {
       const member = await drizzleMemberRepo.findById(tenant, asMemberId(memberId));
@@ -242,6 +248,14 @@ async function scheduleConfirmedMember(
  * between enqueue and send gets nothing) — matched by user id when the row
  * carries it, else by the address frozen at enqueue — and is reached at the
  * CURRENT address.
+ *
+ * Stale — the silent `request_superseded`, like every other arm — when the
+ * member has decided again since (a later round, or a later decision in the
+ * same round: an approval then its withdrawal), or when the E-Blast has closed
+ * (sent, rejected, cancelled, failed, expired). A member WITHDRAWAL is exempt:
+ * it IS the closing event (the row is `cancelled` by it) and nothing can follow
+ * it, so it always renders. With the flag off these rows wait in the outbox and
+ * drain on the re-flip, which is when the rule earns its keep.
  */
 async function memberDecidedMarketing(
   reads: EblastNotificationReads,
@@ -253,8 +267,24 @@ async function memberDecidedMarketing(
 ): Promise<EblastPayload> {
   const decision = ctx.decision;
   if (!isDecidedKind(decision)) return malformed(row, 'decision');
-  const broadcast = await reads.broadcastsRepo.withTx((tx) => reads.broadcastsRepo.findByIdInTx(tx, tenant.slug, broadcastId));
-  if (broadcast === null) return GONE;
+  // The round the decision was recorded in; `undefined` for a withdrawal (no
+  // staleness test). Every recorded decision carries one — a row without it
+  // is malformed. (A withdrawal's own round may be null: from `submitted`.)
+  const decidedIn = decision === 'withdrawn' ? undefined : int(ctx.round);
+  if (decidedIn === null) return malformed(row, 'round');
+  const read = await reads.broadcastsRepo.withTx(async (tx) => {
+    const broadcast = await reads.broadcastsRepo.findByIdInTx(tx, tenant.slug, broadcastId);
+    if (broadcast === null) return null;
+    const decisions = decidedIn === undefined ? [] : await reads.decisionsRepo.listByBroadcast(tenant.slug, broadcastId, tx);
+    return { broadcast, decisions };
+  });
+  if (read === null) return GONE;
+  const { broadcast, decisions } = read;
+  if (decidedIn !== undefined) {
+    const lastInRound = decisions.filter((d) => d.round === decidedIn).at(-1);
+    const decidedSince = decisions.some((d) => d.round > decidedIn) || (lastInRound !== undefined && lastInRound.decision !== decision);
+    if (decidedSince || isTerminalStatus(broadcast.status)) return SUPERSEDED;
+  }
   return staffHandoff(reads, broadcast, ctx, row, (companyName) =>
     buildEblastMemberDecidedMarketingEmail({
       locale,

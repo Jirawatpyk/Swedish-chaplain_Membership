@@ -181,14 +181,18 @@ function makePlansBridge(opts: FixtureOpts = {}): PlansBridgePort {
 interface BroadcastsRepoStub extends BroadcastsRepo {
   readonly inserted: Array<NewBroadcastDraftInput>;
   readonly transitions: Array<{ broadcastId: string; status: string }>;
+  /** The `fields` each `applyTransition` carried, in call order. */
+  readonly transitionFields: Array<Partial<Broadcast>>;
 }
 
 function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
   const inserted: Array<NewBroadcastDraftInput> = [];
   const transitions: Array<{ broadcastId: string; status: string }> = [];
+  const transitionFields: Array<Partial<Broadcast>> = [];
   return {
     inserted,
     transitions,
+    transitionFields,
     async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
       return fn(null);
     },
@@ -224,8 +228,9 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     async lockForUpdate() {
       return null;
     },
-    async applyTransition(_tx, tenantId, broadcastId, status, _fields): Promise<Broadcast> {
+    async applyTransition(_tx, tenantId, broadcastId, status, fields): Promise<Broadcast> {
       transitions.push({ broadcastId: broadcastId as string, status });
+      transitionFields.push(fields);
       const lastInsert = inserted[inserted.length - 1];
       // Existing-draft path: caller never invoked insertDraft. Synthesise
       // a minimal Broadcast row so the use-case's downstream audit emit
@@ -828,6 +833,27 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     expect(broadcastsRepo.transitions).toEqual([
       { broadcastId: result.ok ? result.value.broadcastId : '', status: 'submitted' },
     ]);
+  });
+
+  it('F119 FR-016: the draft → submitted transition writes the member\'s requested time as proposedSendAt', async () => {
+    const requested = new Date('2026-10-01T03:00:00.000Z');
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-2', primaryContactEmail: 'r@example.com' }],
+    });
+    const result = await submitBroadcast(deps, { ...baseInput, scheduledFor: requested });
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.transitionFields).toHaveLength(1);
+    expect(broadcastsRepo.transitionFields[0]?.proposedSendAt).toEqual(requested);
+  });
+
+  it('F119 FR-016: no requested time → proposedSendAt is written as null (an explicit "no proposal")', async () => {
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-2', primaryContactEmail: 'r@example.com' }],
+    });
+    await submitBroadcast(deps, baseInput);
+    expect(broadcastsRepo.transitionFields[0]).toHaveProperty('proposedSendAt', null);
   });
 
   it('happy path: audit emit broadcast_submitted with actor_role + member_id + segment_type + estimated_count', async () => {

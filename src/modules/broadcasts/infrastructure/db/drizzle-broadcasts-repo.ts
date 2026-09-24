@@ -841,6 +841,10 @@ export function makeDrizzleBroadcastsRepo(
         'approvedVersionId',
         'memberReminderStage',
         'memberExpiryNotifiedAt',
+        // F119 FR-016 — the member's proposal, written by the `draft →
+        // submitted` transition ONLY. Any post-draft write of it is refused by
+        // the immutability trigger (0305 F1), loud, never silent.
+        'proposedSendAt',
         // F119 T060 — the PROMOTION of the member-approved version. It must
         // ride the SAME statement as the `member_approved → approved` flip:
         // that edge is the immutability trigger's only content exemption (E1),

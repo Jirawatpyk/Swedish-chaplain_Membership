@@ -167,13 +167,12 @@ promotion re-checks every image host; a de-allow-listed image refuses it with 42
 the member again). The member is emailed the confirmed time, with an explicit "this is not the
 time you proposed" line when they differ.
 
-> **Known gap at `1b06c1cd1`** — `proposed_send_at` has **no writer**: the submit path never sets
-> it, so every E-Blast submitted after migration `0305` carries `NULL`, and only rows that were
-> `submitted` at the `0305` deploy got a proposal (the backfill). On a new E-Blast the dialog
-> therefore reads "The member did not propose a time.", "Keep the member's proposed time" is not
-> offered (the route answers 409 `no_proposal`), and the member's schedule email never shows the
-> "not the time you proposed" line. Use **Choose another time** or **Send now**. Reported to the
-> maintainer; spec FR-016 / data-model § 3 say it is written at submit.
+The proposal is `proposed_send_at`: written by the submit (`draft → submitted`) from the time the
+member requested, and frozen from then on by the immutability trigger — a later confirm or
+reschedule moves `scheduled_for`, never the proposal. A member who requested no time has `NULL`
+("The member did not propose a time.", and "keep" is not offered — 409 `no_proposal`). Rows
+submitted before `0305` carry a proposal only if they were still `submitted` at that deploy (the
+backfill); every other historical row shows "not recorded".
 
 ### `approved` — Scheduled (nobody)
 
@@ -351,7 +350,7 @@ closes a stale row silently as `request_superseded`:
 | `eblast_version_sent_member` | it is still `awaiting_member_approval` in the same round, and the version was sent |
 | `eblast_schedule_confirmed_member` | `scheduled_for` is set and the confirmed approval still governs the row |
 | `eblast_approval_lifecycle` | it is still in the status the tick left it (awaiting, or expired for the closure) in the same round |
-| `eblast_member_decided_marketing` | **no staleness check** — delivered even if the E-Blast has since moved on. The email carries subject, company, the stage the decision produced and a link, so an old one reads as history, not as a current instruction |
+| `eblast_member_decided_marketing` | the member has not decided again since (no decision in a later round, no later decision in the same round — e.g. an approval then its withdrawal) and the E-Blast has not closed (`sent`, `rejected`, `cancelled`, `failed_to_dispatch`, `expired_no_member_response`). A member **withdrawal** is exempt: it is itself the closing event, so it is always delivered |
 
 Staff rows also re-check the recipient against the live roster (a user who left gets nothing —
 `recipient_gone`); member rows go to the approval contact's **current** address and language.
