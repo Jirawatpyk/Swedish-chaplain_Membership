@@ -105,8 +105,14 @@ export function InviteColleagueForm() {
         const code = data?.error?.code;
         if (code === 'email_taken') {
           // Field-scoped — surface inline on the email input (+ focus) rather
-          // than a transient toast (audit XF-01).
+          // than a transient toast (audit XF-01). Only returned when the
+          // address is already a contact of the member's OWN company.
           form.setError('email', { type: 'server', message: t('emailTaken') });
+          form.setFocus('email');
+        } else if (code === 'invite_unavailable') {
+          // Neutral on purpose (account-enumeration guard): the server does
+          // not say WHY this address can't be invited, so neither do we.
+          form.setError('email', { type: 'server', message: t('inviteUnavailable') });
           form.setFocus('email');
         } else if (code === 'invalid_email') {
           // Field-scoped like email_taken — the server rejected the address,

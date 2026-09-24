@@ -6580,7 +6580,8 @@
       "sending": "Skickar…",
       "sendSuccess": "Inbjudan har skickats.",
       "sendError": "Kunde inte skicka inbjudan. Försök igen.",
-      "emailTaken": "Denna e-postadress är redan registrerad.",
+      "emailTaken": "Den här personen är redan en av ditt företags kontakter.",
+      "inviteUnavailable": "Vi kunde inte bjuda in den här adressen. Kontakta handelskammaren för hjälp.",
       "invalidEmail": "Ange en giltig e-postadress.",
       "validationError": "Kontrollera formuläret och försök igen.",
       "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen."
