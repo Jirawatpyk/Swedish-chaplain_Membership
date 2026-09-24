@@ -9,9 +9,8 @@
  * keys under `admin.invoices.supersedeWarning.` so the toast never shows a
  * server string or an internal UUID.
  *
- * Fail-closed: the body is untrusted JSON, so a malformed entry, an unknown
- * `kind`, or a response carrying only the deprecated `supersede_warnings`
- * string array still yields the generic `listFailed` copy ("check this
+ * Fail-closed: the body is untrusted JSON, so a malformed entry or an
+ * unknown `kind` still yields the generic `listFailed` copy ("check this
  * member's older bills") rather than nothing — silently dropping the warning
  * would leave a duplicate bill open with no one told.
  *
@@ -84,13 +83,8 @@ export function routeSupersedeIssues(body: unknown): readonly SupersedeIssueCopy
   // A non-object body (e.g. JSON `null`) carries no issues. Never throw: this
   // runs after a SUCCESSFUL issue, so a throw would read as a failure.
   if (typeof body !== 'object' || body === null) return [];
-  const { supersede_issues: issues, supersede_warnings: legacy } = body as {
-    readonly supersede_issues?: unknown;
-    readonly supersede_warnings?: unknown;
-  };
-  if (!Array.isArray(issues)) {
-    return Array.isArray(legacy) && legacy.length > 0 ? [GENERIC] : [];
-  }
+  const issues = (body as { readonly supersede_issues?: unknown }).supersede_issues;
+  if (!Array.isArray(issues)) return [];
   const routed: SupersedeIssueCopy[] = [];
   for (const raw of issues) {
     const parsed = parseIssue(raw);

@@ -272,7 +272,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
       json: async () => ({
         invoice_id: 'inv-draft-1',
         invoice_number: 'SC2026-00099',
-        supersede_warnings: [],
       }),
     } as Response);
     renderActions();
@@ -297,7 +296,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
       json: async () => ({
         invoice_id: 'inv-draft-1',
         invoice_number: 'SC2026-00100',
-        supersede_warnings: [],
       }),
     } as Response);
     renderActions();
@@ -306,7 +304,7 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     expect(screen.getByText(t.silentDialog.title)).toBeInTheDocument();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
-      json: async () => ({ invoice_number: 'SC2026-00100', supersede_warnings: [] }),
+      json: async () => ({ invoice_number: 'SC2026-00100' }),
     } as Response);
     fireEvent.click(screen.getByRole('button', { name: t.issueSilently }));
 
@@ -328,10 +326,6 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
             error_code: 'concurrent_state_change',
           },
           { kind: 'list_failed' },
-        ],
-        supersede_warnings: [
-          'supersede: void of inv-old-1 failed (concurrent_state_change)',
-          'supersede: failed to list prior bills',
         ],
       }),
     } as Response);
@@ -403,7 +397,7 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     expect(document.body.textContent).not.toMatch(/supersede:/);
   });
 
-  it('a legacy-only string array (no structured issues) still warns, with generic translated copy', async () => {
+  it('a legacy-only string array (no structured issues) is ignored — no raw server string, no warning', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -415,14 +409,8 @@ describe('<AutoRenewalQueueActions> — Issue + Send / Issue silently', () => {
     openMenuAndClick('queue-row-issue-send');
     fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
 
-    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
-    const opts = vi.mocked(toast.warning).mock.calls[0]![1] as {
-      description: React.ReactNode;
-    };
-    cleanup();
-    render(<>{opts.description}</>);
-    expect(screen.getByText(en.admin.invoices.supersedeWarning.listFailed)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/supersede:/);
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.warning).not.toHaveBeenCalled();
   });
 
   it('no supersede issues → no warning toast', async () => {
@@ -640,7 +628,6 @@ describe('<AutoRenewalQueueActions> — focus-on-close (review round 1 BLOCKING)
       json: async () => ({
         invoice_id: 'inv-draft-1',
         invoice_number: 'SC2026-00050',
-        supersede_warnings: [],
       }),
     } as Response);
     renderHarness();

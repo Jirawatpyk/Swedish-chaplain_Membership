@@ -43,27 +43,3 @@ export function serialiseSupersedeIssue(warning: SupersedeWarning): Record<strin
     }
   }
 }
-
-/**
- * DEPRECATED `supersede_warnings[]` — the pre-structured English strings,
- * byte-identical to what `issueMembershipBill` used to return, kept ONLY so a
- * queue page still open from before this deploy (old client bundle, which
- * joins these into its toast) keeps warning instead of going silent. The
- * current UI reads `supersede_issues` and never renders these. Remove once
- * no pre-106-follow-up bundle can still be open.
- */
-export function legacySupersedeWarningText(warning: SupersedeWarning): string {
-  switch (warning.kind) {
-    case 'list_failed':
-      return 'supersede: failed to list prior bills';
-    case 'void_failed':
-      return `supersede: void of ${warning.invoiceId} failed (${warning.errorCode})`;
-    case 'void_threw':
-      return `supersede: void of ${warning.invoiceId} threw`;
-    default: {
-      const _exhaustive: never = warning;
-      void _exhaustive;
-      return 'supersede: failed to list prior bills';
-    }
-  }
-}

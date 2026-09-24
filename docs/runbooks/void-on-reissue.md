@@ -141,10 +141,7 @@ member has two open bills until someone voids the older one. Signals:
   (`list_failed` / `void_failed` with the `voidInvoice` error code /
   `void_threw`), carrying the old bill's `invoiceId` and printed `SC`
   number. `POST /api/invoices/[invoiceId]/issue-auto-drafted` and
-  `POST /api/admin/members/[id]/renew` return them as `supersede_issues[]`
-  (`issue-auto-drafted` also keeps the older `supersede_warnings[]` English
-  strings for one release, for client bundles still open from before the
-  change; the current UI does not display them).
+  `POST /api/admin/members/[id]/renew` return them as `supersede_issues[]`.
 - Staff who issue from the admin auto-renewal queue or the member-detail
   "Renew" dialog see a persistent warning toast in their locale: "The older
   bill SC-… could not be voided automatically. Void it manually." It

@@ -234,12 +234,9 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-auto-drafted (Task 14)'
         bill_document_number: 'SC-2026-000124',
       },
     ]);
-    // Deprecated — kept byte-identical to the pre-structured strings so a
-    // client bundle still open from before this deploy keeps working.
-    expect(body['supersede_warnings']).toEqual([
-      'supersede: void of inv-old-1 failed (concurrent_state_change)',
-      'supersede: void of inv-old-2 threw',
-    ]);
+    // The deprecated English `supersede_warnings[]` was removed after its
+    // one-release grace period: no raw server strings on the wire.
+    expect(body).not.toHaveProperty('supersede_warnings');
     expect(body['link_warning']).toBe('cycle could not be linked');
     expect(body['discarded_invoice_ids']).toEqual(['inv-sibling-1']);
   });
@@ -254,10 +251,10 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-auto-drafted (Task 14)'
     const body = (await res.json()) as Record<string, unknown>;
 
     expect(body['supersede_issues']).toEqual([{ kind: 'list_failed' }]);
-    expect(body['supersede_warnings']).toEqual(['supersede: failed to list prior bills']);
+    expect(body).not.toHaveProperty('supersede_warnings');
   });
 
-  it('no supersede failures → both arrays empty', async () => {
+  it('no supersede failures → supersede_issues empty', async () => {
     issueAutoDraftedRenewalMock.mockResolvedValueOnce(ok(SUCCESS_VALUE));
 
     const { POST } = await importRoute();
@@ -265,7 +262,7 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-auto-drafted (Task 14)'
     const body = (await res.json()) as Record<string, unknown>;
 
     expect(body['supersede_issues']).toEqual([]);
-    expect(body['supersede_warnings']).toEqual([]);
+    expect(body).not.toHaveProperty('supersede_warnings');
   });
 
   // -------------------------------------------------------------------------
