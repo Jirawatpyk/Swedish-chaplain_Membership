@@ -13,7 +13,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { warn, error } = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
 vi.mock('@/lib/logger', () => ({ logger: { warn, error, info: vi.fn(), debug: vi.fn() } }));
 
-import { getInvoiceSupersession } from '@/modules/invoicing/application/use-cases/get-invoice-supersession';
+import {
+  getInvoiceSupersession,
+  isSupersessionLinkLive,
+} from '@/modules/invoicing/application/use-cases/get-invoice-supersession';
 import type {
   InvoiceSupersessionReadPort,
   SupersessionLinkRow,
@@ -60,7 +63,12 @@ describe('getInvoiceSupersession', () => {
     expect(r).toEqual({
       ok: true,
       value: {
-        replacedBy: { invoiceId: 'inv-new', displayNumber: 'SC-2026-000131', issueDate: '2026-09-24' },
+        replacedBy: {
+          invoiceId: 'inv-new',
+          displayNumber: 'SC-2026-000131',
+          issueDate: '2026-09-24',
+          status: 'issued',
+        },
         replaces: [],
       },
     });
@@ -96,7 +104,7 @@ describe('getInvoiceSupersession', () => {
       { tenantId: TENANT, invoice: { invoiceId: 'inv-new', status: 'paid', memberId: 'member-1' } },
     );
     expect(r.ok && r.value.replaces).toEqual([
-      { invoiceId: 'inv-b', displayNumber: 'inv-b', issueDate: '2026-09-24' },
+      { invoiceId: 'inv-b', displayNumber: 'inv-b', issueDate: '2026-09-24', status: 'void' },
     ]);
   });
 
@@ -140,5 +148,19 @@ describe('getInvoiceSupersession', () => {
     );
     expect(r).toEqual({ ok: false, error: { code: 'read_failed' } });
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a void or fully credited replacement is not live; issued / paid / partially credited are', () => {
+    const link = (status: SupersessionLinkRow['status']) => ({
+      invoiceId: 'i',
+      displayNumber: 'SC-1',
+      issueDate: null,
+      status,
+    });
+    expect(isSupersessionLinkLive(link('void'))).toBe(false);
+    expect(isSupersessionLinkLive(link('credited'))).toBe(false);
+    expect(isSupersessionLinkLive(link('issued'))).toBe(true);
+    expect(isSupersessionLinkLive(link('paid'))).toBe(true);
+    expect(isSupersessionLinkLive(link('partially_credited'))).toBe(true);
   });
 });

@@ -33,6 +33,14 @@
 -- Rollback: DROP INDEX IF EXISTS audit_log_invoice_superseded_fwd_idx,
 -- audit_log_invoice_superseded_rev_idx; — the adapter still works without them
 -- (tenant/event index + filter), just slower.
+--
+-- Fail fast on the lock (0293 precedent): CREATE INDEX takes a SHARE lock on
+-- `audit_log`, which every audited write needs. If a long transaction holds a
+-- conflicting lock, abort after 5 s and let the deploy retry rather than queue
+-- every audit INSERT behind us. SET LOCAL lives to the end of the migrator's
+-- single batch transaction, so the default is handed back as the LAST
+-- statement — later migrations in the same deploy must not inherit it.
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 
 CREATE INDEX IF NOT EXISTS "audit_log_invoice_superseded_fwd_idx"
   ON "audit_log" ("tenant_id", ("payload"->>'invoice_id'))
@@ -42,4 +50,6 @@ CREATE INDEX IF NOT EXISTS "audit_log_invoice_superseded_fwd_idx"
 CREATE INDEX IF NOT EXISTS "audit_log_invoice_superseded_rev_idx"
   ON "audit_log" ("tenant_id", ("payload"->>'superseded_by_invoice_id'))
   WHERE "event_type" = 'invoice_voided'
-    AND ("payload"->>'superseded_by_invoice_id') IS NOT NULL;
+    AND ("payload"->>'superseded_by_invoice_id') IS NOT NULL;--> statement-breakpoint
+
+SET LOCAL lock_timeout = DEFAULT;

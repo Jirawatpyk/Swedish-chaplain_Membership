@@ -167,3 +167,11 @@ tests/integration/invoicing/invoice-supersession.test.ts
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | Two partial expression indexes on `audit_log` (non-concurrent build) | Point lookups on a JSON key in both directions without scanning every `invoice_voided` row of a tenant | Relying on `audit_log_tenant_event_ts_idx` alone scans and JSON-filters all of a tenant's void rows on every detail view; a denormalised `invoices` column duplicates the audit truth and touches the money write path (see Design decision) |
+
+## Review outcomes (2026-09-24, solo-maintainer substitute: project reviewer agents)
+
+| Reviewer | Verdict | Acted on |
+|---|---|---|
+| financial-integrity-reviewer | CONDITIONAL PASS, no blocker. M1: "Replaced by" never said whether the replacement is still live (A→B→C chain, B later voided or credited) | Link carries `status`; a void / fully credited target gets a status badge (`isSupersessionLinkLive`). Integration test for the A→B→C chain. No chain-following: B's own page names C. L1 (number vs header when `FEATURE_088_TAX_AT_PAYMENT` is off) and L2 (two mutually-blind concurrent reissues, pre-existing) accepted. |
+| security-engineer | APPROVE, checklist signed (tenant isolation, cross-tenant test, member-scope IDOR, SQLi, log PII). LOW: the explicit `tenant_id` predicate was not proven by any test (RLS alone hides a cross-tenant row) | Integration test with a `tenant_id IS NULL` `invoice_voided` row (visible under the `audit_log` policy): only the explicit predicate stops it; verified RED with the predicate removed. INFO items (error log on each render of an anomalous row; `::uuid` cast fails closed) accepted. |
+| drizzle-migration-reviewer | Ship, no blocker. Suggestion: fail fast on the `audit_log` lock | `SET LOCAL lock_timeout = '5s'` at the top of 0305, handed back to DEFAULT as its last statement (0293 precedent). Drizzle `schema.ts` not updated (0021 precedent; `db:generate` retired). |

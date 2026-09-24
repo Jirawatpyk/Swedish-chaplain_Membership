@@ -54,6 +54,13 @@ export interface InvoiceSupersessionLink {
   /** Bill / document number; the invoice id when the other end has none. */
   readonly displayNumber: string;
   readonly issueDate: string | null;
+  /**
+   * Current status of the linked invoice. A replacement can itself be
+   * superseded (A→B→C) or credited later, so "Replaced by B" alone would
+   * point staff at a bill that is no longer live; pages badge a non-live one.
+   * There is no chain-following here: B's own page names C.
+   */
+  readonly status: InvoiceStatus;
 }
 
 export interface InvoiceSupersession {
@@ -61,6 +68,15 @@ export interface InvoiceSupersession {
   readonly replacedBy: InvoiceSupersessionLink | null;
   /** The bills this invoice superseded (oldest first); usually empty. */
   readonly replaces: readonly InvoiceSupersessionLink[];
+}
+
+/**
+ * A linked invoice that no longer stands as a live bill: voided (e.g. itself
+ * superseded) or fully credited. Pages badge these so a "Replaced by" pointer
+ * never reads as "this is the bill to collect".
+ */
+export function isSupersessionLinkLive(link: InvoiceSupersessionLink): boolean {
+  return link.status !== 'void' && link.status !== 'credited';
 }
 
 export interface InvoiceSupersessionReadFailed {
@@ -121,5 +137,6 @@ function toLink(row: SupersessionLinkRow): InvoiceSupersessionLink {
     invoiceId: row.invoiceId,
     displayNumber: row.displayNumber ?? row.invoiceId,
     issueDate: row.issueDate,
+    status: row.status,
   };
 }

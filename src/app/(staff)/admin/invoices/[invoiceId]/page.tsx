@@ -43,6 +43,7 @@ import {
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
   getInvoiceSupersession,
+  isSupersessionLinkLive,
   makeGetInvoiceSupersessionDeps,
 } from '@/modules/invoicing';
 // Direct infra import for the settings read — same escape-hatch as
@@ -983,6 +984,14 @@ export default async function InvoiceDetailPage({
                         }),
                       })}
                     </span>
+                  )}
+                  {/* The replacement is itself no longer live (superseded again,
+                      voided or fully credited) — say so, so staff open it and
+                      follow ITS "Replaced by" instead of chasing this number. */}
+                  {!isSupersessionLinkLive(replacedBy) && (
+                    <Badge variant="outline" className="ml-2 align-middle">
+                      {tStatus(replacedBy.status)}
+                    </Badge>
                   )}
                 </p>
               )}

@@ -602,6 +602,7 @@ export { makeMemberMoneyRecipientStatusDeps } from './application/invoicing-deps
  */
 export {
   getInvoiceSupersession,
+  isSupersessionLinkLive,
   type InvoiceSupersession,
   type InvoiceSupersessionLink,
 } from './application/use-cases/get-invoice-supersession';

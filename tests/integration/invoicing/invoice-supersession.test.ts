@@ -19,7 +19,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -335,6 +335,7 @@ describe('getInvoiceSupersession — supersede links on real Postgres (121)', ()
       invoiceId: newBill.invoiceId,
       displayNumber: newBill.billDocumentNumberRaw,
       issueDate: newBill.issueDate,
+      status: 'issued',
     });
     expect(result.value.replaces).toEqual([]);
   });
@@ -349,7 +350,7 @@ describe('getInvoiceSupersession — supersede links on real Postgres (121)', ()
     if (!result.ok) return;
     expect(result.value.replacedBy).toBeNull();
     expect(result.value.replaces).toEqual([
-      { invoiceId: oldBillId, displayNumber: 'SC-2026-910001', issueDate: '2026-01-15' },
+      { invoiceId: oldBillId, displayNumber: 'SC-2026-910001', issueDate: '2026-01-15', status: 'void' },
     ]);
   });
 
@@ -376,7 +377,70 @@ describe('getInvoiceSupersession — supersede links on real Postgres (121)', ()
     expect(result.value).toEqual({ replacedBy: null, replaces: [] });
   });
 
+  it('a chain A→B→C reports B as void, so the reader follows B to the live bill', async () => {
+    const memberId = await seedMember(tenantA);
+    const a = await seedBill(tenantA, user, memberId, {
+      billNumber: 'SC-2026-910010',
+      status: 'void',
+      createdAt: new Date('2026-01-06T00:00:00Z'),
+    });
+    const b = await seedBill(tenantA, user, memberId, {
+      billNumber: 'SC-2026-910011',
+      status: 'void',
+      createdAt: new Date('2026-01-07T00:00:00Z'),
+    });
+    const c = await seedBill(tenantA, user, memberId, {
+      billNumber: 'SC-2026-910012',
+      status: 'issued',
+      createdAt: new Date('2026-01-08T00:00:00Z'),
+    });
+    await forgeVoidedAudit(tenantA, user, { invoice_id: a, superseded_by_invoice_id: b, member_id: memberId });
+    await forgeVoidedAudit(tenantA, user, { invoice_id: b, superseded_by_invoice_id: c, member_id: memberId });
+
+    const onA = await resolve(tenantA, { invoiceId: a, status: 'void', memberId });
+    const onB = await resolve(tenantA, { invoiceId: b, status: 'void', memberId });
+    expect(onA.ok && onB.ok).toBe(true);
+    if (!onA.ok || !onB.ok) return;
+    expect(onA.value.replacedBy).toMatchObject({ invoiceId: b, status: 'void' });
+    expect(onB.value.replacedBy).toMatchObject({ invoiceId: c, status: 'issued' });
+    expect(onB.value.replaces).toEqual([
+      { invoiceId: a, displayNumber: 'SC-2026-910010', issueDate: '2026-01-15', status: 'void' },
+    ]);
+  });
+
   describe('AS4 — cross-tenant isolation (Constitution I.3)', () => {
+    it('app layer: an invoice_voided row with tenant_id NULL (visible under the audit_log RLS policy) never resolves', async () => {
+      const memberId = await seedMember(tenantA);
+      const voided = await seedBill(tenantA, user, memberId, {
+        billNumber: 'SC-2026-910020',
+        status: 'void',
+        createdAt: new Date('2026-01-09T00:00:00Z'),
+      });
+      const target = await seedBill(tenantA, user, memberId, {
+        billNumber: 'SC-2026-910021',
+        status: 'issued',
+        createdAt: new Date('2026-01-10T00:00:00Z'),
+      });
+      // The audit_log policy admits `tenant_id IS NULL` (F1 identity) rows in
+      // every tenant context, so RLS alone would let this row through; only
+      // the adapter's explicit `a.tenant_id = $tenant` predicate stops it.
+      await db.insert(auditLog).values({
+        eventType: 'invoice_voided',
+        actorUserId: user.userId,
+        summary: 'tenantless supersede link (test)',
+        requestId: `forge-null-${randomUUID()}`,
+        payload: { invoice_id: voided, superseded_by_invoice_id: target, member_id: memberId },
+        tenantId: null,
+      });
+
+      const fwd = await resolve(tenantA, { invoiceId: voided, status: 'void', memberId });
+      const rev = await resolve(tenantA, { invoiceId: target, status: 'issued', memberId });
+      expect(fwd.ok && rev.ok).toBe(true);
+      if (!fwd.ok || !rev.ok) return;
+      expect(fwd.value.replacedBy).toBeNull();
+      expect(rev.value.replaces).toEqual([]);
+    });
+
     it('tenant B resolves neither direction of tenant A’s link', async () => {
       const fwd = await resolve(tenantB, { invoiceId: oldBillId, status: 'void', memberId: memberA1 });
       const rev = await resolve(tenantB, {
@@ -442,8 +506,11 @@ describe('getInvoiceSupersession — supersede links on real Postgres (121)', ()
             ),
           ),
       );
-      expect(rows.length).toBeGreaterThan(0);
-      expect(rows.every((r) => r.tenantId === tenantB.ctx.slug)).toBe(true);
+      // B sees its own supersede rows (and, by the policy's design, F1-style
+      // `tenant_id IS NULL` rows — which the app-layer test above proves the
+      // adapter ignores), but never one of tenant A's.
+      expect(rows.some((r) => r.tenantId === tenantB.ctx.slug)).toBe(true);
+      expect(rows.some((r) => r.tenantId === tenantA.ctx.slug)).toBe(false);
 
       const foreign = await runInTenant(tenantB.ctx, (tx) =>
         tx

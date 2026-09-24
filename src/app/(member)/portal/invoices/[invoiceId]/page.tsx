@@ -40,6 +40,7 @@ import {
   invoiceStatusHasReceipt,
   resolveTaxDocumentKind,
   getInvoiceSupersession,
+  isSupersessionLinkLive,
   makeGetInvoiceSupersessionDeps,
 } from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
@@ -513,6 +514,14 @@ export default async function PortalInvoiceDetailPage({
                   {t('void.replacedByIssued', {
                     date: formatDate(replacedBy.issueDate, userLocale),
                   })}
+                </span>
+              )}
+              {!isSupersessionLinkLive(replacedBy) && (
+                <span className="ml-2 inline-block align-middle">
+                  <InvoiceStatusBadge
+                    status={replacedBy.status}
+                    label={tStatus(replacedBy.status)}
+                  />
                 </span>
               )}
             </p>
