@@ -269,10 +269,7 @@
       "search": {
         "label": "Search directory",
         "placeholder": "Search by company, industry, or description",
-        "tier": "Tier",
-        "tierAll": "All tiers",
         "listedOnly": "Listed only",
-        "submit": "Search",
         "clear": "Clear"
       },
       "resultCount": "{count, plural, =0 {No members} one {# member} other {# members}}",

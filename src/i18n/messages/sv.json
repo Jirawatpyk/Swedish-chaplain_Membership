@@ -269,10 +269,7 @@
       "search": {
         "label": "Sök i katalogen",
         "placeholder": "Sök på företag, bransch eller beskrivning",
-        "tier": "Nivå",
-        "tierAll": "Alla nivåer",
         "listedOnly": "Endast listade",
-        "submit": "Sök",
         "clear": "Rensa"
       },
       "resultCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
