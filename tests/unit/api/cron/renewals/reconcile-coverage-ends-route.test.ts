@@ -7,6 +7,7 @@
  *   3. 200 skipped on READ_ONLY_MODE + coordinatorSkippedReadOnly
  *   4. Happy path → counts in the body + per-outcome metrics + age gauge
  *   5. Use-case throws → 500 + an `errored` metric (never silent)
+ *   6. Dead-man's-switch ping: success → ping, failure → /fail, skipped → none
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { NextRequest } from 'next/server';
@@ -14,7 +15,10 @@ import type { NextRequest } from 'next/server';
 const CRON_SECRET = 'test-secret-32-bytes-long-aaaaaa';
 
 const envMock = vi.hoisted(() => ({
-  cron: { secret: 'test-secret-32-bytes-long-aaaaaa' },
+  cron: {
+    secret: 'test-secret-32-bytes-long-aaaaaa',
+    coverageEndHealthcheckUrl: 'https://hc-ping.com/test-check' as string | undefined,
+  },
   features: { f8Renewals: true },
   flags: { readOnlyMode: false },
   tenant: { slug: 'tenanta' },
@@ -59,6 +63,9 @@ vi.mock('@/lib/metrics', () => ({
   },
 }));
 
+const pingMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('@/lib/cron-heartbeat', () => ({ pingCronHeartbeat: pingMock }));
+
 import { POST } from '@/app/api/cron/renewals/reconcile-coverage-ends/route';
 import { ok } from '@/lib/result';
 
@@ -91,6 +98,8 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     expect(reconcileMock).not.toHaveBeenCalled();
     // Heartbeat still ticks, labelled — a disabled flag must not look healthy.
     expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'skipped_flag_disabled');
+    // A skipped pass must NOT ping — the external check then alerts.
+    expect(pingMock).not.toHaveBeenCalled();
   });
 
   it('200 skipped in READ_ONLY_MODE', async () => {
@@ -100,6 +109,7 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     expect(skippedReadOnlyMock).toHaveBeenCalledWith('reconcile_coverage_ends');
     expect(reconcileMock).not.toHaveBeenCalled();
     expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'skipped_read_only');
+    expect(pingMock).not.toHaveBeenCalled();
   });
 
   it('happy path → counts in the body + per-outcome metrics + oldest-waiting gauge', async () => {
@@ -130,6 +140,9 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     expect(reconciledMock).toHaveBeenCalledWith('tenanta', 'backstop_applied', 1);
     expect(oldestMock).toHaveBeenCalledWith('tenanta', 30);
     expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'success');
+    expect(pingMock).toHaveBeenCalledWith('https://hc-ping.com/test-check', 'success', {
+      cron: 'reconcile-coverage-ends',
+    });
   });
 
   it('use-case throws → 500 and an errored metric (never silent)', async () => {
@@ -138,5 +151,8 @@ describe('cron reconcile-coverage-ends route (0306)', () => {
     expect(res.status).toBe(500);
     expect(reconciledMock).toHaveBeenCalledWith('tenanta', 'errored', 1);
     expect(runCompletedMock).toHaveBeenCalledWith('tenanta', 'failure');
+    expect(pingMock).toHaveBeenCalledWith('https://hc-ping.com/test-check', 'fail', {
+      cron: 'reconcile-coverage-ends',
+    });
   });
 });
