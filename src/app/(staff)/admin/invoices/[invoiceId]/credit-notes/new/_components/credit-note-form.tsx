@@ -209,13 +209,13 @@ export function CreditNoteForm({
       // MEDIUM-5 — the email-delivery signal rides alongside: a
       // `skipped_no_recipient` value means the CN is still fully issued but the
       // buyer has no email on file, so the auto-email was skipped (non-blocking
-      // description). F-2 — `membership_cancellation_failed` is the same kind
-      // of non-blocking signal for a requested-but-failed F8 cascade. All
-      // fields come from ONE parse of the success body.
+      // description). `membership_end` (0305) is the same kind of non-blocking
+      // signal for the requested end of the member's coverage. All fields come
+      // from ONE parse of the success body.
       const successBody = (await res.json().catch(() => ({}))) as {
         document_number?: string | null;
         email_delivery?: string;
-        membership_cancellation_failed?: boolean;
+        membership_end?: string;
       };
       const cnNumber =
         typeof successBody.document_number === 'string' && successBody.document_number
@@ -226,8 +226,19 @@ export function CreditNoteForm({
       if (successBody.email_delivery === 'skipped_no_recipient') {
         noticeParts.push(t('emailSkippedNoRecipient'));
       }
-      if (successBody.membership_cancellation_failed === true) {
-        noticeParts.push(t('membershipCancellationFailedNotice'));
+      // 0305 — the outcome of ending the member's coverage (present only when
+      // staff chose to end it). `ended` confirms; the rest explain what is
+      // still pending or needs follow-up. The credit note is issued either way.
+      const membershipEndKey = (
+        {
+          ended: 'membershipEnd.ended',
+          deferred: 'membershipEnd.deferred',
+          no_open_cycle: 'membershipEnd.noOpenCycle',
+          failed: 'membershipEnd.failed',
+        } as const
+      )[successBody.membership_end as 'ended' | 'deferred' | 'no_open_cycle' | 'failed'];
+      if (membershipEndKey !== undefined) {
+        noticeParts.push(t(membershipEndKey));
       }
       if (noticeParts.length > 0) {
         toast.success(title, { description: noticeParts.join(' ') });

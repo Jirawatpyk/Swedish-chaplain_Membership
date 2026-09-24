@@ -73,6 +73,7 @@ function lockedRefund(): Refund {
     failureReasonCode: null,
     creditNoteId: null,
     creditNoteWaivedAt: null,
+    membershipEffect: null,
     creditNoteWaiverReason: null,
     initiatedAt: new Date(NOW_MS - AGED_HOURS * HOUR_MS),
     completedAt: null,

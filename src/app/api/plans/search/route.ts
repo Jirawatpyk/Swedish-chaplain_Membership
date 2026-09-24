@@ -241,7 +241,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               }
               continue;
             }
-            const remaining = computeRemainingRefundable(result.value);
+            // Capped at the invoice's un-credited headroom — the same
+            // min(...) the refund pre-flight enforces, so a manually
+            // credited invoice is not offered for more than can be refunded.
+            const remaining = computeRemainingRefundable(
+              result.value,
+              inv.total
+                ? {
+                    totalSatang: inv.total.satang,
+                    creditedTotalSatang: inv.creditedTotal.satang,
+                  }
+                : undefined,
+            );
             if (!remaining) continue;
 
             const total = inv.total ? Number(inv.total.satang) / 100 : 0;

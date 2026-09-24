@@ -140,6 +140,7 @@ function makeRefund(overrides: Partial<Refund>): Refund {
     failureReasonCode: null,
     creditNoteId: null,
     creditNoteWaivedAt: null,
+    membershipEffect: null,
     creditNoteWaiverReason: null,
     initiatedAt: new Date('2026-05-15T03:14:22.456Z'),
     completedAt: null,

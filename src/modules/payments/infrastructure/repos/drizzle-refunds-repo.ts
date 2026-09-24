@@ -26,7 +26,13 @@ import type {
   RefundStatus,
 } from '../../application/ports/refunds-repo';
 import { asPaymentId, type PaymentId } from '../../domain/payment';
-import { asRefundId, REFUND_STATUSES, type Refund } from '../../domain/refund';
+import {
+  asRefundId,
+  REFUND_MEMBERSHIP_EFFECTS,
+  REFUND_STATUSES,
+  type Refund,
+  type RefundMembershipEffect,
+} from '../../domain/refund';
 import { payments, refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -61,6 +67,21 @@ function assertCreditNoteWaiverReason(
   }
   throw new Error(
     `drizzle-refunds-repo: unknown credit_note_waiver_reason '${s}' on row ${rowId}`,
+  );
+}
+
+// 0305 — same loud-on-unknown discipline as the waiver reason above; the DB
+// CHECK already enforces the vocabulary, so a miss here is a corrupt row.
+function assertRefundMembershipEffect(
+  s: string | null,
+  rowId: string,
+): RefundMembershipEffect | null {
+  if (s === null) return null;
+  if ((REFUND_MEMBERSHIP_EFFECTS as readonly string[]).includes(s)) {
+    return s as RefundMembershipEffect;
+  }
+  throw new Error(
+    `drizzle-refunds-repo: unknown membership_effect '${s}' on row ${rowId}`,
   );
 }
 
@@ -110,6 +131,7 @@ function toRefundDomain(row: RefundRow): Refund {
       row.id,
     ),
     creditNoteWaivedAt: row.creditNoteWaivedAt,
+    membershipEffect: assertRefundMembershipEffect(row.membershipEffect, row.id),
     initiatedAt: row.initiatedAt,
     completedAt: row.completedAt,
     initiatorUserId: row.initiatorUserId,
@@ -143,6 +165,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
           // stamping it on a still-`pending` row would violate the
           // biconditional before Stripe has even been called.
           creditNoteWaiverReason: input.creditNoteWaiverReason,
+          membershipEffect: input.membershipEffect ?? null,
           initiatorUserId: input.initiatorUserId,
           correlationId: input.correlationId,
           initiatedAt: input.initiatedAt,

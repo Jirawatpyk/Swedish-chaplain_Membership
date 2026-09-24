@@ -363,7 +363,10 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
         status,
         enteredPendingAt: null,
         closedAt,
-        closedReason: closedReason as 'cancelled' | 'admin_rejected_with_refund',
+        closedReason: closedReason as
+          | 'cancelled'
+          | 'admin_rejected_with_refund'
+          | 'coverage_ended',
         linkedInvoiceId,
       };
     }

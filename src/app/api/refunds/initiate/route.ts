@@ -45,6 +45,10 @@ import {
   type ActorRef,
 } from '@/lib/stripe-webhook-deps';
 import { errKind } from '@/lib/log-id';
+import {
+  endMembershipAfterMoneyReturned,
+  type MembershipEndOutcome,
+} from '@/lib/membership-coverage-end';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -91,6 +95,9 @@ const InitiateRefundBody = z.object({
     .min(1)
     .max(500)
     .regex(REASON_NO_NEWLINE_RE, 'reason must be a single line'),
+  // 0305 — staff's Keep / End membership choice on a FULL refund of a
+  // membership invoice (the use-case refuses `cancel_membership` otherwise).
+  membershipEffect: z.enum(['keep', 'cancel_membership']).optional(),
 });
 
 /**
@@ -120,6 +127,11 @@ function httpStatusForUseCaseError(error: IssueRefundError): {
       return { status: 409, routeCode: 'refund_exceeds_remaining' };
     case 'refund_in_progress':
       return { status: 409, routeCode: 'refund_in_progress' };
+    // 0305 — End membership on a refund that does not fully credit a
+    // membership invoice. 422: well-formed, but the intent cannot apply.
+    // Refused before Stripe — no money moved.
+    case 'membership_effect_not_applicable':
+      return { status: 422, routeCode: 'membership_effect_not_applicable' };
     case 'tenant_settings_missing':
       return { status: 422, routeCode: 'tenant_settings_incomplete' };
     case 'processor_unavailable':
@@ -328,10 +340,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       actorUserId,
       correlationId,
       requestId,
+      ...(parsedBody.membershipEffect !== undefined
+        ? { membershipEffect: parsedBody.membershipEffect }
+        : {}),
     });
 
     if (result.ok) {
       const v = result.value;
+      // 0305 — End membership: the refund has committed; now end the member's
+      // coverage through the SAME renewals operation the credit-note route
+      // uses (orchestrated HERE, never from F5 Application). A settled refund
+      // ends it now; an async (202) one only SCHEDULES it — the nightly
+      // reconcile ends coverage once the refund settles `succeeded`, and keeps
+      // the membership if it settles `failed` (no money came back). A failure
+      // here never fails the already-committed refund.
+      const membershipEnd: MembershipEndOutcome | undefined =
+        parsedBody.membershipEffect === 'cancel_membership'
+          ? await endMembershipAfterMoneyReturned({
+              tenant: tenantCtx,
+              memberId: v.refund.memberId,
+              trigger: 'refund',
+              ...(v.kind === 'pending'
+                ? { awaitRefund: { refundId: v.refund.id, invoiceId: v.refund.invoiceId } }
+                : {}),
+              initiatedByUserId: actorUserId,
+              // rbac-narrow-ok: stamps the LITERAL role into the renewals
+              // audit row; the `refunds.write` gate above decided admission.
+              initiatedByRole:
+                adminCtx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
+              requestId,
+              correlationId: `refund:${v.refund.id}`,
+            })
+          : undefined;
+      const membershipEndField =
+        membershipEnd !== undefined ? { membership_end: membershipEnd } : {};
       // #1 (2026-07-11) — an async Stripe refund (`pending`/`requires_action`)
       // is NOT booked at creation time. Return 202 Accepted: the refund row
       // is `pending` with its processor id attached, and the eventual
@@ -352,6 +394,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             },
             message: REFUND_PENDING_MESSAGE_EN,
             messageThai: REFUND_PENDING_MESSAGE_TH,
+            ...membershipEndField,
             correlationId,
           },
           { status: 202, headers: baseHeaders(correlationId) },
@@ -395,6 +438,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             id: v.invoice.id,
             status: v.invoice.status,
           },
+          ...membershipEndField,
           correlationId,
         },
         { status: 201, headers: baseHeaders(correlationId) },
@@ -440,12 +484,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'refunds.initiate.use_case_error',
     );
-    return errorResponse(
-      status,
-      routeCode,
-      correlationId,
-      retryAfterSeconds !== undefined ? { retryAfterSeconds } : undefined,
-    );
+    return errorResponse(status, routeCode, correlationId, {
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+      // The authoritative cap, so the dialog quotes it instead of its
+      // page-load figure (which can be stale after a credit note / refund).
+      ...(result.error.code === 'refund_exceeds_remaining'
+        ? { remainingSatang: result.error.remainingSatang.toString() }
+        : {}),
+    });
   } catch (e) {
     logger.error(
       {

@@ -52,6 +52,9 @@ export type F5RouteErrorCode =
   | 'payment_not_refundable'
   | 'refund_exceeds_remaining'
   | 'refund_in_progress'
+  // 0305 — End membership was requested on a refund that does not fully
+  // credit a membership invoice.
+  | 'membership_effect_not_applicable'
   // F4 credit-note issuance failure during the refund flow (Phase 6 T111
   // + simplify Q3). Distinct from `processor_unavailable` so monitoring
   // can route F4 alerts to the F4 on-call channel instead of paging the
@@ -204,6 +207,10 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   refund_exceeds_remaining: {
     message: 'Refund amount exceeds the remaining refundable balance.',
     messageThai: 'จำนวนเงินคืนเกินยอดที่สามารถคืนได้',
+  },
+  membership_effect_not_applicable: {
+    message: 'Ending the membership only applies to a full refund of a membership invoice.',
+    messageThai: 'การสิ้นสุดสมาชิกภาพใช้ได้เฉพาะการคืนเงินเต็มจำนวนของใบแจ้งหนี้ค่าสมาชิกเท่านั้น',
   },
   refund_in_progress: {
     message: 'Another refund is currently in progress for this payment. Please retry shortly.',

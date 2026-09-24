@@ -2311,7 +2311,12 @@
         "success": "Credit note issued.",
         "successWithNumber": "Credit note {number} issued.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
-        "membershipCancellationFailedNotice": "Credit note issued, but the membership cancellation could not be completed automatically — cancel it manually from the Renewals page.",
+        "membershipEnd": {
+          "ended": "The membership has ended — the member's access stops now.",
+          "deferred": "Ending the membership did not complete right away; it will be retried automatically tonight.",
+          "noOpenCycle": "The member has no open renewal cycle, so there was no coverage to end. Check their renewal status.",
+          "failed": "The membership could not be ended. Report this to support with the credit note number."
+        },
         "membershipEffect": {
           "legend": "What should happen to the membership?",
           "keep": {
@@ -2320,7 +2325,7 @@
           },
           "cancelMembership": {
             "label": "Cancel membership — refund handled separately",
-            "description": "Records the credit note and cancels the member's active renewal cycles. No money is returned. Paid online? Use Issue refund on the invoice instead — it refunds the member and issues the credit note itself, but does not cancel the membership, so then cancel it from the Renewals page."
+            "description": "Records the credit note and ends the member's coverage now — their access stops today, even though the period has not run out. No money is returned by this action. Paid online? Use Issue refund on the invoice instead — it refunds the member and issues the credit note itself."
           }
         },
         "errors": {
@@ -2891,6 +2896,7 @@
           "pay": "Record payment…",
           "void": "Void…",
           "issueCreditNote": "Issue credit note…",
+          "issueCreditNoteRefundSettling": "Unavailable while a refund is settling — try again once it completes.",
           "resendInvoice": "Resend invoice email",
           "resendReceipt": "Resend receipt email",
           "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
@@ -3686,7 +3692,8 @@
         "completed_offline": "Paid offline",
         "admin_reactivated": "Reactivated",
         "admin_rejected_with_refund": "Refunded",
-        "pending_reactivation_timed_out": "Reactivation timed out"
+        "pending_reactivation_timed_out": "Reactivation timed out",
+        "coverage_ended": "Membership ended early"
       },
       "terminationBasis": {
         "due_plus_60": "Unpaid more than 60 days after the due date",
@@ -4587,6 +4594,26 @@
       }
     },
     "refund": {
+      "membership": {
+        "warningTitle": "A full refund withdraws this paid membership period",
+        "warningBody": "Renewals will stop counting this period as paid, but the member keeps portal access and benefits until their current membership period ends; renewal reminders then follow the normal schedule. If the member is leaving, choose End membership.",
+        "legend": "What should happen to the membership?",
+        "keep": {
+          "label": "Keep membership until the period ends",
+          "description": "Access continues until the current period ends; renewal reminders follow as usual."
+        },
+        "end": {
+          "label": "End membership",
+          "description": "Access ends as soon as the refund completes — straight away for most card refunds, or once a pending refund is confirmed. If the refund fails, the membership is kept."
+        },
+        "outcome": {
+          "ended": "The membership has ended — the member's access stops now.",
+          "scheduled": "The membership will end once the refund completes. If the refund fails, the membership is kept.",
+          "deferred": "Ending the membership did not complete right away; it will be retried automatically tonight.",
+          "no_open_cycle": "The member has no open renewal cycle, so there was no coverage to end. Check their renewal status.",
+          "failed": "The refund went through, but the membership could not be ended. Report this to support with the refund reference."
+        }
+      },
       "title": "Issue refund",
       "button": {
         "label": "Issue refund…",
@@ -4646,6 +4673,7 @@
         "payment_not_found": "Payment not found.",
         "payment_not_refundable": "This payment cannot be refunded in its current state.",
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
+        "membership_effect_not_applicable": "Ending the membership only applies to a full refund of a membership invoice. Refund the full remaining amount, or choose Keep membership.",
         "refund_in_progress": "A refund is already settling for this payment — no action is needed. It finishes on its own once the payment processor confirms.",
         "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",

@@ -105,6 +105,7 @@ import { AutoRefundFailedAlert } from '../_components/auto-refund-failed-alert';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 import { RefundDialog } from './_components/refund-dialog';
+import { IssueCreditNoteAction } from './_components/issue-credit-note-action';
 import { computeRemainingRefundable } from '@/modules/payments';
 // F5 UX D2 — tenant-scoped audit read for the failed-auto-refund alert. Same
 // documented escape-hatch as the tenant-settings / credit-note reads above:
@@ -472,6 +473,11 @@ export default async function InvoiceDetailPage({
   // refundable presence. Shares the React `cache()`-deduplicated
   // loader with the Suspense'd PaymentTimeline panel below — one
   // DB roundtrip per request, not two.
+  // A refund still settling on ANY of this invoice's payments blocks a manual
+  // credit note server-side (8A `refund_in_progress`); the action is disabled
+  // to match. A failed activity read leaves it enabled — the server guard
+  // still refuses, with its dedicated message.
+  let refundSettling = false;
   let refundButtonProps: {
     paymentId: string;
     remainingRefundableSatang: bigint;
@@ -486,7 +492,19 @@ export default async function InvoiceDetailPage({
       invoiceId,
     );
     if (activity.ok) {
-      const remaining = computeRemainingRefundable(activity.value);
+      refundSettling = activity.value.refunds.some((r) => r.status === 'pending');
+      // Capped at the invoice's un-credited headroom — the same min(...) the
+      // refund pre-flight enforces. Payment-side only would overstate the
+      // max after a manual credit note (and the admin would submit into a 409).
+      const remaining = computeRemainingRefundable(
+        activity.value,
+        invoice.total
+          ? {
+              totalSatang: invoice.total.satang,
+              creditedTotalSatang: invoice.creditedTotal.satang,
+            }
+          : undefined,
+      );
       if (remaining) {
         // Gap E (2026-07-12) — gate the Issue-refund action on a NON-terminal
         // (pending/async) refund for THIS payment. Pending amounts are NOT
@@ -613,12 +631,10 @@ export default async function InvoiceDetailPage({
             )}
             {(invoice.status === 'paid' || invoice.status === 'partially_credited') &&
               isAdmin && (
-                <Link
-                  href={`/admin/invoices/${invoice.invoiceId}/credit-notes/new`}
-                  className={buttonVariants({ variant: 'outline' })}
-                >
-                  {t('actions.issueCreditNote')}
-                </Link>
+                <IssueCreditNoteAction
+                  invoiceId={invoice.invoiceId}
+                  refundSettling={refundSettling}
+                />
               )}
             {/* F5 Phase 6 (T112) — Refund online payment. Only appears
                 when the invoice was paid via Stripe (i.e. there is a
@@ -653,6 +669,14 @@ export default async function InvoiceDetailPage({
                   currencyCode={
                     (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
                       ?.currency_code ?? 'THB'
+                  }
+                  // 0305 — a full refund of a membership invoice asks Keep /
+                  // End membership; "full" = the invoice's un-credited headroom.
+                  invoiceSubject={invoice.invoiceSubject}
+                  invoiceHeadroomSatang={
+                    invoice.total
+                      ? invoice.total.satang - invoice.creditedTotal.satang
+                      : 0n
                   }
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
                   // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).

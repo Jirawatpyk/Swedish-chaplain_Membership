@@ -36,6 +36,8 @@ function renderDialog(opts: { search: string; pendingRefundExists?: boolean }) {
         memberCompanyName="Acme AB"
         remainingRefundableSatang={535000n}
         currencyCode="THB"
+        invoiceSubject="event"
+        invoiceHeadroomSatang={535000n}
         pendingRefundExists={opts.pendingRefundExists ?? false}
       />
     </NextIntlClientProvider>,

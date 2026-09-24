@@ -86,6 +86,16 @@ export async function loadInvoicePaymentActivity(
  */
 export function computeRemainingRefundable(
   activity: LoadInvoicePaymentActivityOutput,
+  /**
+   * The invoice's F4 total + credited total. When supplied, the result is
+   * capped at the un-credited headroom (`total − credited`) — the SAME
+   * min(payment remainder, invoice headroom) the refund pre-flight
+   * (`checkRefundNotExceedingRemainder`) enforces, so a UI showing this figure
+   * never overstates the max after a manual credit note. Omit it only where
+   * the payment-side remainder is what is being asked (e.g. "is any online
+   * money still refundable at all?").
+   */
+  invoice?: { readonly totalSatang: bigint; readonly creditedTotalSatang: bigint },
 ): { readonly paymentId: string; readonly remainingSatang: Satang } | null {
   const succeededPayment = [...activity.payments]
     .filter(
@@ -102,7 +112,11 @@ export function computeRemainingRefundable(
       (r) => r.status === 'succeeded' && r.paymentId === succeededPayment.id,
     )
     .reduce((acc, r) => acc + r.amountSatang, 0n);
-  const remaining = succeededPayment.amountSatang - sumSucceededRefunds;
+  const paymentRemaining = succeededPayment.amountSatang - sumSucceededRefunds;
+  const headroom =
+    invoice === undefined ? null : invoice.totalSatang - invoice.creditedTotalSatang;
+  const remaining =
+    headroom !== null && headroom < paymentRemaining ? headroom : paymentRemaining;
   if (remaining <= 0n) return null;
   // F5R3v2 H-5 (2026-05-16) — brand the result so consumers (F8
   // bridge, admin page, cmdk) receive a typed Satang. asSatang

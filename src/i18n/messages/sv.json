@@ -2311,7 +2311,12 @@
         "success": "Kreditnota utfärdad.",
         "successWithNumber": "Kreditnota {number} utfärdad.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
-        "membershipCancellationFailedNotice": "Kreditnotan utfärdades, men medlemskapet kunde inte avslutas automatiskt — avsluta det manuellt från sidan Förnyelser.",
+        "membershipEnd": {
+          "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
+          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt i natt.",
+          "noOpenCycle": "Medlemmen har ingen öppen förnyelsecykel, så det fanns ingen täckning att avsluta. Kontrollera medlemmens förnyelsestatus.",
+          "failed": "Medlemskapet kunde inte avslutas. Rapportera detta till supporten med kreditnotans nummer."
+        },
         "membershipEffect": {
           "legend": "Vad ska hända med medlemskapet?",
           "keep": {
@@ -2320,7 +2325,7 @@
           },
           "cancelMembership": {
             "label": "Avsluta medlemskapet — återbetalning hanteras separat",
-            "description": "Registrerar kreditnotan och avbryter medlemmens aktiva förnyelsecykler. Inga pengar återbetalas. Betalt online? Använd Utfärda återbetalning på fakturan i stället — den återbetalar medlemmen och utfärdar kreditnotan själv, men avslutar inte medlemskapet, så avsluta det sedan från sidan Förnyelser."
+            "description": "Registrerar kreditnotan och avslutar medlemmens täckning nu — åtkomsten upphör i dag, även om perioden inte har löpt ut. Inga pengar återbetalas genom denna åtgärd. Betalt online? Använd Utfärda återbetalning på fakturan i stället — den återbetalar medlemmen och utfärdar kreditnotan själv."
           }
         },
         "errors": {
@@ -2891,6 +2896,7 @@
           "pay": "Registrera betalning…",
           "void": "Annullera…",
           "issueCreditNote": "Utfärda kreditnota…",
+          "issueCreditNoteRefundSettling": "Inte tillgängligt medan en återbetalning behandlas — försök igen när den är klar.",
           "resendInvoice": "Skicka faktura-mejl igen",
           "resendReceipt": "Skicka kvitto-mejl igen",
           "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
@@ -3686,7 +3692,8 @@
         "completed_offline": "Betald offline",
         "admin_reactivated": "Återaktiverad",
         "admin_rejected_with_refund": "Återbetald",
-        "pending_reactivation_timed_out": "Återaktivering tog slut"
+        "pending_reactivation_timed_out": "Återaktivering tog slut",
+        "coverage_ended": "Medlemskapet avslutat i förtid"
       },
       "terminationBasis": {
         "due_plus_60": "Obetald mer än 60 dagar efter förfallodagen",
@@ -4587,6 +4594,26 @@
       }
     },
     "refund": {
+      "membership": {
+        "warningTitle": "En fullständig återbetalning drar tillbaka denna betalda medlemsperiod",
+        "warningBody": "Förnyelser slutar räkna perioden som betald, men medlemmen behåller portalåtkomst och förmåner tills den nuvarande medlemsperioden tar slut; därefter följer förnyelsepåminnelserna det vanliga schemat. Om medlemmen lämnar, välj Avsluta medlemskapet.",
+        "legend": "Vad ska hända med medlemskapet?",
+        "keep": {
+          "label": "Behåll medlemskapet till periodens slut",
+          "description": "Åtkomsten fortsätter tills den nuvarande perioden tar slut; förnyelsepåminnelser skickas som vanligt."
+        },
+        "end": {
+          "label": "Avsluta medlemskapet",
+          "description": "Åtkomsten upphör så snart återbetalningen är klar — direkt för de flesta kortåterbetalningar, eller när en väntande återbetalning bekräftas. Om återbetalningen misslyckas behålls medlemskapet."
+        },
+        "outcome": {
+          "ended": "Medlemskapet har avslutats — medlemmens åtkomst upphör nu.",
+          "scheduled": "Medlemskapet avslutas när återbetalningen är klar. Om återbetalningen misslyckas behålls medlemskapet.",
+          "deferred": "Avslutet av medlemskapet slutfördes inte direkt; det görs om automatiskt i natt.",
+          "no_open_cycle": "Medlemmen har ingen öppen förnyelsecykel, så det fanns ingen täckning att avsluta. Kontrollera medlemmens förnyelsestatus.",
+          "failed": "Återbetalningen genomfördes, men medlemskapet kunde inte avslutas. Rapportera detta till supporten med återbetalningsreferensen."
+        }
+      },
       "title": "Utfärda återbetalning",
       "button": {
         "label": "Utfärda återbetalning…",
@@ -4646,6 +4673,7 @@
         "payment_not_found": "Betalning hittades inte.",
         "payment_not_refundable": "Denna betalning kan inte återbetalas i sitt nuvarande tillstånd.",
         "refund_exceeds_remaining": "Återbetalningsbeloppet överskrider återstående återbetalningsbar saldo ({remaining} THB).",
+        "membership_effect_not_applicable": "Att avsluta medlemskapet gäller bara en fullständig återbetalning av en medlemsfaktura. Återbetala hela det återstående beloppet eller välj Behåll medlemskapet.",
         "refund_in_progress": "En återbetalning behandlas redan för den här betalningen — ingen åtgärd behövs. Den slutförs av sig själv när betalningsleverantören bekräftar.",
         "processor_unavailable": "Betalningssystemet är tillfälligt otillgängligt. Försök igen.",
         "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",

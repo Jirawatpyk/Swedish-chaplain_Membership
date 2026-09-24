@@ -2080,6 +2080,13 @@
       "when": 1798543800000,
       "tag": "0305_audit_log_invoice_supersede_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1798543900000,
+      "tag": "0306_membership_coverage_end",
+      "breakpoints": true
     }
   ]
 }

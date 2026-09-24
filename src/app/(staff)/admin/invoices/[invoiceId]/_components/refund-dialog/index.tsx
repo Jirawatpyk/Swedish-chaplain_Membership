@@ -36,6 +36,10 @@ type Props = {
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
+  /** 0305 — see RefundForm: a full MEMBERSHIP refund asks Keep / End. */
+  readonly invoiceSubject: 'membership' | 'event';
+  /** 0305 — the invoice's un-credited headroom (`total − credited`). */
+  readonly invoiceHeadroomSatang: bigint;
   /**
    * Receipt document number (e.g. `RC-2026-0001`) — surfaced in the
    * dialog header so the bookkeeper can cross-reference the refund
@@ -63,6 +67,8 @@ export function RefundDialog({
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
+  invoiceSubject,
+  invoiceHeadroomSatang,
   receiptDocumentNumberRaw,
   invoiceDocumentNumber,
   pendingRefundExists = false,
@@ -181,6 +187,8 @@ export function RefundDialog({
           memberCompanyName={memberCompanyName}
           remainingRefundableSatang={remainingRefundableSatang}
           currencyCode={currencyCode}
+          invoiceSubject={invoiceSubject}
+          invoiceHeadroomSatang={invoiceHeadroomSatang}
           onClose={() => handleOpenChange(false)}
         />
       </AlertDialogContent>

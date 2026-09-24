@@ -75,6 +75,11 @@ export const CLOSED_REASONS = [
   'admin_reactivated',
   'admin_rejected_with_refund',
   'pending_reactivation_timed_out',
+  // 0305 — a refund / full credit note ENDED the member's coverage now. Unlike
+  // a plain `cancelled` close (paid-through access honoured until
+  // `expires_at`), this one terminates access immediately — the money for the
+  // period was returned. Written only by `endMembershipCoverageNow`.
+  'coverage_ended',
 ] as const;
 
 export type ClosedReason = (typeof CLOSED_REASONS)[number];
@@ -83,11 +88,11 @@ export type ClosedReason = (typeof CLOSED_REASONS)[number];
  * K7: compile-time count assertion — pin the const tuple length so
  * accidentally adding/dropping a closed_reason becomes a build error.
  * Mirrors `_AssertCycleStatusCount` and `_AssertSkipReasonCount`.
- * Keep in sync with the DB CHECK constraint in migration 0108.
+ * Keep in sync with the DB CHECK constraint (migrations 0108, 0305).
  */
-type _AssertClosedReasonCount = (typeof CLOSED_REASONS)['length'] extends 9
+type _AssertClosedReasonCount = (typeof CLOSED_REASONS)['length'] extends 10
   ? true
-  : 'CLOSED_REASONS count mismatch — expected 9';
+  : 'CLOSED_REASONS count mismatch — expected 10';
 const _assertClosedReasonCount: _AssertClosedReasonCount = true;
 void _assertClosedReasonCount;
 
@@ -201,12 +206,15 @@ interface LapsedCycleFields {
   readonly linkedInvoiceId: string | null;
 }
 
-/** Terminal — admin-cancelled or admin-rejected with refund. */
+/**
+ * Terminal — admin-cancelled, admin-rejected with refund, or (0305) coverage
+ * ended by a refund / full credit note.
+ */
 interface CancelledCycleFields {
   readonly status: 'cancelled';
   readonly enteredPendingAt: null;
   readonly closedAt: string;
-  readonly closedReason: 'cancelled' | 'admin_rejected_with_refund';
+  readonly closedReason: 'cancelled' | 'admin_rejected_with_refund' | 'coverage_ended';
   readonly linkedInvoiceId: string | null;
 }
 
@@ -383,6 +391,8 @@ export interface MembershipAccessDecision {
  *  - `terminated`: a `lapsed` cycle (ALWAYS — 065 §5.2⇄§5.3, see below), OR
  *    a `cancelled` cycle whose `expiresAt` is in the past (a `cancelled`
  *    cycle whose period has NOT ended is not ended coverage → `full`).
+ *    A `cancelled` cycle closed `coverage_ended` (0305 — a refund / full
+ *    credit note returned the period's money) is terminated IMMEDIATELY.
  *    `completed` is NEVER terminated (057 R2: the member paid; re-prompting
  *    payment causes a duplicate).
  *    065 §5.2⇄§5.3 — `lapsed` no longer requires a past `expiresAt`.
@@ -432,6 +442,12 @@ export function deriveMembershipAccess(
   const expired = !Number.isFinite(expiresMs) || expiresMs < now.getTime();
 
   if (cycle.status === 'cancelled') {
+    // 0305 — `coverage_ended` returned the money for the period, so access
+    // ends NOW regardless of `expiresAt` (checked before the expiry, like the
+    // `lapsed` arm above).
+    if (cycle.closedReason === 'coverage_ended') {
+      return { access: 'terminated', reason: 'cancelled' };
+    }
     return expired
       ? { access: 'terminated', reason: 'cancelled' }
       : { access: 'full', reason: 'in_good_standing' };

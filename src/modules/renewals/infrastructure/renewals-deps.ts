@@ -75,6 +75,8 @@ import {
 import type { InvoicingAdapterOverrides } from '@/modules/invoicing';
 import { autoInvoiceSettingsBridge } from './ports-adapters/auto-invoice-settings-bridge-drizzle';
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
+import { makeDrizzleMembershipCoverageEndRepo } from './drizzle/drizzle-membership-coverage-end-repo';
+import type { MembershipCoverageEndRepo } from '../application/ports/membership-coverage-end-repo';
 import { benefitConsumptionReaderInsights } from './ports-adapters/benefit-consumption-reader-insights';
 import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
 import { makeDrizzleFiscalYearStartMonth } from './ports-adapters/fiscal-year-settings-drizzle';
@@ -231,6 +233,12 @@ export interface RenewalsDeps {
    * the production drizzle adapter (`f5-refund-bridge-drizzle.ts`).
    */
   readonly f5RefundBridge: F5RefundBridge;
+  /**
+   * Migration 0305 — the durable "end this member's coverage" request on the
+   * open cycle (`end_coverage_*`), written by `endMembershipCoverageNow` and
+   * converged by `reconcileMembershipCoverageEnds`.
+   */
+  readonly coverageEndRequests: MembershipCoverageEndRepo;
   /**
    * Phase 5 Wave B (T122) — F8 → F4 invoice-creation bridge port for
    * the public renewal-confirm flow. Composes F4 `createInvoiceDraft` +
@@ -496,6 +504,7 @@ export function makeRenewalsDeps(
     tokenVerifier: renewalLinkTokenVerifier,
     consumedLinkTokensRepo: makeDrizzleConsumedLinkTokensRepo(tenant),
     f5RefundBridge,
+    coverageEndRequests: makeDrizzleMembershipCoverageEndRepo(tenant),
     f4InvoicingBridge: bridgeFor(overrides),
     autoInvoiceSettings: autoInvoiceSettingsBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),

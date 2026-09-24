@@ -1667,3 +1667,81 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
   });
 
 });
+
+// 0305 — staff's Keep / End membership choice on a FULL refund of a
+// membership invoice. `cancel_membership` is only meaningful when this refund
+// fully credits a membership invoice (that is what withdraws the paid period);
+// anything else is refused BEFORE Stripe (money never moves on a bad intent).
+// The choice is pinned on the refund row so the webhook / sweep finaliser can
+// forward it when an async refund settles.
+describe('issueRefund — membership effect (0305)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function membershipInvoice(creditedSatang = 0n, subject: 'membership' | 'event' = 'membership') {
+    return ok({
+      creditedTotalSatang: asSatang(creditedSatang),
+      totalSatang: PAYMENT_AMOUNT_SATANG,
+      creditNoteRequirement: { kind: 'issue' as const },
+      invoiceSubject: subject,
+    });
+  }
+
+  it('refuses cancel_membership on a PARTIAL refund — before Stripe, no row written', async () => {
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(membershipInvoice());
+    const r = await issueRefund(
+      deps,
+      baseInput({ amountSatang: asSatang(350_000n), membershipEffect: 'cancel_membership' }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('membership_effect_not_applicable');
+    expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
+  });
+
+  it('refuses cancel_membership on an EVENT invoice even when the refund is full', async () => {
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      membershipInvoice(0n, 'event'),
+    );
+    const r = await issueRefund(
+      deps,
+      baseInput({ amountSatang: PAYMENT_AMOUNT_SATANG, membershipEffect: 'cancel_membership' }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('membership_effect_not_applicable');
+    expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+  });
+
+  it('a FULL membership refund with cancel_membership pins it on the row and forwards it to the credit note', async () => {
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(membershipInvoice());
+    asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
+      ok({ id: 're_test_xxx', status: 'succeeded', amountSatang: PAYMENT_AMOUNT_SATANG }),
+    );
+    const r = await issueRefund(
+      deps,
+      baseInput({ amountSatang: PAYMENT_AMOUNT_SATANG, membershipEffect: 'cancel_membership' }),
+    );
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    expect(asMock(deps.refundsRepo.insert).mock.calls[0]![1]).toMatchObject({
+      membershipEffect: 'cancel_membership',
+    });
+    expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mock.calls[0]![0]).toMatchObject({
+      membershipEffect: 'cancel_membership',
+    });
+    // The route needs the member to orchestrate the renewals end.
+    if (r.ok) expect(r.value.refund.memberId).toBe('mbr-1');
+  });
+
+  it('no declared effect → nothing pinned (null) and nothing forwarded beyond F4\'s own default', async () => {
+    const deps = makeDeps();
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(true);
+    expect(asMock(deps.refundsRepo.insert).mock.calls[0]![1]).toMatchObject({
+      membershipEffect: null,
+    });
+  });
+});

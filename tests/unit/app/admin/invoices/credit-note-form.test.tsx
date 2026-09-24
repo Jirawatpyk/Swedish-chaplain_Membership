@@ -244,10 +244,15 @@ describe('<CreditNoteForm> — F-2 submit body wiring', () => {
     expect(sentBody.membershipEffect).toBe('cancel_membership');
   });
 
-  it('a membership_cancellation_failed:true response shows a toast description prompting a manual renewals retry', async () => {
+  it.each([
+    ['ended', 'ended'],
+    ['deferred', 'deferred'],
+    ['no_open_cycle', 'noOpenCycle'],
+    ['failed', 'failed'],
+  ] as const)('membership_end:%s shows its own toast description (no "cancel it in Renewals" hint)', async (outcome, key) => {
     const fetchMock = mockFetchOk({
       document_number: 'CN-2026-000004',
-      membership_cancellation_failed: true,
+      membership_end: outcome,
     });
     vi.stubGlobal('fetch', fetchMock);
     renderForm({ invoiceSubject: 'membership' });
@@ -257,9 +262,9 @@ describe('<CreditNoteForm> — F-2 submit body wiring', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
 
     const [, opts] = toastSuccess.mock.calls[0]!;
-    expect((opts as { description?: string }).description).toContain(
-      cnMessages.membershipCancellationFailedNotice,
-    );
+    const description = (opts as { description?: string }).description ?? '';
+    expect(description).toContain(cnMessages.membershipEnd[key]);
+    expect(description).not.toMatch(/renewals page/i);
   });
 
   it('a normal success (no cascade warning) shows a toast with no description', async () => {

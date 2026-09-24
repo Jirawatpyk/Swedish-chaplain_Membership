@@ -1228,6 +1228,11 @@ export async function issueCreditNote(
         reason: input.reason,
         document_number: docNum.value.raw,
         pdf_sha256: rendered.sha256,
+        // 0305 — the staff's declared Keep / End membership intent on a FULL
+        // membership credit (manual or refund-origin), for the forensic chain.
+        ...(isMembershipInvoice && isFullCredit && input.membershipEffect !== undefined
+          ? { membership_effect: input.membershipEffect }
+          : {}),
         // Present only when staff acknowledged issuing this manual CN over a
         // refundable online payment (the `online_payment_refundable` override).
         // `null` satang = the payments read failed (fail-closed `unknown`).

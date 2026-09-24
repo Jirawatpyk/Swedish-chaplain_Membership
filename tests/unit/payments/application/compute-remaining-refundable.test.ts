@@ -209,3 +209,38 @@ describe('computeRemainingRefundable — pure refund-remainder projection', () =
     expect(refunds).toHaveLength(1);
   });
 });
+
+// The server-side refund pre-flight (`checkRefundNotExceedingRemainder`) caps
+// a refund at min(payment − succeeded refunds, invoice total − credited). The
+// dialog's "Maximum refundable" must show the SAME figure, or after a manual
+// credit note it overstates the max and the admin submits into a 409.
+describe('computeRemainingRefundable — invoice-headroom cap (mirrors the server min)', () => {
+  const payment = makePayment({ amountSatang: asSatang(107_000n) });
+
+  it('caps at the invoice headroom after a manual credit note shrank it', () => {
+    const r = computeRemainingRefundable(
+      { payments: [payment], refunds: [] },
+      { totalSatang: 107_000n, creditedTotalSatang: 53_500n },
+    );
+    expect(r!.remainingSatang).toBe(53_500n);
+  });
+
+  it('keeps the payment remainder when it is the binding bound', () => {
+    const r = computeRemainingRefundable(
+      {
+        payments: [payment],
+        refunds: [makeRefund({ amountSatang: asSatang(80_000n) })],
+      },
+      { totalSatang: 107_000n, creditedTotalSatang: 0n },
+    );
+    expect(r!.remainingSatang).toBe(27_000n);
+  });
+
+  it('returns null when the invoice has no headroom left (fully credited)', () => {
+    const r = computeRemainingRefundable(
+      { payments: [payment], refunds: [] },
+      { totalSatang: 107_000n, creditedTotalSatang: 107_000n },
+    );
+    expect(r).toBeNull();
+  });
+});
