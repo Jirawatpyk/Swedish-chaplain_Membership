@@ -134,9 +134,12 @@ function makeDeps(opts: {
   const invoiceRepo = {
     listSupersedableMembershipBills: opts.listThrows
       ? vi.fn().mockRejectedValue(new Error('list failed'))
-      : vi
-          .fn()
-          .mockResolvedValue((opts.olderBills ?? []).map((invoiceId) => ({ invoiceId }))),
+      : vi.fn().mockResolvedValue(
+          (opts.olderBills ?? []).map((invoiceId) => ({
+            invoiceId,
+            billDocumentNumberRaw: `SC-${invoiceId}`,
+          })),
+        ),
   } as unknown as InvoiceRepo;
 
   return {
@@ -213,7 +216,7 @@ describe('issueMembershipBill', () => {
     expect(deps.invoiceRepo.listSupersedableMembershipBills).not.toHaveBeenCalled();
   });
 
-  it('a void failure is non-fatal: issue still returns ok + warning + metric', async () => {
+  it('a void failure is non-fatal: issue still returns ok + a typed void_failed warning naming the old bill + metric', async () => {
     const deps = makeDeps({
       enabled: true,
       issued: OK_ISSUED,
@@ -222,8 +225,46 @@ describe('issueMembershipBill', () => {
     });
     const res = await issueMembershipBill(deps, ISSUE_INPUT);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.supersedeWarnings).toHaveLength(1);
+    if (res.ok) {
+      expect(res.value.supersedeWarnings).toEqual([
+        {
+          kind: 'void_failed',
+          invoiceId: 'old-1',
+          billDocumentNumber: 'SC-old-1',
+          errorCode: 'concurrent_state_change',
+        },
+      ]);
+    }
     expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('several failed voids → one typed warning and one metric per bill, in list order', async () => {
+    const deps = makeDeps({
+      enabled: true,
+      issued: OK_ISSUED,
+      olderBills: ['old-1', 'old-2'],
+      voidError: { code: 'refund_in_progress' },
+    });
+    const res = await issueMembershipBill(deps, ISSUE_INPUT);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.supersedeWarnings).toEqual([
+        {
+          kind: 'void_failed',
+          invoiceId: 'old-1',
+          billDocumentNumber: 'SC-old-1',
+          errorCode: 'refund_in_progress',
+        },
+        {
+          kind: 'void_failed',
+          invoiceId: 'old-2',
+          billDocumentNumber: 'SC-old-2',
+          errorCode: 'refund_in_progress',
+        },
+      ]);
+    }
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(2);
   });
 
   it('invalid_status void (already void / raced to paid) is swallowed as no-op, no warning', async () => {
@@ -239,21 +280,27 @@ describe('issueMembershipBill', () => {
     expect(metricSpy.voidOnReissueFailed).not.toHaveBeenCalled();
   });
 
-  it('a THROWN void error is non-fatal: issue still returns ok + warning + metric (symmetric with the returned-error case)', async () => {
+  it('a THROWN void error is non-fatal: issue still returns ok + a typed void_threw warning + metric (symmetric with the returned-error case)', async () => {
     const deps = makeDeps({ enabled: true, issued: OK_ISSUED, olderBills: ['old-1'] });
     voidInvoiceMock.mockRejectedValue(new Error('infra'));
     const res = await issueMembershipBill(deps, ISSUE_INPUT);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.supersedeWarnings).toHaveLength(1);
+    if (res.ok) {
+      expect(res.value.supersedeWarnings).toEqual([
+        { kind: 'void_threw', invoiceId: 'old-1', billDocumentNumber: 'SC-old-1' },
+      ]);
+    }
     expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(1);
   });
 
-  it('a THROWN list error is non-fatal: issue still returns ok + warning + metric (symmetric with the void-throw case)', async () => {
+  it('a THROWN list error is non-fatal: issue still returns ok + a typed list_failed warning + metric (symmetric with the void-throw case)', async () => {
     const deps = makeDeps({ enabled: true, issued: OK_ISSUED, listThrows: true });
     const res = await issueMembershipBill(deps, ISSUE_INPUT);
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.supersedeWarnings).toHaveLength(1);
+    if (res.ok) expect(res.value.supersedeWarnings).toEqual([{ kind: 'list_failed' }]);
     expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledTimes(1);
     // list threw before any void was attempted
     expect(voidInvoiceMock).not.toHaveBeenCalled();
   });

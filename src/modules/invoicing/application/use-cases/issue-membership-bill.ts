@@ -25,8 +25,8 @@
  *     to paid, was already void, or a legacy §86/4 the repo's shape filter
  *     already excludes) → silently `continue`. No warning, no metric.
  *   - Any OTHER void failure (or a failure to even LIST the candidates) is
- *     METRIC-ONLY (`invoicingMetrics.voidOnReissueFailed`) plus a
- *     `supersedeWarnings` entry on the (still-`ok`) return value. Deliberately
+ *     METRIC-ONLY (`invoicingMetrics.voidOnReissueFailed`) plus a typed
+ *     {@link SupersedeWarning} on the (still-`ok`) return value. Deliberately
  *     NOT a dedicated audit event and NEVER a reuse of `invoice_voided` (that
  *     event means a bill was successfully voided) — this preserves the
  *     zero-schema-change promise of this feature.
@@ -72,7 +72,7 @@ import {
   type IssueInvoiceInput,
   type IssueInvoiceSuccess,
 } from './issue-invoice';
-import { voidInvoice, type VoidInvoiceDeps } from './void-invoice';
+import { voidInvoice, type VoidInvoiceDeps, type VoidInvoiceError } from './void-invoice';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 
 export interface IssueMembershipBillDeps {
@@ -86,12 +86,39 @@ export interface IssueMembershipBillDeps {
   readonly voidOnReissueEnabled: boolean;
 }
 
+/**
+ * One best-effort supersede-void failure. Structured (not prose) so the
+ * presentation layer can translate it and name the old bill by its printed
+ * `SC` number (`billDocumentNumber`) rather than its internal UUID; the UUID
+ * (`invoiceId`) is kept for linking to the bill.
+ *   - `list_failed` — the older bills could not even be listed, so none were
+ *     voided and there is no bill to name.
+ *   - `void_failed` — `voidInvoice` returned an error other than the expected
+ *     `invalid_status` no-op.
+ *   - `void_threw`  — `voidInvoice` threw (infra error).
+ * In every case the older bill is still outstanding and staff must void it
+ * by hand.
+ */
+export type SupersedeWarning =
+  | { readonly kind: 'list_failed' }
+  | {
+      readonly kind: 'void_failed';
+      readonly invoiceId: string;
+      readonly billDocumentNumber: string;
+      readonly errorCode: Exclude<VoidInvoiceError['code'], 'invalid_status'>;
+    }
+  | {
+      readonly kind: 'void_threw';
+      readonly invoiceId: string;
+      readonly billDocumentNumber: string;
+    };
+
 export type IssueMembershipBillSuccess = IssueInvoiceSuccess & {
-  /** Best-effort supersede-void failures, human-readable, NEVER fatal to the
-   * issue. Empty when the flag is off, nothing was outstanding to supersede,
-   * or every supersede-void succeeded (including any that were a swallowed
+  /** Best-effort supersede-void failures, NEVER fatal to the issue. Empty
+   * when the flag is off, nothing was outstanding to supersede, or every
+   * supersede-void succeeded (including any that were a swallowed
    * `invalid_status` no-op). */
-  readonly supersedeWarnings: readonly string[];
+  readonly supersedeWarnings: readonly SupersedeWarning[];
 };
 
 export async function issueMembershipBill(
@@ -118,8 +145,11 @@ export async function issueMembershipBill(
   //    (member, plan_year) unique index for membership, by design (a
   //    shorter-term plan could legitimately share a plan_year)).
   const newBill = issued.value;
-  const supersedeWarnings: string[] = [];
-  let older: ReadonlyArray<{ readonly invoiceId: string }> = [];
+  const supersedeWarnings: SupersedeWarning[] = [];
+  let older: ReadonlyArray<{
+    readonly invoiceId: string;
+    readonly billDocumentNumberRaw: string;
+  }> = [];
   // A membership bill's memberId is never null (InvoiceSubjectFields'
   // 'membership' arm requires it) — this guard exists because `Invoice` is a
   // subject-agnostic union at the type level (TS can't narrow on
@@ -142,7 +172,7 @@ export async function issueMembershipBill(
       );
     } catch {
       invoicingMetrics.voidOnReissueFailed(input.tenantId);
-      supersedeWarnings.push('supersede: failed to list prior bills');
+      supersedeWarnings.push({ kind: 'list_failed' });
       return ok({ ...newBill, supersedeWarnings });
     }
   }
@@ -172,11 +202,20 @@ export async function issueMembershipBill(
         // invalid_status = expected no-op (already void, or raced to paid → correctly preserved).
         if (voided.error.code === 'invalid_status') continue;
         invoicingMetrics.voidOnReissueFailed(input.tenantId);
-        supersedeWarnings.push(`supersede: void of ${bill.invoiceId} failed (${voided.error.code})`);
+        supersedeWarnings.push({
+          kind: 'void_failed',
+          invoiceId: bill.invoiceId,
+          billDocumentNumber: bill.billDocumentNumberRaw,
+          errorCode: voided.error.code,
+        });
       }
     } catch {
       invoicingMetrics.voidOnReissueFailed(input.tenantId);
-      supersedeWarnings.push(`supersede: void of ${bill.invoiceId} threw`);
+      supersedeWarnings.push({
+        kind: 'void_threw',
+        invoiceId: bill.invoiceId,
+        billDocumentNumber: bill.billDocumentNumberRaw,
+      });
     }
   }
   return ok({ ...newBill, supersedeWarnings });

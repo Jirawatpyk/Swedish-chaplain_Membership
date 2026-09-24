@@ -130,6 +130,29 @@ Pay-now action 403s.
    AND the member's prior new-flow bill (if any) flips to `void` with a
    `supersededByInvoiceId` audit payload pointing at the new bill.
 
+## When a supersede-void fails
+
+The new bill is issued regardless; the older bill stays `issued`, so the
+member has two open bills until someone voids the older one. Signals:
+
+- `invoicing_void_on_reissue_failed_total{tenant}` increments (one per
+  failed list or failed void).
+- `issueMembershipBill` returns a typed `SupersedeWarning` per failure
+  (`list_failed` / `void_failed` with the `voidInvoice` error code /
+  `void_threw`), carrying the old bill's `invoiceId` and printed `SC`
+  number. `POST /api/invoices/[invoiceId]/issue-auto-drafted` returns
+  them as `supersede_issues[]` (the older `supersede_warnings[]` English
+  strings remain for one release, for client bundles still open from
+  before the change, and are not displayed by the current UI).
+- On the admin auto-renewal queue, staff see a persistent warning toast in
+  their locale: "The older bill SC-… could not be voided automatically.
+  Void it manually." It includes a link to that bill. For `list_failed`, no
+  bill can be named, so the toast asks staff to check the member's invoices.
+
+Action: open the named bill and void it through the normal admin void.
+The renewal paths (`confirmRenewal`, `adminRenew`) ignore these warnings
+today, so check the metric for failures that no staff member saw.
+
 ## Rollback
 
 Flip `FEATURE_VOID_ON_REISSUE=false` in Vercel env + redeploy. Zero

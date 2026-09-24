@@ -3,6 +3,7 @@ import type {
   CreateInvoiceDraftError,
   CreateInvoiceDraftInput,
   IssueInvoiceError,
+  SupersedeWarning,
 } from '@/modules/invoicing';
 
 /**
@@ -143,13 +144,14 @@ export type IssueInvoiceForRenewalResult =
       readonly totalSatang: Satang;
       /**
        * 106-void-on-reissue (Task 4) — best-effort supersede-void warnings
-       * from `issueMembershipBill`'s auto-void pass, threaded verbatim.
+       * from `issueMembershipBill`'s auto-void pass, threaded verbatim
+       * (typed, untranslated — the presentation layer owns the copy).
        * Empty when `FEATURE_VOID_ON_REISSUE` is off, nothing was
        * outstanding to supersede, or every supersede-void succeeded.
-       * Optional (not `readonly string[]`) so the F5R3-era callers that
-       * predate this field don't need updating just to destructure it.
+       * Optional so the F5R3-era callers that predate this field don't
+       * need updating just to destructure it.
        */
-      readonly supersedeWarnings?: readonly string[];
+      readonly supersedeWarnings?: readonly SupersedeWarning[];
     }
   | {
       readonly status: 'create_failed';

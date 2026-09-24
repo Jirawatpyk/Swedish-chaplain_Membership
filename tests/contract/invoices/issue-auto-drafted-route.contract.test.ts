@@ -29,6 +29,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { err, ok } from '@/lib/result';
+import type { SupersedeWarning } from '@/modules/invoicing';
 
 // ---------------------------------------------------------------------------
 // Mock seams — declared before any import of the route.
@@ -125,7 +126,7 @@ function makePostRequest(body: unknown): NextRequest {
 const SUCCESS_VALUE = {
   invoiceId: DRAFT_ID,
   invoiceNumber: 'SC2026-00042',
-  supersedeWarnings: [] as readonly string[],
+  supersedeWarnings: [] as readonly SupersedeWarning[],
   linkWarning: null,
   discardedInvoiceIds: [] as readonly string[],
 };
@@ -195,11 +196,19 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-auto-drafted (Task 14)'
     expect(issueAutoDraftedRenewalMock).not.toHaveBeenCalled();
   });
 
-  it('surfaces supersedeWarnings + linkWarning + discardedInvoiceIds on success', async () => {
+  it('surfaces supersede issues + linkWarning + discardedInvoiceIds on success', async () => {
     issueAutoDraftedRenewalMock.mockResolvedValueOnce(
       ok({
         ...SUCCESS_VALUE,
-        supersedeWarnings: ['superseded invoice SC2026-00040'],
+        supersedeWarnings: [
+          {
+            kind: 'void_failed',
+            invoiceId: 'inv-old-1',
+            billDocumentNumber: 'SC-2026-000123',
+            errorCode: 'concurrent_state_change',
+          },
+          { kind: 'void_threw', invoiceId: 'inv-old-2', billDocumentNumber: 'SC-2026-000124' },
+        ],
         linkWarning: 'cycle could not be linked',
         discardedInvoiceIds: ['inv-sibling-1'],
       }),
@@ -209,9 +218,54 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-auto-drafted (Task 14)'
     const res = await POST(makePostRequest({ sendEmail: false }), routeParams);
     const body = (await res.json()) as Record<string, unknown>;
 
-    expect(body['supersede_warnings']).toEqual(['superseded invoice SC2026-00040']);
+    // 106 follow-up — the structured, snake_case contract the admin UI
+    // translates. Carries the old bill's printed number so staff never see
+    // an internal UUID.
+    expect(body['supersede_issues']).toEqual([
+      {
+        kind: 'void_failed',
+        invoice_id: 'inv-old-1',
+        bill_document_number: 'SC-2026-000123',
+        error_code: 'concurrent_state_change',
+      },
+      {
+        kind: 'void_threw',
+        invoice_id: 'inv-old-2',
+        bill_document_number: 'SC-2026-000124',
+      },
+    ]);
+    // Deprecated — kept byte-identical to the pre-structured strings so a
+    // client bundle still open from before this deploy keeps working.
+    expect(body['supersede_warnings']).toEqual([
+      'supersede: void of inv-old-1 failed (concurrent_state_change)',
+      'supersede: void of inv-old-2 threw',
+    ]);
     expect(body['link_warning']).toBe('cycle could not be linked');
     expect(body['discarded_invoice_ids']).toEqual(['inv-sibling-1']);
+  });
+
+  it('list_failed serialises as a bare kind (no bill to name)', async () => {
+    issueAutoDraftedRenewalMock.mockResolvedValueOnce(
+      ok({ ...SUCCESS_VALUE, supersedeWarnings: [{ kind: 'list_failed' }] }),
+    );
+
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest({ sendEmail: true }), routeParams);
+    const body = (await res.json()) as Record<string, unknown>;
+
+    expect(body['supersede_issues']).toEqual([{ kind: 'list_failed' }]);
+    expect(body['supersede_warnings']).toEqual(['supersede: failed to list prior bills']);
+  });
+
+  it('no supersede failures → both arrays empty', async () => {
+    issueAutoDraftedRenewalMock.mockResolvedValueOnce(ok(SUCCESS_VALUE));
+
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest({ sendEmail: true }), routeParams);
+    const body = (await res.json()) as Record<string, unknown>;
+
+    expect(body['supersede_issues']).toEqual([]);
+    expect(body['supersede_warnings']).toEqual([]);
   });
 
   // -------------------------------------------------------------------------

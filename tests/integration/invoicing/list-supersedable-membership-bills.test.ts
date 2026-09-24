@@ -354,6 +354,11 @@ describe('InvoiceRepo.listSupersedableMembershipBills — integration (Task 2, 1
       expect(ids).not.toContain(bPaid.invoiceId); // paid excluded by status
       expect(ids).not.toContain(bLegacy.invoiceId); // legacy §86/4 excluded by shape
       expect(ids).not.toContain(bEvent.invoiceId); // event excluded by subject
+      // 106 follow-up — each row carries its printed SC number, so a failed
+      // supersede-void can name the bill to staff instead of its UUID.
+      expect(rows).toEqual([
+        { invoiceId: bOld.invoiceId, billDocumentNumberRaw: 'SC-2026-000100' },
+      ]);
     }, 60_000);
 
     // Fix 1 (Task 3 hardening, 106-void-on-reissue): in the test above,
