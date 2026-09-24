@@ -42,6 +42,7 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { type RenewLapsedErrorCode } from '@/components/members/renew-lapsed-error-codes';
 import { adminRenewLapsedMember, makeRenewalsDeps } from '@/modules/renewals';
+import { serialiseSupersedeIssue } from '@/lib/supersede-issues-wire';
 import { assertNever } from '@/lib/assert-never';
 
 /**
@@ -256,6 +257,9 @@ export async function POST(
         cycle_id: result.value.cycleId,
         invoice_id: result.value.invoiceId,
         cycle_status: result.value.cycleStatus,
+        // 106-void-on-reissue follow-up — older unpaid bills this reissue
+        // could not auto-void; the dialog names them so staff void by hand.
+        supersede_issues: result.value.supersedeWarnings.map(serialiseSupersedeIssue),
       },
       ctx.correlationId,
     );

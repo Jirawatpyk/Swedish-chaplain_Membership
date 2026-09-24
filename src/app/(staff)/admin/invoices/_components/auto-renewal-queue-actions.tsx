@@ -94,7 +94,7 @@ import {
   routeDiscardAutoDraftError,
   routeIssueAutoDraftError,
 } from './issue-auto-draft-error-routing';
-import { routeSupersedeIssues } from './supersede-issue-routing';
+import { useSupersedeWarningToast } from '@/components/invoices/use-supersede-warning-toast';
 
 type ActiveAction = 'send' | 'silent' | 'discard' | null;
 
@@ -165,6 +165,7 @@ export function AutoRenewalQueueActions({
 }: AutoRenewalQueueActionsProps) {
   const t = useTranslations('admin.invoices.autoRenewalQueue.actions');
   const tQueue = useTranslations('admin.invoices.list.queue');
+  const showSupersedeWarning = useSupersedeWarningToast();
   const router = useRouter();
 
   const [active, setActive] = useState<ActiveAction>(null);
@@ -270,44 +271,8 @@ export function AutoRenewalQueueActions({
         : t('toast.issuedSilently', { number: body.invoice_number ?? '' }),
     );
     // 106-void-on-reissue follow-up — the bill WAS issued, but an older
-    // unpaid bill for this member could not be auto-voided, so a duplicate
-    // is still open. A separate `warning` (not the success toast's
-    // description): it asks staff to act. Persistent + `closeButton` for the
-    // same reason as the refund-form's waived-VAT toast — it is the only
-    // moment staff are told, and a never-dismissing toast needs a keyboard
-    // dismiss control (WCAG 2.1.1 / ux-standards §4.2). Copy is translated
-    // from the structured `supersede_issues`, never the server's strings.
-    const supersedeIssues = routeSupersedeIssues(body);
-    if (supersedeIssues.length > 0) {
-      toast.warning(t('supersedeWarning.title'), {
-        description: (
-          <ul className="flex flex-col gap-2">
-            {supersedeIssues.map((issue, i) =>
-              issue.messageKey === 'voidFailed' ? (
-                <li key={issue.invoiceId} className="flex flex-col items-start gap-1">
-                  <span>{t('supersedeWarning.voidFailed', { number: issue.number })}</span>
-                  {/* 44×44 target — same standard as the "View existing
-                      bill" link in this component's error alert. */}
-                  <Link
-                    href={`/admin/invoices/${issue.invoiceId}`}
-                    className={cn(
-                      buttonVariants({ variant: 'outline', size: 'sm' }),
-                      'min-h-11 gap-1 px-3',
-                    )}
-                  >
-                    {t('supersedeWarning.openBill', { number: issue.number })}
-                  </Link>
-                </li>
-              ) : (
-                <li key={`generic-${i}`}>{t('supersedeWarning.listFailed')}</li>
-              ),
-            )}
-          </ul>
-        ),
-        duration: Infinity,
-        closeButton: true,
-      });
-    }
+    // unpaid bill may still be open; see `useSupersedeWarningToast`.
+    showSupersedeWarning(body);
     // Success unmounts the trigger (status flips away from 'draft' on
     // refresh) — see module header. Must be set BEFORE the close so
     // `finalFocus` (read at close time) observes it.

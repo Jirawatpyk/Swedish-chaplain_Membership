@@ -102,6 +102,7 @@ import {
 } from '../../domain/plan-price-change';
 import { loadClassificationCounts } from './_lib/classification-input';
 import { LIVE_MEMBERSHIP_BILL_STATUSES } from './_lib/live-membership-bill';
+import { logSupersedeWarnings } from './_lib/log-supersede-warnings';
 import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import {
   parseCycleId,
@@ -877,6 +878,17 @@ export async function confirmRenewal(
   if (invoiceResult.status !== 'issued') {
     return mapInvoiceError(invoiceResult);
   }
+  // 106-void-on-reissue follow-up — the new bill is issued, but an older
+  // unpaid bill may not have been auto-voided. This is the MEMBER's path, so
+  // the remediation copy is never returned to them; staff find it by errorId.
+  // Logged before the link step so a later link failure cannot swallow it.
+  logSupersedeWarnings(invoiceResult.supersedeWarnings ?? [], {
+    errorId: 'F8.CONFIRM_RENEWAL.SUPERSEDE_VOID_FAILED',
+    tenantId: input.tenantId,
+    memberId: input.memberId,
+    invoiceId: invoiceResult.invoiceId,
+    correlationId: input.correlationId,
+  });
 
   // ---- Step 4 + 5: link invoice + reconcile frozen price + emit audit atomically
   return runInTenant(deps.tenant, async (tx) => {

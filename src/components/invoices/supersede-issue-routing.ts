@@ -1,12 +1,13 @@
 /**
- * 106-void-on-reissue follow-up — `/issue-auto-drafted`'s `supersede_issues`
- * → i18n routing (pure).
+ * 106-void-on-reissue follow-up — `supersede_issues` → i18n routing (pure).
  *
- * The route reports each best-effort supersede-void failure as a structured
- * `{ kind, invoice_id?, bill_document_number?, error_code? }` entry; this
- * leaf turns them into message keys under
- * `admin.invoices.autoRenewalQueue.actions.supersedeWarning.` so the toast
- * never shows a server string or an internal UUID.
+ * Every route that issues a membership bill through the renewal bridge
+ * (`/issue-auto-drafted`, `/admin/members/[id]/renew`) reports each
+ * best-effort supersede-void failure as a structured
+ * `{ kind, invoice_id?, bill_document_number?, error_code? }` entry
+ * (`src/lib/supersede-issues-wire.ts`); this leaf turns them into message
+ * keys under `admin.invoices.supersedeWarning.` so the toast never shows a
+ * server string or an internal UUID.
  *
  * Fail-closed: the body is untrusted JSON, so a malformed entry, an unknown
  * `kind`, or a response carrying only the deprecated `supersede_warnings`
@@ -79,13 +80,15 @@ function routeIssue(issue: WireSupersedeIssue): SupersedeIssueCopy {
   }
 }
 
-export function routeSupersedeIssues(body: {
-  readonly supersede_issues?: unknown;
-  readonly supersede_warnings?: unknown;
-}): readonly SupersedeIssueCopy[] {
-  const issues = body.supersede_issues;
+export function routeSupersedeIssues(body: unknown): readonly SupersedeIssueCopy[] {
+  // A non-object body (e.g. JSON `null`) carries no issues. Never throw: this
+  // runs after a SUCCESSFUL issue, so a throw would read as a failure.
+  if (typeof body !== 'object' || body === null) return [];
+  const { supersede_issues: issues, supersede_warnings: legacy } = body as {
+    readonly supersede_issues?: unknown;
+    readonly supersede_warnings?: unknown;
+  };
   if (!Array.isArray(issues)) {
-    const legacy = body.supersede_warnings;
     return Array.isArray(legacy) && legacy.length > 0 ? [GENERIC] : [];
   }
   const routed: SupersedeIssueCopy[] = [];
