@@ -114,6 +114,8 @@ function emptyDraft(currentYear: number): PlanSchemaInput {
 export interface PlanFormWizardProps {
   readonly currentYear: number;
   readonly currencyPrefix: string;
+  /** Tenant VAT rate in percent (7 for 7 %) for the fee hint; `null` when unknown. */
+  readonly vatRatePercent?: number | null;
   readonly submitting?: boolean;
   readonly initialValues?: PlanSchemaInput;
   readonly onSubmit: (draft: PlanSchemaInput) => Promise<void> | void;
@@ -123,6 +125,7 @@ export interface PlanFormWizardProps {
 export function PlanFormWizard({
   currentYear,
   currencyPrefix,
+  vatRatePercent = null,
   submitting = false,
   initialValues,
   onSubmit,
@@ -393,6 +396,11 @@ export function PlanFormWizard({
             onChange={(n) => update('annual_fee_minor_units', n ?? 0)}
             prefix={currencyPrefix}
             required
+            helpText={
+              vatRatePercent === null
+                ? tLabels('annualFeeHelpNoRate')
+                : tLabels('annualFeeHelp', { rate: vatRatePercent })
+            }
           />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <MoneyInput

@@ -865,6 +865,8 @@
           "planCategory": "Kategori",
           "memberTypeScope": "Medlemstyp",
           "annualFee": "Årsavgift",
+          "annualFeeHelp": "Hela baht, exklusive {rate} % moms.",
+          "annualFeeHelpNoRate": "Hela baht, exklusive moms.",
           "includesCorporatePlanId": "Inkluderat företagspaket",
           "minTurnover": "Minsta omsättning",
           "maxTurnover": "Högsta omsättning",

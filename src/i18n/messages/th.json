@@ -865,6 +865,8 @@
           "planCategory": "ประเภท",
           "memberTypeScope": "ประเภทสมาชิก",
           "annualFee": "ค่าธรรมเนียมรายปี",
+          "annualFeeHelp": "จำนวนเต็มหน่วยบาท ไม่รวมภาษีมูลค่าเพิ่ม {rate}%",
+          "annualFeeHelpNoRate": "จำนวนเต็มหน่วยบาท ไม่รวมภาษีมูลค่าเพิ่ม",
           "includesCorporatePlanId": "แพ็กเกจองค์กรที่รวมอยู่",
           "minTurnover": "รายได้ขั้นต่ำ",
           "maxTurnover": "รายได้สูงสุด",

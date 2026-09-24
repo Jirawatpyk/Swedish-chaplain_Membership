@@ -18,6 +18,7 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { vatRatePercent } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
@@ -48,7 +49,11 @@ export default async function NewPlanPage() {
       <PageHeader title={t('title')} />
       <Card>
         <CardContent>
-          <NewPlanClient currentYear={currentYear} currencyPrefix={currencyPrefix} />
+          <NewPlanClient
+            currentYear={currentYear}
+            currencyPrefix={currencyPrefix}
+            vatRatePercent={taxPolicy ? vatRatePercent(taxPolicy.vatRateRaw) : null}
+          />
         </CardContent>
       </Card>
     </FormContainer>

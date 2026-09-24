@@ -865,6 +865,8 @@
           "planCategory": "Category",
           "memberTypeScope": "Member type",
           "annualFee": "Annual fee",
+          "annualFeeHelp": "Whole baht, excluding {rate}% VAT.",
+          "annualFeeHelpNoRate": "Whole baht, excluding VAT.",
           "includesCorporatePlanId": "Bundled corporate plan",
           "minTurnover": "Minimum turnover",
           "maxTurnover": "Maximum turnover",

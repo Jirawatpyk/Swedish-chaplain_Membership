@@ -19,6 +19,7 @@ import { resolvePlanCreateErrorKey } from './error-key';
 export interface NewPlanClientProps {
   readonly currentYear: number;
   readonly currencyPrefix: string;
+  readonly vatRatePercent: number | null;
 }
 
 function freshIdempotencyKey(): string {
@@ -28,7 +29,11 @@ function freshIdempotencyKey(): string {
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProps) {
+export function NewPlanClient({
+  currentYear,
+  currencyPrefix,
+  vatRatePercent,
+}: NewPlanClientProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const t = useTranslations('admin.plans');
@@ -97,6 +102,7 @@ export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProp
     <PlanFormWizard
       currentYear={currentYear}
       currencyPrefix={currencyPrefix}
+      vatRatePercent={vatRatePercent}
       submitting={submitting}
       onSubmit={handleSubmit}
       onCancel={() => router.push('/admin/plans')}

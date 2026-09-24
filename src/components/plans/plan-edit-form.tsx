@@ -47,6 +47,8 @@ export interface PlanEditFormProps {
   /** A non-deleted plan with this plan ID exists in `currentYear` — picks
    *  the prior-year banner's CTA (open it vs. clone the year). */
   readonly currentYearPlanExists?: boolean;
+  /** Tenant VAT rate in percent (7 for 7 %) for the fee hint; `null` when unknown. */
+  readonly vatRatePercent?: number | null;
   readonly submitting?: boolean;
   readonly onSubmit: (draft: PlanSchemaInput) => Promise<void> | void;
   readonly onCancel?: () => void;
@@ -92,6 +94,7 @@ export function PlanEditForm({
   currentYear,
   currencyPrefix,
   currentYearPlanExists = false,
+  vatRatePercent = null,
   submitting = false,
   onSubmit,
   onCancel,
@@ -205,6 +208,11 @@ export function PlanEditForm({
             prefix={currencyPrefix}
             disabled={isLocked('annual_fee_minor_units')}
             required
+            helpText={
+              vatRatePercent === null
+                ? t('annualFeeHelpNoRate')
+                : t('annualFeeHelp', { rate: vatRatePercent })
+            }
           />
         </LockWrapper>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
