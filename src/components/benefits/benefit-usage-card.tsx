@@ -14,6 +14,8 @@
  * - The under-use warning renders above the bars when flagged (FR-021).
  * - Staff-only actions (send reminder / suggest usage) slot in via `staffActions`
  *   so the same card serves the member + admin variants (FR-022/AS-4).
+ * - `staffSubjectName` switches the under-use warning to third-person staff
+ *   copy; the member portal keeps the second-person wording.
  */
 import Link from 'next/link';
 import { ArrowRight, PackageOpen, PauseCircle } from 'lucide-react';
@@ -50,6 +52,12 @@ export interface BenefitUsageCardProps {
   readonly warningActionHref?: string;
   /** Admin-only action controls (rendered in the header on the staff variant). */
   readonly staffActions?: React.ReactNode;
+  /**
+   * Staff variant: the viewed member's company name. When set, the under-use
+   * warning speaks about that company ("Acme has used 10% of its benefits")
+   * instead of the member-facing "you've used". Omitted on the member portal.
+   */
+  readonly staffSubjectName?: string;
   /**
    * 059-membership-suspension Task 18 — renders an amber "Suspended" badge
    * beside the title when the member's benefits are temporarily paused
@@ -111,6 +119,7 @@ export function BenefitUsageCard({
   underUseWarning,
   warningActionHref,
   staffActions,
+  staffSubjectName,
   suspended = false,
   compact = false,
   previewHref,
@@ -186,6 +195,7 @@ export function BenefitUsageCard({
             elapsedYearPct={elapsedYearPct}
             consumedPct={aggregateConsumedPct}
             {...(warningActionHref !== undefined ? { actionHref: warningActionHref } : {})}
+            {...(staffSubjectName !== undefined ? { subjectName: staffSubjectName } : {})}
           />
         )}
 

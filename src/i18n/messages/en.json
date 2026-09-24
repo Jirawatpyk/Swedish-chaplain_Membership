@@ -7448,7 +7448,9 @@
     "warning": {
       "title": "You're not using all your benefits",
       "body": "At {elapsed}% of the year you've used {consumed}% of your benefits. Make the most of your membership.",
-      "action": "Use a benefit"
+      "action": "Use a benefit",
+      "staffTitle": "Under-using their benefits",
+      "staffBody": "At {elapsed}% of the year, {company} has used {consumed}% of its benefits."
     }
   },
   "gdprExport": {

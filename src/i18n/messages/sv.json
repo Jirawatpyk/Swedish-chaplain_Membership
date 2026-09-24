@@ -7448,7 +7448,9 @@
     "warning": {
       "title": "Du använder inte alla dina förmåner",
       "body": "Vid {elapsed}% av året har du använt {consumed}% av dina förmåner. Få ut mesta möjliga av ditt medlemskap.",
-      "action": "Använd en förmån"
+      "action": "Använd en förmån",
+      "staffTitle": "Använder inte sina förmåner fullt ut",
+      "staffBody": "Vid {elapsed}% av året har {company} använt {consumed}% av sina förmåner."
     }
   },
   "gdprExport": {

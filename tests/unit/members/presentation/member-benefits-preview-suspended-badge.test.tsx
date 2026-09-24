@@ -50,7 +50,11 @@ const TENANT = asTenantContext('t1');
 const MEMBER_ID = 'm1';
 
 async function renderSection() {
-  const ui = await MemberBenefitsPreviewSection({ tenant: TENANT, memberId: MEMBER_ID });
+  const ui = await MemberBenefitsPreviewSection({
+    tenant: TENANT,
+    memberId: MEMBER_ID,
+    companyName: 'Acme Co',
+  });
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       {ui}
@@ -75,6 +79,26 @@ describe('<MemberBenefitsPreviewSection> — suspended badge wiring (059-members
     loadMembershipAccess.mockResolvedValue({ access: 'full', reason: 'in_good_standing' });
     await renderSection();
     expect(screen.queryByText('Suspended')).toBeNull();
+  });
+
+  it('words the under-use warning about the member company (staff copy, not "you")', async () => {
+    loadMembershipAccess.mockResolvedValue({ access: 'full', reason: 'in_good_standing' });
+    computeBenefitUsage.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        membershipYear: 2026,
+        elapsedYearPct: 62,
+        quantifiable: [{ key: 'eblast', used: 1, entitlement: 10, lastUsedAt: null }],
+        active: [],
+        aggregateConsumedPct: 10,
+        underUseWarning: true,
+      },
+    });
+    await renderSection();
+    expect(screen.getByText('Under-using their benefits')).toBeInTheDocument();
+    expect(
+      screen.getByText('At 62% of the year, Acme Co has used 10% of its benefits.'),
+    ).toBeInTheDocument();
   });
 
   it('renders nothing (section omitted) when the benefit-usage read fails, regardless of access', async () => {
