@@ -1,6 +1,13 @@
 -- ---------------------------------------------------------------------------
--- Migration 0308 — `renewal_cycles.awaiting_entered_at`: separates an EARLY
+-- Migration 0309 — `renewal_cycles.awaiting_entered_at`: separates an EARLY
 -- renewal bill from a never-paid cycle.
+--
+-- Numbered 0309, with `when` 1798544200000: the F119 branch's
+-- `0308_eblast_member_approval` already holds 0308 and `when` 1798544100000
+-- on the shared CI/dev Neon branch. With the same `when`, the drizzle migrator
+-- treated this file as already applied and skipped it, while still printing
+-- "applied" (CLAUDE.md gotcha). The missing column then broke every
+-- renewal_cycles read in CI.
 --
 -- The problem: `deriveMembershipAccess` resolved EVERY `awaiting_payment`
 -- cycle to `suspended`. Three writers move a PAID `upcoming|reminded` cycle
@@ -26,7 +33,7 @@
 -- it only while status = 'awaiting_payment':
 --   stamped AND expires_at in the future  → full
 --   otherwise                             → suspended (unchanged)
--- NULL gives the pre-0308 behaviour. The column can only ever grant access
+-- NULL gives the pre-0309 behaviour. The column can only ever grant access
 -- that a cycle's own paid period already covers.
 --
 -- Backfill: stamp ONLY the currently-`awaiting_payment` rows that have
@@ -83,7 +90,7 @@ DECLARE
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolbypassrls) THEN
     RAISE EXCEPTION
-      'migration role % lacks BYPASSRLS; the 0308 backfill would be blind under RLS FORCE',
+      'migration role % lacks BYPASSRLS; the 0309 backfill would be blind under RLS FORCE',
       current_user;
   END IF;
 
@@ -179,7 +186,7 @@ BEGIN
     ));
   GET DIAGNOSTICS n_auto = ROW_COUNT;
 
-  RAISE NOTICE '0308 backfill: stamped % cycle(s) from audit evidence, % from auto-draft links',
+  RAISE NOTICE '0309 backfill: stamped % cycle(s) from audit evidence, % from auto-draft links',
     n_audit, n_auto;
 END
 $$;

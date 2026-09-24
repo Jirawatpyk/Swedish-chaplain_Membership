@@ -46,7 +46,7 @@ interface SeedCycle {
   tier: 'thai_alumni' | 'start_up' | 'regular' | 'premium' | 'partnership';
   /** Defaults to 'upcoming'. */
   status?: 'upcoming' | 'awaiting_payment';
-  /** 0308 — stamp `awaiting_entered_at` (flipped early from a paid period). */
+  /** 0309 — stamp `awaiting_entered_at` (flipped early from a paid period). */
   awaitingEnteredAt?: Date;
 }
 
@@ -135,7 +135,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
         tier: 'regular',
         status: 'awaiting_payment',
       },
-      // 0308 — an EARLY renewal bill on a paid period that runs another 120
+      // 0309 — an EARLY renewal bill on a paid period that runs another 120
       // days: access is full, so the outside-window SUSPENDED leg must NOT
       // count it (the count above stays 1, the born-awaiting row only).
       {
@@ -368,7 +368,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
       // All offsets are within the 90-day pipeline window so every row lands in
       // the summary aggregate. The FUTURE born-awaiting / pending rows are the
       // crux: access is 'suspended' regardless of a far-off expiry, so they
-      // must NOT read as a t-* countdown. The 0308 early-flipped rows are the
+      // must NOT read as a t-* countdown. The 0309 early-flipped rows are the
       // mirror case: a renewal bill issued before T-0 against a PAID period
       // keeps access 'full' (a t-* countdown) until that period ends.
       const cases: ReadonlyArray<{
@@ -379,7 +379,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
           | 'reminded'
           | 'lapsed';
         offsetDays: number;
-        /** 0308 — flipped `upcoming|reminded → awaiting_payment` (early bill). */
+        /** 0309 — flipped `upcoming|reminded → awaiting_payment` (early bill). */
         earlyFlipped?: boolean;
         /** The intended access. Pins behaviour, not just SQL⇄domain parity. */
         access: 'full' | 'suspended' | 'terminated';
@@ -459,7 +459,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
         return deriveMembershipAccess(cycleLike, nowDate).access;
       });
       // Parity alone would stay green if BOTH sides drifted the same way (the
-      // pre-0308 bug: an early bill suspended a paid member in the domain AND
+      // pre-0309 bug: an early bill suspended a paid member in the domain AND
       // the pipeline), so the domain must also match the intended access.
       expect(expected).toEqual(cases.map((c) => c.access));
       const expectSuspended = expected.filter((a) => a === 'suspended').length;

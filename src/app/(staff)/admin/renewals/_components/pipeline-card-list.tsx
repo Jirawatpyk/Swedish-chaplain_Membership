@@ -179,7 +179,7 @@ export function PipelineCardList({
                           <CycleTierCell tier={original.tierBucket} />
                         </div>
                       </div>
-                      {/* 0308 — early renewal bill marker, stacked under the
+                      {/* 0309 — early renewal bill marker, stacked under the
                           countdown pill so the card header keeps its width. */}
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         <UrgencyPill urgency={original.urgency} />

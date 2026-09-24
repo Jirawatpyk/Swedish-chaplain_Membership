@@ -77,7 +77,7 @@ async function observeCycleStateGaugesForTenant(
           -- admin-reactivation review, OR a born awaiting_payment cycle
           -- (regardless of grace window), OR a non-terminal upcoming/
           -- reminded cycle — or an early-flipped awaiting_payment one
-          -- (0308 awaiting_entered_at set: a renewal bill issued before
+          -- (0309 awaiting_entered_at set: a renewal bill issued before
           -- T-0 on a paid period) — whose period already ended.
           --
           -- Unlike active/in_grace/lapsed_total above — which are raw

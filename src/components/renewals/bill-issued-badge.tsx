@@ -1,5 +1,5 @@
 /**
- * 0308 — `BillIssuedBadge`: marks a pipeline row whose renewal bill was
+ * 0309 — `BillIssuedBadge`: marks a pipeline row whose renewal bill was
  * issued BEFORE T-0 (member confirm, 107 auto-drafted issue, orphan relink).
  *
  * Such a cycle is `awaiting_payment` but keeps its countdown urgency: the

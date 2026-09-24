@@ -320,7 +320,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     const cyc = await cycleRow(tenant, cycleId);
     expect(cyc?.status).toBe('awaiting_payment');
     expect(cyc?.linkedInvoiceId).toBe(invoiceId);
-    // 0308 — the auto-issue flip is the common early-bill path: it must
+    // 0309 — the auto-issue flip is the common early-bill path: it must
     // stamp the marker so the member keeps access for the paid period that
     // is still running (drafts exist only before T-0).
     expect(cyc?.awaitingEnteredAt).toBeInstanceOf(Date);

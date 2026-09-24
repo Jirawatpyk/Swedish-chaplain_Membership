@@ -350,7 +350,7 @@ export function PipelineTable({
       {
         id: 'urgency',
         header: t('columns.urgency'),
-        // 0308 — an early renewal bill keeps the countdown pill (access stays
+        // 0309 — an early renewal bill keeps the countdown pill (access stays
         // full until expiry); the badge says the bill is already out.
         cell: ({ row }) => (
           <span className="inline-flex flex-wrap items-center gap-1">

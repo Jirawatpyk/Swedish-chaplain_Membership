@@ -130,7 +130,7 @@ interface RenewalCycleBase {
   readonly anchorInvoiceId: string | null;
 
   /**
-   * Migration 0308. Set when the cycle was FLIPPED `upcoming|reminded →
+   * Migration 0309. Set when the cycle was FLIPPED `upcoming|reminded →
    * awaiting_payment` by a RENEWAL bill (`classifyMembershipPayment` →
    * `renewal`: the cycle is anchored or the member has a settled predecessor),
    * i.e. the bill charges the NEXT term while the current one is paid. Null
@@ -423,7 +423,7 @@ export interface MembershipAccessDecision {
  *    dependency).
  *  - `full`: everything else, including a member with no cycle, AND an
  *    `awaiting_payment` cycle that was FLIPPED out of `upcoming|reminded`
- *    by a RENEWAL bill (`awaitingEnteredAt` set, migration 0308) while its
+ *    by a RENEWAL bill (`awaitingEnteredAt` set, migration 0309) while its
  *    period is still running. A renewal bill issued before T-0 (member
  *    confirm, 107 auto-drafted issue, orphan relink) bills the NEXT term; the
  *    current period is already paid, so it keeps full access until
@@ -463,11 +463,11 @@ export function deriveMembershipAccess(
   const expired = !Number.isFinite(expiresMs) || expiresMs < now.getTime();
 
   if (cycle.status === 'awaiting_payment') {
-    // 0308 — an early bill on a paid period keeps access until that period
+    // 0309 — an early bill on a paid period keeps access until that period
     // ends (see the docstring). Born-awaiting (null marker) → suspended.
     // `typeof` rather than `!== null`: a cycle object assembled without the
     // field (a partial projection, a stale fixture) must fail CLOSED to the
-    // pre-0308 answer, never read `undefined` as "flipped" and grant access.
+    // pre-0309 answer, never read `undefined` as "flipped" and grant access.
     return typeof cycle.awaitingEnteredAt === 'string' && !expired
       ? { access: 'full', reason: 'in_good_standing' }
       : { access: 'suspended', reason: 'unpaid' };

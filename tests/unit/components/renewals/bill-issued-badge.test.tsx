@@ -1,5 +1,5 @@
 /**
- * 0308 — `<BillIssuedBadge>`: the pipeline marker for a renewal bill issued
+ * 0309 — `<BillIssuedBadge>`: the pipeline marker for a renewal bill issued
  * BEFORE T-0 against a paid period. Such a cycle is `awaiting_payment` yet
  * keeps a countdown urgency (access stays full until expiry), so without a
  * marker staff cannot tell it from an un-billed `upcoming` row.

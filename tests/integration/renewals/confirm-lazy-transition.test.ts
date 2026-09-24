@@ -451,7 +451,7 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
     // emit a duplicate.
     expect(await countEnterAudits(cycleId)).toBe(1);
   }, 120_000);
-  // 0308 — an EARLY renewal bill must not suspend a member whose current
+  // 0309 — an EARLY renewal bill must not suspend a member whose current
   // period is paid. Before the fix `confirmRenewal`'s lazy flip moved the
   // cycle to `awaiting_payment`, `deriveMembershipAccess` returned
   // `suspended` for that status whatever the expiry, and the pipeline filed
@@ -555,7 +555,7 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
   // financial-integrity B1 — an UN-anchored cycle with no settled
   // predecessor (e.g. an imported member the R4 backfill skipped) classifies
   // `first_payment`: its early bill charges the CURRENT period, which is
-  // therefore unpaid. The marker must NOT be stamped, so the pre-0308 answer
+  // therefore unpaid. The marker must NOT be stamped, so the pre-0309 answer
   // holds: suspended, and still due+60-terminable.
   it('early confirm on a FIRST-PAYMENT cycle (bill charges the current period) stays suspended + lapse-eligible', async () => {
     const expiresAt = new Date(Date.now() + 20 * 86_400_000);

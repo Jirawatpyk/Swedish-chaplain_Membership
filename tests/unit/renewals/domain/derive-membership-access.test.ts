@@ -75,7 +75,7 @@ describe('deriveMembershipAccess', () => {
     expect(d.reason).toBe(reason);
   });
 
-  it('awaiting_payment with the 0308 marker MISSING (undefined) fails closed → suspended', () => {
+  it('awaiting_payment with the 0309 marker MISSING (undefined) fails closed → suspended', () => {
     const c = { ...cycle({ status: 'awaiting_payment', expiresAt: FUTURE }) } as Record<string, unknown>;
     delete c['awaitingEnteredAt'];
     expect(deriveMembershipAccess(c as unknown as RenewalCycle, NOW)).toEqual({ access: 'suspended', reason: 'unpaid' });

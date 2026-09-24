@@ -90,7 +90,7 @@ export const renewalCycles = pgTable(
     // renewal can still link cleanly through the `linkInvoice` I1 guard.
     anchoredAt: timestamp('anchored_at', { withTimezone: true }),
     anchorInvoiceId: uuid('anchor_invoice_id'),
-    // Migration 0308 — stamped by `transitionStatus` on `upcoming|reminded →
+    // Migration 0309 — stamped by `transitionStatus` on `upcoming|reminded →
     // awaiting_payment` when the bill is a RENEWAL (the current period is
     // paid; a `first_payment` flip is NOT stamped), cleared on every other
     // transition into or out of
