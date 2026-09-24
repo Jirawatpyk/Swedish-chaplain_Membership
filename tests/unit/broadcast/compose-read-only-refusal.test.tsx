@@ -58,7 +58,7 @@ function stubReadOnlySubmit(retryAfter: string | null): void {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: unknown) => {
-      if (String(input).includes('/api/broadcasts/submit')) {
+      if (String(input).includes('/api/broadcasts/submit') || String(input).includes('/api/broadcasts/draft')) {
         return {
           ok: false,
           status: 503,
@@ -145,5 +145,30 @@ describe('compose submit refused by the read-only proxy', () => {
     await screen.findByTestId('compose-read-only-alert');
     expect(screen.getByLabelText('Subject')).toHaveValue('Spring mixer');
     expect(screen.getByLabelText('Message body')).toHaveValue('<p>See you there</p>');
+  });
+});
+
+describe('compose draft save refused by the read-only proxy', () => {
+  it('shows the draft variant of the alert — nothing about an E-Blast slot — focused, no toast', async () => {
+    stubReadOnlySubmit('300');
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposeForm
+          audienceCeiling={5000}
+          audienceMode="primary_only"
+          initialSubject="Spring mixer"
+          initialBodyHtml="<p>See you there</p>"
+        />
+      </NextIntlClientProvider>,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save as draft' }));
+
+    const alert = await screen.findByTestId('compose-read-only-alert');
+    expect(alert).toHaveTextContent(enMessages.portal.broadcasts.compose.readOnly.draftTitle);
+    expect(alert).toHaveTextContent('try again in about 5 minutes.');
+    expect(alert).not.toHaveTextContent('E-Blast slot');
+    await waitFor(() => expect(alert).toHaveFocus());
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Subject')).toHaveValue('Spring mixer');
   });
 });

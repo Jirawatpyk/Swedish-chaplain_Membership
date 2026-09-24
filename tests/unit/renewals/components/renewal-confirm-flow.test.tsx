@@ -379,3 +379,26 @@ describe('<RenewalConfirmFlow> — downgrade quota delta (C4)', () => {
     expect(screen.queryByText(/You have already used/)).toBeNull();
   });
 });
+
+describe('<RenewalConfirmFlow> — the read-only 503 (portal error states follow-up)', () => {
+  it("names the maintenance freeze, not the generic failure, for the proxy's flat refusal", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'read-only-mode' }), {
+        status: 503,
+        headers: { 'content-type': 'application/json', 'Retry-After': '300' },
+      }),
+    );
+
+    renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('confirm-error')).getByText(
+          enMessages.portal.renewal.confirm.errorReadOnly,
+        ),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
+  });
+});
