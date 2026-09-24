@@ -150,18 +150,21 @@ member has two open bills until someone voids the older one. Signals:
   bill SC-… could not be voided automatically. Void it manually." It
   includes a link to that bill. For `list_failed`, no bill can be named, so
   the toast asks staff to check the member's invoices.
-- The two renewal paths below log one `warn` line per failure with the old
-  bill's number (`supersededBillNumber`) and invoice id
-  (`supersededInvoiceId`). The queue path shows the toast only.
+- Every renewal path logs one `warn` line per failure with the old bill's
+  number (`supersededBillNumber`) and invoice id (`supersededInvoiceId`):
   - `F8.CONFIRM_RENEWAL.SUPERSEDE_VOID_FAILED`: member self-service
     renewal. The member is never shown this, so **no staff member sees a
     toast**. This log line is the only place that names the bill.
   - `F8.ADMIN_RENEW.SUPERSEDE_VOID_FAILED`: the admin "Renew" dialog, which
     also shows the toast above.
+  - `F8.AUTO_ISSUE.SUPERSEDE_VOID_FAILED`: the auto-renewal queue's Issue
+    actions, which also show the toast above. Carries `requestId` instead
+    of `correlationId`.
 
 Action: open the named bill and void it through the normal admin void.
-For `F8.CONFIRM_RENEWAL.SUPERSEDE_VOID_FAILED`, search the logs for that
-errorId whenever the metric increments.
+Whenever the metric increments, search the logs for
+`*.SUPERSEDE_VOID_FAILED`. A toast can be dismissed before anyone acts on
+it; the log line cannot.
 
 ## Rollback
 
