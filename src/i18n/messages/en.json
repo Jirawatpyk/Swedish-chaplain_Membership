@@ -5709,7 +5709,8 @@
     "changeRequests": "Change requests",
     "changeRequestDetail": "Review",
     "broadcastDetail": "Details",
-    "proxySubmit": "Submit on behalf of member"
+    "proxySubmit": "Submit on behalf of member",
+    "templateDetail": "Template"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",

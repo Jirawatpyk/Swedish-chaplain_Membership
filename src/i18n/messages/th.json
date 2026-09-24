@@ -5709,7 +5709,8 @@
     "changeRequests": "คำขอแก้ไขข้อมูล",
     "changeRequestDetail": "ตรวจสอบ",
     "broadcastDetail": "รายละเอียด",
-    "proxySubmit": "ส่งแทนสมาชิก"
+    "proxySubmit": "ส่งแทนสมาชิก",
+    "templateDetail": "เทมเพลต"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",

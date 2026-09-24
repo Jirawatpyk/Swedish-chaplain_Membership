@@ -364,6 +364,44 @@ describe('buildBreadcrumbStaticLabels (real en.json breadcrumb copy)', () => {
     expect(labelsFor(pathname)).toEqual(labels);
   });
 
+  describe('template editor — /admin/broadcasts/templates/<id>/edit', () => {
+    const path = `/admin/broadcasts/templates/${OTHER}/edit`;
+    const parse = (dynamicLabels: ReadonlyMap<string, string> = new Map()) =>
+      parseBreadcrumbPath({
+        pathname: path,
+        staticLabels: buildBreadcrumbStaticLabels(t, path),
+        dynamicLabels,
+      });
+
+    it('the template-id crumb reads "Template", not the raw UUID, and is not a link to the page-less /templates/<id>', () => {
+      const trail = parse();
+      expect(trail.map((s) => s.label)).toEqual([
+        'Broadcasts',
+        'Templates',
+        'Template',
+        'Edit Template',
+      ]);
+      expect(trail[2]).toMatchObject({
+        isLinkable: false,
+        href: '/admin/broadcasts/templates',
+      });
+    });
+
+    it('a registered template name replaces the fallback label', () => {
+      expect(parse(new Map([[OTHER, 'Welcome email']]))[2]?.label).toBe('Welcome email');
+    });
+
+    it('a dynamic id WITH its own page stays a link (member detail)', () => {
+      const memberPath = `/admin/members/${MEMBER}/edit`;
+      const crumb = parseBreadcrumbPath({
+        pathname: memberPath,
+        staticLabels: buildBreadcrumbStaticLabels(t, memberPath),
+        dynamicLabels: new Map(),
+      })[1];
+      expect(crumb).toMatchObject({ isLinkable: true, href: `/admin/members/${MEMBER}` });
+    });
+  });
+
   it('member-portal and existing verb mappings are unchanged', () => {
     expect(labelsFor('/admin/members/new')).toEqual(['Members', 'New Member']);
     expect(labelsFor(`/admin/invoices/${OTHER}/credit-notes/new`)).toEqual([

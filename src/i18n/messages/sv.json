@@ -5709,7 +5709,8 @@
     "changeRequests": "Ändringsbegäranden",
     "changeRequestDetail": "Granska",
     "broadcastDetail": "Detaljer",
-    "proxySubmit": "Skicka in å medlems vägnar"
+    "proxySubmit": "Skicka in å medlems vägnar",
+    "templateDetail": "Mall"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

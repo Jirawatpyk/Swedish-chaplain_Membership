@@ -151,10 +151,22 @@ export function parseBreadcrumbPath({
   // NON_ROUTE_BY_PARENT. The leaf (isCurrent) is the real route and renders
   // as BreadcrumbPage regardless. The cascade can only DOWNGRADE a crumb to
   // plain text — it never produces a clickable bad link.
+  // A dynamic id whose own level has no page.tsx, keyed by the resource it
+  // sits under: `/admin/broadcasts/templates/<id>/edit` — the only page under
+  // `templates/[id]` is `edit/`, so a link to `templates/<id>` 404s. Every
+  // other dynamic id (members, invoices, events, …) has a detail page and
+  // stays linkable.
+  const NON_ROUTE_DYNAMIC_CHILD_OF: ReadonlySet<string> = new Set(['templates']);
+
   const nonRouteFlags: boolean[] = new Array(rawParts.length).fill(false);
   let inStructuralSubtree = false;
   for (let i = 0; i < lastIndex; i++) {
-    if (isNonRouteSegment(i)) {
+    if (
+      isDynamicId(decodedParts[i]) &&
+      NON_ROUTE_DYNAMIC_CHILD_OF.has(decodedParts[i - 1] ?? '')
+    ) {
+      nonRouteFlags[i] = true;
+    } else if (isNonRouteSegment(i)) {
       inStructuralSubtree = true;
       nonRouteFlags[i] = true;
     } else if (inStructuralSubtree && isDynamicId(decodedParts[i])) {
@@ -324,6 +336,8 @@ const DETAIL_LABEL_KEYS_BY_PARENT: Record<string, string> = {
   'change-requests': 'changeRequestDetail',
   events: 'eventDetail',
   registrations: 'registrationDetail',
+  // Fallback until the editor page registers the template's name.
+  templates: 'templateDetail',
 };
 
 // A path segment that stands for a record rather than a resource: a UUID, or
