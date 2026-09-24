@@ -827,9 +827,17 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
 - **Personal data**: E-Blast content and free-text feedback/notes may contain personal data;
   author and decider identities are recorded. Lawful basis: performance of the membership contract
   (delivery of the E-Blast benefit). Retention follows the parent E-Blast record (the existing
-  E-Blast retention from F7; audit rows 5 years). Erasure and export must reach every stored
-  version, every feedback/note text, every notification about the E-Blast and every image
-  uploaded for it, not only the current content. "Not reachable" means the reference is removed
+  E-Blast retention from F7; audit rows 5 years). **Erasure** must reach every stored version
+  (including an unsent working copy), every feedback/note text, the member's pending notifications
+  about the E-Blast and every image uploaded for it, not only the current content; a sent or failed
+  notification keeps the address it was sent to until the 90-day outbox purge. **Export** covers
+  the versions sent to the member and the member's decisions on them, with their notes and
+  reasons: the unsent working copy is excluded (the chamber's work in progress, not yet shown to
+  the member — DPO decision (b)), and notifications are not exported — they are disclosed through
+  the audit rows the export already carries (`audit-events.json`). *(Amended 2026-09-24 after the T166 privacy review:
+  this line used to say erasure and export "must reach every stored version … every
+  notification", which described neither what was built nor what the DPO decided; the record of
+  processing, § F119 PR-2, carries the four rulings.)* "Not reachable" means the reference is removed
   immediately and the stored file is deleted by the daily sweep — on the next tick, 200 rows per
   arm per tenant — once nothing — no E-Blast and no template — references it; an image still
   referenced elsewhere is kept. (The bound is the batch, not a 24-hour clock, which is what this

@@ -392,6 +392,7 @@ SELECT
      JOIN broadcasts b ON b.tenant_id = v.tenant_id AND b.broadcast_id = v.broadcast_id
     WHERE b.tenant_id = '<tenant>' AND b.requested_by_member_id = '<member>'
       AND (v.subject <> '[redacted]' OR v.body_html <> '[redacted]'
+           OR v.body_source <> '[redacted]'
            OR (v.note_to_member IS NOT NULL AND v.note_to_member <> '[redacted]')))
     AS versions_not_redacted,
   (SELECT count(*) FROM broadcast_member_decisions d

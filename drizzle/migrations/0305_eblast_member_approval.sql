@@ -45,8 +45,8 @@
 -- essentially all of them — and `prune-expired-drafts` deletes drafts on
 -- `updated_at < now() - 30 days`, so every stale draft would get a fresh
 -- 30-day lease on deploy and every "last updated" read would jump. Both ALTERs
--- run inside the migration transaction (the ADD COLUMN above already holds
--- ACCESS EXCLUSIVE on broadcasts), so no other session ever observes the
+-- run inside the migration transaction (the explicit LOCK TABLE in § 0b
+-- already holds ACCESS EXCLUSIVE on broadcasts), so no other session ever observes the
 -- trigger disabled. This bracket is not in data-model § 3; the two backfill
 -- statements themselves are verbatim.
 --
@@ -97,6 +97,23 @@ ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_schedule_confir
 ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_approval_reminder_sent';--> statement-breakpoint
 ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_approval_expiry_warned';--> statement-breakpoint
 ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_approval_expired';--> statement-breakpoint
+
+-- --- 0b. take the strongest lock on broadcasts FIRST (migration review LOW 5)
+-- Every later statement that touches `broadcasts` locks it: the two CREATE
+-- TABLEs below (their FKs to broadcasts take SHARE ROW EXCLUSIVE), then the
+-- ALTER TABLE ... ADD COLUMN (ACCESS EXCLUSIVE). Acquiring the weaker lock
+-- first and upgrading later is the lock-upgrade deadlock shape against a prod
+-- cron transaction on broadcasts (dispatch, prune, the approval tick). One
+-- ACCESS EXCLUSIVE up front means this transaction waits once, then holds
+-- everything it needs. This is inside the transactional pass:
+-- scripts/run-migrations.ts replays only the enum lines above in autocommit,
+-- then drizzle's migrate() runs the rest of the pending batch in ONE
+-- transaction, where LOCK TABLE is valid (and is released at its COMMIT).
+-- The runner's statement_timeout (30 s) bounds the wait: a cron holding
+-- broadcasts longer fails the deploy cleanly rather than hanging it — re-run
+-- the deploy. The lock is transient, so the dev branch (which already
+-- applied 0305 without it) has nothing to re-apply.
+LOCK TABLE "broadcasts" IN ACCESS EXCLUSIVE MODE;--> statement-breakpoint
 
 -- --- 1. broadcast_versions (data-model § 1) ---------------------------------
 -- version_no 0 = the member's original (materialised lazily when marketing
@@ -330,9 +347,18 @@ ALTER TABLE "broadcasts"
     CONSTRAINT "broadcasts_member_reminder_stage_check"
     CHECK ("member_reminder_stage" BETWEEN 0 AND 3),
   ADD COLUMN "member_expiry_notified_at" timestamptz NULL,
+  -- ON DELETE NO ACTION is the Postgres default, written out on purpose
+  -- (migration review LOW 2): a version a live E-Blast still points at as
+  -- its approval must never be deleted from under it, and there is no
+  -- cascade to "fix" this into. The two other FKs in this file CASCADE;
+  -- this one deliberately does not. NO ACTION, not RESTRICT: its check runs
+  -- at the end of the statement, so `DELETE FROM broadcasts` (which removes
+  -- the referencing row and cascades its versions in one statement) passes.
+  -- The dev branch already applied 0305 with the implicit default — the
+  -- same constraint — so nothing needs re-applying there.
   ADD CONSTRAINT "broadcasts_approved_version_fk"
     FOREIGN KEY ("tenant_id", "approved_version_id")
-    REFERENCES "broadcast_versions" ("tenant_id", "id");--> statement-breakpoint
+    REFERENCES "broadcast_versions" ("tenant_id", "id") ON DELETE NO ACTION;--> statement-breakpoint
 
 -- The dashboard's per-stage list + the stalled comparison at 1,000 rows (SC-008).
 CREATE INDEX "broadcasts_stage_queue_idx"

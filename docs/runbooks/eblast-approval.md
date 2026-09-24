@@ -338,6 +338,9 @@ production deploy — only the maintainer does it.
   does **not** email the member, and neither do its reminders — yet the 30-day clock runs. Tell
   the member by hand, or cancel the E-Blast.
 - The staff nav badge hides unless a row is in an approval-round stage.
+- **A permanent flag-off (retirement) needs a purge**: the held rows keep a recipient address in
+  `to_email` for as long as they wait, and every submit adds more. The `DELETE` and its RLS note
+  are in `quickstart.md` § 3.5 row 1; never run it ahead of a planned re-flip.
 
 #### After a re-flip
 
@@ -350,7 +353,7 @@ closes a stale row silently as `request_superseded`:
 | `eblast_version_sent_member` | it is still `awaiting_member_approval` in the same round, and the version was sent |
 | `eblast_schedule_confirmed_member` | `scheduled_for` is set and the confirmed approval still governs the row |
 | `eblast_approval_lifecycle` | it is still in the status the tick left it (awaiting, or expired for the closure) in the same round |
-| `eblast_member_decided_marketing` | the member has not decided again since (no decision in a later round, no later decision in the same round — e.g. an approval then its withdrawal) and the E-Blast has not closed (`sent`, `rejected`, `cancelled`, `failed_to_dispatch`, `expired_no_member_response`). A member **withdrawal** is exempt: it is itself the closing event, so it is always delivered |
+| `eblast_member_decided_marketing` | the member has not decided again since (no decision in a later round, no later decision in the same round — e.g. an approval then its withdrawal) and the E-Blast has not closed (`sent`, `rejected`, `cancelled`, `failed_to_dispatch`, `expired_no_member_response`). A row recording a member **withdrawal** is exempt from that re-check — it is itself the closing event — **but only while it is fresh**: a withdrawal row enqueued more than **7 days** before the tick is closed as `request_superseded` like any stale row, so a flip after a long flag-off does not send marketing a backlog of old "member withdrew" emails. The withdrawal itself is on the E-Blast's timeline and in the audit trail (`broadcast_member_approval_withdrawn`) regardless |
 
 Staff rows also re-check the recipient against the live roster (a user who left gets nothing —
 `recipient_gone`); member rows go to the approval contact's **current** address and language.

@@ -6469,7 +6469,7 @@
           "description": "Handelskammarens marknadsföringsteam bekräftar nu sändningstiden. När du har godkänt kan innehållet inte ändras utan ett nytt godkännande från dig.",
           "noteLabel": "Meddelande till handelskammaren (valfritt)",
           "notePlaceholder": "Något handelskammaren bör veta före utskicket",
-          "noteHelp": "Högst 500 tecken.",
+          "noteHelp": "Högst 500 tecken. Sparas i det här utskickets historik och kan ses av ditt företag och handelskammaren.",
           "noteTooLong": "Meddelandet är längre än 500 tecken.",
           "confirm": "Godkänn",
           "cancel": "Inte än"
@@ -6479,7 +6479,7 @@
           "description": "Utskicket går tillbaka till handelskammaren med din motivering, och de skickar en ny version som du får godkänna.",
           "reasonLabel": "Vad ska ändras?",
           "reasonPlaceholder": "Till exempel: datumet i rubriken är fel.",
-          "reasonHelp": "Obligatoriskt — högst 2 000 tecken.",
+          "reasonHelp": "Obligatoriskt — högst 2 000 tecken. Sparas i det här utskickets historik och kan ses av ditt företag och handelskammaren.",
           "confirm": "Begär ändringar",
           "cancel": "Fortsätt granska",
           "errors": {
@@ -6492,7 +6492,7 @@
           "description": "Utskicket går tillbaka till handelskammaren och en bekräftad sändningstid ställs in. Det skickas inte förrän du godkänner en version igen.",
           "reasonLabel": "Varför drar du tillbaka godkännandet?",
           "reasonPlaceholder": "Till exempel: priset i erbjudandet har ändrats.",
-          "reasonHelp": "Obligatoriskt — högst 2 000 tecken.",
+          "reasonHelp": "Obligatoriskt — högst 2 000 tecken. Sparas i det här utskickets historik och kan ses av ditt företag och handelskammaren.",
           "confirm": "Dra tillbaka godkännandet",
           "cancel": "Behåll godkännandet",
           "errors": {

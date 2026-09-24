@@ -6469,7 +6469,7 @@
           "description": "The chamber's marketing team will now confirm the send time. Once you approve, the content cannot change without a new approval from you.",
           "noteLabel": "Note to the chamber (optional)",
           "notePlaceholder": "Anything the chamber should know before sending",
-          "noteHelp": "Up to 500 characters.",
+          "noteHelp": "Up to 500 characters. Kept with this E-Blast's history; visible to your company and the chamber.",
           "noteTooLong": "The note is longer than 500 characters.",
           "confirm": "Approve",
           "cancel": "Not yet"
@@ -6479,7 +6479,7 @@
           "description": "This broadcast goes back to the chamber with your reason, and they will send you a new version to approve.",
           "reasonLabel": "What should change?",
           "reasonPlaceholder": "For example: the date in the heading is wrong.",
-          "reasonHelp": "Required — up to 2,000 characters.",
+          "reasonHelp": "Required — up to 2,000 characters. Kept with this E-Blast's history; visible to your company and the chamber.",
           "confirm": "Request changes",
           "cancel": "Keep reviewing",
           "errors": {
@@ -6492,7 +6492,7 @@
           "description": "This broadcast goes back to the chamber and any confirmed send time is cancelled. It is not sent until you approve a version again.",
           "reasonLabel": "Why are you withdrawing the approval?",
           "reasonPlaceholder": "For example: the price in the offer has changed.",
-          "reasonHelp": "Required — up to 2,000 characters.",
+          "reasonHelp": "Required — up to 2,000 characters. Kept with this E-Blast's history; visible to your company and the chamber.",
           "confirm": "Withdraw approval",
           "cancel": "Keep the approval",
           "errors": {

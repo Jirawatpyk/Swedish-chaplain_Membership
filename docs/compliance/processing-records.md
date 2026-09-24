@@ -1913,8 +1913,12 @@ reading the record wrongly.
 
 ## F119 PR-2 — E-Blast member-approval round: versions, decisions, hand-off emails (amendment to F7 and to F119 PR-1)
 
-**Status**: authored 2026-09-24 against branch `119-eblast-approval-workflow` at `1b06c1cd1`,
-**before PR-2 merges** (migration `0305`). This record is the **precondition of the flag flip**
+**Status**: authored 2026-09-24 against branch `119-eblast-approval-workflow` at `1b06c1cd1`;
+**verified unchanged at `42f540316`** (2026-09-24, T166 privacy review), pending the T166 fix
+commits — none of which changes the processing recorded here except security finding S-H1, which
+adds a read-only standing check of the member at schedule confirmation (a read of existing
+membership state; no new datum, recipient or retention). Authored **before PR-2 merges**
+(migration `0305`). This record is the **precondition of the flag flip**
 (`quickstart.md` § 3.2 step 4): `FEATURE_EBLAST_MEMBER_APPROVAL` is not set until it lands.
 **Scope**: exactly what spec § Personal data names for the approval round — the new purpose, the
 new fields by name, the staff recipients of the hand-off emails, the chamber postal address in
@@ -1943,10 +1947,10 @@ formatted version**, which the flag gates (the `submitted → in_design` edge).
 
 | Activity | Lawful basis | Retention | Recipients | TOMs |
 |---|---|---|---|---|
-| **Review and member sign-off of E-Blast content; accountable version history** — marketing formats a member's E-Blast as numbered versions, sends each to the member, and the member approves, asks for changes or withdraws an approval (`start-formatted-version`, `save-formatted-version`, `send-version-to-member`, `record-member-decision`, `confirm-schedule`) | **Contract** — GDPR Art. 6(1)(b) / PDPA §24, the same basis as the F7 sender side: the annual E-Blast quota is a contractually promised benefit, and agreeing its content with the member is how it is delivered. The version history also serves accountability (SC-002: proving which version was sent and who on the member side approved it) | **Follows the parent E-Blast record** (the F7 retention, 5 years); audit rows 5 years. Rows are never deleted while the E-Blast exists — the erasure path redacts them in place | The owning member company's portal users (their own E-Blasts only) and staff holding `broadcasts.read` (admin, super_admin, marketing, manager read-only). Nobody outside the controller | RLS + FORCE on both new tables (the 0064 policy); cross-tenant and cross-member probe tests; a sent version is frozen by a DB trigger (`sent_to_member_at` stamped); decisions are append-only (no update path; a DB trigger refuses UPDATE / DELETE except the redaction GUC and the parent cascade); a member reads only their own company's E-Blasts (another member's id → 404 + `broadcast_cross_member_probe`); the portal never shows a staff name ("the chamber"); **a staff user cannot give the member-side approval** — decided by the session role |
-| **Hand-off notifications to staff** — "new E-Blast submitted", "member decided", and the day-23 / day-30 notices (`eblast_submitted_marketing`, `eblast_member_decided_marketing`, `eblast_approval_lifecycle { audience: 'staff' }`) | **Legitimate interest** — GDPR Art. 6(1)(f) / PDPA §24(5): running the chamber's own review workflow, addressed to its own staff at their work address | Outbox row: pending until sent; a `sent` or `permanently_failed` row **90 days** (`outbox-purge`) | **The staff recipients** (below) and **Resend** (transactional processor) | `context_data` carries **ids and discriminators only**; the email is rendered at send time and carries **only** the E-Blast subject, the member company name, the new stage and a link — never the body, the member's reason or note, marketing's note or the send times (FR-021b); the recipient is re-checked against the live roster at send time |
-| **Hand-off notifications to the member** — "version ready for your approval", "send time confirmed", the day-3 / day-7 reminders and the day-23 / day-30 notices (`eblast_version_sent_member`, `eblast_schedule_confirmed_member`, `eblast_approval_lifecycle { audience: 'member' }`) | **Contract** — as the first row | As above | **The member's approval contact** — the contact linked to the portal login that submitted the E-Blast, else the member's primary contact, else the lowest-id active portal contact — in that contact's `preferred_language`; and **Resend** | Rendered at send time from ids, to the contact's **current** address; the member email names "the chamber", never a staff user; it carries the E-Blast subject, **marketing's note to the member** (free text ≤ 1,000), the proposed and confirmed send times, the timeline, and a link |
-| **Approval lifecycle** — the daily reminder / warning / expiry tick (`expireStaleMemberApprovals`, Block 3 of `/api/cron/broadcasts/prune-expired-drafts`) | **Contract** — FR-022 / FR-022a; a fixed rule, **not** an automated decision: it never approves, and the only outcome it can produce is closure (`expired_no_member_response`) after 30 days without a response, which the member is told of when the version is sent | Audit rows 5 years | As the two notification rows | System actor (`actor_role: 'system'`), `related_member_id` only |
+| **Review and member sign-off of E-Blast content; accountable version history** — marketing formats a member's E-Blast as numbered versions, sends each to the member, and the member approves, asks for changes or withdraws an approval (`start-formatted-version`, `save-formatted-version`, `send-version-to-member`, `record-member-decision`, `confirm-schedule`) | **Contract** — GDPR Art. 6(1)(b) / PDPA §24(3), the same basis as the F7 sender side: the annual E-Blast quota is a contractually promised benefit, and agreeing its content with the member is how it is delivered. The version history also serves accountability (SC-002: proving which version was sent and who on the member side approved it) | **Follows the parent E-Blast record** (the F7 retention, 5 years); audit rows 5 years. Rows are never deleted while the E-Blast exists — the erasure path redacts them in place | The owning member company's portal users (their own E-Blasts only) and staff holding `broadcasts.read` (admin, super_admin, marketing, manager read-only). Nobody outside the controller | RLS + FORCE on both new tables (the 0064 policy); cross-tenant and cross-member probe tests; a sent version is frozen by a DB trigger (`sent_to_member_at` stamped); decisions are append-only (no update path; a DB trigger refuses UPDATE / DELETE except the redaction GUC and the parent cascade); a member reads only their own company's E-Blasts (another member's id → 404 + `broadcast_cross_member_probe`); the portal never shows a staff name ("the chamber"); **a staff user cannot give the member-side approval** — decided by the session role |
+| **Hand-off notifications to staff** — "new E-Blast submitted", "member decided", and the day-23 / day-30 notices (`eblast_submitted_marketing`, `eblast_member_decided_marketing`, `eblast_approval_lifecycle { audience: 'staff' }`) | **Legitimate interest** — GDPR Art. 6(1)(f) / PDPA §24(5): running the chamber's own review workflow, addressed to its own staff at their work address. **Confirmed by the DPO 2026-09-24** (decision 4 below). **Balancing test**: *(i) necessity* — without the hand-off notices nobody learns that an E-Blast is waiting on them, the queue stalls, and the member's 30-day approval clock (FR-022) runs out on a request that was never picked up; polling the queue is the burden this feature exists to remove; *(ii) reasonable expectation* — a work email to a staff user about a task that is part of their own duties, on the chamber's transactional surface, is what an employee of the chamber expects; it is not marketing and it is not about the staff user as a person; *(iii) minimisation* — the email carries exactly the four facts FR-021b allows (the E-Blast subject, the member company name, the new stage, a link), never the body, the member's reason or note, marketing's note or the send times; the outbox row holds ids only, and the recipient is re-checked against the live roster at send time, so a user who has left or lost the role is not emailed. The staff member's interests do not override: the processing is confined to their work address and their role, and the roster residual (§ Residual risk below) concerns a *second tenant's* hand-off subjects, not the staff recipient's own data | Outbox row: pending until sent; a `sent` or `permanently_failed` row **90 days** (`outbox-purge`) | **The staff recipients** (below) and **Resend** (transactional processor) | `context_data` carries **ids and discriminators only**; the email is rendered at send time and carries **only** the E-Blast subject, the member company name, the new stage and a link — never the body, the member's reason or note, marketing's note or the send times (FR-021b); the recipient is re-checked against the live roster at send time |
+| **Hand-off notifications to the member** — "version ready for your approval", "send time confirmed", the day-3 / day-7 reminders and the day-23 / day-30 notices (`eblast_version_sent_member`, `eblast_schedule_confirmed_member`, `eblast_approval_lifecycle { audience: 'member' }`) | **Contract** — GDPR Art. 6(1)(b) / PDPA §24(3), as the first row | As above | **The member's approval contact** — the contact linked to the portal login that submitted the E-Blast, else the member's primary contact, else the lowest-id active portal contact — in that contact's `preferred_language`; and **Resend** | Rendered at send time from ids, to the contact's **current** address; the member email names "the chamber", never a staff user; it carries the E-Blast subject, **marketing's note to the member** (free text ≤ 1,000), the proposed and confirmed send times, the timeline, and a link |
+| **Approval lifecycle** — the daily reminder / warning / expiry tick (`expireStaleMemberApprovals`, Block 3 of `/api/cron/broadcasts/prune-expired-drafts`) | **Contract** — GDPR Art. 6(1)(b) / PDPA §24(3); FR-022 / FR-022a; a fixed rule, **not** an automated decision: it never approves, and the only outcome it can produce is closure (`expired_no_member_response`) after 30 days without a response, which the member is told of when the version is sent | Audit rows 5 years | As the two notification rows | System actor (`actor_role: 'system'`), `related_member_id` only |
 
 ### New data items stored
 
@@ -1965,10 +1969,29 @@ The roster is computed at enqueue and **re-checked at send time**
 (`src/lib/broadcast-marketing-deps.ts`): every **ACTIVE** user whose role the permission
 evaluator grants `broadcasts.write`, **minus the admin tiers** (`admin`, `super_admin`) — today
 that is the **`marketing`-role users**. When no such user is active, the **fallback** is every
-active `broadcasts.write` holder — `admin`, `super_admin` and `marketing` — i.e. the tenant's
-**admins** (FR-021a). `manager` and every other staff role are never emailed for a hand-off. An
-empty roster notifies nobody and increments `broadcasts_no_marketing_recipient_total`, which pages.
-`users` has no locale column, so staff emails render in the platform default language.
+active `broadcasts.write` holder — `admin`, `super_admin` and `marketing` — i.e. the **admins**
+(FR-021a says "the tenant's admins"). `manager` and every other staff role are never emailed for a
+hand-off. An empty roster notifies nobody and increments
+`broadcasts_no_marketing_recipient_total`, which pages. `users` has no locale column, so staff
+emails render in the platform default language.
+
+**The roster is a platform-wide read, not a tenant-scoped one.** `users` has no `tenant_id` and no
+RLS (F1's deliberate exception; staff accounts are cross-tenant by design,
+`docs/saas-architecture.md` § 4), and `listActiveUsersByRole`
+(`src/modules/auth/infrastructure/db/active-users-by-role-repo.ts`) reads it on the pool-global
+`db`, filtered by status and role only. "The tenant's marketing users" therefore means **every
+active marketing (or fallback admin) user on the deployment**. Under single-tenant deployment
+(MTA+STD) the two sets are identical; the residual row below records what changes on the second
+tenant. `specs/119-eblast-approval-workflow/research.md` § R15 records the design choice, and
+F114's reviewer emails use the same read (`specs/114-member-change-approval/spec.md` § Assumptions
+— "of the tenant is vacuous under single-tenant deployment … becomes `user_tenants`-scoped at
+F10").
+
+### Residual risk — cross-tenant staff roster (F6.1 DPIA risk-row format)
+
+| Risk | Likelihood × Severity | Mitigation | Residual |
+|---|---|---|---|
+| **The hand-off roster is not tenant-scoped.** `listActiveUsersByRole` reads the cross-tenant `users` table on the global `db` (no `tenant_id`, no RLS), so with a **second live tenant** sharing this database, tenant A's `eblast_submitted_marketing` / `eblast_member_decided_marketing` / staff `eblast_approval_lifecycle` emails would be enqueued to — and delivered to — tenant B's marketing (or fallback admin) users as well, disclosing tenant A's **E-Blast subjects and member company names** (the FR-021b fields) to another controller's staff. The send-time re-check reads the same unscoped roster, so it does not catch this | **Today: nil** — measured, not assumed: prod holds exactly **one** tenant (`swecham`; the same measurement residual 8a records), so the platform-wide roster and the tenant's roster are the same set. **On tenant #2: M × M** | FR-021b minimisation (four facts, never body / reason / note); ids-only `context_data`; the roster is re-checked live at send; the transactional Resend surface (not marketing); `broadcasts_no_marketing_recipient_total` pages on an empty roster. None of these scopes the recipient set to the tenant — the mitigation that closes it is F10's `user_tenants` join (or a per-tenant role grant), which does not exist yet | **Accepted under single-tenant deployment (MTA+STD) only. OPEN — owner: solo maintainer (Jirawatpyk). Opened 2026-09-24 (T166 privacy review, condition C-1). Revisit condition: the second live tenant is onboarded, or F10 `user_tenants` lands — whichever comes first; onboarding a second tenant onto this database with this read unchanged is a Principle I breach, not a residual.** "Correct because we only have one tenant" is the class of thing that breaks silently on tenant #2 (residual 8a's wording, same footing); the F114 reviewer directory carries the same read and closes on the same event |
 
 ### Chamber postal address in every footer
 
@@ -1980,7 +2003,10 @@ preview and the compare view the member signs off on. A brand change never voids
 ### Retention of the outbox rows
 
 A **pending** `eblast_*` row lives until the drainer sends it — with the flag off, indefinitely
-(held, not delivered). A **sent** (or `permanently_failed`) row is kept **90 days** by the existing
+(held, not delivered), keeping a staff or member address in `to_email` for as long as it waits.
+A flag-off that is a **retirement** rather than a pause therefore carries a purge step
+(`specs/119-eblast-approval-workflow/quickstart.md` § 3.5 row 1), repeated while the flag stays
+off because every submit keeps enqueuing. A **sent** (or `permanently_failed`) row is kept **90 days** by the existing
 `outbox-purge` job and then deleted; for those 90 days it **keeps the recipient's address frozen at
 enqueue** in `to_email`, while holding no content (`context_data` is ids only; the email was
 rendered at send time and is not stored). The same rule already applies to every other outbox
@@ -1990,7 +2016,7 @@ type; it is recorded here because the member-addressed rows carry a member conta
 
 | Right (GDPR / PDPA) | PR-2 procedure |
 |---|---|
-| **Access (Art. 15 / §30)** | The F9 member archive gains **`broadcast-versions.json`** (T083, research R17): for every E-Blast the member originated, the **versions the member was shown** (oldest first) — `versionId`, `versionNo`, `authoredBy` (`member` \| `organisation`, never a staff id or name), `subject`, `bodyHtml`, `noteToMember`, `sentToMemberAt`, `createdAt` — and the member's **decisions** on them — `decisionId`, `versionId`, `round`, `decision`, `reason`, `decidedAt` (no decider identity). Threads run newest activity first; each list is capped at 1,000 rows (newest kept) with the standard truncation disclosure. An E-Blast approved as submitted has no version rows (its content is in `broadcasts.json`). After an erasure the rows appear with the `[redacted]` sentinels the erasure wrote — the archive shows what is held. **Three choices for the DPO to confirm are listed below.** The member also sees the same history on `/portal/broadcasts/[id]`. |
+| **Access (Art. 15 / §30)** | The F9 member archive gains **`broadcast-versions.json`** (T083, research R17): for every E-Blast the member originated, the **versions the member was shown** (oldest first) — `versionId`, `versionNo`, `authoredBy` (`member` \| `organisation`, never a staff id or name), `subject`, `bodyHtml`, `noteToMember`, `sentToMemberAt`, `createdAt` — and the member's **decisions** on them — `decisionId`, `versionId`, `round`, `decision`, `reason`, `decidedAt` (no decider identity). Threads run newest activity first; each list is capped at 1,000 rows (newest kept) with the standard truncation disclosure. An E-Blast approved as submitted has no version rows (its content is in `broadcasts.json`). After an erasure the rows appear with the `[redacted]` sentinels the erasure wrote — the archive shows what is held. **Three of the four DPO decisions below govern this export; all four were ruled 2026-09-24.** The member also sees the same history on `/portal/broadcasts/[id]`. |
 | **Rectification (Art. 16 / §31)** | Not applicable to a sent version (it is the record of what was shown) or to a decision. A wrong note or reason is corrected by the next round or a withdrawal; the earlier row stays as history. |
 | **Erasure (Art. 17 / §33)** | The COMP-1 cascade (`scrubBroadcastContentForMember`, one transaction with the F7 content redaction) now also: sets **every version's** `subject`, `body_html`, `body_source` — and `note_to_member` where one exists — to `'[redacted]'` for every E-Blast the member originated; sets **every non-NULL decision `reason`** to `'[redacted]'` (a NULL stays NULL — a sentinel would invent a note); and **deletes the member's pending `eblast_*` outbox rows**, including the staff-addressed ones only this leg can find. Rows are **kept**, redacted, so the SC-002 chain (which version was sent, who approved it) survives as ids. The counts land on `broadcast_content_redacted` (`versions_redacted`, `decision_reasons_redacted`, `notifications_cancelled`). In-progress E-Blasts in **any** new stage are cancelled by the existing cascade (the in-progress set now covers all six pre-send statuses). Images: stamped by the PR-1 leg (`member_erased`), bytes deleted **by the daily sweep only** — the next tick, 200 rows per arm per tenant, under the last-reference rule (see the PR-1 Erasure row). **Not reached**: a **sent** or failed outbox row keeps the address frozen at enqueue for up to 90 days (above); `decided_by_user_id` / `decided_by_contact_id` / `authored_by_user_id` stay as ids (the contact and user rows themselves are anonymised by the F3 / F1 cascades); the audit rows keep ids and lengths only; Resend's own send log follows the provider's default. Runbook: `docs/runbooks/member-erasure.md` § E-Blast approval round. |
 | **Restrict (Art. 18 / §34)** | `FEATURE_EBLAST_MEMBER_APPROVAL` off stops **new** E-Blasts entering the round and holds every hand-off email at the drainer; rows already in the round stay completable (FR-034). The F7 master switch halts the whole surface. |
@@ -1998,28 +2024,36 @@ type; it is recorded here because the member-addressed rows carry a member conta
 | **Object (Art. 21 / §32)** | Unchanged — objection is exercised against the SEND. The hand-off emails are service messages about the member's own E-Blast, sent on the transactional Resend surface — not marketing, and not subject to the marketing suppression list. |
 | **No automated decision (Art. 22)** | None. The day-30 closure is a fixed, announced rule that ends the request without deciding anything about the person; nothing is ever approved automatically (FR-014). |
 
-### DPO decisions to confirm (from commit `1e5c1cf75`, T083 / T082)
+### DPO decisions — ruled 2026-09-24 (from commit `1e5c1cf75`, T083 / T082; T166 privacy review)
 
-These were built as conservative defaults; the DPO may revise them. Each is recorded so a DSR
-answer states it plainly.
+These were built as conservative defaults and put to the DPO; the T166 privacy review
+(2026-09-24) ruled on all four. Each is recorded so a DSR answer states it plainly and so it is
+not re-litigated.
 
 1. **The v0 `sentToMemberAt` is reported as `null` in the DSAR.** Version 0 is the member's own
    original. The database stamps it (`sent_to_member_at = submitted_at`) only so the version
    trigger freezes it; nobody "sent" it to the member, so the archive reports `null`.
+   **Ruling (a): ACCEPT** — the stamp equals `submitted_at`, which `broadcasts.json` already
+   discloses, so nothing is withheld.
 2. **The unsent working copy is not in the DSAR.** A version marketing is still editing has not
    been shown to the member; it is the chamber's work in progress. It appears in the archive once
-   it is sent. (It is reached by erasure regardless.)
+   it is sent. (It is reached by erasure regardless.) **Ruling (b): ACCEPT** — internal
+   deliberation, derived from the exported v0, disclosed in the archive README, and reached by
+   erasure. Spec § Personal data was amended the same day to say so.
 3. **Blob bytes are removed only by the sweep.** The erasure removes the reference in its own
    transaction; the image file itself is deleted by the daily sweep on its next tick (200 rows per
    arm per tenant), and a file whose identical bytes another live row still uses is kept — the PR-1
-   decision (e) disclosure applies. There is no immediate delete.
+   decision (e) disclosure applies. There is no immediate delete. **Ruling (c): ACCEPT** — this is
+   the PR-1 decision (e) footing, not a new decision.
 4. **The lawful basis for the staff hand-off emails** (added by T162, not from `1e5c1cf75`).
    Spec § Personal data names one basis for the approval round — performance of the membership
    contract — and this record applies it to the round and to the member-addressed emails. For the
    emails addressed to the chamber's **own staff** it records **legitimate interest** instead,
    because the staff member is not a party to the membership contract; the data is their work
-   address and the E-Blast's subject and company. The DPO confirms either this or contract for
-   those rows.
+   address and the E-Blast's subject and company. **Ruling (d): CONFIRMED — legitimate interest**
+   (GDPR Art. 6(1)(f) / PDPA §24(5)), not contract, on the condition that the balancing test is
+   recorded; it is, in the Lawful basis cell of the staff hand-off row above (necessity,
+   reasonable expectation, minimisation).
 
 ### DPIA
 
@@ -2037,4 +2071,5 @@ Same as F7.
 
 | Date | Change | Author |
 |---|---|---|
+| 2026-09-24 | **T166 privacy review conditions closed** (verdict APPROVE WITH CONDITIONS, no blocker). **C-1**: the staff roster is recorded as a platform-wide read of the cross-tenant `users` table, with a residual-risk row (accepted under single-tenant deployment; revisit on the second live tenant or F10 `user_tenants`). **C-2**: the legitimate-interest balancing test (necessity, reasonable expectation, minimisation) is recorded on the staff hand-off row, and the four DPO decisions are recorded as ruled — (a), (b), (c) ACCEPT, (d) legitimate interest CONFIRMED. **C-3**: the record is re-pinned — verified unchanged at `42f540316`, pending the T166 fix commits, which alter no processing here except S-H1's read-only standing check. Also: contract cited as PDPA §24(3) rather than bare §24 (L-6); the flag-off retention of a pending row now points at the retirement purge step (L-2) | F119 PR-2 (T166 privacy review) |
 | 2026-09-24 | F119 **PR-2** amendment authored (T162, precondition of the flag): the approval-round purpose; `broadcast_versions` and `broadcast_member_decisions` by field; the staff and member recipients of the five hand-off emails; the outbox retention of a sent row; `broadcast-versions.json`; the erasure reach including pending notifications; the three DPO decisions from `1e5c1cf75` and a fourth — the legitimate-interest basis recorded for the staff hand-off emails. The PR-1 record's "PR-2, T081 — not yet shipped" lines now point here | F119 PR-2 (T162) |
