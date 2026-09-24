@@ -220,3 +220,50 @@ export function findMissingKeyRefs(
 ): readonly MissingKeyRef[] {
   return scanKeyRefs(source, enKeys).missing;
 }
+
+// ---------------------------------------------------------------------------
+// Orphan-key scan (`check:i18n --orphans`, advisory — never fails CI).
+// ---------------------------------------------------------------------------
+
+const ORPHAN_T_CALL_RE = /\bt\(\s*['"]([\w.\-]+)['"]/g;
+const ORPHAN_NS_RE = /(?:getTranslations|useTranslations)\(\s*['"]([\w.\-]+)['"]/g;
+
+/**
+ * en.json keys that no source file references, for the advisory
+ * `check:i18n --orphans` report. `sources` is the text of every scanned file.
+ */
+export function findOrphanKeys(
+  sources: readonly string[],
+  enKeys: ReadonlySet<string>,
+): string[] {
+  const used = new Set<string>();
+  const namespaces: string[] = [];
+  for (const text of sources) {
+    for (const m of text.matchAll(ORPHAN_T_CALL_RE)) used.add(m[1]!);
+    for (const m of text.matchAll(ORPHAN_NS_RE)) namespaces.push(m[1]!);
+  }
+
+  const orphans: string[] = [];
+  for (const key of enKeys) {
+    if (used.has(key)) continue;
+    let foundViaNs = false;
+    for (const ns of namespaces) {
+      if (key.startsWith(`${ns}.`)) {
+        const suffix = key.slice(ns.length + 1);
+        if (used.has(suffix)) {
+          foundViaNs = true;
+          break;
+        }
+        for (const u of used) {
+          if (u === suffix || suffix.startsWith(`${u}.`) || u.startsWith(`${suffix}.`)) {
+            foundViaNs = true;
+            break;
+          }
+        }
+        if (foundViaNs) break;
+      }
+    }
+    if (!foundViaNs) orphans.push(key);
+  }
+  return orphans.sort();
+}
