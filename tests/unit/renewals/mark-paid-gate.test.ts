@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PAYABLE_STATUSES,
+  resolveLiveLinkedBill,
   shouldOfferMarkPaid,
 } from '@/app/(staff)/admin/renewals/_lib/mark-paid-gate';
 
@@ -43,5 +44,38 @@ describe('mark-paid gate', () => {
 
   it('PAYABLE_STATUSES has exactly the two the cycle-detail control uses', () => {
     expect([...PAYABLE_STATUSES].sort()).toEqual(['awaiting_payment', 'upcoming']);
+  });
+});
+
+describe('resolveLiveLinkedBill (cycle-detail page)', () => {
+  const invoiceId = '22222222-2222-2222-2222-222222222222';
+
+  it('is null when the cycle has no linked invoice', () => {
+    expect(resolveLiveLinkedBill(null, null)).toBeNull();
+  });
+
+  it('carries the printed bill number for a live linked bill', () => {
+    expect(
+      resolveLiveLinkedBill(invoiceId, {
+        invoiceNumber: 'SC-2026-000412',
+        status: 'issued',
+      }),
+    ).toEqual({ invoiceId, billNumber: 'SC-2026-000412' });
+  });
+
+  it('is null when F4 reports the linked invoice void', () => {
+    expect(
+      resolveLiveLinkedBill(invoiceId, { invoiceNumber: 'SC-2026-000412', status: 'void' }),
+    ).toBeNull();
+  });
+
+  it('treats a degraded F4 fetch as live (fail-closed: never offer mint-and-pay)', () => {
+    expect(
+      resolveLiveLinkedBill(invoiceId, { invoiceNumber: null, status: 'unknown' }),
+    ).toEqual({ invoiceId, billNumber: null });
+    expect(resolveLiveLinkedBill(invoiceId, null)).toEqual({
+      invoiceId,
+      billNumber: null,
+    });
   });
 });
