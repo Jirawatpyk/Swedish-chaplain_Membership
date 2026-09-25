@@ -98,6 +98,7 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += 'member_plan_change_billing_effect' (0270, renumbered from
  *                           0259 at rebase so it follows the task-7 stack's 0269)
  *                        += the ten F119 approval-round events (0308)
+ *                        += 'broadcast_retention_swept' (0310, F7 retention sweep)
  *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0308)
  *   - `broadcast_status`  += the five F119 approval-round statuses (0308)
  */
@@ -177,6 +178,10 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'broadcast_approval_reminder_sent',
     'broadcast_approval_expiry_warned',
     'broadcast_approval_expired',
+    // F7 retention sweep (0310) — the daily cron INSERTs one run row per
+    // tenant; a non-persisting ADD VALUE would fail every run in prod (and
+    // with it the retention the RoPA says is enforced).
+    'broadcast_retention_swept',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [

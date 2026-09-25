@@ -1559,6 +1559,28 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(scrubMeta.tombstonedCount).toBe(5);
   });
 
+  it('locks the PARENT broadcasts before the CHILD deliveries (custom-recipient redact runs before the tombstone)', async () => {
+    // The F7 retention sweep locks `broadcasts` FOR UPDATE and then cascades
+    // into `broadcast_deliveries` (parent → child). An erasure that updated a
+    // delivery first and a `broadcasts` row second (child → parent) could
+    // deadlock with it on an expired custom-segment E-Blast the member received.
+    const deps = buildEraseDeps();
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(true);
+    const [redactOrder] =
+      deps.broadcastsDeliveryTombstone.redactCustomRecipientEmailsInTx.mock.invocationCallOrder;
+    const [tombstoneOrder] =
+      deps.broadcastsDeliveryTombstone.tombstoneDeliveriesInTx.mock.invocationCallOrder;
+    expect(redactOrder).toBeDefined();
+    expect(tombstoneOrder).toBeDefined();
+    expect(redactOrder!).toBeLessThan(tombstoneOrder!);
+  });
+
   // ---------------------------------------------------------------------------
   // COMP-1 US2c — F6 event-registration fan-out erasure cascade (Task 5).
   // Hard-deletes every F6 event registration matched to the erased member (each

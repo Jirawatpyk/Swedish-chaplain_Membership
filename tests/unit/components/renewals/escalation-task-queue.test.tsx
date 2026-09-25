@@ -125,6 +125,7 @@ function renderQueue(
   distinctTaskTypes: string[] = Array.from(
     new Set(items.map((i) => i.taskType)),
   ).sort(),
+  overdueCount = 0,
 ) {
   return render(
     <NextIntlClientProvider
@@ -136,7 +137,7 @@ function renderQueue(
       <EscalationTaskQueue
         canMutate
         actorUserId="actor-1"
-        overdueCount={0}
+        overdueCount={overdueCount}
         distinctTaskTypes={distinctTaskTypes}
         items={items}
       />
@@ -235,5 +236,35 @@ describe('<EscalationTaskQueue> — dates', () => {
     // dueAt 2026-04-10T00:00Z = 10 April in Bangkok.
     expect(screen.getAllByText('10 Apr 2026').length).toBeGreaterThan(0);
     expect(screen.queryByText('Apr 10, 2026')).toBeNull();
+  });
+});
+
+// The overdue banner is a toggle for the `?overdue_only=` filter. Its copy
+// must be device-neutral (no "Click" — it is tapped on touch devices), and as
+// a toggle button its accessible name stays the SAME in both states: the
+// state rides `aria-pressed`, not a relabelled button.
+describe('<EscalationTaskQueue> — overdue banner toggle', () => {
+  const tasks = [makeTask({ taskId: 't1', taskType: 'phone_call' })];
+  const banner = () =>
+    screen.getByRole('button', { name: /show only overdue tasks/i });
+
+  it('reads "Show only overdue tasks", never "Click", and is not pressed by default', () => {
+    renderQueue(tasks, undefined, 3);
+    expect(banner()).toHaveAttribute('aria-pressed', 'false');
+    expect(banner()).toHaveAccessibleName(/3 overdue tasks/i);
+    expect(banner().textContent).not.toMatch(/click/i);
+  });
+
+  it('keeps the same name and reports aria-pressed="true" while the filter is on', () => {
+    searchParamsStub = new URLSearchParams('overdue_only=true');
+    renderQueue(tasks, undefined, 3);
+    expect(banner()).toHaveAttribute('aria-pressed', 'true');
+    expect(banner().textContent).not.toMatch(/click/i);
+  });
+
+  it('toggles ?overdue_only= on and off', () => {
+    renderQueue(tasks, undefined, 3);
+    fireEvent.click(banner());
+    expect(String(replace.mock.calls.at(-1)?.[0])).toContain('overdue_only=true');
   });
 });

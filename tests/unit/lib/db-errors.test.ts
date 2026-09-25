@@ -13,6 +13,7 @@ import {
   errorChainMessage,
   isLastAdminTriggerError,
   isUniqueViolation,
+  pgErrorCode,
   primaryContactTriggerViolation,
 } from '@/lib/db-errors';
 
@@ -153,5 +154,19 @@ describe('primaryContactTriggerViolation (108 round 4, F4-#9 / F4-#10)', () => {
     ).toBeNull();
     expect(primaryContactTriggerViolation(pgError('23505', RAISE))).toBeNull();
     expect(primaryContactTriggerViolation(null)).toBeNull();
+  });
+});
+
+describe('pgErrorCode', () => {
+  it('returns the SQLSTATE from anywhere in the cause chain (Drizzle wraps the Postgres error)', () => {
+    const wrapped = withCause(new Error('Failed query: DELETE … params: a,b'), pgError('55P03', 'lock timeout'));
+    expect(pgErrorCode(wrapped)).toBe('55P03');
+    expect(pgErrorCode(pgError('23505', 'dup'))).toBe('23505');
+  });
+
+  it('returns undefined when no link carries a code', () => {
+    expect(pgErrorCode(new Error('plain'))).toBeUndefined();
+    expect(pgErrorCode('boom')).toBeUndefined();
+    expect(pgErrorCode(null)).toBeUndefined();
   });
 });

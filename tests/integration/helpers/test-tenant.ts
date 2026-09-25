@@ -136,8 +136,9 @@ export async function createTestTenant(
     // tests + a shared-Neon ACCESS EXCLUSIVE lock). Left as harmless pollution
     // (tenant-scoped, throwaway UUID slugs); a disposable Neon branch is the
     // right long-term fix (same note as audit_log below).
-    // F7 cleanup — delete in FK order: deliveries → broadcasts (logical FK,
-    // composite PK on broadcasts so no SQL FK constraint); marketing
+    // F7 cleanup — delete in FK order: deliveries → broadcasts (a real FK
+    // since migration 0310, ON DELETE CASCADE; deleting the children first
+    // keeps this independent of the cascade's trigger arm); marketing
     // unsubscribes + segment definitions are independent. broadcasts has
     // append-only triggers on broadcast_deliveries — DELETE on the
     // child table fires `broadcast_deliveries_no_delete` trigger which

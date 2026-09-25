@@ -4088,6 +4088,8 @@
       "actions": {
         "open": "Open cycle",
         "openAriaLabel": "Open cycle for {company}",
+        "recordPaymentOnInvoice": "Record payment on invoice",
+        "recordPaymentOnInvoiceAriaLabel": "Record payment on the invoice for {company}",
         "sendReminder": "Send reminder",
         "sendReminderAriaLabel": "Send reminder to {company}",
         "markContacted": "Mark contacted",
@@ -4517,6 +4519,10 @@
             "server_error": "Something went wrong. Please try again."
           }
         },
+        "recordPaymentOnBill": {
+          "link": "Record payment on {billNumber}",
+          "linkNoNumber": "Record payment on the invoice"
+        },
         "markPaidOffline": {
           "button": "Mark paid offline",
           "dialogTitle": "Record an offline payment?",
@@ -4724,8 +4730,7 @@
         "view_timeline_for": "View timeline for {company}",
         "table_caption": "Manual escalation tasks for the current tenant — sortable by status, assignment, and due date.",
         "overdue_banner": "{count, plural, one {# overdue task} other {# overdue tasks}}",
-        "overdue_banner_cta": "Click to filter the queue to overdue tasks only",
-        "overdue_banner_clear": "Filter active — click to show all open tasks again",
+        "overdue_banner_cta": "Show only overdue tasks",
         "overdue_badge": "Overdue",
         "status_tabs_aria": "Filter by task status",
         "assignment_filter_aria": "Filter by assignment",
@@ -7493,6 +7498,7 @@
       "broadcast_image_unsafe": "Unsafe broadcast image",
       "broadcast_brand_settings_changed": "E-Blast brand settings changed",
       "broadcast_image_removed": "E-Blast image removed",
+      "broadcast_retention_swept": "E-Blasts deleted after their retention period",
       "broadcast_image_uploaded": "E-Blast image uploaded",
       "broadcast_test_copy_sent": "E-Blast test copy sent",
       "broadcast_version_started": "E-Blast version started",

@@ -39,13 +39,23 @@ vi.mock('sonner', () => ({
 
 const CYCLE_ID = '11111111-1111-1111-1111-111111111111';
 
-function renderActions(status: CycleStatus) {
+function renderActions(
+  status: CycleStatus,
+  liveLinkedBill: {
+    readonly invoiceId: string;
+    readonly billNumber: string | null;
+  } | null = null,
+) {
   return render(
     <NextIntlClientProvider
       locale="en"
       messages={enMessages as Record<string, unknown>}
     >
-      <CycleAdminActions cycleId={CYCLE_ID} status={status} />
+      <CycleAdminActions
+        cycleId={CYCLE_ID}
+        status={status}
+        liveLinkedBill={liveLinkedBill}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -95,5 +105,53 @@ describe('<CycleAdminActions> — DV-5 visibility gates', () => {
     ).not.toBeInTheDocument();
     // The component returns null → no DOM at all.
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+// A payable cycle that already has a live linked bill (SC-…) — e.g. an
+// `awaiting_payment` cycle after the member confirmed early. Mark-paid-offline
+// would be refused by the use-case (`membership_bill_already_exists`), so the
+// page offers the F4 Record-payment path on that bill instead.
+describe('<CycleAdminActions> — cycle with a live linked bill', () => {
+  const INVOICE_ID = '22222222-2222-2222-2222-222222222222';
+  afterEach(() => cleanup());
+
+  it.each<CycleStatus>(['upcoming', 'awaiting_payment'])(
+    'shows "Record payment on {billNumber}" instead of Mark paid offline (status=%s)',
+    (status) => {
+      renderActions(status, {
+        invoiceId: INVOICE_ID,
+        billNumber: 'SC-2026-000412',
+      });
+      expect(
+        screen.queryByRole('button', { name: 'Mark paid offline' }),
+      ).not.toBeInTheDocument();
+      const link = screen.getByRole('link', {
+        name: 'Record payment on SC-2026-000412',
+      });
+      expect(link).toHaveAttribute('href', `/admin/invoices/${INVOICE_ID}`);
+      // Cancel stays available — only the mint-and-pay path is swapped.
+      expect(
+        screen.getByRole('button', { name: 'Cancel cycle' }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('falls back to a generic label when the bill number is unknown', () => {
+    renderActions('awaiting_payment', { invoiceId: INVOICE_ID, billNumber: null });
+    expect(
+      screen.getByRole('link', { name: 'Record payment on the invoice' }),
+    ).toHaveAttribute('href', `/admin/invoices/${INVOICE_ID}`);
+  });
+
+  it('offers neither for a non-payable status even with a linked bill', () => {
+    renderActions('reminded', {
+      invoiceId: INVOICE_ID,
+      billNumber: 'SC-2026-000412',
+    });
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Mark paid offline' }),
+    ).not.toBeInTheDocument();
   });
 });

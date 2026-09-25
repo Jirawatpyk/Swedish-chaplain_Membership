@@ -179,11 +179,20 @@ describe('broadcasts repo — scrubContentForMemberInTx + tombstoneDeliveriesFor
     opts?: { errorMessage?: string },
   ): Promise<string> {
     const deliveryId = randomUUID();
+    // A REAL parent: since migration 0310 `broadcast_deliveries` has an FK to
+    // `broadcasts`, so an orphan `broadcast_id` is refused with 23503. The
+    // parent is authored by a throwaway id (requested_by_member_id carries no
+    // FK) so the author-keyed scrub of `memberId` never matches it.
+    const broadcastId = await seedBroadcast({
+      status: 'submitted',
+      segment: 'all_members',
+      owner: randomUUID(),
+    });
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(broadcastDeliveries).values({
         tenantId: tenant.ctx.slug,
         deliveryId,
-        broadcastId: randomUUID(),
+        broadcastId,
         recipientEmailLower,
         // PRODUCTION shape: the Resend webhook hard-codes recipient_member_id
         // = NULL at every insert site (process-webhook-event.ts:173,221); no

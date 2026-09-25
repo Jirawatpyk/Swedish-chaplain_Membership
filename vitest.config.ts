@@ -896,6 +896,24 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F7 retention sweep (migration 0310) — the retention anchor map (Domain,
+        // Constitution II 100% line; constants only since the unused in-memory
+        // clock helpers were removed) and the per-tenant sweep loop (the three
+        // phases, the Resend-copy outcomes, the time budget, the in-tx image
+        // stamp, the counts-only run row, the failure arms). Both measured at
+        // 100% on every axis by their unit suites and pinned there.
+        'src/modules/broadcasts/domain/retention/broadcast-retention.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/application/use-cases/sweep-expired-broadcasts.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // The count endpoints' shared core. The `_exhaustive: never` arm is
         // unreachable by construction, so 100% line is not honest here; the
         // floor is what the unit + contract suites measured (parse, rate key,

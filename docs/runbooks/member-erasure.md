@@ -62,6 +62,13 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    HTML, put the list on the ticket, and delete those objects from the Blob
    store after step 4 confirms the cascade completed.
 
+   **The same window closes without any erasure** when the F7 retention sweep
+   (migration 0310) deletes a pre-0304 E-Blast row on age: the row, and with it
+   the `body_html` that is the blob's only attribution, is gone. That case is
+   not a DSR and is handled in `docs/runbooks/cron-jobs.md` § F7
+   retention-sweep, "Pre-0304 image blobs" — same enumeration, run over the
+   rows about to expire rather than one member's.
+
 3. **Execute via the admin UI (US3-A).** As an **admin** (the page is admin-only
    — manager/member get 404), open the member at `/admin/members/[memberId]`,
    click **Erase member**, and complete the gated dialog: type-to-confirm the

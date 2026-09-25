@@ -173,6 +173,28 @@ export class BroadcastConcurrentMutationError extends Error {
   }
 }
 
+/**
+ * F7 retention sweep — where the next `listExpiredForRetention` read starts:
+ * strictly after this (anchor, id) pair, in the read's own order.
+ * `anchorKey` is OPAQUE to the caller — the adapter's lossless text form of
+ * the anchor (a JS `Date` would drop Postgres' microseconds and re-read the
+ * same row).
+ */
+export interface RetentionCursor {
+  readonly anchorKey: string;
+  readonly broadcastId: string;
+}
+
+/** F7 retention sweep — one expired E-Blast and the Resend copies it still owns. */
+export interface RetentionCandidate extends RetentionCursor {
+  /**
+   * Every Resend broadcast id the row knows: its own `resend_broadcast_id` and
+   * any per-batch `broadcast_batch_manifests.provider_broadcast_id`, de-duplicated.
+   * Empty when nothing was ever created at Resend (e.g. a rejected E-Blast).
+   */
+  readonly resendBroadcastIds: readonly string[];
+}
+
 export interface BroadcastsRepo {
   /**
    * Open a Drizzle transaction. Use cases pass the resulting `tx`
@@ -593,6 +615,71 @@ export interface BroadcastsRepo {
       readonly broadcastId: string;
       /** The owning member, for the image audit's `related_member_id`. */
       readonly requestedByMemberId: string | null;
+    }[];
+  }>;
+
+  /**
+   * F7 retention sweep (migration 0310), phase 1 — READ up to `limit` CLOSED
+   * E-Blasts whose retention has run out (the eligibility rule is the one
+   * `deleteExpiredForRetention` documents below), oldest anchor first, strictly
+   * after `after` when given. NO lock, own tenant transaction: the caller
+   * deletes the Resend copies next, over the network, and no row lock may be
+   * held across that call.
+   *
+   * `after` is the last candidate of the previous read, so a row the caller
+   * KEPT (its Resend copy could not be deleted) is not read again in the same
+   * run; the next daily run starts from the oldest again and retries it.
+   */
+  listExpiredForRetention(
+    tenantId: TenantSlug,
+    now: Date,
+    limit: number,
+    after: RetentionCursor | null,
+  ): Promise<readonly RetentionCandidate[]>;
+
+  /**
+   * F7 retention sweep (migration 0310), phase 3 — delete the given CLOSED
+   * E-Blasts on the caller's `tx`, RE-CHECKING that each is still eligible and
+   * skipping any row another transaction holds (`FOR UPDATE SKIP LOCKED`), and
+   * return what was deleted. The caller passes only rows whose Resend copies
+   * are confirmed gone. The first statement is `SET LOCAL lock_timeout = '5s'`,
+   * so a lock wait (the cascade into children another transaction holds) ends
+   * the batch with 55P03 instead of hanging it.
+   *
+   * Eligible = ALL of:
+   *   - `status` in `TERMINAL_BROADCAST_STATUSES`;
+   *   - anchor + `retention_years` <= `now`, the anchor per status from
+   *     `RETENTION_ANCHOR_FIELD` (Domain) — never `updated_at`;
+   *   - NO live Resend audience (`resend_audience_id IS NULL OR
+   *     audience_deleted_at IS NOT NULL`). `cleanup-audiences` reaps the
+   *     audience first; deleting the row before it would orphan the audience
+   *     on the provider's side (Free plan: 3 segments), with nothing left in
+   *     the database that knows it exists.
+   *
+   * Children leave by ON DELETE CASCADE, never by a direct DELETE:
+   * `broadcast_deliveries` (FK + trigger amendment in 0310),
+   * `broadcast_versions` + `broadcast_member_decisions` (0308),
+   * `broadcast_batch_manifests` → `broadcast_batch_delivery_events`
+   * (0163 / 0218). `broadcast_images` has no FK (two possible parents): the
+   * CALLER stamps them in the same `tx` from the returned ids.
+   *
+   * `tx` is REQUIRED: the caller's image stamp must co-commit with this
+   * DELETE. Tenant isolation: `WHERE tenant_id = $1` plus RLS+FORCE plus the
+   * adapter's `assertTenantBoundTx`.
+   */
+  deleteExpiredForRetention(
+    tenantId: TenantSlug,
+    now: Date,
+    broadcastIds: readonly string[],
+    tx: unknown,
+  ): Promise<{
+    /** The E-Blasts this batch deleted; its `length` is the batch's count. */
+    readonly swept: readonly {
+      readonly broadcastId: string;
+      /** The owning member, for the image audit's `related_member_id`. */
+      readonly requestedByMemberId: string | null;
+      /** The row's retention anchor — for the run row's anchor range. */
+      readonly anchor: Date;
     }[];
   }>;
 

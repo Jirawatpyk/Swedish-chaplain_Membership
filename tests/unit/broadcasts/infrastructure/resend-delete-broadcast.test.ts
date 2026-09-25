@@ -65,6 +65,28 @@ describe('resendBroadcastsGateway.deleteBroadcast', () => {
   });
 
   /**
+   * The F7 retention sweep (0310) reads this classification: a 4xx that is not
+   * 404 / 410 is `permanent`, thrown at once with no retry, and the sweep
+   * deletes the row anyway, leaving the copy under Resend's retention (a 5xx /
+   * 429 would instead keep the row for a retry). Resend documents that a sent broadcast cannot be deleted; the
+   * status it answers with has not been measured, so this pins the class for
+   * the shape a validation refusal takes, not a recorded response.
+   */
+  it('a 4xx refusal (e.g. 422) → throws `permanent` immediately, with the provider code and no retry', async () => {
+    removeBroadcastMock.mockResolvedValue({
+      data: null,
+      error: { statusCode: 422, name: 'validation_error', message: 'Broadcast cannot be deleted' },
+    });
+
+    await expect(resendBroadcastsGateway.deleteBroadcast(BROADCAST_ID)).rejects.toMatchObject({
+      name: 'GatewayThrowable',
+      kind: 'permanent',
+      code: 'validation_error',
+    });
+    expect(removeBroadcastMock).toHaveBeenCalledTimes(1);
+  });
+
+  /**
    * Positive control. Without a failing case the three above would also be
    * satisfied by a `deleteBroadcast` that swallowed every response — which is
    * exactly the shape that would let a call site log "reclaimed" for a resource

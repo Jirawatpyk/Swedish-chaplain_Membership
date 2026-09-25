@@ -2260,6 +2260,69 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_retention_swept_total{tenant}` — F7 retention sweep (migration
+   * 0310). Incremented by the number of closed E-Blasts the daily
+   * `/api/cron/broadcasts/retention-sweep` deleted for the tenant (their
+   * deliveries, versions, decisions and batch manifests go with them by
+   * cascade). Emitted on the error path too, with the rows that DID commit
+   * before the failure — they stay deleted.
+   *
+   * Reading it: zero for years is expected (the first F7 E-Blast crosses
+   * 5 years around 2031). After that, a small daily rate. The per-run
+   * `broadcast_retention_swept` audit row is the durable evidence; this is
+   * the dashboard view of it.
+   */
+  retentionSwept(tenantId: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_retention_swept_total',
+        'Closed E-Blasts deleted by the daily retention sweep after their retention_years',
+      ).add(count, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_retention_sweep_failed_total{tenant}` — F7 retention sweep
+   * (migration 0310). One per tenant per daily run that returned an error or
+   * threw. The route still answers 200 (a 500 would hide the tenants that
+   * succeeded), so THIS is the signal: any increment is worth a look, and two
+   * consecutive days for the same tenant means the retention the RoPA says is
+   * enforced is not being enforced.
+   */
+  retentionSweepFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_retention_sweep_failed_total',
+        'Daily E-Blast retention-sweep runs that failed for a tenant',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_retention_provider_copy_kept_total{tenant,reason}` — F7
+   * retention sweep. Resend copies of expired E-Blasts the sweep could not
+   * delete. `reason="transient"` (5xx / 429 / network, or an unclassified
+   * throw): our row is KEPT with its key and the next daily run retries — it
+   * should not persist. `reason="retained_at_processor"` (a 4xx refusal): our
+   * row is DELETED ANYWAY and the copy stays under Resend's own retention (a
+   * disclosed RoPA residual). Resend documents that a SENT broadcast cannot be
+   * deleted, so from ~2031 a steady `retained_at_processor` rate is expected —
+   * see the cron runbook § F7 retention-sweep "Resend copies".
+   */
+  retentionProviderCopyKept(
+    tenantId: string,
+    reason: 'transient' | 'retained_at_processor',
+    count: number,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_retention_provider_copy_kept_total',
+        'Resend copies of expired E-Blasts the retention sweep could not delete (kept for a retry, or retained at the processor)',
+      ).add(count, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
    * `broadcasts.cron.dispatched.count{tenant}` — scheduled-send cron
    * throughput.
    */

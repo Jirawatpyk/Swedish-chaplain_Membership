@@ -255,6 +255,13 @@ export {
   type PruneExpiredDraftsError,
   type PruneExpiredDraftsOutput,
 } from './application/use-cases/prune-expired-drafts';
+// F7 retention sweep (migration 0310) — the daily per-tenant deletion of
+// closed E-Blasts past their retention_years.
+export {
+  sweepExpiredBroadcasts,
+  type SweepExpiredBroadcastsError,
+  type SweepExpiredBroadcastsOutput,
+} from './application/use-cases/sweep-expired-broadcasts';
 // Phase 9 / T178a — F3 archival/erasure cascade. Exposed at the barrel
 // because the F3 archival/erasure use-case calls into F7 to auto-cancel
 // in-flight broadcasts when the originating member is archived/erased.
@@ -335,6 +342,7 @@ export {
   makeDispatchScheduledBroadcastDeps,
   makeBuildAudienceTickDeps,
   makePruneExpiredDraftsDeps,
+  makeSweepExpiredBroadcastsDeps,
   makeMarkOwnerImagesRemovedDeps,
   makeCancelInFlightBroadcastsForMemberDeps,
   makeScrubBroadcastContentForMemberDeps,

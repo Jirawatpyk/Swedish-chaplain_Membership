@@ -4088,6 +4088,8 @@
       "actions": {
         "open": "เปิดรอบการต่ออายุ",
         "openAriaLabel": "เปิดรอบการต่ออายุของ {company}",
+        "recordPaymentOnInvoice": "บันทึกการชำระเงินในใบแจ้งหนี้",
+        "recordPaymentOnInvoiceAriaLabel": "บันทึกการชำระเงินในใบแจ้งหนี้ของ {company}",
         "sendReminder": "ส่งเตือน",
         "sendReminderAriaLabel": "ส่งเตือนถึง {company}",
         "markContacted": "ทำเครื่องหมายว่าติดต่อแล้ว",
@@ -4517,6 +4519,10 @@
             "server_error": "เกิดข้อผิดพลาดบางอย่าง กรุณาลองใหม่อีกครั้ง"
           }
         },
+        "recordPaymentOnBill": {
+          "link": "บันทึกการชำระเงินใน {billNumber}",
+          "linkNoNumber": "บันทึกการชำระเงินในใบแจ้งหนี้"
+        },
         "markPaidOffline": {
           "button": "บันทึกชำระเงินนอกระบบ",
           "dialogTitle": "บันทึกการชำระเงินนอกระบบหรือไม่?",
@@ -4724,8 +4730,7 @@
         "view_timeline_for": "ดูประวัติเหตุการณ์ของ {company}",
         "table_caption": "งานติดตามด่วนของผู้เช่าระบบปัจจุบัน — เรียงลำดับตามสถานะ ผู้รับผิดชอบ และวันครบกำหนด",
         "overdue_banner": "{count, plural, other {มีงานเกินกำหนด # รายการ}}",
-        "overdue_banner_cta": "คลิกเพื่อกรองคิวให้แสดงเฉพาะงานเกินกำหนด",
-        "overdue_banner_clear": "กำลังกรองอยู่ — คลิกเพื่อแสดงงานเปิดทั้งหมดอีกครั้ง",
+        "overdue_banner_cta": "แสดงเฉพาะงานเกินกำหนด",
         "overdue_badge": "เกินกำหนด",
         "status_tabs_aria": "กรองตามสถานะของงาน",
         "assignment_filter_aria": "กรองตามผู้รับผิดชอบ",
@@ -7493,6 +7498,7 @@
       "broadcast_image_unsafe": "พบรูปภาพไม่ปลอดภัยในอีเมล",
       "broadcast_brand_settings_changed": "เปลี่ยนการตั้งค่าแบรนด์ E-Blast",
       "broadcast_image_removed": "ลบรูปภาพ E-Blast",
+      "broadcast_retention_swept": "ลบ E-Blast ที่ครบระยะเวลาการเก็บรักษาแล้ว",
       "broadcast_image_uploaded": "อัปโหลดรูปภาพ E-Blast",
       "broadcast_test_copy_sent": "ส่งสำเนาทดสอบ E-Blast แล้ว",
       "broadcast_version_started": "เริ่มจัดทำฉบับ E-Blast",

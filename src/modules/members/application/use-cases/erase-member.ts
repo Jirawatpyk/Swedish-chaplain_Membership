@@ -527,6 +527,35 @@ export async function eraseMember(
           tombstoneEmails,
         );
 
+      // COMP-1 FIX-9 — element-wise redact the erased member's email out of
+      // OTHER authors' broadcasts.custom_recipient_emails, INSIDE this atomic
+      // tx, while the member's contact emails are still LIVE. The post-commit
+      // F7 content-scrub (keyed on requested_by_member_id) handles the member's
+      // OWN broadcasts, but the member's email sitting in a SIBLING author's
+      // custom recipient list is never reached by it → plaintext PII survival
+      // on a peer member's row (Art.17 / PDPA §33 gap; the SAME bug-class as
+      // the delivery tombstone below — the recipient-PII erasure axis in F7 is
+      // EMAIL, not author id). Keyed on the SAME `tombstoneEmails` set as the
+      // tombstone (FIX-3 cross-member over-redaction guard — covers a
+      // pre-archived contact's email, excludes a peer's live-claimed email).
+      // FAIL-LOUD by construction (co-commits with `erased_at`; a throw rolls
+      // back the whole atomic tx → member_erased withheld → the US2d reconciler
+      // re-drives). The member's OWN custom rows are ALSO element-wise redacted
+      // here harmlessly; the post-commit author-scrub subsequently
+      // whole-array-replaces them — order-independent, non-conflicting.
+      //
+      // LOCK ORDER (F7 retention sweep, 0310): this UPDATE of the PARENT
+      // `broadcasts` runs BEFORE the delivery tombstone below updates the CHILD
+      // `broadcast_deliveries`. The sweep locks the parent FOR UPDATE and then
+      // cascades into the child (parent -> child); child-before-parent here
+      // could deadlock with it on an expired custom-segment E-Blast the member
+      // received. Keep parent-before-child.
+      await deps.broadcastsDeliveryTombstone.redactCustomRecipientEmailsInTx(
+        tx,
+        deps.tenant.slug,
+        tombstoneEmails,
+      );
+
       // COMP-1 US2b (re-drive-stable delivery tombstone) — tombstone every
       // `broadcast_deliveries` row the member RECEIVED, INSIDE this atomic tx,
       // while the member's contact emails are still LIVE. Keyed on the
@@ -552,28 +581,6 @@ export async function eraseMember(
           tombstoneEmails,
         );
       tombstonedDeliveriesCount = tombstone.tombstonedCount;
-
-      // COMP-1 FIX-9 — element-wise redact the erased member's email out of
-      // OTHER authors' broadcasts.custom_recipient_emails, INSIDE this atomic
-      // tx, while the member's contact emails are still LIVE. The post-commit
-      // F7 content-scrub (keyed on requested_by_member_id) handles the member's
-      // OWN broadcasts, but the member's email sitting in a SIBLING author's
-      // custom recipient list is never reached by it → plaintext PII survival
-      // on a peer member's row (Art.17 / PDPA §33 gap; the SAME bug-class as
-      // the delivery tombstone above — the recipient-PII erasure axis in F7 is
-      // EMAIL, not author id). Keyed on the SAME `tombstoneEmails` set as the
-      // tombstone (FIX-3 cross-member over-redaction guard — covers a
-      // pre-archived contact's email, excludes a peer's live-claimed email).
-      // FAIL-LOUD by construction (co-commits with `erased_at`; a throw rolls
-      // back the whole atomic tx → member_erased withheld → the US2d reconciler
-      // re-drives). The member's OWN custom rows are ALSO element-wise redacted
-      // here harmlessly; the post-commit author-scrub subsequently
-      // whole-array-replaces them — order-independent, non-conflicting.
-      await deps.broadcastsDeliveryTombstone.redactCustomRecipientEmailsInTx(
-        tx,
-        deps.tenant.slug,
-        tombstoneEmails,
-      );
 
       const scrubMember = await deps.memberRepo.scrubPiiInTx(tx, memberId, {
         erasedAt: now,

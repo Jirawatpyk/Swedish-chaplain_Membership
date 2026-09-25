@@ -4088,6 +4088,8 @@
       "actions": {
         "open": "Öppna cykel",
         "openAriaLabel": "Öppna cykel för {company}",
+        "recordPaymentOnInvoice": "Registrera betalning på fakturan",
+        "recordPaymentOnInvoiceAriaLabel": "Registrera betalning på fakturan för {company}",
         "sendReminder": "Skicka påminnelse",
         "sendReminderAriaLabel": "Skicka påminnelse till {company}",
         "markContacted": "Markera kontaktad",
@@ -4517,6 +4519,10 @@
             "server_error": "Något gick fel. Försök igen."
           }
         },
+        "recordPaymentOnBill": {
+          "link": "Registrera betalning på {billNumber}",
+          "linkNoNumber": "Registrera betalning på fakturan"
+        },
         "markPaidOffline": {
           "button": "Markera betald offline",
           "dialogTitle": "Registrera en offlinebetalning?",
@@ -4724,8 +4730,7 @@
         "view_timeline_for": "Visa tidslinje för {company}",
         "table_caption": "Manuella uppföljningsuppgifter för aktuell organisation — sorterbara på status, tilldelning och förfallodatum.",
         "overdue_banner": "{count, plural, one {# försenad uppgift} other {# försenade uppgifter}}",
-        "overdue_banner_cta": "Klicka för att filtrera kön till endast försenade uppgifter",
-        "overdue_banner_clear": "Filter aktivt — klicka för att visa alla öppna uppgifter igen",
+        "overdue_banner_cta": "Visa endast försenade uppgifter",
         "overdue_badge": "Försenad",
         "status_tabs_aria": "Filtrera på uppgiftsstatus",
         "assignment_filter_aria": "Filtrera på tilldelning",
@@ -7493,6 +7498,7 @@
       "broadcast_image_unsafe": "Osäker bild i utskick",
       "broadcast_brand_settings_changed": "E-Blast-varumärkesinställningar ändrade",
       "broadcast_image_removed": "E-Blast-bild borttagen",
+      "broadcast_retention_swept": "E-Blasts raderade efter lagringstiden",
       "broadcast_image_uploaded": "E-Blast-bild uppladdad",
       "broadcast_test_copy_sent": "Testkopia av E-Blast skickad",
       "broadcast_version_started": "E-Blast-version påbörjad",
