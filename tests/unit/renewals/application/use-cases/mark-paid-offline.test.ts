@@ -1362,4 +1362,38 @@ describe('markPaidOffline — stale linked invoice (orphan-§86/4 guard)', () =>
     expect(f.clearStaleLinkedInvoiceInTxMock).not.toHaveBeenCalled();
     expect(f.bridgeMock).not.toHaveBeenCalled();
   });
+
+  // Review M1 — the re-anchor helper reads the IN-MEMORY cycle's
+  // `linkedInvoiceId`. After the stale link is cleared in the DB, a stale
+  // in-memory copy made it log a false "orphaned invoice — staff must void"
+  // alarm for an invoice that is already void.
+  it('first-payment cycle linked to a VOID invoice re-anchors without a false orphan-invoice alarm', async () => {
+    const f = fakeDeps(
+      buildCycle({
+        status: 'awaiting_payment',
+        anchoredAt: null,
+        linkedInvoiceId: 'inv-void',
+      }),
+    );
+    f.countCyclesForMemberInTxMock.mockResolvedValue(1);
+    f.countSettledCyclesForMemberInTxMock.mockResolvedValue(0);
+    f.findMembershipInvoiceInTxMock.mockResolvedValueOnce({
+      invoiceId: 'inv-void',
+      memberId: 'mem-1',
+      planYear: 2026,
+      planId: 'plan-x',
+      status: 'void',
+      origin: 'renewal',
+    });
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.outcome).toBe('reanchored');
+    const orphanAlarms = loggerErrorMock.mock.calls.filter((c) =>
+      String(c[1]).includes('orphaned invoice'),
+    );
+    expect(orphanAlarms).toHaveLength(0);
+  });
 });
+
