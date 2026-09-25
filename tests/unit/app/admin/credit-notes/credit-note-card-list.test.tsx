@@ -50,16 +50,17 @@ function renderList(rows: readonly ListCreditNotesRow[]) {
 }
 
 describe('<CreditNoteCardList>', () => {
-  it('renders one labelled list item per credit note, each titled by a level-2 heading', () => {
+  it('renders one list item per credit note, each titled by a level-2 heading link of 44px', () => {
     renderList([row(), row({ creditNoteId: 'cn-2', documentNumberRaw: 'CN-2026-000015' })]);
     const list = screen.getByRole('list');
     expect(list.className).toContain('md:hidden');
     const items = within(list).getAllByRole('listitem');
     expect(items).toHaveLength(2);
-    expect(items[0]).toHaveAttribute('aria-label', 'Credit note CN-2026-000014');
     const heading = within(items[0]!).getByRole('heading', { level: 2 });
     expect(heading).toHaveTextContent('CN-2026-000014');
-    expect(within(heading).getByRole('link')).toHaveAttribute('href', '/admin/credit-notes/cn-1');
+    const link = within(heading).getByRole('link');
+    expect(link).toHaveAttribute('href', '/admin/credit-notes/cn-1');
+    expect(link.className).toContain('min-h-11');
   });
 
   it('shows the issue date, original tax invoice, member, reason and total', () => {
@@ -72,13 +73,29 @@ describe('<CreditNoteCardList>', () => {
       'href',
       '/admin/invoices/inv-1',
     );
+    // Member + reason keep their column names for screen readers.
+    const terms = within(item)
+      .getAllByRole('term')
+      .map((el) => el.textContent);
+    expect(terms).toEqual(['Member', 'Reason']);
     expect(item).toHaveTextContent('Credit Refs Co');
     expect(item).toHaveTextContent('difference credited');
     expect(item).toHaveTextContent('10,700.00 THB');
   });
 
+  it('shows a long reason in full — no clamp, no touch-unreachable title', () => {
+    const reason = 'A very long reason '.repeat(12).trim();
+    renderList([row({ reason })]);
+    const dd = screen.getByText(reason);
+    expect(dd.className).not.toContain('line-clamp');
+    expect(dd).not.toHaveAttribute('title');
+  });
+
   it('marks only refund-origin notes with the Refund badge', () => {
-    renderList([row(), row({ creditNoteId: 'cn-2', documentNumberRaw: 'CN-2026-000015', isRefund: true })]);
+    renderList([
+      row(),
+      row({ creditNoteId: 'cn-2', documentNumberRaw: 'CN-2026-000015', isRefund: true }),
+    ]);
     const [manual, refund] = screen.getAllByRole('listitem');
     expect(manual).not.toHaveTextContent('Refund');
     expect(refund).toHaveTextContent('Refund');

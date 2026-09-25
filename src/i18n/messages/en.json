@@ -2427,8 +2427,7 @@
           "pdf": "PDF",
           "pdfAria": "Download PDF for credit note {number}",
           "clearFilters": "Clear filters"
-        },
-        "cardAria": "Credit note {number}"
+        }
       },
       "detail": {
         "meta": {
