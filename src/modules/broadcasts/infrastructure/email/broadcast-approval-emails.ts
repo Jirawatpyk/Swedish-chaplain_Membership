@@ -36,6 +36,7 @@ import {
   MEMBER_APPROVAL_TIMELINE_DAYS,
 } from '../../domain/approval/approval-schedule-policy';
 import { scheduleDiffers } from '../../domain/approval/member-decision';
+import type { EblastApprovalLifecycleKind } from '../../application/ports/eblast-notification-outbox-port';
 
 export interface BuiltEblastEmail {
   readonly subject: string;
@@ -53,7 +54,12 @@ export const EBLAST_MEMBER_DECIDED_KINDS = ['approved', 'changes_requested', 'ap
 export type EblastMemberDecidedKind = (typeof EBLAST_MEMBER_DECIDED_KINDS)[number];
 
 /** The `kind` of `eblast_approval_lifecycle` (FR-022, FR-022a). */
-export const EBLAST_LIFECYCLE_KINDS = ['reminder_day3', 'reminder_day7', 'expiry_warning_day23', 'expired_day30'] as const;
+export const EBLAST_LIFECYCLE_KINDS = [
+  'reminder_day3',
+  'reminder_day7',
+  'expiry_warning_day23',
+  'expired_day30',
+] as const satisfies readonly EblastApprovalLifecycleKind[];
 export type EblastLifecycleKind = (typeof EBLAST_LIFECYCLE_KINDS)[number];
 
 interface TitledCopy {

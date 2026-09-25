@@ -30,6 +30,7 @@
  */
 import { vi, type Mocked } from 'vitest';
 import { err, ok } from '@/lib/result';
+import type { MemberId } from '@/modules/members';
 import type { BrandSettings } from '@/modules/broadcasts/domain/brand/brand-settings';
 import type { BrandChromePort } from '@/modules/broadcasts/application/ports/brand-chrome-port';
 import type {
@@ -47,7 +48,7 @@ import type { ImageMimeType, ImageStoragePort, StoredImageRef } from '@/modules/
 import type { ImageReencoderPort } from '@/modules/broadcasts/application/ports/image-reencoder-port';
 import type { TenantLogoUrlPort } from '@/modules/broadcasts/application/ports/tenant-logo-url-port';
 import type { TestCopyMailerPort, TestCopyMessage } from '@/modules/broadcasts/application/ports/test-copy-mailer-port';
-import { asBroadcastId, type Broadcast, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId, type Broadcast, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastVersion } from '@/modules/broadcasts/domain/approval/broadcast-version';
 import type { MemberDecision } from '@/modules/broadcasts/domain/approval/member-decision';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
@@ -476,10 +477,17 @@ export function makeApprovalBroadcast(overrides: Partial<Broadcast> = {}): Broad
   };
 }
 
-/** A `BroadcastVersion` row (defaults: v1, a working copy of the default broadcast). */
-export function makeApprovalVersion(overrides: Partial<BroadcastVersion> = {}): BroadcastVersion {
+/**
+ * A `BroadcastVersion` row (defaults: v1, a working copy of the default
+ * broadcast). `id` may be given as a plain string — it is branded here, so a
+ * fixture never has to spell `asBroadcastVersionId` (#400 item 2).
+ */
+export function makeApprovalVersion(
+  overrides: Omit<Partial<BroadcastVersion>, 'id'> & { readonly id?: string } = {},
+): BroadcastVersion {
+  const { id = 'aaaaaaaa-0000-4000-8000-000000000001', ...rest } = overrides;
   return {
-    id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    id: asBroadcastVersionId(id),
     tenantId: APPROVAL_TENANT,
     broadcastId: asBroadcastId('11111111-1111-4111-8111-111111111111'),
     versionNo: 1,
@@ -492,14 +500,24 @@ export function makeApprovalVersion(overrides: Partial<BroadcastVersion> = {}): 
     sentToMemberAt: null,
     createdAt: APPROVAL_NOW,
     updatedAt: APPROVAL_NOW,
-    ...overrides,
+    ...rest,
   };
 }
 
-/** One `notifications_outbox` row the approval round enqueued, with the tx it rode on. */
-export interface FakeOutboxRow extends EblastNotificationEnqueue {
+/**
+ * One `notifications_outbox` row the approval round enqueued, with the tx it
+ * rode on. An intersection (not an `interface extends`): the enqueue is a union
+ * on `type` since #400 item 3. Tests read `contextData` through
+ * {@link contextOf}, the untyped view a stored row really is.
+ */
+export type FakeOutboxRow = EblastNotificationEnqueue & {
   readonly tx: unknown;
   readonly tenantId: string;
+};
+
+/** A row's context as the dispatcher sees a stored one: untyped (a test reads any key without narrowing on `type`). */
+export function contextOf(row: FakeOutboxRow): Readonly<Record<string, unknown>> {
+  return row.contextData;
 }
 
 export interface ApprovalStoreState {
@@ -685,7 +703,7 @@ export function makeFakeApprovalStore(
         throw new Error('duplicate key value violates unique constraint "broadcast_versions_one_unsent_idx"');
       }
       const row: BroadcastVersion = {
-        id: nextApprovalId('bbbbbbbb'),
+        id: asBroadcastVersionId(nextApprovalId('bbbbbbbb')),
         tenantId: tenantId as string,
         ...input,
         createdAt: store.now,
@@ -781,7 +799,7 @@ export function makeFakePortalRecipients(
   byMember: Readonly<Record<string, readonly PortalContact[]>> = {},
 ): Mocked<MemberPortalRecipientPort> {
   return {
-    listActivePortalContacts: vi.fn(async (_tenant: TenantContext, memberId: string, _tx: unknown) => byMember[memberId] ?? []),
+    listActivePortalContacts: vi.fn(async (_tenant: TenantContext, memberId: MemberId, _tx: unknown) => byMember[memberId] ?? []),
   } satisfies MemberPortalRecipientPort;
 }
 
@@ -870,7 +888,8 @@ export function makeFakeBroadcastQueueReads(
         Object.fromEntries(BROADCAST_STATUSES.map((st) => [st, counts[st] ?? 0])) as Record<BroadcastStatus, number>,
     ),
     deliveryCountsFor: vi.fn(
-      async (_ctx: TenantContext, ids: readonly string[]) => new Map([...deliveries].filter(([id]) => ids.includes(id))),
+      async (_ctx: TenantContext, ids: readonly BroadcastId[]) =>
+        new Map([...deliveries].filter(([id]) => (ids as readonly string[]).includes(id))),
     ),
   } satisfies BroadcastQueueReads;
 }
@@ -896,7 +915,7 @@ export function makeFakeBroadcastApprovalScrub(store?: FakeApprovalStore): FakeB
         .map((b) => b.broadcastId as string),
     );
   return {
-    redactVersionsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: string) => {
+    redactVersionsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: MemberId) => {
       if (store === undefined) return { redactedCount: 0 };
       const owned = ownedBy(tenantId as string, memberId);
       let redactedCount = 0;
@@ -909,7 +928,7 @@ export function makeFakeBroadcastApprovalScrub(store?: FakeApprovalStore): FakeB
       });
       return { redactedCount };
     }),
-    redactDecisionReasonsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: string) => {
+    redactDecisionReasonsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: MemberId) => {
       if (store === undefined) return { redactedCount: 0 };
       const owned = ownedBy(tenantId as string, memberId);
       let redactedCount = 0;
@@ -920,7 +939,7 @@ export function makeFakeBroadcastApprovalScrub(store?: FakeApprovalStore): FakeB
       });
       return { redactedCount };
     }),
-    cancelPendingNotificationsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: string) => {
+    cancelPendingNotificationsForMemberInTx: vi.fn(async (_tx: unknown, tenantId: TenantSlug, memberId: MemberId) => {
       if (store === undefined) return { cancelledCount: 0 };
       const owned = ownedBy(tenantId as string, memberId);
       const keep = store.state.outbox.filter(

@@ -19,7 +19,7 @@ import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { err } from '@/lib/result';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
-import { makeApprovalBroadcast, makeApprovalVersion } from '../../helpers/eblast-approval-fakes';
+import { contextOf, makeApprovalBroadcast, makeApprovalVersion } from '../../helpers/eblast-approval-fakes';
 import {
   HARNESS_MEMBER_ID,
   OTHER_MEMBER_ID,
@@ -112,7 +112,7 @@ describe('approve — awaiting_member_approval → member_approved (US1-AS4, FR-
     const res = await decide({ versionId: V1.id, decision: 'approved' });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toMatchObject({ stage: 'member_approved', whoseTurn: 'marketing', round: 1, decision: { versionId: V1.id, decision: 'approved' } });
+    expect(body).toMatchObject({ status: 'member_approved', whoseTurn: 'marketing', round: 1, decision: { versionId: V1.id, decision: 'approved' } });
 
     expect(row()).toMatchObject({ status: 'member_approved', approvedVersionId: V1.id, stageEnteredAt: harness.store.now });
     expect(harness.store.decisionsRepo.rows()).toEqual([
@@ -192,7 +192,7 @@ describe('request changes — awaiting_member_approval → changes_requested (US
   it('200: back to marketing, the reminder clock reset, the reason on the decision row, reason_length (never the text) on the audit row', async () => {
     const res = await decide({ versionId: V1.id, decision: 'changes_requested', reason: REASON });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ stage: 'changes_requested', whoseTurn: 'marketing', round: 1 });
+    expect(await res.json()).toMatchObject({ status: 'changes_requested', whoseTurn: 'marketing', round: 1 });
     expect(row()).toMatchObject({ status: 'changes_requested', memberReminderStage: 0, stageEnteredAt: harness.store.now });
     expect(harness.store.decisionsRepo.rows()[0]).toMatchObject({ decision: 'changes_requested', reason: REASON, round: 1 });
 
@@ -207,7 +207,7 @@ describe('request changes — awaiting_member_approval → changes_requested (US
     });
     expect(JSON.stringify(harness.audit.events)).not.toContain('SECRET-REASON');
     expect(JSON.stringify(harness.store.outbox.rows())).not.toContain('SECRET-REASON');
-    expect(harness.store.outbox.rows().map((r) => r.contextData.decision)).toEqual(['changes_requested', 'changes_requested']);
+    expect(harness.store.outbox.rows().map((r) => contextOf(r).decision)).toEqual(['changes_requested', 'changes_requested']);
   });
 });
 
@@ -219,7 +219,7 @@ describe('withdraw an approval (US2-AS6, FR-015, FR-015a)', () => {
     resetVersionHarness({ broadcasts: [approved()], versions: [V0, V1] });
     const res = await decide({ versionId: V1.id, decision: 'approval_withdrawn', reason: REASON });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ stage: 'changes_requested', whoseTurn: 'marketing', round: 1 });
+    expect(await res.json()).toMatchObject({ status: 'changes_requested', whoseTurn: 'marketing', round: 1 });
     expect(row()).toMatchObject({ status: 'changes_requested', scheduledFor: null, approvedVersionId: null, stageEnteredAt: harness.store.now });
     // A withdrawn approval does not start a round (FR-026).
     expect(row().currentRound).toBe(1);
@@ -234,7 +234,7 @@ describe('withdraw an approval (US2-AS6, FR-015, FR-015a)', () => {
       cancelled_schedule_at: CONFIRMED.toISOString(),
       actor_role: 'member',
     });
-    expect(harness.store.outbox.rows().map((r) => r.contextData.decision)).toEqual(['approval_withdrawn', 'approval_withdrawn']);
+    expect(harness.store.outbox.rows().map((r) => contextOf(r).decision)).toEqual(['approval_withdrawn', 'approval_withdrawn']);
   });
 
   it('T071: withdraw while approved/Scheduled → 200, and from member_approved → 200', async () => {
@@ -512,6 +512,6 @@ describe('the member write bucket — 60 / minute per (tenant, user), atomic, co
     expect(row().status).toBe('cancelled');
     const outbox = harness.store.outbox.rows();
     expect(outbox).toHaveLength(2);
-    expect(outbox.every((r) => r.type === 'eblast_member_decided_marketing' && r.contextData.decision === 'withdrawn')).toBe(true);
+    expect(outbox.every((r) => r.type === 'eblast_member_decided_marketing' && contextOf(r).decision === 'withdrawn')).toBe(true);
   });
 });

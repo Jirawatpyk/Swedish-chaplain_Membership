@@ -128,6 +128,8 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
         </div>
         {/* The Upcoming sends button — no label above it. */}
         <Skeleton data-skeleton="upcoming-sends" className="h-9 w-40" />
+        {/* #400 item 8 — the Waiting on marketing button beside it. */}
+        <Skeleton data-skeleton="waiting-on-marketing" className="h-9 w-44" />
       </div>
       {/* The order hint (`text-xs`) above the list. */}
       <Skeleton data-skeleton="order-hint" className="h-4 w-48" aria-hidden="true" />

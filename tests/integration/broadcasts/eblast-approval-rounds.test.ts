@@ -32,7 +32,8 @@ import {
   makeSendVersionToMemberDeps,
   makeStartFormattedVersionDeps,
 } from '@/lib/broadcast-approval-deps';
-import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asMemberId } from '@/modules/members';
 import { getMemberVersionThread } from '@/modules/broadcasts/application/use-cases/approval/get-member-version-thread';
 import { listBroadcastVersions } from '@/modules/broadcasts/application/use-cases/approval/list-broadcast-versions';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
@@ -144,17 +145,17 @@ describe('F119 T069 — two rounds, both visible to both sides in order, a hand-
       { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: roster },
       {
         broadcastId,
-        memberId,
+        memberId: asMemberId(memberId),
         actorUserId: portalUser.userId,
         actorRole: 'member',
         contactId,
-        versionId: v1,
+        versionId: asBroadcastVersionId(v1),
         decision: 'changes_requested',
         reason: FEEDBACK,
         requestId: null,
       },
     );
-    expect(changes.ok ? changes.value.stage : changes.error).toBe('changes_requested');
+    expect(changes.ok ? changes.value.status : changes.error).toBe('changes_requested');
 
     // Round 2.
     const v2 = await formatAndSend(2, NOTE_2);
@@ -180,7 +181,7 @@ describe('F119 T069 — two rounds, both visible to both sides in order, a hand-
     // The MEMBER side — the same history, in the same order, authors named only as member / organisation.
     const member = await getMemberVersionThread(makeGetMemberVersionThreadDeps(tenant.ctx.slug), {
       broadcastId,
-      memberId,
+      memberId: asMemberId(memberId),
       actorUserId: portalUser.userId,
       requestId: null,
     });
@@ -200,20 +201,20 @@ describe('F119 T069 — two rounds, both visible to both sides in order, a hand-
       { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: roster },
       {
         broadcastId,
-        memberId,
+        memberId: asMemberId(memberId),
         actorUserId: portalUser.userId,
         actorRole: 'member',
         contactId,
-        versionId: v2,
+        versionId: asBroadcastVersionId(v2),
         decision: 'approved',
         reason: null,
         requestId: null,
       },
     );
-    expect(approved.ok ? approved.value.stage : approved.error).toBe('member_approved');
+    expect(approved.ok ? approved.value.status : approved.error).toBe('member_approved');
     const after = await getMemberVersionThread(makeGetMemberVersionThreadDeps(tenant.ctx.slug), {
       broadcastId,
-      memberId,
+      memberId: asMemberId(memberId),
       actorUserId: portalUser.userId,
       requestId: null,
     });

@@ -20,6 +20,13 @@ import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skelet
  * `<BrandSettingsForm />` — colour field + swatch + readout, textarea +
  * counter, logo preview + source + link — so the skeleton→content swap does
  * not shift layout.
+ *
+ * U12 (#400 PR-B) — including the two lines that render precisely on a FIRST
+ * visit (nothing saved yet): the default-colour hint under the colour hint
+ * (`colour.defaultHint`, shown while the field is empty) and the
+ * missing-address warning under the counter (`address.missing`, an
+ * `InlineAlert`). A later visit renders neither, so it shifts up by exactly
+ * those rows — the rarer, returning reader, against the operator's first look.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.settings.broadcasts.brand');
@@ -42,7 +49,10 @@ export default async function Loading() {
                   <SkeletonBlock className="h-[var(--input-height)] sm:w-40" />
                   <SkeletonBlock className="h-9 w-14 shrink-0" />
                 </div>
-                <SkeletonBlock className="h-3 w-2/3" />
+                {/* The colour hint (`text-sm`). */}
+                <SkeletonBlock className="h-4 w-2/3" />
+                {/* First visit: the default-colour hint. */}
+                <SkeletonBlock data-skeleton="colour-default-hint" className="h-4 w-1/2" />
               </div>
               {/* Contrast readout. */}
               <SkeletonBlock className="h-4 w-56" />
@@ -57,7 +67,10 @@ export default async function Loading() {
             <CardContent className="space-y-2">
               <SkeletonBlock className="h-4 w-44" />
               <SkeletonBlock className="h-24 w-full" />
-              <SkeletonBlock className="h-3 w-32" />
+              {/* The counter (`text-sm`). */}
+              <SkeletonBlock className="h-4 w-32" />
+              {/* First visit: the missing-address warning (an InlineAlert). */}
+              <SkeletonBlock data-skeleton="address-missing" className="h-12 w-full" />
             </CardContent>
           </Card>
 

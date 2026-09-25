@@ -22,6 +22,7 @@
  * Pure Application — no framework imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import type { MemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import {
   evaluateImageSources,
@@ -41,8 +42,12 @@ export interface ReadFormattingWarningsDeps {
 }
 
 export interface ReadFormattingWarningsInput {
-  /** `broadcasts.requested_by_member_id` — the company that must approve. */
-  readonly memberId: string;
+  /**
+   * `broadcasts.requested_by_member_id` — the company that must approve. The
+   * caller re-brands the aggregate's plain-string field (`asMemberId`); see
+   * `Broadcast.requestedByMemberId` for why the Domain field is unbranded.
+   */
+  readonly memberId: MemberId;
   /** The body the next hand-off would carry (working copy, approved version, or the record). */
   readonly bodyHtml: string;
 }

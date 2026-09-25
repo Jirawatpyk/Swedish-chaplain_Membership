@@ -64,11 +64,12 @@ import type { ApprovalLifecycleScanPort, AwaitingApprovalCandidate } from '../..
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
-import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
+import type { EblastApprovalLifecycleKind, EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
 import type { MarketingDirectoryPort, MarketingRecipient } from '../../ports/marketing-directory-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
 import { ApprovalDependencyError, approvalErrKind } from '../../approval-dependency-error';
 import type { ApprovalBroadcastsRepo } from './_approval-tx';
+import { ownerMemberId } from './_owner-member-id';
 import { chooseApprovalRecipient } from './_approval-recipient';
 
 /** ≤ this many rows per kind per tick (the tenant has ~2 in flight; the bound stops a backlog making the tick unbounded). */
@@ -114,8 +115,6 @@ export interface ExpireStaleMemberApprovalsOutput {
 
 export type ExpireStaleMemberApprovalsError = { readonly kind: 'lifecycle.server_error'; readonly errKind: string };
 
-/** The `kind` discriminator of `eblast_approval_lifecycle` (data-model § 7.3) each step enqueues. */
-type LifecycleKind = 'reminder_day3' | 'reminder_day7' | 'expiry_warning_day23' | 'expired_day30';
 
 /** The tick's one roster read — or the error CLASS, so a row that needs it fails and is retried. */
 type Roster =
@@ -125,7 +124,8 @@ type Roster =
 /** The steps that notify marketing as well as the member. */
 const STAFF_STEPS: ReadonlySet<ApprovalScheduleStep> = new Set(['day23', 'expire']);
 
-const KIND_OF: Readonly<Record<ApprovalScheduleStep, LifecycleKind>> = {
+/** The `kind` discriminator of `eblast_approval_lifecycle` (data-model § 7.3) each step enqueues. */
+const KIND_OF: Readonly<Record<ApprovalScheduleStep, EblastApprovalLifecycleKind>> = {
   day3: 'reminder_day3',
   day7: 'reminder_day7',
   day23: 'expiry_warning_day23',
@@ -350,7 +350,7 @@ async function notify(
   };
   let enqueued = 0;
   if (to.member) {
-    const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, broadcast.requestedByMemberId, tx);
+    const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, ownerMemberId(broadcast), tx);
     const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId);
     if (recipient !== null) {
       await deps.outbox.enqueueInTx(tx, deps.tenant, {

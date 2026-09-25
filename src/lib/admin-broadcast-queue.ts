@@ -157,7 +157,7 @@ export async function loadAdminBroadcastQueue(
   });
 
   const memberIds = [...new Set(list.rows.map((r) => r.requestedByMemberId))];
-  const sentIds = list.rows.filter((r) => SENT_STATUSES.has(r.status)).map((r) => r.broadcastId as string);
+  const sentIds = list.rows.filter((r) => SENT_STATUSES.has(r.status)).map((r) => r.broadcastId);
   const [names, deliveries] = await Promise.all([
     readMemberNames(tenant, memberIds),
     sentIds.length > 0

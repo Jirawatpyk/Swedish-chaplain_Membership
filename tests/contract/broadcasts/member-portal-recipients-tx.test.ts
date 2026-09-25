@@ -18,7 +18,7 @@ vi.mock('@/modules/auth/infrastructure/db/active-users-by-role-repo', () => ({
 
 import { memberPortalRecipients } from '@/lib/broadcast-approval-deps';
 import { ApprovalDependencyError, approvalErrKind } from '@/modules/broadcasts';
-import { drizzleContactRepo } from '@/modules/members';
+import { asMemberId, drizzleContactRepo } from '@/modules/members';
 import { asTenantContext } from '@/modules/tenants';
 
 const TX = { sentinel: 'locked-tenant-tx' };
@@ -39,7 +39,7 @@ describe('memberPortalRecipients.listActivePortalContacts — one connection', (
       ],
     } as never);
 
-    const listed = await memberPortalRecipients.listActivePortalContacts(asTenantContext('test-tenant'), 'm-1', TX);
+    const listed = await memberPortalRecipients.listActivePortalContacts(asTenantContext('test-tenant'), asMemberId('m-1'), TX);
 
     expect(contacts.mock.calls[0]![0]).toBe(TX);
     expect(activeIds).toHaveBeenCalledWith(['u-1'], 'member', TX);
@@ -54,7 +54,7 @@ describe('memberPortalRecipients.listActivePortalContacts — one connection', (
       error: { code: 'repo.unexpected' },
     } as never);
 
-    const thrown = await memberPortalRecipients.listActivePortalContacts(asTenantContext('test-tenant'), 'm-1', TX).then(
+    const thrown = await memberPortalRecipients.listActivePortalContacts(asTenantContext('test-tenant'), asMemberId('m-1'), TX).then(
       () => null,
       (e: unknown) => e,
     );

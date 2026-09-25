@@ -4,6 +4,9 @@ import {
   defineGuard,
   type SurfaceGuard,
 } from '@/modules/auth/domain/permissions/surface-guard';
+// A literal with no runtime imports (the staff home imports it too), pinned to
+// the Domain's MARKETING_TURN_STATUSES by `queue-view.test.ts`.
+import { MARKETING_TURN_QUEUE_HREF } from '@/app/(staff)/admin/broadcasts/_lib/queue-view';
 import {
   LayoutDashboardIcon,
   FileTextIcon,
@@ -52,7 +55,19 @@ export interface NavItem {
    */
   readonly shortTitleKey?: string;
   readonly icon: LucideIcon;
+  /**
+   * The item's IDENTITY: the page its `guard` protects, the key its badge count
+   * is resolved under ({@link applyNavBadges}), and — unless {@link linkHref}
+   * says otherwise — where the link goes.
+   */
   readonly href: string;
+  /**
+   * #400 item 8 — where the link goes when that is not `href` itself: a
+   * filtered view of the same page (a query string only, so `activePattern`
+   * still matches on the pathname). Never a different page — the permission
+   * parity and the badge both key on `href`.
+   */
+  readonly linkHref?: string;
   /** URL pattern for active-state matching (see {@link ActivePattern}). */
   readonly activePattern: ActivePattern;
     /**
@@ -417,6 +432,11 @@ export const staffNavConfig: NavConfig = {
           // request in the staff layout (`readEblastWaitingCountForNav`) and
           // applied through `applyNavBadges`; this carries the sr-only noun only.
           badge: { labelKey: 'nav.staff.broadcastsBadge' },
+          // #400 item 8 — the link opens the view the badge counts (every
+          // marketing-turn stage), not the submitted-only FR-010 default. It
+          // never reads the flag: with it off the three round stages hold no
+          // rows, so this view lists what `submitted` lists.
+          linkHref: MARKETING_TURN_QUEUE_HREF,
         },
         // F6 Events — EventCreate-imported event list + attendee detail.
         // Manager has read-only access via the same route (FR-035).

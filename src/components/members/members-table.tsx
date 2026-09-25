@@ -595,6 +595,9 @@ export function MembersTable({
                 onCheckedChange={(checked) =>
                   table.toggleAllPageRowsSelected(!!checked)
                 }
+                // The bulk bar's Clear hands focus here (the bar unmounts
+                // with the selection it clears — `bulk-action-bar.tsx`).
+                data-testid="members-select-all"
                 aria-label={t('selectAll')}
                 className="min-h-[24px] min-w-[24px]"
               />

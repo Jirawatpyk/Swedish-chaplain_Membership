@@ -42,7 +42,7 @@
 import { broadcastsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { BroadcastId } from '../../../domain/broadcast';
+import type { BroadcastId, BroadcastVersionId } from '../../../domain/broadcast';
 import type { BroadcastVersion } from '../../../domain/approval/broadcast-version';
 import { memberApprovalExpiresAt } from '../../../domain/approval/member-approval-expiry';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
@@ -56,7 +56,8 @@ import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipi
 import { approvalErrKind } from '../../approval-dependency-error';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
 import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist';
-import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ApprovalRefusal, isOwnRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ownerMemberId } from './_owner-member-id';
 import { chooseApprovalRecipient } from './_approval-recipient';
 import { checkVersionContent, type VersionContentError } from './_version-content';
 
@@ -87,11 +88,12 @@ export interface SendVersionToMemberInput {
 }
 
 export interface SendVersionToMemberOutput {
-  readonly stage: 'awaiting_member_approval';
+  /** The new status (#400 item 6: `status`, not `stage` — the value is a status). */
+  readonly status: 'awaiting_member_approval';
   readonly whoseTurn: 'member';
   /** The new `current_round` — the sent version's `version_no`. */
   readonly round: number;
-  readonly versionId: string;
+  readonly versionId: BroadcastVersionId;
   /** `stage_entered_at` + 30 days (FR-022a). */
   readonly expiresAt: Date;
 }
@@ -130,7 +132,7 @@ export async function sendVersionToMember(
         refuse({ kind: 'version_changed', current: workingCopy });
       }
 
-      const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, broadcast.requestedByMemberId, tx);
+      const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, ownerMemberId(broadcast), tx);
       const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId) ?? refuse({ kind: 'no_portal_user' });
 
       const checked = checkVersionContent(deps.sanitizer, workingCopy, allowlist);
@@ -176,7 +178,7 @@ export async function sendVersionToMember(
       });
 
       return {
-        stage: 'awaiting_member_approval' as const,
+        status: 'awaiting_member_approval' as const,
         whoseTurn: 'member' as const,
         round,
         versionId: workingCopy.id,
@@ -185,6 +187,8 @@ export async function sendVersionToMember(
     });
   } catch (e) {
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
+    // #400 item 5 — a refusal another use case raised is not ours to map.
+    if (!isOwnRefusal(e, 'send-version-to-member')) throw e;
     const refusal = e.refusal as SendVersionToMemberError;
     if (refusal.kind === 'not_found') {
       await emitCrossTenantProbe({
@@ -213,5 +217,5 @@ export async function sendVersionToMember(
 
 /** Throw-to-rollback: the refusal leaves the tx, which rolls back (`_approval-tx.ts`). */
 function refuse(refusal: SendVersionToMemberError): never {
-  throw new ApprovalRefusal<SendVersionToMemberError>(refusal);
+  throw new ApprovalRefusal<SendVersionToMemberError>('send-version-to-member', refusal);
 }

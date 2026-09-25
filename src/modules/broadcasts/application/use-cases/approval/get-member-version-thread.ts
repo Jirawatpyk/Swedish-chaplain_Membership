@@ -25,6 +25,7 @@
  */
 import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
+import type { MemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../../domain/broadcast';
 import type { AuditPort } from '../../ports/audit-port';
@@ -54,7 +55,7 @@ export interface GetMemberVersionThreadDeps {
 export interface GetMemberVersionThreadInput {
   readonly broadcastId: BroadcastId;
   /** The caller's member (resolved from the portal session, never the request). */
-  readonly memberId: string;
+  readonly memberId: MemberId;
   readonly actorUserId: string;
   readonly requestId: string | null;
 }

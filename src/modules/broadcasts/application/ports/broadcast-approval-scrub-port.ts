@@ -31,6 +31,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { MemberId } from '@/modules/members';
 import type { TenantSlug } from '@/modules/tenants';
 
 /** Opaque tx handle from `BroadcastsRepo.withTx`. */
@@ -41,20 +42,20 @@ export interface BroadcastApprovalScrubPort {
   redactVersionsForMemberInTx(
     tx: BroadcastApprovalScrubTx,
     tenantId: TenantSlug,
-    memberId: string,
+    memberId: MemberId,
   ): Promise<{ readonly redactedCount: number }>;
 
   /** Redact the reason of every decision on the member's E-Blasts. */
   redactDecisionReasonsForMemberInTx(
     tx: BroadcastApprovalScrubTx,
     tenantId: TenantSlug,
-    memberId: string,
+    memberId: MemberId,
   ): Promise<{ readonly redactedCount: number }>;
 
   /** Remove every pending `eblast_*` notification about the member's E-Blasts. */
   cancelPendingNotificationsForMemberInTx(
     tx: BroadcastApprovalScrubTx,
     tenantId: TenantSlug,
-    memberId: string,
+    memberId: MemberId,
   ): Promise<{ readonly cancelledCount: number }>;
 }

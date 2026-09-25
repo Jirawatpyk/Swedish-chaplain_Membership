@@ -52,8 +52,9 @@
 import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
+import type { MemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
-import type { BroadcastId } from '../../../domain/broadcast';
+import type { BroadcastId, BroadcastVersionId } from '../../../domain/broadcast';
 import type { BroadcastVersion } from '../../../domain/approval/broadcast-version';
 import {
   validateDecisionReason,
@@ -71,7 +72,7 @@ import type { EblastNotificationOutboxPort } from '../../ports/eblast-notificati
 import type { MarketingDirectoryPort, MarketingRecipient } from '../../ports/marketing-directory-port';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
 import { safeAuditEmitTyped } from '../_safe-audit-emit';
-import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ApprovalRefusal, isOwnRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
 
 export interface RecordMemberDecisionDeps {
   readonly tenant: TenantContext;
@@ -87,13 +88,13 @@ export interface RecordMemberDecisionDeps {
 export interface RecordMemberDecisionInput {
   readonly broadcastId: BroadcastId;
   /** The caller's member (resolved from the portal session, never the body). */
-  readonly memberId: string;
+  readonly memberId: MemberId;
   readonly actorUserId: string;
   /** The session role, recorded as-is (the route passes `role ?? null`), never a literal. */
   readonly actorRole: string | null;
   /** The caller's own contact — `decided_by_contact_id` (SC-002: who approved). */
   readonly contactId: string;
-  readonly versionId: string;
+  readonly versionId: BroadcastVersionId;
   readonly decision: MemberDecisionKind;
   /** The approval note (optional) or the reason (mandatory for the other two). */
   readonly reason: string | null;
@@ -101,8 +102,12 @@ export interface RecordMemberDecisionInput {
 }
 
 export interface RecordMemberDecisionOutput {
-  /** The new status — `member_approved` or `changes_requested`. */
-  readonly stage: 'member_approved' | 'changes_requested';
+  /**
+   * The new status — `member_approved` or `changes_requested`. Named
+   * `status`, not `stage` (#400 item 6): its values are statuses, and the
+   * same endpoint's 409 `details.stage` speaks the `stageOf` vocabulary.
+   */
+  readonly status: 'member_approved' | 'changes_requested';
   readonly whoseTurn: 'marketing';
   readonly round: number;
   readonly decision: MemberDecision;
@@ -201,11 +206,11 @@ export async function recordMemberDecision(
       };
       const reasonLength = [...(reason.value ?? '')].length;
       const audit = { tenantId: slug, requestId: input.requestId, actorUserId: input.actorUserId };
-      let stage: RecordMemberDecisionOutput['stage'];
+      let target: RecordMemberDecisionOutput['status'];
       switch (input.decision) {
         case 'approved':
-          stage = 'member_approved';
-          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, stage, { stageEnteredAt: now, approvedVersionId: input.versionId }, status);
+          target = 'member_approved';
+          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, { stageEnteredAt: now, approvedVersionId: input.versionId }, status);
           await deps.audit.emitTyped(tx, {
             ...audit,
             eventType: 'broadcast_member_approved',
@@ -214,8 +219,8 @@ export async function recordMemberDecision(
           });
           break;
         case 'changes_requested':
-          stage = 'changes_requested';
-          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, stage, { stageEnteredAt: now, memberReminderStage: 0 }, status);
+          target = 'changes_requested';
+          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, { stageEnteredAt: now, memberReminderStage: 0 }, status);
           await deps.audit.emitTyped(tx, {
             ...audit,
             eventType: 'broadcast_member_changes_requested',
@@ -224,12 +229,12 @@ export async function recordMemberDecision(
           });
           break;
         case 'approval_withdrawn':
-          stage = 'changes_requested';
+          target = 'changes_requested';
           await deps.broadcastsRepo.applyTransition(
             tx,
             slug,
             input.broadcastId,
-            stage,
+            target,
             { stageEnteredAt: now, approvedVersionId: null, scheduledFor: null },
             status,
           );
@@ -260,10 +265,12 @@ export async function recordMemberDecision(
         });
       }
 
-      return { stage, whoseTurn: 'marketing' as const, round, decision };
+      return { status: target, whoseTurn: 'marketing' as const, round, decision };
     });
   } catch (e) {
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: errKind(e) });
+    // #400 item 5 — a refusal another use case raised is not ours to map.
+    if (!isOwnRefusal(e, 'record-member-decision')) throw e;
     const refusal = e.refusal as Refusal;
     if (refusal.kind !== 'probe') return err(refusal);
     await emitProbe(deps, input, refusal.probe);
@@ -291,7 +298,7 @@ async function stageChangedRefusal(
   status: BroadcastStatus,
 ): Promise<ApprovalRefusal<Refusal>> {
   const decisions = await deps.decisionsRepo.listByBroadcast(deps.tenant.slug, broadcastId, tx);
-  return new ApprovalRefusal<Refusal>({ kind: 'stage_changed', status, recorded: decisions.at(-1) ?? null });
+  return new ApprovalRefusal<Refusal>('record-member-decision', { kind: 'stage_changed', status, recorded: decisions.at(-1) ?? null });
 }
 
 /**
@@ -327,5 +334,5 @@ async function emitProbe(
 
 /** Throw-to-rollback: the refusal leaves the tx, which rolls back (`_approval-tx.ts`). */
 function refuse(refusal: Refusal): never {
-  throw new ApprovalRefusal<Refusal>(refusal);
+  throw new ApprovalRefusal<Refusal>('record-member-decision', refusal);
 }

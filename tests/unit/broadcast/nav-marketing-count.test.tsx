@@ -31,7 +31,8 @@ import { asTenantContext } from '@/modules/tenants';
 import { BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { MARKETING_TURN_STATUSES, turnOf } from '@/modules/broadcasts/domain/stage/whose-turn';
 import { APPROVAL_ROUND_STATUSES } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
-import { applyNavBadges, isNavGroup, staffNavConfig, type RenderedNavItem } from '@/config/nav';
+import { applyNavBadges, isNavGroup, isNavItemActive, staffNavConfig, type RenderedNavItem } from '@/config/nav';
+import { MARKETING_TURN_QUEUE_HREF } from '@/app/(staff)/admin/broadcasts/_lib/queue-view';
 
 const h = vi.hoisted(() => ({
   features: { f7Broadcasts: true } as { f7Broadcasts: boolean },
@@ -209,8 +210,20 @@ describe('the staff layout seam: read → applyNavBadges → the Broadcasts link
       </NextIntlClientProvider>,
     );
     const link = screen.getByRole('link', { name: 'Broadcasts 4 waiting' });
-    expect(link).toHaveAttribute('href', '/admin/broadcasts');
+    // #400 item 8 — the link opens the view the badge counts, not the
+    // submitted-only default; the badge stays keyed on the item's `href`.
+    expect(link).toHaveAttribute('href', MARKETING_TURN_QUEUE_HREF);
     expect(link.querySelector('.sr-only')).toHaveTextContent('waiting');
+  });
+
+  it('#400 item 8: the link target is the waiting-on-marketing view, while the badge key and the active highlight stay on /admin/broadcasts', () => {
+    const item = broadcastsItem({ '/admin/broadcasts': 3 });
+    expect(item.href).toBe('/admin/broadcasts');
+    expect(item.linkHref).toBe(MARKETING_TURN_QUEUE_HREF);
+    expect(item.badgeCount).toBe(3);
+    // The pathname carries no query, so every queue view keeps the item active.
+    expect(isNavItemActive('/admin/broadcasts', item.activePattern)).toBe(true);
+    expect(isNavItemActive('/admin/broadcasts/11111111-1111-4111-8111-111111111111', item.activePattern)).toBe(true);
   });
 
   it('hidden and unavailable reach the nav as no badge at all (0 is never rendered)', () => {

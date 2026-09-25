@@ -25,6 +25,13 @@
  * deterministic + lets us flag forgotten new tables (the failure case
  * "table exists in schema but not in allow-list" is what we want to
  * surface to the engineer adding a table without registering it here).
+ *
+ * #400 PR-B — that failure case was only ever a promise: nothing compared the
+ * allow-list with the schema, and fifteen `tenant_id` tables sat unregistered
+ * (so unchecked) while the gate reported OK. The positive control
+ * (`scripts/lib/multi-tenant-coverage.ts`) now parses every Drizzle table
+ * that declares `tenant_id` and fails when one is in none of SCOPED_TABLES,
+ * LEGACY_KNOWN_GAPS or EXEMPT, or when the parse finds nothing at all.
  */
 // `package.json` invokes this script via `node --env-file=.env.local`
 // so `process.env.DATABASE_URL` and the rest of the zod-validated env
@@ -32,6 +39,12 @@
 // runs the schema validator.
 import { db } from '@/lib/db';
 import { sql } from 'drizzle-orm';
+import {
+  checkCoverage,
+  parseTenantScopedTables,
+  readSchemaSources,
+  type ExemptTable,
+} from './lib/multi-tenant-coverage';
 
 /**
  * Tables in the SCOPED set — these MUST pass every check. CI fails
@@ -88,6 +101,30 @@ const SCOPED_TABLES = [
   // the append-only member decisions; RLS ENABLE + FORCE + the 0064 policy.
   'broadcast_versions',
   'broadcast_member_decisions',
+  // #400 PR-B — tables that always carried RLS + FORCE + a tenant policy but
+  // were never registered here, so the gate never checked them. Found by the
+  // positive control below; each verified on the dev branch (relrowsecurity,
+  // relforcerowsecurity, one policy) before it was added.
+  // F7 broadcasts: batch dispatch + the template library.
+  'broadcast_batch_delivery_events',
+  'broadcast_batch_manifests',
+  'broadcast_templates',
+  // F3 members: the member-number allocator and the per-tenant member settings.
+  'tenant_member_sequences',
+  'tenant_member_settings',
+  // F6 events (EventCreate integration).
+  'events',
+  'event_registrations',
+  'eventcreate_idempotency_receipts',
+  'csv_import_records',
+  'tenant_webhook_configs',
+  // F9 insights.
+  'dashboard_metrics_cache',
+  'directory_listings',
+  'export_jobs',
+  'smart_insight_dismissals',
+  // F7 broadcasts: the image-source allow-list.
+  'tenant_image_source_allowlist',
   // F8 renewals (Wave C)
   'scheduled_plan_changes',
   'renewal_cycles',
@@ -139,6 +176,14 @@ const LEGACY_KNOWN_GAPS: ReadonlyArray<string> = [
   'audit_log',
   'processor_events',
 ];
+
+/**
+ * #400 PR-B — `tenant_id` tables deliberately OUTSIDE the RLS contract, each
+ * with the reason. Empty: every `tenant_id` table today is either scoped or a
+ * known legacy gap. An entry here is a decision someone must be able to read
+ * back, so the control refuses one without a reason.
+ */
+const EXEMPT: ReadonlyArray<ExemptTable> = [];
 
 /**
  * Tables that are tenant-scoped but DON'T have a literal `tenant_id`
@@ -252,7 +297,33 @@ function classifyFailures(results: readonly CheckResult[]): Failure[] {
   return failures;
 }
 
+/**
+ * #400 PR-B — the positive control: the lists above must cover the schema.
+ * Runs before any database read, so a blind or stale list fails even when the
+ * database is unreachable.
+ */
+function assertListsCoverSchema(): void {
+  const parsed = parseTenantScopedTables(readSchemaSources(process.cwd()));
+  const { failures } = checkCoverage(parsed, {
+    scoped: SCOPED_TABLES,
+    legacy: LEGACY_KNOWN_GAPS,
+    exempt: EXEMPT,
+  });
+  if (failures.length > 0) {
+    console.error(
+      `[check:multi-tenant] ✗ the allow-lists do not cover the schema (${parsed.length} tenant_id tables parsed):`,
+    );
+    for (const f of failures) console.error(`  • ${f}`);
+    process.exit(1);
+  }
+  console.log(
+    `[check:multi-tenant] ✓ positive control: ${parsed.length} tenant_id tables parsed from the Drizzle schema, ` +
+      `all registered (${SCOPED_TABLES.length} scoped + ${LEGACY_KNOWN_GAPS.length} legacy + ${EXEMPT.length} exempt)`,
+  );
+}
+
 async function main(): Promise<void> {
+  assertListsCoverSchema();
   console.log(
     `[check:multi-tenant] auditing ${SCOPED_TABLES.length} scoped tables ` +
       `+ ${LEGACY_KNOWN_GAPS.length} legacy-tracked tables…`,

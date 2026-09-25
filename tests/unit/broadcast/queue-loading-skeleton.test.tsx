@@ -58,6 +58,13 @@ describe('the queue loading skeleton (UX review M2)', () => {
     expect(slot).not.toBeNull();
     expect(slot!.className).toContain('h-9');
   });
+
+  it('#400 item 8: reserves an h-9 slot for the Waiting on marketing button too', async () => {
+    const { container } = await renderSkeleton();
+    const slot = container.querySelector('[data-skeleton="waiting-on-marketing"]');
+    expect(slot).not.toBeNull();
+    expect(slot!.className).toContain('h-9');
+  });
 });
 
 /**

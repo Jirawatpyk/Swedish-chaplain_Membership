@@ -3397,6 +3397,7 @@
           "toDate": "Inskickad till",
           "reset": "Återställ filter",
           "upcomingSends": "Kommande utskick",
+          "waitingOnMarketing": "Väntar på marknad",
           "chipCount": "{count, plural, one {# utskick} other {# utskick}}",
           "chipCountsScope": "Antalen gäller alla utskick i varje steg — filtren för medlem, datum och kommande utskick ändrar dem inte."
         },

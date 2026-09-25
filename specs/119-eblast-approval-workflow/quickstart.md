@@ -684,7 +684,14 @@ design-block keys added to `admin.broadcasts.templates.errors` in EN + TH + SV.
 (skeleton drift on the six files outside this record's PR-1 screens) · **U13** (no template
 delete UI) · **U14** (chip focus ring) · **U15** (toolbar Arrow Up/Down + `aria-orientation`) ·
 **U20**–**U26**. (2026-09-24: U14 and U12's `/admin/broadcasts/loading.tsx` part were closed by
-T086a V4 / V3 — see the T086a record; U12's other five files are still open.)
+T086a V4 / V3 — see the T086a record. 2026-09-25: **U12 is CLOSED.** Its "six files" counted U1's
+file (the portal detail skeleton, closed on its own — "U1 is closed" below), so after the queue file FOUR were left, not the five this
+line used to say; #400 PR-B fixed all four: `/portal/broadcasts/new/loading.tsx` (the four-counter
+quota card and the wrap of 44 px toolbar controls) and `/admin/broadcasts/new/loading.tsx` (the
+two-column grid) now share `ComposeFormSkeleton`; `templates/loading.tsx` puts the button in the
+header and adds the three filter pills; `settings/broadcasts/brand/loading.tsx` reserves the
+first-visit default-colour hint and missing-address warning. Test:
+`compose-and-settings-skeletons.test.tsx` (went RED on all four).)
 
 Two measurement debts remain from the record above and are NOT discharged by this round: the three
 member-portal surfaces were walked from code only (the `E2E_MEMBER_EMAIL_EMPTY` persona does not

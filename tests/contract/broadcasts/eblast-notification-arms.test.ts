@@ -31,7 +31,7 @@ import { escapeHtml } from '@/lib/html-escape';
 import { notificationTypeEnum } from '@/modules/auth/infrastructure/db/schema';
 import { asTenantContext } from '@/modules/tenants';
 import type { MemberDecision } from '@/modules/broadcasts/domain/approval/member-decision';
-import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastVersionId, type Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastVersion } from '@/modules/broadcasts/domain/approval/broadcast-version';
 import { formatEblastEmailDate } from '@/modules/broadcasts/infrastructure/email/broadcast-approval-emails';
 import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
@@ -39,7 +39,7 @@ import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { ApprovalDependencyError } from '@/modules/broadcasts';
-import { drizzleMemberRepo } from '@/modules/members';
+import { asMemberId, drizzleMemberRepo } from '@/modules/members';
 import {
   EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS,
   buildEblastNotificationPayload,
@@ -66,9 +66,9 @@ vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 
 const ROOT = join(__dirname, '..', '..', '..');
 const TENANT = 'test-tenant';
-const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
+const MEMBER_ID = asMemberId('22222222-2222-4222-8222-222222222222');
 const BROADCAST_ID = '11111111-1111-4111-8111-111111111111';
-const V1 = 'aaaaaaaa-0000-4000-8000-000000000001';
+const V1 = asBroadcastVersionId('aaaaaaaa-0000-4000-8000-000000000001');
 /** `makeMarketingRecipient()`'s user id — the roster member a decided row names. */
 const MARKETER_ID = '44444444-4444-4444-8444-444444444444';
 const COMPANY = 'Nordic Trading Co., Ltd.';
@@ -275,16 +275,16 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', { versionId: V1, round: 1, decision: 'approved' }), () => gone.reads)).toEqual({ miss: 'recipient_gone' });
   });
 
-  it('a broadcast or member gone → request_gone; a transient roster fault → null (the retry ladder), never a throw', async () => {
+  it('a broadcast or member gone → request_gone; a transient roster fault → read_failed (the retry ladder, #400 item 4), never a throw', async () => {
     const ctx = { versionId: V1, round: 1, decision: 'approved', recipientUserId: MARKETER_ID };
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({}).reads)).toEqual({ miss: 'request_gone' });
     expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { company: null }).reads)).toEqual({ miss: 'request_gone' });
-    await expect(buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { roster: 'throws' }).reads)).resolves.toBeNull();
+    await expect(buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => fixture({ broadcasts: [loaded()] }, { roster: 'throws' }).reads)).resolves.toEqual({ transient: 'read_failed' });
   });
 
   // F119 round-4 B3 — the member-company read threw a plain `Error`, so the
   // read_failed line said `err: 'Error'` whatever failed. It names the read now.
-  it('a member-company read that fails → null (the retry ladder) and the read_failed line names the dependency and the repo code', async () => {
+  it('a member-company read that fails → read_failed (the retry ladder) and the read_failed line names the dependency and the repo code', async () => {
     vi.spyOn(drizzleMemberRepo, 'findById').mockResolvedValueOnce({ ok: false, error: { code: 'repo.unexpected' } } as never);
     await expect(makeEblastNotificationReads(TENANT).companyName(MEMBER_ID)).rejects.toBeInstanceOf(ApprovalDependencyError);
 
@@ -293,7 +293,7 @@ describe('eblast_member_decided_marketing — FR-021b staff containment', () => 
     const failing = fixture({ broadcasts: [loaded()] });
     vi.mocked(failing.reads.companyName).mockRejectedValueOnce(new ApprovalDependencyError('member_company', 'repo.unexpected'));
     const ctx = { versionId: V1, round: 1, decision: 'approved', recipientUserId: MARKETER_ID };
-    expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => failing.reads)).toBeNull();
+    expect(await buildEblastNotificationPayload(row('eblast_member_decided_marketing', ctx), () => failing.reads)).toEqual({ transient: 'read_failed' });
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
       expect.objectContaining({ err: 'ApprovalDependencyError:member_company:repo.unexpected' }),
       'M119.outbox_dispatch.eblast.read_failed',
@@ -389,13 +389,13 @@ describe('eblast_submitted_marketing — FR-021b staff containment (T129)', () =
     }
   });
 
-  it('misses: broadcast or member gone → request_gone; a recipient off the roster → recipient_gone; a roster fault → null', async () => {
+  it('misses: broadcast or member gone → request_gone; a recipient off the roster → recipient_gone; a roster fault → read_failed', async () => {
     const run = (f: ReadsFixture, ctx: Record<string, unknown> = { recipientUserId: MARKETER_ID }) =>
       buildEblastNotificationPayload(row('eblast_submitted_marketing', ctx), () => f.reads);
     expect(await run(fixture({}))).toEqual({ miss: 'request_gone' });
     expect(await run(fixture({ broadcasts: [submitted()] }, { company: null }))).toEqual({ miss: 'request_gone' });
     expect(await run(fixture({ broadcasts: [submitted()] }, { roster: [] }))).toEqual({ miss: 'recipient_gone' });
-    expect(await run(fixture({ broadcasts: [submitted()] }, { roster: 'throws' }))).toBeNull();
+    expect(await run(fixture({ broadcasts: [submitted()] }, { roster: 'throws' }))).toEqual({ transient: 'read_failed' });
   });
 });
 

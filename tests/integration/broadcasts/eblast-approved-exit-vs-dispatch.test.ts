@@ -35,12 +35,14 @@ import {
 } from '@/lib/broadcast-approval-deps';
 import {
   asBroadcastId,
+  asBroadcastVersionId,
   cancelBroadcast,
   cancelInFlightBroadcastsForMember,
   dispatchScheduledBroadcast,
   makeCancelBroadcastDeps,
   makeCancelInFlightBroadcastsForMemberDeps,
 } from '@/modules/broadcasts';
+import { asMemberId } from '@/modules/members';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
@@ -119,11 +121,11 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: roster },
       {
         broadcastId: asBroadcastId(id),
-        memberId,
+        memberId: asMemberId(memberId),
         actorUserId: portalUser.userId,
         actorRole: 'member',
         contactId,
-        versionId,
+        versionId: asBroadcastVersionId(versionId),
         decision: 'approval_withdrawn',
         reason: 'The venue changed — please hold this.',
         requestId: null,
@@ -154,7 +156,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       const before = await readRow(id);
 
       const withdrawn = await withdraw(id, v1);
-      expect(withdrawn.ok ? withdrawn.value.stage : withdrawn.error).toEqual({ kind: 'sending_started', status: 'approved' });
+      expect(withdrawn.ok ? withdrawn.value.status : withdrawn.error).toEqual({ kind: 'sending_started', status: 'approved' });
 
       const staff = { broadcastId: asBroadcastId(id), actorUserId: MARKETER, actorRole: 'marketing', requestId: null };
       const cancelled = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { ...staff, mode: { mode: 'cancel' } });
@@ -169,7 +171,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
         { ...makeStartFormattedVersionDeps(tenant.ctx.slug), memberApprovalEnabled: true },
         staff,
       );
-      expect(restarted.ok ? restarted.value.stage : restarted.error).toEqual({ kind: 'sending_started', status: 'approved' });
+      expect(restarted.ok ? restarted.value.status : restarted.error).toEqual({ kind: 'sending_started', status: 'approved' });
 
       // The whole-E-Blast cancel (member withdrawal and staff cancel) is an exit
       // from `approved` too: it must refuse once the row was handed over, or the

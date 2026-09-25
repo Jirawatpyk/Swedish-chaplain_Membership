@@ -94,6 +94,12 @@ import {
   isEblastMemberApprovalEnabled,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
+import {
+  isPayloadMiss,
+  isPayloadTransient,
+  unbuiltPayloadOutcome,
+  type UnbuiltPayload,
+} from '@/lib/outbox-unbuilt-payload';
 import { asTenantContext } from '@/modules/tenants';
 import { sql as sqlTag } from 'drizzle-orm';
 
@@ -153,30 +159,15 @@ interface BuiltPayload {
 }
 
 /**
- * F114 — a DETERMINISTIC miss: the row can never render because the thing
- * it refers to no longer exists (the request row was hard-deleted, or the
- * submitting contact was removed / erased). Unlike `null` (transient — the
- * template inputs could not be resolved this tick) a miss permanent-fails
- * the row on the FIRST tick with the reason in `last_error` + the
- * `email_dispatch_failed` audit payload, so an operator sees WHY.
+ * F114 — a DETERMINISTIC miss (`PayloadMiss`) permanent-fails the row on the
+ * FIRST tick with the reason in `last_error` + the `email_dispatch_failed`
+ * audit payload, so an operator sees WHY; `null` (no arm rendered it) and a
+ * named transient (`PayloadTransient`, #400 item 4: a failed read) stay on the
+ * retry ladder. The vocabularies and the rule live in `@/lib/outbox-unbuilt-
+ * payload` (`unbuiltPayloadOutcome`), unit-tested apart from this tx.
  */
-interface PayloadMiss {
-  /**
-   * Per arm (round 7 — the two arms do NOT share one vocabulary):
-   *   staff arm (`…_submitted_staff`): `request_gone` — the request, its
-   *     member OR its submitting contact no longer exists; `recipient_gone`
-   *     — no active reviewer matches the row; `request_superseded` — the
-   *     request left `pending` before send (a normal flow: silent skip).
-   *   member arm (`…_decided_member`): `request_gone` — the request row is
-   *     gone; `recipient_gone` — the submitting contact is gone / removed /
-   *     unlinked; `request_not_decided` — the request is not `decided`
-   *     (unreachable by construction; kept LOUD: audit + failure metric).
-   */
-  readonly miss: 'request_gone' | 'recipient_gone' | 'request_superseded' | 'request_not_decided';
-}
-
-function isPayloadMiss(v: BuiltPayload | PayloadMiss | null): v is PayloadMiss {
-  return v !== null && 'miss' in v;
+function isBuiltPayload(v: BuiltPayload | UnbuiltPayload): v is BuiltPayload {
+  return v !== null && !isPayloadMiss(v) && !isPayloadTransient(v);
 }
 
 /**
@@ -190,7 +181,7 @@ function isPayloadMiss(v: BuiltPayload | PayloadMiss | null): v is PayloadMiss {
 async function buildPayload(
   row: NotificationsOutboxRow,
   prefetchedBytes?: Uint8Array,
-): Promise<BuiltPayload | PayloadMiss | null> {
+): Promise<BuiltPayload | UnbuiltPayload> {
   const locale: Locale = isLocale(row.locale) ? row.locale : 'en';
   const ctx = row.contextData as Record<string, unknown>;
 
@@ -1063,14 +1054,13 @@ async function dispatchOne(
 
     const built = await buildPayload(row, prefetchedBytes);
     // F114 — a deterministic miss (request / recipient gone) permanent-fails
-    // on the first tick; `null` keeps the transient retry ladder below.
-    const miss = isPayloadMiss(built) ? built.miss : null;
-    const payload = isPayloadMiss(built) ? null : built;
-
-    if (!payload) {
+    // on the first tick; `null` and a named transient (#400 item 4:
+    // `read_failed`) keep the retry ladder below, each under its own reason.
+    if (!isBuiltPayload(built)) {
       const nextAttempt = row.attempts + 1;
-      const isPermanent = miss !== null || nextAttempt >= MAX_ATTEMPTS;
-      const failReason: string = miss ?? 'no_template_handler';
+      const outcome = unbuiltPayloadOutcome(built, nextAttempt, MAX_ATTEMPTS);
+      const isPermanent = outcome.permanent;
+      const failReason: string = outcome.reason;
 
       // F114 — a staff row whose request left `pending` before it was sent
       // (replaced by a resubmit, or decided from the queue before this tick)
@@ -1080,7 +1070,8 @@ async function dispatchOne(
       // `email_dispatch_failed` audit (the replacement is already audited as
       // `member_change_request_withdrawn{replaced}`) — so the on-call alarm
       // on `outbox_permanent_failures_total` does not fire for a typo fix.
-      if (miss === 'request_superseded') {
+      // (`request_superseded` — the one outcome with no failure-metric reason.)
+      if (outcome.metricReason === null) {
         await tx
           .update(notificationsOutbox)
           .set({
@@ -1146,10 +1137,7 @@ async function dispatchOne(
             },
           });
         }
-        outboxMetrics.permanentFailure(
-          row.notificationType,
-          miss === 'request_gone' || miss === 'recipient_gone' || miss === 'request_not_decided' ? miss : 'no_template_handler',
-        );
+        outboxMetrics.permanentFailure(row.notificationType, outcome.metricReason);
         if (row.notificationType === 'invoice_auto_email') {
           invoicingMetrics.autoEmailBounce('no_template_handler');
         }
@@ -1168,12 +1156,13 @@ async function dispatchOne(
         .set({
           attempts: nextAttempt,
           nextRetryAt: new Date(now.getTime() + noTplBackoffSeconds * 1000),
-          lastError: 'no_template_handler',
+          lastError: outcome.reason,
           updatedAt: now,
         })
         .where(eq(notificationsOutbox.id, row.id));
       return 'retried';
     }
+    const payload = built;
 
     // NOTE: Resend send happens INSIDE the tx. The tx holds a row-level
     // lock until commit — two concurrent ticks cannot both send the

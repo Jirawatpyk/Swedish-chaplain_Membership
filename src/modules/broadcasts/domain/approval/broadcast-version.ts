@@ -10,10 +10,10 @@
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */
-import type { BroadcastActorRole, BroadcastId } from '../broadcast';
+import type { BroadcastActorRole, BroadcastId, BroadcastVersionId } from '../broadcast';
 
 export interface BroadcastVersion {
-  readonly id: string;
+  readonly id: BroadcastVersionId;
   readonly tenantId: string;
   readonly broadcastId: BroadcastId;
   /** 0 for the working copy opened before the first send; ≥ 0 per the CHECK. */

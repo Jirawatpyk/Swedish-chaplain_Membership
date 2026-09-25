@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CalendarClockIcon, CheckIcon, XIcon } from 'lucide-react';
+import { CalendarClockIcon, CheckIcon, InboxIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -41,6 +41,7 @@ import {
   OFFERED_BROADCAST_STATUSES,
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts/domain/stage/whose-turn';
 import { cn } from '@/lib/utils';
 
 const DEBOUNCE_MS = 300;
@@ -98,6 +99,17 @@ const TERMINAL_STATUSES: ReadonlyArray<BroadcastStatus> =
 const UPCOMING_SORT = 'scheduled_for';
 const UPCOMING_FROM = 'now';
 
+/**
+ * #400 item 8 — the "Waiting on marketing" preset: the stage filter that IS
+ * `MARKETING_TURN_STATUSES`, order-insensitive. Plain `status` params, the
+ * URL the staff nav's Broadcasts link and the staff home's card open
+ * (`MARKETING_TURN_QUEUE_HREF`), so the page needs no parsing of its own.
+ */
+function isMarketingTurnView(statuses: ReadonlyArray<BroadcastStatus>): boolean {
+  const selected = new Set(statuses);
+  return selected.size === MARKETING_TURN_STATUSES.length && MARKETING_TURN_STATUSES.every((s) => selected.has(s));
+}
+
 export interface QueueFiltersProps {
   readonly memberOptions: ReadonlyArray<{
     readonly memberId: string;
@@ -138,6 +150,8 @@ export function QueueFilters({
   const currentFrom = searchParams.get('from');
   const upcomingActive =
     currentSort === UPCOMING_SORT && currentFrom === UPCOMING_FROM;
+  // Explicit params only: the no-param default (`submitted`) is never the preset.
+  const marketingActive = !currentStatusAll && !upcomingActive && isMarketingTurnView(urlStatus);
 
   // VISUAL set — what the user sees ticked. When `status_all` sentinel
   // is active, every checkbox stays UNCHECKED so the user has an honest
@@ -338,6 +352,13 @@ export function QueueFilters({
     pushUrl({ status: ['approved'], statusAll: null, upcoming: true });
   }, [upcomingActive, pushUrl]);
 
+  // #400 item 8 — the same toggle shape as Upcoming: on, exactly the four
+  // marketing-turn stages (a status change drops the Upcoming bound, and the
+  // member and date filters stay); off, back to the FR-010 default.
+  const toggleMarketing = useCallback(() => {
+    pushUrl(marketingActive ? { status: null, statusAll: null } : { status: MARKETING_TURN_STATUSES, statusAll: null });
+  }, [marketingActive, pushUrl]);
+
   // Visual check uses the separate `visualStatus` set so sentinel-mode
   // (`status_all=1`) renders ALL chips unchecked — matching the user's
   // mental model of "no filter, show everything".
@@ -533,6 +554,24 @@ export function QueueFilters({
           <CalendarClockIcon className="size-4" aria-hidden="true" />
         )}
         {t('upcomingSends')}
+      </Button>
+
+      <Button
+        type="button"
+        variant="outline"
+        aria-pressed={marketingActive}
+        onClick={toggleMarketing}
+        className={cn(
+          'whitespace-nowrap',
+          marketingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
+        )}
+      >
+        {marketingActive ? (
+          <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
+        ) : (
+          <InboxIcon className="size-4" aria-hidden="true" />
+        )}
+        {t('waitingOnMarketing')}
       </Button>
 
       {/* UX review LOW — the default h-9, like the controls beside it (it

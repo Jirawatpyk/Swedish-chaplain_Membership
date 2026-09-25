@@ -102,7 +102,8 @@ import {
   type MemberSendStanding,
   type MemberSendStandingDeps,
 } from '../_member-send-standing';
-import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ApprovalRefusal, isOwnRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ownerMemberId } from './_owner-member-id';
 import { chooseApprovalRecipient } from './_approval-recipient';
 
 export type ScheduleMode =
@@ -273,7 +274,7 @@ export async function confirmSchedule(
         });
 
         if (timing.kind === 'confirm') {
-          const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, broadcast.requestedByMemberId, tx);
+          const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, ownerMemberId(broadcast), tx);
           const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId);
           if (recipient === null) {
             logger.warn(
@@ -295,6 +296,8 @@ export async function confirmSchedule(
     );
   } catch (e) {
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
+    // #400 item 5 — a refusal another use case raised is not ours to map.
+    if (!isOwnRefusal(e, 'confirm-schedule')) throw e;
     const refusal = e.refusal as ConfirmScheduleError;
     if (refusal.kind === 'not_found') {
       await emitCrossTenantProbe({
@@ -397,5 +400,5 @@ function resolveTiming(mode: ScheduleMode, broadcast: Broadcast, now: Date, floo
 
 /** Throw-to-rollback: the refusal leaves the tx, which rolls back (`_approval-tx.ts`). */
 function refuse(refusal: ConfirmScheduleError): never {
-  throw new ApprovalRefusal<ConfirmScheduleError>(refusal);
+  throw new ApprovalRefusal<ConfirmScheduleError>('confirm-schedule', refusal);
 }

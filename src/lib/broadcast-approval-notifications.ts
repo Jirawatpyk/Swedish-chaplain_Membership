@@ -20,14 +20,18 @@
  *                            contact; the staff user left the roster);
  *       `request_superseded` the hand-off is stale — a later round, a
  *                            decided or cancelled row (the silent path);
- *   - `null` — transient (a read threw) or malformed `context_data`: the retry
- *     ladder, logged here first so ops can tell it from a missing template.
+ *   - `{ transient: 'read_failed' }` — a read threw: the retry ladder, and after
+ *     `MAX_ATTEMPTS` the row closes as `read_failed` (#400 item 4 — it used to
+ *     close as `no_template_handler`, although the template exists);
+ *   - `null` — malformed `context_data`: the retry ladder, logged here first
+ *     (`malformed_context`), closing as `no_template_handler`.
  *
  * Never throws — an arm that throws escapes `dispatchOne` without bumping
  * `attempts`. Never logs an address, a subject, a body, a note or a reason.
  */
 import type { Locale } from '@/i18n/config';
 import { logger } from '@/lib/logger';
+import type { PayloadMiss, PayloadTransient } from '@/lib/outbox-unbuilt-payload';
 import { memberPortalRecipients } from '@/lib/broadcast-approval-deps';
 import { resolveMarketingRoster } from '@/lib/broadcast-marketing-deps';
 import {
@@ -55,6 +59,8 @@ import {
   type BuiltEblastEmail,
   type EblastLifecycleKind,
   type EblastMemberDecidedKind,
+  type EblastNotificationContexts,
+  type F119NotificationType,
   type MarketingRecipient,
   type MemberPortalRecipientPort,
 } from '@/modules/broadcasts';
@@ -71,8 +77,13 @@ export interface EblastOutboxRow {
   readonly contextData: unknown;
 }
 
-export type EblastPayloadMiss = { readonly miss: 'request_gone' | 'recipient_gone' | 'request_superseded' };
-export type EblastPayload = (BuiltEblastEmail & { readonly toEmail: string }) | EblastPayloadMiss | null;
+/**
+ * The dispatcher's miss vocabulary (`PayloadMiss`), so the two unions cannot
+ * drift (#400 item 4). These arms never answer `request_not_decided` (an F114
+ * member-arm reason); it is in the type because the dispatcher's is.
+ */
+export type EblastPayloadMiss = PayloadMiss;
+export type EblastPayload = (BuiltEblastEmail & { readonly toEmail: string }) | EblastPayloadMiss | PayloadTransient | null;
 
 /** Everything an arm reads. Each method THROWS on a transient fault. */
 export interface EblastNotificationReads {
@@ -108,6 +119,19 @@ export function makeEblastNotificationReads(tenantId: string): EblastNotificatio
 /** The tenant-slug shape guard every tenant-scoped arm applies (F114, S9). */
 const TENANT_SLUG = /^[a-z0-9-]{1,63}$/;
 
+/**
+ * #400 item 3 — a STORED row's `context_data`, per type: exactly the keys its
+ * producer writes (`EblastNotificationContexts`, the port's union), each still
+ * `unknown`. A DB row is untyped, so every value is re-checked below and a bad
+ * one is `malformed()`; typing the KEYS is what ties each arm to its producer —
+ * a key renamed or dropped at the port fails to compile here instead of
+ * silently dropping the email at send time.
+ */
+type KeysOf<T> = T extends unknown ? keyof T : never;
+type StoredContext<T extends F119NotificationType> = {
+  readonly [K in KeysOf<EblastNotificationContexts[T]>]?: unknown;
+};
+
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 const int = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null);
 const isLocale = (v: unknown): v is Locale => v === 'en' || v === 'th' || v === 'sv';
@@ -131,6 +155,8 @@ const WITHDRAWN_NOTICE_MAX_AGE_MS = EBLAST_WITHDRAWN_NOTICE_MAX_AGE_DAYS * 24 * 
 const GONE: EblastPayloadMiss = { miss: 'request_gone' };
 const RECIPIENT_GONE: EblastPayloadMiss = { miss: 'recipient_gone' };
 const SUPERSEDED: EblastPayloadMiss = { miss: 'request_superseded' };
+/** #400 item 4 — a read threw: the retry ladder, under its own reason (never `no_template_handler`). */
+const READ_FAILED: PayloadTransient = { transient: 'read_failed' };
 
 /**
  * Render one `eblast_*` outbox row. `readsFor` is injectable for the contract
@@ -140,7 +166,7 @@ export async function buildEblastNotificationPayload(
   row: EblastOutboxRow,
   readsFor: (tenantId: string) => EblastNotificationReads = makeEblastNotificationReads,
 ): Promise<EblastPayload> {
-  const ctx = (typeof row.contextData === 'object' && row.contextData !== null ? row.contextData : {}) as Record<string, unknown>;
+  const ctx = (typeof row.contextData === 'object' && row.contextData !== null ? row.contextData : {}) as Readonly<Record<string, unknown>>;
   const parsed = parseBroadcastId(str(ctx.broadcastId) ?? '');
   if (!parsed.ok || row.tenantId === null || !TENANT_SLUG.test(row.tenantId)) return malformed(row, 'broadcast_or_tenant');
   const tenant = asTenantContext(row.tenantId);
@@ -168,7 +194,7 @@ export async function buildEblastNotificationPayload(
       { outboxRowId: row.id, tenantId: row.tenantId, notificationType: row.notificationType, err: approvalErrKind(e) },
       'M119.outbox_dispatch.eblast.read_failed',
     );
-    return null;
+    return READ_FAILED;
   }
 }
 
@@ -185,7 +211,7 @@ async function versionSentMember(
   reads: EblastNotificationReads,
   tenant: TenantContext,
   broadcastId: BroadcastId,
-  ctx: Record<string, unknown>,
+  ctx: StoredContext<'eblast_version_sent_member'>,
   row: EblastOutboxRow,
 ): Promise<EblastPayload> {
   const versionId = str(ctx.versionId);
@@ -197,7 +223,7 @@ async function versionSentMember(
     const versions = await reads.versionsRepo.listByBroadcast(tenant.slug, broadcastId, tx);
     const version = versions.find((v) => v.id === versionId);
     if (version === undefined) return null;
-    const contacts = await reads.portalRecipients.listActivePortalContacts(tenant, broadcast.requestedByMemberId, tx);
+    const contacts = await reads.portalRecipients.listActivePortalContacts(tenant, asMemberId(broadcast.requestedByMemberId), tx);
     return { broadcast, version, recipient: chooseApprovalRecipient(contacts, broadcast.submittedByUserId) };
   });
   if (read === null) return GONE;
@@ -234,7 +260,7 @@ async function scheduleConfirmedMember(
   reads: EblastNotificationReads,
   tenant: TenantContext,
   broadcastId: BroadcastId,
-  ctx: Record<string, unknown>,
+  ctx: StoredContext<'eblast_schedule_confirmed_member'>,
   row: EblastOutboxRow,
 ): Promise<EblastPayload> {
   const versionId = str(ctx.versionId);
@@ -242,7 +268,7 @@ async function scheduleConfirmedMember(
   const read = await reads.broadcastsRepo.withTx(async (tx) => {
     const broadcast = await reads.broadcastsRepo.findByIdInTx(tx, tenant.slug, broadcastId);
     if (broadcast === null) return null;
-    const contacts = await reads.portalRecipients.listActivePortalContacts(tenant, broadcast.requestedByMemberId, tx);
+    const contacts = await reads.portalRecipients.listActivePortalContacts(tenant, asMemberId(broadcast.requestedByMemberId), tx);
     return { broadcast, recipient: chooseApprovalRecipient(contacts, broadcast.submittedByUserId) };
   });
   if (read === null) return GONE;
@@ -283,7 +309,7 @@ async function memberDecidedMarketing(
   reads: EblastNotificationReads,
   tenant: TenantContext,
   broadcastId: BroadcastId,
-  ctx: Record<string, unknown>,
+  ctx: StoredContext<'eblast_member_decided_marketing'>,
   row: EblastOutboxRow,
   locale: Locale,
 ): Promise<EblastPayload> {
@@ -330,7 +356,7 @@ async function memberDecidedMarketing(
 async function staffHandoff(
   reads: EblastNotificationReads,
   broadcast: Broadcast,
-  ctx: Record<string, unknown>,
+  ctx: Pick<StoredContext<'eblast_submitted_marketing'>, 'recipientUserId'>,
   row: EblastOutboxRow,
   build: (companyName: string) => BuiltEblastEmail,
 ): Promise<EblastPayload> {
@@ -357,7 +383,7 @@ async function submittedMarketing(
   reads: EblastNotificationReads,
   tenant: TenantContext,
   broadcastId: BroadcastId,
-  ctx: Record<string, unknown>,
+  ctx: StoredContext<'eblast_submitted_marketing'>,
   row: EblastOutboxRow,
   locale: Locale,
 ): Promise<EblastPayload> {
@@ -385,7 +411,7 @@ async function approvalLifecycle(
   reads: EblastNotificationReads,
   tenant: TenantContext,
   broadcastId: BroadcastId,
-  ctx: Record<string, unknown>,
+  ctx: StoredContext<'eblast_approval_lifecycle'>,
   row: EblastOutboxRow,
   locale: Locale,
 ): Promise<EblastPayload> {
@@ -403,7 +429,7 @@ async function approvalLifecycle(
     const version = versions.find((v) => v.id === versionId);
     if (version === undefined) return null;
     const contacts =
-      audience === 'member' ? await reads.portalRecipients.listActivePortalContacts(tenant, broadcast.requestedByMemberId, tx) : [];
+      audience === 'member' ? await reads.portalRecipients.listActivePortalContacts(tenant, asMemberId(broadcast.requestedByMemberId), tx) : [];
     return { broadcast, version, contacts };
   });
   if (read === null) return GONE;

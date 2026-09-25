@@ -5,7 +5,7 @@
  *   `requireMemberContext` (a member session only — a STAFF session is
  *   refused 403 here, which is how FR-013 "a staff user can never give the
  *   member-side approval" is enforced structurally) → 200
- *   { stage, whoseTurn, round, decision }
+ *   { status, whoseTurn, round, decision }
  *
  * Order of checks: the session gate → id (a malformed id is a 404 before any
  * read, with no audit row) → the 60 / minute per-(tenant, user) member write
@@ -39,6 +39,7 @@ import { requireMemberContext } from '@/lib/member-context';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { F119_BROADCASTS_SPANS } from '@/lib/otel-tracer';
 import {
+  asBroadcastVersionId,
   parseBroadcastId,
   recordMemberDecision,
   stageOf,
@@ -58,7 +59,8 @@ type RouteContext = { params: Promise<{ id: string }> };
  * contract's 422, whatever its length).
  */
 const DecisionBodySchema = z.object({
-  versionId: z.string().uuid(),
+  // Branded once it is known to be a uuid (#400 item 2).
+  versionId: z.string().uuid().transform(asBroadcastVersionId),
   decision: z.enum(['approved', 'changes_requested', 'approval_withdrawn']),
   reason: z.string().nullable().optional(),
 });
@@ -95,7 +97,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     () =>
       recordMemberDecision(makeRecordMemberDecisionDeps(ctx.tenant.slug), {
         broadcastId: parsedId.value,
-        memberId: ctx.memberId as string,
+        memberId: ctx.memberId,
         actorUserId: ctx.current.user.id,
         actorRole: ctx.current.user.role ?? null,
         contactId: ctx.ownContactId as string,
@@ -104,16 +106,16 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         reason: body.data.reason ?? null,
         requestId: ctx.requestId ?? correlationId,
       }),
-    (decided) => ({ stage: stageOf(decided.stage), round: decided.round }),
+    (decided) => ({ stage: stageOf(decided.status), round: decided.round }),
   );
   broadcastsMetrics.memberDecideMs(ctx.tenant.slug, performance.now() - started);
   if (!result.ok) return decisionErrorResponse(result.error, ctx.current.user.id, correlationId);
 
-  const { stage, round, decision } = result.value;
+  const { status, round, decision } = result.value;
   return NextResponse.json(
     {
-      stage,
-      whoseTurn: turnOf(stage),
+      status,
+      whoseTurn: turnOf(status),
       round,
       decision: {
         id: decision.id,

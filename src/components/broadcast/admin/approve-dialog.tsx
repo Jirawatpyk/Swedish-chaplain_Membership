@@ -13,6 +13,13 @@
  * reason inside itself (`InlineError`, role=alert — a toast behind this modal
  * would be aria-hidden, ux-standards § 6.4). Every other 409 keeps the
  * concurrentRace close + refresh.
+ *
+ * #400 item 7 — a 503 from the READ_ONLY_MODE write freeze is the same kind of
+ * refusal: nothing moved, so the dialog stays open and says so inside itself
+ * with main #390's warning (title AND "nothing was changed", warning tone,
+ * focused), never the generic toast under the modal. The pattern of the F119
+ * `schedule-confirm-dialog.tsx` (`FormRefusal`, `isReadOnlyResponse`,
+ * `InlineWarning`).
  */
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { Loader2Icon } from 'lucide-react';
@@ -39,8 +46,15 @@ import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-
 import { cancelApprovedBroadcasts } from '@/components/broadcast/admin/send-now-undo';
 import { readErrorCode, STANDING_REFUSAL_CODES } from '@/components/broadcast/approval/approval-error';
 import { InlineError } from '@/components/broadcast/approval/inline-error';
+import { InlineWarning } from '@/components/broadcast/approval/inline-warning';
+import { useFocusRefusal } from '@/components/broadcast/approval/use-focus-refusal';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
+const FORM_ERROR_ID = 'approve-dialog-error';
+
+/** A refusal that keeps the dialog open: a named reason, or the write freeze. */
+type FormRefusal = { readonly kind: 'error'; readonly message: string } | { readonly kind: 'read_only' };
 const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
 
 /**
@@ -116,12 +130,15 @@ export function ApproveDialog({
   // Task 5 (2026-08-02-broadcast-review-queue-pr3) — same 60s send-now Undo
   // toast as the bulk bar, reusing its i18n namespace verbatim.
   const tUndo = useTranslations('admin.broadcasts.queue.bulk.undo');
+  // #400 item 7 — main #390's read-only warning, word for word (root `errors`).
+  const tReadOnly = useTranslations('errors');
   const locale = useLocale();
   const router = useRouter();
   const [decision, setDecision] = useState<'send_now' | 'schedule'>('send_now');
   const [scheduledFor, setScheduledFor] = useState<string>('');
   const [pending, startTransition] = useTransition();
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<FormRefusal | null>(null);
+  useFocusRefusal(formError, FORM_ERROR_ID);
   const minLocal = useMemo(() => minLocalDateTime(), []);
   // F7-A11Y-1 — raised on the success / 409 close (both run router.refresh() →
   // the ReviewActions trigger Button unmounts). finalFocus reads it to SKIP the
@@ -225,6 +242,9 @@ export function ApproveDialog({
           }
           onOpenChange(false);
           router.refresh();
+        } else if (await isReadOnlyResponse(res)) {
+          // Nothing moved and the trigger survives: stay open, say it here.
+          setFormError({ kind: 'read_only' });
         } else if (res.status === 409) {
           const code = await readErrorCode(res);
           const message = code !== null && tToast.has(code) ? tToast(code) : tToast('concurrentRace');
@@ -232,7 +252,7 @@ export function ApproveDialog({
             // The row did not move and the trigger survives: stay open, say
             // why here, and leave closedViaSuccessRef down so Cancel returns
             // focus to the trigger.
-            setFormError(message);
+            setFormError({ kind: 'error', message });
             return;
           }
           closedViaSuccessRef.current = true;
@@ -364,9 +384,16 @@ export function ApproveDialog({
             </div>
           ) : null}
         </fieldset>
-        {formError !== null ? (
-          <InlineError id="approve-dialog-error" data-testid="approve-dialog-error" message={formError} />
-        ) : null}
+        {formError === null ? null : formError.kind === 'read_only' ? (
+          <InlineWarning
+            id={FORM_ERROR_ID}
+            data-testid="approve-dialog-error"
+            title={tReadOnly('readOnlyMode')}
+            description={tReadOnly('readOnlyNothingChanged')}
+          />
+        ) : (
+          <InlineError id={FORM_ERROR_ID} data-testid="approve-dialog-error" message={formError.message} />
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
           <AlertDialogAction
