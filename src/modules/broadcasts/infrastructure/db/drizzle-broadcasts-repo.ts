@@ -29,6 +29,10 @@ import type { BroadcastStatus } from '../../domain/value-objects/broadcast-statu
 import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import { IN_PROGRESS_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
+import {
+  RETENTION_ANCHOR_FIELD,
+  type RetentionAnchorField,
+} from '../../domain/retention/broadcast-retention';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
@@ -493,6 +497,56 @@ function inProgressStatusPredicate(): SQL {
     sql`, `,
   );
   return sql`${broadcasts.status}::text IN (${list})`;
+}
+
+/**
+ * F7 retention sweep (migration 0310) — the Domain's anchor fields as the
+ * `broadcasts` columns they name. A `Record` over the Domain union, so a new
+ * anchor field is a compile error here until it is mapped.
+ */
+const RETENTION_ANCHOR_COLUMN: Readonly<Record<RetentionAnchorField, AnyPgColumn>> = {
+  sentAt: broadcasts.sentAt,
+  partialDeliveryAcceptedAt: broadcasts.partialDeliveryAcceptedAt,
+  failedToDispatchAt: broadcasts.failedToDispatchAt,
+  rejectedAt: broadcasts.rejectedAt,
+  cancelledAt: broadcasts.cancelledAt,
+  stageEnteredAt: broadcasts.stageEnteredAt,
+};
+
+/**
+ * The retention anchor as SQL — one `CASE` arm per terminal status, built from
+ * `RETENTION_ANCHOR_FIELD` (Finding G: the Domain constant, never a literal
+ * list). Each arm is `COALESCE(<own column>, stage_entered_at)`; the
+ * `expired_no_member_response` arm is `stage_entered_at` itself
+ * (NOT NULL since 0308). A non-terminal status falls to `ELSE NULL`, and
+ * `NULL + interval <= now` is never true, so an open row can never match even
+ * if the status filter were dropped. Never `updated_at`.
+ */
+function retentionAnchorExpression(): SQL {
+  const arms = (Object.entries(RETENTION_ANCHOR_FIELD) as Array<[string, RetentionAnchorField]>).map(
+    ([status, field]) =>
+      field === 'stageEnteredAt'
+        ? sql`WHEN ${status} THEN ${broadcasts.stageEnteredAt}`
+        : sql`WHEN ${status} THEN COALESCE(${RETENTION_ANCHOR_COLUMN[field]}, ${broadcasts.stageEnteredAt})`,
+  );
+  return sql`(CASE ${broadcasts.status}::text ${sql.join(arms, sql` `)} ELSE NULL END)`;
+}
+
+/**
+ * F7 retention sweep (migration 0310) — the eligibility predicate, shared by
+ * the unlocked read and the locked re-check so the two cannot drift: a
+ * terminal status, no live Resend audience (`cleanup-audiences` reaps it
+ * first), and anchor + the row's own `retention_years` at or before `now`.
+ */
+function retentionEligibility(now: Date): SQL {
+  const terminalStatusList = sql.join(
+    TERMINAL_BROADCAST_STATUSES.map((s) => sql`${s}`),
+    sql`, `,
+  );
+  return sql`status::text IN (${terminalStatusList})
+    AND (resend_audience_id IS NULL OR audience_deleted_at IS NOT NULL)
+    AND ${retentionAnchorExpression()} + make_interval(years => retention_years::int)
+        <= ${now.toISOString()}::timestamptz`;
 }
 
 /**
@@ -1425,6 +1479,146 @@ export function makeDrizzleBroadcastsRepo(
           })),
         };
       });
+    },
+
+    /**
+     * F7 retention sweep (migration 0310), phase 1 — see the port. A plain
+     * SELECT in its own tenant transaction: NO row lock, because the caller
+     * deletes the Resend copies next, over the network.
+     *
+     * Each row carries every Resend broadcast id it owns — its own
+     * `resend_broadcast_id` plus any per-batch
+     * `broadcast_batch_manifests.provider_broadcast_id` (the batch path was
+     * deleted in 108 Phase 9, but manifests from before it keep their ids).
+     *
+     * The cursor is `(anchor, broadcast_id)` in the ORDER BY's own order, and
+     * `anchorKey` is the anchor as ISO text WITH MICROSECONDS: a JS `Date`
+     * would truncate to milliseconds, and `(anchor, id) > (truncated, id)` would
+     * read the same row again. A tenant-scoped seq scan: there is no index on
+     * the anchor expression, and the table is small per tenant.
+     */
+    async listExpiredForRetention(tenantIdArg, now, limit, after) {
+      const anchor = retentionAnchorExpression();
+      const afterClause =
+        after === null
+          ? sql``
+          : sql`AND (${anchor}, broadcast_id) > (${after.anchorKey}::timestamptz, ${after.broadcastId}::uuid)`;
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT broadcast_id,
+                 resend_broadcast_id,
+                 to_char(${anchor} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS anchor_key,
+                 COALESCE(
+                   (SELECT json_agg(DISTINCT m.provider_broadcast_id)
+                      FROM broadcast_batch_manifests m
+                     WHERE m.tenant_id = broadcasts.tenant_id
+                       AND m.broadcast_id = broadcasts.broadcast_id
+                       AND m.provider_broadcast_id IS NOT NULL),
+                   '[]'::json
+                 ) AS provider_broadcast_ids
+            FROM broadcasts
+           WHERE tenant_id = ${tenantIdArg}
+             AND ${retentionEligibility(now)}
+             ${afterClause}
+           ORDER BY ${anchor}, broadcast_id
+           LIMIT ${limit}
+        `)) as unknown as Array<{
+          broadcast_id: string;
+          resend_broadcast_id: string | null;
+          anchor_key: string;
+          provider_broadcast_ids: string[];
+        }>;
+        return rows.map((r) => ({
+          broadcastId: r.broadcast_id,
+          anchorKey: r.anchor_key,
+          resendBroadcastIds: [
+            ...new Set([
+              ...r.provider_broadcast_ids,
+              ...(r.resend_broadcast_id === null ? [] : [r.resend_broadcast_id]),
+            ]),
+          ],
+        }));
+      });
+    },
+
+    /**
+     * F7 retention sweep (migration 0310), phase 3 — see the port for the
+     * eligibility rule. The caller passes only rows whose Resend copies are
+     * confirmed gone; eligibility is RE-CHECKED here, under the lock, rather
+     * than trusted from the unlocked read.
+     *
+     * `SET LOCAL lock_timeout = '5s'` is the FIRST statement (R2). The run's
+     * time budget is checked only between batches and the Neon pooler can drop
+     * `statement_timeout`, so without it a batch waiting on a lock — the
+     * cascade into a delivery another transaction holds — could hang the run.
+     * A wait now ends with 55P03, which rolls this batch back; the use case
+     * counts it as a failure and still writes the run row. `SET LOCAL` dies
+     * with the transaction, and the image stamp that follows in the same `tx`
+     * gets the same bound.
+     *
+     * ONE statement: the sub-select picks the given rows that are still
+     * eligible (`FOR UPDATE SKIP LOCKED`: a row another transaction ALREADY
+     * holds — an erasure's redaction UPDATE, or a webhook whose delivery INSERT
+     * has taken the FK's `FOR KEY SHARE` on it — is skipped rather than waited
+     * on; the next daily run takes it), the DELETE removes them, and the
+     * children follow by ON DELETE CASCADE — deliveries (0310), versions +
+     * decisions (0308), batch manifests + their events (0163/0218). The RI
+     * cascade runs as the child table's owner, which is why no DELETE grant
+     * exists or is needed on any child, and why a direct DELETE by
+     * `chamber_app` on deliveries / decisions still fails.
+     *
+     * Lock order: this takes the PARENT, then the cascade takes the CHILDREN.
+     * Member erasure (`erase-member.ts`) redacts the parent `broadcasts` rows
+     * before it tombstones the child deliveries for the same reason — the
+     * opposite order could deadlock with this statement.
+     *
+     * Sweep-vs-webhook race (accepted, theoretical — it needs a Resend event
+     * for an E-Blast closed 5+ years ago). The webhook reads the parent with a
+     * plain SELECT and only locks it when its delivery INSERT runs the FK
+     * check. If the sweep's `FOR UPDATE` gets there first, that INSERT's
+     * `FOR KEY SHARE` waits behind it, re-checks after the sweep commits, and
+     * fails with 23503 (foreign_key_violation): `processWebhookEvent` returns
+     * `process_webhook.server_error`, the route answers 500, Resend retries,
+     * and the retry's route-level lookup no longer finds the E-Blast → 200
+     * (audited `reason: 'unknown_resend_broadcast_id'`). No delivery row is
+     * written for a deleted E-Blast, which is the point.
+     *
+     * `now` is bound as an ISO string cast to TIMESTAMPTZ (the Neon driver
+     * does not serialise a JS Date in a raw `sql` param). The anchor comes back
+     * as ISO text (ms) for the run row's anchor range.
+     */
+    async deleteExpiredForRetention(tenantIdArg, now, broadcastIds, txArg) {
+      if (broadcastIds.length === 0) return { swept: [] };
+      const tx = txArg as TenantTx;
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+      await assertTenantBoundTx(tx, ctx.slug, 'deleteExpiredForRetention');
+      const anchor = retentionAnchorExpression();
+      const ids = sql.join(
+        broadcastIds.map((id) => sql`${id}`),
+        sql`, `,
+      );
+      const deleted = (await tx.execute(sql`
+        DELETE FROM broadcasts
+        WHERE tenant_id = ${tenantIdArg}
+          AND broadcast_id IN (
+            SELECT broadcast_id
+              FROM broadcasts
+             WHERE tenant_id = ${tenantIdArg}
+               AND broadcast_id = ANY(ARRAY[${ids}]::uuid[])
+               AND ${retentionEligibility(now)}
+             FOR UPDATE SKIP LOCKED
+          )
+        RETURNING broadcast_id,
+                  requested_by_member_id,
+                  to_char(${anchor} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS anchor
+      `)) as unknown as Array<{ broadcast_id: string; requested_by_member_id: string | null; anchor: string }>;
+      return {
+        swept: deleted.map((r) => ({
+          broadcastId: r.broadcast_id,
+          requestedByMemberId: r.requested_by_member_id,
+          anchor: new Date(r.anchor),
+        })),
+      };
     },
 
     /**

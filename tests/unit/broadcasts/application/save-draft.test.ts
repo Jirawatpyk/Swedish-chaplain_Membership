@@ -208,6 +208,8 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in save-draft fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in save-draft fixture'); },
+    async deleteExpiredForRetention() { throw new Error('not used in save-draft fixture'); },
+    async listExpiredForRetention() { throw new Error('not used in save-draft fixture'); },
     async existingBroadcastIds() { throw new Error('not used in save-draft fixture'); },
   };
 }

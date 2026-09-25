@@ -1519,6 +1519,39 @@ Extends § 22.1 with **2 metrics**, both emitted by `reclaimOrphanedImages` (the
 
 Routes per § 22.8 (alarm → `#oncall-platform`).
 
+### 22.13 F7 retention sweep (migration 0310)
+
+Extends § 22.1 with **2 counters**, both emitted by the route
+`/api/cron/broadcasts/retention-sweep` (daily 20:50 UTC) from the result of
+`sweepExpiredBroadcasts`, which deletes closed E-Blasts past their
+`retention_years` (children by cascade; images stamped for § 22.12's sweep).
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts_retention_swept_total` | counter | `tenant` | Incremented by the number of E-Blasts the run deleted for the tenant — on the error path too, with the rows that committed before the failure (they stay deleted). Zero until ~2031 (the first prod E-Blast + 5 years) is correct. |
+| `broadcasts_retention_sweep_failed_total` | counter | `tenant` | One per tenant per run that returned an error or threw. The route still answers **200** with the tenant marked `outcome: 'error'` (a 500 would hide the tenants that succeeded), so this counter is the signal. Logs: `cron.broadcasts.retention_sweep.server_error` (errorId `F7.cron.retention_sweep.server_error`, `err` = the error class of the use case's `cause`, `code` = its SQLSTATE — never the message: a Drizzle `Failed query:` message quotes the query's params, which can carry a `related_member_id`; `code: '55P03'` = a batch hit its 5 s `lock_timeout`) and `.uncaught_error` (errorId `F7.cron.retention_sweep.uncaught`, `err: errKind(e)` — the error class, never the message). |
+| `broadcasts_retention_provider_copy_kept_total` | counter | `tenant`, `reason` (`transient` \| `retained_at_processor`) | Resend copies of expired E-Blasts the sweep could not delete. `transient` (5xx / 429 / network, or an unclassified throw): our row is KEPT with its key and the next run retries — should not persist. `retained_at_processor` (a 4xx refusal): our row is DELETED anyway and the copy stays under Resend's own retention (RoPA residual; maintainer decision 2026-09-25). Resend documents that a SENT broadcast cannot be deleted (unmeasured here), so from ~2031 a steady `retained_at_processor` rate is expected, not an incident — `docs/runbooks/cron-jobs.md` § F7 retention-sweep "Resend copies". Log: `broadcasts.retention_sweep.provider_copy_kept` (warn; `tenantId`, `outcome`, `errorKind`, `subKind` / `code` when present — no ids, never the provider's text). |
+
+The durable record is the audit trail, not the counter (no alerting backend is
+bound in code): one counts-only `broadcast_retention_swept` row per tenant per
+run — `swept_count`, `images_marked`, `batches`, `budget_exhausted`,
+`completed`, `provider_copy_kept_transient`, `provider_copy_retained_at_processor`,
+`oldest_anchor` / `newest_anchor` (the ISO anchor range of the rows deleted),
+`actor_role: 'system'`; no ids, no content — written even when nothing expired,
+plus `broadcast_image_removed { reason: 'retention_expired' }` per stamped
+image. No log line the sweep or its route writes carries a broadcast id, a
+member id or content (checked 2026-09-25, after the route stopped logging the
+use-case error's message — pinned by the route's contract test). The one id that
+does reach a log is Resend's own: the gateway adapter's
+`resend.broadcasts.broadcast_deleted` / `broadcast_already_absent` lines carry
+the Resend broadcast id it was asked to delete (an opaque provider id, not a
+member key), as they do for every other `deleteBroadcast` caller.
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts_retention_sweep_failed_total` increments on **two consecutive daily runs** for the same `tenant` | **alarm** | one failed run is retried the next day; two in a row means the retention the RoPA says is enforced is not being enforced | `docs/runbooks/cron-jobs.md` § F7 — broadcasts/retention-sweep |
+| No `broadcast_retention_swept` audit row for a tenant in **48 h** | **warn** | the cron did not run at all (it writes a row per run even when it deletes nothing) | same |
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability

@@ -24,7 +24,7 @@ import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
-import { auditImagesRemoved } from './_mark-owner-images-removed';
+import { markBroadcastBatchImagesRemoved } from './_mark-owner-images-removed';
 
 export type PruneExpiredDraftsError = {
   readonly kind: 'prune.server_error';
@@ -121,9 +121,20 @@ export async function pruneExpiredDrafts(
           tx,
           batchSize,
         );
-        if (page.prunedDrafts.length > 0) {
-          await stampBatchImages(deps, page.prunedDrafts, now, tx);
-        }
+        // ROUND-2 R-M1 — ONE stamp statement for the whole batch; the shared
+        // helper (also the 0310 retention sweep's) audits per image, grouped
+        // by owner, with `actor_role: 'system'`.
+        await markBroadcastBatchImagesRemoved(
+          deps,
+          {
+            tenantId: deps.tenant.slug,
+            reason: 'draft_pruned',
+            at: now,
+            requestId: deps.requestId,
+            owners: page.prunedDrafts,
+          },
+          tx,
+        );
         return page;
       });
 
@@ -162,56 +173,5 @@ export async function pruneExpiredDrafts(
     // violation messages with row data) from leaking into audit.
     const safeMessage = message.length > 500 ? message.slice(0, 500) + '…' : message;
     return err({ kind: 'prune.server_error', message: safeMessage });
-  }
-}
-
-/**
- * ROUND-2 R-M1 — ONE stamp statement for the whole batch, then the audit rows
- * built from what it returned.
- *
- * The audits are still one per image and still carry the OWNING draft's
- * member in `related_member_id`, so they are grouped by owner before emission
- * — a batched stamp must not cost the audit trail its per-member truth.
- */
-async function stampBatchImages(
-  deps: Pick<PruneExpiredDraftsDeps, 'imagesRepo' | 'audit' | 'tenant' | 'requestId'>,
-  drafts: readonly { readonly broadcastId: string; readonly requestedByMemberId: string | null }[],
-  at: Date,
-  tx: unknown,
-): Promise<void> {
-  const stamped = await deps.imagesRepo.markDeletedByOwners(
-    deps.tenant.slug,
-    'broadcast',
-    drafts.map((d) => d.broadcastId),
-    at,
-    tx,
-  );
-  if (stamped.length === 0) return;
-
-  const memberByDraft = new Map(drafts.map((d) => [d.broadcastId, d.requestedByMemberId]));
-  const byOwner = new Map<string, typeof stamped[number][]>();
-  for (const image of stamped) {
-    const bucket = byOwner.get(image.ownerId);
-    if (bucket === undefined) byOwner.set(image.ownerId, [image]);
-    else bucket.push(image);
-  }
-
-  for (const [ownerId, images] of byOwner) {
-    await auditImagesRemoved(
-      deps.audit,
-      {
-        tenantId: deps.tenant.slug,
-        reason: 'draft_pruned',
-        at,
-        requestId: deps.requestId,
-        // The cron holds no session. `'system'` is the truth, and
-        // `check:actor-role-truth` forbids inventing a role here.
-        actorUserId: 'system',
-        actorRole: 'system',
-        relatedMemberId: memberByDraft.get(ownerId) ?? null,
-      },
-      images,
-      tx,
-    );
   }
 }

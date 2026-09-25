@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 69 live audit event types (55 before F119) as a const tuple + discriminated union for
+ * 70 live audit event types (55 before F119) as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -45,9 +45,11 @@
  *     (version started / sent to member, member approved / changes requested
  *     / approval withdrawn, approval voided, schedule confirmed, reminder
  *     sent, expiry warned, expired).
- *   = 75 declared, minus the 6 RETIRED batch events kept only in
- *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **69 live** (this tuple). Static-assert
- *   below (`extends 69`) is the source of truth; the header summary is
+ *   - F7 retention sweep (migration 0310): 1 event — `broadcast_retention_swept`
+ *     (one counts-only row per tenant per daily run).
+ *   = 76 declared, minus the 6 RETIRED batch events kept only in
+ *   `RETIRED_F7_AUDIT_EVENT_TYPES` = **70 live** (this tuple). Static-assert
+ *   below (`extends 70`) is the source of truth; the header summary is
  *   informational only and should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
@@ -215,15 +217,24 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_approval_reminder_sent',
   'broadcast_approval_expiry_warned',
   'broadcast_approval_expired',
+
+  // --- F7 retention sweep (migration 0310) — 1 event ------------------------
+  // ONE row per tenant per daily run of `sweepExpiredBroadcasts`, emitted
+  // even when nothing expired (the row is the evidence the retention is
+  // enforced). COUNTS ONLY — no broadcast id, member id or content; each
+  // swept E-Blast's images are evidenced separately by
+  // `broadcast_image_removed { reason: 'retention_expired' }`.
+  'broadcast_retention_swept',
 ] as const;
 
 /**
- * Static assertion: the tuple length is 69. The authoritative per-category
- * breakdown is the file-header taxonomy above (it nets to 69 live); this
+ * Static assertion: the tuple length is 70. The authoritative per-category
+ * breakdown is the file-header taxonomy above (it nets to 70 live); this
  * assert is the enforced source of truth. If a spec amendment adds/removes
  * an event, update the tuple, this literal, and the header taxonomy —
- * TypeScript errors here ("Type '70' is not assignable to type '69'") if
- * the count drifts. (F119 T022: 55 → 59; T050: 59 → 69.)
+ * TypeScript errors here ("Type '71' is not assignable to type '70'") if
+ * the count drifts. (F119 T022: 55 → 59; T050: 59 → 69; the 0310 retention
+ * sweep: 69 → 70.)
  *
  * (The previous inline arithmetic here was dropped — it double-counted
  * `broadcast_image_unsafe`, which is already inside the "11 F7.1a
@@ -271,7 +282,7 @@ export const RETIRED_F7_AUDIT_EVENT_TYPES = [
 export type RetiredF7AuditEventType =
   (typeof RETIRED_F7_AUDIT_EVENT_TYPES)[number];
 
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 69
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 70
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -529,7 +540,15 @@ export interface F7AuditPayloadShapes {
       | {
           // F119 T081 — `withdrawn` (member withdrawal / staff cancel) and
           // `rejected` (staff rejection) stamp in the same tx as the state change.
-          readonly reason: 'draft_discarded' | 'draft_pruned' | 'member_erased' | 'withdrawn' | 'rejected';
+          // The 0310 retention sweep adds `retention_expired` (the parent
+          // E-Blast passed its retention_years and was deleted).
+          readonly reason:
+            | 'draft_discarded'
+            | 'draft_pruned'
+            | 'member_erased'
+            | 'withdrawn'
+            | 'rejected'
+            | 'retention_expired';
           readonly blob_deleted: false;
           readonly blob_disposition?: never;
           readonly actor_role: string | null;
@@ -652,6 +671,31 @@ export interface F7AuditPayloadShapes {
     readonly days_waiting: number;
     /** Always true: `expired_no_member_response` is in neither the reserved nor the consumed set. */
     readonly allowance_released: true;
+  };
+  // F7 retention sweep (migration 0310) — ONE row per tenant per daily run,
+  // written even when nothing expired. COUNTS ONLY: no broadcast id, no member
+  // key, no content (a swept E-Blast's member is on its own
+  // `broadcast_image_removed { reason: 'retention_expired' }` rows, if it had
+  // images). `completed: false` = a batch threw after `swept_count` rows had
+  // already committed; the rest go on the next daily tick.
+  // `provider_copy_kept_transient` = expired rows KEPT (with their key) because
+  // deleting a Resend copy failed transiently — retried next run.
+  // `provider_copy_retained_at_processor` = rows DELETED although Resend refused
+  // to delete their copy (a sent broadcast cannot be deleted); the copy stays
+  // under Resend's own retention (RoPA residual). `oldest_anchor` / `newest_anchor` = the retention-anchor range
+  // (ISO timestamps, no ids) of the rows deleted, `null` when none — so an
+  // auditor can check nothing younger than the period was removed.
+  readonly broadcast_retention_swept: {
+    readonly swept_count: number;
+    readonly images_marked: number;
+    readonly batches: number;
+    readonly budget_exhausted: boolean;
+    readonly completed: boolean;
+    readonly provider_copy_kept_transient: number;
+    readonly provider_copy_retained_at_processor: number;
+    readonly oldest_anchor: string | null;
+    readonly newest_anchor: string | null;
+    readonly actor_role: 'system';
   };
 }
 
@@ -791,7 +835,7 @@ export interface AuditPort {
    * same `vi.fn()` so behaviour mirrors).
    *
    * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
-   * (all 69 events) to `keyof F7AuditPayloadShapes` (27 typed events since F119 PR-2).
+   * (all 70 events) to `keyof F7AuditPayloadShapes` (28 typed events since the 0310 retention sweep).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
    * silently fell back to `Record<string, unknown>` via a now-retired

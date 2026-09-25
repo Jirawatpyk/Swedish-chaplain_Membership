@@ -169,6 +169,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_approval_reminder_sent',
           'broadcast_approval_expiry_warned',
           'broadcast_approval_expired',
+          // 0310 (F7 retention sweep):
+          'broadcast_retention_swept',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -255,6 +257,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_approval_reminder_sent',
           'broadcast_approval_expiry_warned',
           'broadcast_approval_expired',
+          // 0310 (F7 retention sweep):
+          'broadcast_retention_swept',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -368,6 +372,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_approval_reminder_sent',
           'broadcast_approval_expiry_warned',
           'broadcast_approval_expired',
+          // 0310 (F7 retention sweep):
+          'broadcast_retention_swept',
         ],
       },
     ]);
@@ -406,6 +412,9 @@ describe('findMissingEnumValues', () => {
     // broadcasts.status to one of these (R-9).
     expect(REQUIRED_ENUM_VALUES['broadcast_status']).toContain('awaiting_member_approval');
     expect(REQUIRED_ENUM_VALUES['notification_type']).toContain('eblast_version_sent_member');
+    // 0310 (F7 retention sweep): the daily cron INSERTs its run row; a
+    // non-persisting ADD VALUE would fail every run in prod.
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('broadcast_retention_swept');
   });
 });
 

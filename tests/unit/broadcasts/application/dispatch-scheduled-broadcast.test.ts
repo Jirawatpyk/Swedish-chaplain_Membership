@@ -296,6 +296,8 @@ function makeRepo(opts: RepoOpts): {
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
+    async deleteExpiredForRetention() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
+    async listExpiredForRetention() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
     async existingBroadcastIds() { throw new Error('not used in dispatch-scheduled-broadcast fixture'); },
     },
   };

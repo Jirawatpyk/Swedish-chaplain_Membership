@@ -294,11 +294,25 @@ async function seedDelivery(
 ): Promise<string> {
   const deliveryId = randomUUID();
   const withBounce = opts?.withBounce ?? false;
+  // A REAL parent: since migration 0310 `broadcast_deliveries` has an FK to
+  // `broadcasts`, so an orphan `broadcast_id` is refused with 23503. The
+  // parent is authored by a throwaway id (requested_by_member_id and
+  // submitted_by_user_id carry no FK) and holds neutral content, so the
+  // author-keyed content scrub of the erased member never matches it and it
+  // adds nothing to the no-residual-PII oracle.
+  const broadcastId = await seedBroadcast(tenant, randomUUID(), PLAN_ID, randomUUID(), {
+    segment: 'all_members',
+    subject: 'Delivery parent',
+    bodyHtml: '<p>delivery parent</p>',
+    bodySource: 'delivery parent',
+    fromName: 'Chamber',
+    replyToEmail: 'reply@example.com',
+  });
   await runInTenant(tenant.ctx, (tx) =>
     tx.insert(broadcastDeliveries).values({
       tenantId: tenant.ctx.slug,
       deliveryId,
-      broadcastId: randomUUID(),
+      broadcastId,
       recipientEmailLower: recipientEmail,
       // PRODUCTION shape: recipient_member_id is NEVER populated in prod (the
       // webhook hard-codes null at process-webhook-event.ts:173,221). Seeding

@@ -280,8 +280,15 @@ export function proxy(request: NextRequest): NextResponse {
   // 1. READ_ONLY_MODE — block all writes with 503 (used for rollback /
   //    scheduled maintenance per .env.local README).
   //
-  //    F-stack cron handlers (`POST /api/cron/**`) are intentionally
-  //    INCLUDED in this gate. Rationale: an emergency write-freeze IS
+  //    CAVEAT — this gate sees only POST/PUT/PATCH/DELETE. Native Vercel
+  //    Cron invokes every `/api/cron/**` route with GET (`export const
+  //    GET = POST`), so a scheduled run is NOT stopped here: a cron handler
+  //    that writes must check `env.flags.readOnlyMode` itself and answer 200
+  //    `{ skipped: true, reason: 'read_only_mode' }` (e.g.
+  //    `cron/auth/prune-expired-invitations`,
+  //    `cron/broadcasts/retention-sweep`). The rationale below still
+  //    describes the intent, which a manual POST to a cron route still gets:
+  //    an emergency write-freeze IS
   //    intended to halt all state-mutating server work, including
   //    scheduled jobs — otherwise a cron pass during the freeze could
   //    corrupt state the operator is trying to stabilise. Cron-job.org

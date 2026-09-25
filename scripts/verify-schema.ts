@@ -166,6 +166,19 @@ async function main(): Promise<void> {
         name: "broadcast_versions + broadcast_member_decisions tables + broadcasts.{proposed_send_at, stage_entered_at, current_round, approved_version_id, member_reminder_stage, member_expiry_notified_at} + broadcast_status 'awaiting_member_approval' (mig 0308)",
         query: `SELECT 1 AS hit WHERE to_regclass('public.broadcast_versions') IS NOT NULL AND to_regclass('public.broadcast_member_decisions') IS NOT NULL AND (SELECT count(*) FROM information_schema.columns WHERE table_name = 'broadcasts' AND column_name IN ('proposed_send_at','stage_entered_at','current_round','approved_version_id','member_reminder_stage','member_expiry_notified_at')) = 6 AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'broadcast_status'::regtype AND enumlabel = 'awaiting_member_approval')`,
       },
+      {
+        // F7 retention sweep (mig 0310). All three halves together, because a
+        // partial apply is what this list exists to catch: the enum label is
+        // hoisted to the AUTOCOMMIT pre-pass, so a journal that skips 0310
+        // still has it while the FK and the trigger amendment are missing —
+        // and without the trigger arm, the sweep's DELETE of a parent that
+        // has deliveries raises `broadcast_deliveries_append_only` on the
+        // cascade. `convalidated` is deliberately NOT asserted: the FK ships
+        // NOT VALID and is validated by hand (runbook cron-jobs.md), so this
+        // canary must pass both before and after that step.
+        name: "broadcast_deliveries_broadcast_fk (ON DELETE CASCADE) + broadcast_deliveries_append_only_fn cascade arm + audit_event_type 'broadcast_retention_swept' (mig 0310)",
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'broadcast_deliveries_broadcast_fk' AND conrelid = 'public.broadcast_deliveries'::regclass AND confrelid = 'public.broadcasts'::regclass AND contype = 'f' AND confdeltype = 'c' AND array_length(conkey, 1) = 2) AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcast_deliveries_append_only_fn' AND prosrc LIKE '%pg_trigger_depth()%') AND EXISTS (SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'broadcast_retention_swept')`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

@@ -38,7 +38,14 @@ import type { BroadcastImageOwnerKind, BroadcastImagesRepo, BroadcastImagesTx } 
  * erasure — three very different compliance stories — and, since F119 T081,
  * a withdrawn (member withdrawal or staff cancel) or rejected E-Blast.
  */
-export type ImageRemovalReason = 'draft_discarded' | 'draft_pruned' | 'member_erased' | 'withdrawn' | 'rejected';
+export type ImageRemovalReason =
+  | 'draft_discarded'
+  | 'draft_pruned'
+  | 'member_erased'
+  | 'withdrawn'
+  | 'rejected'
+  // The 0310 retention sweep: the owning E-Blast passed its retention and was deleted.
+  | 'retention_expired';
 
 export interface MarkOwnerImagesRemovedDeps {
   readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
@@ -131,4 +138,76 @@ export async function auditImagesRemoved(
   for (const event of events) {
     await audit.emitTyped(tx, event);
   }
+}
+
+/**
+ * ROUND-2 R-M1 (moved here from `prune-expired-drafts.ts` for the 0310
+ * retention sweep) — stamp every live image of a BATCH of deleted E-Blasts in
+ * ONE statement, then audit each stamped row with its owning E-Blast's member.
+ *
+ * Two callers delete E-Blast rows in bounded batches — the draft prune and the
+ * retention sweep — and both must stamp inside the DELETE's own transaction
+ * (see the file header for why). They differ only in `reason`, so the batch
+ * shape lives once, here. The audits stay one per image and still carry the
+ * OWNING E-Blast's member in `related_member_id`, so they are grouped by owner
+ * before emission — a batched stamp must not cost the audit trail its
+ * per-member truth.
+ *
+ * `actorUserId` / `actorRole` are both `'system'`: both callers are crons that
+ * hold no session, and `check:actor-role-truth` forbids inventing a role.
+ *
+ * Returns the number of image rows stamped.
+ */
+export async function markBroadcastBatchImagesRemoved(
+  deps: {
+    readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwners'>;
+    readonly audit: AuditPort;
+  },
+  input: {
+    readonly tenantId: TenantSlug;
+    readonly reason: ImageRemovalReason;
+    readonly at: Date;
+    readonly requestId: string;
+    readonly owners: readonly {
+      readonly broadcastId: string;
+      readonly requestedByMemberId: string | null;
+    }[];
+  },
+  tx: BroadcastImagesTx,
+): Promise<number> {
+  if (input.owners.length === 0) return 0;
+  const stamped = await deps.imagesRepo.markDeletedByOwners(
+    input.tenantId,
+    'broadcast',
+    input.owners.map((o) => o.broadcastId),
+    input.at,
+    tx,
+  );
+  if (stamped.length === 0) return 0;
+
+  const memberByOwner = new Map(input.owners.map((o) => [o.broadcastId, o.requestedByMemberId]));
+  const byOwner = new Map<string, (typeof stamped)[number][]>();
+  for (const image of stamped) {
+    const bucket = byOwner.get(image.ownerId);
+    if (bucket === undefined) byOwner.set(image.ownerId, [image]);
+    else bucket.push(image);
+  }
+
+  for (const [ownerId, images] of byOwner) {
+    await auditImagesRemoved(
+      deps.audit,
+      {
+        tenantId: input.tenantId,
+        reason: input.reason,
+        at: input.at,
+        requestId: input.requestId,
+        actorUserId: 'system',
+        actorRole: 'system',
+        relatedMemberId: memberByOwner.get(ownerId) ?? null,
+      },
+      images,
+      tx,
+    );
+  }
+  return stamped.length;
 }
