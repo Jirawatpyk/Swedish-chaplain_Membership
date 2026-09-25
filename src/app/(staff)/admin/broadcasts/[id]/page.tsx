@@ -9,6 +9,7 @@ import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/compone
 import { RelativeTime } from '@/components/ui/relative-time';
 import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
+import { failureReasonToken } from '@/components/broadcast/admin/failure-reason';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
@@ -217,6 +218,14 @@ export default async function AdminBroadcastDetailPage({
   const showReview = showApprove || showReject;
   const showActionRow = canWrite && (isCancellable || showReview || showStart || showSchedule);
 
+  // F119 PR-A — why a `failed_to_dispatch` E-Blast was not sent. The stored
+  // reason is a lookup hint (`failureReasonToken`), never display text; a token
+  // with no sentence in the catalogue reads the generic one (`t.has`).
+  const failureToken = status === 'failed_to_dispatch' ? failureReasonToken(broadcast.failureReason) : null;
+  const failureKey = failureToken === null ? null : `failureReason.${failureToken}`;
+  const failureReasonText =
+    failureKey !== null && t.has(failureKey) ? t(failureKey) : t('failureReason.generic');
+
   const turn = turnOf(status);
   // M2 — the Round row speaks only where a round exists or can still start:
   // with the flag off, `submitted` has no formatting round (FR-034 — "behave
@@ -271,6 +280,19 @@ export default async function AdminBroadcastDetailPage({
         }
       />
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
+
+      {/* F119 PR-A — "marketing sees why it is blocked": the stored reason,
+          translated (never the raw value, which can be provider free text),
+          under the status it explains. A note, not a live region: it is page
+          content, not an event. Body text, not the muted empty-sentinel tone. */}
+      {status === 'failed_to_dispatch' ? (
+        <InlineAlert tone="warning" role="note" data-testid="eblast-failure-reason">
+          <InlineAlertTitle>{t('failureReasonTitle')}</InlineAlertTitle>
+          <InlineAlertDescription>
+            <span className="block break-words text-foreground">{failureReasonText}</span>
+          </InlineAlertDescription>
+        </InlineAlert>
+      ) : null}
 
       {threadUnavailable ? (
         <InlineAlert tone="destructive" data-testid="eblast-thread-unavailable">

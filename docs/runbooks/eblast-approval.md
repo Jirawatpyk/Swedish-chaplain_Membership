@@ -183,12 +183,63 @@ its time is an F7 dispatch problem — see `docs/runbooks/broadcasts-dispatch-fa
 expired**. The schedule dialog here offers "Choose another time", "Send now" and "Cancel the
 confirmed time" (→ Changes requested, approval and time both cleared) — not "keep the proposal".
 To stop it otherwise: start a new version (voids the approval) or cancel the E-Blast. Reject is
-not offered here.
+not offered here. When it comes due, the dispatcher re-checks the member's standing and refuses a
+halted, suspended or terminated member — see § Dispatch standing refusal.
 
 ### `expired_no_member_response` — Expired (closed)
 
 Terminal and cannot be reopened (the DB state machine has no edge out). The allowance place is
 free (`quota_year_consumed` stays NULL). The member submits a new E-Blast if they still want one.
+
+## Dispatch standing refusal
+
+F119 PR-A — unflagged, so it applies to every F7 send, flag on or off. Just before any Resend
+call, both dispatch legs re-read the rules submit applies (`readMemberSendStanding`): the F7 halt
+flag and F8 membership access. The approval edges read them too, but an E-Blast can sit
+`approved` for days, and a refund or full credit note ends coverage at once (`0306`).
+
+**What it looks like**
+
+| Signal | Refusal (halted / not in good standing) | Read failure |
+|---|---|---|
+| Row | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick (5 min) asks again |
+| Staff detail page | a "Why this E-Blast was not sent" note under the status, naming the cause | nothing new |
+| Audit | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx) | none |
+| Member | the FR-021 "did not go out" email, with a factual reason and "contact the chamber" | nothing |
+| Quota | the slot is released (design D1) | unchanged (still reserved) |
+| Metrics | `broadcasts_failed_to_dispatch_count{failure_reason="member_ineligible"}` — never `app_error` | `broadcasts_dispatch_resolve_failed_total{phase="standing"}` + a `cron.broadcasts.dispatch.server_error` warn with `errClass` |
+
+A refusal is **permanent by the maintainer's rule, halted members included**: there is no edge out
+of `failed_to_dispatch`, and clearing a halt does not revive the row. Mail a prior tick already
+handed to Resend is never refused (legacy leg: the inherited-id probe; import leg: a
+`resend_broadcast_id` already attached).
+
+**What staff do**
+
+1. Open `/admin/broadcasts/<id>`; the note names the cause. The member has already been emailed.
+2. **Halted** — the member's E-Blasts were on hold (complaint-rate auto-halt). Review the halt as
+   usual (`/admin/broadcasts` halt banner → Clear halt). Nothing to do on this row.
+3. **Not in good standing** — the membership is suspended (unpaid / pending reactivation) or
+   terminated (lapsed, refunded, fully credited). Resolve the membership in F8 if that is wrong.
+4. If the member still wants the content sent, they (or staff by proxy) submit a **new** E-Blast
+   once eligible. The released slot is available to it.
+5. **Read failures** that persist (`phase="standing"` > 0 for 15 min) mean the F3 halt read or the
+   F8 renewal-cycle read is failing: check Neon, the `errClass` on the cron's warn line, and the
+   `[membership-access-bridge] access lookup failed — failing closed` warns. Nothing is sent while
+   it lasts, so a scheduled send slips; `broadcasts_approved_overdue_count` notices after an hour.
+
+**Query** — standing refusals in the last 7 days:
+
+```sql
+SELECT timestamp, event_type, payload->>'broadcast_id' AS broadcast_id,
+       payload->>'related_member_id' AS member_id
+  FROM audit_log
+ WHERE tenant_id = '<tenant>'
+   AND event_type IN ('broadcast_member_halted_pending_review', 'broadcast_membership_suspended_blocked')
+   AND payload->>'surface' = 'dispatch'
+   AND timestamp > now() - interval '7 days'
+ ORDER BY timestamp DESC;
+```
 
 ## The expiry clock
 

@@ -273,9 +273,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // in the same tick now share one F3 round-trip instead of
     // re-fetching the same recipient list per broadcast. Cache scope
     // = this cron-tick closure (fresh Map per tick).
+    const tickBridge = makeTickMemoizedMembersBridge(baseDeps.membersBridge);
     const deps = {
       ...baseDeps,
-      membersBridge: makeTickMemoizedMembersBridge(baseDeps.membersBridge),
+      membersBridge: tickBridge,
+      // F119 PR-A — the send-time standing gate reads the halt list through
+      // the SAME tick memo, so up to MAX_PER_TICK broadcasts cost one read.
+      sendStanding: { ...baseDeps.sendStanding, membersBridge: tickBridge },
       // F119 T031 (FR-041c) — brand chrome read live at dispatch, composed
       // here (the seam lives in src/lib) so the delivered email carries the
       // logo, colour and address the preview showed.

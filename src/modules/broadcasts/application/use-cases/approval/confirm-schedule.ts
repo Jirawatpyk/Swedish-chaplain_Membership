@@ -44,8 +44,8 @@
  * write submit's own refusal audit row after the rollback (T166 follow-up,
  * `standingRefusalAuditEvent`); a fail-closed read writes none. A re-time of an
  * already `approved` row does not re-read them — the promotion is the edge
- * where the row becomes dispatchable — and dispatch does not re-read them
- * either (quickstart § 3.6).
+ * where the row becomes dispatchable — and dispatch re-reads them at send
+ * time (F119 PR-A), so a standing lost after the re-time is still refused.
  *
  * The promotion re-checks every image of the approved version against the
  * tenant allow-list (read before the tx, on its own connection): a host

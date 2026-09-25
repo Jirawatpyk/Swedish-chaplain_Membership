@@ -159,3 +159,43 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
     }
   });
 });
+
+/**
+ * F119 PR-A — the two send-time standing refusals, and the quota promise every
+ * failure email makes.
+ *
+ * The reassurance paragraph said the allowance slot "remains reserved" and
+ * invited the member to re-schedule the same broadcast. Neither is true:
+ * `failed_to_dispatch` RELEASES the slot (design D1, pinned live by
+ * `quota-release-on-failed-dispatch.test.ts`) and has no outgoing edge, so the
+ * only way to send the content is a NEW E-Blast. The old sentence told a member
+ * to wait for, or look for, an action that does not exist.
+ */
+describe('buildBroadcastFailedToDispatchEmail — member standing and the quota promise (F119 PR-A)', () => {
+  it('en: a halt says the account is under review and whom to contact, without accusing', () => {
+    const text = build('member_halted', 'en').text;
+    expect(text).toMatch(/under review/i);
+    expect(text).toMatch(/contact/i);
+    expect(text).not.toMatch(/complain|spam|violat|abuse/i);
+  });
+
+  it('en: a lapsed or suspended membership says it is not currently active, and whom to contact', () => {
+    const text = build('member_not_in_good_standing', 'en').text;
+    expect(text).toMatch(/not currently active/i);
+    expect(text).toMatch(/contact/i);
+  });
+
+  it.each([
+    ['en', /remains reserved|re-schedule/i],
+    ['th', /ยังคงสำรองไว้|จัดกำหนดการใหม่/],
+    ['sv', /fortfarande reserverad|schemalägga om/i],
+  ] as const)('%s: the reassurance no longer promises a reserved slot or a re-schedule', (locale, stale) => {
+    expect(reassuranceFor(locale)).not.toMatch(stale);
+  });
+
+  it('en: the reassurance says the send did not count and that a NEW E-Blast is the way to send it', () => {
+    const text = reassuranceFor('en');
+    expect(text).toMatch(/not (been )?counted|did not count/i);
+    expect(text).toMatch(/new E-Blast/i);
+  });
+});

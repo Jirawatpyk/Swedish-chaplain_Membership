@@ -2170,10 +2170,15 @@ export const broadcastsMetrics = {
    * `broadcasts.failed_to_dispatch.count{tenant, failure_reason}` —
    * dispatch-failure forensics. Paired with `dispatchBudgetExhausted`
    * (which counts only the AS2 1-hour-budget terminal case).
+   *
+   * `member_ineligible` (F119 PR-A) — the send-time standing gate refused: the
+   * member was halted, suspended or terminated when the send came due. A
+   * decision about the member, not an infrastructure fault, so it never counts
+   * as `app_error` (observability.md § 29).
    */
   failedToDispatchCount(
     tenantId: string,
-    failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout',
+    failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' | 'member_ineligible',
   ): void {
     safeMetric(() => {
       counter(
@@ -2746,13 +2751,16 @@ export const broadcastsMetrics = {
    * triage tree (F3 pages / Neon / opt-out lookup) described only the
    * resolver. The name is kept so the catalogued alert keeps firing; the label
    * says which subsystem to open. Closed union across both legs:
-   * live leg `lock | resolve | inherited_status | persist_broadcast_id`,
-   * import leg `gateway | resolve | terminal_write`.
+   * live leg `lock | standing | resolve | inherited_status | persist_broadcast_id`,
+   * import leg `gateway | standing | resolve | terminal_write`. `standing`
+   * (F119 PR-A) — the member-standing read (F3 halt list or F8 access) failed,
+   * so nothing was sent (observability.md § 29).
    */
   dispatchResolveFailedTotal(
     tenantId: string,
     phase:
       | 'lock'
+      | 'standing'
       | 'resolve'
       | 'inherited_status'
       | 'persist_broadcast_id'

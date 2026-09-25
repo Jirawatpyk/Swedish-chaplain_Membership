@@ -39,6 +39,7 @@ import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
 } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -106,6 +107,7 @@ interface Recorder {
     eventType: string;
     payload: Record<string, unknown>;
     txId?: number | undefined;
+    actorUserId?: string | undefined;
   }>;
   readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
   readonly sends: string[];
@@ -115,6 +117,8 @@ interface Recorder {
   readonly resendIdWrites: Array<{ resendBroadcastId: string; txId?: number | undefined }>;
   /** Round 3 finding 3-9 — was the import stamped consumed, and when. */
   readonly completionStamps: boolean[];
+  /** F119 PR-A — every Resend call the tick made, in order (a standing refusal makes none). */
+  readonly gatewayCalls: GatewayMethod[];
 }
 
 /**
@@ -227,7 +231,11 @@ function makeDeps(opts: {
   readonly lockStatus?: 'not_found' | 'sending' | 'cancelled';
   /** Round 4 T4/M8 — the completion stamp failing AFTER a successful send. */
   readonly completionStampThrows?: boolean;
-}): { deps: DepsWithEveryPort; rec: Recorder } {
+  /** F119 PR-A — the member's standing at send time; default: in good standing. */
+  readonly standing?: FakeSendStandingOpts;
+  /** F119 PR-A — an earlier tick's send was handed to Resend (the id is attached only after it). */
+  readonly resendBroadcastId?: string | null;
+}): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
     transitions: [],
@@ -238,6 +246,7 @@ function makeDeps(opts: {
     plansChecked: [],
     resendIdWrites: [],
     completionStamps: [],
+    gatewayCalls: [],
   };
 
   const broadcast = {
@@ -262,12 +271,14 @@ function makeDeps(opts: {
     customRecipientEmails: null,
     estimatedRecipientCount: RECIPIENTS.length,
     resendAudienceId: opts.resendAudienceId ?? null,
+    resendBroadcastId: opts.resendBroadcastId ?? null,
     audienceImportId: opts.audienceImportId ?? null,
     audienceImportSubmittedAt: opts.audienceImportSubmittedAt ?? null,
     audienceImportCompletedAt: null,
   };
 
   function maybeThrow(m: GatewayMethod): void {
+    rec.gatewayCalls.push(m);
     if (opts.throwOn?.method === m) {
       throw gatewayThrow(
         opts.throwOn.kind,
@@ -389,6 +400,8 @@ function makeDeps(opts: {
           return ok({ planId: 'plan-new', planCode: 'CORP', eblastPerYear: 12 });
         },
       },
+      // F119 PR-A — the send-time standing gate (halt list + F8 access).
+      sendStanding: makeFakeSendStanding(opts.standing),
       broadcastsRepo: {
         async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
           // A DISTINCT handle per transaction. `null` for every call made the
@@ -495,7 +508,7 @@ function makeDeps(opts: {
         },
       },
       audit: {
-        async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown> }) {
+        async emit(tx: unknown, e: { eventType: string; payload: Record<string, unknown>; actorUserId?: string }) {
           // Round 3 finding 3-8 — a failing audit INSERT. In production this
           // aborts the surrounding transaction (25P02), which is why WHICH tx it
           // runs in decides what survives.
@@ -509,6 +522,7 @@ function makeDeps(opts: {
             eventType: e.eventType,
             payload: e.payload,
             txId: (tx as { txId?: number } | null)?.txId,
+            actorUserId: e.actorUserId,
           });
         },
       },
@@ -2070,5 +2084,113 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
     expect(rec.audits.map((a) => a.eventType)).toContain('broadcast_failed_to_dispatch');
     expect(rec.memberEmails).toHaveLength(1);
+  });
+});
+
+/**
+ * F119 PR-A — the member-standing gate on the IMPORT leg, read before the
+ * submit/confirm branch so it covers both ticks. Same rule as the legacy leg:
+ * a refusal is PERMANENT and goes through `failTerminally` (the terminal
+ * transition is what hands a tick-1 Resend audience to `cleanup-audiences`); a
+ * read that fails decides nothing and the row stays `approved`.
+ */
+describe('buildAudienceTick — member standing at send time (F119 PR-A)', () => {
+  it.each([
+    ['halted', { halted: ['m-1'] }, 'member_halted', 'broadcast_member_halted_pending_review'],
+    ['suspended', { access: 'suspended' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked'],
+  ] as const)('tick 1, a %s member → failed_to_dispatch (%s) before any Resend call', async (_label, standing, reason, refusalEvent) => {
+    const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({ standing });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({
+      ok: false,
+      error: { kind: 'audience_import_failed', reason, importId: null, observed: null, expected: null },
+    });
+    expect(rec.transitions).toEqual([
+      expect.objectContaining({ status: 'failed_to_dispatch', failureReason: reason }),
+    ]);
+    // Both rows in the terminal transaction; the refusal row is the cron's,
+    // role-less, and never snake `member_id` (the 0009 trigger key).
+    expect(rec.audits.map((a) => [a.eventType, a.txId])).toEqual([
+      ['broadcast_failed_to_dispatch', rec.transitions[0]?.txId],
+      [refusalEvent, rec.transitions[0]?.txId],
+    ]);
+    expect(rec.audits[1]).toMatchObject({
+      actorUserId: 'system:cron',
+      payload: { related_member_id: 'm-1', broadcast_id: BROADCAST_ID, surface: 'dispatch', actor_role: null },
+    });
+    expect(rec.audits[1]?.payload).not.toHaveProperty('member_id');
+    expect(spy).toHaveBeenCalledWith('test-tenant', 'member_ineligible');
+    expect(rec.memberEmails).toEqual([{ templateKey: 'broadcast_failed_to_dispatch', reason }]);
+    expect(rec.gatewayCalls).toEqual([]);
+  });
+
+  it('tick 2, a member halted after the import was submitted → terminal via failTerminally, so the tick-1 audience is reaped, not orphaned', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, standing: { halted: ['m-1'] } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({
+      ok: false,
+      error: { kind: 'audience_import_failed', reason: 'member_halted', importId: 'imp-1', observed: null, expected: null },
+    });
+    // The terminal state IS the cleanup hand-off: `cleanup-audiences` reaps
+    // terminal rows that still carry `resend_audience_id` (Free plan: three).
+    // A shortcut return here would leave the row `approved`, invisible to it.
+    expect(rec.transitions.map((t) => [t.status, t.failureReason])).toEqual([['failed_to_dispatch', 'member_halted']]);
+    expect(rec.audits.map((a) => a.eventType)).toEqual([
+      'broadcast_failed_to_dispatch',
+      'broadcast_member_halted_pending_review',
+    ]);
+    expect(rec.audits[0]?.payload).toMatchObject({ importId: 'imp-1', reason: 'member_halted' });
+    // Nothing was polled, created or sent on the refusing tick.
+    expect(rec.gatewayCalls).toEqual([]);
+    expect(rec.sends).toEqual([]);
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  it.each([
+    ['the halt read throws', { haltReadThrows: true }, 'Error'],
+    ['the access lookup answers its error arm', { access: 'lookup_error' }, 'membership_access.lookup_error'],
+  ] as const)('%s → dispatch.server_error phase standing; the row stays approved and nothing reaches Resend', async (_label, standing, errClass) => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, standing });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'standing', errClass });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+    expect(rec.gatewayCalls).toEqual([]);
+  });
+
+  it('a row whose send an earlier tick already handed to Resend (resend_broadcast_id attached) skips the standing read entirely', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: 'rb-earlier-tick',
+      standing: { halted: ['m-1'] },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(deps.sendStanding.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
+    expect(deps.sendStanding.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+    expect(rec.transitions.map((t) => t.failureReason)).not.toContain('member_halted');
+  });
+
+  it('a member in good standing proceeds on both ticks, and the read names the requesting member', async () => {
+    const tick1 = makeDeps({});
+    expect((await buildAudienceTick(tick1.deps as never, { broadcastId: BROADCAST_ID })).ok).toBe(true);
+    expect(tick1.deps.sendStanding.membershipAccess.getMembershipAccess).toHaveBeenCalledWith(tenant, 'm-1');
+
+    const tick2 = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
+    const res = await buildAudienceTick(tick2.deps as never, { broadcastId: BROADCAST_ID });
+    expect(res.ok).toBe(true);
+    expect(tick2.rec.sends).toEqual(['rb-1']);
   });
 });

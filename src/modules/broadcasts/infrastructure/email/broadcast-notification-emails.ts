@@ -278,7 +278,8 @@ export function buildBroadcastFailedToDispatchEmail(
   // rendered for exactly two of fourteen reason keys; both of those state its
   // content themselves; the other twelve never saw it. Every reader still gets
   // `body1` (the broadcast did not go out), the reason sentence, and
-  // `reassurance` (the quota slot is still reserved). So the deletion costs no
+  // `reassurance` (the fate of the quota slot — released, since F119 PR-A
+  // corrected a sentence that claimed it stayed reserved). So the deletion costs no
   // reader anything, and removes a paragraph that had been wrong twice.
 
   const html = `<!doctype html>

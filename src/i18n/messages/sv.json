@@ -3459,6 +3459,27 @@
           "event_attendees_last_90d": "Deltagare (senaste 90 dagarna)",
           "custom": "Anpassad mottagarlista"
         },
+        "failureReasonTitle": "Varför E-Blasten inte skickades",
+        "failureReason": {
+          "member_halted": "Medlemmens E-Blasts var pausade för granskning när denna skulle skickas. Granska pausen; medlemmen behöver skicka in en ny E-Blast.",
+          "member_not_in_good_standing": "Medlemskapet var avstängt eller avslutat när denna skulle skickas. Medlemmen behöver skicka in en ny E-Blast när medlemskapet är aktivt igen.",
+          "failed_rows": "Resend avvisade några mottagaradresser i kontaktimporten.",
+          "counts_incoherent": "Kontaktimportens antal gick inte ihop, så utskicket stoppades.",
+          "count_mismatch": "Antalet importerade mottagare stämde inte med målgruppen vid utskickstillfället.",
+          "provider_failed": "Resend rapporterade att kontaktimporten misslyckades.",
+          "gateway_permanent": "Resend avvisade begäran (ett permanent fel). Kontrollera Resend-kontot och planens gränser.",
+          "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Kontrollera utskicksloggarna för denna E-Blast.",
+          "malformed_segment": "Den sparade målgruppen för denna E-Blast är ofullständig (en nivåmålgrupp utan nivåer).",
+          "audience_too_large": "Målgruppen växte förbi den tillåtna storleken mellan godkännande och utskick.",
+          "retry_budget_exhausted": "Resend gick inte att nå på över en timme, så utskicket slutade försöka.",
+          "audience_post_suppression_empty": "Inga mottagare återstod när avregistreringar och avanmälningar hade tillämpats.",
+          "audience_membership_drift": "Resend-målgruppen innehöll fler kontakter än som beräknats, så utskicket stoppades.",
+          "audience_import_stuck": "Kontaktimporten blev inte klar inom 30 minuter.",
+          "resend_resource_missing": "En Resend-resurs för denna E-Blast finns inte längre. Kontrollera Resend-kontot.",
+          "resend_resource_404": "Resend har inte längre detta utskick (upptäckt vid 24-timmarsavstämningen).",
+          "no_resend_resource_attached": "Inget Resend-utskick kopplades någonsin till denna E-Blast (upptäckt vid 24-timmarsavstämningen).",
+          "generic": "Utskicket misslyckades. Se granskningsloggen och utskicksloggarna för denna E-Blast för orsaken."
+        },
         "audit": {
           "title": "Livscykelstidslinje",
           "drafted": "Utkast skapat",
@@ -7677,9 +7698,11 @@
         "gateway_permanent": "vår e-postleverantör avvisade begäran – din kammaradministratör behöver kontrollera kontot",
         "gateway_unknown": "ett oväntat problem uppstod när utskicket förbereddes",
         "audience_import_stuck": "det tog för lång tid att förbereda mottagarlistan, så vi avbröt i stället för att skicka vid en oväntad tidpunkt",
+        "member_halted": "ditt konto granskas, så utskick från det är pausade tills vidare – kontakta handelskammaren för mer information",
+        "member_not_in_good_standing": "ditt medlemskap är inte aktivt för närvarande – kontakta handelskammaren för mer information",
         "generic": "ett tekniskt problem hindrade leveransen"
       },
-      "reassurance": "Din utskickskvot har INTE förbrukats och är fortfarande reserverad. Du kan schemalägga om samma utskick från administrationskön, eller låta din kammaradministratör skicka det manuellt.",
+      "reassurance": "Utskicket har inte räknats av från din årliga utskickskvot – platsen har frigjorts. Det kan inte skickas igen som det är; skicka in ett nytt utskick om du vill skicka innehållet.",
       "ctaRescheduleLabel": "Öppna utskicksdetaljer",
       "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
     },

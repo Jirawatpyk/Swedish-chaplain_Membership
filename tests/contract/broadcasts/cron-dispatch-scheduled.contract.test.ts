@@ -35,6 +35,10 @@ const dispatchScheduledBroadcastMock = vi.fn();
 const dispatchResolveFailedTotalSpy = vi.fn();
 const cronSkippedCountSpy = vi.fn();
 const cronUnknownErrorCountSpy = vi.fn();
+/** F119 PR-A — the members bridge the deps factory hands the route, and the F8 access port. */
+const STUB_BRIDGE = { kind: 'members-bridge-stub' } as const;
+const STUB_ACCESS = { kind: 'membership-access-stub' } as const;
+const buildDepsArgs: unknown[][] = [];
 
 const envMock = {
   cron: { secret: 'test-cron-secret' },
@@ -84,8 +88,14 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
 vi.mock('@/modules/broadcasts', () => ({
   asBroadcastId: (raw: string) => raw,
   dispatchScheduledBroadcast: (...args: unknown[]) => dispatchScheduledBroadcastMock(...args),
-  makeDispatchScheduledBroadcastDeps: async () => ({ membersBridge: { kind: 'members-bridge-stub' } }),
-  makeTickMemoizedMembersBridge: (inner: unknown) => inner,
+  makeDispatchScheduledBroadcastDeps: async () => ({
+    membersBridge: STUB_BRIDGE,
+    // F119 PR-A — the factory wires the RAW bridge; the route must swap in its memo.
+    sendStanding: { membersBridge: STUB_BRIDGE, membershipAccess: STUB_ACCESS },
+  }),
+  // A marker wrapper, not the identity: with `(inner) => inner` nothing here
+  // could tell whether the route passed the memo or the raw bridge on.
+  makeTickMemoizedMembersBridge: (inner: unknown) => ({ memoOf: inner }),
   // `SPLIT_THRESHOLD_RECIPIENTS` was mocked here for the Phase 9b claim
   // predicate. Both are gone: `ca51f59a1` deleted the batch crons and the
   // constant, and the route now references neither (`grep -c` = 0). Removed
@@ -94,7 +104,10 @@ vi.mock('@/modules/broadcasts', () => ({
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
   isF7ImportAudienceEnabled: () => isF7ImportAudienceEnabledMock(),
   buildAudienceTick: (...args: unknown[]) => buildAudienceTickMock(...args),
-  makeBuildAudienceTickDeps: async () => ({ kind: 'build-deps-stub' }),
+  makeBuildAudienceTickDeps: async (...args: unknown[]) => {
+    buildDepsArgs.push(args);
+    return { kind: 'build-deps-stub' };
+  },
 }));
 
 function makeRequest(opts: { auth?: string }): NextRequest {
@@ -118,6 +131,7 @@ beforeEach(() => {
   dispatchResolveFailedTotalSpy.mockReset();
   cronSkippedCountSpy.mockReset();
   cronUnknownErrorCountSpy.mockReset();
+  buildDepsArgs.length = 0;
 });
 
 afterEach(() => {
@@ -446,3 +460,90 @@ function sqlTextOf(q: unknown): string {
   if (Array.isArray(node.value)) return node.value.join('');
   return '';
 }
+
+/**
+ * F119 PR-A — the send-time standing gate, as the cron sees it.
+ *
+ * A standing refusal is terminal and already recorded by the use case, so it
+ * must land in `permanent_failed` — never `unknown_error`, whose counter PAGES
+ * on-call as enum drift. A failed standing read is transient: `retryable`, and
+ * the resolve-failed counter labelled `standing` so the runbook opens the
+ * member-standing reads rather than the F3 page walk. And both legs must read
+ * the halt list through the tick's memo, or 50 rows cost 50 reads.
+ */
+describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', () => {
+  function oneRow(): void {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+  }
+
+  it.each(['member_halted', 'member_not_in_good_standing'] as const)(
+    'legacy leg: a %s refusal → permanent_failed, NOT unknown_error, and does not page',
+    async (reason) => {
+      oneRow();
+      dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'broadcast_failed_to_dispatch', reason }));
+
+      const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+      const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
+
+      expect(body['permanent_failed']).toBe(1);
+      expect(body['unknown_error']).toBe(0);
+      expect(body['retryable']).toBe(0);
+      expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['member_halted', 'member_not_in_good_standing'] as const)(
+    'import leg: a %s refusal → permanent_failed, NOT unknown_error, and does not page',
+    async (reason) => {
+      isF7ImportAudienceEnabledMock.mockReturnValue(true);
+      oneRow();
+      buildAudienceTickMock.mockResolvedValue(
+        err({ kind: 'audience_import_failed', reason, importId: 'imp-1', observed: null, expected: null }),
+      );
+
+      const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+      const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
+
+      expect(body['permanent_failed']).toBe(1);
+      expect(body['unknown_error']).toBe(0);
+      expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it('a failed standing read → retryable, counted under phase `standing`', async () => {
+    oneRow();
+    dispatchScheduledBroadcastMock.mockResolvedValue(
+      err({ kind: 'dispatch.server_error', message: 'member_standing_halt_read_failed', errClass: 'Error', phase: 'standing' }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
+
+    expect(body['retryable']).toBe(1);
+    expect(body['permanent_failed']).toBe(0);
+    expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant', 'standing');
+  });
+
+  it('both legs read the halt list through the tick memo, not the raw bridge', async () => {
+    oneRow();
+    dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' }));
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+
+    const [legacyDeps] = dispatchScheduledBroadcastMock.mock.calls[0] as [
+      { membersBridge: unknown; sendStanding: { membersBridge: unknown; membershipAccess: unknown } },
+    ];
+    expect(legacyDeps.sendStanding.membersBridge).toEqual({ memoOf: STUB_BRIDGE });
+    // The SAME memo instance the resolver reads, so one tick = one cache.
+    expect(legacyDeps.sendStanding.membersBridge).toBe(legacyDeps.membersBridge);
+    expect(legacyDeps.sendStanding.membershipAccess).toBe(STUB_ACCESS);
+
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    // The import maker wires `sendStanding` from the bridge it is handed.
+    expect(buildDepsArgs[0]?.[1]).toEqual({ memoOf: STUB_BRIDGE });
+  });
+});

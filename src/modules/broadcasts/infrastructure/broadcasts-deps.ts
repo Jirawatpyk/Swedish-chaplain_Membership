@@ -511,6 +511,10 @@ export async function makeDispatchScheduledBroadcastDeps(
     // failed_to_dispatch. Routes through F4 outbox dispatcher's
     // `broadcast_failed_to_dispatch_notification` render branch.
     emailTransactional: emailTransactionalBridge,
+    // F119 PR-A — the send-time standing reads. The cron REPLACES
+    // `membersBridge` here with its per-tick memo (it does the same for the
+    // top-level bridge), so a tick reads the tenant's halt list once.
+    sendStanding: { membersBridge, membershipAccess: membershipAccessBridge },
   };
 }
 
@@ -1130,5 +1134,8 @@ export async function makeBuildAudienceTickDeps(
     membersBridge: bridge,
     emailTransactional: emailTransactionalBridge,
     plansBridge,
+    // F119 PR-A — the send-time standing reads, through the caller's per-tick
+    // memo (`bridge`), so a tick reads the tenant's halt list once.
+    sendStanding: { membersBridge: bridge, membershipAccess: membershipAccessBridge },
   };
 }

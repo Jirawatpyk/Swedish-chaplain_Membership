@@ -59,7 +59,12 @@ import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { AuditPortInvariantError } from '../ports/audit-port';
-import type { AuditPort } from '../ports/audit-port';
+import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
+import {
+  readMemberSendStanding,
+  standingRefusalAuditEvent,
+  type MemberSendStandingDeps,
+} from './_member-send-standing';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
@@ -142,6 +147,15 @@ export const IMPORT_FAILURE_REASONS = [
    * the audience and would still receive the broadcast.
    */
   'audience_membership_drift',
+  /**
+   * F119 PR-A — the member's broadcasts were halted pending admin review when
+   * the send came due. Read at SEND time on both legs (the legacy leg records
+   * the same token); PERMANENT by the maintainer's rule, even though a halt can
+   * be cleared — the member submits a new E-Blast.
+   */
+  'member_halted',
+  /** F119 PR-A — the membership was suspended or terminated (F8) at send time. */
+  'member_not_in_good_standing',
 ] as const;
 
 export type ImportFailureReason = (typeof IMPORT_FAILURE_REASONS)[number];
@@ -226,9 +240,11 @@ export type BuildAudienceTickError =
        * `dispatch_resolve_failed.total`. `gateway` is the one the live leg does
        * not have: a retryable Resend throw WITHIN the FR-021 budget is reported
        * here as `dispatch.server_error`, so without the label every 5xx read as
-       * "could not build the audience".
+       * "could not build the audience". `standing` (F119 PR-A, shared with the
+       * live leg) — the member-standing read failed and the gate was not
+       * decided, so nothing was sent.
        */
-      readonly phase: 'gateway' | 'resolve' | 'terminal_write';
+      readonly phase: 'gateway' | 'resolve' | 'terminal_write' | 'standing';
     };
 
 /**
@@ -330,6 +346,13 @@ export interface BuildAudienceTickDeps {
    * with no evidence on the record.
    */
   readonly plansBridge: PlansBridgePort;
+  /**
+   * F119 PR-A — the member-standing reads (the F7 halt list + F8 membership
+   * access) re-applied at SEND time, exactly as the legacy leg applies them.
+   * REQUIRED for the same reason: a composition that forgot it would send for
+   * a halted or suspended member, silently.
+   */
+  readonly sendStanding: MemberSendStandingDeps;
 }
 
 export interface BuildAudienceTickInput {
@@ -363,9 +386,116 @@ export async function buildAudienceTick(
   }
   const broadcast = loaded.broadcast;
 
+  // Step 1b (F119 PR-A) — the member's standing, re-read at SEND time, BEFORE
+  // the submit/confirm branch so it covers both ticks: a member halted or
+  // suspended between tick 1 (import submitted) and tick 2 (send) is refused on
+  // tick 2. Outside every transaction — the lock tx above has committed.
+  //
+  // A refusal goes through `failTerminally` and nothing else: the terminal
+  // transition is what makes a tick-1 Resend audience a `cleanup-audiences`
+  // candidate (terminal status + `resend_audience_id` + no
+  // `audience_deleted_at`), and the Free plan holds three.
+  //
+  // Skipped when `resend_broadcast_id` is already set. On this leg that id is
+  // attached only AFTER `sendBroadcast` succeeded, so a row still `approved`
+  // with it has had its mail handed to Resend by an earlier tick whose status
+  // flip was lost — refusing it would record a delivered broadcast as
+  // `failed_to_dispatch`, free its quota slot and email the member that it did
+  // not go out. The legacy leg's `alreadyHandedToSend` probe draws the same line.
+  // Keyed on a PRESENT id, so a row whose id cannot be read is still gated.
+  // The "attached only after the send" premise holds for THIS leg's writes; a
+  // legacy-leg row carried across a flag flip (whose pre-send
+  // `attachBroadcastId` sets the id before `/send`) would skip the gate — the
+  // same half-built-row hazard the drain-before-flip runbook step covers.
+  const handedToSend = typeof broadcast.resendBroadcastId === 'string' && broadcast.resendBroadcastId !== '';
+  if (!handedToSend) {
+    const refused = await applySendStanding(deps, input, broadcast);
+    if (refused !== null) return refused;
+  }
+
   return broadcast.audienceImportId === null
     ? submitImport(deps, input, broadcast)
     : confirmImport(deps, input, broadcast, broadcast.audienceImportId, now);
+}
+
+/**
+ * F119 PR-A — apply the send-time standing gate. `null` means "in good
+ * standing, carry on"; anything else is the tick's answer.
+ *
+ * A refusal is PERMANENT (the maintainer's rule, halted members included) and
+ * writes BOTH audit rows in the terminal transaction: the
+ * `broadcast_failed_to_dispatch` row every terminal failure writes, and the
+ * standing refusal under submit's own event types (`surface: 'dispatch'`), so
+ * "why was this member's E-Blast refused" stays one query across every
+ * surface. A read that FAILS decides nothing: `dispatch.server_error` with
+ * phase `standing`, the row stays `approved` and the next tick asks again.
+ */
+async function applySendStanding(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
+  const standing = await readMemberSendStanding(
+    deps.sendStanding,
+    deps.tenant,
+    broadcast.requestedByMemberId,
+  );
+  switch (standing.kind) {
+    case 'ok':
+      return null;
+    case 'halted':
+    case 'not_in_good_standing':
+      return failTerminally(
+        deps,
+        input,
+        broadcast,
+        {
+          kind: 'audience_import_failed',
+          reason: standing.kind === 'halted' ? 'member_halted' : 'member_not_in_good_standing',
+          importId: broadcast.audienceImportId,
+          observed: null,
+          expected: null,
+        },
+        {
+          extraAudit: standingRefusalAuditEvent({
+            refusal: standing.kind,
+            surface: 'dispatch',
+            tenantSlug: deps.tenant.slug,
+            memberId: broadcast.requestedByMemberId,
+            broadcastId: input.broadcastId as unknown as string,
+            actorUserId: 'system:cron',
+            actorRole: null,
+            requestId: null,
+          }),
+        },
+      );
+    case 'halt_read_failed':
+      return err({
+        kind: 'dispatch.server_error',
+        message: 'member_standing_halt_read_failed',
+        errClass: standing.errKind,
+        phase: 'standing',
+      });
+    case 'access_unavailable':
+      return err({
+        kind: 'dispatch.server_error',
+        message: 'member_standing_access_unavailable',
+        errClass: standing.errorKind,
+        phase: 'standing',
+      });
+    default: {
+      // `void`, never `return _exhaustive` (fail-open at runtime). An unknown
+      // answer did not decide the gate, so nothing is sent.
+      const _exhaustive: never = standing;
+      void _exhaustive;
+      return err({
+        kind: 'dispatch.server_error',
+        message: 'member_standing_unrouted',
+        errClass: 'gate',
+        phase: 'standing',
+      });
+    }
+  }
 }
 
 /**
@@ -529,16 +659,25 @@ async function viaRepoConcurrency<T>(
  */
 function budgetSubKindToFailureMetric(
   subKind: 'network' | 'timeout' | 'server_5xx' | 'api' | 'unclassified',
-): 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' {
+): FailureMetricLabel {
   if (subKind === 'server_5xx') return 'resend_5xx';
   if (subKind === 'timeout') return 'timeout';
   return 'app_error';
 }
 
+/**
+ * The `failure_reason` label set of `broadcasts.failed_to_dispatch.count` —
+ * the same closed union the legacy leg's `DispatchFailureReason` spells.
+ * `member_ineligible` (F119 PR-A) is a decision about the member, not a fault,
+ * so it is counted apart from `app_error`, which the dispatch alert reads.
+ */
+type FailureMetricLabel = 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' | 'member_ineligible';
+
 function importReasonToFailureMetric(
   reason: ImportFailureReason | 'audience_import_stuck',
   code: string | undefined,
-): 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' {
+): FailureMetricLabel {
+  if (reason === 'member_halted' || reason === 'member_not_in_good_standing') return 'member_ineligible';
   if (reason === 'audience_import_stuck') return 'timeout';
   if (code === 'http_403') return 'resend_403';
   if (code === 'http_429') return 'resend_429';
@@ -1441,7 +1580,14 @@ async function failTerminally(
     readonly auditEventType?: 'broadcast_failed_to_dispatch' | 'broadcast_resend_resource_missing';
     readonly notifyMember?: boolean;
     /** Round 3 finding 3-12 — see `importReasonToFailureMetric`. */
-    readonly failureMetric?: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout';
+    readonly failureMetric?: FailureMetricLabel;
+    /**
+     * F119 PR-A — a second audit row that must commit WITH the terminal
+     * transition or not at all (the standing refusal's own event). Written in
+     * the same tx: separately, a lost transition (a concurrent cancel won)
+     * would still leave a refusal row for a broadcast that was cancelled.
+     */
+    readonly extraAudit?: AuditEmitInput;
     /**
      * Round 4 F5 — set on the 404 path so the RETURNED kind is
      * `broadcast_resend_resource_missing` and the cron buckets it the way the
@@ -1552,6 +1698,10 @@ async function failTerminally(
         );
       }
       broadcastsMetrics.auditEmitCount(deps.tenant.slug, auditEventType);
+      if (opts.extraAudit !== undefined) {
+        await deps.audit.emit(tx, opts.extraAudit);
+        broadcastsMetrics.auditEmitCount(deps.tenant.slug, opts.extraAudit.eventType);
+      }
     });
   } catch (cleanupErr) {
     // Mirrors the single-tick path: if the transition itself failed, a concurrent

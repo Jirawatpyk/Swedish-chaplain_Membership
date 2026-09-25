@@ -3459,6 +3459,27 @@
           "event_attendees_last_90d": "Event attendees (last 90 days)",
           "custom": "Custom recipient list"
         },
+        "failureReasonTitle": "Why this E-Blast was not sent",
+        "failureReason": {
+          "member_halted": "The member's E-Blasts were on hold for review when this was due to send. Review the hold; the member must submit a new E-Blast.",
+          "member_not_in_good_standing": "The membership was suspended or terminated when this was due to send. The member must submit a new E-Blast once the membership is active again.",
+          "failed_rows": "Resend rejected some recipient addresses in the contact import.",
+          "counts_incoherent": "The contact import's counts did not add up, so the send was stopped.",
+          "count_mismatch": "The imported recipient count did not match the audience resolved at send time.",
+          "provider_failed": "Resend reported the contact import as failed.",
+          "gateway_permanent": "Resend refused the request (a permanent error). Check the Resend account and its plan limits.",
+          "gateway_unknown": "An unexpected error occurred while preparing the send. Check the dispatch logs for this E-Blast.",
+          "malformed_segment": "The saved audience for this E-Blast is incomplete (a tier audience with no tiers).",
+          "audience_too_large": "The audience grew past the allowed size between approval and send.",
+          "retry_budget_exhausted": "Resend could not be reached for over an hour, so dispatch stopped retrying.",
+          "audience_post_suppression_empty": "No recipients were left once unsubscribes and opt-outs were applied.",
+          "audience_membership_drift": "The Resend audience held more contacts than were resolved, so the send was stopped.",
+          "audience_import_stuck": "The contact import did not finish within 30 minutes.",
+          "resend_resource_missing": "A Resend resource for this E-Blast no longer exists. Check the Resend account.",
+          "resend_resource_404": "Resend no longer has this broadcast (found by the 24-hour reconciliation).",
+          "no_resend_resource_attached": "No Resend broadcast was ever attached to this E-Blast (found by the 24-hour reconciliation).",
+          "generic": "Dispatch failed. Check this E-Blast's audit trail and the dispatch logs for the cause."
+        },
         "audit": {
           "title": "Lifecycle timeline",
           "drafted": "Drafted",
@@ -7677,9 +7698,11 @@
         "gateway_permanent": "our email provider refused the request — your chamber administrator needs to check the account",
         "gateway_unknown": "an unexpected problem occurred while preparing the send",
         "audience_import_stuck": "preparing the recipient list took too long, so we stopped rather than send at an unexpected time",
+        "member_halted": "your account is under review, so E-Blasts from it are on hold for now — please contact the chamber for details",
+        "member_not_in_good_standing": "your membership is not currently active — please contact the chamber for details",
         "generic": "a technical problem prevented delivery"
       },
-      "reassurance": "Your E-Blast quota slot has NOT been consumed and remains reserved. You can re-schedule the same broadcast from the admin queue, or your chamber admin can re-trigger dispatch manually.",
+      "reassurance": "This broadcast did not count against your annual E-Blast allowance — the slot has been released. It cannot be sent again as it is; to send this content, please submit a new E-Blast.",
       "ctaRescheduleLabel": "Open broadcast detail",
       "footerSignOff": "If you need help, please contact your chamber administrator."
     },

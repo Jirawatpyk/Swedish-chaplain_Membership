@@ -24,15 +24,24 @@
  * memo (a third map, keyed with the excluded sender too), so a tick's frozen
  * audience is paired with ONE count, not N independently timed ones.
  *
- * Pure pass-through for the other 9 methods (`MembersBridgePort` exposes
- * 12 methods total since 108 PR-D added `filterMarketingOptedOut` and PR-C
- * `getContactsBySegment` + `countOptedOutContactsBySegment`; the spread
- * forwards the rest) so we don't accidentally cache mutating calls
- * (`setMemberHalt`, `markBroadcastsAcknowledged`) or per-member lookups
- * whose freshness matters during a tick.
+ * F119 PR-A memoises `getMembersHaltedInTenant` too, in a fourth map keyed by
+ * tenant slug. Both dispatch legs now read member standing for EVERY broadcast
+ * they claim, and the halt list is one tenant-wide read, so without it a tick
+ * of 50 rows re-read the same list 50 times. Only a SUCCESSFUL read is cached:
+ * a throw propagates and the next broadcast reads again, because the standing
+ * gate fails closed per broadcast and must not inherit another row's failure.
+ * The staleness this admits is one tick (≤ 5 min) — the same bound the member
+ * and contact caches already accept.
+ *
+ * Every other method is a pure pass-through (the spread forwards them) so we
+ * don't accidentally cache mutating calls (`setMemberHalt`,
+ * `markBroadcastsAcknowledged`) or per-member lookups whose freshness matters
+ * during a tick — in particular `filterMarketingOptedOut`, where a cached
+ * answer would send to a contact who opted out mid-tick.
  */
 import type {
   ContactRecipient,
+  MemberHaltSummary,
   MembersBridgePort,
   MemberRecipient,
   SegmentResolveParams,
@@ -67,9 +76,19 @@ export function makeTickMemoizedMembersBridge(
   // segment in a tick paired one frozen audience with two independently
   // timed counts. Same key (+ the excluded sender, which changes the number).
   const countCache = new Map<string, number>();
+  const haltedCache = new Map<string, ReadonlyArray<MemberHaltSummary>>();
 
   return {
     ...inner,
+    async getMembersHaltedInTenant(
+      tenantCtx: TenantContext,
+    ): Promise<ReadonlyArray<MemberHaltSummary>> {
+      const hit = haltedCache.get(tenantCtx.slug);
+      if (hit !== undefined) return hit;
+      const fresh = await inner.getMembersHaltedInTenant(tenantCtx);
+      haltedCache.set(tenantCtx.slug, fresh);
+      return fresh;
+    },
     async countOptedOutContactsBySegment(
       tenantCtx: TenantContext,
       segmentType: BroadcastSegmentType,

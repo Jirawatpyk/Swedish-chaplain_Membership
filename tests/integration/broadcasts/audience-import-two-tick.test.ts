@@ -31,6 +31,15 @@ import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/bu
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { systemClock } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
+import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
+import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
+
+/**
+ * F119 PR-A — the send-time standing reads, REAL on both halves (the F3 halt
+ * list + the F8 access bridge): the seeded requesting member is neither halted
+ * nor has a renewal cycle, so both answer "in good standing" and the send runs.
+ */
+const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge };
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL);
 const TEST_TENANT = 'swecham';
@@ -140,6 +149,7 @@ function makeDeps(gateway: FakeGateway, recipients: readonly string[] = RECIPIEN
       getMemberPreferredLocale: async () => 'en' as const,
     },
     emailTransactional: { sendMemberEmail: async () => undefined },
+    sendStanding: LIVE_STANDING,
     plansBridge: { getPlanForMember: async () => ok({ planId: 'plan-unchanged' }) },
     // Required since F119 T031. Missing, `loadBrandChrome` swallowed the
     // TypeError and the file passed by accident (hidden by `as never`).

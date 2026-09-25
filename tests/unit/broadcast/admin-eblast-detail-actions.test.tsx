@@ -22,6 +22,8 @@ import type { ReactElement, ReactNode } from 'react';
 
 let role = 'admin';
 let flagOn = false;
+/** F119 PR-A — keys the mocked catalogue does NOT hold, so `t.has` can answer false. */
+let missingKeys = new Set<string>();
 
 vi.mock('next/link', () => ({
   default: ({ children }: { children?: ReactNode }) => children as ReactElement,
@@ -37,7 +39,7 @@ vi.mock('@/components/shell/refresh-page-button', () => ({
 }));
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockResolvedValue(
-    Object.assign((key: string) => key, { has: () => true }),
+    Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) }),
   ),
   getLocale: vi.fn().mockResolvedValue('en'),
 }));
@@ -497,5 +499,74 @@ describe('F119 T063 — the staff detail page action controls', () => {
     const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: ID }) }));
     expect(has(html, 'eblast-thread-unavailable')).toBe(true);
     expect(has(html, 'format-workspace')).toBe(false);
+  });
+});
+
+/**
+ * F119 PR-A — "marketing sees why it is blocked": a `failed_to_dispatch` row
+ * says WHY under its status. The reason was stored (`failure_reason`) and shown
+ * nowhere, so staff could not tell a member refused at send time (halted,
+ * suspended) from a Resend outage without reading the audit log.
+ */
+describe('F119 PR-A — the staff detail page shows why an E-Blast was not sent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    missingKeys = new Set();
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+  });
+
+  async function renderFailed(failureReason: string | null, status = 'failed_to_dispatch'): Promise<string> {
+    findByIdMock.mockResolvedValue(makeBroadcast({ status, failureReason }));
+    listVersionsMock.mockResolvedValue(threadFor(status, 0));
+    const Page = (await import('@/app/(staff)/admin/broadcasts/[id]/page')).default;
+    return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: ID }) }));
+  }
+
+  /** The reason block's own text (the mocked `t` echoes the key it was asked for). */
+  function reasonBlock(html: string): string {
+    const at = html.indexOf('data-testid="eblast-failure-reason"');
+    expect(at, 'the reason block is rendered').toBeGreaterThan(-1);
+    // From the block's own opening tag, so its attributes (`role`, …) are in view.
+    return html.slice(html.lastIndexOf('<div', at), html.indexOf('</div></div>', at));
+  }
+
+  it.each(['member_halted', 'member_not_in_good_standing', 'audience_import_stuck'] as const)(
+    'failed_to_dispatch (%s) → the reason sentence for that token, as a note in body text',
+    async (reason) => {
+      const html = await renderFailed(reason);
+      const block = reasonBlock(html);
+      expect(block).toContain('role="note"');
+      expect(block).toContain('failureReasonTitle');
+      expect(block).toContain(`failureReason.${reason}`);
+      // Body text, not the muted empty-sentinel colour; never italic (Thai).
+      expect(block).toContain('text-foreground');
+      expect(block).not.toMatch(/text-muted-foreground|italic/);
+    },
+  );
+
+  it('a composite stored reason (the legacy leg writes `<token>:<detail>`) reads its token, never the detail', async () => {
+    const block = reasonBlock(await renderFailed('retry_budget_exhausted_after_1h:server_5xx:upstream said no'));
+    expect(block).toContain('failureReason.retry_budget_exhausted');
+    expect(block).not.toContain('upstream said no');
+    const missing = reasonBlock(await renderFailed('resend_resource_missing:audience'));
+    expect(missing).toContain('failureReason.resend_resource_missing');
+  });
+
+  it('free text, an unknown token or a NULL reason → the generic sentence, and the raw value never reaches the page', async () => {
+    missingKeys = new Set(['failureReason.a_token_nobody_wrote']);
+    expect(reasonBlock(await renderFailed('a_token_nobody_wrote'))).toContain('failureReason.generic');
+    const raw = reasonBlock(await renderFailed('Resend said: 422 invalid from address <x@y.z>'));
+    expect(raw).toContain('failureReason.generic');
+    expect(raw).not.toContain('x@y.z');
+    expect(reasonBlock(await renderFailed(null))).toContain('failureReason.generic');
+  });
+
+  it('only a failed_to_dispatch row carries the block', async () => {
+    for (const status of ['approved', 'sent', 'cancelled', 'rejected'] as const) {
+      expect(has(await renderFailed('member_halted', status), 'eblast-failure-reason'), status).toBe(false);
+    }
   });
 });

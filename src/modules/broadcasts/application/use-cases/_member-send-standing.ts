@@ -12,17 +12,18 @@
  *   l. F8 membership access — a `suspended` or `terminated` member spends no
  *      E-Blast benefit (059-membership-suspension).
  *
- * `submitBroadcast`, `approveBroadcast` (approve-as-submitted) and
- * `confirmSchedule`'s promotion (`member_approved → approved`) all read them
- * through `readMemberSendStanding`, so the three cannot drift apart.
+ * `submitBroadcast`, `approveBroadcast` (approve-as-submitted),
+ * `confirmSchedule`'s promotion (`member_approved → approved`) and BOTH
+ * dispatch legs (`dispatchScheduledBroadcast`, `buildAudienceTick`) all read
+ * them through `readMemberSendStanding`, so the five cannot drift apart.
  *
- * WHERE the gate runs — exactly those three edges, the ones that make a row
- * dispatchable, and nowhere later. It is NOT a send-time check: neither
- * dispatch path (`dispatchScheduledBroadcast`, `buildAudienceTick`) reads
- * standing, so an `approved` E-Blast scheduled days ahead is still sent if the
- * member is halted, suspended or loses coverage in between — including by a
- * refund or full credit note, which ends coverage immediately since migration
- * 0306 (#383). Tracked as a follow-up (quickstart § 3.6).
+ * WHERE the gate runs — the three edges that make a row dispatchable, and
+ * again at SEND time (F119 PR-A). An `approved` E-Blast scheduled days ahead
+ * used to be sent even if the member was halted, suspended or lost coverage in
+ * between — including by a refund or full credit note, which ends coverage
+ * immediately since migration 0306 (#383). A dispatch refusal is PERMANENT
+ * (`failed_to_dispatch`, halted members included — the maintainer's rule);
+ * mail a prior tick already handed to Resend is never refused.
  *
  * Fail CLOSED, never open: a halt read that throws is `halt_read_failed`, an
  * access lookup error is `access_unavailable` — each caller turns both into a
@@ -52,17 +53,19 @@ export type MemberSendStanding =
   | { readonly kind: 'access_unavailable'; readonly errorKind: MembershipAccessLookupError['kind'] };
 
 /**
- * T166 follow-up — the audit row a STAFF refusal writes, under the SAME event
- * types submit's refusals use (`broadcast_member_halted_pending_review`,
+ * T166 follow-up — the audit row a STAFF or DISPATCH refusal writes, under the
+ * SAME event types submit's refusals use (`broadcast_member_halted_pending_review`,
  * `broadcast_membership_suspended_blocked`), so "why was this member's E-Blast
- * refused" is one query whichever surface refused it. `surface` tells the two
- * staff edges apart. Ids only; `related_member_id`, never `member_id` — a staff
- * act is not member activity and must not fire the 0009 `last_activity_at`
- * trigger (#336/#337); `actor_role` is the session role as held (`?? null`).
+ * refused" is one query whichever surface refused it. `surface` tells the
+ * edges apart. Ids only; `related_member_id`, never `member_id` — a staff or
+ * system act is not member activity and must not fire the 0009
+ * `last_activity_at` trigger (#336/#337); `actor_role` is the session role as
+ * held (`?? null`) — `null` for the cron, which holds none.
  */
 export interface StandingRefusalAuditInput {
   readonly refusal: 'halted' | 'not_in_good_standing';
-  readonly surface: 'approve_as_submitted' | 'schedule_confirm';
+  /** F119 PR-A — `dispatch` is either send leg (actor `system:cron`). */
+  readonly surface: 'approve_as_submitted' | 'schedule_confirm' | 'dispatch';
   readonly tenantSlug: string;
   readonly memberId: string;
   readonly broadcastId: string;
@@ -71,10 +74,17 @@ export interface StandingRefusalAuditInput {
   readonly requestId: string | null;
 }
 
+/** The summary's verb per surface — a total map, so a new surface cannot fall into another's wording. */
+const REFUSAL_VERB: Readonly<Record<StandingRefusalAuditInput['surface'], string>> = {
+  approve_as_submitted: 'Approve',
+  schedule_confirm: 'Schedule confirm',
+  dispatch: 'Dispatch',
+};
+
 export function standingRefusalAuditEvent(input: StandingRefusalAuditInput): AuditEmitInput {
   const eventType: F7AuditEventType =
     input.refusal === 'halted' ? 'broadcast_member_halted_pending_review' : 'broadcast_membership_suspended_blocked';
-  const verb = input.surface === 'approve_as_submitted' ? 'Approve' : 'Schedule confirm';
+  const verb = REFUSAL_VERB[input.surface];
   return {
     tenantId: input.tenantSlug,
     eventType,

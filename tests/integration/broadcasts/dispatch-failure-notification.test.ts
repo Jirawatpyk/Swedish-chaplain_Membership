@@ -38,6 +38,14 @@ import { emailTransactionalBridge } from '@/modules/broadcasts/infrastructure/em
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
+
+/**
+ * F119 PR-A — the send-time standing reads, REAL on both halves (the F3 halt
+ * list + the F8 access bridge): the seeded requesting member is neither halted
+ * nor has a renewal cycle, so both answer "in good standing" and the send runs.
+ */
+const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge };
 
 /** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
 const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
@@ -239,6 +247,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
         locale: 'en' as const,
         plansBridge,
         emailTransactional: emailTransactionalBridge,
+        sendStanding: LIVE_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       { broadcastId: asBroadcastId(broadcastId) },
@@ -359,6 +368,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
         locale: 'en' as const,
         plansBridge,
         emailTransactional: emailTransactionalBridge,
+        sendStanding: LIVE_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       { broadcastId: asBroadcastId(broadcastId) },

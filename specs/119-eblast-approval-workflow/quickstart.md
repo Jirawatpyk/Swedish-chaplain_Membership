@@ -1459,18 +1459,19 @@ PR-2 builds on PR-1.
 
 ### 3.6 Known follow-ups
 
-- **The member-standing gate does not run at dispatch** (whole-branch review round 2). The halt
-  flag and F8 membership access (`readMemberSendStanding`) are read at submit, approve-as-submitted
-  and confirm-schedule's promotion — the edges that make a row dispatchable — and nowhere later:
-  neither `dispatchScheduledBroadcast` nor `buildAudienceTick` reads them, which is also true on
-  `main`. Since `main`'s migration `0306` (#383) a refund or a full credit note ends coverage
-  immediately, so an E-Blast **already `approved` and scheduled days ahead is still sent** after the
-  member is refunded, suspended or halted. Spec § Edge Cases ("the existing rules that block
-  sending still apply at send time") is therefore met at the approval edges only. Until the fix
-  lands, cancel the member's `approved` rows by hand when their coverage ends. Proposed fix: each
-  dispatch path reads standing before any Resend call; a refusal moves the row to
-  `failed_to_dispatch` with its own reason, audits, and notifies; a failed read leaves the row
-  `approved` for the next tick.
+- ~~**The member-standing gate does not run at dispatch**~~ — **FIXED** (F119 PR-A, PR #TBD;
+  unflagged, live for every F7 send on merge). Both dispatch legs (`dispatchScheduledBroadcast`
+  and `buildAudienceTick`, the latter before its submit/confirm branch so it covers both ticks)
+  now read `readMemberSendStanding` before any Resend call, outside every transaction. A halted
+  member → `failed_to_dispatch` with `failure_reason = member_halted`; a suspended or terminated
+  one (a refund or full credit note included, since `0306`) → `member_not_in_good_standing`. Both
+  are PERMANENT (maintainer's rule, halted members included): the quota slot is released, the
+  member gets the FR-021 email, and two audit rows land in the terminal transaction —
+  `broadcast_failed_to_dispatch` and submit's own refusal type with `surface: 'dispatch'` (actor
+  `system:cron`, role `null`). A failed standing read sends nothing and leaves the row `approved`
+  (`dispatch.server_error`, phase `standing`); the next tick asks again. Mail a prior tick already
+  handed to Resend is never refused. The interim "cancel `approved` rows by hand" step is retired.
+  Runbook: `docs/runbooks/eblast-approval.md` § Dispatch standing refusal.
 - **Type seams and smaller follow-ups from the PR #392 review round 3** are tracked in issue #400:
   the `applyTransition` field allowlist as a type, branded ids across the F119 ports, a typed
   `contextData` per `eblast_*` type, a distinct `read_failed` outbox failure reason, the `stage`

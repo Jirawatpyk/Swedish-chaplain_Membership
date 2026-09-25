@@ -229,6 +229,35 @@ describe('makeTickMemoizedMembersBridge — getContactsBySegment is memoized per
     expect(stub.countCalls).toHaveLength(3);
   });
 
+  // F119 PR-A — both dispatch legs now read member standing per broadcast, and
+  // the halt list is one tenant-wide read, so up to MAX_PER_TICK (50) rows in a
+  // tick would re-read the same list. One read per tenant per tick; a read that
+  // THREW is not cached, so the next broadcast retries rather than inheriting a
+  // failure (the gate fails closed on each one independently).
+  it('getMembersHaltedInTenant is read once per tenant per tick, and a failed read is not cached', async () => {
+    let calls = 0;
+    let failNext = true;
+    const inner: MembersBridgePort = {
+      ...makeStubBridge().bridge,
+      async getMembersHaltedInTenant() {
+        calls += 1;
+        if (failNext) {
+          failNext = false;
+          throw new Error('halt read failed');
+        }
+        return [{ memberId: 'm-halted', displayName: 'Halted Co', haltedSinceAt: new Date(0) }] as never;
+      },
+    };
+    const memo = makeTickMemoizedMembersBridge(inner);
+    await expect(memo.getMembersHaltedInTenant(tenant)).rejects.toThrow('halt read failed');
+    const a = await memo.getMembersHaltedInTenant(tenant);
+    const b = await memo.getMembersHaltedInTenant(tenant);
+    expect(calls).toBe(2);
+    expect(a).toBe(b);
+    await memo.getMembersHaltedInTenant(asTenantContext('other-tenant'));
+    expect(calls).toBe(3);
+  });
+
   it('the member-level and contact-level caches never share a slot: the same segment asked both ways runs both', async () => {
     // A `MemberRecipient[]` handed to a caller expecting `ContactRecipient[]`
     // would resolve to ZERO recipients (no `emailLower` field) — exactly the
