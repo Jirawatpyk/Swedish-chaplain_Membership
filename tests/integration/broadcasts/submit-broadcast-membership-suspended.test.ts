@@ -168,7 +168,7 @@ describe('submitBroadcast — membership-access wiring (live Neon, 059 Task 5)',
         ),
       );
     expect(auditRows).toHaveLength(1);
-    expect(auditRows[0]?.payload).toMatchObject({ memberId });
+    expect(auditRows[0]?.payload).toMatchObject({ memberId, access: 'suspended' });
   });
 
   it('member with a lapsed (ended-terminal) LATEST cycle → also blocked (access=terminated)', async () => {
