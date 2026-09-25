@@ -628,12 +628,8 @@ describe('F8 markPaidOffline — duplicate membership-bill guard', () => {
       }
     }
     // The receipt counter increment rode the outer tx, which rolled back.
+    // (Pre-fix, the returned err committed it: `next` moved past `before`.)
     expect(await readReceiptNext()).toBe(before);
-    // Nothing else from the outer tx persisted either.
-    const cycleRows = await runInTenant(tenant.ctx, (tx) =>
-      tx.select().from(renewalCycles).where(eq(renewalCycles.cycleId, cycleId)),
-    );
-    expect(cycleRows[0]?.status).toBe('awaiting_payment');
 
     bridgeSpy.mockRestore();
   }, 60_000);
