@@ -468,7 +468,9 @@ export type NewBroadcastRow = typeof broadcasts.$inferInsert;
 
 /**
  * One row per Resend delivery event (per recipient × per broadcast).
- * Append-only audit trail: insert-only, no DELETE, and the ONLY permitted
+ * Append-only audit trail: insert-only, no direct DELETE (a row leaves only
+ * by the ON DELETE CASCADE of its parent E-Blast — the retention sweep,
+ * migration 0310), and the ONLY permitted
  * UPDATE is the GDPR Art.17 tombstone below (gated by the
  * `app.allow_broadcast_redaction` GUC arm on
  * `broadcast_deliveries_append_only_fn`, migration 0225). Idempotency via
@@ -517,6 +519,17 @@ export const broadcastDeliveries = pgTable(
       name: 'broadcast_deliveries_pkey',
       columns: [table.tenantId, table.deliveryId],
     }),
+
+    // Migration 0310 — added NOT VALID (existing rows unchecked until the
+    // manual VALIDATE in docs/runbooks/cron-jobs.md § F7 retention-sweep).
+    // ON DELETE CASCADE is how the retention sweep's parent DELETE takes the
+    // deliveries with it; the append-only trigger admits that DELETE only at
+    // pg_trigger_depth() > 1.
+    foreignKey({
+      name: 'broadcast_deliveries_broadcast_fk',
+      columns: [table.tenantId, table.broadcastId],
+      foreignColumns: [broadcasts.tenantId, broadcasts.broadcastId],
+    }).onDelete('cascade'),
 
     // FR-025: webhook idempotency primitive
     uniqueIndex('broadcast_deliveries_resend_event_id_uniq').on(

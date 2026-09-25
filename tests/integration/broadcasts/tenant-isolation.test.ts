@@ -447,11 +447,22 @@ describe('F7 Tenant isolation — REVIEW-GATE BLOCKER (T022)', () => {
         errorMessage: null,
         bounceType: null,
       };
+      // Assert the RLS refusal SPECIFICALLY. `rogue.broadcastId` is tenant B's
+      // real E-Blast, so the 0310 FK is satisfied and cannot be what refuses
+      // it (a bare `.toThrow()` would also pass on a 23503). RLS WITH CHECK
+      // runs at insert time, before the FK's AFTER trigger. 42501 alone also
+      // means "permission denied" (a missing grant), so the message pins the
+      // policy. Drizzle wraps the PostgresError; the SQLSTATE is on `.cause`.
       await expect(
         runInTenant(tenantA.ctx, (tx) =>
           tx.insert(broadcastDeliveries).values(rogue),
         ),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({
+        cause: {
+          code: '42501',
+          message: expect.stringContaining('row-level security policy'),
+        },
+      });
     });
   });
 

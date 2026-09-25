@@ -836,6 +836,30 @@ written even when nothing expired; it is the evidence the retention is enforced.
 Nothing is expected to be swept before ~2031 (the first prod E-Blast plus
 5 years). A steady `swept_count: 0` until then is correct.
 
+### Deploying 0310: the lock wait is bounded (`lock_timeout = 5s`)
+
+0310's `ADD CONSTRAINT … FOREIGN KEY … NOT VALID` takes a SHARE ROW EXCLUSIVE
+lock on **both** `broadcast_deliveries` and `broadcasts`. Prod migrates on
+deploy while the app is live, so an open transaction that has written either
+table (an in-flight Resend webhook, a broadcasts cron tick) holds ROW EXCLUSIVE
+and blocks it — and while the ALTER waits in the lock queue, every later reader
+and writer of `broadcasts` queues behind it. The migrator only sets
+`statement_timeout` (30 s), so 0310 sets `SET LOCAL lock_timeout = '5s'` first
+(handed back to `DEFAULT` as its last statement, per 0293/0305/0309).
+
+If the lock is not granted in 5 s the statement fails with `lock_timeout`
+(SQLSTATE `55P03`, "canceling statement due to lock timeout"), the migrator's
+single batch transaction rolls back whole, **the deploy fails and the previous
+deployment stays live**. Action: redeploy (Vercel → Redeploy). If it fails
+again, find the holder before retrying:
+
+```sql
+SELECT pid, state, xact_start, left(query, 120)
+  FROM pg_stat_activity
+ WHERE pid IN (SELECT pid FROM pg_locks
+                WHERE relation IN ('broadcasts'::regclass, 'broadcast_deliveries'::regclass));
+```
+
 ### One-time manual step: `VALIDATE CONSTRAINT` (after 0310 deploys)
 
 0310 adds `broadcast_deliveries_broadcast_fk` **NOT VALID**: new inserts are

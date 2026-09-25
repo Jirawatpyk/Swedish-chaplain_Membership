@@ -38,9 +38,13 @@
  *   orphan that audience permanently (the cron lists eligible audiences by
  *   broadcast row).
  *   Deliveries: `broadcast_deliveries` is append-only (trigger `broadcast_deliveries_no_delete`
- *   + no DELETE grant for chamber_app, migrations 0065/0225) AND a logical FK only
- *   (no real FK on `broadcast_id`, 0065:32) — so this script NEVER deletes
- *   deliveries; it just never touches a broadcast that has any.
+ *   + no DELETE grant for chamber_app, migrations 0065/0225), but since 0310 it
+ *   has a REAL FK on (tenant_id, broadcast_id) → broadcasts ON DELETE CASCADE,
+ *   and the trigger admits a DELETE that arrives through that cascade
+ *   (`pg_trigger_depth() > 1`). Deleting a broadcast therefore DELETES its
+ *   deliveries. What keeps them safe here is the `DELETABLE_STATUSES`
+ *   allow-list: only pre-send rows are deleted, and a delivery row exists only
+ *   once Resend reports an event for a SENT E-Blast.
  *   `broadcast_batch_manifests` cascades ON DELETE with the broadcast
  *   (migration 0218), so manifests are handled automatically.
  *
@@ -88,7 +92,8 @@ const TENANT = process.env.RESET_TENANT ?? 'swecham';
  * The ONLY statuses this script may delete — an allow-list, so a status added
  * by a later migration is kept by default. Send stages carry append-only
  * `broadcast_deliveries` (trigger `broadcast_deliveries_no_delete`, no DELETE
- * grant for chamber_app — migrations 0065/0225); terminal statuses reserve
+ * grant for chamber_app — migrations 0065/0225), which since 0310 would leave
+ * WITH the broadcast by ON DELETE CASCADE; terminal statuses reserve
  * nothing and may carry F119 decisions; the approval-round stages always carry
  * versions. A row in one of these three statuses is still kept when it carries
  * approval-round history (see the DELETE).

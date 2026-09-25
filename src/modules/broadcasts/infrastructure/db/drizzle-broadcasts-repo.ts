@@ -1503,13 +1503,27 @@ export function makeDrizzleBroadcastsRepo(
     /**
      * F7 retention sweep (migration 0310) — see the port for the eligibility
      * rule. ONE statement: the sub-select picks the oldest `limit` expired rows
-     * (`FOR UPDATE SKIP LOCKED`, so a row a webhook or an erasure transaction
-     * holds is left for tomorrow rather than waited on), the DELETE removes
+     * (`FOR UPDATE SKIP LOCKED`: a row another transaction ALREADY holds — an
+     * erasure's scrub UPDATE, or a webhook whose delivery INSERT has taken the
+     * FK's `FOR KEY SHARE` on it — is skipped by this batch rather than waited
+     * on; a later batch of the same run may take it if the lock is gone, else
+     * the next daily run does), the DELETE removes
      * them, and the children follow by ON DELETE CASCADE — deliveries (0310),
      * versions + decisions (0308), batch manifests + their events (0163/0218).
      * The RI cascade runs as the child table's owner, which is why no DELETE
      * grant exists or is needed on any child, and why a direct DELETE by
      * `chamber_app` on deliveries / decisions still fails.
+     *
+     * Sweep-vs-webhook race (accepted, theoretical — it needs a Resend event
+     * for an E-Blast closed 5+ years ago). The webhook reads the parent with a
+     * plain SELECT and only locks it when its delivery INSERT runs the FK
+     * check. If the sweep's `FOR UPDATE` gets there first, that INSERT's
+     * `FOR KEY SHARE` waits behind it, re-checks after the sweep commits, and
+     * fails with 23503 (foreign_key_violation): `processWebhookEvent` returns
+     * `process_webhook.server_error`, the route answers 500, Resend retries,
+     * and the retry's route-level lookup no longer finds the E-Blast → 200
+     * (audited `reason: 'unknown_resend_broadcast_id'`). No delivery row is
+     * written for a deleted E-Blast, which is the point.
      *
      * `now` is bound as an ISO string cast to TIMESTAMPTZ (the Neon driver
      * does not serialise a JS Date in a raw `sql` param). The expiry is

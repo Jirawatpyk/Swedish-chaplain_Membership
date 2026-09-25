@@ -19,7 +19,9 @@
 --      (scripts/lib/enum-migration-guard.ts); the transactional copy below is
 --      an `IF NOT EXISTS` no-op.
 --   1. broadcast_deliveries (tenant_id, broadcast_id) → broadcasts
---      (tenant_id, broadcast_id) ON DELETE CASCADE, NOT VALID. The target is
+--      (tenant_id, broadcast_id) ON DELETE CASCADE, NOT VALID, under
+--      `SET LOCAL lock_timeout = '5s'` (handed back to DEFAULT as the file's
+--      last statement). The target is
 --      `broadcasts_pkey` (0064) and the columns are exactly those of
 --      `broadcast_versions_broadcast_fk` (0308). Until now the column was a
 --      logical FK only (0065), so deleting a broadcast left its deliveries
@@ -65,6 +67,19 @@
 -- --- 0. enum value (hoisted to AUTOCOMMIT by the runner) --------------------
 
 ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_retention_swept';--> statement-breakpoint
+
+-- --- fail fast on the lock (0293 / 0305 / 0309 precedent) -------------------
+-- `ADD CONSTRAINT … FOREIGN KEY` takes SHARE ROW EXCLUSIVE on BOTH
+-- `broadcast_deliveries` and `broadcasts`. Prod migrates on deploy while the
+-- app is live: an open webhook or cron transaction that has written either
+-- table holds ROW EXCLUSIVE, and while this statement waits in the lock queue
+-- every later reader and writer of `broadcasts` queues behind it. The
+-- migrator sets only `statement_timeout` (30 s). Abort after 5 s instead: the
+-- batch rolls back whole, the deploy fails, the previous deployment stays
+-- live, and a redeploy retries. SET LOCAL lives to the end of the migrator's
+-- single batch transaction, so the default is handed back as this file's
+-- LAST statement — later migrations in the same deploy must not inherit it.
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 
 -- --- 1. the FK the cascade needs --------------------------------------------
 
@@ -125,3 +140,6 @@ BEGIN
           HINT    = 'broadcast_deliveries rows are insert-only (audit trail).';
 END;
 $$;--> statement-breakpoint
+
+-- Hand the default back (see the lock_timeout block above).
+SET LOCAL lock_timeout = DEFAULT;
