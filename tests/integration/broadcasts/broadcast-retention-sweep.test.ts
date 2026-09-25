@@ -22,7 +22,11 @@
  *   - the swept row's images are stamped (so the daily image sweep reclaims
  *     the bytes) and audited as `retention_expired`, and one counts-only
  *     `broadcast_retention_swept` row lands;
- *   - another tenant's expired row is untouched (Principle I).
+ *   - another tenant's expired row is untouched (Principle I);
+ *   - M1: a row that owns Resend copies (its own `resend_broadcast_id` and a
+ *     batch manifest's `provider_broadcast_id`) is deleted only AFTER the
+ *     gateway confirmed each copy gone, and a transient or refused copy keeps
+ *     its row. The gateway is a FAKE: no test here reaches Resend.
  *
  * Needs migration 0310 applied to the target branch.
  */
@@ -48,6 +52,13 @@ const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
 const yearsAgo = (n: number): Date => new Date(NOW.getTime() - n * YEAR_MS);
 const SIX_YEARS_AGO = yearsAgo(6);
 const ONE_YEAR_AGO = yearsAgo(1);
+
+/** For runs whose rows own no Resend copy: any call is a bug. */
+const noResendCall = {
+  async deleteBroadcast(id: string): Promise<void> {
+    throw new Error(`unexpected Resend delete of ${id}`);
+  },
+};
 
 type Tx = Parameters<Parameters<typeof runInTenant>[1]>[0];
 
@@ -277,12 +288,22 @@ describe('F7 retention sweep (0310) — live Neon', () => {
       const requestId = `retention-it-${randomUUID()}`;
       const result = await sweepExpiredBroadcasts({
         ...makeSweepExpiredBroadcastsDeps(tenantA.ctx.slug, requestId),
+        broadcastsGateway: noResendCall,
         clock: { now: () => NOW },
       });
 
       expect(result).toEqual({
         ok: true,
-        value: { sweptCount: 4, imagesMarked: 1, batches: 1, budgetExhausted: false },
+        value: {
+          sweptCount: 4,
+          imagesMarked: 1,
+          batches: 1,
+          budgetExhausted: false,
+          providerCopyKeptTransient: 0,
+          providerCopyKeptRefused: 0,
+          oldestAnchor: SIX_YEARS_AGO,
+          newestAnchor: SIX_YEARS_AGO,
+        },
       });
 
       const swept = [oldSent, oldCancelledNoColumn, oldExpired, oldSentAudienceReaped];
@@ -331,6 +352,10 @@ describe('F7 retention sweep (0310) — live Neon', () => {
           batches: 1,
           budget_exhausted: false,
           completed: true,
+          provider_copy_kept_transient: 0,
+          provider_copy_kept_refused: 0,
+          oldest_anchor: SIX_YEARS_AGO.toISOString(),
+          newest_anchor: SIX_YEARS_AGO.toISOString(),
           actor_role: 'system',
         },
       ]);
@@ -379,11 +404,21 @@ describe('F7 retention sweep (0310) — live Neon', () => {
     const requestId = `retention-it-empty-${randomUUID()}`;
     const result = await sweepExpiredBroadcasts({
       ...makeSweepExpiredBroadcastsDeps(tenantA.ctx.slug, requestId),
+      broadcastsGateway: noResendCall,
       clock: { now: () => NOW },
     });
     expect(result).toEqual({
       ok: true,
-      value: { sweptCount: 0, imagesMarked: 0, batches: 1, budgetExhausted: false },
+      value: {
+        sweptCount: 0,
+        imagesMarked: 0,
+        batches: 1,
+        budgetExhausted: false,
+        providerCopyKeptTransient: 0,
+        providerCopyKeptRefused: 0,
+        oldestAnchor: null,
+        newestAnchor: null,
+      },
     });
     const runRows = (await db.execute(sql`
       SELECT payload FROM audit_log
@@ -393,4 +428,125 @@ describe('F7 retention sweep (0310) — live Neon', () => {
     expect(runRows).toHaveLength(1);
     expect(runRows[0]!.payload).toMatchObject({ swept_count: 0, completed: true });
   });
+  it(
+    'M1: a row with Resend copies goes only after the fake gateway confirmed each; a transient or refused copy keeps its row',
+    async () => {
+      const SEVEN_YEARS_AGO = yearsAgo(7);
+      const tag = randomUUID().slice(0, 8);
+      const confirmedOwn = `re-it-own-${tag}`;
+      const confirmedBatch = `re-it-batch-${tag}`;
+      const transientOwn = `re-it-transient-${tag}`;
+      const refusedOwn = `re-it-refused-${tag}`;
+
+      const confirmed = await insertRow(
+        tenantA,
+        row(tenantA, { sentAt: SEVEN_YEARS_AGO, stageEnteredAt: SEVEN_YEARS_AGO, resendBroadcastId: confirmedOwn }),
+      );
+      const transient = await insertRow(tenantA, row(tenantA, { sentAt: SIX_YEARS_AGO, resendBroadcastId: transientOwn }));
+      const refused = await insertRow(tenantA, row(tenantA, { sentAt: SIX_YEARS_AGO, resendBroadcastId: refusedOwn }));
+      // A per-batch Resend copy on the confirmed row, and one delivery that must go by cascade.
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx.execute(sql`
+          INSERT INTO broadcast_batch_manifests (
+            tenant_id, broadcast_id, batch_index, recipient_count,
+            recipient_range_start, recipient_range_end, idempotency_key, status, provider_broadcast_id
+          ) VALUES (
+            ${tenantA.ctx.slug}, ${confirmed}::uuid, 0, 2, 0, 1,
+            ${`broadcast-${confirmed}-batch-0-attempt-0`}, 'sent', ${confirmedBatch}
+          )
+        `);
+        await insertDelivery(tx, tenantA, confirmed);
+      });
+
+      // The fake records, for each call, whether our row still existed at that moment.
+      const calls: Array<{ id: string; rowExisted: boolean }> = [];
+      const ownerOf = new Map([
+        [confirmedOwn, confirmed],
+        [confirmedBatch, confirmed],
+        [transientOwn, transient],
+        [refusedOwn, refused],
+      ]);
+      const fakeGateway = {
+        async deleteBroadcast(id: string): Promise<void> {
+          const owner = ownerOf.get(id);
+          calls.push({ id, rowExisted: owner !== undefined && (await surviving(tenantA, [owner])).length === 1 });
+          if (id === transientOwn) {
+            throw Object.assign(new Error('503'), { kind: 'retryable', subKind: 'server_5xx', reason: 'down' });
+          }
+          if (id === refusedOwn) {
+            throw Object.assign(new Error('422'), { kind: 'permanent', code: 'validation_error', reason: 'sent' });
+          }
+        },
+      };
+
+      // batchSize 1: three reads + one empty read, so the (anchor, id) read
+      // cursor is exercised on Postgres — including the id tiebreak, since the
+      // transient and refused rows share one anchor.
+      const requestId = `retention-it-m1-${randomUUID()}`;
+      const result = await sweepExpiredBroadcasts({
+        ...makeSweepExpiredBroadcastsDeps(tenantA.ctx.slug, requestId),
+        broadcastsGateway: fakeGateway,
+        clock: { now: () => NOW },
+        batchSize: 1,
+      });
+
+      expect(result).toEqual({
+        ok: true,
+        value: {
+          sweptCount: 1,
+          imagesMarked: 0,
+          batches: 4,
+          budgetExhausted: false,
+          providerCopyKeptTransient: 1,
+          providerCopyKeptRefused: 1,
+          oldestAnchor: SEVEN_YEARS_AGO,
+          newestAnchor: SEVEN_YEARS_AGO,
+        },
+      });
+      // Both copies of the confirmed row were deleted while the row still existed.
+      expect(calls.filter((c) => c.id === confirmedOwn || c.id === confirmedBatch)).toEqual(
+        expect.arrayContaining([
+          { id: confirmedOwn, rowExisted: true },
+          { id: confirmedBatch, rowExisted: true },
+        ]),
+      );
+      expect(calls.map((c) => c.id).sort()).toEqual([confirmedBatch, confirmedOwn, refusedOwn, transientOwn].sort());
+      // Exactly once each: the cursor never re-read a kept row.
+
+      expect(await surviving(tenantA, [confirmed])).toEqual([]);
+      expect(await childCounts(tenantA, confirmed)).toMatchObject({ deliveries: 0, manifests: 0 });
+      // Never drop the key: both kept rows still carry their Resend id for the next run.
+      const kept = await db
+        .select({ id: broadcasts.broadcastId, resendBroadcastId: broadcasts.resendBroadcastId })
+        .from(broadcasts)
+        .where(and(eq(broadcasts.tenantId, tenantA.ctx.slug), inArray(broadcasts.broadcastId, [transient, refused])));
+      expect(new Map(kept.map((k) => [k.id, k.resendBroadcastId]))).toEqual(
+        new Map([
+          [transient, transientOwn],
+          [refused, refusedOwn],
+        ]),
+      );
+
+      const runRows = (await db.execute(sql`
+        SELECT payload FROM audit_log
+         WHERE tenant_id = ${tenantA.ctx.slug} AND request_id = ${requestId}
+           AND event_type = 'broadcast_retention_swept'
+      `)) as unknown as Array<{ payload: Record<string, unknown> }>;
+      expect(runRows.map((r) => r.payload)).toEqual([
+        {
+          swept_count: 1,
+          images_marked: 0,
+          batches: 4,
+          budget_exhausted: false,
+          completed: true,
+          provider_copy_kept_transient: 1,
+          provider_copy_kept_refused: 1,
+          oldest_anchor: SEVEN_YEARS_AGO.toISOString(),
+          newest_anchor: SEVEN_YEARS_AGO.toISOString(),
+          actor_role: 'system',
+        },
+      ]);
+    },
+    120_000,
+  );
 });

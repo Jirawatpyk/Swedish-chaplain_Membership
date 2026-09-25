@@ -93,6 +93,7 @@ function makeRepoMocks(opts: {
     listTerminalBroadcastsWithLiveAudience: async () => { throw new Error('not used in get-member-broadcast fixture'); },
     markAudienceDeletedInTx: async () => { throw new Error('not used in get-member-broadcast fixture'); },
     deleteExpiredForRetention: async () => { throw new Error('not used in get-member-broadcast fixture'); },
+    listExpiredForRetention: async () => { throw new Error('not used in get-member-broadcast fixture'); },
     existingBroadcastIds: async () => { throw new Error('not used in get-member-broadcast fixture'); },
   };
 }

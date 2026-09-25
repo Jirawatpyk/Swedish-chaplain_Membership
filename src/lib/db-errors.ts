@@ -130,6 +130,21 @@ export function errorChainMessage(error: unknown): string {
 }
 
 /**
+ * The SQLSTATE of the first Postgres error in the `.cause` chain, or
+ * `undefined`. For LOGGING: pair with `errKind(e)` so a failure is
+ * diagnosable without its message — a Drizzle `Failed query:` message quotes
+ * the statement's parameters, which can carry member ids.
+ */
+export function pgErrorCode(error: unknown): string | undefined {
+  let cur: unknown = error;
+  while (cur !== null && cur !== undefined) {
+    if (isPostgresError(cur)) return cur.code;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+/**
  * SQLSTATE 23505 = unique_violation. Walks the cause chain so it
  * works with Drizzle 0.45+ wrapped errors. Returns true when any
  * link in the chain is a Postgres error with code 23505.

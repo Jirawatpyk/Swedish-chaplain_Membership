@@ -2299,6 +2299,24 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_retention_provider_copy_kept_total{tenant,reason}` — F7
+   * retention sweep. Expired E-Blasts KEPT because their Resend copy could not
+   * be deleted first. `reason="transient"` (5xx / 429 / network) retries on
+   * the next daily run and should not persist; `reason="refused"` (a 4xx) will
+   * repeat every day until an operator acts — see the cron runbook § F7
+   * retention-sweep. Resend documents that a SENT broadcast cannot be deleted,
+   * so a steady `refused` rate from 2031 on is the expected signature of that.
+   */
+  retentionProviderCopyKept(tenantId: string, reason: 'transient' | 'refused', count: number): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_retention_provider_copy_kept_total',
+        'Expired E-Blasts kept by the retention sweep because their Resend copy could not be deleted',
+      ).add(count, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
    * `broadcasts.cron.dispatched.count{tenant}` — scheduled-send cron
    * throughput.
    */

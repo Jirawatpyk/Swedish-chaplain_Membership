@@ -805,9 +805,25 @@ obligation on data already held, whether or not the feature is still on.
 ### What it does
 
 Per tenant (`listKnownTenants()`; SweCham only today), `sweepExpiredBroadcasts`
-deletes in batches of **200**, one `runInTenant` transaction per batch, until a
-short batch or a **60 s** budget (checked between batches). A row is swept when
-ALL hold:
+works in batches of **200** until a short read or a **60 s** budget (checked
+between batches and before every chunk of Resend calls). Each batch has three
+phases, so no network call ever runs inside a transaction that holds locks
+(the `cleanup-audiences` shape):
+
+1. **Read** up to 200 eligible rows, oldest anchor first, **without a lock**,
+   each with every Resend broadcast id it owns (its own `resend_broadcast_id`
+   and any `broadcast_batch_manifests.provider_broadcast_id`).
+2. **Delete the Resend copies** outside any transaction, 5 in flight
+   (`deleteBroadcast`). Resolved — deleted, or 404 / 410 (already gone) → the
+   row may go. `retryable` (5xx / 429 / network) → the row is **kept with its
+   key** and retried by a later run. Anything else (a 4xx) → the row is **kept
+   and counted as refused** (see "Resend copies" below). A row with no Resend id
+   skips this phase. A kept row is not read again in the same run.
+3. **Delete the confirmed rows** in one `runInTenant` transaction whose first
+   statement is `SET LOCAL lock_timeout = '5s'`, re-checking eligibility under
+   `FOR UPDATE SKIP LOCKED`; the images are stamped in the same transaction.
+
+A row is eligible when ALL hold:
 
 - `status` is terminal (`sent`, `partial_delivery_accepted`,
   `failed_to_dispatch`, `rejected`, `cancelled`, `expired_no_member_response`);
@@ -830,11 +846,134 @@ i.e. from the cascade. The batch's `broadcast_images` rows are stamped
 `prune-expired-drafts` Block 2 then reclaims the bytes under the last-reference
 rule), each audited `broadcast_image_removed { reason: 'retention_expired' }`.
 One counts-only `broadcast_retention_swept` audit row per tenant per run
-(`swept_count`, `images_marked`, `batches`, `budget_exhausted`, `completed`) —
-written even when nothing expired; it is the evidence the retention is enforced.
+(`swept_count`, `images_marked`, `batches`, `budget_exhausted`, `completed`,
+`provider_copy_kept_transient`, `provider_copy_kept_refused`, and
+`oldest_anchor` / `newest_anchor` — the ISO anchor range of the rows deleted,
+`null` when none, so an auditor can check nothing younger than the period went;
+no ids) — written even when nothing expired; it is the evidence the retention is
+enforced.
 
 Nothing is expected to be swept before ~2031 (the first prod E-Blast plus
 5 years). A steady `swept_count: 0` until then is correct.
+
+**READ_ONLY_MODE** stops it: the route answers 200
+`{ skipped: true, reason: 'read_only_mode' }` and touches nothing. (Vercel Cron
+calls GET, which the proxy's write-freeze does not cover, so the check is in the
+route.)
+
+### Resend copies — TO MEASURE BEFORE 2031
+
+`DELETE /broadcasts/{id}` has been measured against the live account **on a
+draft only** (2026-09-10). Resend's documentation says a broadcast that has been
+**queued or sent cannot be deleted**. If that holds, every expired `sent` /
+`partial_delivery_accepted` row carrying a `resend_broadcast_id` is refused and
+KEPT — the sweep then removes only rows that never reached Resend (`rejected`,
+`cancelled`, `expired_no_member_response`, most `failed_to_dispatch`), and the
+retention the RoPA declares is not enforced for sent E-Blasts.
+
+Before the first prod E-Blast crosses its retention (~2031), the maintainer:
+
+1. Measures it: send a throwaway broadcast to a test audience on the Resend
+   account, then `DELETE /broadcasts/{id}` it; record the status and the
+   provider `name` (the sweep logs that `name` as `code`).
+2. Decides, with the DPO, what a refused sent copy means — e.g. delete our row
+   anyway and record Resend's copy as the sub-processor's own retention in the
+   RoPA, or keep the row as today. This is a code change either way; the sweep
+   does not guess.
+
+Signal while it is open: `broadcasts_retention_provider_copy_kept_total{reason="refused"}`
+and `provider_copy_kept_refused` in the run row, plus the log line
+`broadcasts.retention_sweep.provider_copy_kept` (`outcome`, `errorKind`, `code`;
+no ids). To list the kept rows (read-only):
+
+```sql
+SELECT broadcast_id, status, resend_broadcast_id
+  FROM broadcasts
+ WHERE status::text IN ('sent','partial_delivery_accepted','failed_to_dispatch','rejected','cancelled','expired_no_member_response')
+   AND resend_broadcast_id IS NOT NULL
+   AND (resend_audience_id IS NULL OR audience_deleted_at IS NOT NULL)
+   AND (CASE status::text
+          WHEN 'sent' THEN COALESCE(sent_at, stage_entered_at)
+          WHEN 'partial_delivery_accepted' THEN COALESCE(partial_delivery_accepted_at, stage_entered_at)
+          WHEN 'failed_to_dispatch' THEN COALESCE(failed_to_dispatch_at, stage_entered_at)
+          WHEN 'rejected' THEN COALESCE(rejected_at, stage_entered_at)
+          WHEN 'cancelled' THEN COALESCE(cancelled_at, stage_entered_at)
+          ELSE stage_entered_at
+        END) + make_interval(years => retention_years::int) <= now();
+```
+
+A **transient** kept row needs nothing: the next run retries it. A
+`reason="transient"` count that persists for days means Resend is failing for
+that id — check the Resend status page.
+
+### Anchor checks (read-only)
+
+The anchor never reads `updated_at` directly, but migration 0308 backfilled
+`stage_entered_at = COALESCE(submitted_at, updated_at)`. A terminal row whose
+own anchor column is NULL therefore falls back to `stage_entered_at`, and if its
+`submitted_at` was also NULL, that is the `updated_at` it had at 0308. Expected
+**0** on the `updated_at` path:
+
+```sql
+SELECT status::text, count(*) AS own_anchor_null,
+       count(*) FILTER (WHERE submitted_at IS NULL) AS updated_at_path
+  FROM broadcasts
+ WHERE status::text IN ('sent','partial_delivery_accepted','failed_to_dispatch','rejected','cancelled')
+   AND (CASE status::text
+          WHEN 'sent' THEN sent_at
+          WHEN 'partial_delivery_accepted' THEN partial_delivery_accepted_at
+          WHEN 'failed_to_dispatch' THEN failed_to_dispatch_at
+          WHEN 'rejected' THEN rejected_at
+          WHEN 'cancelled' THEN cancelled_at
+        END) IS NULL
+ GROUP BY status;
+```
+
+Measured on the dev branch 2026-09-25 (read-only, owner role): 5 `sent` rows
+with a NULL `sent_at`, all with `submitted_at` set — **0** on the `updated_at`
+path. Run it on prod (read-only) before the first expiry; a non-zero
+`updated_at_path` goes to the DPO (those rows' clocks may have been restarted by
+an edit before 0308).
+
+`partially_sent` is **not terminal** and never ages out. Nothing has produced
+or closed it since 108 Phase 9 deleted the batch path (`ca51f59a1`), so the
+population is frozen; only an operator's status move bounds it. Count it
+(read-only) and take a non-zero count to the DPO:
+
+```sql
+SELECT count(*) FROM broadcasts WHERE status::text = 'partially_sent';
+```
+
+(dev, 2026-09-25: 1.)
+
+### Pre-0304 image blobs
+
+An image uploaded before migration 0304 has no `broadcast_images` row, so the
+sweep's image stamp cannot see it; the only thing that attributes the blob is
+the E-Blast's `body_html` — which the sweep deletes with the row. The same
+window the member-erasure runbook closes at step 2a. Before the first E-Blast
+expires (~2031), and whenever the query below returns rows, enumerate the blob
+paths from the rows expiring within the next 30 days, record them, and delete
+them from the Blob store by hand once the sweep has removed their rows:
+
+```sql
+SELECT broadcast_id, body_html, body_source
+  FROM broadcasts
+ WHERE (body_html LIKE '%/broadcasts/images/%' OR body_source LIKE '%/broadcasts/images/%')
+   AND status::text IN ('sent','partial_delivery_accepted','failed_to_dispatch','rejected','cancelled','expired_no_member_response')
+   AND (CASE status::text
+          WHEN 'sent' THEN COALESCE(sent_at, stage_entered_at)
+          WHEN 'partial_delivery_accepted' THEN COALESCE(partial_delivery_accepted_at, stage_entered_at)
+          WHEN 'failed_to_dispatch' THEN COALESCE(failed_to_dispatch_at, stage_entered_at)
+          WHEN 'rejected' THEN COALESCE(rejected_at, stage_entered_at)
+          WHEN 'cancelled' THEN COALESCE(cancelled_at, stage_entered_at)
+          ELSE stage_entered_at
+        END) + make_interval(years => retention_years::int) <= now() + interval '30 days';
+```
+
+Extract every `/broadcasts/images/<tenant>/<hash>.<ext>` path; skip any path
+whose URL appears as a `broadcast_images.blob_url` (a post-0304 image — the
+image sweep owns it). What remains is pre-0304 and is yours to delete.
 
 ### Deploying 0310: the lock wait is bounded (`lock_timeout = 5s`)
 
@@ -902,7 +1041,9 @@ leftovers; it does not need validating.
 |-----------|---------|-----------------|
 | 200 + every `perTenant[].outcome: 'success'` | Ran for every tenant; `sweptCount` is the rows deleted | None |
 | 200 + `budgetExhausted: true` | Stopped on the 60 s budget with expired rows left | None if it clears within a few days; two weeks running means the backlog outgrows 200-row batches — look at the batch plan |
-| 200 + a tenant with `outcome: 'error'` | That tenant's run failed (`sweptCount`, when present, is what DID commit — it stays deleted). Other tenants ran | Vercel logs `cron.broadcasts.retention_sweep.server_error` / `.uncaught_error` (errorId `F7.cron.retention_sweep.*`); the next daily tick retries. `broadcasts_retention_sweep_failed_total{tenant}` increments |
+| 200 + a tenant with `outcome: 'error'` | That tenant's run failed (`sweptCount`, when present, is what DID commit — it stays deleted). Other tenants ran | Vercel logs `cron.broadcasts.retention_sweep.server_error` (fields `err` = the error class, `code` = the SQLSTATE; never the message — a Drizzle message quotes the query's params) / `.uncaught_error` (errorId `F7.cron.retention_sweep.*`); the next daily tick retries. `broadcasts_retention_sweep_failed_total{tenant}` increments. `code: '55P03'` = a batch waited more than 5 s for a lock (the cascade into a row another transaction held) — that batch rolled back; nothing to do unless it repeats |
+| 200 + `providerCopyKeptRefused > 0` | Rows kept because Resend refused to delete their copy | § "Resend copies" above |
+| 200 + `{ skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE` is on; nothing ran | None — it resumes the day after the freeze lifts |
 | 401 | Bearer mismatch | Rotate / fix `CRON_SECRET` |
 
 ### Alert rules
@@ -911,6 +1052,9 @@ leftovers; it does not need validating.
   the retention the RoPA says is enforced is not being enforced. Page.
 - No `broadcast_retention_swept` audit row for a tenant in 48 h — the cron did
   not run (it writes one row per run even when it deletes nothing).
+- `broadcasts_retention_provider_copy_kept_total{reason="refused"}` above 0 —
+  warn, not page: see § "Resend copies". `reason="transient"` on three
+  consecutive days — warn.
 
 ### Handler module
 
@@ -1000,7 +1144,9 @@ review (S51).
 
 **Re-count from `vercel.json` rather than trusting this number** — it has now
 drifted once, and the failure mode is silent: a 41st cron is rejected at deploy,
-not at review.
+not at review. The table below had drifted too: it listed 36 of the 39 until
+2026-09-25, when `prune-expired-invitations`, `plan-change-divergence` and
+`void-pdf-reconcile` were added (schedules read from `vercel.json`).
 
 | `vercel.json` path | UTC schedule | Logical time / cadence | Verb |
 |---|---|---|---|
@@ -1040,6 +1186,9 @@ not at review.
 | `/api/cron/sweep-stale-pending-refunds` | `0 3 * * *` | 03:00 UTC (native since Hobby) | GET |
 | `/api/internal/cron/receipt-pdf-reconcile` | `*/5 * * * *` | every 5 min (≤5-min receipt-PDF recovery SLA) | GET |
 | `/api/cron/lockout-cleanup` | `45 3 * * *` | 03:45 UTC (native since Hobby) | GET |
+| `/api/cron/auth/prune-expired-invitations` | `40 4 * * *` | 04:40 UTC (11:40 ICT) — expired F1 invitations | GET+POST |
+| `/api/internal/cron/plan-change-divergence` | `20 3 * * *` | 03:20 UTC (10:20 ICT) — plan-change divergence check | GET |
+| `/api/internal/cron/void-pdf-reconcile` | `*/5 * * * *` | every 5 min — void-PDF reconcile | GET |
 
 > **`reconcile-erasures` retry note:** on cron-job.org this job used
 > retry-ON (500 → retry). Vercel Cron has **no auto-retry** — the

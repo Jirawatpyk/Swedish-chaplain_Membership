@@ -173,6 +173,28 @@ export class BroadcastConcurrentMutationError extends Error {
   }
 }
 
+/**
+ * F7 retention sweep — where the next `listExpiredForRetention` read starts:
+ * strictly after this (anchor, id) pair, in the read's own order.
+ * `anchorKey` is OPAQUE to the caller — the adapter's lossless text form of
+ * the anchor (a JS `Date` would drop Postgres' microseconds and re-read the
+ * same row).
+ */
+export interface RetentionCursor {
+  readonly anchorKey: string;
+  readonly broadcastId: string;
+}
+
+/** F7 retention sweep — one expired E-Blast and the Resend copies it still owns. */
+export interface RetentionCandidate extends RetentionCursor {
+  /**
+   * Every Resend broadcast id the row knows: its own `resend_broadcast_id` and
+   * any per-batch `broadcast_batch_manifests.provider_broadcast_id`, de-duplicated.
+   * Empty when nothing was ever created at Resend (e.g. a rejected E-Blast).
+   */
+  readonly resendBroadcastIds: readonly string[];
+}
+
 export interface BroadcastsRepo {
   /**
    * Open a Drizzle transaction. Use cases pass the resulting `tx`
@@ -597,9 +619,32 @@ export interface BroadcastsRepo {
   }>;
 
   /**
-   * F7 retention sweep (migration 0310) — delete up to `limit` CLOSED E-Blasts
-   * whose retention has run out, oldest anchor first, on the caller's `tx`, and
-   * return what was deleted.
+   * F7 retention sweep (migration 0310), phase 1 — READ up to `limit` CLOSED
+   * E-Blasts whose retention has run out (the eligibility rule is the one
+   * `deleteExpiredForRetention` documents below), oldest anchor first, strictly
+   * after `after` when given. NO lock, own tenant transaction: the caller
+   * deletes the Resend copies next, over the network, and no row lock may be
+   * held across that call.
+   *
+   * `after` is the last candidate of the previous read, so a row the caller
+   * KEPT (its Resend copy could not be deleted) is not read again in the same
+   * run; the next daily run starts from the oldest again and retries it.
+   */
+  listExpiredForRetention(
+    tenantId: TenantSlug,
+    now: Date,
+    limit: number,
+    after: RetentionCursor | null,
+  ): Promise<readonly RetentionCandidate[]>;
+
+  /**
+   * F7 retention sweep (migration 0310), phase 3 — delete the given CLOSED
+   * E-Blasts on the caller's `tx`, RE-CHECKING that each is still eligible and
+   * skipping any row another transaction holds (`FOR UPDATE SKIP LOCKED`), and
+   * return what was deleted. The caller passes only rows whose Resend copies
+   * are confirmed gone. The first statement is `SET LOCAL lock_timeout = '5s'`,
+   * so a lock wait (the cascade into children another transaction holds) ends
+   * the batch with 55P03 instead of hanging it.
    *
    * Eligible = ALL of:
    *   - `status` in `TERMINAL_BROADCAST_STATUSES`;
@@ -625,7 +670,7 @@ export interface BroadcastsRepo {
   deleteExpiredForRetention(
     tenantId: TenantSlug,
     now: Date,
-    limit: number,
+    broadcastIds: readonly string[],
     tx: unknown,
   ): Promise<{
     /** The E-Blasts this batch deleted; its `length` is the batch's count. */
@@ -633,6 +678,8 @@ export interface BroadcastsRepo {
       readonly broadcastId: string;
       /** The owning member, for the image audit's `related_member_id`. */
       readonly requestedByMemberId: string | null;
+      /** The row's retention anchor — for the run row's anchor range. */
+      readonly anchor: Date;
     }[];
   }>;
 

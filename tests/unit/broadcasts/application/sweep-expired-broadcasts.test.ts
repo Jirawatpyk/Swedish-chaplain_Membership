@@ -1,29 +1,51 @@
 /**
  * F7 retention sweep (migration 0310) — `sweepExpiredBroadcasts`.
  *
- * Pins the loop (bounded batches, one transaction each, a wall-clock budget
- * checked between batches), the image stamp that co-commits with each batch,
- * and the ONE counts-only `broadcast_retention_swept` row per run.
+ * Pins the loop (bounded batches, a wall-clock budget), the three phases of a
+ * batch — read the candidates without a lock, delete their Resend copies
+ * OUTSIDE any transaction, then delete only the confirmed rows in one
+ * transaction that re-checks eligibility — the image stamp that co-commits
+ * with each delete, and the ONE counts-only `broadcast_retention_swept` row
+ * per run.
  *
  * What the repository selects (terminal, past the anchor + retention_years,
  * no live Resend audience) and that the children leave by cascade is proven
  * against live Postgres in
  * `tests/integration/broadcasts/broadcast-retention-sweep.test.ts`.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const logged = vi.hoisted(() => ({ warn: [] as unknown[][], info: [] as unknown[][], error: [] as unknown[][] }));
+vi.mock('@/lib/logger', () => ({
+  logger: {
+    warn: (...args: unknown[]) => logged.warn.push(args),
+    info: (...args: unknown[]) => logged.info.push(args),
+    error: (...args: unknown[]) => logged.error.push(args),
+    debug: () => undefined,
+  },
+}));
 
 import {
   sweepExpiredBroadcasts,
   type SweepExpiredBroadcastsDeps,
 } from '@/modules/broadcasts/application/use-cases/sweep-expired-broadcasts';
 import type { BroadcastImageRecord } from '@/modules/broadcasts/application/ports/broadcast-images-repo';
+import type { RetentionCandidate, RetentionCursor } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import { asTenantContext } from '@/modules/tenants';
 
 const tenant = asTenantContext('test-tenant');
 const NOW = new Date('2031-06-15T20:50:00.000Z');
 const TX = Symbol('batch-tx');
 
-type Swept = { broadcastId: string; requestedByMemberId: string | null };
+/** What the fake gateway does for one Resend id. */
+type ProviderBehaviour = 'deleted' | 'transient' | 'refused' | 'not_a_gateway_error';
+
+interface FakeRow {
+  readonly broadcastId: string;
+  readonly requestedByMemberId: string | null;
+  readonly anchor: Date;
+  readonly resendBroadcastIds: readonly string[];
+}
 
 function imageOf(ownerId: string, n: number): BroadcastImageRecord {
   return {
@@ -42,12 +64,23 @@ function imageOf(ownerId: string, n: number): BroadcastImageRecord {
   };
 }
 
+/** `n` expired rows, oldest first, one day apart, no Resend copies. */
+function plainRows(n: number): FakeRow[] {
+  return Array.from({ length: n }, (_v, i) => ({
+    broadcastId: `bc-${i + 1}`,
+    requestedByMemberId: (i + 1) % 2 === 0 ? `m-${i + 1}` : null,
+    anchor: new Date(Date.UTC(2026, 0, 1 + i)),
+    resendBroadcastIds: [],
+  }));
+}
+
+const keyOf = (r: FakeRow): string => `${r.anchor.toISOString()}|${r.broadcastId}`;
+
 function makeDeps(opts: {
-  /** Expired rows the fake serves `limit` at a time, oldest first. */
-  expired?: number;
-  /** Throw on this (1-based) repo call. */
-  throwOnCall?: number;
-  /** Images per swept broadcast. */
+  rows?: FakeRow[];
+  provider?: Record<string, ProviderBehaviour>;
+  /** Throw on this (1-based) delete call. */
+  deleteThrowsOnCall?: number;
   imagesPerRow?: number;
   /** Advance the clock by this much on every read after the first. */
   tickMs?: number;
@@ -55,27 +88,69 @@ function makeDeps(opts: {
   timeBudgetMs?: number;
   batchSize?: number;
 }) {
-  let remaining = opts.expired ?? 0;
-  let served = 0;
-  let calls = 0;
-  let clockReads = 0;
-  const repoCalls: Array<{ tenantId: string; now: Date; limit: number; tx: unknown }> = [];
+  // The fake table: rows leave it only through `deleteExpiredForRetention`.
+  const table = new Map<string, FakeRow>((opts.rows ?? []).map((r) => [r.broadcastId, r]));
+  const events: string[] = [];
+  const listCalls: Array<{ tenantId: string; now: Date; limit: number; after: RetentionCursor | null }> = [];
+  const deleteCalls: Array<{ tenantId: string; now: Date; ids: readonly string[]; tx: unknown }> = [];
+  const gatewayCalls: string[] = [];
   const txOpened: number[] = [];
+  let deleteCallCount = 0;
+  let clockReads = 0;
 
-  const deleteExpiredForRetention = vi.fn(
-    async (tenantId: string, now: Date, limit: number, tx: unknown): Promise<{ swept: readonly Swept[] }> => {
-      calls += 1;
-      repoCalls.push({ tenantId, now, limit, tx });
-      if (opts.throwOnCall === calls) throw new Error('Neon: connection terminated');
-      const take = Math.min(limit, remaining);
-      remaining -= take;
-      const swept = Array.from({ length: take }, () => {
-        served += 1;
-        return { broadcastId: `bc-${served}`, requestedByMemberId: served % 2 === 0 ? `m-${served}` : null };
-      });
-      return { swept };
+  const listExpiredForRetention = vi.fn(
+    async (tenantId: string, now: Date, limit: number, after: RetentionCursor | null): Promise<readonly RetentionCandidate[]> => {
+      listCalls.push({ tenantId, now, limit, after });
+      events.push('list');
+      const afterKey = after === null ? null : `${after.anchorKey}|${after.broadcastId}`;
+      return [...table.values()]
+        .sort((a, b) => keyOf(a).localeCompare(keyOf(b)))
+        .filter((r) => afterKey === null || keyOf(r) > afterKey)
+        .slice(0, limit)
+        .map((r) => ({
+          broadcastId: r.broadcastId,
+          anchorKey: r.anchor.toISOString(),
+          resendBroadcastIds: r.resendBroadcastIds,
+        }));
     },
   );
+
+  const deleteExpiredForRetention = vi.fn(async (tenantId: string, now: Date, ids: readonly string[], tx: unknown) => {
+    deleteCallCount += 1;
+    deleteCalls.push({ tenantId, now, ids: [...ids], tx });
+    events.push(`delete:${ids.join(',')}`);
+    if (opts.deleteThrowsOnCall === deleteCallCount) {
+      throw new Error('Failed query: DELETE … params: 7f3c1a52-0000-4000-8000-000000000001', {
+        cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+      });
+    }
+    const swept = ids.flatMap((id) => {
+      const r = table.get(id);
+      if (!r) return [];
+      table.delete(id);
+      return [{ broadcastId: r.broadcastId, requestedByMemberId: r.requestedByMemberId, anchor: r.anchor }];
+    });
+    return { swept };
+  });
+
+  const deleteBroadcast = vi.fn(async (resendId: string) => {
+    gatewayCalls.push(resendId);
+    events.push(`resend:${resendId}`);
+    switch (opts.provider?.[resendId] ?? 'deleted') {
+      case 'deleted':
+        return;
+      case 'transient':
+        throw Object.assign(new Error('Resend 503 for re_secret'), { kind: 'retryable', subKind: 'server_5xx', reason: 'down' });
+      case 'refused':
+        throw Object.assign(new Error('Resend 422 for re_secret'), {
+          kind: 'permanent',
+          code: 'validation_error',
+          reason: 'You can only delete broadcasts that have not been sent',
+        });
+      case 'not_a_gateway_error':
+        throw new TypeError('cannot read properties of undefined');
+    }
+  });
 
   const markDeletedByOwners = vi.fn(
     async (_t: string, _kind: string, ownerIds: readonly string[]): Promise<readonly BroadcastImageRecord[]> =>
@@ -91,10 +166,13 @@ function makeDeps(opts: {
     broadcastsRepo: {
       async withTx(fn) {
         txOpened.push(txOpened.length + 1);
+        events.push('tx');
         return fn(TX);
       },
+      listExpiredForRetention,
       deleteExpiredForRetention,
     },
+    broadcastsGateway: { deleteBroadcast },
     imagesRepo: { markDeletedByOwners },
     audit: { emit: vi.fn(async () => undefined), emitTyped } as never,
     clock: {
@@ -108,7 +186,7 @@ function makeDeps(opts: {
     ...(opts.batchSize !== undefined ? { batchSize: opts.batchSize } : {}),
     ...(opts.timeBudgetMs !== undefined ? { timeBudgetMs: opts.timeBudgetMs } : {}),
   };
-  return { deps, repoCalls, txOpened, markDeletedByOwners, emitTyped };
+  return { deps, table, events, listCalls, deleteCalls, gatewayCalls, txOpened, markDeletedByOwners, emitTyped };
 }
 
 function runAudits(emitTyped: ReturnType<typeof vi.fn>) {
@@ -117,18 +195,34 @@ function runAudits(emitTyped: ReturnType<typeof vi.fn>) {
     .filter((e) => e.eventType === 'broadcast_retention_swept');
 }
 
-describe('sweepExpiredBroadcasts', () => {
-  it('zero rows: one batch, nothing stamped, and still ONE run row saying 0', async () => {
-    const { deps, repoCalls, markDeletedByOwners, emitTyped } = makeDeps({ expired: 0 });
+const ZERO_OUTPUT = {
+  sweptCount: 0,
+  imagesMarked: 0,
+  batches: 1,
+  budgetExhausted: false,
+  providerCopyKeptTransient: 0,
+  providerCopyKeptRefused: 0,
+  oldestAnchor: null,
+  newestAnchor: null,
+};
+
+beforeEach(() => {
+  logged.warn.length = 0;
+  logged.info.length = 0;
+  logged.error.length = 0;
+});
+
+describe('sweepExpiredBroadcasts — the batch loop', () => {
+  it('zero rows: one read, no delete transaction, no Resend call, and still ONE run row saying 0', async () => {
+    const { deps, listCalls, deleteCalls, gatewayCalls, txOpened, markDeletedByOwners, emitTyped } = makeDeps({});
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result).toEqual({
-      ok: true,
-      value: { sweptCount: 0, imagesMarked: 0, batches: 1, budgetExhausted: false },
-    });
-    expect(repoCalls).toHaveLength(1);
-    expect(repoCalls[0]).toEqual({ tenantId: 'test-tenant', now: NOW, limit: 200, tx: TX });
+    expect(result).toEqual({ ok: true, value: ZERO_OUTPUT });
+    expect(listCalls).toEqual([{ tenantId: 'test-tenant', now: NOW, limit: 200, after: null }]);
+    expect(deleteCalls).toHaveLength(0);
+    expect(gatewayCalls).toHaveLength(0);
     expect(markDeletedByOwners).not.toHaveBeenCalled();
+    expect(txOpened).toHaveLength(1); // the run row only
     const audits = runAudits(emitTyped);
     expect(audits).toHaveLength(1);
     expect(audits[0]?.payload).toEqual({
@@ -137,58 +231,57 @@ describe('sweepExpiredBroadcasts', () => {
       batches: 1,
       budget_exhausted: false,
       completed: true,
+      provider_copy_kept_transient: 0,
+      provider_copy_kept_refused: 0,
+      oldest_anchor: null,
+      newest_anchor: null,
       actor_role: 'system',
     });
   });
 
-  it('batches of 200 until a short batch, one transaction per batch (+1 for the run row)', async () => {
-    const { deps, repoCalls, txOpened, emitTyped } = makeDeps({ expired: 450 });
+  it('batches of 200 until a short batch, one delete transaction per batch (+1 for the run row), each read after the last', async () => {
+    const { deps, listCalls, deleteCalls, txOpened, emitTyped } = makeDeps({ rows: plainRows(450) });
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result.ok && result.value).toEqual({
-      sweptCount: 450,
-      imagesMarked: 0,
-      batches: 3,
-      budgetExhausted: false,
-    });
-    expect(repoCalls.map((c) => c.limit)).toEqual([200, 200, 200]);
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 450, batches: 3, budgetExhausted: false });
+    expect(listCalls.map((c) => c.limit)).toEqual([200, 200, 200]);
+    expect(listCalls[0]?.after).toBeNull();
+    expect(listCalls[1]?.after).toEqual({ anchorKey: new Date(Date.UTC(2026, 0, 200)).toISOString(), broadcastId: 'bc-200' });
+    expect(deleteCalls.map((c) => c.ids.length)).toEqual([200, 200, 50]);
+    expect(deleteCalls.every((c) => c.tx === TX && c.now.getTime() === NOW.getTime())).toBe(true);
     expect(txOpened).toHaveLength(4);
     expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ swept_count: 450, batches: 3 });
   });
 
-  it('an exact multiple of the batch size costs one more (empty) batch, never an extra row', async () => {
-    const { deps, repoCalls } = makeDeps({ expired: 400 });
+  it('an exact multiple of the batch size costs one more (empty) read, never an extra delete', async () => {
+    const { deps, listCalls, deleteCalls } = makeDeps({ rows: plainRows(400) });
     const result = await sweepExpiredBroadcasts(deps);
     expect(result.ok && result.value.sweptCount).toBe(400);
-    expect(repoCalls).toHaveLength(3);
+    expect(listCalls).toHaveLength(3);
+    expect(deleteCalls).toHaveLength(2);
   });
 
   it('stops on the time budget between batches and says so', async () => {
     // Every clock read is 30 s later; the budget is 45 s.
-    const { deps, repoCalls, emitTyped } = makeDeps({ expired: 1000, tickMs: 30_000, timeBudgetMs: 45_000 });
+    const { deps, listCalls, emitTyped } = makeDeps({ rows: plainRows(1000), tickMs: 30_000, timeBudgetMs: 45_000 });
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result.ok && result.value).toEqual({
-      sweptCount: 400,
-      imagesMarked: 0,
-      batches: 2,
-      budgetExhausted: true,
-    });
-    expect(repoCalls).toHaveLength(2);
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 400, batches: 2, budgetExhausted: true });
+    expect(listCalls).toHaveLength(2);
     // The repo's cutoff is the tick's start, not a moving clock.
-    expect(repoCalls.every((c) => c.now.getTime() === NOW.getTime())).toBe(true);
+    expect(listCalls.every((c) => c.now.getTime() === NOW.getTime())).toBe(true);
     expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ budget_exhausted: true, completed: true });
   });
 
   it('honours a custom batch size', async () => {
-    const { deps, repoCalls } = makeDeps({ expired: 5, batchSize: 2 });
+    const { deps, listCalls } = makeDeps({ rows: plainRows(5), batchSize: 2 });
     const result = await sweepExpiredBroadcasts(deps);
     expect(result.ok && result.value.batches).toBe(3);
-    expect(repoCalls.map((c) => c.limit)).toEqual([2, 2, 2]);
+    expect(listCalls.map((c) => c.limit)).toEqual([2, 2, 2]);
   });
 
   it('stamps each batch\'s images on the batch tx and audits them as retention_expired, per owner', async () => {
-    const { deps, markDeletedByOwners, emitTyped } = makeDeps({ expired: 3, imagesPerRow: 2 });
+    const { deps, markDeletedByOwners, emitTyped } = makeDeps({ rows: plainRows(3), imagesPerRow: 2 });
     const result = await sweepExpiredBroadcasts(deps);
 
     expect(result.ok && result.value.imagesMarked).toBe(6);
@@ -206,57 +299,215 @@ describe('sweepExpiredBroadcasts', () => {
     expect(removed.map(([, e]) => e.payload['related_member_id'])).toEqual([null, null, 'm-2', 'm-2', null, null]);
   });
 
-  it('the run row carries counts only — no broadcast id, member id or content', async () => {
-    const { deps, emitTyped } = makeDeps({ expired: 2, imagesPerRow: 1 });
+  it('the run row carries counts and the swept anchor range only — no broadcast id, member id, Resend id or content', async () => {
+    const rows = plainRows(2).map((r) => ({ ...r, resendBroadcastIds: [`re_${r.broadcastId}`] }));
+    const { deps, emitTyped } = makeDeps({ rows, imagesPerRow: 1 });
     await sweepExpiredBroadcasts(deps);
 
     const [run] = runAudits(emitTyped);
     expect(run?.actorUserId).toBe('system');
     expect(Object.keys(run?.payload ?? {}).sort()).toEqual(
-      ['actor_role', 'batches', 'budget_exhausted', 'completed', 'images_marked', 'swept_count'].sort(),
+      [
+        'actor_role',
+        'batches',
+        'budget_exhausted',
+        'completed',
+        'images_marked',
+        'newest_anchor',
+        'oldest_anchor',
+        'provider_copy_kept_refused',
+        'provider_copy_kept_transient',
+        'swept_count',
+      ].sort(),
     );
-    expect(JSON.stringify(run?.payload)).not.toMatch(/bc-|m-2/);
+    expect(JSON.stringify(run?.payload)).not.toMatch(/bc-|m-2|re_/);
   });
 
-  it('a batch that throws: the committed batches are still counted, the run row says completed:false, and the result is an error', async () => {
-    const { deps, emitTyped } = makeDeps({ expired: 450, throwOnCall: 2 });
+  it('the anchor range spans every batch: the oldest and newest anchor of the rows actually deleted', async () => {
+    const { deps, emitTyped } = makeDeps({ rows: plainRows(5), batchSize: 2 });
     const result = await sweepExpiredBroadcasts(deps);
 
-    expect(result).toEqual({
-      ok: false,
-      error: {
-        kind: 'retention_sweep.server_error',
-        message: 'Neon: connection terminated',
-        sweptCount: 200,
-      },
+    expect(result.ok && result.value.oldestAnchor).toEqual(new Date(Date.UTC(2026, 0, 1)));
+    expect(result.ok && result.value.newestAnchor).toEqual(new Date(Date.UTC(2026, 0, 5)));
+    expect(runAudits(emitTyped)[0]?.payload).toMatchObject({
+      oldest_anchor: '2026-01-01T00:00:00.000Z',
+      newest_anchor: '2026-01-05T00:00:00.000Z',
     });
+  });
+});
+
+describe('sweepExpiredBroadcasts — the Resend copy (M1)', () => {
+  /** Three rows: one Resend copy, two copies (a per-batch one + its own), none. */
+  const RESEND_ROWS: FakeRow[] = [
+    { broadcastId: 'bc-a', requestedByMemberId: null, anchor: new Date('2026-01-01T00:00:00Z'), resendBroadcastIds: ['re_a'] },
+    {
+      broadcastId: 'bc-b',
+      requestedByMemberId: 'm-b',
+      anchor: new Date('2026-01-02T00:00:00Z'),
+      // A per-batch copy (broadcast_batch_manifests.provider_broadcast_id) plus the row's own.
+      resendBroadcastIds: ['re_b_batch0', 're_b'],
+    },
+    { broadcastId: 'bc-c', requestedByMemberId: null, anchor: new Date('2026-01-03T00:00:00Z'), resendBroadcastIds: [] },
+  ];
+  const withResend = (provider: Record<string, ProviderBehaviour>) => makeDeps({ rows: RESEND_ROWS, provider });
+
+  it('deletes every Resend copy BEFORE the row, outside the delete transaction, and deletes the row once they are gone', async () => {
+    const { deps, events, gatewayCalls, deleteCalls, table } = withResend({});
+    const result = await sweepExpiredBroadcasts(deps);
+
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 3, providerCopyKeptTransient: 0, providerCopyKeptRefused: 0 });
+    expect([...gatewayCalls].sort()).toEqual(['re_a', 're_b', 're_b_batch0']);
+    expect(deleteCalls[0]?.ids).toEqual(['bc-a', 'bc-b', 'bc-c']);
+    // Every Resend call happened before the batch transaction opened.
+    const firstTx = events.indexOf('tx');
+    expect(events.slice(0, firstTx).filter((e) => e.startsWith('resend:'))).toHaveLength(3);
+    expect(events.slice(firstTx).some((e) => e.startsWith('resend:'))).toBe(false);
+    expect(table.size).toBe(0);
+  });
+
+  it('an already-gone copy (the gateway resolves a 404 / 410) lets the row go', async () => {
+    // The adapter turns 404 / 410 into a plain resolve (resend-delete-broadcast.test.ts);
+    // to this use case that is indistinguishable from a delete, which is the point.
+    const { deps, deleteCalls } = withResend({ re_a: 'deleted' });
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result.ok && result.value.sweptCount).toBe(3);
+    expect(deleteCalls[0]?.ids).toContain('bc-a');
+  });
+
+  it('a TRANSIENT failure keeps the row (never drops the key) and counts it; the rest of the batch still goes', async () => {
+    const { deps, deleteCalls, table, emitTyped } = withResend({ re_a: 'transient' });
+    const result = await sweepExpiredBroadcasts(deps);
+
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptTransient: 1, providerCopyKeptRefused: 0 });
+    expect(deleteCalls[0]?.ids).toEqual(['bc-b', 'bc-c']);
+    expect([...table.keys()]).toEqual(['bc-a']);
+    expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ provider_copy_kept_transient: 1, completed: true });
+  });
+
+  it('a PERMANENT refusal keeps the row and counts it apart from the transient ones', async () => {
+    const { deps, deleteCalls, table, emitTyped } = withResend({ re_a: 'refused' });
+    const result = await sweepExpiredBroadcasts(deps);
+
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptTransient: 0, providerCopyKeptRefused: 1 });
+    expect(deleteCalls[0]?.ids).not.toContain('bc-a');
+    expect(table.has('bc-a')).toBe(true);
+    expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ provider_copy_kept_refused: 1 });
+  });
+
+  it('a throw that is not a classified gateway error is a refusal too — the row is kept', async () => {
+    const { deps, table } = withResend({ re_a: 'not_a_gateway_error' });
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptRefused: 1 });
+    expect(table.has('bc-a')).toBe(true);
+  });
+
+  it('ONE surviving copy is enough to keep the row: the batch copy went, the row\'s own did not', async () => {
+    const { deps, gatewayCalls, table } = withResend({ re_b: 'transient' });
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 2, providerCopyKeptTransient: 1 });
+    expect(gatewayCalls).toContain('re_b_batch0');
+    expect(table.has('bc-b')).toBe(true);
+  });
+
+  it('a kept row is not read again in the same run (the next read starts after it)', async () => {
+    const rows = plainRows(3).map((r) => ({ ...r, resendBroadcastIds: [`re_${r.broadcastId}`] }));
+    const { deps, listCalls, gatewayCalls } = makeDeps({
+      rows,
+      batchSize: 1,
+      provider: { 're_bc-1': 'refused', 're_bc-2': 'transient' },
+    });
+    const result = await sweepExpiredBroadcasts(deps);
+
+    expect(result.ok && result.value).toMatchObject({ sweptCount: 1, providerCopyKeptTransient: 1, providerCopyKeptRefused: 1 });
+    expect(gatewayCalls).toEqual(['re_bc-1', 're_bc-2', 're_bc-3']);
+    expect(listCalls.map((c) => c.after?.broadcastId ?? null)).toEqual([null, 'bc-1', 'bc-2', 'bc-3']);
+  });
+
+  it('a batch whose every row was kept opens no delete transaction', async () => {
+    const { deps, deleteCalls, txOpened } = makeDeps({
+      rows: [{ broadcastId: 'bc-a', requestedByMemberId: null, anchor: NOW, resendBroadcastIds: ['re_a'] }],
+      provider: { re_a: 'refused' },
+    });
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result.ok && result.value.sweptCount).toBe(0);
+    expect(deleteCalls).toHaveLength(0);
+    expect(txOpened).toHaveLength(1); // the run row
+  });
+
+  it('logs a kept copy with the error class and provider code only — never a broadcast id, Resend id or the provider text', async () => {
+    const { deps } = makeDeps({
+      rows: [{ broadcastId: 'bc-secret', requestedByMemberId: 'm-secret', anchor: NOW, resendBroadcastIds: ['re_secret'] }],
+      provider: { re_secret: 'refused' },
+    });
+    await sweepExpiredBroadcasts(deps);
+
+    expect(logged.warn).toHaveLength(1);
+    const [fields, msg] = logged.warn[0] as [Record<string, unknown>, string];
+    expect(msg).toBe('broadcasts.retention_sweep.provider_copy_kept');
+    expect(fields).toEqual({
+      tenantId: 'test-tenant',
+      outcome: 'refused',
+      errorKind: 'permanent',
+      code: 'validation_error',
+    });
+    const everything = JSON.stringify([logged.warn, logged.info, logged.error]);
+    expect(everything).not.toMatch(/secret|only delete/);
+  });
+
+  it('stops calling Resend when the time budget runs out mid-batch; the confirmed rows are still deleted', async () => {
+    // 12 rows, all with a copy, chunks of 5: the clock passes the 45 s budget
+    // after the first chunk, so rows 6..12 are not attempted this run.
+    const rows = plainRows(12).map((r) => ({ ...r, resendBroadcastIds: [`re_${r.broadcastId}`] }));
+    const { deps, gatewayCalls, deleteCalls, table } = makeDeps({ rows, tickMs: 30_000, timeBudgetMs: 45_000 });
+    const result = await sweepExpiredBroadcasts(deps);
+
+    expect(result.ok && result.value).toMatchObject({
+      sweptCount: 5,
+      batches: 1,
+      budgetExhausted: true,
+      providerCopyKeptTransient: 0,
+      providerCopyKeptRefused: 0,
+    });
+    expect(gatewayCalls).toHaveLength(5);
+    expect(deleteCalls[0]?.ids).toEqual(['bc-1', 'bc-2', 'bc-3', 'bc-4', 'bc-5']);
+    expect(table.size).toBe(7);
+  });
+});
+
+describe('sweepExpiredBroadcasts — failures', () => {
+  it('a batch that throws (e.g. 55P03 lock timeout): committed batches still counted, run row completed:false, error carries the cause and no message', async () => {
+    const { deps, emitTyped } = makeDeps({ rows: plainRows(450), deleteThrowsOnCall: 2 });
+    const result = await sweepExpiredBroadcasts(deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('retention_sweep.server_error');
+    expect(result.error.sweptCount).toBe(200);
+    expect(result.error.cause).toBeInstanceOf(Error);
+    expect((result.error.cause as { cause?: { code?: string } }).cause?.code).toBe('55P03');
+    expect(result.error).not.toHaveProperty('message');
+
     const audits = runAudits(emitTyped);
     expect(audits).toHaveLength(1);
-    expect(audits[0]?.payload).toMatchObject({ swept_count: 200, batches: 1, completed: false });
+    expect(audits[0]?.payload).toMatchObject({ swept_count: 200, batches: 2, completed: false });
   });
 
-  it('a failed run row is an error even when every batch committed', async () => {
-    const { deps } = makeDeps({ expired: 1, auditThrows: true });
+  it('a failed run row is an error even when every batch committed, and carries that cause', async () => {
+    const { deps } = makeDeps({ rows: plainRows(1), auditThrows: true });
     const result = await sweepExpiredBroadcasts(deps);
-    expect(result).toEqual({
-      ok: false,
-      error: { kind: 'retention_sweep.server_error', message: 'audit down', sweptCount: 1 },
-    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.sweptCount).toBe(1);
+    expect((result.error.cause as Error).message).toBe('audit down');
   });
 
-  it('truncates a long error message and names a non-Error throw', async () => {
-    const long = makeDeps({ expired: 1 });
-    long.deps.broadcastsRepo.deleteExpiredForRetention = async () => {
-      throw new Error('x'.repeat(600));
-    };
-    const r1 = await sweepExpiredBroadcasts(long.deps);
-    expect(!r1.ok && r1.error.message).toBe(`${'x'.repeat(500)}…`);
-
-    const odd = makeDeps({ expired: 1 });
-    odd.deps.broadcastsRepo.deleteExpiredForRetention = async () => {
+  it('a read that throws is a failure of the run, with the run row still written', async () => {
+    const { deps, emitTyped } = makeDeps({ rows: plainRows(1) });
+    deps.broadcastsRepo.listExpiredForRetention = async () => {
       throw 'boom';
     };
-    const r2 = await sweepExpiredBroadcasts(odd.deps);
-    expect(!r2.ok && r2.error.message).toBe('unknown error');
+    const result = await sweepExpiredBroadcasts(deps);
+    expect(result).toEqual({ ok: false, error: { kind: 'retention_sweep.server_error', sweptCount: 0, cause: 'boom' } });
+    expect(runAudits(emitTyped)[0]?.payload).toMatchObject({ completed: false, batches: 0 });
   });
 });

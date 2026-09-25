@@ -20,17 +20,20 @@ const sweepMock = vi.fn();
 const makeDepsMock = vi.fn((tenant: string, requestId: string) => ({ tenant, requestId }));
 const sweptMetric = vi.fn();
 const failedMetric = vi.fn();
+const keptMetric = vi.fn();
+const flags = vi.hoisted(() => ({ readOnlyMode: false }));
 
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('@/lib/env', () => ({
-  env: { cron: { secret: 'cron-secret-for-test' }, tenant: { slug: 'test-tenant' } },
+  env: { cron: { secret: 'cron-secret-for-test' }, tenant: { slug: 'test-tenant' }, flags },
 }));
 vi.mock('@/lib/metrics', () => ({
   broadcastsMetrics: {
     retentionSwept: (...args: unknown[]) => sweptMetric(...args),
     retentionSweepFailed: (...args: unknown[]) => failedMetric(...args),
+    retentionProviderCopyKept: (...args: unknown[]) => keptMetric(...args),
   },
 }));
 vi.mock('@/modules/broadcasts', () => ({
@@ -46,10 +49,26 @@ function req(method: 'GET' | 'POST', auth: string | null = 'Bearer cron-secret-f
 }
 const importRoute = () => import('@/app/api/cron/broadcasts/retention-sweep/route');
 
+const SUCCESS = {
+  sweptCount: 3,
+  imagesMarked: 1,
+  batches: 1,
+  budgetExhausted: false,
+  providerCopyKeptTransient: 0,
+  providerCopyKeptRefused: 0,
+  oldestAnchor: new Date('2026-01-01T00:00:00.000Z'),
+  newestAnchor: new Date('2026-01-03T00:00:00.000Z'),
+};
+
+/** A Drizzle query error: its message quotes the statement's params, its cause carries the SQLSTATE. */
+class DrizzleQueryError extends Error {}
+const MEMBER_ID = '7f3c1a52-0000-4000-8000-000000000001';
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
-  sweepMock.mockResolvedValue(ok({ sweptCount: 3, imagesMarked: 1, batches: 1, budgetExhausted: false }));
+  flags.readOnlyMode = false;
+  sweepMock.mockResolvedValue(ok(SUCCESS));
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -81,10 +100,9 @@ describe('/api/cron/broadcasts/retention-sweep', () => {
         {
           tenantId: 'test-tenant',
           outcome: 'success',
-          sweptCount: 3,
-          imagesMarked: 1,
-          batches: 1,
-          budgetExhausted: false,
+          ...SUCCESS,
+          oldestAnchor: '2026-01-01T00:00:00.000Z',
+          newestAnchor: '2026-01-03T00:00:00.000Z',
         },
       ],
     });
@@ -93,9 +111,62 @@ describe('/api/cron/broadcasts/retention-sweep', () => {
     expect(failedMetric).not.toHaveBeenCalled();
   });
 
+  it('READ_ONLY_MODE: 200 skipped and nothing runs — Vercel Cron calls GET, which the proxy write-freeze does not stop', async () => {
+    flags.readOnlyMode = true;
+    const { GET } = await importRoute();
+    const res = await GET(req('GET'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ skipped: true, reason: 'read_only_mode' });
+    expect(sweepMock).not.toHaveBeenCalled();
+    expect(makeDepsMock).not.toHaveBeenCalled();
+  });
+
+  it('READ_ONLY_MODE still answers 401 to a wrong secret (the bearer gate comes first)', async () => {
+    flags.readOnlyMode = true;
+    const { GET } = await importRoute();
+    const res = await GET(req('GET', 'Bearer not-the-secret'));
+    expect(res.status).toBe(401);
+  });
+
+  it('meters the rows kept because their Resend copy could not be deleted, per reason', async () => {
+    sweepMock.mockResolvedValueOnce(ok({ ...SUCCESS, providerCopyKeptTransient: 2, providerCopyKeptRefused: 5 }));
+    const { POST } = await importRoute();
+    await POST(req('POST'));
+    expect(keptMetric).toHaveBeenCalledWith('test-tenant', 'transient', 2);
+    expect(keptMetric).toHaveBeenCalledWith('test-tenant', 'refused', 5);
+  });
+
+  it('a tenant whose sweep returns an error logs the error CLASS and SQLSTATE only — no query text, no params, no ids', async () => {
+    const cause = new DrizzleQueryError(
+      `Failed query: DELETE FROM broadcasts WHERE broadcast_id = ANY($2)\nparams: test-tenant,${MEMBER_ID}`,
+      { cause: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }) },
+    );
+    sweepMock.mockResolvedValueOnce(err({ kind: 'retention_sweep.server_error', cause, sweptCount: 200 }));
+    const { POST } = await importRoute();
+    const { logger } = await import('@/lib/logger');
+    await POST(req('POST'));
+
+    const [fields, msg] = vi.mocked(logger.error).mock.calls[0]!;
+    expect(msg).toBe('cron.broadcasts.retention_sweep.server_error');
+    expect(fields).toEqual({
+      tenantId: 'test-tenant',
+      sweptCount: 200,
+      err: 'DrizzleQueryError',
+      code: '55P03',
+      errorId: 'F7.cron.retention_sweep.server_error',
+    });
+    const everyLogLine = JSON.stringify([
+      vi.mocked(logger.error).mock.calls,
+      vi.mocked(logger.info).mock.calls,
+      vi.mocked(logger.warn).mock.calls,
+    ]);
+    expect(everyLogLine).not.toContain(MEMBER_ID);
+    expect(everyLogLine).not.toMatch(/Failed query|params|lock timeout/);
+  });
+
   it('a tenant whose sweep returns an error: 200, outcome error with the rows that did commit, the failure metered', async () => {
     sweepMock.mockResolvedValueOnce(
-      err({ kind: 'retention_sweep.server_error', message: 'relation "x" does not exist', sweptCount: 200 }),
+      err({ kind: 'retention_sweep.server_error', cause: new Error('relation "x" does not exist'), sweptCount: 200 }),
     );
     const { POST } = await importRoute();
     const { logger } = await import('@/lib/logger');

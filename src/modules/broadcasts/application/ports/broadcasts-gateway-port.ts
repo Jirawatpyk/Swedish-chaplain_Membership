@@ -381,9 +381,18 @@ export interface BroadcastsGatewayPort {
    * every call site — a failed reclaim is logged at critical and the tick's
    * outcome is unchanged, because the outcome was decided before the reclaim.
    *
-   * **Never call this on an id read from the row.** A persisted id is the
-   * resource a send may already have gone out on; only an id this tick minted
-   * and failed to persist is safe to remove.
+   * **Never call this on an id read from the row** — with ONE exception. A
+   * persisted id is the resource a send may already have gone out on, so on
+   * any live path only an id this tick minted and failed to persist is safe to
+   * remove. The exception is the F7 retention sweep (`sweepExpiredBroadcasts`,
+   * 0310): it calls this on the persisted `resend_broadcast_id` (and any
+   * per-batch `provider_broadcast_id`) of an E-Blast that is terminal AND past
+   * its `retention_years` — the send finished years ago, and removing the
+   * Resend copy (HTML body, a name naming the member and tenant) before the row
+   * is the point. NOT MEASURED there: the happy path above was measured on a
+   * DRAFT only, and Resend's documentation says a queued or sent broadcast
+   * cannot be deleted — the sweep treats that refusal as "keep the row" (see
+   * `docs/runbooks/cron-jobs.md` § F7 retention-sweep, to measure before 2031).
    */
   deleteBroadcast(broadcastId: string): Promise<void>;
 

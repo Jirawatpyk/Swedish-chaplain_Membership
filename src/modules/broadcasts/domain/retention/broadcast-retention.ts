@@ -4,28 +4,34 @@
  *
  * The RoPA declares 5 years for `broadcasts` (and everything that hangs off
  * it); `retention_years` is a per-row column (CHECK IN (5, 10)) so a row can
- * carry the longer period. This file answers the two questions the sweep asks
- * of a row: WHEN did its clock start, and has it run out.
+ * carry the longer period. The clock is `anchor + retention_years`, evaluated
+ * in SQL by the sweep; this file owns the one decision the SQL takes from
+ * the Domain: WHICH column is the anchor.
  *
  * THE ANCHOR is the moment the row reached its terminal status — the status's
  * own timestamp column, falling back to `stageEnteredAt` when that column is
  * NULL (a historical row written before the column was stamped). The anchor is
- * NEVER `updatedAt`: the erasure redaction and the audience clean-up both
- * touch a closed row, and either would restart its clock. A row that is not
+ * never `updatedAt` directly: the erasure redaction and the audience clean-up
+ * both touch a closed row, and either would restart its clock. (One indirect
+ * route exists — migration 0308 backfilled `stage_entered_at` from
+ * `COALESCE(submitted_at, updated_at)`, so a pre-0308 row with neither its own
+ * column nor `submitted_at` inherits that `updated_at` through the fallback;
+ * the RoPA and the cron runbook carry the check query.) A row that is not
  * terminal has no clock at all — it is still somebody's work.
  *
  * `RETENTION_ANCHOR_FIELD` is the single source of truth for the mapping. The
  * Drizzle adapter builds its SQL `CASE` from it (the same rule as
  * `TERMINAL_BROADCAST_STATUSES` → `IN (...)`, Finding G), so the SQL that
- * deletes and the function that documents cannot disagree on a column.
+ * deletes cannot name a column the Domain did not choose.
+ *
+ * (The in-memory `retentionAnchorOf` / `retentionExpiresAt` /
+ * `isPastRetention` helpers were removed: nothing in production called them —
+ * only the SQL decides — and a TypeScript twin of the SQL clock that nothing
+ * checks against Postgres is a parity claim without evidence.)
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */
-import type { Broadcast } from '../broadcast';
-import {
-  isTerminalStatus,
-  type TERMINAL_BROADCAST_STATUSES,
-} from '../value-objects/broadcast-status';
+import type { TERMINAL_BROADCAST_STATUSES } from '../value-objects/broadcast-status';
 
 export type TerminalBroadcastStatus = (typeof TERMINAL_BROADCAST_STATUSES)[number];
 
@@ -53,56 +59,3 @@ export const RETENTION_ANCHOR_FIELD: Readonly<Record<TerminalBroadcastStatus, Re
   // terminal stage is the moment.
   expired_no_member_response: 'stageEnteredAt',
 };
-
-/** The fields of a row the retention clock reads — nothing else. */
-export type RetentionClockInput = Pick<
-  Broadcast,
-  'status' | 'retentionYears' | RetentionAnchorField
->;
-
-/**
- * When the row's retention clock started, or `null` when the row is not
- * terminal (and so has no clock).
- */
-export function retentionAnchorOf(row: RetentionClockInput): Date | null {
-  if (!isTerminalStatus(row.status)) return null;
-  const field = RETENTION_ANCHOR_FIELD[row.status as TerminalBroadcastStatus];
-  return row[field] ?? row.stageEnteredAt;
-}
-
-/**
- * `date` plus `years` calendar years, in UTC, clamping 29 February to
- * 28 February in a non-leap target year — the same result as Postgres
- * `timestamptz + make_interval(years => n)` in a UTC session, which is what
- * the sweep's SQL evaluates. (Plain `setUTCFullYear` would roll to 1 March.)
- */
-export function addCalendarYearsUtc(date: Date, years: number): Date {
-  const year = date.getUTCFullYear() + years;
-  const month = date.getUTCMonth();
-  const lastDayOfTargetMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const day = Math.min(date.getUTCDate(), lastDayOfTargetMonth);
-  return new Date(
-    Date.UTC(
-      year,
-      month,
-      day,
-      date.getUTCHours(),
-      date.getUTCMinutes(),
-      date.getUTCSeconds(),
-      date.getUTCMilliseconds(),
-    ),
-  );
-}
-
-/** The instant the row's retention runs out, or `null` for a non-terminal row. */
-export function retentionExpiresAt(row: RetentionClockInput): Date | null {
-  const anchor = retentionAnchorOf(row);
-  if (anchor === null) return null;
-  return addCalendarYearsUtc(anchor, row.retentionYears);
-}
-
-/** True once `now` has reached the row's expiry. Never true for a non-terminal row. */
-export function isPastRetention(row: RetentionClockInput, now: Date): boolean {
-  const expiresAt = retentionExpiresAt(row);
-  return expiresAt !== null && now.getTime() >= expiresAt.getTime();
-}

@@ -9,21 +9,32 @@
  *
  * Per tenant, `sweepExpiredBroadcasts` deletes terminal E-Blasts whose
  * anchor + retention_years has passed and whose Resend audience is no longer
- * live, in batches of 200 — one `runInTenant` transaction per batch, opened by
- * the tenant-bound repo's `withTx` (an outer `runInTenant` here would only
- * hold an idle connection around them). Children go by ON DELETE CASCADE;
- * images are stamped for the daily image sweep in the same transaction; one
- * counts-only `broadcast_retention_swept` audit row per tenant per run.
+ * live, in batches of 200: read the batch without a lock, delete each row's
+ * Resend copy outside any transaction (a row whose copy cannot be deleted is
+ * kept), then delete the confirmed rows in one `runInTenant` transaction per
+ * batch, opened by the tenant-bound repo's `withTx` (an outer `runInTenant`
+ * here would only hold an idle connection around them). Children go by
+ * ON DELETE CASCADE; images are stamped for the daily image sweep in the same
+ * transaction; one counts-only `broadcast_retention_swept` audit row per
+ * tenant per run.
  *
  * NOT gated on `FEATURE_F7_BROADCASTS`: retention is an obligation on data
  * already held, whether or not the tenant still uses the marketing feature.
  * A tenant that switched F7 off still holds rows that must expire.
  *
+ * READ_ONLY_MODE: skipped with 200 `{ skipped: true, reason: 'read_only_mode' }`
+ * (the `prune-expired-invitations` pattern). Vercel Cron invokes GET, and the
+ * proxy's write-freeze stops only POST/PUT/PATCH/DELETE, so without this check
+ * an emergency freeze would still delete rows (and Resend copies) nightly. 200,
+ * not 503, so the cron does not retry-storm.
+ *
  * Failure mode (copied from `sweep-eventcreate-idempotency`): a tenant's
  * failure is logged and reported in `perTenant`, never blocks another tenant,
  * and the response stays 200 — a 500 would hide the tenants that DID succeed.
  * The alert rides `broadcasts_retention_sweep_failed_total{tenant}`. The body
- * carries counts only; a raw error message is logged, never returned.
+ * carries counts only. The log carries the error CLASS and SQLSTATE only —
+ * never the message: a Drizzle `Failed query:` message quotes the statement's
+ * parameters, which can include a `related_member_id`.
  *
  * Auth: Bearer `CRON_SECRET` (constant-time `verifyCronBearer`, as the other
  * F7 crons).
@@ -32,8 +43,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { makeSweepExpiredBroadcastsDeps, sweepExpiredBroadcasts } from '@/modules/broadcasts';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { pgErrorCode } from '@/lib/db-errors';
 import { env } from '@/lib/env';
-import { errKind } from '@/lib/log-id';
+import { errKind, rootCause } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 
@@ -60,6 +72,10 @@ type TenantOutcome =
       readonly imagesMarked: number;
       readonly batches: number;
       readonly budgetExhausted: boolean;
+      readonly providerCopyKeptTransient: number;
+      readonly providerCopyKeptRefused: number;
+      readonly oldestAnchor: Date | null;
+      readonly newestAnchor: Date | null;
     }
   | { readonly tenantId: string; readonly outcome: 'error'; readonly sweptCount?: number };
 
@@ -72,6 +88,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
   }
 
+  // READ_ONLY_MODE short-circuit — REQUIRED here: GET is not caught by the
+  // proxy write-freeze, and this handler DELETEs rows and Resend copies.
+  if (env.flags.readOnlyMode) {
+    logger.info({}, 'cron.broadcasts.retention_sweep.read_only_mode');
+    return NextResponse.json({ skipped: true, reason: 'read_only_mode' }, { status: 200 });
+  }
+
   const startedAt = Date.now();
   const perTenant: TenantOutcome[] = [];
 
@@ -82,6 +105,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
       if (result.ok) {
         broadcastsMetrics.retentionSwept(tenantId, result.value.sweptCount);
+        if (result.value.providerCopyKeptTransient > 0) {
+          broadcastsMetrics.retentionProviderCopyKept(tenantId, 'transient', result.value.providerCopyKeptTransient);
+        }
+        if (result.value.providerCopyKeptRefused > 0) {
+          broadcastsMetrics.retentionProviderCopyKept(tenantId, 'refused', result.value.providerCopyKeptRefused);
+        }
         logger.info(
           { tenantId, ...result.value },
           'cron.broadcasts.retention_sweep.tenant_complete',
@@ -95,7 +124,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           {
             tenantId,
             sweptCount: result.error.sweptCount,
-            message: result.error.message,
+            err: errKind(rootCause(result.error)),
+            code: pgErrorCode(rootCause(result.error)),
             errorId: 'F7.cron.retention_sweep.server_error',
           },
           'cron.broadcasts.retention_sweep.server_error',

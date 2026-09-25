@@ -168,6 +168,7 @@ function makeBroadcastsRepo(args: {
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in process-webhook-event fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in process-webhook-event fixture'); },
     async deleteExpiredForRetention() { throw new Error('not used in process-webhook-event fixture'); },
+    async listExpiredForRetention() { throw new Error('not used in process-webhook-event fixture'); },
     async existingBroadcastIds() { throw new Error('not used in process-webhook-event fixture'); },
   };
   return { port, transitions };

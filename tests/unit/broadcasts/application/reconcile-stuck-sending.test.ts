@@ -166,6 +166,7 @@ function makeBroadcastsRepo(args: {
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in reconcile-stuck-sending fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in reconcile-stuck-sending fixture'); },
     async deleteExpiredForRetention() { throw new Error('not used in reconcile-stuck-sending fixture'); },
+    async listExpiredForRetention() { throw new Error('not used in reconcile-stuck-sending fixture'); },
     async existingBroadcastIds() { throw new Error('not used in reconcile-stuck-sending fixture'); },
   };
   return { port, transitions };

@@ -547,11 +547,13 @@ export function makePruneExpiredDraftsDeps(
 
 /**
  * F7 retention sweep (migration 0310) — composition for
- * `sweepExpiredBroadcasts`, one per tenant per cron tick. Same four adapters
- * as the draft prune: the tenant-bound broadcasts repo (its `withTx` opens
+ * `sweepExpiredBroadcasts`, one per tenant per cron tick. The draft prune's
+ * four adapters — the tenant-bound broadcasts repo (its `withTx` opens
  * `runInTenant` per batch), the images repo for the in-tx stamp, the F7 audit
- * adapter and the system clock. Batch size and time budget take the use
- * case's defaults (200 rows, 60 s).
+ * adapter and the system clock — plus the Resend Broadcasts gateway, whose
+ * `deleteBroadcast` removes an expired E-Blast's Resend copy before its row
+ * goes. Batch size and time budget take the use case's defaults (200 rows,
+ * 60 s).
  */
 export function makeSweepExpiredBroadcastsDeps(
   tenantId: string,
@@ -560,6 +562,7 @@ export function makeSweepExpiredBroadcastsDeps(
   return {
     tenant: asTenantContext(tenantId),
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    broadcastsGateway: resendBroadcastsGateway,
     imagesRepo: drizzleBroadcastImagesRepo,
     audit: f7AuditAdapter,
     clock: systemClock,

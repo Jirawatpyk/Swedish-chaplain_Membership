@@ -126,6 +126,7 @@ function makeRepo(opts: {
       throw new Error('not used in reclaim-orphaned-audiences fixture');
     },
     async deleteExpiredForRetention() { throw new Error('not used in reclaim-orphaned-audiences fixture'); },
+    async listExpiredForRetention() { throw new Error('not used in reclaim-orphaned-audiences fixture'); },
     async existingBroadcastIds(tenantId, ids) {
       existingCalls.push({ tenantId, ids });
       if (opts.shouldThrow) throw new Error('Neon: existingBroadcastIds connection lost');

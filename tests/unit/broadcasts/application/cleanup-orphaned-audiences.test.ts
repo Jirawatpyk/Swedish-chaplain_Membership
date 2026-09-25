@@ -97,6 +97,7 @@ function makeRepo(opts: {
       markCalls.push(broadcastId);
     },
     async deleteExpiredForRetention() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
+    async listExpiredForRetention() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
     async existingBroadcastIds() { throw new Error('not used in cleanup-orphaned-audiences fixture'); },
   };
 

@@ -124,6 +124,7 @@ function makeBroadcastsRepo({
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in compute-quota-counter fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in compute-quota-counter fixture'); },
     async deleteExpiredForRetention() { throw new Error('not used in compute-quota-counter fixture'); },
+    async listExpiredForRetention() { throw new Error('not used in compute-quota-counter fixture'); },
     async existingBroadcastIds() { throw new Error('not used in compute-quota-counter fixture'); },
   };
 }
