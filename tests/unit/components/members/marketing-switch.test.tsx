@@ -10,8 +10,9 @@
  *     no confirmation dialog either way;
  *   - `unchanged` is an info toast; 409 suppressed / 403 / 404 / 429 / 5xx
  *     each map to a localized error toast;
- *   - "status unavailable" renders the switch disabled (a blind change could
- *     override an unsubscribe nobody could verify);
+ *   - "status unavailable", `off_by_contact` and `unsubscribed` render NO
+ *     switch, only a short visible explanation (a blind change could override
+ *     an unsubscribe nobody could verify; an empty cell explains nothing);
  *   - the accessible name carries the contact's name and the state.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -99,6 +100,9 @@ describe('MarketingSwitch — rendering', () => {
     (state) => {
       renderSwitch(state);
       expect(screen.queryByRole('switch')).toBeNull();
+      // …but never an empty cell: the audience table's switch column showed
+      // nothing, which reads as "something failed to load".
+      expect(screen.getByText('Only they can change this')).toBeInTheDocument();
     },
   );
 
@@ -110,6 +114,7 @@ describe('MarketingSwitch — rendering', () => {
     // same as `unsubscribed` and `off_by_contact` already do.
     renderSwitch('unavailable');
     expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.getByText("Can't change right now")).toBeInTheDocument();
   });
 });
 
