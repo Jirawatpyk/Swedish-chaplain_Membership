@@ -516,4 +516,29 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
       within(desktopTable()).getByRole('menuitem', { name: /mark paid/i }),
     ).toBeInTheDocument();
   });
+  // A payable row that already has a live linked bill: the use-case refuses
+  // mint-and-pay (`membership_bill_already_exists`), so the ⋯ menu must not
+  // offer "Mark paid" — it links to the bill's Record payment flow instead.
+  it('canMutate={true} + live linked bill: no Mark paid, offers "Record payment on invoice" instead', async () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      { ...PAYABLE_ROW[0]!, linkedInvoiceId: 'inv-9' },
+    ];
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={rows} canMutate />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.click(
+      within(desktopTable()).getByRole('button', { name: /actions for beta co/i }),
+    );
+
+    const record = await within(desktopTable()).findByRole('menuitem', {
+      name: /record payment on invoice/i,
+    });
+    expect(record).toHaveAttribute('href', '/admin/invoices/inv-9');
+    expect(
+      within(desktopTable()).queryByRole('menuitem', { name: /mark paid/i }),
+    ).toBeNull();
+  });
 });

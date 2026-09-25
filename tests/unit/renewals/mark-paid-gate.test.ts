@@ -15,8 +15,18 @@ import {
 
 describe('mark-paid gate', () => {
   it('offers mark-paid only for payable statuses (mirrors the route guard)', () => {
-    expect(shouldOfferMarkPaid('upcoming')).toBe(true);
-    expect(shouldOfferMarkPaid('awaiting_payment')).toBe(true);
+    expect(shouldOfferMarkPaid('upcoming', null)).toBe(true);
+    expect(shouldOfferMarkPaid('awaiting_payment', null)).toBe(true);
+  });
+
+  // A payable-status cycle that already carries a live linked bill (e.g. an
+  // `awaiting_payment` cycle after the member confirmed early) is refused by
+  // the use-case with `membership_bill_already_exists` — mint-and-pay must
+  // never be offered there; staff record the payment on that bill instead.
+  it('never offers mark-paid when the cycle already has a live linked bill', () => {
+    const invoiceId = '22222222-2222-2222-2222-222222222222';
+    expect(shouldOfferMarkPaid('awaiting_payment', invoiceId)).toBe(false);
+    expect(shouldOfferMarkPaid('upcoming', invoiceId)).toBe(false);
   });
 
   it('never offers mark-paid for terminal / reminded / pending statuses', () => {
@@ -27,7 +37,7 @@ describe('mark-paid gate', () => {
       'cancelled',
       'pending_admin_reactivation',
     ] as const) {
-      expect(shouldOfferMarkPaid(s)).toBe(false);
+      expect(shouldOfferMarkPaid(s, null)).toBe(false);
     }
   });
 
