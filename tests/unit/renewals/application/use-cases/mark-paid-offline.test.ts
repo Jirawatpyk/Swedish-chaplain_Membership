@@ -18,12 +18,23 @@ import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 const VALID_UUID = '00000000-0000-0000-0000-0000000000c4';
 const TENANT_ID = 'tenantA';
 
+// Records how the last `runInTenant` callback settled: a real tx COMMITS
+// when the callback resolves (even with an `err` value) and ROLLS BACK only
+// when it rejects — the orphan-receipt test below pins that distinction.
+const txOutcome = vi.hoisted(() => ({ last: null as 'committed' | 'rolled_back' | null }));
 vi.mock('@/lib/db', () => ({
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) => {
     const fakeTx = {
       execute: vi.fn(async () => ({ rows: [] })),
     };
-    return fn(fakeTx as unknown);
+    try {
+      const out = await fn(fakeTx as unknown);
+      txOutcome.last = 'committed';
+      return out;
+    } catch (e) {
+      txOutcome.last = 'rolled_back';
+      throw e;
+    }
   },
 }));
 
@@ -1108,6 +1119,36 @@ describe('markPaidOffline — error paths', () => {
       if (r.error.kind === 'f4_orphan_invoice') {
         expect(r.error.orphanInvoiceId).toBe('orphan-inv-99');
       }
+    }
+  });
+
+  // FEATURE_088_TAX_AT_PAYMENT: recordPayment allocates the §87 RECEIPT number
+  // on OUR outer tx (externalTx, no savepoint) before the sync PDF render /
+  // upload that can fail, and reports that failure by RETURNING err — so a
+  // returned `f4_orphan_invoice` inside `runInTenant` would COMMIT the counter
+  // increment: a burned receipt number with no document behind it (the same
+  // mechanism confirm-payment.ts documents as F-1). The outer tx must roll back.
+  it('rolls the outer tx back on record_payment_failed, so no §87 receipt number is burned', async () => {
+    const { deps } = fakeDeps(buildCycle(), async () => ({
+      ok: false,
+      error: {
+        kind: 'record_payment_failed',
+        reason: 'pdf_render_failed',
+        orphanInvoiceId: 'orphan-inv-42',
+      },
+    }));
+    txOutcome.last = null;
+
+    const r = await markPaidOffline(deps, baseInput);
+
+    expect(txOutcome.last).toBe('rolled_back');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatchObject({
+        kind: 'f4_orphan_invoice',
+        orphanInvoiceId: 'orphan-inv-42',
+        reason: 'pdf_render_failed',
+      });
     }
   });
 
