@@ -68,6 +68,15 @@ export interface PeriodOutputVatSummary {
    * amount to SUBTRACT from gross output VAT for the net ภ.พ.30 figure.
    */
   readonly creditNoteVatSatang: string;
+  /**
+   * COMBINED-mode tax invoices ISSUED in the period — rows whose §87 INV number
+   * is the §86/4 tax invoice (no RC/RE, no SC bill): before the tax-at-payment
+   * switch, or on a tenant with it off. Every non-void, non-draft one counts,
+   * paid or not — a tax invoice issued before payment has its §78/1(1)(ก) tax
+   * point at issue. They are outside both register streams, so a non-zero
+   * count means the net figure is not the whole period.
+   */
+  readonly legacyCombinedCount: number;
 }
 
 export interface TaxRegisterRepo {
@@ -115,4 +124,32 @@ export interface TaxRegisterRepo {
       readonly to: string;
     },
   ): Promise<PeriodOutputVatSummary>;
+
+  /**
+   * The rows the paid-invoices CSV export writes for the inclusive Bangkok-
+   * local `[from, to]` range, bucketed by the SAME tax point as the registers
+   * (`payment_date`, else `paid_at`), so the CSV of a month always reconciles
+   * to that month's register:
+   *   - every NON-VOID receipt that {@link sumPeriodOutputVat} counts — the
+   *     §86/4 RC and §105 RE streams, whatever the status (`credited` /
+   *     `partially_credited` included: their reduction is a §86/10 credit
+   *     note in the month the note is issued, not a missing sale);
+   *   - plus PAID combined-mode tax invoices (the §87 INV number is the
+   *     §86/4 tax invoice; no RC/RE — before the tax-at-payment switch, or on
+   *     a tenant with `FEATURE_088_TAX_AT_PAYMENT` off) ISSUED in the period:
+   *     their tax point is the issue date (§78/1(1)(ก)). The registers never
+   *     list them; `sumPeriodOutputVat.legacyCombinedCount` counts them (plus
+   *     any still unpaid).
+   * Ordered by each row's tax point, then receipt / invoice number. Rows carry
+   * `lines: []`. RLS-scoped via `runInTenant`.
+   */
+  listForExport(
+    tenantId: string,
+    opts: {
+      /** Inclusive `YYYY-MM-DD` Bangkok-local. */
+      readonly from: string;
+      /** Inclusive `YYYY-MM-DD` Bangkok-local. */
+      readonly to: string;
+    },
+  ): Promise<readonly Invoice[]>;
 }

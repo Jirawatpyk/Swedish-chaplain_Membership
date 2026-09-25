@@ -11,3 +11,12 @@ describe('payment-timeline formatTimestamp', () => {
     expect(out).toContain('2026');
   });
 });
+
+describe('payment-timeline formatTimestamp — English uses en-GB (ux-standards § 12.3)', () => {
+  it('day-first, 24-hour, Bangkok time', () => {
+    // 07:10 UTC = 14:10 Bangkok.
+    const out = formatTimestamp(new Date('2026-09-23T07:10:00.000Z'), 'en');
+    expect(out).toMatch(/^23 Sept? 2026, 14:10/);
+    expect(out).not.toContain('PM');
+  });
+});

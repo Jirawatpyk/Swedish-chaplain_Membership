@@ -47,8 +47,10 @@ export interface InvoiceMoreMenuProps {
    * 088 bill `documentNumber` resolves to the RC §86/4 tax-receipt number
    * (via `displayDocumentNumber`), but the main PDF served by `showDownload`
    * is the non-tax SC bill — so its filename + aria must carry the SC bill
-   * number, not the RC. The receipt arm keeps `documentNumber` (the RC).
-   * Defaults to `documentNumber` (byte-identical to the pre-088 behaviour).
+   * number, not the RC. The same number names the ⋯ trigger and "Resend
+   * invoice email" (which resends that bill); the receipt arm keeps
+   * `documentNumber` (the RC). Defaults to `documentNumber` (byte-identical to
+   * the pre-088 behaviour).
    */
   readonly invoiceDownloadNumber?: string;
   readonly showDownload: boolean;
@@ -292,7 +294,9 @@ export function InvoiceMoreMenu({
             // so `!` is required to force the compact 36×36 square
             // mandated by ux-standards.md § 19.
             className="flex-none!"
-            aria-label={t('actions.moreAria', { number: documentNumber })}
+            // The trigger names the page's own document — the SC bill on an
+            // 088 invoice (the RC names only the receipt actions below).
+            aria-label={t('actions.moreAria', { number: mainDownloadNumber })}
           >
             <MoreHorizontal aria-hidden="true" />
           </Button>
@@ -358,8 +362,11 @@ export function InvoiceMoreMenu({
           <DropdownMenuItem
             disabled={pendingVariant !== null || recentlySent.invoice}
             onClick={() => handleResend('invoice')}
+            data-testid="resend-invoice-trigger"
+            // Resends the main (bill / invoice) PDF, so it names that number —
+            // the SC on a paid 088 bill, not the RC.
             aria-label={t('actions.resendInvoiceAria', {
-              number: documentNumber,
+              number: mainDownloadNumber,
             })}
           >
             {pendingVariant === 'invoice' ? (

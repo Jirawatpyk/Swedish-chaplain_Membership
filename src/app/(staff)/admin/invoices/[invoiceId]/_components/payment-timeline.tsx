@@ -22,7 +22,12 @@
  */
 import { randomUUID } from 'node:crypto';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { formatTimestamp } from './payment-timeline-format';
+import {
+  formatTimestamp,
+  isSucceededLike,
+  latestSucceededPayment,
+} from './payment-timeline-format';
+import { isSystemActor } from '../_lib/system-actor';
 import {
   ArrowDownToLineIcon,
   BanknoteIcon,
@@ -39,7 +44,6 @@ import { Badge } from '@/components/ui/badge';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import {
-  SYSTEM_ACTOR_STRIPE_WEBHOOK,
   SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
   type LoadInvoicePaymentActivityOutput,
   type RefundActivityDto,
@@ -87,21 +91,8 @@ export interface TimelineEvent {
   readonly subjectId: string; // paymentId or refundId
 }
 
-// Detect non-human actors: either the legacy "system:..." string prefix
-// (used by some F5 audit emit paths) OR the canonical reserved UUID
-// `SYSTEM_ACTOR_STRIPE_WEBHOOK` from migration 0041 — which is what F4
-// `payment_recorded_by_user_id` actually carries on online payments.
-// Pre-fix: only the prefix branch matched, so the UUID slipped past the
-// filter into `userRepo.findById` and rendered the seeded internal email
-// `system-stripe-webhook@chamber-os.internal` instead of the i18n
-// `actorSystem` label.
-const SYSTEM_ACTOR_PREFIX = 'system:';
-function isSystemActor(actorUserId: string): boolean {
-  return (
-    actorUserId.startsWith(SYSTEM_ACTOR_PREFIX) ||
-    actorUserId === SYSTEM_ACTOR_STRIPE_WEBHOOK
-  );
-}
+// Non-human actors (the legacy "system:..." prefix or the reserved webhook
+// UUID) render the i18n `actorSystem` label — see `_lib/system-actor.ts`.
 
 /**
  * F5R1-S8 — record-driven event visual table. The previous two
@@ -167,19 +158,6 @@ function buildStripeDashboardUrl(
   return `https://dashboard.stripe.com/${segment}payments/${chargeOrIntentId}`;
 }
 
-/**
- * A payment status that implies the payment SUCCEEDED (was captured) at some
- * point: `succeeded`, or `partially_refunded`/`refunded` (a refund presupposes
- * a captured payment). `auto_refunded` is deliberately EXCLUDED — that path
- * reverses a stale/late capture and never marked the invoice paid.
- */
-function isSucceededLike(status: string): boolean {
-  return (
-    status === 'succeeded' ||
-    status === 'partially_refunded' ||
-    status === 'refunded'
-  );
-}
 
 export function buildEvents(
   payments: LoadInvoicePaymentActivityOutput['payments'],
@@ -418,13 +396,9 @@ export async function PaymentTimeline({
   // Latest succeeded payment carries the canonical processor reference
   // for the dashboard link. Fall back to processorPaymentIntentId when
   // chargeId is null (PromptPay) — the dashboard URL accepts both.
-  const succeeded = activity.payments
-    .filter((p) => p.status === 'succeeded')
-    .sort(
-      (a, b) =>
-        (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0),
-    );
-  const latestSucceeded = succeeded[0];
+  // `isSucceededLike` — a partially / fully refunded payment was captured, so
+  // its charge row + "View in Stripe" link must stay after the refund.
+  const latestSucceeded = latestSucceededPayment(activity.payments);
   const processorRef =
     latestSucceeded?.processorChargeId ??
     latestSucceeded?.processorPaymentIntentId ??

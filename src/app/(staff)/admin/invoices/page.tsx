@@ -660,7 +660,9 @@ export default async function AdminInvoicesPage({
         buyerSubtitle: buildBuyerSubtitle(r, eventNameById, t),
         issueDate: r.issueDate,
         dueDate: r.dueDate,
-        totalSatang: r.total?.satang.toString() ?? '0',
+        // A draft has no total yet (computed at issue) — null renders "—",
+        // never a "0.00 THB" that reads like a real zero-value invoice.
+        totalSatang: r.total?.satang.toString() ?? null,
         hasPdf: r.pdf !== null,
         // G-2 — indicator pair. `creditedTotal` is already on the
         // Invoice entity (frozen + rolled up by applyCreditNoteRollup);

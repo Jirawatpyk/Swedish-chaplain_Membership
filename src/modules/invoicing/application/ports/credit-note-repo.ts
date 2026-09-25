@@ -133,7 +133,14 @@ export interface CreditNoteRepo {
       readonly documentNumberRaw: string;
       readonly issueDate: string;
       readonly originalInvoiceId: string;
-      readonly originalInvoiceNumberRaw: string | null;
+      /** The original invoice's payment-time RC/RE (`receipt_document_number_raw`). */
+      readonly originalReceiptDocumentNumberRaw: string | null;
+      /** The original invoice's §87 number (NULL on an 088 bill). */
+      readonly originalDocumentNumberRaw: string | null;
+      /** The original invoice's 088 SC bill number. */
+      readonly originalBillDocumentNumberRaw: string | null;
+      /** Set when the F5 refund flow issued this note. */
+      readonly sourceRefundId: string | null;
       readonly memberLegalName: string;
       readonly totalSatang: Satang;
       readonly reason: string;

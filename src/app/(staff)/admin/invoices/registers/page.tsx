@@ -34,6 +34,8 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
+import { TriangleAlertIcon } from 'lucide-react';
 import { TaxRegisterForm } from './_components/tax-register-form';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -43,6 +45,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 type RegisterKind = 'rc_register' | 'zero_rate_sales' | 're_register';
 
+// Shape only. A shape-valid but impossible date (`2026-02-30`) is passed
+// through so the use-case refuses it as `invalid_range` / `not_a_date` rather
+// than silently swapping in the default range.
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 interface SearchParams {
@@ -113,9 +118,11 @@ export default async function TaxRegistersPage({
 
           {!result.ok ? (
             <p className="py-8 text-center text-sm text-destructive" role="alert">
-              {result.error.code === 'invalid_range'
-                ? t('errors.invalidRange')
-                : t('errors.loadFailed')}
+              {result.error.code !== 'invalid_range'
+                ? t('errors.loadFailed')
+                : result.error.reason === 'not_a_date'
+                  ? t('errors.invalidDate')
+                  : t('errors.invalidRange')}
             </p>
           ) : (
             <>
@@ -158,14 +165,45 @@ export default async function TaxRegistersPage({
                       BigInt(result.value.periodOutputVat.reVatSatang),
                     locale,
                   )}
-                  {' − '}
+                  {/* The minus carries the meaning; some screen-reader
+                      punctuation levels skip U+2212, so say it too. */}
+                  <span aria-hidden="true">{' − '}</span>
+                  <span className="sr-only"> {t('outputVat.less')} </span>
                   {t('outputVat.creditNote')}{' '}
                   {formatSatangThb(
                     BigInt(result.value.periodOutputVat.creditNoteVatSatang),
                     locale,
                   )}
                 </p>
-                <p className="mt-2 text-xs text-muted-foreground">{t('outputVat.note')}</p>
+                {/* Only a closed calendar month is "the figure to report" —
+                    the current month can still take receipts, and a range
+                    that is not one month is not a ภ.พ.30 period at all. */}
+                {result.value.periodStatus === 'closed_month' ? (
+                  <p className="mt-2 text-sm font-medium" data-testid="period-output-vat-status">
+                    {t('outputVat.status.closedMonth')}
+                  </p>
+                ) : (
+                  // Every other status is a caution against filing this figure
+                  // as-is — styled as a warning so it cannot be mistaken for
+                  // the closed-month confirmation above.
+                  <InlineAlert
+                    tone="warning"
+                    className="mt-2"
+                    data-testid="period-output-vat-status"
+                  >
+                    <TriangleAlertIcon className="size-4" aria-hidden="true" />
+                    <InlineAlertDescription>
+                      {result.value.periodStatus === 'closed_month_incomplete'
+                        ? t('outputVat.status.closedMonthIncomplete', {
+                            count: result.value.legacyCombinedCount,
+                          })
+                        : result.value.periodStatus === 'month_to_date'
+                          ? t('outputVat.status.monthToDate')
+                          : t('outputVat.status.notAMonth')}
+                    </InlineAlertDescription>
+                  </InlineAlert>
+                )}
+                <p className="mt-1 text-xs text-muted-foreground">{t('outputVat.note')}</p>
               </section>
 
               {result.value.rows.length === 0 ? (
@@ -174,6 +212,12 @@ export default async function TaxRegistersPage({
                 <>
                   <p className="text-sm text-muted-foreground" data-testid="register-summary">
                     {t('summary.count', { count: result.value.summary.rowCount })}
+                    {result.value.summary.cancelledCount > 0 ? (
+                      <>
+                        {' '}
+                        {t('summary.cancelled', { count: result.value.summary.cancelledCount })}
+                      </>
+                    ) : null}
                     {' · '}
                     {t('summary.subtotal')}{' '}
                     {formatSatangThb(BigInt(result.value.summary.totalSubtotalSatang), locale)}

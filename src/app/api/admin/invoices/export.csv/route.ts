@@ -81,9 +81,11 @@ export async function GET(request: NextRequest): Promise<Response> {
             code: 'invalid_range',
             reason: result.error.reason,
             message:
-              result.error.reason === 'inverted'
-                ? '`from` must be ≤ `to`.'
-                : 'Range exceeds the 1-year maximum.',
+              result.error.reason === 'not_a_date'
+                ? '`from` and `to` must be real calendar dates.'
+                : result.error.reason === 'inverted'
+                  ? '`from` must be ≤ `to`.'
+                  : 'Range exceeds the 1-year maximum.',
           },
         },
         { status: 400 },

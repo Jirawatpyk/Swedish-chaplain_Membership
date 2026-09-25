@@ -401,3 +401,12 @@ describe('<CreditNoteForm> — online-payment steering (a credit note moves no m
     expect(cancel.description).toMatch(/no money is returned/i);
   });
 });
+
+describe('CreditNoteForm — remainder formatting', () => {
+  it('shows the creditable remainder with thousands grouping (shared THB formatter)', () => {
+    renderForm();
+    // 107,000 satang → "1,070.00 THB", not the ungrouped "1070.00 THB".
+    expect(screen.getByText('1,070.00 THB')).toBeInTheDocument();
+    expect(screen.queryByText('1070.00 THB')).not.toBeInTheDocument();
+  });
+});

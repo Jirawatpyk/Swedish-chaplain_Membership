@@ -15,7 +15,8 @@
         "accountDisabled": "Ditt konto har inaktiverats. Kontakta en administratör.",
         "accountLocked": "För många misslyckade försök. Försök igen senare.",
         "rateLimited": "För många förfrågningar. Vänta och försök igen."
-      }
+      },
+      "linkInvalidBanner": "Länken är inte längre giltig. Logga in för att fortsätta."
     },
     "signOut": {
       "label": "Logga ut"
@@ -2408,11 +2409,11 @@
         "columns": {
           "documentNumber": "Nummer",
           "issueDate": "Utfärdad",
-          "originalInvoice": "Ursprungsfaktura",
           "member": "Medlem",
           "reason": "Orsak",
           "total": "Totalt",
-          "actions": "Åtgärder"
+          "actions": "Åtgärder",
+          "originalReceipt": "Ursprunglig skattefaktura"
         },
         "filters": {
           "search": "Sök dokumentnummer",
@@ -2453,11 +2454,10 @@
         "fields": {
           "issueDate": "Utfärdandedatum",
           "issuedBy": "Utfärdad av",
-          "originalInvoice": "Ursprunglig faktura",
-          "originalInvoiceLinkLabel": "Öppna faktura",
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
-          "total": "Totalt krediterat (inkl. moms)"
+          "total": "Totalt krediterat (inkl. moms)",
+          "originalReceipt": "Ursprunglig skattefaktura"
         },
         "reason": {
           "heading": "Anledning"
@@ -2569,7 +2569,8 @@
           "buyer": "Köpare",
           "method": "Metod",
           "receiptNumber": "Skattekvittonr.",
-          "queue": "Kö"
+          "queue": "Kö",
+          "totalPending": "Beräknas vid utfärdande"
         },
         "subjectChip": {
           "event": "Evenemang",
@@ -2722,14 +2723,22 @@
           "rc": "§86/4 (RC)",
           "re": "§105 (RE)",
           "gross": "Brutto utgående moms",
-          "creditNote": "minus §86/10-kreditnotor",
-          "note": "Netto standardbeskattad utgående moms för perioden: §86/4-skattekvitton + §105-kvitton (annullerade kvitton exkluderade), minus §86/10-kreditnotor utfärdade denna period — beloppet som ska rapporteras i ภ.พ.30. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret."
+          "creditNote": "§86/10-kreditnotor",
+          "note": "Netto standardbeskattad utgående moms för perioden: §86/4-skattekvitton + §105-kvitton (annullerade kvitton exkluderade), minus §86/10-kreditnotor utfärdade denna period. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret.",
+          "status": {
+            "closedMonth": "Utgående moms att rapportera i ภ.พ.30 för vald månad, per i dag.",
+            "monthToDate": "Månaden hittills — perioden är inte stängd.",
+            "notAMonth": "Inte en enskild kalendermånad — ภ.พ.30 lämnas per kalendermånad.",
+            "closedMonthIncomplete": "Ofullständigt belopp — {count, plural, one {# kombinerad faktura + kvitto} other {# kombinerade fakturor + kvitton}} (INV-nummer, utan RC/RE) utfärdade denna månad ingår inte i beloppet. Ta med {count, plural, one {den} other {dem}} innan ภ.พ.30 lämnas."
+          },
+          "less": "minus"
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",
           "subtotal": "Delsumma",
           "vat": "Moms",
-          "total": "Totalt"
+          "total": "Totalt",
+          "cancelled": "({count, plural, one {# annullerat} other {# annullerade}} — ingår inte i summorna)"
         },
         "columns": {
           "receiptNo": "Kvittonr.",
@@ -2750,7 +2759,8 @@
         "empty": "Inga skattedokument under denna period.",
         "errors": {
           "invalidRange": "Från-datumet måste vara samma dag eller före Till-datumet, inom ett år.",
-          "loadFailed": "Kunde inte ladda registret. Försök igen."
+          "loadFailed": "Kunde inte ladda registret. Försök igen.",
+          "invalidDate": "Ange ett giltigt datum (ÅÅÅÅ-MM-DD)."
         }
       },
       "new": {
@@ -3017,8 +3027,12 @@
             "bank_transfer": "Banköverföring",
             "cheque": "Check",
             "cash": "Kontant",
-            "other": "Övrigt"
-          }
+            "other": "Övrigt",
+            "card_online": "Kort (online)",
+            "promptpay_online": "PromptPay (online)",
+            "online": "Onlinebetalning"
+          },
+          "recordedBySystem": "System (Stripe webhook)"
         },
         "voidDetails": {
           "title": "Annullerad",
@@ -6289,11 +6303,10 @@
         },
         "fields": {
           "issueDate": "Utfärdandedatum",
-          "originalInvoice": "Ursprunglig faktura",
-          "originalInvoiceLinkLabel": "Öppna faktura",
           "creditAmount": "Kreditbelopp (exkl. moms)",
           "vat": "Moms",
-          "total": "Totalt kredit (inkl. moms)"
+          "total": "Totalt kredit (inkl. moms)",
+          "originalReceipt": "Ursprunglig skattefaktura"
         },
         "reason": {
           "heading": "Anledning"
@@ -7628,6 +7641,13 @@
           "generic": "Något gick fel. Försök igen."
         }
       }
+    },
+    "creditNoteOriginal": {
+      "bill": "Räkning {number}",
+      "invoice": "Faktura {number}",
+      "combined": "Kombinerad faktura + kvitto",
+      "refund": "Återbetalning",
+      "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay"
     }
   },
   "email": {
