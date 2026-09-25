@@ -48,6 +48,7 @@ function makeDeps(
         legacyCombinedCount,
       })),
       listForExport: vi.fn(),
+      listCreditNotesForExport: vi.fn(),
     },
     clock: { nowIso: () => nowIso },
   };

@@ -11,8 +11,10 @@
  *     month it was paid, while the register still counts it (its reduction is
  *     the §86/10 credit note, netted in the month the note is issued).
  *
- * For each month the CSV's VAT column must sum to the register's gross output
- * VAT (`rcVatSatang + reVatSatang`), and list the same receipts.
+ * For each month the CSV lists the same receipts as the register, plus each
+ * §86/10 credit note issued that month as a negative row, so its VAT column
+ * sums to the register's NET output VAT (`rcVat + reVat − creditNoteVat`, the
+ * ภ.พ.30 figure).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -79,28 +81,53 @@ const SNAP_BUYER = {
 
 const MEMBER_ID = '00000000-0000-4000-8000-0000000000d1';
 
-/** CSV column 8 ("VAT", baht with 2 decimals) summed as satang. */
+/** Data rows split into cells. Test fixtures carry no commas in quoted fields. */
+function csvRows(csv: string): string[][] {
+  return csv
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .split('\r\n')
+    .slice(1)
+    .map((l) => l.split(','));
+}
+
+/** Column 14 ("Status") marks the §86/10 credit-note rows. */
+const isCreditNoteRow = (cells: readonly string[]) => cells[13] === 'Credit note';
+
+/** CSV column 8 ("VAT", baht with 2 decimals, credit notes negative) summed as satang. */
 function csvVatSatang(csv: string): bigint {
-  const lines = csv.replace(/^﻿/, '').trim().split('\r\n').slice(1);
   let sum = 0n;
-  for (const line of lines) {
-    // Test fixtures carry no commas in quoted fields, so a plain split is safe.
-    const vat = line.split(',')[7] ?? '';
-    const [baht = '0', satang = '00'] = vat.split('.');
-    sum += BigInt(baht) * 100n + BigInt(satang.padEnd(2, '0'));
+  for (const cells of csvRows(csv)) {
+    const vat = cells[7] ?? '';
+    const negative = vat.startsWith('-');
+    const [baht = '0', satang = '00'] = vat.replace(/^-/, '').split('.');
+    const abs = BigInt(baht) * 100n + BigInt(satang.padEnd(2, '0'));
+    sum += negative ? -abs : abs;
   }
   return sum;
 }
 
-/** Column 2 ("Invoice No.") — the §87 number a combined-mode row carries. */
+/** Column 2 ("Invoice No.") of the invoice rows — the §87 number a combined-mode row carries. */
 function csvInvoiceNumbers(csv: string): string[] {
-  const lines = csv.replace(/^\uFEFF/, '').trim().split('\r\n').slice(1);
-  return lines.map((l) => l.split(',')[1] ?? '').sort();
+  return csvRows(csv)
+    .filter((c) => !isCreditNoteRow(c))
+    .map((c) => c[1] ?? '')
+    .sort();
 }
 
+/** Column 3 ("Receipt No.") of the invoice rows. */
 function csvReceiptNumbers(csv: string): string[] {
-  const lines = csv.replace(/^﻿/, '').trim().split('\r\n').slice(1);
-  return lines.map((l) => l.split(',')[2] ?? '').sort();
+  return csvRows(csv)
+    .filter((c) => !isCreditNoteRow(c))
+    .map((c) => c[2] ?? '')
+    .sort();
+}
+
+/** Credit-note rows as `[number, VAT, reference document]`. */
+function csvCreditNotes(csv: string): string[][] {
+  return csvRows(csv)
+    .filter(isCreditNoteRow)
+    .map((c) => [c[1] ?? '', c[7] ?? '', c[14] ?? '']);
 }
 
 describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', () => {
@@ -259,9 +286,8 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
     if (!rc.ok || !re.ok) throw new Error('register failed');
     const live = [...rc.value.rows, ...re.value.rows].filter((r) => r.status !== 'void');
     return {
-      grossVat:
-        BigInt(rc.value.periodOutputVat.rcVatSatang) +
-        BigInt(rc.value.periodOutputVat.reVatSatang),
+      // rc + re − credit notes: the net ภ.พ.30 output VAT.
+      netVat: BigInt(rc.value.periodOutputVat.combinedVatSatang),
       receiptNumbers: live.map((r) => r.receiptDocumentNumberRaw ?? '').sort(),
     };
   }
@@ -526,16 +552,19 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
       'RE-2026-000101',
     ]);
     expect(csvReceiptNumbers(jul.csv)).toEqual(julRegister.receiptNumbers);
-    // 7,000 + 14,000 (back-dated) + 22,897 (§105) satang.
-    expect(csvVatSatang(jul.csv)).toBe(43_897n);
-    expect(csvVatSatang(jul.csv)).toBe(julRegister.grossVat);
+    // 7,000 + 14,000 (back-dated) + 22,897 (§105) − 21,000 (CN-091, issued
+    // 5 July against June's RC-091) satang.
+    expect(csvCreditNotes(jul.csv)).toEqual([['CN-2026-000091', '-210.00', 'RC-2026-000091']]);
+    expect(csvVatSatang(jul.csv)).toBe(22_897n);
+    expect(csvVatSatang(jul.csv)).toBe(julRegister.netVat);
 
     const aug = await exportMonth('2026-08-01', '2026-08-31');
     const augRegister = await registerMonth('2026-08-01', '2026-08-31');
     expect(csvReceiptNumbers(aug.csv)).toEqual(['RC-2026-000103']);
     expect(csvReceiptNumbers(aug.csv)).toEqual(augRegister.receiptNumbers);
+    expect(csvCreditNotes(aug.csv)).toEqual([]);
     expect(csvVatSatang(aug.csv)).toBe(9_100n);
-    expect(csvVatSatang(aug.csv)).toBe(augRegister.grossVat);
+    expect(csvVatSatang(aug.csv)).toBe(augRegister.netVat);
   });
 
   it('a receipt credited later stays in the export of the month it was paid, like the register', async () => {
@@ -544,8 +573,11 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
     // Fully credited + partially credited are both exported; the void is not.
     expect(csvReceiptNumbers(jun.csv)).toEqual(['RC-2026-000091', 'RC-2026-000092']);
     expect(csvReceiptNumbers(jun.csv)).toEqual(junRegister.receiptNumbers);
-    expect(csvVatSatang(jun.csv)).toBe(28_000n);
-    expect(csvVatSatang(jun.csv)).toBe(junRegister.grossVat);
+    // The full credit (CN-091) is issued in July, so only CN-092 nets here:
+    // 21,000 + 7,000 − 700 satang.
+    expect(csvCreditNotes(jun.csv)).toEqual([['CN-2026-000092', '-7.00', 'RC-2026-000092']]);
+    expect(csvVatSatang(jun.csv)).toBe(27_300n);
+    expect(csvVatSatang(jun.csv)).toBe(junRegister.netVat);
   });
 
   it('combined-mode tax invoices are bucketed by issue date, and flag that month incomplete', async () => {

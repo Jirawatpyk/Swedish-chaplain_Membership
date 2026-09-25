@@ -15,10 +15,11 @@ import {
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
+import type { CreditNoteExportRow } from '@/modules/invoicing/application/ports/tax-register-repo';
 
 const BOM = '﻿';
 const HEADER_LINE =
-  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method,Tax Point Date';
+  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method,Tax Point Date,Status,Reference Document No.';
 
 function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
   const base = {
@@ -76,12 +77,34 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
   return { ...base, ...overrides } as Invoice;
 }
 
+function makeCreditNote(overrides: Partial<CreditNoteExportRow> = {}): CreditNoteExportRow {
+  return {
+    creditNoteNumberRaw: 'CN-2026-000007',
+    issueDate: '2026-05-20',
+    legalName: 'ACME Co., Ltd.',
+    taxId: '0123456789012',
+    creditAmountSatang: 50_000n,
+    vatSatang: 3_500n,
+    totalSatang: 53_500n,
+    currency: 'THB',
+    originalReceiptDocumentNumberRaw: 'RC-2026-000001',
+    originalDocumentNumberRaw: null,
+    originalBillDocumentNumberRaw: 'SC-2026-000001',
+    originalVatRateRaw: '0.0700',
+    ...overrides,
+  };
+}
+
 function makeDeps(
   paidInvoices: readonly Invoice[],
   paymentMethodMap: ReadonlyMap<string, 'card' | 'promptpay'> = new Map(),
+  creditNotes: readonly CreditNoteExportRow[] = [],
 ): ExportPaidInvoicesCsvDeps & {
   audit: { emit: ReturnType<typeof vi.fn> };
-  registerRepo: { listForExport: ReturnType<typeof vi.fn> };
+  registerRepo: {
+    listForExport: ReturnType<typeof vi.fn>;
+    listCreditNotesForExport: ReturnType<typeof vi.fn>;
+  };
 } {
   const audit = { emit: vi.fn(async () => {}) };
   return {
@@ -90,6 +113,7 @@ function makeDeps(
       // The repo owns the period predicate (the register's tax point); the
       // use-case writes whatever it returns. Only `listForExport` is used.
       listForExport: vi.fn(async () => paidInvoices),
+      listCreditNotesForExport: vi.fn(async () => creditNotes),
       listForPeriod: vi.fn(),
       sumPeriodOutputVat: vi.fn(),
     },
@@ -211,7 +235,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,manual,2026-05-15\r?\n?$/);
+    expect(result.value.csv).toMatch(/,manual,2026-05-15,Paid,\r?\n?$/);
   });
 
   it('labels F5-paid rows by their PaymentMethod', async () => {
@@ -227,7 +251,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,promptpay,2026-05-15\r?\n?$/);
+    expect(result.value.csv).toMatch(/,promptpay,2026-05-15,Paid,\r?\n?$/);
   });
 
   it('includes an AS-PAID event invoice with its paidAt + payment date rendered (064 T15 pin)', async () => {
@@ -296,7 +320,8 @@ describe('exportPaidInvoicesCsv', () => {
     expect(result.value.rowCount).toBe(2);
     // "Paid At" is when it was marked paid; the trailing "Tax Point Date"
     // column is the date that put the row in this month.
-    expect(result.value.csv).toMatch(/2026-06-02T03:00:00Z,manual,2026-05-31\r\n/);
+    expect(result.value.csv).toMatch(/2026-06-02T03:00:00Z,manual,2026-05-31,Paid,\r\n/);
+    expect(result.value.csv).toMatch(/,manual,2026-05-15,Credited,\r\n/);
   });
 
   it('a combined-mode row (no RC/RE) takes its issue date as the tax point', async () => {
@@ -316,7 +341,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-04-30',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,manual,2026-04-28\r\n/);
+    expect(result.value.csv).toMatch(/,manual,2026-04-28,Paid,\r\n/);
   });
 
   it('refuses an impossible calendar date without querying', async () => {
@@ -353,9 +378,100 @@ describe('exportPaidInvoicesCsv', () => {
       from: '2026-05-01',
       to: '2026-05-31',
       row_count: 1,
+      credit_note_count: 0,
       actor_user_id: 'admin-1',
       route: 'export-paid-invoices-csv',
     });
+  });
+
+  it('writes each credit note issued in the period as a negative row after the invoices', async () => {
+    // A §86/10 credit note reduces output VAT in the month it is issued, so
+    // summing the VAT column gives the net ภ.พ.30 figure (rc + re − cn).
+    const inv = makeInvoice({
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+      receiptDocumentNumberRaw: 'RC-2026-000001',
+    });
+    const deps = makeDeps([inv], new Map(), [makeCreditNote()]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(deps.registerRepo.listCreditNotesForExport).toHaveBeenCalledWith('t', {
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    const lines = result.value.csv.replace(BOM, '').trimEnd().split('\r\n');
+    expect(lines).toHaveLength(3); // header, invoice, credit note — in that order
+    expect(lines[1]).toMatch(/^2026-05-15,SC-2026-000001,RC-2026-000001,/);
+    expect(lines[2]).toBe(
+      '2026-05-20,CN-2026-000007,,"ACME Co., Ltd.",0123456789012,-500.00,7.00,-35.00,-535.00,THB,,,2026-05-20,Credit note,RC-2026-000001',
+    );
+    // rowCount counts every data row (invoices + credit notes).
+    expect(result.value.rowCount).toBe(2);
+  });
+
+  it('a credit note on a legacy combined invoice references the INV', async () => {
+    const deps = makeDeps([], new Map(), [
+      makeCreditNote({
+        originalReceiptDocumentNumberRaw: null,
+        originalDocumentNumberRaw: 'INV-2026-000052',
+        originalBillDocumentNumberRaw: null,
+      }),
+    ]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.csv).toMatch(/,Credit note,INV-2026-000052\r\n$/);
+  });
+
+  it('labels a partially credited invoice row', async () => {
+    const deps = makeDeps([makeInvoice({ status: 'partially_credited' })]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.csv).toMatch(/,2026-05-15,Partially credited,\r\n$/);
+  });
+
+  it('counts the credit notes in the audit payload', async () => {
+    const deps = makeDeps([makeInvoice()], new Map(), [
+      makeCreditNote(),
+      makeCreditNote({ creditNoteNumberRaw: 'CN-2026-000008' }),
+    ]);
+    await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'admin-1',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    const [, event] = deps.audit.emit.mock.calls[0]!;
+    // row_count = every data row in the file (= X-Row-Count); the credit
+    // notes are the negative subset.
+    expect(event.payload).toMatchObject({ row_count: 3, credit_note_count: 2 });
+  });
+
+  it('returns list_failed when the credit-note read fails', async () => {
+    const deps = makeDeps([makeInvoice()]);
+    deps.registerRepo.listCreditNotesForExport.mockRejectedValueOnce(new Error('neon down'));
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    expect(result).toEqual({ ok: false, error: { code: 'list_failed' } });
+    expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
   it('rejects an inverted range without emitting audit', async () => {
