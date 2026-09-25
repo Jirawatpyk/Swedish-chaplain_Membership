@@ -28,6 +28,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
 
 const tenant = asTenantContext('test-tenant');
 const BROADCAST_ID = asBroadcastId('44444444-4444-4444-8444-444444444444');
@@ -289,6 +290,8 @@ function makeDeps(opts: {
           return ok({ planId: 'plan-1', planCode: 'CORP', eblastPerYear: 12 });
         },
       },
+      // F119 PR-A — the send-time standing gate; in good standing by default.
+      sendStanding: makeFakeSendStanding(),
     },
   };
 }

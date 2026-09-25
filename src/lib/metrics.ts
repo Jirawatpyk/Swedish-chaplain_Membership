@@ -2170,10 +2170,17 @@ export const broadcastsMetrics = {
    * `broadcasts.failed_to_dispatch.count{tenant, failure_reason}` —
    * dispatch-failure forensics. Paired with `dispatchBudgetExhausted`
    * (which counts only the AS2 1-hour-budget terminal case).
+   *
+   * `member_ineligible` (F119 PR-A) — the send-time standing gate refused: the
+   * member's E-Blasts were halted, or the membership had ENDED (F8
+   * `terminated`), when the send came due. A decision about the member, not an
+   * infrastructure fault, so it never counts as `app_error`. A `suspended`
+   * membership is HELD, not refused, and is counted by
+   * `dispatchStandingHeldTotal` instead (observability.md § 29).
    */
   failedToDispatchCount(
     tenantId: string,
-    failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout',
+    failureReason: 'resend_5xx' | 'resend_429' | 'resend_403' | 'app_error' | 'timeout' | 'member_ineligible',
   ): void {
     safeMetric(() => {
       counter(
@@ -2746,13 +2753,18 @@ export const broadcastsMetrics = {
    * triage tree (F3 pages / Neon / opt-out lookup) described only the
    * resolver. The name is kept so the catalogued alert keeps firing; the label
    * says which subsystem to open. Closed union across both legs:
-   * live leg `lock | resolve | inherited_status | persist_broadcast_id`,
-   * import leg `gateway | resolve | terminal_write`.
+   * live leg `lock | standing | resolve | inherited_status | persist_broadcast_id
+   * | terminal_write`, import leg `gateway | standing | resolve | terminal_write`.
+   * `standing` (F119 PR-A) — the member-standing read (F3 halt list or F8
+   * access) failed, so nothing was sent; `terminal_write` (the live leg since
+   * F119 PR-A) — a terminal `failed_to_dispatch` write did not commit, so the
+   * row is still `approved` (observability.md § 29).
    */
   dispatchResolveFailedTotal(
     tenantId: string,
     phase:
       | 'lock'
+      | 'standing'
       | 'resolve'
       | 'inherited_status'
       | 'persist_broadcast_id'
@@ -2764,6 +2776,28 @@ export const broadcastsMetrics = {
         'broadcasts_dispatch_resolve_failed_total',
         'Dispatch ticks that answered dispatch.server_error, by phase (row stays approved; retried next tick)',
       ).add(1, { tenant: tenantId, phase });
+    });
+  },
+
+  /**
+   * `broadcasts.dispatch_standing_held.total{tenant}` — F119 PR-A (R1). One per
+   * dispatch tick that HELD a due E-Blast because the requesting member's
+   * membership was `suspended` (F8: `awaiting_payment`,
+   * `pending_admin_reactivation`, or an unpaid period that has ended). Nothing
+   * is sent or written; the row stays `approved` and every tick re-checks it,
+   * so a held row adds 1 per tick (every 5 min) until the member pays (it
+   * sends) or the cycle lapses (it is refused, `member_not_in_good_standing`).
+   * Not a failure and not a page. A held row also sits past `scheduled_for`,
+   * so it raises `broadcasts.approved_overdue_count` after an hour — this
+   * series is how that alarm is told apart from a stuck dispatch
+   * (observability.md § 29.8).
+   */
+  dispatchStandingHeldTotal(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_dispatch_standing_held_total',
+        'Dispatch ticks that held a due E-Blast: member suspended (awaiting payment); retried every tick',
+      ).add(1, { tenant: tenantId });
     });
   },
 

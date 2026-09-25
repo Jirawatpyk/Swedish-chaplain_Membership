@@ -9,6 +9,7 @@ import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/compone
 import { RelativeTime } from '@/components/ui/relative-time';
 import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
+import { failureReasonToken } from '@/components/broadcast/admin/failure-reason';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
@@ -27,6 +28,7 @@ import {
   listBroadcastVersions,
   makeGetBroadcastDeps,
   parseBroadcastId,
+  readDispatchHold,
   readFormattingWarnings,
   stageOf,
   turnOf,
@@ -38,6 +40,7 @@ import {
 } from '@/modules/broadcasts';
 import {
   makeListBroadcastVersionsDeps,
+  makeReadDispatchHoldDeps,
   makeReadFormattingWarningsDeps,
 } from '@/lib/broadcast-approval-deps';
 import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
@@ -60,6 +63,13 @@ const VERSIONED_STATUSES: ReadonlySet<BroadcastStatus> = new Set([
 
 /** Stages where marketing's next hand-off is blocked by a missing portal user (409 `no_portal_user`). */
 const PORTAL_USER_STATUSES: ReadonlySet<BroadcastStatus> = new Set(['submitted', 'in_design', 'changes_requested']);
+
+/**
+ * F119 PR-A R6.7 — the two send-time STANDING refusals: decisions about the
+ * member, shown as a warning. Every other `failed_to_dispatch` token is a
+ * delivery failure, shown as destructive.
+ */
+const STANDING_FAILURE_TOKENS: ReadonlySet<string> = new Set(['member_halted', 'member_not_in_good_standing']);
 
 /** Stages whose next hand-off re-checks the images (the send, or the promotion). */
 const IMAGE_CHECK_STATUSES: ReadonlySet<BroadcastStatus> = new Set([
@@ -217,6 +227,26 @@ export default async function AdminBroadcastDetailPage({
   const showReview = showApprove || showReject;
   const showActionRow = canWrite && (isCancellable || showReview || showStart || showSchedule);
 
+  // F119 PR-A — why a `failed_to_dispatch` E-Blast was not sent. The stored
+  // reason is a lookup hint (`failureReasonToken`), never display text; a token
+  // with no sentence in the catalogue reads the generic one (`t.has`).
+  const failureToken = status === 'failed_to_dispatch' ? failureReasonToken(broadcast.failureReason) : null;
+  const failureKey = failureToken === null ? null : `failureReason.${failureToken}`;
+  const failureReasonText =
+    failureKey !== null && t.has(failureKey) ? t(failureKey) : t('failureReason.generic');
+  // R6.7 — a standing refusal is a decision about the member (warning); any
+  // other token is a delivery failure (destructive).
+  const failureTone = failureToken !== null && STANDING_FAILURE_TOKENS.has(failureToken) ? 'warning' : 'destructive';
+
+  // F119 PR-A R1 — a due `approved` E-Blast the cron is HOLDING because the
+  // member's membership is awaiting payment (the same decision the cron makes;
+  // the use case answers `false` without a read for any row that is not due).
+  const dispatchHeld = await readHeld(tenant.slug, broadcastId, {
+    status,
+    scheduledFor: broadcast.scheduledFor,
+    memberId: broadcast.requestedByMemberId,
+  });
+
   const turn = turnOf(status);
   // M2 — the Round row speaks only where a round exists or can still start:
   // with the flag off, `submitted` has no formatting round (FR-034 — "behave
@@ -271,6 +301,30 @@ export default async function AdminBroadcastDetailPage({
         }
       />
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
+
+      {/* F119 PR-A — "marketing sees why it is blocked": the stored reason,
+          translated (never the raw value, which can be provider free text),
+          under the status it explains. A note, not a live region: it is page
+          content, not an event. Body text, not the muted empty-sentinel tone. */}
+      {status === 'failed_to_dispatch' ? (
+        <InlineAlert tone={failureTone} role="note" data-testid="eblast-failure-reason">
+          <InlineAlertTitle>{t('failureReasonTitle')}</InlineAlertTitle>
+          <InlineAlertDescription>
+            <span className="block break-words leading-relaxed text-foreground">{failureReasonText}</span>
+          </InlineAlertDescription>
+        </InlineAlert>
+      ) : null}
+      {/* F119 PR-A R1 — held, not failed: it sends by itself once the member
+          pays, or fails if the membership ends. Info, not warning: nothing is
+          wrong with the E-Blast and staff have nothing to fix. */}
+      {dispatchHeld ? (
+        <InlineAlert tone="info" role="note" data-testid="eblast-dispatch-held">
+          <InlineAlertTitle>{t('dispatchHeldTitle')}</InlineAlertTitle>
+          <InlineAlertDescription>
+            <span className="block break-words leading-relaxed text-foreground">{t('dispatchHeldBody')}</span>
+          </InlineAlertDescription>
+        </InlineAlert>
+      ) : null}
 
       {threadUnavailable ? (
         <InlineAlert tone="destructive" data-testid="eblast-thread-unavailable">
@@ -506,6 +560,25 @@ async function readThread(
     'broadcasts.detail_page.thread_read_failed',
   );
   return null;
+}
+
+/**
+ * F119 PR-A R1 — whether the cron is holding this due E-Blast for the member's
+ * payment. A failed read shows no note (logged, so it is not silent): the note
+ * is information, and the cron re-decides every tick regardless.
+ */
+async function readHeld(
+  tenantSlug: string,
+  broadcastId: string,
+  input: Parameters<typeof readDispatchHold>[1],
+): Promise<boolean> {
+  const result = await readDispatchHold(makeReadDispatchHoldDeps(tenantSlug), input);
+  if (result.ok) return result.value;
+  logger.warn(
+    { tenantId: tenantSlug, broadcastId, err: result.error.errClass, errorId: 'M119.admin.detail.dispatch_hold' },
+    'broadcasts.detail_page.dispatch_hold_read_failed',
+  );
+  return false;
 }
 
 /** The member's latest decision when it asked for changes (or withdrew an approval) with a reason. */

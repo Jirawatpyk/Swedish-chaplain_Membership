@@ -41,12 +41,18 @@ import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
-import type { AuditPort } from '../ports/audit-port';
+import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
 } from '../ports/broadcasts-repo';
+import { standingRefusalAuditEvent } from './_member-send-standing';
+import {
+  decideDispatchStanding,
+  recordDispatchHold,
+  type DispatchStandingDeps,
+} from './_dispatch-standing-gate';
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
@@ -129,19 +135,25 @@ export type DispatchScheduledBroadcastError =
     };
 
 /**
- * The four places this leg can answer `dispatch.server_error` (row stays
+ * The six places this leg can answer `dispatch.server_error` (row stays
  * `approved`, next tick retries). `lock` — Step 1 could not read the row;
+ * `standing` — the member-standing read (halt list or F8 access) failed, so
+ * the gate was not decided (F119 PR-A — fail CLOSED: nothing is sent);
  * `resolve` — Step 2 could not build the audience (the case the counter was
  * named for); `inherited_status` — the probe answered a status this build
  * cannot interpret and the tick REFUSED rather than guess; `persist_broadcast_id`
- * — the pre-send persist faulted. The import leg has its own three; the
- * metric's label type is the union.
+ * — the pre-send persist faulted; `terminal_write` (F119 PR-A R3) — a terminal
+ * `failed_to_dispatch` write did not commit, so nothing was recorded and nobody
+ * was told (the import leg's `terminal_write_failed`, same label). The import
+ * leg has its own set; the metric's label type is the union.
  */
 export type DispatchServerErrorPhase =
   | 'lock'
+  | 'standing'
   | 'resolve'
   | 'inherited_status'
-  | 'persist_broadcast_id';
+  | 'persist_broadcast_id'
+  | 'terminal_write';
 
 /** What Step 2 hands Step 3 and Step 4 once a resolve has been ACCEPTED. */
 type ResolvedAudience = ResolveSegmentOutput;
@@ -210,18 +222,38 @@ export interface DispatchScheduledBroadcastDeps {
    * graceful-degrade pattern).
    */
   readonly emailTransactional: EmailTransactionalPort;
+  /**
+   * F119 PR-A — the member-standing reads (the F7 halt list + F8 membership
+   * access) re-applied at SEND time, the same reads submit, approve-as-
+   * submitted and the promotion make. REQUIRED: a composition that forgot it
+   * would send for a halted or ended membership, silently. The cron wires the
+   * halt read through its per-tick memo, so a tick reads the list once, and
+   * sets `haltReadFresh` to the raw bridge for the re-read before a refusal.
+   */
+  readonly sendStanding: DispatchStandingDeps;
 }
 
 export interface DispatchScheduledBroadcastInput {
   readonly broadcastId: BroadcastId;
 }
 
-export interface DispatchScheduledBroadcastOutput {
-  readonly broadcast: Broadcast;
-  readonly resendAudienceId: string;
-  readonly resendBroadcastId: string;
-  readonly recipientCount: number;
-}
+/**
+ * What a tick that did not fail answers. `sent` — the send was handed to
+ * Resend (or a prior tick's already was) and the row is `sending`.
+ * `dispatch_held_member_suspended` (F119 PR-A R1) — the requesting member's
+ * membership is `suspended` (awaiting payment), so NOTHING happened: no Resend
+ * call, no write, no audit, no email; the row stays `approved` and the next
+ * tick asks again. Not an error — the cron counts it `held`.
+ */
+export type DispatchScheduledBroadcastOutput =
+  | {
+      readonly kind: 'sent';
+      readonly broadcast: Broadcast;
+      readonly resendAudienceId: string;
+      readonly resendBroadcastId: string;
+      readonly recipientCount: number;
+    }
+  | { readonly kind: 'dispatch_held_member_suspended' };
 
 function buildIdempotencyKey(tenantId: string, broadcastId: string): string {
   return `broadcast-${tenantId}-${broadcastId}`;
@@ -232,17 +264,28 @@ type DispatchFailureReason =
   | 'resend_429'
   | 'resend_403'
   | 'app_error'
-  | 'timeout';
+  | 'timeout'
+  /**
+   * F119 PR-A — the member was halted or not in good standing at send time. A
+   * decision about the MEMBER, not a fault: counted apart so it can never
+   * inflate `app_error`, which is what the dispatch-failure alert reads.
+   */
+  | 'member_ineligible';
+
+/** The `phase` label a standing refusal passes to `failDispatchAndAudit`. */
+const MEMBER_STANDING_PHASE = 'member_standing';
 
 /**
  * Map a free-text dispatch `phase` label to the bounded
  * `broadcasts.failed_to_dispatch.count` failure_reason enum. Round 5
  * simplification — extracted from a 4-level nested ternary. The phase
  * strings come from `classifyThrown` + caller call-sites; the matcher
- * is order-sensitive (more specific Resend HTTP-code phases first,
- * generic timeout next, app_error catch-all last).
+ * is order-sensitive (the exact member-standing phase first, then the more
+ * specific Resend HTTP-code phases, generic timeout next, app_error
+ * catch-all last).
  */
 function phaseToFailureReason(phase: string): DispatchFailureReason {
+  if (phase === MEMBER_STANDING_PHASE) return 'member_ineligible';
   if (phase.includes('429')) return 'resend_429';
   if (phase.includes('403')) return 'resend_403';
   if (phase.includes('5xx') || phase.includes('server')) return 'resend_5xx';
@@ -261,6 +304,18 @@ function phaseToFailureReason(phase: string): DispatchFailureReason {
  * dispatch-failure transactional notification email AFTER the tx
  * commits (best-effort, failures logged + swallowed so the audit
  * trail remains the source of truth).
+ *
+ * F119 PR-A R3 — answers whether the terminal write COMMITTED. It used to
+ * return nothing, so every caller answered `broadcast_failed_to_dispatch` —
+ * which the cron buckets `permanent_failed`, "finished, nothing to do" — for a
+ * row that was still `approved`. On `false` the caller answers
+ * `terminalWriteFailed()` instead (the import leg's `terminal_write_failed`):
+ * the next tick retries, and if a concurrent cancel is what won, that tick
+ * reads a non-`approved` row and reports `concurrent_skip`.
+ *
+ * R4 — the counters move only AFTER the commit. They sat inside the tx, before
+ * the second audit INSERT, so a refusal whose own audit row failed (rolling the
+ * whole tx back) still counted a failure and an audit row that never existed.
  */
 async function failDispatchAndAudit(
   deps: DispatchScheduledBroadcastDeps,
@@ -290,7 +345,14 @@ async function failDispatchAndAudit(
    */
   memberFacingReason: MemberFacingFailureReason,
   broadcast: Broadcast | null = null,
-): Promise<void> {
+  /**
+   * F119 PR-A — a second audit row that must commit WITH the terminal
+   * transition or not at all (the standing refusal's own event). In the same
+   * tx on purpose: written separately, a lost transition (a concurrent cancel
+   * won) would still leave a refusal row for a broadcast that was cancelled.
+   */
+  extraAudit: AuditEmitInput | null = null,
+): Promise<boolean> {
   try {
     await deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.applyTransition(
@@ -316,20 +378,9 @@ async function failDispatchAndAudit(
         payload,
         requestId: null,
       });
-      // T172 — emit-site wiring (Phase 9). failure_reason maps phase
-      // strings to the bounded enum used by the
-      // broadcasts.failed_to_dispatch.count counter.
-      // Round 5 simplification — replace the 4-level nested ternary with
-      // a small helper that early-returns. CLAUDE.md forbids nested
-      // ternaries; this also gives the helper a name visible in stack
-      // traces if the mapping ever throws.
-      if (eventType === 'broadcast_failed_to_dispatch') {
-        broadcastsMetrics.failedToDispatchCount(
-          deps.tenant.slug,
-          phaseToFailureReason(phase),
-        );
+      if (extraAudit !== null) {
+        await deps.audit.emit(tx, extraAudit);
       }
-      broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
     });
   } catch (cleanupErr) {
     logger.error(
@@ -347,7 +398,18 @@ async function failDispatchAndAudit(
       },
       'broadcasts.dispatch.cleanup_failed',
     );
-    return; // Don't enqueue notification if the transition itself failed
+    return false; // Don't enqueue notification if the transition itself failed
+  }
+
+  // Committed — only now count it (R4). T172 — failure_reason maps phase
+  // strings to the bounded enum used by the broadcasts.failed_to_dispatch.count
+  // counter; Round 5 replaced a 4-level nested ternary with the named helper.
+  if (eventType === 'broadcast_failed_to_dispatch') {
+    broadcastsMetrics.failedToDispatchCount(deps.tenant.slug, phaseToFailureReason(phase));
+  }
+  broadcastsMetrics.auditEmitCount(deps.tenant.slug, eventType);
+  if (extraAudit !== null) {
+    broadcastsMetrics.auditEmitCount(deps.tenant.slug, extraAudit.eventType);
   }
 
   // Slice E (FR-021 / AS2) — enqueue dispatch-failure transactional
@@ -364,6 +426,17 @@ async function failDispatchAndAudit(
       now,
     });
   }
+  return true;
+}
+
+/**
+ * F119 PR-A R3 — what a caller answers when `failDispatchAndAudit` reports that
+ * its terminal write did not commit: nothing was recorded and nobody was told,
+ * so the tick is a transient server error (the row stays `approved`), never a
+ * `permanent_failed`. Mirrors the import leg's `failTerminally`.
+ */
+function terminalWriteFailed(): Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError> {
+  return err({ kind: 'dispatch.server_error', message: 'terminal_write_failed', phase: 'terminal_write' });
 }
 
 
@@ -586,6 +659,77 @@ export async function dispatchScheduledBroadcast(
     // `resource_missing` arm, which exists for exactly that.
   }
 
+  // Step 1c (F119 PR-A): the member's standing, re-read at SEND time.
+  //
+  // Submit, approve-as-submitted and the promotion read it; nothing after them
+  // did, so an E-Blast approved days ahead went out after its member was
+  // halted, suspended, terminated or refunded (0306 ends coverage at once).
+  //
+  // After the probe, and gated on it exactly as the Step-2 refusals are: mail a
+  // prior tick already handed to `/send` is out, and refusing it would record
+  // `failed_to_dispatch`, free the quota slot and email the member that a
+  // delivered broadcast failed. Outside every transaction: the Step-1 lock tx
+  // has committed, and these reads take their own pool connections (the R-L3
+  // rule approve and confirm-schedule follow).
+  //
+  // The decision is `_dispatch-standing-gate.ts`'s, shared with the import
+  // leg: a `suspended` membership (awaiting payment) is HELD — nothing sent or
+  // written, the row stays `approved`, the next tick asks again (R1); a halt
+  // (re-read uncached first, R2) or an ENDED membership is a PERMANENT
+  // refusal; a read that fails decides nothing — fail CLOSED, nothing is sent.
+  if (!alreadyHandedToSend) {
+    const standing = await decideDispatchStanding(
+      deps.sendStanding,
+      deps.tenant,
+      broadcast.requestedByMemberId,
+    );
+    if (standing.kind === 'hold') {
+      recordDispatchHold(deps.tenant.slug, input.broadcastId as string, 'live');
+      return ok({ kind: 'dispatch_held_member_suspended' });
+    }
+    if (standing.kind === 'refuse') {
+      const { reason } = standing;
+      const recorded = await failDispatchAndAudit(
+        deps,
+        input,
+        now,
+        reason,
+        'broadcast_failed_to_dispatch',
+        {
+          broadcastId: input.broadcastId,
+          reason,
+          failedAt: now.toISOString(),
+        },
+        MEMBER_STANDING_PHASE,
+        reason,
+        broadcast,
+        standingRefusalAuditEvent({
+          refusal: standing.refusal,
+          surface: 'dispatch',
+          tenantSlug: deps.tenant.slug,
+          memberId: broadcast.requestedByMemberId,
+          broadcastId: input.broadcastId as string,
+          actorUserId: 'system:cron',
+          actorRole: null,
+          requestId: null,
+        }),
+      );
+      if (!recorded) return terminalWriteFailed();
+      return err({ kind: 'broadcast_failed_to_dispatch', reason });
+    }
+    // Anything but an explicit `send` is not a send (fail CLOSED): the
+    // compiler narrows this to `undecided`, and a kind it does not know would
+    // land here too rather than fall through to Step 2.
+    if (standing.kind !== 'send') {
+      return err({
+        kind: 'dispatch.server_error',
+        message: standing.message,
+        errClass: standing.errClass,
+        phase: 'standing',
+      });
+    }
+  }
+
   // Step 2: re-resolve recipients (segment may have changed since submit)
   // Review 2026-09-07 round 2 (C1/C2) — a tier row with no codes is refused
   // at the boundary, TERMINALLY. It used to reach the resolver as
@@ -602,7 +746,7 @@ export async function dispatchScheduledBroadcast(
   // after submit, so a row that reached `/send` had a well-formed one — but the
   // gate is uniform with the two refusals below rather than special-cased.)
   if (!segmentResult.ok && !alreadyHandedToSend) {
-    await failDispatchAndAudit(
+    const recorded = await failDispatchAndAudit(
       deps,
       input,
       now,
@@ -619,6 +763,7 @@ export async function dispatchScheduledBroadcast(
       'malformed_segment',
       broadcast,
     );
+    if (!recorded) return terminalWriteFailed();
     return err({ kind: 'broadcast_failed_to_dispatch', reason: 'malformed_segment' });
   }
   const requestingMember = broadcast.requestedByMemberId;
@@ -703,7 +848,7 @@ export async function dispatchScheduledBroadcast(
         // AS2 member-notification email as "empty audience" when the true cause was
         // "too large". Mirror submit-broadcast.ts's switch on error.kind.
         if (resolvedResult.error.kind === 'broadcast_audience_too_large') {
-          await failDispatchAndAudit(
+          const recorded = await failDispatchAndAudit(
             deps,
             input,
             now,
@@ -720,6 +865,7 @@ export async function dispatchScheduledBroadcast(
             'audience_too_large',
             broadcast,
           );
+          if (!recorded) return terminalWriteFailed();
           return err({
             kind: 'broadcast_failed_to_dispatch',
             reason: 'audience_too_large',
@@ -727,7 +873,7 @@ export async function dispatchScheduledBroadcast(
         }
         // Empty audience post-suppression — transition to failed_to_dispatch +
         // emit audit + Slice E member notification.
-        await failDispatchAndAudit(
+        const recorded = await failDispatchAndAudit(
           deps,
           input,
           now,
@@ -742,6 +888,7 @@ export async function dispatchScheduledBroadcast(
           'audience_post_suppression_empty',
           broadcast,
         );
+        if (!recorded) return terminalWriteFailed();
         return err({ kind: 'broadcast_audience_post_suppression_empty' });
       }
     } else {
@@ -1449,6 +1596,7 @@ async function advanceToSending(ctx: {
     await emitExpiredPlanAuditIfApplicable({ deps, broadcast });
 
     return ok({
+      kind: 'sent',
       broadcast: sentRow,
       resendAudienceId,
       resendBroadcastId,
@@ -1661,7 +1809,7 @@ async function applyRetryBudget(
     // pages on-call. See `docs/observability.md` § F7 alerts.
     broadcastsMetrics.dispatchBudgetExhausted(deps.tenant.slug, subKind);
     const budgetReason = `retry_budget_exhausted_after_1h:${subKind}:${reason}`;
-    await failDispatchAndAudit(
+    const recorded = await failDispatchAndAudit(
       deps,
       input,
       now,
@@ -1685,6 +1833,7 @@ async function applyRetryBudget(
       'retry_budget_exhausted',
       broadcast,
     );
+    if (!recorded) return terminalWriteFailed();
     return err({
       kind: 'broadcast_failed_to_dispatch',
       reason: budgetReason,
@@ -1743,7 +1892,7 @@ async function settleGatewayThrow(
   // ops-side issue (admin manually deleted Resend resource) requiring
   // admin action, not member notification.
   if (shape.kind === 'resource_missing') {
-    await failDispatchAndAudit(
+    const recorded = await failDispatchAndAudit(
       deps,
       input,
       now,
@@ -1765,6 +1914,7 @@ async function settleGatewayThrow(
       'gateway_permanent',
       broadcast,
     );
+    if (!recorded) return terminalWriteFailed();
     return err({
       kind: 'broadcast_resend_resource_missing',
       resourceType: shape.resourceType ?? 'broadcast',
@@ -1779,7 +1929,7 @@ async function settleGatewayThrow(
     const reason =
       shape.reason ??
       (e instanceof Error ? e.message : 'unknown gateway error');
-    await failDispatchAndAudit(
+    const recorded = await failDispatchAndAudit(
       deps,
       input,
       now,
@@ -1808,6 +1958,7 @@ async function settleGatewayThrow(
       shape.kind === 'permanent' ? 'gateway_permanent' : 'gateway_unknown',
       broadcast,
     );
+    if (!recorded) return terminalWriteFailed();
     return err({ kind: 'broadcast_failed_to_dispatch', reason });
 }
 

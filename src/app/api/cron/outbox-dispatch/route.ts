@@ -392,10 +392,12 @@ async function buildPayload(
       // F7 US6 / Phase 8 — FR-021 / AS2 dispatch-failure transactional
       // email enqueued from `enqueueDispatchFailureNotification` in
       // dispatch-scheduled-broadcast.ts (1h budget exhausted OR
-      // permanent failure path). context_data carries the broadcast
-      // identifiers + scheduled-for + reason; the build helper renders
-      // the bilingual member-facing copy with the admin-rescheduling
-      // CTA + reservation-preserved reassurance.
+      // permanent failure path, and — F119 PR-A — a send-time standing
+      // refusal on either dispatch leg). context_data carries the broadcast
+      // identifiers + scheduled-for + reason; the build helper renders the
+      // trilingual member-facing copy: the reason sentence, the quota line
+      // (the slot is RELEASED — `reassuranceStanding` for the two standing
+      // reasons), and a CTA to the member's own `/portal/broadcasts/{id}`.
       const broadcastId = typeof ctx.broadcastId === 'string' ? ctx.broadcastId : '';
       const broadcastSubject =
         typeof ctx.broadcastSubject === 'string' ? ctx.broadcastSubject : '';

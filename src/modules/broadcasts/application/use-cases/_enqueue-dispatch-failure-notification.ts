@@ -23,8 +23,11 @@ import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 /**
  * Slice E (Phase 8) — enqueue the FR-021 / AS2 transactional
  * notification email informing the originating member that their
- * scheduled broadcast did not go out. Quota reservation is preserved;
- * member can re-schedule from the admin queue.
+ * scheduled broadcast did not go out. `failed_to_dispatch` RELEASES the
+ * quota slot (design D1, pinned by `quota-release-on-failed-dispatch.test.ts`)
+ * and has no outgoing edge, so the member sends the content again by
+ * submitting a NEW E-Blast — there is nothing to re-schedule (F119 PR-A
+ * corrected the email copy that said otherwise).
  *
  * Best-effort: member-lookup failures + missing primary contact are
  * logged but skipped (NOT thrown). The terminal-fail transition + audit
