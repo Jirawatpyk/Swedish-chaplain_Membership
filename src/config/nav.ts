@@ -259,7 +259,7 @@ export function filterNavConfig(
  * appears. Add an entry here (and a `badge` declaration on the item) when a
  * second feature wants one.
  */
-export type BadgeableNavHref = '/admin/change-requests';
+export type BadgeableNavHref = '/admin/change-requests' | '/admin/broadcasts';
 
 /** Server-resolved counts keyed by {@link BadgeableNavHref}. */
 export type NavBadgeCounts = Partial<Record<BadgeableNavHref, number>>;
@@ -413,6 +413,10 @@ export const staffNavConfig: NavConfig = {
           // routes 503 via the proxy kill-switch, so a visible link is a dead
           // end). Member-side E-Blast is already gated in the Benefits page.
           visibilityFlag: 'broadcastsEnabled',
+          // F119 T132 (FR-023) — the E-Blasts waiting on marketing, resolved per
+          // request in the staff layout (`readEblastWaitingCountForNav`) and
+          // applied through `applyNavBadges`; this carries the sr-only noun only.
+          badge: { labelKey: 'nav.staff.broadcastsBadge' },
         },
         // F6 Events — EventCreate-imported event list + attendee detail.
         // Manager has read-only access via the same route (FR-035).

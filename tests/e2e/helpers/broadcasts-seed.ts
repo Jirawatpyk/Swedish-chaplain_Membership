@@ -28,9 +28,17 @@ interface SeedResult {
   readonly haltedMemberDisplayName: string;
 }
 
-export async function seedF7Broadcasts(): Promise<SeedResult | null> {
+/**
+ * `memberEmail` (F119 T166, 2026-09-24): the persona that owns the seeded row.
+ * Defaults to the primary `e2e-member` (global setup). The review-queue spec
+ * passes `E2E_MEMBER_EMAIL_EMPTY`: the primary persona is LAPSED by the F8
+ * fixture, and approve-as-submitted now refuses a member not in good standing
+ * (S-H1), so its rows can no longer be approved.
+ */
+export async function seedF7Broadcasts(
+  memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL,
+): Promise<SeedResult | null> {
   const dbUrl = process.env.DATABASE_URL;
-  const memberEmail = process.env.E2E_MEMBER_EMAIL;
   if (!dbUrl || !memberEmail) {
     console.warn(
       '[e2e seed broadcasts] skipped — DATABASE_URL or E2E_MEMBER_EMAIL missing',
@@ -240,9 +248,10 @@ export interface BulkApproveSeedResult {
  * are absent, or the e2e-member seed itself is missing — callers gate the
  * whole `@bulk` describe on this via `test.skip(!bulkSeed, …)`.
  */
-export async function seedBulkApproveFixtures(): Promise<BulkApproveSeedResult | null> {
+export async function seedBulkApproveFixtures(
+  memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL,
+): Promise<BulkApproveSeedResult | null> {
   const dbUrl = process.env.DATABASE_URL;
-  const memberEmail = process.env.E2E_MEMBER_EMAIL;
   if (!dbUrl || !memberEmail) {
     console.warn(
       '[e2e seed bulk-approve] skipped — DATABASE_URL or E2E_MEMBER_EMAIL missing',
@@ -292,11 +301,14 @@ export async function seedBulkApproveFixtures(): Promise<BulkApproveSeedResult |
       // `noUncheckedIndexedAccess` for the tagged-template calls below.
       if (subject === undefined || recipientCount === undefined) continue;
 
+      // Keyed on the SUBJECT alone, tenant-wide (the `seedF7Broadcasts`
+      // shape): a persona switch would otherwise leave the old owner's row
+      // beside the new one, and the spec's `tbody tr` subject filter would
+      // resolve to two rows (strict-mode violation).
       const existingRows = await sql<Array<{ broadcast_id: string }>>`
         SELECT broadcast_id::text AS broadcast_id
         FROM broadcasts
         WHERE tenant_id = ${TENANT_ID}
-          AND requested_by_member_id = ${member.member_id}::uuid
           AND subject = ${subject}
         ORDER BY created_at DESC
         LIMIT 1
@@ -309,11 +321,15 @@ export async function seedBulkApproveFixtures(): Promise<BulkApproveSeedResult |
         // DELETE + re-INSERT bypasses the "no update after draft" trigger.
         await sql`
           DELETE FROM broadcast_deliveries
-          WHERE tenant_id = ${TENANT_ID} AND broadcast_id = ${id}::uuid
+          WHERE tenant_id = ${TENANT_ID}
+            AND broadcast_id IN (
+              SELECT broadcast_id FROM broadcasts
+              WHERE tenant_id = ${TENANT_ID} AND subject = ${subject}
+            )
         `;
         await sql`
           DELETE FROM broadcasts
-          WHERE tenant_id = ${TENANT_ID} AND broadcast_id = ${id}::uuid
+          WHERE tenant_id = ${TENANT_ID} AND subject = ${subject}
         `;
       }
 
@@ -533,7 +549,9 @@ export async function resetF7AckSeed(): Promise<void> {
  *
  * Audit rows are append-only and survive — the wipe only touches
  * `broadcasts` + `broadcast_deliveries` (FK cascade via temporary
- * trigger disable, mirrors `tests/integration/helpers/test-tenant.ts`).
+ * trigger disable, mirrors `tests/integration/helpers/test-tenant.ts`),
+ * the F119 versions/decisions that cascade with them, and the
+ * `notifications_outbox` rows keyed to the wiped E-Blasts.
  *
  * Skips silently if `DATABASE_URL` is missing.
  *
@@ -576,10 +594,158 @@ export async function wipeE2EMemberBroadcasts(
     await sql`
       ALTER TABLE broadcast_deliveries ENABLE TRIGGER broadcast_deliveries_no_delete
     `;
+    // F119 — the hand-off rows (`eblast_*`, keyed `context_data.broadcastId`)
+    // of the E-Blasts about to go. Left behind they outlive their E-Blast: a
+    // drainer tick with the flag on would mail a member or marketing about a
+    // row that no longer exists. Versions and decisions leave with the row
+    // (ON DELETE CASCADE).
+    await sql`
+      DELETE FROM notifications_outbox
+      WHERE tenant_id = ${tenantId}
+        AND context_data->>'broadcastId' IN (
+          SELECT broadcast_id::text FROM broadcasts
+          WHERE tenant_id = ${tenantId}
+            AND requested_by_member_id = ${memberId}::uuid
+        )
+    `;
     await sql`
       DELETE FROM broadcasts
       WHERE requested_by_member_id = ${memberId}::uuid
     `;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/** Subject of the single row `seedMemberSentBroadcast` owns. */
+export const SENT_FIXTURE_SUBJECT = '[E2E SEED] T129 AS3 sent fixture';
+
+/** Deletes every row carrying `subject` in the tenant, deliveries and outbox rows first. */
+async function deleteBroadcastsBySubject(
+  sql: ReturnType<typeof postgres>,
+  subject: string,
+): Promise<void> {
+  await sql`
+    ALTER TABLE broadcast_deliveries DISABLE TRIGGER broadcast_deliveries_no_delete
+  `;
+  try {
+    await sql`
+      DELETE FROM broadcast_deliveries
+      WHERE tenant_id = ${TENANT_ID}
+        AND broadcast_id IN (
+          SELECT broadcast_id FROM broadcasts
+          WHERE tenant_id = ${TENANT_ID} AND subject = ${subject}
+        )
+    `;
+  } finally {
+    await sql`
+      ALTER TABLE broadcast_deliveries ENABLE TRIGGER broadcast_deliveries_no_delete
+    `;
+  }
+  await sql`
+    DELETE FROM notifications_outbox
+    WHERE tenant_id = ${TENANT_ID}
+      AND context_data->>'broadcastId' IN (
+        SELECT broadcast_id::text FROM broadcasts
+        WHERE tenant_id = ${TENANT_ID} AND subject = ${subject}
+      )
+  `;
+  await sql`
+    DELETE FROM broadcasts
+    WHERE tenant_id = ${TENANT_ID} AND subject = ${subject}
+  `;
+}
+
+/**
+ * T129 AS3 — one SENT broadcast owned by `memberEmail`, with one delivered,
+ * one bounced and one complained delivery, so the portal detail page renders
+ * its delivery breakdown (the card shows only once a send has begun). Without
+ * it AS3 depended on whatever history the persona happened to have and
+ * returned early — green, having checked nothing.
+ *
+ * Idempotent by subject. The row consumes one place of the persona's quota
+ * for the current year while it exists — callers remove it with
+ * `removeMemberSentBroadcast` in an `afterAll`. Returns `null` (never throws)
+ * when `DATABASE_URL` / the email is absent or the persona has no member row.
+ */
+export async function seedMemberSentBroadcast(
+  memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL,
+): Promise<string | null> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl || !memberEmail) return null;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const memberRows = await sql<
+      Array<{ user_id: string; member_id: string; plan_uuid: string; reply_to: string }>
+    >`
+      SELECT u.id::text AS user_id,
+             m.member_id::text AS member_id,
+             m.plan_id AS plan_uuid,
+             u.email AS reply_to
+      FROM users u
+      JOIN contacts c
+        ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
+      JOIN members m
+        ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
+      WHERE u.email = ${memberEmail}
+      LIMIT 1
+    `;
+    const member = memberRows[0];
+    if (!member) return null;
+
+    await deleteBroadcastsBySubject(sql, SENT_FIXTURE_SUBJECT);
+    const broadcastId = randomUUID();
+    await sql`
+      INSERT INTO broadcasts (
+        tenant_id, broadcast_id,
+        requested_by_member_id, requested_by_member_plan_id_snapshot,
+        submitted_by_user_id, actor_role,
+        subject, body_html, body_source,
+        from_name, reply_to_email,
+        segment_type, estimated_recipient_count,
+        status, submitted_at, approved_at, scheduled_for,
+        sending_started_at, sent_at,
+        quota_year_consumed, quota_consumed_at,
+        retention_years, created_at, updated_at
+      ) VALUES (
+        ${TENANT_ID}, ${broadcastId}::uuid,
+        ${member.member_id}::uuid, ${member.plan_uuid},
+        ${member.user_id}::uuid, 'member_self_service',
+        ${SENT_FIXTURE_SUBJECT}, '<p>Sent fixture.</p>', '<p>Sent fixture.</p>',
+        'SweCham', ${member.reply_to},
+        'all_members', 3,
+        'sent', NOW(), NOW(), NOW(),
+        NOW(), NOW(),
+        EXTRACT(YEAR FROM (NOW() AT TIME ZONE 'Asia/Bangkok'))::int, NOW(),
+        5, NOW(), NOW()
+      )
+    `;
+    const deliveries = ['delivered', 'bounced', 'complained'] as const;
+    for (const [k, status] of deliveries.entries()) {
+      await sql`
+        INSERT INTO broadcast_deliveries (
+          tenant_id, broadcast_id, resend_event_id, resend_message_id,
+          recipient_email_lower, status, event_timestamp
+        ) VALUES (
+          ${TENANT_ID}, ${broadcastId}::uuid, ${`evt-e2e-as3-${randomUUID()}`},
+          ${`msg-e2e-as3-${broadcastId}-${k}`}, ${`as3-${k}@example.com`},
+          ${status}, NOW()
+        )
+      `;
+    }
+    return broadcastId;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/** Removes the `seedMemberSentBroadcast` row, its deliveries and any outbox rows keyed to it. */
+export async function removeMemberSentBroadcast(): Promise<void> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) return;
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    await deleteBroadcastsBySubject(sql, SENT_FIXTURE_SUBJECT);
   } finally {
     await sql.end({ timeout: 5 });
   }

@@ -32,7 +32,9 @@
  *
  * Atomic insert + transition + audit in `runInTenant + withTx`. Failure
  * rolls back the row insert AND the audit row (Constitution Principle I
- * clause 3).
+ * clause 3) — and, since F119 T129, the marketing hand-off rows
+ * (`eblast_submitted_marketing`, one per roster recipient) enqueued on the
+ * same tx.
  *
  * Each precondition rejection emits the corresponding audit event via a
  * standalone tx (`tx=null`) so the rejection trail is visible even when
@@ -40,6 +42,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { assertNever } from '@/lib/assert-never';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -73,11 +76,14 @@ import type { EmailValidatorPort } from '../ports/email-validator-port';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { RateLimiterPort } from '../ports/rate-limiter-port';
+import type { MarketingDirectoryPort } from '../ports/marketing-directory-port';
+import type { EblastNotificationOutboxPort } from '../ports/eblast-notification-outbox-port';
 import { sanitizeHtml } from './sanitize-html';
 import { validateImageSourceAllowlist } from './validate-image-source-allowlist';
 import { validateCustomRecipients } from './validate-custom-recipients';
 import { isMissingAddressOrphan, resolveSegmentRecipients } from './resolve-segment-recipients';
 import { computeQuotaCounter } from './compute-quota-counter';
+import { readMemberSendStanding } from './_member-send-standing';
 
 const MAX_SUBJECT_LENGTH = 200;
 const SUBMIT_RATE_LIMIT = 10;
@@ -206,6 +212,14 @@ export interface SubmitBroadcastDeps {
   readonly rateLimiter: RateLimiterPort;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
+  /**
+   * F119 T129 — who "marketing" is for the submit hand-off (FR-021a). The
+   * roster crosses into the auth barrel, so the composition root takes it as
+   * a parameter (`makeSubmitBroadcastDeps(tenantId, marketingDirectory)`).
+   */
+  readonly marketingDirectory: MarketingDirectoryPort;
+  /** F119 T129 — the ids-only approval-round outbox, on the submit's tx. */
+  readonly eblastOutbox: EblastNotificationOutboxPort;
 }
 
 export interface SubmitBroadcastInput {
@@ -343,63 +357,65 @@ export async function submitBroadcast(
   deps: SubmitBroadcastDeps,
   input: SubmitBroadcastInput,
 ): Promise<Result<SubmitBroadcastOutput, SubmitBroadcastError>> {
-  // ---- Precondition (k): halt flag ---------------------------------
-  // Review 2026-09-07 — the bridge THROWS on a failed read (it used to answer
-  // `[]`, which let a halted member through during a Neon blip). A read that
-  // did not happen is a 500 with NO reject audit: the gate was never decided.
-  let haltedMembers: ReadonlyArray<{ readonly memberId: string }>;
-  try {
-    haltedMembers = await deps.membersBridge.getMembersHaltedInTenant(deps.tenant);
-  } catch (e) {
-    logger.error(
-      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
-      'broadcasts.submit.halt_read_failed',
-    );
-    return err({
-      kind: 'submit.server_error' as const,
-      message: 'halt state unavailable',
-    });
-  }
-  if (haltedMembers.some((h) => h.memberId === input.memberId)) {
-    await emitReject(deps, input, 'broadcast_member_halted_pending_review', {
-      memberId: input.memberId,
-    });
-    return err({
-      kind: 'broadcast_member_halted_pending_review',
-      memberId: input.memberId,
-    });
-  }
-
-  // ---- Precondition (l): membership access -------------------------
-  // 059-membership-suspension Task 5. A suspended/terminated member
-  // (F8 `deriveMembershipAccess`) cannot submit an e-blast — this is
-  // the enforcement that actually stops quota from being spent (a
-  // route-only guard would leak: use-cases are called from more than
-  // one route, e.g. proxy-submit delegates here too).
-  const access = await deps.membershipAccess.getMembershipAccess(
-    deps.tenant,
-    input.memberId,
-  );
-  if (!access.ok) {
-    // Infra error → fail CLOSED as a server_error (mirrors the quota
-    // counter's round-4 MED-D pattern at :349-357 below): a DB blip on
-    // the F8 lookup is NOT "member is fine, let it through". Returning
-    // a fake policy reject here would misreport an infra fault as a
-    // 422 user-fault; returning fake success would grant benefit access
-    // on an unexpected error. Neither is acceptable on a write path.
-    return err({
-      kind: 'submit.server_error',
-      message: `membership_access_error: ${access.error.kind}`,
-    });
-  }
-  if (access.value.access !== 'full') {
-    await emitReject(deps, input, 'broadcast_membership_suspended_blocked', {
-      memberId: input.memberId,
-    });
-    return err({
-      kind: 'broadcast_membership_suspended_blocked',
-      memberId: input.memberId,
-    });
+  // ---- Preconditions (k) halt flag + (l) membership access -----------
+  // Read through `readMemberSendStanding` — the SAME reading approve-as-
+  // submitted and the approval-round promotion apply when they make the row
+  // dispatchable (F119 T166 S-H1), so the three cannot drift. Dispatch itself
+  // does not re-read it (quickstart § 3.6).
+  //
+  // (k) Review 2026-09-07 — the bridge THROWS on a failed read (it used to
+  // answer `[]`, which let a halted member through during a Neon blip). A read
+  // that did not happen is a 500 with NO reject audit: the gate was never
+  // decided.
+  //
+  // (l) 059-membership-suspension Task 5. A suspended/terminated member
+  // (F8 `deriveMembershipAccess`) cannot submit an e-blast — this is the
+  // enforcement that actually stops quota from being spent (a route-only
+  // guard would leak: use-cases are called from more than one route, e.g.
+  // proxy-submit delegates here too). An infra error fails CLOSED as a
+  // server_error (mirrors the quota counter's round-4 MED-D pattern below): a
+  // DB blip on the F8 lookup is NOT "member is fine, let it through".
+  // Returning a fake policy reject would misreport an infra fault as a 422
+  // user-fault; returning fake success would grant benefit access on an
+  // unexpected error. Neither is acceptable on a write path.
+  const standing = await readMemberSendStanding(deps, deps.tenant, input.memberId);
+  switch (standing.kind) {
+    case 'halt_read_failed':
+      logger.error(
+        { tenantId: deps.tenant.slug, memberId: input.memberId, err: standing.errKind },
+        'broadcasts.submit.halt_read_failed',
+      );
+      return err({
+        kind: 'submit.server_error' as const,
+        message: 'halt state unavailable',
+      });
+    case 'halted':
+      await emitReject(deps, input, 'broadcast_member_halted_pending_review', {
+        memberId: input.memberId,
+      });
+      return err({
+        kind: 'broadcast_member_halted_pending_review',
+        memberId: input.memberId,
+      });
+    case 'access_unavailable':
+      return err({
+        kind: 'submit.server_error',
+        message: `membership_access_error: ${standing.errorKind}`,
+      });
+    case 'not_in_good_standing':
+      await emitReject(deps, input, 'broadcast_membership_suspended_blocked', {
+        memberId: input.memberId,
+      });
+      return err({
+        kind: 'broadcast_membership_suspended_blocked',
+        memberId: input.memberId,
+      });
+    case 'ok':
+      break;
+    default:
+      // F119 round-4 B2 — an unknown kind is never read as "may send": it
+      // throws before any write (the route answers 500).
+      return assertNever(standing);
   }
 
   // ---- Precondition (d, FR-002d): rate limit -----------------------
@@ -770,7 +786,12 @@ export async function submitBroadcast(
   );
 
   try {
-    return await deps.broadcastsRepo.withTx(async (tx) => {
+    // T166 R-L3 — the hand-off roster is read BEFORE the tx: it is a
+    // pool-global read (`users` is cross-tenant), and made inside it held a
+    // second connection while this tx holds the per-member advisory lock. The
+    // empty-roster count it owes is paid only once the submit has committed.
+    const roster = await deps.marketingDirectory.readRoster();
+    const submitted = await deps.broadcastsRepo.withTx<Result<SubmitBroadcastOutput, SubmitBroadcastError>>(async (tx) => {
       // ---- Bug #4 fix: TOCTOU-safe quota re-check under a per-member lock --
       // The pre-tx computeQuotaCounter read (line ~333) is a stale snapshot.
       // Two concurrent submits at remaining=1 both pass it and over-subscribe
@@ -882,7 +903,11 @@ export async function submitBroadcast(
         );
       }
 
-      // Apply transition draft → submitted with submittedAt timestamp
+      // Apply transition draft → submitted with submittedAt timestamp.
+      // F119 FR-016 — the requested time becomes the member's PROPOSAL here,
+      // and only here: `scheduled_for` is overwritten by every later confirm,
+      // `proposed_send_at` is frozen from this write on (0308 F1). null is an
+      // explicit "did not propose".
       broadcast = await deps.broadcastsRepo.applyTransition(
         tx,
         deps.tenant.slug,
@@ -891,6 +916,7 @@ export async function submitBroadcast(
         {
           submittedAt: now,
           estimatedRecipientCount: resolved.value.estimatedCount,
+          proposedSendAt: input.scheduledFor,
         },
         'draft', // R4 Types-#5 — race-guard
       );
@@ -929,6 +955,25 @@ export async function submitBroadcast(
         requestId: input.requestId,
       });
 
+      // F119 T129 — "new submission → marketing" (FR-021): one ids-only
+      // `eblast_submitted_marketing` row per roster recipient (FR-021a), on
+      // THIS tx, so a rollback leaves none (SC-004). Unconditional — the flag
+      // lives at the drainer (T152a), which holds the rows while it is off
+      // (FR-034: today nobody is emailed on submit, and with the flag off
+      // nobody is). The roster was read before the tx (T166 R-L3).
+      for (const recipient of roster) {
+        await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
+          type: 'eblast_submitted_marketing',
+          toEmail: recipient.email,
+          locale: recipient.locale,
+          contextData: {
+            tenantId: deps.tenant.slug,
+            broadcastId: broadcastId as string,
+            recipientUserId: recipient.userId,
+          },
+        });
+      }
+
       // T172 — emit-site wiring (Phase 9). Counter + audit-volume per
       // SC-010 / SLO-F7-002 dashboards. Duration histogram emitted by
       // the route handler around this use-case (wallclock includes the
@@ -949,6 +994,8 @@ export async function submitBroadcast(
         reviewSlaTargetHours: REVIEW_SLA_TARGET_HOURS,
       });
     });
+    if (submitted.ok && roster.length === 0) deps.marketingDirectory.reportEmptyRoster();
+    return submitted;
   } catch (e) {
     return err({
       kind: 'submit.server_error',

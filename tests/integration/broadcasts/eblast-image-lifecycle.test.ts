@@ -30,6 +30,7 @@ import { sharpImageReencoder } from '@/modules/broadcasts/infrastructure/sharp-i
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo';
 import type { ImageStoragePort } from '@/modules/broadcasts/application/ports/image-storage-port';
+import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
 const HOST = 'assets.swecham.zyncdata.app';
@@ -378,4 +379,140 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
     },
     180_000,
   );
+
+  /**
+   * T081 follow-up — a rejected / withdrawn E-Blast's images are stamped and
+   * audited `broadcast_image_removed`, but its body keeps the URL (immutable
+   * after submit). While `isBlobReferencedByContent` counted the owner's OWN
+   * body, the sweep restored every such image to live and the audit trail
+   * said it was gone. A closed-never-sent E-Blast's content no longer holds
+   * its images; everything else — in progress, sent, a version of an
+   * in-progress E-Blast — still does.
+   */
+  describe('T081 follow-up — a closed-never-sent E-Blast no longer holds its own images', () => {
+    async function seedRow(patch: Partial<NewBroadcastRow> & Pick<NewBroadcastRow, 'status' | 'bodyHtml'>): Promise<string> {
+      const id = randomUUID();
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.insert(broadcasts).values({
+          tenantId: tenant.ctx.slug,
+          broadcastId: id,
+          requestedByMemberId: memberId,
+          requestedByMemberPlanIdSnapshot: 'plan-test',
+          submittedByUserId: actorUserId,
+          actorRole: 'member_self_service',
+          subject: 'Reference rule',
+          bodySource: 'plain',
+          fromName: 'Test Member via Test Chamber',
+          replyToEmail: 'reply@example.com',
+          segmentType: 'all_members',
+          estimatedRecipientCount: 0,
+          ...patch,
+        }),
+      );
+      return id;
+    }
+
+    async function seedVersion(broadcastId: string, bodyHtml: string): Promise<void> {
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.insert(broadcastVersions).values({
+          tenantId: tenant.ctx.slug,
+          broadcastId,
+          versionNo: 1,
+          subject: 'Formatted',
+          bodyHtml,
+          bodySource: 'v1',
+          authoredByUserId: actorUserId,
+          authoredByRole: 'admin_proxy',
+          sentToMemberAt: new Date(),
+        }),
+      );
+    }
+
+    /** A rejected owner with one image row, stamped by the rejection; the sweep then runs. */
+    async function rejectThenSweep(opts: { ownerEmbeds: boolean; seedOthers?: (url: string, owner: string) => Promise<void> }) {
+      const hash = `r${randomUUID().replace(/-/g, '')}`;
+      const blobKey = `broadcasts/images/${tenant.ctx.slug}/${hash}.png`;
+      const url = `https://${HOST}/${blobKey}`;
+      const owner = await seedRow({
+        status: 'rejected',
+        bodyHtml: opts.ownerEmbeds ? `<p><img src="${url}"></p>` : '<p>no image here</p>',
+        submittedAt: new Date(),
+        rejectedAt: new Date(),
+      });
+      await runInTenant(tenant.ctx, (tx) =>
+        drizzleBroadcastImagesRepo.record(
+          tenant.ctx.slug as never,
+          { ownerKind: 'broadcast', ownerId: owner, contentHash: hash, blobUrl: url, blobKey, mimeType: 'image/png', byteSize: 1024, uploadedByUserId: actorUserId },
+          tx,
+        ),
+      );
+      await opts.seedOthers?.(url, owner);
+      await runInTenant(tenant.ctx, (tx) =>
+        markOwnerImagesRemoved(
+          { imagesRepo: drizzleBroadcastImagesRepo, audit: f7AuditAdapter },
+          {
+            tenantId: tenant.ctx.slug as never,
+            owner: { kind: 'broadcast', id: owner },
+            reason: 'rejected',
+            at: new Date(),
+            requestId: `reject-${hash.slice(0, 8)}`,
+            actorUserId,
+            actorRole: 'marketing',
+            relatedMemberId: memberId,
+          },
+          tx,
+        ),
+      );
+      const storage = makeStorage();
+      await reclaimOrphanedImages(
+        { imagesRepo: drizzleBroadcastImagesRepo, storage, audit: f7AuditAdapter },
+        { tenantId: tenant.ctx.slug as never, now: new Date(), requestId: `rule-sweep-${hash.slice(0, 8)}` },
+      );
+      return { owner, deleted: storage.deleted.includes(blobKey), rows: await countImages(tenant, owner) };
+    }
+
+    it('(a) a rejected E-Blast whose own body embeds the image → the sweep deletes the bytes and the row', async () => {
+      expect(await rejectThenSweep({ ownerEmbeds: true })).toMatchObject({ deleted: true, rows: 0 });
+    }, 180_000);
+
+    it('(b) a SENT E-Blast embedding the same URL → retained (a delivered email still loads it)', async () => {
+      const r = await rejectThenSweep({
+        ownerEmbeds: true,
+        seedOthers: async (url) => {
+          await seedRow({
+            status: 'sent',
+            bodyHtml: `<p><img src="${url}"></p>`,
+            submittedAt: new Date(),
+            sentAt: new Date(),
+            quotaYearConsumed: 2026,
+            quotaConsumedAt: new Date(),
+          });
+        },
+      });
+      expect(r).toMatchObject({ deleted: false, rows: 1 });
+    }, 180_000);
+
+    it('(c) an in-progress E-Blast whose VERSION body references it → retained', async () => {
+      // Only the version holds the URL, so this is retained by the version
+      // scan alone — not by the owner's body, which (a) already covers.
+      const r = await rejectThenSweep({
+        ownerEmbeds: false,
+        seedOthers: async (url) => {
+          const live = await seedRow({ status: 'in_design', bodyHtml: '<p>original</p>', submittedAt: new Date(), currentRound: 1 });
+          await seedVersion(live, `<p><img src="${url}"></p>`);
+        },
+      });
+      expect(r).toMatchObject({ deleted: false, rows: 1 });
+    }, 180_000);
+
+    it("(d) the rejected E-Blast's OWN sent version references it → NOT retained", async () => {
+      // The URL is ONLY in the version body, so this fails if the version scan
+      // counts a closed owner's versions — not merely when (a) does.
+      const r = await rejectThenSweep({
+        ownerEmbeds: false,
+        seedOthers: (url, owner) => seedVersion(owner, `<p><img src="${url}"></p>`),
+      });
+      expect(r).toMatchObject({ deleted: true, rows: 0 });
+    }, 180_000);
+  });
 });

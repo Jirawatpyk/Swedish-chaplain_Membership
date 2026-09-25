@@ -127,3 +127,48 @@ export function extractImgSources(
   }
   return out;
 }
+
+/**
+ * F119 T059 / T060 — why one `<img src>` is refused, in the shape the send
+ * and promotion routes return (`{ images: [{ src, host, reason }] }`, spec
+ * § Edge Cases: marketing is told WHICH image and WHY).
+ */
+export type UnsafeImageReason = 'invalid_url' | 'invalid_hostname' | 'not_allowlisted';
+
+export interface UnsafeImageSource {
+  readonly src: string;
+  /** The parsed, lower-cased host; null when the src is not a URL at all. */
+  readonly host: string | null;
+  readonly reason: UnsafeImageReason;
+}
+
+/**
+ * Every `<img src>` in `bodyHtml` that does not resolve to an allow-listed
+ * host, in document order. Empty ⇒ every image is allowed. The one rule
+ * `validateImageSourceAllowlist` applies — it delegates here — so the save,
+ * the send and the promotion cannot drift apart.
+ */
+export function evaluateImageSources(
+  bodyHtml: string,
+  allowlist: readonly AllowlistEntry[],
+): readonly UnsafeImageSource[] {
+  const unsafe: UnsafeImageSource[] = [];
+  for (const { src } of extractImgSources(bodyHtml)) {
+    let host: string;
+    try {
+      host = new URL(src).hostname.toLowerCase();
+    } catch {
+      unsafe.push({ src, host: null, reason: 'invalid_url' });
+      continue;
+    }
+    const hostname = asHostname(host);
+    if (!hostname.ok) {
+      unsafe.push({ src, host, reason: 'invalid_hostname' });
+      continue;
+    }
+    if (!validateHostname(hostname.value, allowlist).ok) {
+      unsafe.push({ src, host, reason: 'not_allowlisted' });
+    }
+  }
+  return unsafe;
+}

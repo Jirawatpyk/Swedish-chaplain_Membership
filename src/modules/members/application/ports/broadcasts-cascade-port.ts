@@ -84,7 +84,12 @@ export interface BroadcastsCascadePort {
  *                                    no in-flight broadcasts.
  *   - `'cascade_partial_failure'`  → cascade iterated all broadcasts but
  *                                    one or more rows hit unexpected
- *                                    errors (`unexpectedErrorCount > 0`).
+ *                                    errors (`unexpectedErrorCount > 0`) —
+ *                                    including a row that lost its CAS and
+ *                                    was STILL in progress after the F7
+ *                                    use case's re-read retries (F119 T166
+ *                                    R-M3). `skippedConcurrentCount` counts
+ *                                    only rows that left progress.
  *                                    Other broadcasts may still have
  *                                    cancelled (`cancelledCount`) or
  *                                    skipped due to concurrent races

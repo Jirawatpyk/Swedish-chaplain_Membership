@@ -499,7 +499,7 @@
         "empty": "Allt klart – inget behöver åtgärdas just nu.",
         "overdueInvoices": "Förfallna fakturor",
         "atRisk": "Medlemmar i riskzonen",
-        "broadcasts": "Utskick som väntar på godkännande",
+        "broadcasts": "E-Blasts som väntar på marknadsföring",
         "changeRequests": "Ändringsbegäranden som väntar (äldsta {days, plural, =0 {inkom idag} one {inkom för # dag sedan} other {inkom för # dagar sedan}})",
         "changeRequestsNoAge": "Ändringsbegäranden som väntar",
         "changeRequestsUnavailable": "Ändringsbegäranden som väntar kunde inte räknas. Ladda om sidan för att försöka igen, eller öppna kön."
@@ -815,9 +815,13 @@
       },
       "priorYearLock": {
         "banner": "Historiskt paket — pris, behörighet och förmåner för {year} är låsta.",
-        "explanation": "För att ändra avgifter eller förmåner, klona detta paket till innevarande år och redigera kopian. Kosmetiska fält (namn, beskrivning, sortering) kan fortfarande redigeras här.",
-        "cloneCta": "Klona till {currentYear}",
-        "fieldTooltip": "Låst på föregående års paket. Klona för att redigera."
+        "explanation": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket. Ändra dem i {currentYear} års version av paketet. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "explanationNoCurrentVersion": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ännu ingen version av paketet. Klona {year} års paket till {currentYear} och redigera sedan kopian. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "explanationCreateInCurrentYear": "Avgifter, behörighet och förmåner kan inte ändras på ett tidigare års paket, och {currentYear} har ingen version av paketet. Lägg till det i {currentYear} som ett nytt paket med samma paket-ID. Namn, beskrivning och sortering kan fortfarande redigeras här.",
+        "createCta": "Skapa {currentYear} års paket",
+        "openCurrentCta": "Öppna {currentYear} års version",
+        "cloneCta": "Klona {year} års paket till {currentYear}",
+        "fieldTooltip": "Låst på föregående års paket. Ändra det i innevarande års version."
       },
       "create": {
         "title": "Nytt paket",
@@ -879,6 +883,8 @@
           "planCategory": "Kategori",
           "memberTypeScope": "Medlemstyp",
           "annualFee": "Årsavgift",
+          "annualFeeHelp": "Hela baht, exklusive {rate} % moms.",
+          "annualFeeHelpNoRate": "Hela baht, exklusive moms.",
           "includesCorporatePlanId": "Inkluderat företagspaket",
           "minTurnover": "Minsta omsättning",
           "maxTurnover": "Högsta omsättning",
@@ -943,6 +949,24 @@
         },
         "errors": {
           "stepValidation": "Granska föregående steg — några obligatoriska fält saknas eller är ogiltiga."
+        },
+        "fieldErrors": {
+          "planId": "Använd 1–63 gemener, siffror eller bindestreck.",
+          "planYear": "Ange ett år från 2000 till 2100.",
+          "planName": "Ange det engelska namnet (högst 120 tecken).",
+          "description": "Ange den engelska beskrivningen (högst 2 000 tecken).",
+          "sortOrder": "Ange ett heltal från 0 till 10 000.",
+          "invalidOption": "Välj ett av alternativen.",
+          "annualFee": "Ange en avgift från 0 till 100 000 000 baht.",
+          "amount": "Ange ett belopp från 0 till 100 000 000 baht.",
+          "turnoverOrder": "Högsta omsättning måste vara större än lägsta omsättning.",
+          "maxDurationYears": "Ange ett helt antal år, 1 eller fler.",
+          "maxMemberAge": "Ange en ålder från 1 till 199.",
+          "bundleRequired": "Partnerpaket måste inkludera ett företagspaket.",
+          "bundleNotAllowed": "Företagspaket kan inte inkludera ett annat paket.",
+          "bundleInvalid": "Ange paket-ID för ett företagspaket (gemener, siffror eller bindestreck).",
+          "partnershipBenefits": "Partnerpaket behöver partnerförmånerna ifyllda.",
+          "benefitMatrix": "Kontrollera förmånerna — vissa värden saknas eller är ogiltiga."
         }
       },
       "edit": {
@@ -955,7 +979,11 @@
         }
       },
       "detail": {
-        "titleGeneric": "Paketdetaljer"
+        "titleGeneric": "Paketdetaljer",
+        "totalWithVat": "Årsavgift inkl. moms",
+        "feeWithVat": "{fee} + {rate} % moms = {total}",
+        "members": "Medlemmar på paketet",
+        "memberCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}"
       },
       "clone": {
         "title": "Klona år",
@@ -969,6 +997,14 @@
         "errors": {
           "targetYearPopulated": "Målåret {year} har redan paket. Ta bort dem eller välj ett annat år.",
           "noPlans": "Källåret {year} har inga paket att klona."
+        },
+        "preview": {
+          "title": "Paket som kopieras från {sourceYear}",
+          "titleNoYear": "Paket som kopieras",
+          "loading": "Läser in paket…",
+          "failed": "Det gick inte att läsa in årets paket. Kloningen kopierar dem ändå.",
+          "empty": "Inga paket för {sourceYear}.",
+          "inactive": "inaktivt"
         }
       },
       "confirm": {
@@ -1246,6 +1282,7 @@
           "search": "Sök: {q}",
           "status": "Status: {value}",
           "plan": "Paket: {value}",
+          "planYear": "Paket: {value} ({year})",
           "risk": "Risk: {value}"
         },
         "filters": {
@@ -3259,9 +3296,39 @@
         "emptyTitle": "Kön är tom",
         "totalPending": "{count} väntar",
         "tableAria": "Granskningskö för utskick",
+        "whoseTurn": {
+          "marketing": "Marknad",
+          "member": "Medlem"
+        },
+        "timeInStage": {
+          "hours": "{hours} h",
+          "days": "{days, plural, one {# dag} other {# dagar}}"
+        },
+        "delivery": {
+          "summary": "{recipients, plural, one {# mottagare} other {# mottagare}} · {delivered} levererade · {bounced} studsade · {complained} klagomål"
+        },
+        "resultsAnnouncement": "{count, plural, =0 {Inga utskick i den här vyn} one {# utskick i den här vyn} other {# utskick i den här vyn}}{stalled, plural, =0 {} other {, # av de visade har fastnat}}",
+        "resultsAnnouncementShown": "{count, plural, =0 {Inga utskick visas} one {# utskick visas} other {# utskick visas}}{stalled, plural, =0 {} other {, # av de visade har fastnat}}",
+        "stalledSummary": "{count, plural, one {# av de visade har fastnat} other {# av de visade har fastnat}}",
+        "row": {
+          "round": "Omgång {round}",
+          "since": "sedan {date}",
+          "proposed": "Föreslagen"
+        },
+        "order": {
+          "longestInStage": "Sorterat efter längst tid i steget",
+          "mostRecent": "Sorterat med senaste först",
+          "sendTime": "Sorterat efter utskickstid"
+        },
+        "pagination": {
+          "label": "Sidor i kön",
+          "summary": "Visar {shown} av {total}",
+          "next": "Nästa sida",
+          "first": "Första sidan"
+        },
         "ageBadge": {
           "aging": "{hours} h väntar",
-          "overdue": "{hours} h — försenad"
+          "stalled": "Fastnat — {days, plural, one {# dag} other {# dagar}}"
         },
         "bulk": {
           "selectAria": "Välj utskick",
@@ -3297,7 +3364,8 @@
             "reason": "Ångrat av administratör från granskningskön",
             "success": "Avbröt {count, plural, one {# utskick} other {# utskick}}.",
             "tooLate": "Skickar redan — för sent att ångra {count, plural, one {# utskick} other {# utskick}}.",
-            "failed": "Kunde inte ångra {count, plural, one {# utskick} other {# utskick}} — fortfarande godkända."
+            "failed": "Kunde inte ångra {count, plural, one {# utskick} other {# utskick}} — fortfarande godkända.",
+            "rateLimited": "För många förfrågningar — kunde inte ångra {count, plural, one {# utskick} other {# utskick}}. {count, plural, one {Det} other {De}} skickas ändå om du inte avbryter i kön."
           },
           "progress": {
             "label": "Godkänner…"
@@ -3305,39 +3373,47 @@
         },
         "card": {
           "actionsLabel": "Åtgärder",
-          "audienceLabel": "Målgrupp",
-          "recipientsLabel": "Mottagare",
-          "submittedLabel": "Skickat",
-          "statusLabel": "Status"
+          "statusLabel": "Steg",
+          "whoseTurnLabel": "Vems tur",
+          "timeInStageLabel": "Tid i steget"
         },
         "filters": {
           "formAriaLabel": "Filter för utskickskö",
-          "statusLabel": "Status",
+          "statusLabel": "Steg",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
-          "fromDate": "Från",
-          "toDate": "Till",
-          "reset": "Återställ filter"
+          "fromDate": "Inskickad från",
+          "toDate": "Inskickad till",
+          "reset": "Återställ filter",
+          "upcomingSends": "Kommande utskick",
+          "chipCount": "{count, plural, one {# utskick} other {# utskick}}",
+          "chipCountsScope": "Antalen gäller alla utskick i varje steg — filtren för medlem, datum och kommande utskick ändrar dem inte."
         },
         "columns": {
-          "submittedAt": "Inskickad",
           "member": "Medlem",
           "subject": "Ämne",
-          "segment": "Mottagare",
-          "recipientCount": "Mottagare",
-          "status": "Status",
+          "segment": "Målgrupp",
+          "status": "Steg",
+          "whoseTurn": "Vems tur",
+          "timeInStage": "Tid i steget",
+          "sendTime": "Utskickstid",
           "actions": "Åtgärder"
         },
         "status": {
           "draft": "Utkast",
-          "submitted": "Inväntar granskning",
-          "approved": "Godkänd",
+          "submitted": "Väntar på granskning av marknadsföring",
+          "approved": "Schemalagd",
           "sending": "Skickar",
           "sent": "Skickad",
           "rejected": "Avvisad",
           "cancelled": "Avbruten",
           "failed_to_dispatch": "Misslyckades",
           "partially_sent": "Delvis skickad",
+          "in_design": "Under utformning",
+          "awaiting_member_approval": "Inväntar medlemmens godkännande",
+          "changes_requested": "Medlemmen begär ändringar",
+          "member_approved": "Godkänd av medlem — inväntar schemaläggning",
+          "expired_no_member_response": "Utgången — inget svar från medlem",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "statusGroup": {
@@ -3357,7 +3433,6 @@
           "breachWarning": "Granskningar går långsamt"
         },
         "overdueBanner": "{count, plural, one {# utskick har} other {# utskick har}} väntat i över 48 timmar — granska nu.",
-        "truncationNote": "Visar de första 50 — förfina filtren för att se fler.",
         "haltStateUnavailableTitle": "Spärrstatus kunde inte läsas",
         "haltStateUnavailable": "Spärrstatus kunde inte läsas just nu. Kön kan dölja spärrade medlemmar. Uppdatera innan du godkänner något."
       },
@@ -3397,6 +3472,163 @@
           "actorBy": "av {actor}",
           "actorSystem": "system",
           "actorUnknown": "okänd användare"
+        }
+      },
+      "approval": {
+        "header": {
+          "title": "Godkännanderunda",
+          "detailsTitle": "Inskick",
+          "turn": "Vems tur",
+          "turnValue": {
+            "marketing": "Marketing",
+            "member": "Medlem",
+            "none": "Ingen"
+          },
+          "timeInStage": "Tid i steget",
+          "round": "Runda",
+          "roundNone": "Inte skickat till medlemmen än",
+          "roundNoRound": "Ingen godkännanderunda",
+          "notSet": "Inte angivet",
+          "proposedSendAt": "Medlemmens föreslagna tid"
+        },
+        "warnings": {
+          "noPortalUserTitle": "Medlemsföretaget har ingen portalanvändare",
+          "noPortalUserBody": "Ingen på {company} kan logga in i portalen, så en formaterad version kan inte skickas till dem för godkännande. Bjud in en portalanvändare först — eller, medan utskicket fortfarande väntar på granskning, godkänn det som inskickat.",
+          "unsafeImagesTitle": "En bild är inte längre tillåten",
+          "unsafeImagesBody": "De här bilderna pekar på en värd som inte finns på listan över tillåtna bildkällor. Byt ut dem innan versionen skickas till medlemmen eller schemaläggs.",
+          "reason": {
+            "not_allowlisted": "värden finns inte på listan över tillåtna källor",
+            "invalid_url": "ingen giltig webbadress",
+            "invalid_hostname": "inget giltigt värdnamn"
+          }
+        },
+        "content": {
+          "originalTitle": "Medlemmens original",
+          "originalHint": "Skrivskyddat — sparat exakt som medlemmen skickade in det.",
+          "workingCopyTitle": "Formaterad version {version} (arbetskopia)",
+          "sentVersionTitle": "Version {version} skickad till medlemmen",
+          "noteLabel": "Anteckning till medlemmen",
+          "threadUnavailableTitle": "Versionshistoriken kunde inte läsas in",
+          "threadUnavailableBody": "Arbetskopian och medlemmens original visas inte, och ingen formatering är möjlig förrän sidan har läst in dem. Uppdatera sidan om en stund.",
+          "threadUnavailableHistoryBody": "Resten av sidan påverkas inte. Försök igen om en stund."
+        },
+        "feedback": {
+          "changesRequestedTitle": "Medlemmen begärde ändringar i version {version}",
+          "withdrawnTitle": "Medlemmen drog tillbaka sitt godkännande av version {version}",
+          "approvedTitle": "Medlemmen godkände version {version}"
+        },
+        "thread": {
+          "title": "Versionshistorik",
+          "original": "Medlemmens original",
+          "round": "Omgång {round}",
+          "submittedByMember": "Inskickat av medlemmen",
+          "submittedOnBehalf": "Inskickat för medlemmens räkning",
+          "submittedOnBehalfBy": "Inskickat för medlemmens räkning av {name}",
+          "versionSent": "Version {version} — skickad till medlemmen",
+          "versionSentBy": "Version {version} — skickad till medlemmen av {name}",
+          "noteLabel": "Meddelande till medlemmen",
+          "reasonLabel": "Motivering",
+          "approvalNoteLabel": "Medlemmens meddelande",
+          "approvedAsSubmitted": "Godkänt som inskickat",
+          "approvedAsSubmittedBy": "Godkänt som inskickat av {name}",
+          "approvedBy": "{name} (medlem) godkände version {version}",
+          "changesRequestedBy": "{name} (medlem) begärde ändringar i version {version}",
+          "withdrawnBy": "{name} (medlem) drog tillbaka godkännandet av version {version}"
+        },
+        "workspace": {
+          "title": "Formaterad version {version}",
+          "description": "Redigera ämnet och meddelandet. Mottagarna är de som medlemmen valde.",
+          "subjectLabel": "Ämne",
+          "bodyLabel": "Meddelande",
+          "noteLabel": "Anteckning till medlemmen (valfritt)",
+          "noteHelp": "Visas för medlemmen bredvid den här versionen. {count} / {max} tecken.",
+          "save": "Spara",
+          "saved": "Versionen har sparats.",
+          "savedAt": "Sparad {time}",
+          "conflictTitle": "Någon annan har ändrat den här versionen",
+          "conflictBody": "En annan personalanvändare sparade versionen efter att du öppnade den. Dina ändringar har inte sparats. Ladda om för att se den aktuella versionen.",
+          "reload": "Ladda om (dina ändringar försvinner)"
+        },
+        "send": {
+          "button": "Skicka till medlemmen",
+          "title": "Skicka den här versionen till medlemmen?",
+          "body": "Medlemmen kommer att få ett e-postmeddelande och ombeds godkänna den. När versionen har skickats kan den inte längre redigeras.",
+          "savesFirst": "Dina osparade ändringar sparas först.",
+          "cancel": "Fortsätt redigera",
+          "confirm": "Skicka till medlemmen",
+          "sent": "Versionen har skickats till medlemmen för godkännande."
+        },
+        "testCopy": {
+          "button": "Skicka ett test till mig",
+          "sent": "Testexemplaret har skickats till din e-postadress."
+        },
+        "start": {
+          "button": "Starta en formaterad version",
+          "voidTitle": "Starta en ny formaterad version?",
+          "voidBody": "Medlemmen godkände runda {round}. En ny version drar tillbaka det godkännandet och tar bort en bekräftad sändningstid. Medlemmen måste godkänna igen.",
+          "voidCancel": "Behåll godkännandet",
+          "voidConfirm": "Starta ny version",
+          "submittedTitle": "Starta en formaterad version?",
+          "submittedBody": "Du kan då inte längre godkänna det som inskickat; medlemmen måste godkänna den formaterade versionen.",
+          "submittedCancel": "Behåll som inskickat",
+          "submittedConfirm": "Starta en formaterad version",
+          "started": "Formateringen har påbörjats."
+        },
+        "schedule": {
+          "button": "Bekräfta sändningstid",
+          "buttonChange": "Ändra sändningstid",
+          "title": "Bekräfta sändningstiden",
+          "titleChange": "Ändra sändningstiden",
+          "description": "Medlemmen har godkänt det här E-Blast-utskicket. Välj när det skickas; medlemmen får veta den slutliga tiden.",
+          "descriptionChange": "Det här E-Blast-utskicket är schemalagt. Ändra tiden, skicka nu eller avbryt den bekräftade tiden.",
+          "proposal": "Medlemmens föreslagna tid: {time}",
+          "proposalNone": "Medlemmen föreslog ingen tid.",
+          "proposalPassed": "Medlemmens föreslagna tid ({time}) är för nära eller har passerat — välj en ny tid.",
+          "modeLegend": "När det ska skickas",
+          "mode": {
+            "keep_proposal": "Behåll medlemmens föreslagna tid",
+            "schedule": "Välj en annan tid",
+            "send_now": "Skicka nu",
+            "cancel": "Avbryt den bekräftade tiden"
+          },
+          "whenLabel": "Skickas kl. (Bangkoktid)",
+          "whenHelp": "Minst 5 minuter från nu. Tiderna anges i Bangkoktid (UTC+7).",
+          "cancelHint": "Utskicket skickas inte. Det går tillbaka till Marketing som ”{stage}” tills en ny version har godkänts.",
+          "tooSoon": "Välj en tid minst 5 minuter från nu.",
+          "differs": "Det här är inte medlemmens föreslagna tid ({time}). Medlemmen får veta om ändringen.",
+          "close": "Stäng",
+          "confirm": "Bekräfta",
+          "confirmCancel": "Avbryt tiden",
+          "confirmSendNow": "Skicka nu",
+          "confirmed": "Sändningstiden är bekräftad. Medlemmen kommer att meddelas.",
+          "cancelled": "Den bekräftade sändningstiden har avbrutits."
+        },
+        "errors": {
+          "generic": "Något gick fel. Försök igen.",
+          "stage_changed": "Det här E-Blast-utskicket har flyttats till ett annat steg under tiden. Sidan har uppdaterats.",
+          "version_changed": "Någon annan har ändrat den här versionen. Ladda om för att se den aktuella versionen.",
+          "no_working_copy": "Det finns ingen arbetskopia att skicka. Börja formatera en version först.",
+          "no_portal_user": "Medlemsföretaget har ingen portalanvändare, så versionen kan inte skickas för godkännande.",
+          "round_zero": "Det här utskicket godkändes som inskickat, så det finns inget medlemsgodkännande att öppna igen.",
+          "mode_not_allowed": "Det alternativet är inte tillgängligt i det här steget.",
+          "no_proposal": "Medlemmen föreslog ingen sändningstid. Välj en tid i stället.",
+          "broadcast_schedule_too_soon": "Välj en tid minst 5 minuter från nu.",
+          "image_source_not_allowlisted": "En bild pekar på en värd som inte finns på listan över tillåtna bildkällor. Byt ut den och försök igen.",
+          "unsafe_content": "Meddelandet innehåller innehåll som inte är tillåtet. Ta bort det och försök igen.",
+          "validation_error": "Kontrollera ämnet (högst 200 tecken), meddelandet (högst 200 KB) och anteckningen till medlemmen (högst 1 000 tecken).",
+          "cta_text_length": "Knapptexten måste vara 1–60 tecken.",
+          "too_many_cta": "Ett meddelande kan ha högst 3 knappar.",
+          "cta_link_scheme": "En knapp eller länk måste börja med http, https eller mailto.",
+          "banner_alt_required": "Varje banner och bild behöver en beskrivning på 1–125 tecken.",
+          "broadcast_rate_limit_exceeded": "För många förfrågningar på kort tid. Vänta en stund och försök igen.",
+          "broadcast_not_found": "Det här E-Blast-utskicket hittades inte.",
+          "permission_denied": "Du har inte behörighet att göra detta.",
+          "test_copy_invalid_recipient": "Testexemplaret kunde inte levereras till din e-postadress.",
+          "test_copy_unavailable": "E-posttjänsten är inte tillgänglig. Försök skicka testexemplaret igen om en stund.",
+          "internal_error": "Något gick fel hos oss. Försök igen.",
+          "sending_started": "Utskicket av detta E-Blast har redan startat, så sändningstiden kan inte längre ändras.",
+          "member_halted": "Sändningstiden bekräftades inte: medlemmens E-Blast-utskick är spärrade i väntan på administratörsgranskning.",
+          "member_not_in_good_standing": "Sändningstiden bekräftades inte: medlemmens medlemskap är avstängt eller avslutat, så E-Blast-utskicket kan inte skickas."
         }
       },
       "approveDialog": {
@@ -3502,7 +3734,10 @@
         "cancelled": "Utskicket har avbrutits. Medlemmen har meddelats.",
         "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
         "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
+        "rejectTooLate": "Detta utskick kan inte längre avvisas — det har redan börjat skickas.",
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
+        "member_halted": "Inte godkänt: medlemmens E-Blast-utskick är spärrade i väntan på administratörsgranskning.",
+        "member_not_in_good_standing": "Inte godkänt: medlemmens medlemskap är avstängt eller avslutat, så E-Blast-utskicket kan inte skickas.",
         "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."
       },
@@ -5613,6 +5848,7 @@
       "dashboard": "Instrumentpanel",
       "changeRequests": "Ändringsbegäranden",
       "changeRequestsBadge": "som väntar",
+      "broadcastsBadge": "som väntar",
       "badgeTooltip": "{title} ({count})",
       "plans": "Paket",
       "users": "Användare",
@@ -6257,13 +6493,18 @@
         "status": {
           "draft": "Utkast",
           "submitted": "Inväntar granskning",
-          "approved": "Godkänd",
+          "approved": "Schemalagd",
           "sending": "Skickar",
           "sent": "Skickad",
           "rejected": "Avvisad",
           "cancelled": "Avbruten",
           "failed_to_dispatch": "Misslyckades",
           "partially_sent": "Delvis skickad",
+          "in_design": "Under utformning",
+          "awaiting_member_approval": "Inväntar ditt godkännande",
+          "changes_requested": "Ändringar begärda",
+          "member_approved": "Godkänd — inväntar schemaläggning",
+          "expired_no_member_response": "Utgången — inget svar från medlem",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
         "pagination": {
@@ -6303,6 +6544,11 @@
           "total": "Totalt"
         },
         "back": "Tillbaka till utskick",
+        "backToDashboard": "Tillbaka till instrumentpanelen",
+        "notFound": {
+          "title": "Vi hittar inte det här utskicket",
+          "body": "Länken kan vara inaktuell, eller så hör utskicket inte till ditt konto. Dina utskick finns under Förmåner."
+        },
         "cancelButton": "Avbryt utskick",
         "cancelDialog": {
           "title": "Avbryta detta utskick?",
@@ -6329,6 +6575,105 @@
           "cancelError": "Kunde inte avbryta utskicket. Försök igen.",
           "cancelTooLate": "Detta utskick kan inte längre avbrytas — det har passerat punkten där det kan stoppas.",
           "concurrentRace": "Detta utskick har redan hanterats. Vyn har uppdaterats."
+        }
+      },
+      "approval": {
+        "banner": {
+          "turn": {
+            "member": "Det är din tur: granska version {version} nedan och godkänn den eller begär ändringar.",
+            "marketing": "Det är handelskammarens tur — du behöver inte göra något just nu."
+          },
+          "expires": "Svara senast {date}. Om inget svar har kommit då förfaller detta utskick och skickas inte."
+        },
+        "fields": {
+          "proposedSendAt": "Din föreslagna sändningstid",
+          "confirmedSendAt": "Bekräftad sändningstid",
+          "notSet": "Inte angiven"
+        },
+        "compare": {
+          "formattedTitle": "Version {version} från handelskammaren",
+          "formattedHint": "Visas så som mottagarna får det.",
+          "originalTitle": "Ditt original",
+          "originalHint": "Det du skickade in, exakt som du skrev det.",
+          "noteLabel": "Meddelande från handelskammaren"
+        },
+        "threadUnavailable": {
+          "title": "Versionshistoriken kunde inte läsas in",
+          "body": "Du kan inte godkänna eller begära ändringar förrän den har lästs in. Uppdatera sidan om en stund.",
+          "refresh": "Uppdatera"
+        },
+        "actions": {
+          "title": "Ditt beslut",
+          "decideDescription": "Godkänn version {version} eller berätta för handelskammaren vad som ska ändras.",
+          "withdrawDescription": "Version {version} är godkänd. Du kan dra tillbaka godkännandet tills utskicket börjar skickas.",
+          "approve": "Godkänn",
+          "requestChanges": "Begär ändringar",
+          "withdrawApproval": "Dra tillbaka godkännandet"
+        },
+        "approveDialog": {
+          "title": "Godkänna version {version}?",
+          "description": "Handelskammarens marknadsföringsteam bekräftar nu sändningstiden. När du har godkänt kan innehållet inte ändras utan ett nytt godkännande från dig.",
+          "noteLabel": "Meddelande till handelskammaren (valfritt)",
+          "notePlaceholder": "Något handelskammaren bör veta före utskicket",
+          "noteHelp": "Högst 500 tecken. Sparas i det här utskickets historik och kan ses av ditt företag och handelskammaren.",
+          "noteTooLong": "Meddelandet är längre än 500 tecken.",
+          "confirm": "Godkänn",
+          "cancel": "Inte än"
+        },
+        "requestChanges": {
+          "title": "Begära ändringar?",
+          "description": "Utskicket går tillbaka till handelskammaren med din motivering, och de skickar en ny version som du får godkänna.",
+          "reasonLabel": "Vad ska ändras?",
+          "reasonPlaceholder": "Till exempel: datumet i rubriken är fel.",
+          "reasonHelp": "Obligatoriskt — högst 2 000 tecken. Sparas i det här utskickets historik och kan ses av ditt företag och handelskammaren.",
+          "confirm": "Begär ändringar",
+          "cancel": "Fortsätt granska",
+          "errors": {
+            "reasonRequired": "Berätta för handelskammaren vad som ska ändras.",
+            "reasonTooLong": "Motiveringen är längre än 2 000 tecken."
+          }
+        },
+        "withdrawApproval": {
+          "title": "Dra tillbaka godkännandet?",
+          "description": "Utskicket går tillbaka till handelskammaren och en bekräftad sändningstid ställs in. Det skickas inte förrän du godkänner en version igen.",
+          "reasonLabel": "Varför drar du tillbaka godkännandet?",
+          "reasonPlaceholder": "Till exempel: priset i erbjudandet har ändrats.",
+          "reasonHelp": "Obligatoriskt — högst 2 000 tecken. Sparas i det här utskickets historik och kan ses av ditt företag och handelskammaren.",
+          "confirm": "Dra tillbaka godkännandet",
+          "cancel": "Behåll godkännandet",
+          "errors": {
+            "reasonRequired": "Ange varför du drar tillbaka godkännandet.",
+            "reasonTooLong": "Motiveringen är längre än 2 000 tecken."
+          }
+        },
+        "errors": {
+          "reason_required": "Ange en motivering — fältet får inte vara tomt.",
+          "validation_error": "Texten är för lång. Korta den och försök igen.",
+          "stale_version": "Handelskammaren har skickat en nyare version. Sidan har uppdaterats — granska den senaste.",
+          "stage_changed": "Utskicket har redan gått vidare. Sidan har uppdaterats.",
+          "sending_started": "Utskicket har redan börjat skickas och kan inte längre ändras.",
+          "broadcast_not_found": "Utskicket finns inte längre.",
+          "broadcast_rate_limit_exceeded": "För många försök på kort tid. Vänta en minut och försök igen.",
+          "generic": "Något gick fel. Försök igen."
+        },
+        "thread": {
+          "title": "Historik",
+          "description": "Varje version som handelskammaren har skickat dig och varje beslut, äldst först.",
+          "original": "Ditt original",
+          "round": "Omgång {round}",
+          "submittedByYourCompany": "Inskickat av ditt företag",
+          "submittedByChamber": "Inskickat av handelskammaren för din räkning",
+          "versionSent": "Version {version} — skickad till dig av handelskammaren",
+          "noteLabel": "Meddelande från handelskammaren",
+          "reasonLabel": "Motivering",
+          "approvalNoteLabel": "Meddelande",
+          "approvedByYou": "Du godkände den här versionen",
+          "approvedByColleague": "En kollega på ditt företag godkände den här versionen",
+          "changesRequestedByYou": "Du begärde ändringar",
+          "changesRequestedByColleague": "En kollega på ditt företag begärde ändringar",
+          "withdrawnByYou": "Du drog tillbaka ditt godkännande",
+          "withdrawnByColleague": "En kollega på ditt företag drog tillbaka godkännandet",
+          "approvedAsSubmitted": "Handelskammaren godkände ditt utskick utan ändringar"
         }
       }
     },
@@ -7098,6 +7443,16 @@
       "broadcast_image_removed": "E-Blast-bild borttagen",
       "broadcast_image_uploaded": "E-Blast-bild uppladdad",
       "broadcast_test_copy_sent": "Testkopia av E-Blast skickad",
+      "broadcast_version_started": "E-Blast-version påbörjad",
+      "broadcast_version_sent_to_member": "E-Blast-version skickad till medlem för godkännande",
+      "broadcast_member_approved": "Medlem godkände E-Blast-version",
+      "broadcast_member_changes_requested": "Medlem begärde ändringar i E-Blast",
+      "broadcast_member_approval_withdrawn": "Medlem drog tillbaka godkännandet av E-Blast",
+      "broadcast_member_approval_voided": "Medlemmens godkännande av E-Blast upphävt genom redigering",
+      "broadcast_schedule_confirmed": "Sändningstid för E-Blast bekräftad",
+      "broadcast_approval_reminder_sent": "Påminnelse om godkännande av E-Blast skickad",
+      "broadcast_approval_expiry_warned": "Varning om att godkännandet av E-Blast snart löper ut skickad",
+      "broadcast_approval_expired": "Godkännandet av E-Blast har löpt ut — inget svar från medlemmen",
       "broadcast_immutable_after_submit": "Utskick låst efter inlämning",
       "broadcast_member_dispatch_resumed": "Utskick till medlem återupptaget",
       "broadcast_member_halted_pending_review": "Utskick till medlem pausat i väntan på granskning",
@@ -7335,6 +7690,97 @@
       "unsubscribeCta": "Avregistrera",
       "unsubscribeSuffix": "från dessa utskick när som helst.",
       "physicalAddress": "Skickat av {tenantDisplayName}."
+    },
+    "eblastApproval": {
+      "common": {
+        "footer": "Detta är ett automatiskt meddelande från handelskammarens medlemsportal.",
+        "subjectLabel": "E-Blast",
+        "companyLabel": "Medlem",
+        "stageLabel": "Steg",
+        "staffCta": "Öppna E-Blasten",
+        "staffDetailsNote": "Innehållet och eventuella kommentarer finns på E-Blast-sidan."
+      },
+      "stage": {
+        "awaitingMarketingReview": "Väntar på granskning av marknadsföring",
+        "memberApproved": "Godkänd av medlem — inväntar schemaläggning",
+        "changesRequested": "Medlemmen begär ändringar",
+        "withdrawn": "Avbruten",
+        "awaitingMemberApproval": "Inväntar medlemmens godkännande",
+        "expired": "Utgången — inget svar från medlem"
+      },
+      "submittedMarketing": {
+        "subject": "Ny E-Blast att granska: {subject}",
+        "heading": "En medlem har skickat in en E-Blast för granskning"
+      },
+      "memberDecidedMarketing": {
+        "subject": "Uppdatering om E-Blast: {subject}",
+        "heading": "En medlem har svarat på en E-Blast"
+      },
+      "versionSentMember": {
+        "subject": "Din E-Blast är redo för ditt godkännande",
+        "heading": "Omgång {round} är redo för ditt godkännande",
+        "intro": "Handelskammaren har förberett en version av din E-Blast \"{subject}\" och ber dig granska den.",
+        "noteHeading": "Meddelande från handelskammaren",
+        "proposedSendAt": "Din föreslagna sändningstid: {when}",
+        "noProposedSendAt": "Du har inte föreslagit någon sändningstid.",
+        "cta": "Granska E-Blasten"
+      },
+      "scheduleConfirmedMember": {
+        "subject": "Din E-Blast är schemalagd",
+        "heading": "Din E-Blast är schemalagd",
+        "intro": "Handelskammaren har bekräftat sändningstiden för din E-Blast \"{subject}\".",
+        "confirmedSendAt": "Bekräftad sändningstid: {when}",
+        "proposedSendAt": "Din föreslagna sändningstid: {when}",
+        "notProposedTime": "Detta är inte den tid du föreslog.",
+        "cta": "Visa din E-Blast"
+      },
+      "timeline": {
+        "heading": "Vad händer härnäst",
+        "day3": "Dag 3 ({date}): en påminnelse om du inte har svarat",
+        "day7": "Dag 7 ({date}): en sista påminnelse",
+        "day23": "Dag 23 ({date}): en varning om att begäran snart stängs",
+        "day30": "Dag 30 ({date}): begäran stängs automatiskt och du behöver skicka in en ny E-Blast"
+      },
+      "lifecycle": {
+        "member": {
+          "reminderDay3": {
+            "subject": "Påminnelse: din E-Blast väntar på ditt godkännande",
+            "body": "Handelskammaren skickade en version av din E-Blast \"{subject}\" till dig den {sentDate}. Den väntar fortfarande på ditt godkännande."
+          },
+          "reminderDay7": {
+            "subject": "Sista påminnelse: din E-Blast väntar på ditt godkännande",
+            "body": "Handelskammaren skickade en version av din E-Blast \"{subject}\" till dig den {sentDate}. Detta är den sista påminnelsen."
+          },
+          "expiryWarningDay23": {
+            "subject": "Din E-Blast-begäran stängs om 7 dagar",
+            "body": "Din E-Blast \"{subject}\" har väntat på ditt godkännande sedan {sentDate}. Om du inte svarar stängs begäran automatiskt den {expiresDate}."
+          },
+          "expiredDay30": {
+            "subject": "Din E-Blast-begäran har stängts",
+            "body": "Handelskammaren fick inget svar på din E-Blast \"{subject}\" inom 30 dagar, så begäran stängdes automatiskt den {expiresDate}. Din kvotplats är ledig igen — skicka in en ny E-Blast när du är redo."
+          },
+          "ctaReview": "Granska E-Blasten",
+          "ctaList": "Öppna dina E-Blasts"
+        },
+        "staff": {
+          "reminderDay3": {
+            "subject": "E-Blast väntar på medlemmens godkännande (dag 3): {subject}",
+            "heading": "Medlemmen har ännu inte svarat på en E-Blast"
+          },
+          "reminderDay7": {
+            "subject": "E-Blast väntar på medlemmens godkännande (dag 7): {subject}",
+            "heading": "Medlemmen har fortfarande inte svarat på en E-Blast"
+          },
+          "expiryWarningDay23": {
+            "subject": "E-Blast stängs om 7 dagar: {subject}",
+            "heading": "En E-Blast stängs om 7 dagar om medlemmen inte svarar"
+          },
+          "expiredDay30": {
+            "subject": "E-Blast har gått ut: {subject}",
+            "heading": "En E-Blast stängdes utan svar från medlemmen"
+          }
+        }
+      }
     }
   },
   "public": {
@@ -7490,6 +7936,7 @@
         "events": "events.json — evenemang du har deltagit i.",
         "broadcasts": "broadcasts.json — E-Blast-/utskicksposter som rör dig.",
         "broadcastImages": "broadcast-images.json — alla bilder som laddats upp för dina E-Blast-utskick, även bilder som redan markerats för radering. En markerad bild visas utan webbadress: den är markerad för radering, och filen kan behållas om en identisk bild fortfarande används någon annanstans. Bilder från ett kasserat eller utgånget utkast listas inte; att de tagits bort syns i audit-events.json, och filen raderas vid nästa dagliga rensning.",
+        "broadcastVersions": "broadcast-versions.json — för vart och ett av dina E-Blast-utskick: de versioner du fått att granska (ditt original och varje version som handelskammaren skickat till dig, med följebrev) och dina beslut om dem (godkänt, ändringar begärda, godkännande återkallat – med din kommentar eller ditt skäl). Versioner som handelskammaren arbetar med och aldrig skickat till dig ingår inte, och upphovet anges som du eller organisationen. Efter en radering står texten som [redacted] och endast datum och beslut finns kvar.",
         "auditEvents": "audit-events.json — händelser i aktivitetsloggen som rör dig. Uppgifter om andra personer har tagits bort.",
         "changeRequests": "change-requests.json — de ändringar du föreslagit i din medlemspost och kammarens beslut om var och en (med angiven anledning). Granskaren visas som organisationen. Begäranden som en kollega skickat visas endast med sina företagsfält och utan motivering. Ett arkiv som kammarens personal tagit fram för din räkning, eller som en kollega begärt, innehåller endast begäranden på företagsnivå och utan granskarens motivering. Kontakta kammaren om du behöver din personliga historik.",
         "manifest": "manifest.json — en maskinläsbar lista över varje fil med dess SHA-256-kontrollsumma så att du kan verifiera integriteten."

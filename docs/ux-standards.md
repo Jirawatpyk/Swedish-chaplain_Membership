@@ -703,6 +703,7 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/portal/contacts/invite`                           | `FormContainer`   | 42rem |
 | `/portal/broadcasts/new`                            | `DetailContainer`† | 72rem |
 | `/admin/broadcasts/new`                             | `DetailContainer`† | 72rem |
+| `/admin/broadcasts/[id]`                            | `DetailContainer`  | 72rem |
 
 \* **Documented exception** — `/admin/settings/invoicing` is a settings/edit
 form, which the §18.1 one-liner would default to `FormContainer` (42rem).
@@ -727,6 +728,12 @@ preview**; an ordinary form, including every other E-Blast screen, still
 follows the default rule. Each page's sibling `loading.tsx` moved to
 `DetailContainer` in the same change so the skeleton→content transition stays
 CLS-0 (§ 18.4). (F119 T148, spec `119-eblast-approval-workflow` FR-050.)
+
+The staff E-Blast detail page (`/admin/broadcasts/[id]`) hosts the same
+writing tool while an E-Blast is In design, with the same
+`lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]` pair. It is a detail page, so
+`DetailContainer` is its default tier and no exception is needed; the row is
+listed so the pair's width is recorded in one place. (F119 T063.)
 
 ### 18.3 Code examples
 

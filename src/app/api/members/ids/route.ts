@@ -63,6 +63,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     {
       ...(filter.q !== undefined ? { q: filter.q } : {}),
       ...(filter.planId !== undefined ? { planId: filter.planId } : {}),
+      ...(filter.planYear !== undefined ? { planYear: filter.planYear } : {}),
       ...(filter.riskBand !== undefined ? { riskBand: filter.riskBand } : {}),
       ...(filter.portalNeedsInvite ? { portalNeedsInvite: { now } } : {}),
       ...(sort ? { sort, ...(order ? { order } : {}) } : {}),

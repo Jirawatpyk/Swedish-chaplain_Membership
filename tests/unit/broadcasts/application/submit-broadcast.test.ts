@@ -52,6 +52,8 @@ import type { MembershipAccessPort } from '@/modules/broadcasts/application/port
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { SubmitBroadcastInput } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
+import type { MarketingRecipient } from '@/modules/broadcasts/application/ports/marketing-directory-port';
+import { makeFakeEblastOutbox, makeFakeMarketingDirectory } from '../../../helpers/eblast-approval-fakes';
 
 const useCasePath = resolve(
   __dirname,
@@ -84,6 +86,8 @@ interface FixtureOpts {
     startedFromTemplateId?: string | null;
     templateNameSnapshot?: string | null;
   };
+  /** F119 T129 — the marketing hand-off roster the submit enqueues to (default: nobody). */
+  readonly roster?: ReadonlyArray<MarketingRecipient>;
 }
 
 function makeAuditEmits(): {
@@ -174,14 +178,18 @@ function makePlansBridge(opts: FixtureOpts = {}): PlansBridgePort {
 interface BroadcastsRepoStub extends BroadcastsRepo {
   readonly inserted: Array<NewBroadcastDraftInput>;
   readonly transitions: Array<{ broadcastId: string; status: string }>;
+  /** The `fields` each `applyTransition` carried, in call order. */
+  readonly transitionFields: Array<Partial<Broadcast>>;
 }
 
 function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
   const inserted: Array<NewBroadcastDraftInput> = [];
   const transitions: Array<{ broadcastId: string; status: string }> = [];
+  const transitionFields: Array<Partial<Broadcast>> = [];
   return {
     inserted,
     transitions,
+    transitionFields,
     async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
       return fn(null);
     },
@@ -217,8 +225,9 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     async lockForUpdate() {
       return null;
     },
-    async applyTransition(_tx, tenantId, broadcastId, status, _fields): Promise<Broadcast> {
+    async applyTransition(_tx, tenantId, broadcastId, status, fields): Promise<Broadcast> {
       transitions.push({ broadcastId: broadcastId as string, status });
+      transitionFields.push(fields);
       const lastInsert = inserted[inserted.length - 1];
       // Existing-draft path: caller never invoked insertDraft. Synthesise
       // a minimal Broadcast row so the use-case's downstream audit emit
@@ -344,6 +353,12 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -411,9 +426,14 @@ function makeMarketingUnsubscribes(): MarketingUnsubscribesRepo {
 function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
   const audit = makeAuditEmits();
   const broadcastsRepo = makeBroadcastsRepo(opts);
+  // F119 T129 / T159a — the shared fakes; the outbox records the tx each row rode on.
+  const eblastOutbox = makeFakeEblastOutbox();
+  const marketingDirectory = makeFakeMarketingDirectory(opts.roster ?? []);
   return {
     audit,
     broadcastsRepo,
+    eblastOutbox,
+    marketingDirectory,
     deps: {
       tenant,
       broadcastsRepo,
@@ -432,6 +452,8 @@ function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
       }),
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
+      marketingDirectory,
+      eblastOutbox,
     },
   };
 }
@@ -787,6 +809,27 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     ]);
   });
 
+  it('F119 FR-016: the draft → submitted transition writes the member\'s requested time as proposedSendAt', async () => {
+    const requested = new Date('2026-10-01T03:00:00.000Z');
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-2', primaryContactEmail: 'r@example.com' }],
+    });
+    const result = await submitBroadcast(deps, { ...baseInput, scheduledFor: requested });
+    expect(result.ok).toBe(true);
+    expect(broadcastsRepo.transitionFields).toHaveLength(1);
+    expect(broadcastsRepo.transitionFields[0]?.proposedSendAt).toEqual(requested);
+  });
+
+  it('F119 FR-016: no requested time → proposedSendAt is written as null (an explicit "no proposal")', async () => {
+    const { broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-2', primaryContactEmail: 'r@example.com' }],
+    });
+    await submitBroadcast(deps, baseInput);
+    expect(broadcastsRepo.transitionFields[0]).toHaveProperty('proposedSendAt', null);
+  });
+
   it('happy path: audit emit broadcast_submitted with actor_role + member_id + segment_type + estimated_count', async () => {
     const { audit, deps } = makeDeps({
       primaryContact: 'me@example.com',
@@ -1119,6 +1162,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       startedFromTemplateId: null,
       templateNameSnapshot: null,
       templateProvenance: null,
+      proposedSendAt: null,
+      stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+      currentRound: 0,
+      approvedVersionId: null,
+      memberReminderStage: 0,
+      memberExpiryNotifiedAt: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -1170,6 +1219,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
         startedFromTemplateId: null,
         templateNameSnapshot: null,
         templateProvenance: null,
+        proposedSendAt: null,
+        stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+        currentRound: 0,
+        approvedVersionId: null,
+        memberReminderStage: 0,
+        memberExpiryNotifiedAt: null,
         createdAt: FROZEN_NOW,
         updatedAt: FROZEN_NOW,
       };
@@ -1251,6 +1306,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       startedFromTemplateId: null,
       templateNameSnapshot: null,
       templateProvenance: null,
+      proposedSendAt: null,
+      stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+      currentRound: 0,
+      approvedVersionId: null,
+      memberReminderStage: 0,
+      memberExpiryNotifiedAt: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -1337,6 +1398,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       startedFromTemplateId: null,
       templateNameSnapshot: null,
       templateProvenance: null,
+      proposedSendAt: null,
+      stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+      currentRound: 0,
+      approvedVersionId: null,
+      memberReminderStage: 0,
+      memberExpiryNotifiedAt: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -1388,6 +1455,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
         startedFromTemplateId: null,
         templateNameSnapshot: null,
         templateProvenance: null,
+        proposedSendAt: null,
+        stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+        currentRound: 0,
+        approvedVersionId: null,
+        memberReminderStage: 0,
+        memberExpiryNotifiedAt: null,
         createdAt: FROZEN_NOW,
         updatedAt: FROZEN_NOW,
       };
@@ -1516,6 +1589,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       startedFromTemplateId: null,
       templateNameSnapshot: null,
       templateProvenance: null,
+      proposedSendAt: null,
+      stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+      currentRound: 0,
+      approvedVersionId: null,
+      memberReminderStage: 0,
+      memberExpiryNotifiedAt: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -1567,6 +1646,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
         startedFromTemplateId: null,
         templateNameSnapshot: null,
         templateProvenance: null,
+        proposedSendAt: null,
+        stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+        currentRound: 0,
+        approvedVersionId: null,
+        memberReminderStage: 0,
+        memberExpiryNotifiedAt: null,
         createdAt: FROZEN_NOW,
         updatedAt: FROZEN_NOW,
       };
@@ -1637,6 +1722,12 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       startedFromTemplateId: null,
       templateNameSnapshot: null,
       templateProvenance: null,
+      proposedSendAt: null,
+      stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+      currentRound: 0,
+      approvedVersionId: null,
+      memberReminderStage: 0,
+      memberExpiryNotifiedAt: null,
       createdAt: FROZEN_NOW,
       updatedAt: FROZEN_NOW,
     });
@@ -1995,5 +2086,117 @@ describe('submitBroadcast — orphan reasons decide the audit (review 2026-09-07
 
     expect(result.ok).toBe(true);
     expect(broadcastsRepo.inserted).toHaveLength(1);
+  });
+});
+
+// ---- F119 T129 — the submit hands off to marketing, inside its own tx -------
+//
+// FR-021 "new submission → marketing": ONE `eblast_submitted_marketing` row
+// per roster recipient (FR-021a), enqueued on the SAME transaction as the
+// `draft → submitted` flip (SC-004), ids only (FR-021b), and unconditionally —
+// the flag lives at the drainer (T152a), never on this path.
+describe('submitBroadcast — F119 T129 marketing hand-off on submit', () => {
+  const MARKETERS: ReadonlyArray<MarketingRecipient> = [
+    { userId: 'mk-1', email: 'marketing-1@swecham.test', locale: 'en' },
+    { userId: 'mk-2', email: 'marketing-2@swecham.test', locale: 'en' },
+  ];
+  const TX = { tx: 'submit-tx' };
+  const ready = (roster: ReadonlyArray<MarketingRecipient>) => {
+    const made = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-2', primaryContactEmail: 'r@example.com' }],
+      roster,
+    });
+    const repo = made.deps.broadcastsRepo as { withTx: BroadcastsRepo['withTx'] };
+    repo.withTx = async <T,>(fn: (tx: unknown) => Promise<T>) => fn(TX);
+    return made;
+  };
+
+  it('one row per marketing recipient, on the submit tx, ids only — nothing a staff email must not show', async () => {
+    const { deps, eblastOutbox } = ready(MARKETERS);
+    const result = await submitBroadcast(deps, { ...baseInput, subject: 'SECRET-SUBJECT', bodyHtml: '<p>SECRET-BODY</p>' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(eblastOutbox.rows().map((r) => r.toEmail)).toEqual(MARKETERS.map((m) => m.email));
+    for (const [i, row] of eblastOutbox.rows().entries()) {
+      expect(row.type).toBe('eblast_submitted_marketing');
+      expect(row.tx).toBe(TX);
+      expect(row.locale).toBe('en');
+      expect(row.contextData).toEqual({
+        tenantId: 'test-tenant',
+        broadcastId: result.value.broadcastId,
+        recipientUserId: MARKETERS[i]!.userId,
+      });
+    }
+    expect(JSON.stringify(eblastOutbox.rows())).not.toMatch(/SECRET/);
+  });
+
+  it('an admin_proxy submit hands off the same way', async () => {
+    const { deps, eblastOutbox } = ready(MARKETERS);
+    const result = await submitBroadcast(deps, { ...baseInput, submittedByUserId: 'admin-99', actorRole: 'admin_proxy' });
+    expect(result.ok).toBe(true);
+    expect(eblastOutbox.rows()).toHaveLength(2);
+  });
+
+  it('an empty roster enqueues nothing and the submit still succeeds; the empty roster is reported ONCE, after the commit', async () => {
+    const { deps, eblastOutbox, marketingDirectory } = ready([]);
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    expect(marketingDirectory.readRoster).toHaveBeenCalledTimes(1);
+    expect(marketingDirectory.reportEmptyRoster).toHaveBeenCalledTimes(1);
+    expect(eblastOutbox.rows()).toHaveLength(0);
+  });
+
+  it('a refused submit reads no roster and enqueues nothing', async () => {
+    const { deps, eblastOutbox, marketingDirectory } = makeDeps({ primaryContact: 'me@example.com', roster: MARKETERS, rateLimit: { allow: false } });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    expect(marketingDirectory.readRoster).not.toHaveBeenCalled();
+    expect(marketingDirectory.listRecipients).not.toHaveBeenCalled();
+    expect(eblastOutbox.rows()).toHaveLength(0);
+  });
+
+  /**
+   * T166 R-L3 — the roster is a pool-global read of the cross-tenant `users`
+   * table. Made INSIDE the submit tx it held a second connection while the tx
+   * held the per-member advisory lock. It is read before the tx now, and the
+   * empty-roster page is still raised only for a submit that committed.
+   */
+  it('T166 R-L3: the roster is read BEFORE the submit tx opens, never while it holds its locks', async () => {
+    const { deps, marketingDirectory } = ready(MARKETERS);
+    const order: string[] = [];
+    marketingDirectory.readRoster.mockImplementation(async () => {
+      order.push('readRoster');
+      return MARKETERS;
+    });
+    const repo = deps.broadcastsRepo as { withTx: BroadcastsRepo['withTx'] };
+    const inner = repo.withTx;
+    repo.withTx = async <T,>(fn: (tx: unknown) => Promise<T>) => {
+      order.push('withTx');
+      return inner(fn);
+    };
+    expect((await submitBroadcast(deps, baseInput)).ok).toBe(true);
+    expect(order).toEqual(['readRoster', 'withTx']);
+    expect(marketingDirectory.listRecipients).not.toHaveBeenCalled();
+    expect(marketingDirectory.reportEmptyRoster).not.toHaveBeenCalled();
+  });
+
+  it('T166 R-L3: an empty roster read before a submit whose tx then fails is NOT reported — nothing was handed off', async () => {
+    const { deps, marketingDirectory } = ready([]);
+    const repo = deps.broadcastsRepo as { withTx: BroadcastsRepo['withTx'] };
+    repo.withTx = async () => {
+      throw new Error('pool exhausted');
+    };
+    expect((await submitBroadcast(deps, baseInput)).ok).toBe(false);
+    expect(marketingDirectory.readRoster).toHaveBeenCalledTimes(1);
+    expect(marketingDirectory.reportEmptyRoster).not.toHaveBeenCalled();
+  });
+
+  it('an enqueue that throws fails the submit (the tx rolls back with it) — never a submit without its hand-off', async () => {
+    const { deps, eblastOutbox } = ready(MARKETERS);
+    eblastOutbox.enqueueInTx.mockRejectedValueOnce(new Error('outbox insert failed'));
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('submit.server_error');
   });
 });

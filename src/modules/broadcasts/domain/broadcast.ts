@@ -12,6 +12,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { BroadcastStatus } from './value-objects/broadcast-status';
+import type { MemberReminderStage } from './approval/approval-schedule-policy';
 import type { BroadcastSegmentType } from './value-objects/segment-type';
 import { isUuid } from './value-objects/uuid';
 
@@ -191,6 +192,19 @@ export interface Broadcast {
     | { readonly templateId: string; readonly templateNameSnapshot: string }
     | null;
 
+  // F119 (migration 0308, data-model § 3) — the approval-round bookkeeping.
+  // `proposedSendAt` is the member's proposal, frozen after submit (FR-016).
+  // `stageEnteredAt` drives time-in-stage and the reminder clock (FR-026).
+  // `currentRound` counts versions SENT to the member (0 = never formatted).
+  // `approvedVersionId` is SC-002's proof — the version the member approved.
+  // `memberReminderStage` 0 none · 1 day-3 · 2 day-7 · 3 day-23 warning.
+  readonly proposedSendAt: Date | null;
+  readonly stageEnteredAt: Date;
+  readonly currentRound: number;
+  readonly approvedVersionId: string | null;
+  readonly memberReminderStage: MemberReminderStage;
+  readonly memberExpiryNotifiedAt: Date | null;
+
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -269,6 +283,21 @@ export type BroadcastPhase =
       readonly partialDeliveryAcceptedByUserId: string;
       readonly quotaYearConsumed: number;
       readonly quotaConsumedAt: Date;
+    }
+  // F119 (0308) — the approval round and its day-30 close. All five are
+  // entered after submission and never reach a send stage, so submission is
+  // the only lifecycle guarantee they share; `approvedAt` may or may not
+  // survive (`approved → in_design | changes_requested`), so it is not
+  // narrowed here.
+  | {
+      readonly kind:
+        | 'in_design'
+        | 'awaiting_member_approval'
+        | 'changes_requested'
+        | 'member_approved'
+        | 'expired_no_member_response';
+      readonly submittedAt: Date;
+      readonly submittedByUserId: string;
     };
 
 /**
@@ -397,6 +426,21 @@ export function phaseOf(b: Broadcast): BroadcastPhase {
         partialDeliveryAcceptedByUserId: b.partialDeliveryAcceptedByUserId,
         quotaYearConsumed: b.quotaYearConsumed,
         quotaConsumedAt: b.quotaConsumedAt,
+      };
+    case 'in_design':
+    case 'awaiting_member_approval':
+    case 'changes_requested':
+    case 'member_approved':
+    case 'expired_no_member_response':
+      if (b.submittedAt === null) {
+        throw new Error(
+          `BroadcastPhaseInvariantViolation: status='${b.status}' but submittedAt is null (broadcastId=${b.broadcastId})`,
+        );
+      }
+      return {
+        kind: b.status,
+        submittedAt: b.submittedAt,
+        submittedByUserId: b.submittedByUserId,
       };
   }
 }

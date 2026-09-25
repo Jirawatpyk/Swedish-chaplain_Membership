@@ -26,8 +26,11 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import {
+  removeMemberSentBroadcast,
   resetF7AckSeed,
   seedF7PlanChangedAudit,
+  seedMemberSentBroadcast,
+  SENT_FIXTURE_SUBJECT,
 } from './helpers/broadcasts-seed';
 import { signInAsMember as signIn } from './helpers/member-sign-in';
 
@@ -71,6 +74,11 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     await clearE2ERateLimits();
     const seed = await seedF7PlanChangedAudit();
     if (seed) planChangedAt = seed.changedAt;
+  });
+
+  // AS3's sent fixture holds one of the persona's quota places while it exists.
+  test.afterAll(async () => {
+    await removeMemberSentBroadcast();
   });
 
   // ── AS1 ────────────────────────────────────────────────────────────
@@ -165,23 +173,27 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   test('AS3 — broadcast detail shows delivered / bounced / complained breakdown', async ({
     page,
   }) => {
-    await signIn(page);
-    await page.goto('/portal/benefits?tab=broadcasts');
-    const firstRow = historyView(page).rows.first();
-    if ((await firstRow.count()) === 0) {
-      test.info().annotations.push({
-        type: 'skip-reason',
-        description: 'No broadcasts in seed — AS3 needs at least one sent.',
-      });
-      return;
-    }
-    await firstRow.locator('a').first().click();
-    await page.waitForURL(/\/portal\/broadcasts\/[^/]+/);
+    // The breakdown needs a SENT row the signed-in persona owns — seeded here
+    // (one delivered, one bounced, one complained) rather than hoped for in
+    // the persona's history; it used to return early, green, on a history
+    // with no sent row. Removed in `afterAll` below.
+    const sentId = await seedMemberSentBroadcast(MEMBER_EMAIL);
+    test.skip(sentId === null, 'Set DATABASE_URL — AS3 seeds the sent broadcast it opens');
 
+    // Straight to the detail page: `E2E_MEMBER_EMAIL` is LAPSED by the F8
+    // fixture, so `/portal/benefits` redirects it to `/portal`, while this
+    // path is exempt (`lapsed-portal-scope.ts` — a lapsed member can still
+    // read and sign off their E-Blasts). The history list is AS1's to cover.
+    await signIn(page);
+    await page.goto(`/portal/broadcasts/${sentId}`);
+    await expect(page.getByRole('heading', { name: SENT_FIXTURE_SUBJECT })).toBeVisible();
+
+    // F119 — the delivery card renders only once sending has begun: the
+    // seeded row is `sent`, with one delivery of each kind.
     await expect(page.getByTestId('delivery-breakdown')).toBeVisible();
-    await expect(page.getByTestId('delivery-delivered-count')).toBeVisible();
-    await expect(page.getByTestId('delivery-bounced-count')).toBeVisible();
-    await expect(page.getByTestId('delivery-complained-count')).toBeVisible();
+    await expect(page.getByTestId('delivery-delivered-count')).toContainText('1');
+    await expect(page.getByTestId('delivery-bounced-count')).toContainText('1');
+    await expect(page.getByTestId('delivery-complained-count')).toContainText('1');
   });
 
   // ── AS4 ────────────────────────────────────────────────────────────

@@ -222,6 +222,12 @@ the E-Blast now stands **and a way back to their E-Blast list** without a second
 Idempotency: a repeat of an identical body after the transition answers **409 `stage_changed`**
 carrying the decision already recorded — the correct answer, not a replay (research R19).
 
+`details.recordedDecision` is `{ id, versionId, decision, decidedAt, byCaller }` (or `null` when
+none is on file). `byCaller` is `true` when the session user recorded it and `false` when another
+portal user of the same member did (PR #392 review D6) — the other user's id is never exposed. A
+client treats the 409 as its own retry succeeding only when the decision and version match **and**
+`byCaller` is `true`; otherwise the page is stale and the typed reason was not recorded.
+
 ## `POST /api/broadcasts/[id]/cancel` — withdraw the whole E-Blast (existing route, widened)
 
 Unchanged contract. The accepted stage set widens from `('submitted','approved')` to
@@ -271,17 +277,21 @@ no field here — it renders the stored body through the same server-side render
 inside the sandboxed preview surface, and pins the two fields with
 `tests/contract/broadcasts/get-broadcast-detail.contract.test.ts` so PR-2's T141a cannot drop them.
 While the broadcast is awaiting the member, the body shown is the latest **sent** version;
-otherwise it is the record's own content.
+otherwise it is the record's own content. **Awaiting the member with no version sent** is an invariant breach, not a
+fallback (round-4 B9): the route logs `M119.portal.detail.missing_sent_version` (ids only) and answers
+**500 `internal_error`** with no content — the record's own content is the member's original, and
+showing it as the thing to sign off would invite an approval of something marketing never sent.
 
 **This widening lands in two PRs** (plan Amendment 5), because only half of it can be built in PR-1:
 
 | field | PR | why |
 |---|---|---|
 | `subject`, `bodyHtml` (from the broadcast record's own content — already on the wire; PR-1 pins them and builds the screen) | **PR-1**, task T141 | FR-049 is a screen-standard fix; it needs no new column and no version row |
-| `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt`, and "the body is the latest **sent** version while awaiting the member" | **PR-2**, task T141a | every one of these reads a `0305` column (`proposed_send_at`, `current_round`, `stage_entered_at`), the `broadcast_versions` table, or the Domain `stageOf`/`turnOf` maps (T052) — none of which exists in PR-1 |
+| `stage`, `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt`, and "the body is the latest **sent** version while awaiting the member" | **PR-2**, task T141a | every one of these reads a `0308` column (`proposed_send_at`, `current_round`, `stage_entered_at`), the `broadcast_versions` table, or the Domain `stageOf`/`turnOf` maps (T052) — none of which exists in PR-1 |
 
 A PR-1 implementation of the second row is not merely early, it does not compile: the columns and
-the table are created by migration `0305`, which ships with PR-2.
+the table are created by migration `0308`, which ships with PR-2.
+*Renumbered at merge (2026-09-24): `main` took `0305`–`0307` while PR-2 was open, so the F119 bundle ships as `0308` (`idx 309`, `when 1798544100000`); see `data-model.md`.*
 
 ---
 

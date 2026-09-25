@@ -4,7 +4,7 @@
  * Serialises the gathered `GdprMemberData` into a single ZIP:
  *   - `README.txt`        — localised (requester locale, EN fallback).
  *   - `profile.json`, `contacts.json`, `invoices.json`, `events.json`,
- *     `broadcasts.json`, `broadcast-images.json`, `audit-events.json`,
+ *     `broadcasts.json`, `broadcast-images.json`, `broadcast-versions.json`, `audit-events.json`,
  *     `change-requests.json` — the member's own data; the audit
  *     subset is already redacted (`buildMemberAuditSubset`).
  *   - `invoices/<file>.pdf` — the invoice PDF documents.
@@ -41,6 +41,7 @@ const TRUNCATED_FILE: Record<GdprTruncatableCategory, string> = {
   events: 'events.json',
   broadcasts: 'broadcasts.json',
   broadcastImages: 'broadcast-images.json',
+  broadcastVersions: 'broadcast-versions.json',
   auditEvents: 'audit-events.json',
   changeRequests: 'change-requests.json',
 };
@@ -109,6 +110,8 @@ export function buildGdprArchiveBytes(
     'broadcasts.json': jsonBytes(data.broadcasts),
     // F119 R17 — every image uploaded for the member's E-Blasts
     'broadcast-images.json': jsonBytes(data.broadcastImages),
+    // F119 T083 — the approval round: versions shown and decisions, per E-Blast
+    'broadcast-versions.json': jsonBytes(data.broadcastVersions),
     'audit-events.json': jsonBytes(data.auditEvents),
     // F114 (FR-030) — the requester's change-request history
     'change-requests.json': jsonBytes(data.changeRequests),

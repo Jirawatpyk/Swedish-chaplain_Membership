@@ -198,6 +198,18 @@ describe('listPlans use case', () => {
     }
   });
 
+  it('returns server_error, not a garbage gross, for a malformed tax-policy rate', async () => {
+    const plan = makePlan({ annual_fee_minor_units: 1_000_000 });
+    const deps = makeDeps({ plans: [plan] });
+    vi.mocked(deps.taxPolicy).mockResolvedValueOnce({
+      currencyCode: 'THB',
+      vatRateRaw: '7%',
+    });
+    const result = await listPlans(baseInput, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('server_error');
+  });
+
   it('serialises deleted_at to ISO string when set', async () => {
     const plan = makePlan({ deleted_at: NOW });
     const deps = makeDeps({ plans: [plan] });

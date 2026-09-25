@@ -13,7 +13,7 @@ import { makeDrizzleBroadcastsRepo } from './db/drizzle-broadcasts-repo';
 import { makeDrizzleBroadcastSegmentDefinitionsRepo } from './db/drizzle-broadcast-segment-definitions-repo';
 import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-unsubscribes-repo';
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
-import { emailTransactionalBridge } from './email-transactional-bridge';
+import { eblastNotificationOutbox, emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
 import { membershipAccessBridge } from './membership-access-bridge';
 import { plansBridge } from './plans-bridge';
@@ -26,6 +26,8 @@ import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webh
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
 import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
 import { makeDrizzleBroadcastApprovalCounter } from './db/drizzle-broadcast-approval-counter';
+import { makeDrizzleBroadcastQueueReads } from './db/drizzle-broadcast-queue-reads';
+import type { BroadcastQueueReads } from '../application/ports/broadcast-queue-reads';
 import type { BroadcastApprovalCounter } from '../application/ports/broadcast-approval-counter';
 
 import type { ClockPort } from '../application/ports/clock-port';
@@ -53,6 +55,7 @@ import type { EnforceTenantContextDeps } from '../application/use-cases/enforce-
 import type { ApproveBroadcastDeps } from '../application/use-cases/approve-broadcast';
 import type { RejectBroadcastDeps } from '../application/use-cases/reject-broadcast';
 import type { CancelBroadcastDeps } from '../application/use-cases/cancel-broadcast';
+import type { MarketingDirectoryPort } from '../application/ports/marketing-directory-port';
 import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-submit-broadcast';
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
 import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
@@ -62,6 +65,9 @@ import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/ac
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
 import type { ListMemberBroadcastImagesDeps } from '../application/use-cases/list-member-broadcast-images';
+import type { ListMemberBroadcastVersionsDeps } from '../application/use-cases/list-member-broadcast-versions';
+import { drizzleBroadcastVersionsRepo } from './db/drizzle-broadcast-versions-repo';
+import { drizzleBroadcastDecisionsRepo } from './db/drizzle-broadcast-decisions-repo';
 // Two imports were removed here in 108 Phase 9 review round 1: the batch
 // deletion left `makeDrizzleBroadcastsRetryRepo` and `pgAdvisoryLockAdapter`
 // unused in this file.
@@ -82,6 +88,7 @@ import type { UploadInlineImageDeps } from '../application/use-cases/upload-inli
 import type { ReclaimOrphanedImagesDeps } from '../application/use-cases/reclaim-orphaned-images';
 import type { AuthorizeImageOwnerDeps } from '../application/use-cases/authorize-image-owner';
 import { drizzleBroadcastImagesRepo } from './db/drizzle-broadcast-images-repo';
+import { drizzleBroadcastApprovalScrub } from './db/drizzle-broadcast-approval-scrub';
 import { sharpImageReencoder } from './sharp-image-reencoder';
 import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
@@ -97,6 +104,14 @@ export function makeBroadcastApprovalCounter(
   tenantId: string,
 ): BroadcastApprovalCounter {
   return makeDrizzleBroadcastApprovalCounter(tenantId);
+}
+
+/**
+ * F119 T116 / T119 — the staff dashboard's per-stage counts and batched
+ * delivery results (contracts/dashboard-and-notifications.md § 1.1, § 1.2).
+ */
+export function makeBroadcastQueueReads(tenantId: string): BroadcastQueueReads {
+  return makeDrizzleBroadcastQueueReads(tenantId);
 }
 
 export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {
@@ -241,8 +256,16 @@ export function makeResolveSegmentDeps(tenantId: string): ResolveSegmentDeps {
   };
 }
 
+/**
+ * F119 T129 — `marketingDirectory` is a parameter for the reason
+ * `makeCancelBroadcastDeps` takes one: the roster crosses into the auth barrel
+ * (`src/lib/broadcast-marketing-deps.ts` `makeMarketingDirectory`), which this
+ * module cannot import. The submit enqueues one `eblast_submitted_marketing`
+ * row per recipient on its own tx.
+ */
 export function makeSubmitBroadcastDeps(
   tenantId: string,
+  marketingDirectory: MarketingDirectoryPort,
 ): SubmitBroadcastDeps {
   const tenant = asTenantContext(tenantId);
   return {
@@ -267,6 +290,8 @@ export function makeSubmitBroadcastDeps(
     rateLimiter: broadcastsRateLimiter,
     audit: f7AuditAdapter,
     clock: systemClock,
+    marketingDirectory,
+    eblastOutbox: eblastNotificationOutbox,
   };
 }
 
@@ -340,6 +365,8 @@ export function makeApproveBroadcastDeps(
     // R4 Types-#6 — member-preferred-locale lookup (today returns
     // null; future-extensibility for F12 white-label).
     membersBridge,
+    // F119 T166 S-H1 — the send-time standing rules submit applies.
+    sendStanding: { membersBridge, membershipAccess: membershipAccessBridge },
   };
 }
 
@@ -350,6 +377,8 @@ export function makeRejectBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // F119 T081 — the rejection stamps the E-Blast's image rows in its tx.
+    imagesRepo: drizzleBroadcastImagesRepo,
     audit: f7AuditAdapter,
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
@@ -360,13 +389,24 @@ export function makeRejectBroadcastDeps(
   };
 }
 
+/**
+ * F119 T081 — `marketingDirectory` is a parameter because the roster crosses
+ * into the auth barrel (`src/lib/broadcast-marketing-deps.ts`
+ * `makeMarketingDirectory`), which this module cannot import.
+ */
 export function makeCancelBroadcastDeps(
   tenantId: string,
+  marketingDirectory: MarketingDirectoryPort,
 ): CancelBroadcastDeps {
   const tenant = asTenantContext(tenantId);
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    // F119 T081 — the withdrawal stamps the E-Blast's image rows in its tx and
+    // hands a member withdrawal to marketing, ids only, on the same tx.
+    imagesRepo: drizzleBroadcastImagesRepo,
+    marketingDirectory,
+    eblastOutbox: eblastNotificationOutbox,
     audit: f7AuditAdapter,
     clock: systemClock,
     // G2 closure (verify-fix 2026-05-02 — US2 wire-up).
@@ -380,10 +420,12 @@ export function makeCancelBroadcastDeps(
 
 export function makeProxySubmitBroadcastDeps(
   tenantId: string,
+  marketingDirectory: MarketingDirectoryPort,
 ): ProxySubmitBroadcastDeps {
   // Same shape as submit-broadcast deps; use case delegates to
-  // submitBroadcast under the hood.
-  return makeSubmitBroadcastDeps(tenantId);
+  // submitBroadcast under the hood (so a proxy submit hands off to marketing
+  // exactly as a member's does — F119 T129).
+  return makeSubmitBroadcastDeps(tenantId, marketingDirectory);
 }
 
 export function makeClearHaltDeps(tenantId: string): ClearHaltDeps {
@@ -570,6 +612,9 @@ export function makeScrubBroadcastContentForMemberDeps(tenantId: string) {
     // F119 review finding F2-2 — the erasure cascade's reach into the member's
     // UPLOADED IMAGES. Redacting body_html removes the pointer, not the file.
     imagesRepo: drizzleBroadcastImagesRepo,
+    // F119 T082 — the approval round's versions, reasons and pending
+    // hand-offs, redacted / removed inside the same content-scrub tx.
+    approvalScrub: drizzleBroadcastApprovalScrub,
   };
 }
 
@@ -611,6 +656,18 @@ export function makeListMemberBroadcastsDeps(
 }
 
 /** F119 R17 — the member's E-Blast images for the F9 GDPR archive. */
+/** F119 T083 — the member's E-Blast approval rounds for the F9 GDPR archive. */
+export function makeListMemberBroadcastVersionsDeps(
+  tenantId: string,
+): ListMemberBroadcastVersionsDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    versionsRepo: drizzleBroadcastVersionsRepo,
+    decisionsRepo: drizzleBroadcastDecisionsRepo,
+  };
+}
+
 export function makeListMemberBroadcastImagesDeps(
   tenantId: string,
 ): ListMemberBroadcastImagesDeps {

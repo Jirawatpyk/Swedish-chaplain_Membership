@@ -15,13 +15,19 @@
  * next so we never exceed 5 concurrent requests against the cancel
  * endpoint.
  *
- * Classification — 3 buckets, mirroring `cancel-broadcast-dialog.tsx`'s
+ * Classification — 4 buckets, mirroring `cancel-broadcast-dialog.tsx`'s
  * 409-code split but simplified (there is no dialog UI to keep open here,
  * just a tally to report back through follow-up toasts):
  *   - `res.ok` (200)                                        → cancelled
- *   - 409 with `error.code === 'broadcast_cancel_too_late'` → tooLate
+ *   - 409 with `error.code` `sending_started` (F119 T081 — the row the cron
+ *     already picked up) or the legacy `broadcast_cancel_too_late`
+ *                                                           → tooLate
  *     (the cron already dispatched before Undo landed — a race, not a
  *     hard error)
+ *   - 429, keyed on the STATUS (a limiter in front may send no body)
+ *                                                           → rateLimited
+ *     (the row is still approved and WILL send — the caller must say so;
+ *     the staff cancel route carries no bucket, so this is a defence)
  *   - anything else (other 409 codes, 404/403/400/5xx, an unparsable
  *     error body, or a rejected `fetch()` itself)            → failed
  *
@@ -36,9 +42,13 @@ export interface UndoResult {
   readonly cancelled: number;
   readonly tooLate: number;
   readonly failed: number;
+  readonly rateLimited: number;
 }
 
-type Classification = 'cancelled' | 'tooLate' | 'failed';
+type Classification = keyof UndoResult;
+
+/** The 409 codes that mean "already dispatching — too late to undo". */
+const TOO_LATE_CODES: ReadonlySet<string> = new Set(['sending_started', 'broadcast_cancel_too_late']);
 
 async function cancelOne(
   id: string,
@@ -52,10 +62,12 @@ async function cancelOne(
       body: JSON.stringify({ cancellationReason }),
     });
     if (res.ok) return 'cancelled';
+    if (res.status === 429) return 'rateLimited';
     const body = (await res.json().catch(() => null)) as
       | { error?: { code?: string } }
       | null;
-    return body?.error?.code === 'broadcast_cancel_too_late'
+    const code = body?.error?.code;
+    return code !== undefined && TOO_LATE_CODES.has(code)
       ? 'tooLate'
       : 'failed';
   } catch {
@@ -68,7 +80,7 @@ export async function cancelApprovedBroadcasts(
   ids: readonly string[],
   cancellationReason: string,
 ): Promise<UndoResult> {
-  const tally = { cancelled: 0, tooLate: 0, failed: 0 };
+  const tally = { cancelled: 0, tooLate: 0, failed: 0, rateLimited: 0 };
 
   for (let i = 0; i < ids.length; i += CANCEL_CHUNK) {
     const chunk = ids.slice(i, i + CANCEL_CHUNK);

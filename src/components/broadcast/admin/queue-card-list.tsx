@@ -25,12 +25,19 @@
  *   ┌───────────────────────────────────────────┐
  *   │ [ ] Q3 Newsletter               [Awaiting]  │  select checkbox (if actionable+!readOnly) · subject link · status badge
  *   │     Acme Co · Member                        │  memberDisplayName + actorRoleLabel, unlabelled subtitle (no i18n key — mirrors the bare subject)
- *   │ Audience  All members                       │
- *   │ Recipients  42                              │
- *   │ Submitted  1 Aug 2026, 07:00  [Waiting 30h] │  age badge only when SLA-flagged (Smart-3)
+ *   │ Whose turn  Marketing                       │  F119 T117 — "—" when nobody is waiting
+ *   │ Time in stage  [30 h waiting]               │  the SLA badge (stalled / aging) or the plain duration
+ *   │ 40 recipients · 37 delivered · …            │  sent rows only (FR-029, UX review H2)
  *   │ ─────────────────────────────────────────  │
  *   │                        [Approve] [Reject]  │  ReviewActions (unchanged), actionable + !readOnly only
  *   └───────────────────────────────────────────┘
+ *
+ * UX review M7 — exactly the five phone-width fields FR-026 names (member,
+ * subject, stage, whose turn, time in stage) plus the delivery line on a sent
+ * row. Audience, Recipients and Submitted left the card: they are desktop
+ * columns (Audience) or detail-page facts (Submitted), and at phone width
+ * every extra line pushes the next card off screen. UX review M6 — the labels
+ * are muted, the values are not.
  *
  * The member subtitle mirrors the desktop `member` column cell verbatim
  * (`queue-table-client.tsx:190-204`: bold name stacked over xs-muted role
@@ -55,13 +62,13 @@
 import Link from 'next/link';
 import type { Table as ReactTableInstance } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { Clock, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
 import type { EnrichedQueueRow } from './queue-table-client';
+import { EmptySentinel, TimeInStage } from './queue-row-cells';
 
 export interface QueueCardListProps {
   /** The SAME `useReactTable` instance `QueueTableClient` builds — see the module docstring. */
@@ -136,31 +143,25 @@ export function QueueCardList({
                       {original.statusBadgeLabel}
                     </Badge>
                   </div>
-                  <LabeledRow label={t('audienceLabel')}>{original.segmentLabel}</LabeledRow>
-                  <LabeledRow label={t('recipientsLabel')}>
-                    <span className="tabular-nums">{original.recipientCount}</span>
+                  {/* F119 T117 (FR-026) — at phone width the card carries
+                      whose turn and time in stage beside member, subject and
+                      stage; round and the two send times live on the detail
+                      page (T115). The SLA badge travels with time in stage. */}
+                  <LabeledRow label={t('whoseTurnLabel')}>
+                    {original.whoseTurnLabel !== null ? (
+                      <span className="text-foreground">{original.whoseTurnLabel}</span>
+                    ) : (
+                      <EmptySentinel />
+                    )}
                   </LabeledRow>
-                  <LabeledRow label={t('submittedLabel')}>
-                    <span className="tabular-nums">{original.submittedAtFormatted}</span>
-                    {original.ageBadge ? (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'ml-2 inline-flex items-center gap-1 align-middle text-xs',
-                          original.ageBadge.variant === 'red'
-                            ? 'border-destructive/40 bg-destructive-surface text-destructive'
-                            : 'border-warning/40 bg-warning-surface text-warning',
-                        )}
-                      >
-                        {original.ageBadge.variant === 'red' ? (
-                          <AlertCircle className="h-3 w-3" aria-hidden="true" />
-                        ) : (
-                          <Clock className="h-3 w-3" aria-hidden="true" />
-                        )}
-                        {original.ageBadge.label}
-                      </Badge>
-                    ) : null}
+                  <LabeledRow label={t('timeInStageLabel')}>
+                    <TimeInStage row={original} />
                   </LabeledRow>
+                  {/* FR-029 — delivery results travel with a sent row at
+                      every width (UX review H2: the card had dropped them). */}
+                  {original.deliverySummary !== null ? (
+                    <p className="text-sm tabular-nums">{original.deliverySummary}</p>
+                  ) : null}
                   {showActions ? (
                     <div className="flex justify-end">
                       <span className="sr-only">{t('actionsLabel')}</span>
@@ -181,9 +182,9 @@ export function QueueCardList({
 }
 
 /**
- * Same shared-shape helper as `PipelineCardList`'s `LabeledRow` — a
- * `text-sm text-muted-foreground` `<p>` with an inline label followed by
- * the value node(s).
+ * Same shared-shape helper as `PipelineCardList`'s `LabeledRow` — a `text-sm`
+ * `<p>` with an inline label followed by the value node(s). UX review M6 —
+ * only the LABEL is muted: a muted value reads as empty or disabled.
  */
 function LabeledRow({
   label,
@@ -193,8 +194,11 @@ function LabeledRow({
   readonly children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <p className="text-sm text-muted-foreground">
-      {label} {children}
+    <p className="text-sm">
+      <span data-slot="card-field-label" className="text-muted-foreground">
+        {label}
+      </span>{' '}
+      {children}
     </p>
   );
 }

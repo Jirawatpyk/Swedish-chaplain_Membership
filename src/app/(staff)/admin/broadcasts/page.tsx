@@ -6,11 +6,12 @@ import { LayoutTemplateIcon } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
-import { QueueTable, type QueueRow } from '@/components/broadcast/admin/queue-table';
+import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
 import { isDefaultBroadcastView } from './_lib/is-default-view';
+import { queueOrderOf, queuePageHref, queueViewKey, queueViewNarrowed, queueViewTotal } from './_lib/queue-view';
 import { HaltStateBanner } from '@/components/broadcast/admin/halt-state-banner';
 import { HaltStateUnavailableBanner } from '@/components/broadcast/admin/halt-state-unavailable-banner';
 import { logger } from '@/lib/logger';
@@ -20,12 +21,15 @@ import { isF71aUs7Enabled } from '@/modules/broadcasts';
 import {
   BROADCAST_STATUSES,
   type BroadcastStatus,
-  makeGetBroadcastDeps,
   membersBridge,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
+import { isUpcomingPreset, loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
+import { readEblastStageChips } from '@/lib/eblast-waiting-count';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
+import { isYmd, tenantDayRangeUtc } from '@/lib/tenant-day-range';
 import { unstable_cache } from 'next/cache';
 
 /**
@@ -93,7 +97,10 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 
-interface SearchParams {
+// A type alias, not an interface: the view helpers (`_lib/queue-view.ts`)
+// take any string-keyed parameter record, and only an alias carries the
+// implicit index signature that assignment needs.
+type SearchParams = {
   readonly status?: string | string[];
   /**
    * Sentinel — `status_all=1` means the user explicitly chose "show
@@ -104,10 +111,24 @@ interface SearchParams {
    */
   readonly status_all?: string;
   readonly memberId?: string;
+  /**
+   * FR-030 — `YYYY-MM-DD` days in the tenant's timezone bounding `submitted_at`,
+   * both days whole. One that is not a real calendar day is ignored here (the
+   * list API refuses it with a 400 instead).
+   */
   readonly fromDate?: string;
   readonly toDate?: string;
   readonly cursor?: string;
-}
+  /**
+   * F119 T119 — `sort=scheduled_for&from=now` is the Upcoming sends preset
+   * (with `status=approved`): scheduled E-Blasts from now on, in send-time
+   * order. Any other `sort` is the dashboard's default order (UX review H1:
+   * longest in stage first on a view of waiting stages, most recent first on
+   * any other); any other `from` is no bound.
+   */
+  readonly sort?: string;
+  readonly from?: string;
+};
 
 export default async function AdminBroadcastsPage({
   searchParams,
@@ -151,62 +172,59 @@ export default async function AdminBroadcastsPage({
     (BROADCAST_STATUSES as readonly string[]).includes(s),
   ) as BroadcastStatus[];
 
-  const deps = makeGetBroadcastDeps(tenant.slug);
-  const listResult = await deps.broadcastsRepo.listByTenantStatus(tenant.slug, {
-    pageSize: 50,
-    ...(status.length > 0 && {
-      statusFilter: status as ReadonlyArray<BroadcastStatus>,
-    }),
-    ...(params.memberId !== undefined && { memberIdFilter: params.memberId }),
-    ...(params.cursor !== undefined && { cursor: params.cursor }),
-    sort: 'submitted_at_asc',
-  });
-
-  // Member display-name map for queue rows.
-  //
-  // R6 staff-review W-P1 — The prior implementation issued a SECOND
-  // `runInTenant` round-trip after the queue list; for ≤50 rows the
-  // second RTT (~25–40ms Bangkok→Singapore) was negligible but
-  // structurally an N+1 design smell that did not scale to multi-
-  // tenant queues. We coalesce both queries into a single
-  // `runInTenant` callback so they share the connection acquisition +
-  // tenant context bind, eliminating the second round-trip even when
-  // we keep two separate SELECTs (one against `broadcasts`, one
-  // against `members` filtered by the just-fetched IDs). The
-  // `members` lookup is bounded by `MAX_PAGE_SIZE` (≤100 IDs) so the
-  // ANY-array + composite PK on `(tenant_id, member_id)` keeps it
-  // index-only.
-  const memberIds = Array.from(
-    new Set(listResult.rows.map((r) => r.requestedByMemberId)),
+  // F119 T117 / T119 — ONE projection for the page and the list API
+  // (`loadAdminBroadcastQueue`): the FR-026 columns, the member name, and the
+  // delivery results of sent rows. Order (UX review H1, `queueSortFor`):
+  // longest in the current stage first on a view of waiting stages only (on
+  // the default Awaiting-review view that is the old submitted-first order —
+  // submit stamps `stage_entered_at`); most recent first on every other view.
+  const scheduledFrom = upcomingFrom(params.from);
+  const submitted = tenantDayRangeUtc(
+    typeof params.fromDate === 'string' && isYmd(params.fromDate) ? params.fromDate : undefined,
+    typeof params.toDate === 'string' && isYmd(params.toDate) ? params.toDate : undefined,
+    env.tenant.timezone,
   );
-  const memberDisplayMap = new Map<string, string>();
-  if (memberIds.length > 0) {
-    const memberRows = (await runInTenant(tenant, async (tx) =>
-      tx.execute(sql`
-        SELECT member_id, company_name FROM members
-        WHERE tenant_id = ${tenant.slug}
-          AND member_id::text = ANY(ARRAY[${sql.join(
-            memberIds.map((id) => sql`${id}`),
-            sql`, `,
-          )}]::text[])
-      `),
-    )) as unknown as Array<{ member_id: string; company_name: string }>;
-    for (const r of memberRows) memberDisplayMap.set(r.member_id, r.company_name);
-  }
+  // Round-4 B7 — the send-time order only WITH its `from=now` bound (a keyset
+  // over the nullable `scheduled_for` loses the unscheduled rows otherwise);
+  // an unbounded `sort=scheduled_for` falls back to the view's own order.
+  const sort = queueSortFor(status, isUpcomingPreset(params.sort, params.from));
+  const [listResult, stageChips] = await Promise.all([
+    loadAdminBroadcastQueue(tenant, {
+      statusFilter: status,
+      pageSize: 50,
+      sort,
+      ...(params.memberId !== undefined && { memberId: params.memberId }),
+      ...(params.cursor !== undefined && { cursor: params.cursor }),
+      ...(scheduledFrom !== undefined && { scheduledFrom }),
+      ...(submitted.fromInclusive !== undefined && { submittedFrom: submitted.fromInclusive }),
+      ...(submitted.toExclusive !== undefined && { submittedBefore: submitted.toExclusive }),
+    }),
+    // F119 T116 (FR-025, R18) — the per-stage chip counts + the flag the chip
+    // strip's "flag ON or rows exist" rule needs. A failed read degrades to
+    // chips without numbers; it never fails the page.
+    readEblastStageChips(tenant, 'M119.admin.broadcasts.stage_counts_failed'),
+  ]);
 
-  const rows: ReadonlyArray<QueueRow> = listResult.rows.map((row) => ({
-    broadcastId: row.broadcastId as string,
-    status: row.status,
-    subject: row.subject,
-    requestedByMemberId: row.requestedByMemberId,
-    requestedByMemberDisplayName:
-      memberDisplayMap.get(row.requestedByMemberId) ?? row.requestedByMemberId,
-    actorRole: row.actorRole,
-    segmentType: row.segmentType,
-    estimatedRecipientCount: row.estimatedRecipientCount,
-    submittedAt: row.submittedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-  }));
+  const rows = listResult.items;
+
+  // UX review H3 — the announcement counts the VIEW, not this page of ≤ 50:
+  // the chip counts summed over the view's stages, when nothing they cannot
+  // see (a member, the Upcoming bound, the FR-030 date range) narrows it. H4 — the view's identity,
+  // so a change of view is announced even when it lands on the same rows.
+  const viewTotal = queueViewTotal({
+    stageCounts: stageChips.kind === 'ok' ? stageChips.counts : null,
+    statusFilter: status,
+    allStatuses: BROADCAST_STATUSES,
+    narrowed: queueViewNarrowed({
+      ...(params.memberId !== undefined && { memberId: params.memberId }),
+      ...(scheduledFrom !== undefined && { scheduledFrom }),
+      submitted,
+    }),
+    firstPage: params.cursor === undefined,
+    rowsOnPage: rows.length,
+    hasNextPage: listResult.nextCursor !== null,
+  });
+  const viewKey = queueViewKey(params);
 
   // SLA stats — R6 W-P2: 5-min cached PERCENTILE_CONT aggregate (see
   // `computeSlaStatsForTenant` above). Result is per-tenant.
@@ -304,7 +322,7 @@ export default async function AdminBroadcastsPage({
   )) as unknown as Array<{ n: number }>;
   const overdueCount = overdueRows[0]?.n ?? 0;
 
-  // Overdue banner + truncation note only on the default `submitted`
+  // Overdue banner only on the default `submitted`
   // view — a filtered/searched subset would mislead (mirror
   // erasure-log unfiltered gating in
   // `compliance/erasure-log/page.tsx`). Delegated to a pure helper
@@ -314,7 +332,12 @@ export default async function AdminBroadcastsPage({
   // an active filter (Task 3 review fix, Important).
   const isDefaultView = isDefaultBroadcastView(params);
   const showOverdue = isDefaultView && overdueCount > 0;
-  const truncated = isDefaultView && listResult.nextCursor !== null;
+  // UX review H1 — every view pages, not only the default one: a Sent view
+  // with no way past its first 50 rows hid everything older. Keyset pages
+  // forward ("Next page") and back to the start ("First page").
+  const nextPageHref =
+    listResult.nextCursor !== null ? queuePageHref(params, listResult.nextCursor) : null;
+  const firstPageHref = params.cursor !== undefined ? queuePageHref(params, null) : null;
 
   // F7.1a US7 (T112+) — surface admin templates entry-point on the
   // queue header. Gated by isF71aUs7Enabled so when the flag is OFF
@@ -377,9 +400,6 @@ export default async function AdminBroadcastsPage({
       />
       <OverdueBanner count={showOverdue ? overdueCount : 0} />
       <SlaBanner stats={slaStats} compact={showOverdue} />
-      {truncated ? (
-        <p className="text-xs text-muted-foreground">{t('truncationNote')}</p>
-      ) : null}
       {haltStateUnavailable ? (
         // Round 2 (UX M-2): the same anatomy as the sibling banner in this slot.
         <HaltStateUnavailableBanner />
@@ -387,12 +407,54 @@ export default async function AdminBroadcastsPage({
         <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
       )}
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
-      <QueueFilters memberOptions={memberOptions} />
+      <QueueFilters
+        memberOptions={memberOptions}
+        stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
+        approvalRoundEnabled={stageChips.approvalRoundEnabled}
+      />
       {/* Round 2 (UX M-1): the warning travels to the decision point — the
           bulk-approve confirm dialog repeats it when the halt state is
           unknown. A NEW prop, not `readOnly`: "manager cannot approve" and
           "the halt read failed" are different facts. */}
-      <QueueTable rows={rows} readOnly={isReadOnlyManager} haltUnknown={haltStateUnavailable} />
+      <QueueTable
+        rows={rows}
+        readOnly={isReadOnlyManager}
+        haltUnknown={haltStateUnavailable}
+        order={queueOrderOf(sort)}
+        viewTotal={viewTotal}
+        viewKey={viewKey}
+        // T086a V10 — rendered by the queue between the list and the bulk
+        // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
+        // visually last and must come last in Tab order too (it came first).
+        pagination={
+          nextPageHref !== null || firstPageHref !== null ? (
+            <nav
+              aria-label={t('pagination.label')}
+              className="flex flex-wrap items-center justify-between gap-3"
+            >
+              <p className="text-sm tabular-nums">
+                {/* On the first page only: keyset pages have no offset, so on page 2
+                    "Showing 50 of 132" would read as the same first 50. */}
+                {viewTotal !== null && firstPageHref === null
+                  ? t('pagination.summary', { shown: rows.length, total: viewTotal })
+                  : null}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {firstPageHref !== null ? (
+                  <Link href={firstPageHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.first')}
+                  </Link>
+                ) : null}
+                {nextPageHref !== null ? (
+                  <Link href={nextPageHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.next')}
+                  </Link>
+                ) : null}
+              </div>
+            </nav>
+          ) : null
+        }
+      />
     </TableContainer>
   );
 }

@@ -20,6 +20,12 @@
  * Configuration: see `docs/runbooks/cron-jobs.md` for the runbook entry.
  * Without this trigger the gauges stay at 0 and the alerts never fire.
  *
+ * F119 T121 — the broadcasts transaction also emits the four E-Blast
+ * approval-stage gauges (`awaiting_member_approval_count`,
+ * `awaiting_member_oldest_age_seconds`, `changes_requested_count`,
+ * `marketing_turn_count`; `specs/119-eblast-approval-workflow/contracts/
+ * dashboard-and-notifications.md` § 4.1), zero-filled like the counts.
+ *
  * Idempotent: GET-only, read-only. Re-running emits identical samples.
  * Runtime: Node.js. Force-dynamic to skip Next cache.
  *
@@ -56,11 +62,23 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics, membersMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const STUCK_SENDING_HOURS = 24;
+
+/**
+ * F119 T132 — the marketing-turn set as SQL bind values, derived from the
+ * Domain (`turnOf(status) === 'marketing'`), so this gauge and the staff nav's
+ * live waiting count (`drizzle-broadcast-approval-counter.ts`) count ONE set.
+ * It was a hand-listed literal here.
+ */
+const MARKETING_TURN_IN = sql.join(
+  MARKETING_TURN_STATUSES.map((status) => sql`${status}`),
+  sql`, `,
+);
 
 interface TenantRow extends Record<string, unknown> {
   tenant_id: string;
@@ -76,6 +94,18 @@ interface MembersPendingRow extends Record<string, unknown> {
   readonly tenant_id: string;
   readonly count: number;
   readonly oldest_age_seconds: number;
+}
+
+/**
+ * F119 T121 — one row per tenant with ≥ 1 broadcast in an E-Blast approval
+ * stage (`contracts/dashboard-and-notifications.md` § 4.1).
+ */
+interface EblastStageRow extends Record<string, unknown> {
+  readonly tenant_id: string;
+  readonly awaiting_count: number;
+  readonly awaiting_oldest_age_seconds: number;
+  readonly changes_requested_count: number;
+  readonly marketing_turn_count: number;
 }
 
 interface DispatchRatioRow extends Record<string, unknown> {
@@ -134,6 +164,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let suppressionSizes: PendingRow[] = [];
   let approvedOverdue: PendingRow[] = [];
   let audienceImportStuck: PendingRow[] = [];
+  let eblastStages: EblastStageRow[] = [];
   let broadcastsGaugesOk = true;
   try {
     const result = await db.transaction(async (tx) => {
@@ -231,10 +262,43 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           AND audience_import_submitted_at < now() - interval '30 minutes'
         GROUP BY tenant_id
       `);
+      // F119 T121 (§ 4.1) — the four E-Blast approval-stage gauges, one
+      // grouped scan. The WHERE keeps the GROUP BY to tenants with a row in
+      // one of the five stages; every other observed tenant is zero-filled
+      // below. `status::text` like every sibling: a bare comparison against
+      // a literal the pg enum does not (yet) carry is an error, not a miss.
+      // MIN over zero FILTERed rows is NULL, hence the COALESCE. This query
+      // needs migration 0308 (`stage_entered_at` + the five statuses), which
+      // ships in the same PR and runs in `vercel-build` before the build.
+      const eblastStageRows = await tx.execute<EblastStageRow>(sql`
+        SELECT
+          tenant_id,
+          COUNT(*) FILTER (WHERE status::text = 'awaiting_member_approval')::int AS awaiting_count,
+          COALESCE(
+            EXTRACT(EPOCH FROM (now() - MIN(stage_entered_at) FILTER (WHERE status::text = 'awaiting_member_approval'))),
+            0
+          )::int AS awaiting_oldest_age_seconds,
+          COUNT(*) FILTER (WHERE status::text = 'changes_requested')::int AS changes_requested_count,
+          COUNT(*) FILTER (
+            WHERE status::text IN (${MARKETING_TURN_IN})
+          )::int AS marketing_turn_count
+        FROM broadcasts
+        WHERE status::text IN (${MARKETING_TURN_IN}, 'awaiting_member_approval')
+        GROUP BY tenant_id
+      `);
       const tenantRows = await tx.execute<TenantRow>(sql`
         SELECT DISTINCT tenant_id FROM broadcasts
       `);
-      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows, audienceImportStuckRows };
+      return {
+        tenantRows,
+        pendingRows,
+        stuckRows,
+        dispatchRows,
+        suppressionRows,
+        approvedOverdueRows,
+        audienceImportStuckRows,
+        eblastStageRows,
+      };
     });
     tenants = Array.from(result.tenantRows ?? []);
     pending = Array.from(result.pendingRows);
@@ -243,6 +307,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     suppressionSizes = Array.from(result.suppressionRows);
     approvedOverdue = Array.from(result.approvedOverdueRows);
     audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
+    eblastStages = Array.from(result.eblastStageRows ?? []);
   } catch (e) {
     broadcastsGaugesOk = false;
     logger.error(
@@ -261,6 +326,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
   const importStuckByTenant = new Map(audienceImportStuck.map((r) => [r.tenant_id, r.count]));
   const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
+  const eblastStageByTenant = new Map(eblastStages.map((r) => [r.tenant_id, r]));
   const observed = new Set<string>();
   for (const t of [
     ...tenants.map((r) => r.tenant_id),
@@ -272,6 +338,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // contact-level opt-out recorded before the first send), so the
     // suppression keys join the observed set rather than relying on it.
     ...suppressionByTenant.keys(),
+    ...eblastStageByTenant.keys(),
   ]) {
     observed.add(t);
   }
@@ -300,6 +367,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // siblings rather than being forgotten like the ratio.
   for (const tenantId of observed) {
     broadcastsMetrics.suppressionListSize(tenantId, suppressionByTenant.get(tenantId) ?? 0);
+  }
+  // F119 T121 (§ 4.1) — all four are ZERO-FILLED, not forgotten: three are
+  // counts, and the oldest age is a level where 0 means "nothing waiting"
+  // (the same choice as the F114 members age gauge below). Only a ratio is
+  // forgotten, because its 0 would assert something that did not happen.
+  // The age is clamped: it can only be negative under DB/app clock skew,
+  // and the § 4.3 alert rules must never see a nonsense value.
+  for (const tenantId of observed) {
+    const row = eblastStageByTenant.get(tenantId);
+    broadcastsMetrics.awaitingMemberApprovalCount(tenantId, row?.awaiting_count ?? 0);
+    broadcastsMetrics.awaitingMemberOldestAgeSeconds(tenantId, Math.max(0, row?.awaiting_oldest_age_seconds ?? 0));
+    broadcastsMetrics.changesRequestedCount(tenantId, row?.changes_requested_count ?? 0);
+    broadcastsMetrics.marketingTurnCount(tenantId, row?.marketing_turn_count ?? 0);
   }
   const ratioTenants = new Set<string>();
   for (const row of dispatchRatios) {

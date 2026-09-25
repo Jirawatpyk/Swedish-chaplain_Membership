@@ -3,10 +3,27 @@
  *
  * Shared between member-self + admin paths per FR-004a / Q10.
  *
- * State-check via Domain `authorizeCancel` policy:
- *   - cancellable iff status IN ('submitted', 'approved')
- *   - REJECTS sending/sent/rejected/cancelled/failed_to_dispatch with
- *     `broadcast_cancel_too_late` (409 + audit)
+ * State-check via Domain `authorizeCancel` policy (widened by F119 T081):
+ *   - cancellable at every in-progress stage (`IN_PROGRESS_BROADCAST_STATUSES`
+ *     — FR-015: withdrawable at ANY stage before sending begins)
+ *   - from `sending` onward → `sending_started` (409): the send completes;
+ *     likewise an `approved` row the dispatcher already handed over
+ *     (`hasDispatchBegun`, T166 R-H1)
+ *   - a closed E-Blast that never started sending (rejected / cancelled /
+ *     expired / a failed dispatch) → `broadcast_cancel_too_late` (409)
+ *   Both refusals audit `broadcast_cancel_too_late` (the forensic event).
+ *
+ * F119 T081, in the SAME transaction as the transition:
+ *   - every live `broadcast_images` row of the E-Blast is stamped and audited
+ *     `broadcast_image_removed { reason: 'withdrawn' }` (the bytes go on the
+ *     sweep's next tick, under the last-reference rule — spec § Personal data);
+ *   - a MEMBER withdrawal tells the other party (FR-021 "withdrawn → the other
+ *     party"): one `eblast_member_decided_marketing { decision: 'withdrawn' }`
+ *     row per marketing recipient (FR-021a), ids only. `versionId` is null —
+ *     a whole-E-Blast withdrawal concerns no one version — and `round` is the
+ *     current round, or null before any round (the arm renders from the
+ *     broadcast alone). The enqueue is unconditional; the flag lives at the
+ *     drainer (T152a).
  *
  * Authorisation:
  *   - `member` actor: only the originating member
@@ -24,6 +41,11 @@ import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
+import { hasDispatchBegun } from '../../domain/stage/in-progress-statuses';
+import type { BroadcastImagesRepo } from '../ports/broadcast-images-repo';
+import type { EblastNotificationOutboxPort } from '../ports/eblast-notification-outbox-port';
+import type { MarketingDirectoryPort } from '../ports/marketing-directory-port';
+import { markOwnerImagesRemoved } from './_mark-owner-images-removed';
 
 import type { AuditPort } from '../ports/audit-port';
 import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
@@ -62,6 +84,8 @@ export type CancelActor =
 export type CancelBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
   | { readonly kind: 'broadcast_cancel_too_late'; readonly observedStatus: string }
+  /** F119 T081 — from `sending` onward: the send completes (FR-015). */
+  | { readonly kind: 'sending_started'; readonly observedStatus: string }
   | {
       readonly kind: 'broadcast_concurrent_action_blocked';
       readonly observedStatus: string;
@@ -70,11 +94,26 @@ export type CancelBroadcastError =
       readonly kind: 'broadcast_cancel_reason_too_long';
       readonly length: number;
     }
-  | { readonly kind: 'cancel.server_error'; readonly message: string };
+  /**
+   * An infrastructure fault. `errKind` is the error CLASS only (T166 R-M4):
+   * the raw message can carry a Neon error's bound parameters, and the route
+   * logs what it is handed.
+   */
+  | { readonly kind: 'cancel.server_error'; readonly errKind: string };
 
 export interface CancelBroadcastDeps {
   readonly tenant: TenantContext;
-  readonly broadcastsRepo: BroadcastsRepo;
+  /**
+   * `lockForUpdate` (round-4 B4) takes the row lock before the row is read;
+   * `findById` (round-4 B5) is the non-locking pre-read the locale read keys on.
+   */
+  readonly broadcastsRepo: Pick<BroadcastsRepo, 'withTx' | 'findById' | 'lockForUpdate' | 'findByIdInTx' | 'applyTransition'>;
+  /** F119 T081 — the E-Blast's image rows, stamped in the cancel's tx. */
+  readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;
+  /** F119 T081 — who "marketing" is for the member-withdrawal hand-off (FR-021a). */
+  readonly marketingDirectory: MarketingDirectoryPort;
+  /** F119 T081 — the ids-only approval-round outbox, on the cancel's tx. */
+  readonly eblastOutbox: EblastNotificationOutboxPort;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /** G2 closure (verify-fix 2026-05-02) — best-effort post-cancel email. */
@@ -86,6 +125,11 @@ export interface CancelBroadcastDeps {
 export interface CancelBroadcastInput {
   readonly broadcastId: BroadcastId;
   readonly actor: CancelActor;
+  /**
+   * F119 T081 — the SESSION role, recorded as-is on the image-removal audit
+   * rows (`check:actor-role-truth`: never a literal stand-in).
+   */
+  readonly actorRole: string | null;
   readonly cancellationReason: string | null;
   readonly requestId: string | null;
   /** E1 closure (verify-fix 2026-05-02) — locale for notification email. */
@@ -117,7 +161,27 @@ export async function cancelBroadcast(
     input.actor.kind === 'member' ? 'member_self_service' : 'admin';
 
   try {
-    return await deps.broadcastsRepo.withTx(async (tx) => {
+    // T166 R-L3 — a member withdrawal hands off to marketing; the roster is a
+    // pool-global read and is made BEFORE the tx, never while it holds the row
+    // lock. Its empty-roster count is paid only once the withdrawal committed.
+    const roster = input.actor.kind === 'member' ? await deps.marketingDirectory.readRoster() : [];
+    // F119 round-4 B5 — the member's preferred locale (for the cancellation
+    // email) is a members-bridge read on its own pool connection, so it is
+    // made here too, before the lock. `requested_by_member_id` is immutable
+    // after submit, so a non-locking pre-read names the member the locked row
+    // will. A member is never read for another member's E-Blast (that cancel
+    // answers not-found below).
+    const memberPreferred = await readPreferredLocaleBeforeTx(deps, input);
+    const withdrawn = await deps.broadcastsRepo.withTx<Result<CancelBroadcastOutput, CancelBroadcastError>>(async (tx) => {
+      // F119 round-4 B4 — lock the row BEFORE reading it. The dispatch leg
+      // commits its own lock before calling Resend and attaches the id in a
+      // later tx; read unlocked, an attach committing between this read and
+      // the status-only CAS below let the row end `cancelled` WITH a Resend id
+      // (the email went out, the allowance was freed). Under the lock the read
+      // sees the attach, and `hasDispatchBegun` refuses `sending_started`.
+      // The decision stays on the re-read row (not the lock's status), exactly
+      // as the approval use cases do.
+      await deps.broadcastsRepo.lockForUpdate(tx, deps.tenant.slug, input.broadcastId);
       const existing = await deps.broadcastsRepo.findByIdInTx(
         tx,
         deps.tenant.slug,
@@ -174,24 +238,29 @@ export async function cancelBroadcast(
       // would delete the batch branch's last documentation of itself, and the
       // policy's own tests still exercise both. Reviewed as a dead branch and
       // kept deliberately — see reviews/review-20260908-223000.md S40.
-      const policyResult = authorizeCancel(existing.status, false);
+      //
+      // T166 R-H1 — an `approved` row the dispatcher has already handed over
+      // (`resend_broadcast_id` / `audience_import_id` set, status not moved
+      // yet) is refused `sending_started`, exactly as every other exit from
+      // `approved` is. Otherwise the row would read `cancelled` and free the
+      // allowance while the email goes out. Decided before any write.
+      const policyResult =
+        existing.status === 'approved' && hasDispatchBegun(existing)
+          ? err({ code: 'sending_started' as const, status: existing.status })
+          : authorizeCancel(existing.status, false);
       if (!policyResult.ok) {
-        // R7 staff-review MED-R2 — `null` tx is intentional here: the
-        // policy reject branch performs NO state mutation (no UPDATE,
-        // no INSERT into broadcasts), so emitting the audit on
-        // auto-commit is safe — there is no broadcasts-row write that
-        // could roll back independently. This DIVERGES from the
-        // F5/F4 in-tx-audit pattern but the F5/F4 patterns wrap a
-        // mutation; here the audit is the sole side effect of a
-        // policy reject. If a future change adds a write to this
-        // branch (unlikely — it would conflict with FR-004a's
-        // "cancellation rejected" semantic), promote `null` → `tx`.
+        // PR #392 review D2 — the refusal audit rides THIS tx. It used to be
+        // emitted on `null` (auto-commit on a SECOND pool connection) while
+        // this tx held the row lock (round-4 B4). The branch writes nothing
+        // else, so the `err(...)` below — a normal return — commits exactly
+        // the audit row. A failed emit is swallowed (logged) and aborts the
+        // tx, whose COMMIT then rolls back: nothing else was written.
         try {
-          await deps.audit.emit(null, {
+          await deps.audit.emit(tx, {
             tenantId: deps.tenant.slug,
             eventType: 'broadcast_cancel_too_late',
             actorUserId,
-            summary: `Cancel rejected — broadcast ${input.broadcastId} in terminal state ${existing.status}`,
+            summary: `Cancel rejected (${policyResult.error.code}) — broadcast ${input.broadcastId} at ${existing.status}`,
             payload: {
               broadcastId: input.broadcastId,
               observedStatus: existing.status,
@@ -215,7 +284,7 @@ export async function cancelBroadcast(
           );
         }
         return err({
-          kind: 'broadcast_cancel_too_late',
+          kind: policyResult.error.code,
           observedStatus: existing.status,
         });
       }
@@ -290,9 +359,46 @@ export async function cancelBroadcast(
           actorRole,
           cancellationReason: input.cancellationReason,
           cancelledAt: now.toISOString(),
+          // F119 T081 — the stage it was withdrawn / cancelled from.
+          previousStatus: existing.status,
         },
         requestId: input.requestId,
       });
+
+      // F119 T081 — the images stop being reachable in the same tx.
+      await markOwnerImagesRemoved(
+        { imagesRepo: deps.imagesRepo, audit: deps.audit },
+        {
+          tenantId: deps.tenant.slug,
+          owner: { kind: 'broadcast', id: input.broadcastId as string },
+          reason: 'withdrawn',
+          at: now,
+          requestId: input.requestId ?? `cancel-${input.broadcastId as string}`,
+          actorUserId,
+          actorRole: input.actorRole,
+          relatedMemberId: cancelled.requestedByMemberId,
+        },
+        tx,
+      );
+
+      // F119 T081 — a member withdrawal is a hand-off to marketing (FR-021).
+      if (input.actor.kind === 'member') {
+        for (const recipient of roster) {
+          await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
+            type: 'eblast_member_decided_marketing',
+            toEmail: recipient.email,
+            locale: recipient.locale,
+            contextData: {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              versionId: null,
+              round: existing.currentRound >= 1 ? existing.currentRound : null,
+              decision: 'withdrawn',
+              recipientUserId: recipient.userId,
+            },
+          });
+        }
+      }
 
       // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — notify the
       // originating member. For self-cancel: confirmation. For
@@ -300,27 +406,9 @@ export async function cancelBroadcast(
       // + the (admin-supplied) cancellation reason.
       // Recipient = `replyToEmail` (immutable submit-time snapshot).
       // Verify-fix R4 (Simplify-#2 + Types-#6): shared helper +
-      // member-preferred-locale chain.
+      // member-preferred-locale chain (the locale was read before the tx —
+      // round-4 B5).
       if (deps.emailTransactional) {
-        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
-        if (deps.membersBridge) {
-          try {
-            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
-              deps.tenant,
-              cancelled.requestedByMemberId,
-            );
-          } catch (e) {
-            logger.warn(
-              {
-                err: errKind(e),
-                tenantId: deps.tenant.slug,
-                memberId: cancelled.requestedByMemberId,
-                useCase: 'cancel-broadcast',
-              },
-              'broadcasts.locale_resolve_failed',
-            );
-          }
-        }
         await enqueueBroadcastMemberNotification({
           tenant: deps.tenant,
           emailTransactional: deps.emailTransactional,
@@ -336,6 +424,10 @@ export async function cancelBroadcast(
 
       return ok({ broadcast: cancelled, reservationReleased: true as const });
     });
+    if (withdrawn.ok && input.actor.kind === 'member' && roster.length === 0) {
+      deps.marketingDirectory.reportEmptyRoster();
+    }
+    return withdrawn;
   } catch (e) {
     // Bug #5: the concurrency signal was rethrown from inside withTx to force
     // the rollback (batch halts + never-applied transition reverted). Map it
@@ -346,10 +438,33 @@ export async function cancelBroadcast(
         observedStatus: e.observedStatus,
       });
     }
-    return err({
-      kind: 'cancel.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
+    return err({ kind: 'cancel.server_error', errKind: errKind(e) });
+  }
+}
+
+/**
+ * Round-4 B5 — the owning member's preferred locale, read before the tx and
+ * best-effort: a bridge throw is logged (R5 verify-fix Errors-H3, the error
+ * CLASS only) and answers null, so the chain falls through. Nothing is read
+ * when no email will be sent, for a row that is gone, or for a member actor
+ * who does not own the row.
+ */
+async function readPreferredLocaleBeforeTx(
+  deps: CancelBroadcastDeps,
+  input: CancelBroadcastInput,
+): Promise<'en' | 'th' | 'sv' | null> {
+  if (!deps.emailTransactional || !deps.membersBridge) return null;
+  const preRead = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  if (preRead === null) return null;
+  if (input.actor.kind === 'member' && preRead.requestedByMemberId !== input.actor.memberId) return null;
+  try {
+    return await deps.membersBridge.getMemberPreferredLocale(deps.tenant, preRead.requestedByMemberId);
+  } catch (e) {
+    logger.warn(
+      { err: errKind(e), tenantId: deps.tenant.slug, memberId: preRead.requestedByMemberId, useCase: 'cancel-broadcast' },
+      'broadcasts.locale_resolve_failed',
+    );
+    return null;
   }
 }
 

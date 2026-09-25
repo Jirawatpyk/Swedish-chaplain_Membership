@@ -150,6 +150,50 @@ describe('POST /api/admin/broadcasts/[id]/images', () => {
     expect((await POST(req(), params())).status).toBe(503);
   });
 
+  // T106a — the PR-2 stage set, decided by the REAL `authorizeImageOwner`
+  // (the barrel mock delegates to it over a one-row repo), so the stage set
+  // itself is under test rather than a mocked verdict.
+  async function withRealAuthorize(status: string) {
+    const real = await vi.importActual<typeof import('@/modules/broadcasts/application/use-cases/authorize-image-owner')>(
+      '@/modules/broadcasts/application/use-cases/authorize-image-owner',
+    );
+    const events: string[] = [];
+    authorizeMock.mockImplementation((_deps: unknown, input: Parameters<typeof real.authorizeImageOwner>[1]) =>
+      real.authorizeImageOwner(
+        {
+          tenant: { slug: 'test-tenant' } as never,
+          broadcastsRepo: {
+            findOwnedByMember: vi.fn(),
+            findById: vi.fn(async () => ({ broadcastId: BID, status, requestedByMemberId: '22222222-2222-2222-2222-222222222222' })),
+          } as never,
+          templates: { findById: vi.fn() } as never,
+          audit: { emit: async (_t: unknown, e: { eventType: string }) => void events.push(e.eventType), emitTyped: async () => undefined } as never,
+        },
+        input,
+      ),
+    );
+  }
+
+  it('T106a — upload on an in_design broadcast → 201: the image joins the working copy marketing is formatting', async () => {
+    await withRealAuthorize('in_design');
+    const { POST } = await importRoute();
+    const res = await POST(req(), params());
+    expect(res.status).toBe(201);
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+    expect(uploadMock.mock.calls[0]![1]).toMatchObject({ actor: { relatedMemberId: '22222222-2222-2222-2222-222222222222' } });
+  });
+
+  it('T106a — upload on awaiting_member_approval → 409 stage_changed (a sent version is read-only); nothing is uploaded', async () => {
+    await withRealAuthorize('awaiting_member_approval');
+    const { POST } = await importRoute();
+    const res = await POST(req(), params());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('stage_changed');
+    expect(body.error.details).toEqual({ status: 'awaiting_member_approval' });
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
   it('a form without a file → 400 invalid_body before the bucket is consumed', async () => {
     const { POST } = await importRoute();
     expect((await POST(req(BID, null), params())).status).toBe(400);

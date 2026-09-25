@@ -65,6 +65,31 @@ export function broadcastsTracer(): Tracer {
 }
 
 /**
+ * F119 T122 — the E-Blast approval-workflow span names on `broadcastsTracer()`
+ * (`specs/119-eblast-approval-workflow/contracts/dashboard-and-notifications.md`
+ * § 4.4). Emitters import the name from here rather than spelling it, so a
+ * dashboard query and the code cannot drift apart:
+ *
+ *   previewRender   — the preview render (T032)
+ *   versionSend     — marketing sends a version to the member (T059)
+ *   memberDecide    — the member approves / requests changes / withdraws (T078)
+ *   scheduleConfirm — marketing confirms the send time after approval (T060)
+ *
+ * `previewRender` belongs to T122a's half (PR-1); T032 shipped without
+ * emitting it, so it is registered here with the other three.
+ *
+ * Attribute allowlist (§ 4.4): `tenant.slug`, `broadcast.id`,
+ * `broadcast.stage`, `broadcast.round` — never a value (no subject, body,
+ * note, reason or email address).
+ */
+export const F119_BROADCASTS_SPANS = {
+  previewRender: 'broadcasts.preview.render',
+  versionSend: 'broadcasts.version.send',
+  memberDecide: 'broadcasts.member.decide',
+  scheduleConfirm: 'broadcasts.schedule.confirm',
+} as const;
+
+/**
  * F8 Phase 3.5 S-06 — OTel tracer for the renewals bounded context.
  *
  * Trace tree (US1 Phase 3 + Phase 4+ extensions):

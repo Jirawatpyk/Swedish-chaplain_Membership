@@ -660,7 +660,7 @@ describe('applyNavBadges — F114 US6 server-resolved badge counts (plan Complex
     expect(byHref).toEqual({ '/admin/a': 3, '/admin/b': undefined, '/admin/g/c': undefined });
   });
 
-  it('the static config never authors a badgeCount; changeRequests declares the sr-only label key', () => {
+  it('the static config never authors a badgeCount; changeRequests and broadcasts declare their sr-only label keys', () => {
     // `badgeCount` is server-resolved (staff layout → sidebar); a hand-authored
     // count in the config would be a stale number on every tenant — and the
     // authored `badge` carries the LABEL KEY only, never a number.
@@ -670,8 +670,11 @@ describe('applyNavBadges — F114 US6 server-resolved badge counts (plan Complex
     expect(leavesOfStaff.every((i) => !('badgeCount' in i))).toBe(true);
     const changeRequests = leavesOfStaff.find((i) => i.href === '/admin/change-requests')!;
     expect(changeRequests.badge).toEqual({ labelKey: 'nav.staff.changeRequestsBadge' });
-    // the ONLY badgeable item today — `BadgeableNavHref` says so in the type
+    // F119 T132 — the E-Blast waiting count on Broadcasts (FR-023).
+    const broadcasts = leavesOfStaff.find((i) => i.href === '/admin/broadcasts')!;
+    expect(broadcasts.badge).toEqual({ labelKey: 'nav.staff.broadcastsBadge' });
+    // the ONLY badgeable items today — `BadgeableNavHref` says so in the type
     // system; this pins that the config agrees
-    expect(leavesOfStaff.filter((i) => i.badge !== undefined).map((i) => i.href)).toEqual(['/admin/change-requests']);
+    expect(leavesOfStaff.filter((i) => i.badge !== undefined).map((i) => i.href)).toEqual(['/admin/change-requests', '/admin/broadcasts']);
   });
 });

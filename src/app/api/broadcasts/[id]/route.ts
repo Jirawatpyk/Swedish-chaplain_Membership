@@ -3,6 +3,13 @@
  *
  * Member views their own broadcast detail. Cross-member probe → 404
  * (FR-037; matches `enforce-tenant-context` pattern).
+ *
+ * F119 T141a (FR-049, plan Amendment 5) — the workflow fields: `stage`,
+ * `whoseTurn`, `round`, `proposedSendAt`, `confirmedSendAt`, `expiresAt`.
+ * While the E-Blast is awaiting the member, `subject` / `bodyHtml` /
+ * `bodySource` are the latest version SENT to them (what they are signing
+ * off); otherwise the record's own content (`readMemberEblastView`, after the
+ * owning-member check below).
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -11,12 +18,15 @@ import {
   enforceTenantContext,
   makeGetBroadcastDeps,
   makeEnforceTenantContextDeps,
+  readMemberEblastView,
 } from '@/modules/broadcasts';
+import { makeReadMemberEblastViewDeps } from '@/lib/broadcast-approval-deps';
 import {
   errorResponse,
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 
 export async function GET(
@@ -75,13 +85,25 @@ export async function GET(
       return errorResponse(404, 'broadcast_not_found', correlationId);
     }
 
+    const { summary, content } = await readMemberEblastView(
+      makeReadMemberEblastViewDeps(ctx.tenant.slug),
+      broadcast,
+    );
+
     return NextResponse.json(
       {
         broadcastId: broadcast.broadcastId,
         status: broadcast.status,
-        subject: broadcast.subject,
-        bodyHtml: broadcast.bodyHtml,
-        bodySource: broadcast.bodySource,
+        // F119 T141a — where the E-Blast stands in the approval round.
+        stage: summary.stage,
+        whoseTurn: summary.whoseTurn,
+        round: summary.round,
+        proposedSendAt: summary.proposedSendAt?.toISOString() ?? null,
+        confirmedSendAt: summary.confirmedSendAt?.toISOString() ?? null,
+        expiresAt: summary.expiresAt?.toISOString() ?? null,
+        subject: content.subject,
+        bodyHtml: content.bodyHtml,
+        bodySource: content.bodySource,
         segmentType: broadcast.segmentType,
         segmentParams: broadcast.segmentParams,
         // PII-minimisation (W0-15): return only the count, never the raw recipient
@@ -110,7 +132,9 @@ export async function GET(
   } catch (e) {
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        // Round-4 B9 — the error CLASS only (F7-5): a message can carry a
+        // Neon error's bound parameters.
+        err: errKind(e),
         correlationId,
         tenantId: ctx.tenant.slug,
         memberId: ctx.member.memberId,

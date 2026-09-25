@@ -10,6 +10,10 @@
  *     PATCH /api/admin/broadcasts/brand                 (T026)
  *     POST  /api/admin/broadcasts/[id]/images           (T106)
  *     POST  /api/admin/broadcasts/templates/[id]/images (T107)
+ *     POST  /api/admin/broadcasts/[id]/version          (T062a)
+ *     PATCH /api/admin/broadcasts/[id]/version          (T062a)
+ *     POST  /api/admin/broadcasts/[id]/version/send     (T062a)
+ *     POST  /api/admin/broadcasts/[id]/schedule         (T062a)
  *   member 60 / minute per (tenant, user):
  *     POST  /api/broadcasts/inline-image-upload         (T146 wires it)
  *
@@ -221,5 +225,156 @@ describe('image uploads — write buckets (T026a)', () => {
     expect(res.status).toBe(201);
     expect(checkLimitMock.mock.invocationCallOrder[0]!).toBeLessThan(authorizeMock.mock.invocationCallOrder[0]!);
     expect(authorizeMock.mock.invocationCallOrder[0]!).toBeLessThan(uploadMock.mock.invocationCallOrder[0]!);
+  });
+});
+
+// --- T062a — the formatting routes (`…/[id]/version` POST + PATCH).
+describe('POST | PATCH /api/admin/broadcasts/[id]/version — staff write bucket (T062a)', () => {
+  const startMock = vi.fn();
+  const saveMock = vi.fn();
+  const UUID = '11111111-1111-4111-8111-111111111111';
+  const versionUrl = `http://localhost/api/admin/broadcasts/${UUID}/version`;
+  const patchBody = {
+    subject: 'S',
+    bodyHtml: '<p>b</p>',
+    bodySource: '{}',
+    noteToMember: null,
+    expectedUpdatedAt: '2026-09-24T08:30:00.000Z',
+  };
+  const patchReq = () =>
+    new NextRequest(versionUrl, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patchBody) });
+  const params = () => ({ params: Promise.resolve({ id: UUID }) });
+
+  beforeEach(() => {
+    vi.doMock('@/lib/broadcast-approval-deps', () => ({
+      makeStartFormattedVersionDeps: () => ({}),
+      makeSaveFormattedVersionDeps: () => ({}),
+      makeListBroadcastVersionsDeps: () => ({}),
+    }));
+    vi.doMock('@/modules/broadcasts', () => ({
+      startFormattedVersion: (...args: unknown[]) => startMock(...args),
+      saveFormattedVersion: (...args: unknown[]) => saveMock(...args),
+      listBroadcastVersions: vi.fn(),
+      broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => checkLimitMock(...args) },
+      parseBroadcastId: (id: string) => ({ ok: id === UUID, value: id, error: { kind: 'invalid_uuid' } }),
+      stageOf: () => 'in_design',
+    }));
+    startMock.mockReset();
+    saveMock.mockReset();
+    saveMock.mockResolvedValue(ok({ version: { id: 'v', versionNo: 1, updatedAt: new Date('2026-09-24T09:00:00.000Z') } }));
+  });
+
+  it('the 31st PATCH …/version in a minute → 429 broadcast_rate_limit_exceeded with Retry-After, and nothing is saved', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 23 }));
+    const { PATCH } = await import('@/app/api/admin/broadcasts/[id]/version/route');
+    const res = await PATCH(patchReq(), params());
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('23');
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_rate_limit_exceeded');
+    expect(body.error.details).toEqual({ retryAfterSeconds: 23 });
+    expect(checkLimitMock).toHaveBeenCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it('POST …/version rides the same bucket: refused 429 before the use case runs; under the bucket the bucket is consumed first', async () => {
+    const { POST } = await import('@/app/api/admin/broadcasts/[id]/version/route');
+    checkLimitMock.mockResolvedValueOnce(err({ retryAfterSeconds: 5 }));
+    const refused = await POST(new NextRequest(versionUrl, { method: 'POST' }), params());
+    expect(refused.status).toBe(429);
+    expect(startMock).not.toHaveBeenCalled();
+
+    checkLimitMock.mockResolvedValueOnce(ok(true));
+    startMock.mockResolvedValueOnce(err({ kind: 'round_zero' }));
+    await POST(new NextRequest(versionUrl, { method: 'POST' }), params());
+    expect(checkLimitMock).toHaveBeenLastCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    expect(checkLimitMock.mock.invocationCallOrder.at(-1)!).toBeLessThan(startMock.mock.invocationCallOrder[0]!);
+  });
+
+  /**
+   * T166 S-INFO — the PATCH body is up to 2 MB (`bodySource`), and parsing it
+   * cost the server that much work BEFORE the bucket was consumed, so an
+   * over-limit caller could keep making the route parse 2 MB for free. The
+   * bucket is consumed FIRST now, as reject already does: a malformed
+   * body still answers 400, but it spends one of the 30.
+   */
+  it('T166 S-INFO: the bucket is consumed BEFORE the PATCH body is parsed — an exhausted bucket answers 429 without reading the body', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 17 }));
+    const { PATCH } = await import('@/app/api/admin/broadcasts/[id]/version/route');
+    const res = await PATCH(
+      new NextRequest(versionUrl, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"subject":1}' }),
+      params(),
+    );
+    expect(res.status).toBe(429);
+    expect((await res.json()).error.code).toBe('broadcast_rate_limit_exceeded');
+  });
+
+  it('T166 S-INFO: under the bucket, a malformed PATCH body is still 400 — and it spent one call', async () => {
+    checkLimitMock.mockResolvedValue(ok(true));
+    const { PATCH } = await import('@/app/api/admin/broadcasts/[id]/version/route');
+    const res = await PATCH(
+      new NextRequest(versionUrl, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"subject":1}' }),
+      params(),
+    );
+    expect(res.status).toBe(400);
+    expect(checkLimitMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- T062a — the send and schedule routes (T059 / T060).
+describe('POST …/[id]/version/send and POST …/[id]/schedule — staff write bucket (T062a)', () => {
+  const sendMock = vi.fn();
+  const scheduleMock = vi.fn();
+  const UUID = '11111111-1111-4111-8111-111111111111';
+  const params = () => ({ params: Promise.resolve({ id: UUID }) });
+
+  beforeEach(() => {
+    vi.doMock('@/lib/broadcast-approval-deps', () => ({
+      makeSendVersionToMemberDeps: () => ({}),
+      makeConfirmScheduleDeps: () => ({}),
+    }));
+    vi.doMock('@/modules/broadcasts', () => ({
+      sendVersionToMember: (...args: unknown[]) => sendMock(...args),
+      confirmSchedule: (...args: unknown[]) => scheduleMock(...args),
+      broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => checkLimitMock(...args) },
+      parseBroadcastId: (id: string) => ({ ok: id === UUID, value: id, error: { kind: 'invalid_uuid' } }),
+      stageOf: () => 'in_design',
+    }));
+    sendMock.mockReset();
+    scheduleMock.mockReset();
+  });
+
+  it('the 31st …/version/send in a minute → 429 with Retry-After, with no version sent and no outbox row (the use case never runs)', async () => {
+    checkLimitMock.mockResolvedValue(err({ retryAfterSeconds: 17 }));
+    const { POST } = await import('@/app/api/admin/broadcasts/[id]/version/send/route');
+    const res = await POST(new NextRequest(`http://localhost/api/admin/broadcasts/${UUID}/version/send`, { method: 'POST' }), params());
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('17');
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_rate_limit_exceeded');
+    expect(body.error.details).toEqual({ retryAfterSeconds: 17 });
+    expect(checkLimitMock).toHaveBeenCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    // `sendVersionToMember` is the only writer of the send stamp and the outbox row.
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('…/schedule rides the same bucket: refused 429 before the use case; under the bucket the bucket is consumed first', async () => {
+    const { POST } = await import('@/app/api/admin/broadcasts/[id]/schedule/route');
+    const req = () =>
+      new NextRequest(`http://localhost/api/admin/broadcasts/${UUID}/schedule`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'send_now' }),
+      });
+    checkLimitMock.mockResolvedValueOnce(err({ retryAfterSeconds: 4 }));
+    const refused = await POST(req(), params());
+    expect(refused.status).toBe(429);
+    expect(scheduleMock).not.toHaveBeenCalled();
+
+    checkLimitMock.mockResolvedValueOnce(ok(true));
+    scheduleMock.mockResolvedValueOnce(err({ kind: 'no_proposal' }));
+    await POST(req(), params());
+    expect(checkLimitMock).toHaveBeenLastCalledWith('broadcasts:staff-write:test-tenant:user-admin-1', 30, 60);
+    expect(checkLimitMock.mock.invocationCallOrder.at(-1)!).toBeLessThan(scheduleMock.mock.invocationCallOrder[0]!);
   });
 });

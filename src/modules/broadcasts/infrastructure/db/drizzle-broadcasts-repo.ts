@@ -15,7 +15,8 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
@@ -25,12 +26,15 @@ import {
   type BroadcastId,
 } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
+import { IN_PROGRESS_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
   ListByTenantStatusOpts,
   ListByTenantStatusResult,
+  ListByTenantStatusSort,
   NewBroadcastDraftInput,
 } from '../../application/ports/broadcasts-repo';
 import {
@@ -129,7 +133,7 @@ export function reduceDeliveryAggregateRows(
  * For defence-in-depth security, the chamber_app role + RLS+FORCE
  * policies on the underlying tables are the actual enforcement layer.
  */
-async function assertTenantBoundTx(
+export async function assertTenantBoundTx(
   tx: TenantTx,
   expectedTenantId: string,
   callerName: string,
@@ -202,6 +206,17 @@ export function deriveTemplateProvenance(
 }
 
 /**
+ * PR #392 review C6 — `member_reminder_stage` is a SMALLINT the 0308 CHECK
+ * holds to 0–3 (`broadcasts_member_reminder_stage_check`). Narrowed here, never
+ * cast: a value outside the type means the CHECK and the Domain disagree, and
+ * the lifecycle tick must not read a stage it cannot reason about.
+ */
+function toMemberReminderStage(value: number): MemberReminderStage {
+  if (value === 0 || value === 1 || value === 2 || value === 3) return value;
+  throw new Error(`broadcasts.member_reminder_stage out of range: ${value}`);
+}
+
+/**
  * @internal — exported solely for the R8.5 end-to-end mapper test
  * (`tests/unit/broadcasts/infrastructure/drizzle-broadcasts-repo-mapper.test.ts`).
  * Production callers SHOULD invoke the repo's `findById` / other port
@@ -265,6 +280,15 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     partialDeliveryAcceptedByUserId: row.partialDeliveryAcceptedByUserId,
     templateProvenance: deriveTemplateProvenance(row),
 
+    // F119 (0308) — approval-round bookkeeping; DB defaults cover every
+    // pre-0308 row (stage_entered_at backfilled, current_round 0, …).
+    proposedSendAt: row.proposedSendAt,
+    stageEnteredAt: row.stageEnteredAt,
+    currentRound: row.currentRound,
+    approvedVersionId: row.approvedVersionId,
+    memberReminderStage: toMemberReminderStage(row.memberReminderStage),
+    memberExpiryNotifiedAt: row.memberExpiryNotifiedAt,
+
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -325,7 +349,96 @@ async function throwConcurrentMutation(
   throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probeRow.status);
 }
 
-// Cursor format: base64 of `submittedAt-iso|broadcast-id`
+/**
+ * The admin list's orders (F119 T117 / T119). Each names the column the keyset
+ * compares on, its direction, and how to read that column off the last row of
+ * a page — so the cursor always carries the value the ORDER BY sorts on. (It
+ * used to carry `submitted_at` for every sort, which made page 2 of
+ * `created_at_desc` compare on a column it was not ordered by.)
+ */
+const LIST_SORTS: Readonly<
+  Record<
+    ListByTenantStatusSort,
+    {
+      readonly column: AnyPgColumn;
+      readonly direction: 'asc' | 'desc';
+      readonly keyOf: (row: BroadcastRow) => Date | null;
+    }
+  >
+> = {
+  submitted_at_asc: { column: broadcasts.submittedAt, direction: 'asc', keyOf: (r) => r.submittedAt },
+  submitted_at_desc: { column: broadcasts.submittedAt, direction: 'desc', keyOf: (r) => r.submittedAt },
+  created_at_desc: { column: broadcasts.createdAt, direction: 'desc', keyOf: (r) => r.createdAt },
+  stage_entered_at_asc: { column: broadcasts.stageEnteredAt, direction: 'asc', keyOf: (r) => r.stageEnteredAt },
+  stage_entered_at_desc: { column: broadcasts.stageEnteredAt, direction: 'desc', keyOf: (r) => r.stageEnteredAt },
+  scheduled_for_asc: { column: broadcasts.scheduledFor, direction: 'asc', keyOf: (r) => r.scheduledFor },
+};
+
+function pageLimit(pageSize: number): number {
+  return Math.max(1, Math.min(pageSize, 100));
+}
+
+/**
+ * F119 T114 — the admin list statement (`/admin/broadcasts` and
+ * `GET /api/admin/broadcasts`), exported so the live EXPLAIN in
+ * `eblast-dashboard-pagination.test.ts` runs the statement
+ * `listByTenantStatus` runs — there is no second read path.
+ *
+ * The status filter compares the ENUM column (`inArray`), not `status::text`:
+ * a cast on the column hides it from every `(tenant_id, status, …)` index and
+ * from the per-status partial indexes' predicate proof. Caveat measured by
+ * T114: inside `runInTenant` (RLS) `enum_eq` is not LEAKPROOF, so Postgres
+ * will not use `status = …` as an index CONDITION behind the policy's
+ * security barrier — only a partial index (`WHERE status = '…'`, proven at
+ * plan time) narrows on the stage there; `broadcasts_stage_queue_idx` serves
+ * as a `tenant_id`-prefix index. At SC-008's 1,000 rows the budget holds.
+ */
+export function adminQueueListQuery(tx: TenantTx, tenantId: string, opts: ListByTenantStatusOpts) {
+  const conditions: SQL[] = [eq(broadcasts.tenantId, tenantId)];
+  if (opts.statusFilter !== undefined && opts.statusFilter.length > 0) {
+    conditions.push(inArray(broadcasts.status, [...opts.statusFilter]));
+  }
+  if (opts.memberIdFilter !== undefined) {
+    conditions.push(eq(broadcasts.requestedByMemberId, opts.memberIdFilter));
+  }
+  if (opts.scheduledFrom !== undefined) {
+    conditions.push(gte(broadcasts.scheduledFor, opts.scheduledFrom));
+  }
+  // FR-030's date range — half-open on `submitted_at`. Typed builders, like
+  // `scheduledFrom` above: they bind the `Date` through the column's own
+  // mapping (only a raw `sql` param needs the ISO-text `::timestamptz` cast the
+  // cursor below uses). A NULL `submitted_at` (a draft) satisfies neither.
+  if (opts.submittedFrom !== undefined) {
+    conditions.push(gte(broadcasts.submittedAt, opts.submittedFrom));
+  }
+  if (opts.submittedBefore !== undefined) {
+    conditions.push(lt(broadcasts.submittedAt, opts.submittedBefore));
+  }
+  const sort = LIST_SORTS[opts.sort ?? 'created_at_desc'];
+  const cursor = opts.cursor !== undefined ? decodeCursor(opts.cursor) : null;
+  if (cursor !== null) {
+    // A raw `sql` param skips the column's driver mapping, and the driver
+    // refuses a `Date` for a timestamptz slot — so the key goes over as ISO
+    // text with an explicit cast. (Passing the Date made every second page
+    // of this list fail; nothing had paged it until T114.)
+    const key = sql`${cursor.submittedAt === null ? null : cursor.submittedAt.toISOString()}::timestamptz`;
+    conditions.push(
+      sort.direction === 'asc'
+        ? sql`(${sort.column}, ${broadcasts.broadcastId}) > (${key}, ${cursor.broadcastId})`
+        : sql`(${sort.column}, ${broadcasts.broadcastId}) < (${key}, ${cursor.broadcastId})`,
+    );
+  }
+  const order = sort.direction === 'asc' ? asc : desc;
+  return tx
+    .select()
+    .from(broadcasts)
+    .where(and(...conditions))
+    .orderBy(order(sort.column), order(broadcasts.broadcastId))
+    .limit(pageLimit(opts.pageSize) + 1);
+}
+
+// Cursor format: base64 of `<sort-key-iso>|broadcast-id` (the key is the
+// value of the column the list is ordered by — see `LIST_SORTS`).
 function encodeCursor(submittedAt: Date | null, broadcastId: string): string {
   const iso = submittedAt === null ? '' : submittedAt.toISOString();
   return Buffer.from(`${iso}|${broadcastId}`, 'utf8').toString('base64url');
@@ -366,8 +479,23 @@ function decodeCursor(
 }
 
 /**
+ * F119 T080 — "in progress" as SQL, derived from the ONE Domain constant
+ * (`IN_PROGRESS_BROADCAST_STATUSES`, research R7) with the Finding-G pattern
+ * of `TERMINAL_BROADCAST_STATUSES` below. It is the reserved allowance bucket
+ * (FR-020) AND the erasure / cancel cascade set — definitionally the same set,
+ * so both sites call this and neither carries a literal list.
+ */
+function inProgressStatusPredicate(): SQL {
+  const list = sql.join(
+    IN_PROGRESS_BROADCAST_STATUSES.map((s) => sql`${s}`),
+    sql`, `,
+  );
+  return sql`${broadcasts.status}::text IN (${list})`;
+}
+
+/**
  * Shared two-bucket member-quota count, run on a caller-supplied tx. Reserved
- * = `submitted` ∪ `approved`; consumed (`sent`) = `sent` ∪
+ * = `IN_PROGRESS_BROADCAST_STATUSES` (F119 T080; was `submitted` ∪ `approved`); consumed (`sent`) = `sent` ∪
  * `partial_delivery_accepted`, year-fenced on `quota_year_consumed` (Design D1
  * / FR-008c). Extracted (code-review) so `countForMemberQuota` (own runInTenant)
  * and `recheckMemberQuotaUnderLock` (bug #4 under-lock recheck) read via ONE
@@ -388,7 +516,7 @@ async function countMemberQuotaBucketsOnTx(
         and(
           eq(broadcasts.tenantId, tenantIdArg),
           eq(broadcasts.requestedByMemberId, memberId),
-          sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+          inProgressStatusPredicate(),
         ),
       ),
     tx
@@ -727,11 +855,41 @@ export function makeDrizzleBroadcastsRepo(
         'quotaYearConsumed',
         'quotaConsumedAt',
         'estimatedRecipientCount',
+        // F119 (0308) — the approval-round bookkeeping a transition writes.
+        // Not in the immutability trigger's blocklist; `scheduledFor` above is
+        // the one that needs an exempt edge (E2). A key missing here is
+        // silently DROPPED, so every F119 transition field must be listed.
+        'stageEnteredAt',
+        'currentRound',
+        'approvedVersionId',
+        'memberReminderStage',
+        'memberExpiryNotifiedAt',
+        // F119 FR-016 — the member's proposal, written by the `draft →
+        // submitted` transition ONLY. Any post-draft write of it is refused by
+        // the immutability trigger (0308 F1), loud, never silent.
+        'proposedSendAt',
+        // F119 T060 — the PROMOTION of the member-approved version. It must
+        // ride the SAME statement as the `member_approved → approved` flip:
+        // that edge is the immutability trigger's only content exemption (E1),
+        // so on every other transition (or a separate UPDATE) the trigger
+        // still raises `broadcast_immutable_after_submit` — loud, not silent.
+        'subject',
+        'bodyHtml',
+        'bodySource',
       ];
       for (const key of passthrough) {
         if (fields[key] !== undefined) {
           setClause[key] = fields[key];
         }
+      }
+      // F119 — every status change moves the stage clock (data-model § 3:
+      // "stamped on every status change"; T117's time-in-stage badge and
+      // T121's gauges read it). The pre-F119 transitions (approve, reject,
+      // cancel, dispatch) pass no `stageEnteredAt`, so it is stamped here; a
+      // caller that owns the instant passes its own, and a same-status write
+      // (a reschedule `approved → approved`) leaves the clock alone.
+      if (target !== expectedFromStatus && fields.stageEnteredAt === undefined) {
+        setClause['stageEnteredAt'] = setClause['updatedAt'];
       }
 
       // Verify-fix R4 (Types-#5, 2026-05-02): expectedFromStatus is
@@ -854,6 +1012,14 @@ export function makeDrizzleBroadcastsRepo(
               isNull(broadcasts.resendAudienceId),
               eq(broadcasts.resendAudienceId, resendAudienceId),
             ),
+            // F119 T166 R-H1 — and only while the row is still dispatchable.
+            // Step 1's lock is long committed by now, and F119 added exits from
+            // `approved` that are NOT terminal (a withdrawn approval, a
+            // cancelled schedule, a new working copy): a row that left
+            // `approved` mid-dispatch must refuse the attach, so the tick takes
+            // its lost-CAS arm (reclaim what it minted, send nothing) instead of
+            // sending a version nobody approves any more.
+            eq(broadcasts.status, 'approved'),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -893,6 +1059,12 @@ export function makeDrizzleBroadcastsRepo(
               isNull(broadcasts.resendBroadcastId),
               eq(broadcasts.resendBroadcastId, resendBroadcastId),
             ),
+            // F119 T166 R-H1 — the status CAS, as `attachAudienceId`. This is
+            // the last write before `sendBroadcast`: a row withdrawn, cancelled
+            // or re-opened since Step 1 fails it, the tick reclaims the resource
+            // it just minted and sends nothing, and no id is left behind for the
+            // next round to inherit (and mistake for "already sent").
+            eq(broadcasts.status, 'approved'),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -955,6 +1127,9 @@ export function makeDrizzleBroadcastsRepo(
               isNull(broadcasts.audienceImportId),
               eq(broadcasts.audienceImportId, importId),
             ),
+            // F119 T166 R-H1 — the status CAS, as `attachAudienceId`: the
+            // import leg's hand-over marker only lands on a row still `approved`.
+            eq(broadcasts.status, 'approved'),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1033,58 +1208,15 @@ export function makeDrizzleBroadcastsRepo(
       opts: ListByTenantStatusOpts,
     ): Promise<ListByTenantStatusResult> {
       return runInTenant(ctx, async (tx) => {
-        const conditions = [eq(broadcasts.tenantId, tenantIdArg)];
-        if (opts.statusFilter !== undefined && opts.statusFilter.length > 0) {
-          conditions.push(
-            sql`${broadcasts.status}::text = ANY(ARRAY[${sql.join(
-              opts.statusFilter.map((s) => sql`${s}`),
-              sql`, `,
-            )}]::text[])`,
-          );
-        }
-        if (opts.memberIdFilter !== undefined) {
-          conditions.push(
-            eq(broadcasts.requestedByMemberId, opts.memberIdFilter),
-          );
-        }
-
-        const sort = opts.sort ?? 'created_at_desc';
-        const cursor =
-          opts.cursor !== undefined ? decodeCursor(opts.cursor) : null;
-
-        if (cursor !== null) {
-          if (sort === 'submitted_at_asc') {
-            conditions.push(
-              sql`(${broadcasts.submittedAt}, ${broadcasts.broadcastId}) > (${cursor.submittedAt}, ${cursor.broadcastId})`,
-            );
-          } else {
-            conditions.push(
-              sql`(${broadcasts.submittedAt}, ${broadcasts.broadcastId}) < (${cursor.submittedAt}, ${cursor.broadcastId})`,
-            );
-          }
-        }
-
-        const orderBy =
-          sort === 'submitted_at_asc'
-            ? [asc(broadcasts.submittedAt), asc(broadcasts.broadcastId)]
-            : sort === 'submitted_at_desc'
-              ? [desc(broadcasts.submittedAt), desc(broadcasts.broadcastId)]
-              : [desc(broadcasts.createdAt), desc(broadcasts.broadcastId)];
-
-        const limit = Math.max(1, Math.min(opts.pageSize, 100));
-        const rows = await tx
-          .select()
-          .from(broadcasts)
-          .where(and(...conditions))
-          .orderBy(...orderBy)
-          .limit(limit + 1);
+        const limit = pageLimit(opts.pageSize);
+        const rows = await adminQueueListQuery(tx, tenantIdArg, opts);
 
         const hasNext = rows.length > limit;
         const trimmed = hasNext ? rows.slice(0, limit) : rows;
         const last = trimmed[trimmed.length - 1];
         const nextCursor =
           hasNext && last !== undefined
-            ? encodeCursor(last.submittedAt, last.broadcastId)
+            ? encodeCursor(LIST_SORTS[opts.sort ?? 'created_at_desc'].keyOf(last), last.broadcastId)
             : null;
 
         return {
@@ -1333,9 +1465,9 @@ export function makeDrizzleBroadcastsRepo(
 
     /**
      * F7 Phase 9 / T178a — list in-flight broadcasts owned by a member.
-     * Used by the F3 archival/erasure cascade. Status filter narrow:
-     * only `submitted` + `approved` are cancellable per FR-004a / Q10
-     * (the cancellation cutoff is at Resend dispatch).
+     * Used by the F3 archival/erasure cascade. F119 T080: the in-progress
+     * set (`IN_PROGRESS_BROADCAST_STATUSES`) — every stage before the
+     * `sending` cut-off, the same set that holds an allowance place.
      */
     async listInFlightOwnedByMember(tenantIdArg, memberId) {
       return runInTenant(ctx, async (tx) => {
@@ -1346,7 +1478,7 @@ export function makeDrizzleBroadcastsRepo(
             and(
               eq(broadcasts.tenantId, tenantIdArg),
               eq(broadcasts.requestedByMemberId, memberId),
-              sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+              inProgressStatusPredicate(),
             ),
           )
           .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId));

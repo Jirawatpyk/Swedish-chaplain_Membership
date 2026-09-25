@@ -124,6 +124,20 @@ describe('authorizeImageOwner — staff', () => {
     }
   });
 
+  it('T106a — an in_design broadcast → ok (marketing illustrates the version it is formatting)', async () => {
+    const { deps } = makeDeps({ status: 'in_design' });
+    const r = await authorizeImageOwner(deps, { ...base, owner: { kind: 'broadcast', id: BID }, actor: { kind: 'staff' } });
+    expect(r).toEqual({ ok: true, value: { relatedMemberId: OTHER } });
+  });
+
+  it('T106a — a SENT version is read-only: awaiting_member_approval and every later stage → closed', async () => {
+    for (const status of ['awaiting_member_approval', 'changes_requested', 'member_approved']) {
+      const { deps } = makeDeps({ status });
+      const r = await authorizeImageOwner(deps, { ...base, owner: { kind: 'broadcast', id: BID }, actor: { kind: 'staff' } });
+      expect(r).toEqual({ ok: false, error: { kind: 'closed', status } });
+    }
+  });
+
   it('a closed broadcast → closed; an approved one → closed (a sent version is read-only)', async () => {
     for (const status of ['approved', 'sent', 'rejected']) {
       const { deps } = makeDeps({ status });

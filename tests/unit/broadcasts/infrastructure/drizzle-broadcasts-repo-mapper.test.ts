@@ -157,9 +157,21 @@ describe('rowToBroadcast end-to-end — R8.5 (R7 code-reviewer LOW-2 close)', ()
     partialDeliveryAcceptedByUserId: null,
     startedFromTemplateId: 'tpl-snapshot-id',
     templateNameSnapshot: 'Monthly Newsletter',
+    memberReminderStage: 0,
     createdAt: NOW,
     updatedAt: NOW,
   } as unknown as BroadcastRow;
+
+  // PR #392 review C6 — `member_reminder_stage` is a SMALLINT the 0308 CHECK
+  // holds to 0–3; the Domain types it `MemberReminderStage`. The mapper
+  // narrows it and refuses an out-of-range value loudly rather than casting.
+  it.each([0, 1, 2, 3])('carries member_reminder_stage %i', (stage) => {
+    expect(rowToBroadcast({ ...FULL_ROW, memberReminderStage: stage }).memberReminderStage).toBe(stage);
+  });
+
+  it.each([-1, 4, 1.5])('refuses member_reminder_stage %s instead of casting it', (stage) => {
+    expect(() => rowToBroadcast({ ...FULL_ROW, memberReminderStage: stage })).toThrow(/member_reminder_stage/);
+  });
 
   it('composes templateProvenance via deriveTemplateProvenance helper', () => {
     const out = rowToBroadcast(FULL_ROW);

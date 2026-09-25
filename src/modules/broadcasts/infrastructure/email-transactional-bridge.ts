@@ -52,6 +52,10 @@ import type {
   EmailTransactionalPort,
   SendEmailInput,
 } from '../application/ports/email-transactional-port';
+import type {
+  EblastNotificationOutboxPort,
+  F119NotificationType,
+} from '../application/ports/eblast-notification-outbox-port';
 
 /**
  * Runtime guard for `TenantTx` (review ERR-H-R3-1, round 3). The port
@@ -136,10 +140,10 @@ function resolveNotificationType(templateKey: string): F7NotificationType {
 async function enqueueOutboxRow(
   tx: TenantTx | null,
   tenantId: string,
-  notificationType: F7NotificationType,
+  notificationType: F7NotificationType | F119NotificationType,
   toEmail: string,
   locale: 'en' | 'th' | 'sv',
-  contextData: Record<string, unknown>,
+  contextData: Readonly<Record<string, unknown>>,
 ): Promise<void> {
   const target = (tx as TenantTx | null) ?? db;
   await target.execute(sql`
@@ -217,6 +221,34 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
         locale: input.locale,
       },
       'broadcasts.member_notification.enqueued',
+    );
+  },
+};
+
+/**
+ * F119 — the approval-round hand-off rows (`EblastNotificationOutboxPort`).
+ * Same INSERT as the F7 member emails above, with two differences that are
+ * the point of a separate port: the `tx` is REQUIRED (the row must commit or
+ * roll back with the state change — SC-004), and `context_data` is written
+ * exactly as given, ids only — no `subject`, no `event_type` spread in.
+ */
+export const eblastNotificationOutbox: EblastNotificationOutboxPort = {
+  async enqueueInTx(tx, tenantCtx, request) {
+    const verifiedTx = assertTenantTxOrNull(tx);
+    if (verifiedTx === null) {
+      throw new TypeError(
+        'EblastNotificationOutboxPort.enqueueInTx: a TenantTx is required — the row must share the transaction of the state change.',
+      );
+    }
+    await enqueueOutboxRow(verifiedTx, tenantCtx.slug, request.type, request.toEmail, request.locale, request.contextData);
+    logger.info(
+      {
+        tenantId: tenantCtx.slug,
+        notificationType: request.type,
+        toHash: recipientLogHash(request.toEmail),
+        locale: request.locale,
+      },
+      'broadcasts.eblast_notification.enqueued',
     );
   },
 };

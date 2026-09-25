@@ -85,6 +85,12 @@ export interface TypedPhraseFieldProps {
   /** Enter in the input — the caller's confirm (it re-checks validity itself). */
   readonly onSubmit?: () => void;
   readonly disabled?: boolean;
+  /**
+   * The input keeps focus but takes no typing — for a request in flight,
+   * where `disabled` would drop the focus it holds to <body> (Enter in this
+   * input is what started the request).
+   */
+  readonly readOnly?: boolean;
 }
 
 export function TypedPhraseField({
@@ -98,6 +104,7 @@ export function TypedPhraseField({
   copy,
   onSubmit,
   disabled = false,
+  readOnly = false,
 }: TypedPhraseFieldProps): React.ReactElement {
   const phraseId = `${id}-phrase`;
   const helpId = `${id}-help`;
@@ -178,6 +185,7 @@ export function TypedPhraseField({
           onSubmit();
         }}
         disabled={disabled}
+        readOnly={readOnly}
         autoComplete="off"
         autoCapitalize="off"
         autoCorrect="off"
@@ -185,14 +193,15 @@ export function TypedPhraseField({
         aria-invalid={showError}
         aria-describedby={describedBy}
       />
-      {helpText ? (
-        <p id={helpId} className="text-xs text-muted-foreground">
-          {helpText}
-        </p>
-      ) : null}
+      {/* ux-standards § 4.1 — the error sits immediately under its input. */}
       {showError ? (
         <p id={errorId} className="text-xs text-destructive" role="alert">
           {errorMessage}
+        </p>
+      ) : null}
+      {helpText ? (
+        <p id={helpId} className="text-xs text-muted-foreground">
+          {helpText}
         </p>
       ) : null}
     </div>

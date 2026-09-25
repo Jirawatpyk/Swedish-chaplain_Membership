@@ -55,3 +55,33 @@ export function tenantDayEndUtc(ymd: string, tz: string): string {
     .toInstant()
     .toString();
 }
+
+/** A calendar-day range as instants: `fromInclusive <= t < toExclusive`. An absent side is no bound. */
+export interface TenantDayRange {
+  readonly fromInclusive?: Date;
+  readonly toExclusive?: Date;
+}
+
+/**
+ * The instants that bound the tenant-timezone calendar days `fromYmd` through
+ * `toYmd`, BOTH days whole (F119 FR-030, the E-Blast dashboard's date range).
+ *
+ * HALF-OPEN on purpose: the end is 00:00 of the day AFTER `toYmd`, compared
+ * with `<`. A `Date` carries milliseconds only, so the inclusive alternative —
+ * `lte(col, new Date(tenantDayEndUtc(to)))` — would drop the final 999 µs of the
+ * `to` day on a `timestamptz(6)` column (the F9 #14 class). The day after is
+ * computed on the calendar, then placed in the zone, so a DST change on either
+ * end day is honoured. Callers validate each side with `isYmd` first.
+ */
+export function tenantDayRangeUtc(
+  fromYmd: string | undefined,
+  toYmd: string | undefined,
+  tz: string,
+): TenantDayRange {
+  return {
+    ...(fromYmd !== undefined && { fromInclusive: new Date(tenantDayStartUtc(fromYmd, tz)) }),
+    ...(toYmd !== undefined && {
+      toExclusive: new Date(tenantDayStartUtc(LocalDate.parse(toYmd).plusDays(1).toString(), tz)),
+    }),
+  };
+}

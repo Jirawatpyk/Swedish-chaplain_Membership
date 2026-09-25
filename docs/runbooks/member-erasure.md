@@ -2,7 +2,7 @@
 
 **Status**: ACTIVE
 **Owner**: Maintainer + DPO
-**Last reviewed**: 2026-06-21 (COMP-1 US3-E — end-to-end DPO procedure + RoPA exit-dependency fulfilled)
+**Last reviewed**: 2026-09-24 (F119 PR-2 — § E-Blast approval round: versions, decision reasons and pending `eblast_*` notifications. Previously 2026-06-21, COMP-1 US3-E — end-to-end DPO procedure + RoPA exit-dependency fulfilled)
 
 ## Purpose
 
@@ -75,7 +75,10 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    - `member_erased` is present (the completion proof — green/complete badge);
    - the **F1 `user_erased`** credential-erasure proof is shown (the linked
      login was anonymised);
-   - the cascade outcomes look clean.
+   - the cascade outcomes look clean;
+   - for a member who used E-Blasts: the `broadcast_content_redacted` row carries
+     `versions_redacted`, `decision_reasons_redacted` and `notifications_cancelled`, and the
+     three-count query in § E-Blast approval round returns zeros.
    If the card shows a **half-run** (requested, no `member_erased`) or **OVERDUE**
    badge, go to step 8.
 
@@ -250,15 +253,32 @@ template image the chamber still uses must not be deleted out from under it.
       AND bi.deleted_at IS NULL;          -- stamped by the cascade, then un-stamped
    ```
 
-   For each row, name the holder with the same two legs the sweep itself
-   checks (`isBlobReferencedByContent`) — live broadcasts AND templates:
+   For each row, name the holder with the same three legs the sweep itself
+   checks (`isBlobReferencedByContent`) — broadcasts, their `broadcast_versions`
+   (0308), and templates. A broadcast (or a version's owner) that is closed and
+   never sent (`rejected` / `cancelled` / `expired_no_member_response` with no
+   `sending_started_at`, `resend_broadcast_id` or `audience_import_id`) does NOT
+   hold the image, so it is filtered out here too:
 
    ```sql
    SELECT 'broadcast' AS holder_kind, broadcast_id AS holder_id, requested_by_member_id
-     FROM broadcasts
+     FROM broadcasts b
     WHERE tenant_id = '<tenant>'
       AND (position('<blob_url>' in body_html) > 0
         OR position('<blob_url>' in body_source) > 0)
+      AND NOT (b.status IN ('rejected', 'cancelled', 'expired_no_member_response')
+               AND b.sending_started_at IS NULL AND b.resend_broadcast_id IS NULL
+               AND b.audience_import_id IS NULL)
+   UNION ALL
+   SELECT 'broadcast_version', v.broadcast_id, b.requested_by_member_id
+     FROM broadcast_versions v
+     JOIN broadcasts b ON b.tenant_id = v.tenant_id AND b.broadcast_id = v.broadcast_id
+    WHERE v.tenant_id = '<tenant>'
+      AND (position('<blob_url>' in v.body_html) > 0
+        OR position('<blob_url>' in v.body_source) > 0)
+      AND NOT (b.status IN ('rejected', 'cancelled', 'expired_no_member_response')
+               AND b.sending_started_at IS NULL AND b.resend_broadcast_id IS NULL
+               AND b.audience_import_id IS NULL)
    UNION ALL
    SELECT 'template', id, NULL
      FROM broadcast_templates
@@ -335,6 +355,78 @@ backfilled by migration 0304. An image uploaded BEFORE 0304 has no row, so this
 step cannot find it; it is reachable only by reading the `body_html` that
 references it — which is why the enumeration is **step 2a, before the cascade
 redacts that HTML**, and why the blobs are residual (e) in step 7.
+
+---
+
+## E-Blast approval round (F119 PR-2)
+
+**What the cascade does now.** In the same transaction as the F7 content redaction and the image
+stamp above, `scrubBroadcastContentForMember` calls `BroadcastApprovalScrubPort` for every E-Blast
+the erased member originated (keyed on `broadcasts.requested_by_member_id`, `tenant_id` on both
+sides of every join):
+
+1. **Versions** (`broadcast_versions`) — `subject`, `body_html`, `body_source` → `'[redacted]'`,
+   and `note_to_member` → `'[redacted]'` where one exists (a NULL note stays NULL). Every version,
+   sent or not, including version 0 (the member's original) and an unsent working copy.
+2. **Decisions** (`broadcast_member_decisions`) — every non-NULL `reason` (a change request, a
+   withdrawal, or the optional approval note) → `'[redacted]'`. A NULL stays NULL: a sentinel would
+   invent a note that never existed.
+3. **Notifications** — the member's **pending** `eblast_*` rows in `notifications_outbox` are
+   **deleted**, including the staff-addressed ones (`eblast_submitted_marketing`,
+   `eblast_member_decided_marketing`, the staff half of `eblast_approval_lifecycle`) that only this
+   leg can find, because they are keyed on the broadcast, not on the member's address. Sent and
+   permanently-failed rows are kept (they hold no content; `outbox-purge` removes them after 90
+   days).
+
+Rows are **kept**, redacted, never deleted: the SC-002 chain (which version was sent, who on the
+member side approved it) survives as ids. Each method sets the redaction GUC itself and asserts a
+tenant-bound transaction, so it is order-independent of the parent redaction; a second run is a
+no-op (every `WHERE` excludes rows already redacted). In-progress E-Blasts in any new stage
+(`in_design`, `awaiting_member_approval`, `changes_requested`, `member_approved`) are cancelled by
+the existing in-flight cascade, which now reads the whole in-progress set.
+
+The counts land in the same attestation row as the rest of the F7 leg —
+`broadcast_content_redacted { versions_redacted, decision_reasons_redacted,
+notifications_cancelled, … }` — and on the completion log line
+`broadcasts.content_scrub.completed` as `versionsRedacted`, `decisionReasonsRedacted`,
+`notificationsCancelled`.
+
+**Not reached, and a DSR answer must say so:**
+- a **sent** `eblast_*` outbox row keeps the recipient address it was enqueued with in `to_email`
+  for up to **90 days** (member-addressed rows carry the member contact's address);
+- `authored_by_user_id`, `decided_by_user_id` and `decided_by_contact_id` stay as ids — the user
+  and contact rows they point at are anonymised by the F1 / F3 legs;
+- an email already delivered to the member's or a staff inbox;
+- the image bytes, until the sweep (§ Inline E-Blast images — PR-1 decision (e) applies).
+
+### Verifying it after an erasure
+
+Run with `tenant_id` on both sides; zero on every line is the expected result:
+
+```sql
+SELECT
+  (SELECT count(*) FROM broadcast_versions v
+     JOIN broadcasts b ON b.tenant_id = v.tenant_id AND b.broadcast_id = v.broadcast_id
+    WHERE b.tenant_id = '<tenant>' AND b.requested_by_member_id = '<member>'
+      AND (v.subject <> '[redacted]' OR v.body_html <> '[redacted]'
+           OR v.body_source <> '[redacted]'
+           OR (v.note_to_member IS NOT NULL AND v.note_to_member <> '[redacted]')))
+    AS versions_not_redacted,
+  (SELECT count(*) FROM broadcast_member_decisions d
+     JOIN broadcasts b ON b.tenant_id = d.tenant_id AND b.broadcast_id = d.broadcast_id
+    WHERE b.tenant_id = '<tenant>' AND b.requested_by_member_id = '<member>'
+      AND d.reason IS NOT NULL AND d.reason <> '[redacted]')
+    AS reasons_not_redacted,
+  (SELECT count(*) FROM notifications_outbox o
+     JOIN broadcasts b ON b.tenant_id = o.tenant_id AND b.broadcast_id::text = o.context_data->>'broadcastId'
+    WHERE b.tenant_id = '<tenant>' AND b.requested_by_member_id = '<member>'
+      AND o.status = 'pending' AND o.notification_type::text LIKE 'eblast\_%')
+    AS pending_eblast_rows;
+```
+
+A non-zero count means the F7 leg did not run to completion: check the evidence log for a
+half-run (step 8) and `broadcasts.content_scrub.failed`; the US2d reconciler re-drives it.
+Record the three counts on the DSR ticket beside the image counts above.
 
 ---
 

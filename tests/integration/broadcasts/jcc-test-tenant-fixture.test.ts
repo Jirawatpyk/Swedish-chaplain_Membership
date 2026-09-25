@@ -73,8 +73,9 @@ function makeStubRepo(tenantSlug: string): {
     insertDraft: () => Promise.reject(new Error('not used')),
     updateDraft: () => Promise.reject(new Error('not used')),
     findById: () => Promise.resolve(null),
-    findByIdInTx: () => Promise.resolve(null),
-    lockForUpdate: () => Promise.reject(new Error('not used')),
+    // PR #392 review D1 — the cascade locks the row and reads it under the lock.
+    findByIdInTx: () => Promise.resolve(oneInFlight),
+    lockForUpdate: () => Promise.resolve(null),
     async applyTransition(
       _tx: unknown,
       tenantId: string,

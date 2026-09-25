@@ -8,7 +8,7 @@
  * advertises DST-correctness.
  */
 import { describe, expect, it } from 'vitest';
-import { isYmd, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
+import { isYmd, tenantDayRangeUtc, tenantDayStartUtc, tenantDayEndUtc } from '@/lib/tenant-day-range';
 
 describe('tenantDayStartUtc / tenantDayEndUtc', () => {
   it('Asia/Bangkok (UTC+7) — local day maps to the offset UTC instants', () => {
@@ -40,6 +40,49 @@ describe('tenantDayStartUtc / tenantDayEndUtc', () => {
   it('throws on a malformed date (caller must guard with isYmd first)', () => {
     expect(() => tenantDayStartUtc('garbage', 'UTC')).toThrow();
     expect(() => tenantDayStartUtc('2026-13-99', 'UTC')).toThrow();
+  });
+});
+
+/**
+ * F119 FR-030 — the E-Blast dashboard's date range as a HALF-OPEN interval of
+ * instants: `[start of fromDate, start of the day after toDate)` in the tenant
+ * timezone. Half-open because a `Date` carries milliseconds only — an inclusive
+ * `lte` on `new Date(tenantDayEndUtc(…))` would drop the final 999 µs of the
+ * `to` day on a `timestamptz(6)` column (F9 #14's class).
+ */
+describe('tenantDayRangeUtc', () => {
+  it('Asia/Bangkok — from = 00:00 +07 of fromDate, toExclusive = 00:00 +07 of the day AFTER toDate', () => {
+    const r = tenantDayRangeUtc('2026-03-10', '2026-03-15', 'Asia/Bangkok');
+    expect(r.fromInclusive?.toISOString()).toBe('2026-03-09T17:00:00.000Z');
+    expect(r.toExclusive?.toISOString()).toBe('2026-03-15T17:00:00.000Z');
+  });
+
+  it('a one-day range is exactly 24 h wide, whatever the zone', () => {
+    const r = tenantDayRangeUtc('2026-03-15', '2026-03-15', 'Asia/Bangkok');
+    expect(r.toExclusive!.getTime() - r.fromInclusive!.getTime()).toBe(24 * 3_600_000);
+  });
+
+  it('the day after the end of a month / year rolls over', () => {
+    expect(tenantDayRangeUtc(undefined, '2026-12-31', 'Asia/Bangkok').toExclusive?.toISOString()).toBe(
+      '2026-12-31T17:00:00.000Z',
+    );
+  });
+
+  it('Europe/Stockholm — the end bound follows the zone on the day it applies (CET → CEST)', () => {
+    // 2026-03-29 is the spring-forward day: 00:00 CEST(+02) on 03-30 = 03-29 22:00Z.
+    expect(tenantDayRangeUtc(undefined, '2026-03-29', 'Europe/Stockholm').toExclusive?.toISOString()).toBe(
+      '2026-03-29T22:00:00.000Z',
+    );
+  });
+
+  it('each side is optional; an absent side is absent, not an unbounded instant', () => {
+    expect(tenantDayRangeUtc(undefined, undefined, 'Asia/Bangkok')).toEqual({});
+    expect(tenantDayRangeUtc('2026-03-10', undefined, 'Asia/Bangkok')).toEqual({
+      fromInclusive: new Date('2026-03-09T17:00:00.000Z'),
+    });
+    expect(tenantDayRangeUtc(undefined, '2026-03-10', 'Asia/Bangkok')).toEqual({
+      toExclusive: new Date('2026-03-10T17:00:00.000Z'),
+    });
   });
 });
 

@@ -20,6 +20,11 @@
  * Terminal states (sent, rejected, cancelled, failed_to_dispatch) have
  * empty outbound adjacency lists.
  *
+ * F119 adds the approval round (data-model § 8.2): submitted/approved →
+ * in_design → awaiting_member_approval → member_approved | changes_requested,
+ * member_approved → approved (confirm schedule), and the terminal
+ * expired_no_member_response, reachable only from awaiting_member_approval.
+ *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
@@ -34,8 +39,14 @@ import {
  */
 const TRANSITIONS: Readonly<Record<BroadcastStatus, ReadonlyArray<BroadcastStatus>>> = {
   draft: ['submitted'],
-  submitted: ['approved', 'rejected', 'cancelled'],
-  approved: ['sending', 'cancelled'],
+  // F119 (0308, data-model § 8.2) — every arm that touches one of the five
+  // new statuses is identical to `broadcasts_state_machine_fn`; T037 probes
+  // each pair at the DB and here. `approved → failed_to_dispatch` stays a
+  // trigger-only edge (a recorded pre-existing divergence, out of scope).
+  // The Application adds guards on top: `submitted → in_design` needs the
+  // flag, `approved → in_design | changes_requested` needs round ≥ 1.
+  submitted: ['approved', 'rejected', 'cancelled', 'in_design'],
+  approved: ['sending', 'cancelled', 'changes_requested', 'in_design'],
   // F7.1a US1 — `sending` can also progress to `partially_sent`
   // (FR-008a: ≥1 batch reached failed after per-batch retry budget
   // exhausted). The legacy `sent`/`failed_to_dispatch` edges stay
@@ -53,6 +64,18 @@ const TRANSITIONS: Readonly<Record<BroadcastStatus, ReadonlyArray<BroadcastStatu
   //     "Accept partial delivery" action
   partially_sent: ['sending', 'partial_delivery_accepted'],
   partial_delivery_accepted: [],
+  in_design: ['awaiting_member_approval', 'rejected', 'cancelled'],
+  awaiting_member_approval: [
+    'member_approved',
+    'changes_requested',
+    'rejected',
+    'cancelled',
+    'expired_no_member_response',
+  ],
+  changes_requested: ['in_design', 'rejected', 'cancelled'],
+  member_approved: ['approved', 'changes_requested', 'in_design', 'rejected', 'cancelled'],
+  // TERMINAL (FR-022a) — no closed stage can be reopened.
+  expired_no_member_response: [],
 };
 
 export type BroadcastTransitionError =

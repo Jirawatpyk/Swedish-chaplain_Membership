@@ -509,6 +509,57 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
     expect(onClear).not.toHaveBeenCalled();
   });
 
+  // T166 follow-up — approve-as-submitted refuses a halted / suspended /
+  // terminated member (409 member_halted / member_not_in_good_standing). The
+  // per-row outcome already carried the code; the toast only counted. It now
+  // names each standing reason, so the admin knows WHY those rows were not
+  // approved (not a race — retrying will not help).
+  it('a partial failure names the standing reason in the toast description', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        String(url).includes('b2')
+          ? jsonResponse({ error: { code: 'member_halted' } }, 409)
+          : jsonResponse({ ok: true }),
+      ),
+    );
+    render(
+      <Provider>
+        <QueueBulkActionBar selectedIds={['b1', 'b2']} onClear={vi.fn()} readOnly={false} recipientByIdRows={[]} />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+    expect(toastWarning).toHaveBeenCalledWith('1 approved, 1 failed.', {
+      description: enMessages.admin.broadcasts.toast.member_halted,
+    });
+  });
+
+  it('a total failure names every distinct standing reason once', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        jsonResponse({ error: { code: String(url).includes('b1') ? 'member_not_in_good_standing' : 'member_halted' } }, 409),
+      ),
+    );
+    render(
+      <Provider>
+        <QueueBulkActionBar selectedIds={['b1', 'b2', 'b3']} onClear={vi.fn()} readOnly={false} recipientByIdRows={[]} />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    const [message, opts] = toastError.mock.calls[0] as [string, { description: string }];
+    expect(message).toBe(enMessages.admin.broadcasts.queue.bulk.failureAll);
+    expect(opts.description).toBe(
+      `${enMessages.admin.broadcasts.toast.member_not_in_good_standing} ${enMessages.admin.broadcasts.toast.member_halted}`,
+    );
+  });
+
   it('clicking Clear calls onClear without hitting the network', () => {
     const onClear = vi.fn();
     render(
@@ -694,15 +745,17 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
     const fetchMock = fetchMockOf(async (url) => {
       const u = String(url);
       if (u.endsWith('/approve')) return jsonResponse({ ok: true });
-      // /cancel — classify by id: b1 too-late, b2 hard-failed, b3 cancelled.
+      // /cancel — classify by id: b1 too-late (F119 T081's `sending_started`,
+      // the code for a row the cron already picked up), b2 hard-failed,
+      // b4 rate-limited (whole-branch review HIGH-3 defence), b3 cancelled.
       if (u.endsWith('/b1/cancel')) {
-        return jsonResponse(
-          { error: { code: 'broadcast_cancel_too_late' } },
-          409,
-        );
+        return jsonResponse({ error: { code: 'sending_started' } }, 409);
       }
       if (u.endsWith('/b2/cancel')) {
         return jsonResponse({ error: { code: 'internal_error' } }, 500);
+      }
+      if (u.endsWith('/b4/cancel')) {
+        return jsonResponse({ error: { code: 'broadcast_rate_limit_exceeded' } }, 429);
       }
       return jsonResponse({ status: 'cancelled' });
     });
@@ -711,7 +764,7 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
     render(
       <Provider>
         <QueueBulkActionBar
-          selectedIds={['b1', 'b2', 'b3']}
+          selectedIds={['b1', 'b2', 'b3', 'b4']}
           onClear={vi.fn()}
           readOnly={false}
           recipientByIdRows={[]}
@@ -739,9 +792,14 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
       'Already sending — too late to undo 1 broadcast.',
     );
     // failed → toast.error with the real ICU-resolved copy
-    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    // rateLimited → its OWN toast.error: the row is still approved and will
+    // send, which "still approved" alone did not say (HIGH-3 defence).
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(2));
     expect(toastError).toHaveBeenCalledWith(
       "Couldn't undo 1 broadcast — still approved.",
+    );
+    expect(toastError).toHaveBeenCalledWith(
+      "Too many requests — couldn't undo 1 broadcast. It will still send unless you cancel it from the queue.",
     );
   });
 });
@@ -858,5 +916,33 @@ describe('QueueBulkActionBar — Task 2 hotfix (2026-08-05-broadcast-crosspr-hot
     await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1)); // partial toast
     await waitFor(() => expect(document.activeElement).toBe(mainContent));
     expect(document.activeElement).not.toBe(approveBtn);
+  });
+});
+
+/**
+ * T086a V2 — the Clear fallback. Below `md` the queue table (and its select-all
+ * checkbox) is `display: none`, so `.focus()` on it does nothing; jsdom has no
+ * CSS, so the two shapes the phone produces are modelled directly: no select-all
+ * in the document, and one that refuses focus (a disabled control, which jsdom
+ * will not focus either). Both land on `#main-content`, never `<body>`.
+ */
+describe('QueueBulkActionBar — Clear focus fallback (T086a V2)', () => {
+  it.each([
+    ['no select-all is rendered', null],
+    ['the select-all cannot take focus', <button key="sa" type="button" disabled data-testid="queue-select-all" />],
+  ])('%s → Clear lands on #main-content and still clears', async (_, selectAll) => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+    render(
+      <Provider>
+        <main id="main-content" tabIndex={-1}>
+          {selectAll}
+          <QueueBulkActionBar selectedIds={['b1']} onClear={onClear} readOnly={false} recipientByIdRows={[]} />
+        </main>
+      </Provider>,
+    );
+    await user.click(within(screen.getByRole('toolbar')).getByRole('button', { name: /clear/i }));
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(document.getElementById('main-content'));
   });
 });

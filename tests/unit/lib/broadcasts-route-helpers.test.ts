@@ -79,6 +79,22 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   test_copy_invalid_recipient: 422,
   // F119 review finding F2-6 — an empty file is the member's mistake to fix.
   broadcast_image_empty: 400,
+  // F119 PR-2 — the `…/[id]/version` routes.
+  stage_changed: 409,
+  round_zero: 409,
+  version_changed: 409,
+  no_working_copy: 409,
+  unsafe_content: 422,
+  image_source_not_allowlisted: 422,
+  // F119 PR-2 — `…/version/send` and `…/schedule`.
+  no_portal_user: 409,
+  no_proposal: 409,
+  mode_not_allowed: 409,
+  reason_required: 422,
+  stale_version: 409,
+  sending_started: 409,
+  member_halted: 409,
+  member_not_in_good_standing: 409,
   internal_error: 500,
 };
 

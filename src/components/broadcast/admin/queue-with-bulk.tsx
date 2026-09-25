@@ -62,6 +62,19 @@ export interface QueueWithBulkProps {
   readonly readOnly?: boolean;
   /** Round 2 (UX M-1) — see `QueueTableProps.haltUnknown`. */
   readonly haltUnknown?: boolean;
+  /** F119 T109 — see `QueueTableClientProps.emptyState`. */
+  readonly emptyState?: React.ReactNode;
+  /** UX review H1 / M1 / H3 / H4 — see the same props on `QueueTableClientProps`. */
+  readonly order?: QueueTableClientProps['order'];
+  readonly viewTotal?: QueueTableClientProps['viewTotal'];
+  readonly viewKey?: QueueTableClientProps['viewKey'];
+  /**
+   * T086a V10 — the page's pagination, rendered AFTER the list and BEFORE the
+   * bulk toolbar. The toolbar is `position: fixed` at the bottom of the
+   * viewport, so it is visually last; in the DOM it came before the
+   * pagination, and Tab visited the bottom toolbar before the links above it.
+   */
+  readonly pagination?: React.ReactNode;
 }
 
 export function QueueWithBulk({
@@ -69,6 +82,11 @@ export function QueueWithBulk({
   columnLabels,
   readOnly = false,
   haltUnknown = false,
+  emptyState,
+  order,
+  viewTotal,
+  viewKey,
+  pagination,
 }: QueueWithBulkProps): React.ReactElement {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clearNonce, setClearNonce] = useState(0);
@@ -107,7 +125,12 @@ export function QueueWithBulk({
         clearSelectionNonce={clearNonce}
         reselectIds={reselectIds}
         reselectNonce={reselectNonce}
+        emptyState={emptyState}
+        {...(order !== undefined && { order })}
+        {...(viewTotal !== undefined && { viewTotal })}
+        {...(viewKey !== undefined && { viewKey })}
       />
+      {pagination}
       <QueueBulkActionBar
         selectedIds={selectedIds}
         readOnly={readOnly}

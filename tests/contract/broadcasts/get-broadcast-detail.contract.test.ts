@@ -26,12 +26,16 @@ vi.mock('@/lib/member-context', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@/modules/broadcasts', () => ({
+vi.mock('@/modules/broadcasts', async () => ({
   parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
   makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
   makeEnforceTenantContextDeps: () => ({}),
   enforceTenantContext: (...args: unknown[]) => enforceTenantContextMock(...args),
+  // T141a — the REAL workflow view (a `sent` row reads no versions).
+  readMemberEblastView: (await import('@/modules/broadcasts/application/use-cases/approval/read-member-eblast-view'))
+    .readMemberEblastView,
 }));
+vi.mock('@/lib/broadcast-approval-deps', () => ({ makeReadMemberEblastViewDeps: () => ({}) }));
 
 const BROADCAST_ID = '77777777-7777-4777-8777-777777777777';
 

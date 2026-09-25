@@ -8,7 +8,9 @@ the Domain types in § 9 are hand-declared.
 | migration | journal | carries |
 |---|---|---|
 | `0304_eblast_images_and_brand.sql` | `idx: 305`, `when: 1798543700000` | `broadcast_images` (+RLS/FORCE) · 4 brand columns on `tenant_broadcast_settings` · `audit_event_type` += `broadcast_test_copy_sent`, `broadcast_brand_settings_changed`, `broadcast_image_uploaded`, `broadcast_image_removed` |
-| `0305_eblast_member_approval.sql` | `idx: 306`, `when: 1798543800000` | **the FR-012a bundle**: `broadcast_status` +5 · `broadcasts_immutable_after_submit_fn` amended · `broadcasts_state_machine_fn` amended · `broadcast_versions` + `broadcast_member_decisions` (+RLS/FORCE) · 6 columns on `broadcasts` incl. `proposed_send_at` · `audit_event_type` += 10 · `notification_type` += 5 · the `proposed_send_at` backfill |
+| `0308_eblast_member_approval.sql` (written as `0305`; see the note below) | `idx: 309`, `when: 1798544100000` | **the FR-012a bundle**: `broadcast_status` +5 · `broadcasts_immutable_after_submit_fn` amended · `broadcasts_state_machine_fn` amended · `broadcast_versions` + `broadcast_member_decisions` (+RLS/FORCE) · 6 columns on `broadcasts` incl. `proposed_send_at` · `audit_event_type` += 10 · `notification_type` += 5 · the `proposed_send_at` backfill |
+
+**Renumbered at merge (2026-09-24).** `main` took `0305`–`0307` (invoice supersede index, membership coverage end) while PR-2 was open, at the same `idx` and `when` this file had reserved, so the F119 bundle ships as `0308` (`idx 309`, `when 1798544100000`). Every "0305" below means that file; the DDL is unchanged. `tasks.md` keeps the original number as a record.
 
 FR-019 names `data-model.md` § State machine **normative** for the stage list: § 8.1a below carries
 the entry condition, exit conditions and acting party of **every** stage including Draft, and § 8.1b

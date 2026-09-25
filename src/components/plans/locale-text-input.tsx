@@ -59,6 +59,10 @@ export function LocaleTextInput({
 }: LocaleTextInputProps) {
   const t = useTranslations('admin.plans.badges');
   const baseId = useId();
+  const errorId = `${baseId}-error`;
+  const invalidProps = error
+    ? { 'aria-invalid': true, 'aria-describedby': errorId }
+    : {};
   const [active, setActive] = useState<LocaleKey>('en');
 
   function update(locale: LocaleKey, next: string): void {
@@ -125,6 +129,7 @@ export function LocaleTextInput({
                 disabled={disabled}
                 rows={4}
                 aria-label={`${label} (${l.label})`}
+                {...invalidProps}
               />
             ) : (
               <Input
@@ -135,13 +140,16 @@ export function LocaleTextInput({
                 maxLength={maxLength}
                 disabled={disabled}
                 aria-label={`${label} (${l.label})`}
+                {...invalidProps}
               />
             )}
           </TabsContent>
         ))}
       </Tabs>
       {error ? (
-        <p className="text-destructive text-sm" role="alert">
+        // Linked via aria-describedby (not role="alert"): the form moves
+        // focus to the first invalid field, which then reads its message.
+        <p id={errorId} className="text-destructive text-sm">
           {error}
         </p>
       ) : null}

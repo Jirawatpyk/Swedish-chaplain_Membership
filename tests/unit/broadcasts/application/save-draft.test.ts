@@ -80,6 +80,12 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };

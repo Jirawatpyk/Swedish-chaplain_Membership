@@ -60,7 +60,17 @@ export type BroadcastProbeUseCase =
   | 'cancel-broadcast'
   // F119 T106/T146 — the image ownership check (staff route miss, member
   // route unknown/other-tenant id).
-  | 'upload-inline-image';
+  | 'upload-inline-image'
+  // F119 PR-2 — the staff formatting routes (`…/[id]/version`,
+  // `…/version/send`, `…/schedule`).
+  | 'start-formatted-version'
+  | 'save-formatted-version'
+  | 'list-broadcast-versions'
+  | 'send-version-to-member'
+  | 'confirm-schedule'
+  | 'record-member-decision'
+  // F119 T087 — the member's version thread (`GET /api/broadcasts/[id]/versions`).
+  | 'get-member-version-thread';
 
 export type CrossTenantProbeSurface =
   | {

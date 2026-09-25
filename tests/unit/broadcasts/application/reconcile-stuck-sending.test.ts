@@ -97,6 +97,12 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
     // Two days before `now`, so a provider `sent_at` of 2026-06-14 is INSIDE the
     // [createdAt, now] sanity range the reconciler enforces (review L-1).
     createdAt: new Date(FROZEN_NOW.getTime() - 2 * 24 * 60 * 60 * 1000),

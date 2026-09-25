@@ -10,8 +10,12 @@
  * invisible to the axe suite.
  *
  * Pinned here, on structure rather than on pixels jsdom cannot measure:
- *   1. the skeleton renders three card regions, in the page's order;
- *   2. the middle one reserves a frame whose height is the SAME constant the
+ *   1. the skeleton renders the page's regions in the page's order — since
+ *      F119 T086 the sign-off shape: the stage banner, the fields card, the
+ *      compare grid (formatted first; the original beside it at ≥ lg only) —
+ *      and, since T086a V5, NOT the delivery card, which the page renders only
+ *      once sending has begun;
+ *   2. the formatted frame reserves a height that is the SAME constant the
  *      page passes `PreviewSurface` — imported, not retyped, so the two can
  *      never drift by a number again.
  */
@@ -35,16 +39,37 @@ beforeEach(() => {
 });
 
 describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', () => {
-  it('renders three card regions, not two', async () => {
+  it('renders the stage banner, then the fields card and the content grid — no delivery card', async () => {
     const { default: Loading } = await import(
       '@/app/(member)/portal/broadcasts/[id]/loading'
     );
     render(await Loading());
 
-    expect(document.querySelectorAll('[data-slot="card"]')).toHaveLength(3);
+    // F119 T086 — fields · formatted · original (≥ lg). T086a V5: the
+    // delivery card is NOT reserved — the page renders it only once sending
+    // has begun, and on the sign-off stages this view exists for, the
+    // decision controls and the history sit in that slot instead.
+    const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
+    expect(cards).toHaveLength(3);
+    // The banner is reserved ABOVE the fields card, as the page renders it.
+    const banner = screen.getByTestId('detail-stage-banner-skeleton');
+    expect(banner.compareDocumentPosition(cards[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('the middle card reserves the frame height the page passes PreviewSurface', async () => {
+  it('T086a V5: the fields card has a header (the overline + the subject heading), as the page does', async () => {
+    const { default: Loading } = await import(
+      '@/app/(member)/portal/broadcasts/[id]/loading'
+    );
+    render(await Loading());
+
+    const fields = document.querySelectorAll('[data-slot="card"]')[0]!;
+    const header = Array.from(fields.children).find((el) => el.getAttribute('data-slot') === 'card-header');
+    expect(header).toBeDefined();
+    // The overline label and the subject heading — two bars, as `page.tsx`.
+    expect(header!.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(2);
+  });
+
+  it('the formatted frame reserves the height the page passes PreviewSurface, first in the grid', async () => {
     const { default: Loading } = await import(
       '@/app/(member)/portal/broadcasts/[id]/loading'
     );
@@ -55,8 +80,12 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
     // change to both, or this fails.
     expect(frame.style.height).toBe(`${DETAIL_PREVIEW_FRAME_HEIGHT}px`);
 
-    // …and it sits in the SECOND card, between fields and delivery.
+    // …and it sits in the SECOND card (the grid's first), after the fields
+    // card; the original's frame beside it is reserved at ≥ lg only.
     const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
     expect(cards[1]?.contains(frame)).toBe(true);
+    const original = screen.getByTestId('detail-original-frame-skeleton');
+    expect(cards[2]?.contains(original)).toBe(true);
+    expect(cards[2]?.className).toContain('hidden lg:flex');
   });
 });

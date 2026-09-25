@@ -69,11 +69,17 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     actorRoleLabel: null,
     segmentLabel: 'All members',
     recipientCount: 42,
-    submittedAtFormatted: '1 Aug 2026, 07:00',
     ageBadge: null,
     statusBadgeVariant: 'secondary',
     statusBadgeLabel: 'Awaiting review',
     actionable: true,
+    whoseTurnLabel: 'Marketing',
+    timeInStageLabel: '3 h',
+    round: 0,
+    proposedSendAtFormatted: null,
+    confirmedSendAtFormatted: null,
+    lastActivityFormatted: '1 Aug 2026, 07:00',
+    deliverySummary: null,
     ...overrides,
   };
 }
@@ -109,13 +115,13 @@ function Harness({
 }
 
 describe('<QueueCardList>', () => {
-  it('renders one card per row with the subject and the labelled Audience/Recipients fields', () => {
+  // F119 UX review M7 — Audience / Recipients / Submitted left the card (the
+  // phone-width field set is pinned exactly in `queue-card-list-columns.test.tsx`).
+  it('renders one card per row with the subject and the member', () => {
     render(<Harness rows={[makeRow({ broadcastId: 'b1', subject: 'Q3 Newsletter' })]} />);
 
     const list = screen.getByTestId('queue-card-list');
     expect(within(list).getByText('Q3 Newsletter')).toBeInTheDocument();
-    expect(within(list).getByText(/Audience/)).toBeInTheDocument();
-    expect(within(list).getByText(/Recipients/)).toBeInTheDocument();
     // Fix round 1 (Important, desktop/mobile parity) — WHO submitted the
     // broadcast must be visible on the card, mirroring the desktop
     // `member` column. `makeRow()` defaults `actorRoleLabel` to null, so
@@ -155,15 +161,9 @@ describe('<QueueCardList>', () => {
     expect(link).toHaveAttribute('href', '/admin/broadcasts/b7');
   });
 
-  it('renders the Submitted field value and the status badge label', () => {
-    render(
-      <Harness
-        rows={[makeRow({ submittedAtFormatted: '1 Aug 2026, 07:00', statusBadgeLabel: 'Awaiting review' })]}
-      />,
-    );
+  it('renders the status badge label', () => {
+    render(<Harness rows={[makeRow({ statusBadgeLabel: 'Awaiting review' })]} />);
     const list = screen.getByTestId('queue-card-list');
-    expect(within(list).getByText(/Submitted/)).toBeInTheDocument();
-    expect(within(list).getByText('1 Aug 2026, 07:00')).toBeInTheDocument();
     expect(within(list).getByText('Awaiting review')).toBeInTheDocument();
   });
 

@@ -105,6 +105,8 @@ export {
   subtractMoney,
   multiplyMoney,
   addVat,
+  grossWithVatMinorUnits,
+  vatRatePercent,
   formatMoney,
   isCurrencyCode,
   InvalidMoneyError,

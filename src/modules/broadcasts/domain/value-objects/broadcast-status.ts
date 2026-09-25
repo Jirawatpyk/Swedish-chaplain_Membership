@@ -2,9 +2,9 @@
  * T024 — `BroadcastStatus` Domain value object (F7) + F7.1a Phase 3 B0
  * extension (2026-05-19).
  *
- * 10-state lifecycle constant tuple (FR-004 + FR-004a + FR-008a/b).
- * Mirrors the `broadcastStatusEnum` in Infrastructure schema + DB
- * pgEnum (migrations 0064 + 0169) verbatim. The Domain owns the
+ * 15-state lifecycle constant tuple (FR-004 + FR-004a + FR-008a/b, and the
+ * five F119 approval-round statuses). Mirrors the `broadcastStatusEnum` in
+ * Infrastructure schema + DB pgEnum (migrations 0064 + 0169 + 0308) verbatim. The Domain owns the
  * **transition policy** (`broadcast-status-transitions.ts`);
  * Infrastructure owns the **DB enum + state-machine trigger**
  * (data-model § 4.2).
@@ -24,6 +24,13 @@ export const BROADCAST_STATUSES = [
   // F7.1a US1 — Phase 3 B0 extension
   'partially_sent',
   'partial_delivery_accepted',
+  // F119 (migration 0308, data-model § 7.1) — the two-sided approval round.
+  // Same order as the `broadcast_status` pgEnum and `broadcastStatusEnum`.
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+  'expired_no_member_response',
 ] as const;
 
 export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number];
@@ -90,12 +97,59 @@ export const OFFERED_BROADCAST_STATUSES: ReadonlyArray<BroadcastStatus> =
     (s) => !(RETIRED_BROADCAST_STATUSES as readonly string[]).includes(s),
   );
 
+/**
+ * F119 T132 — the in-progress stages that exist ONLY inside the
+ * member-approval round (migration 0308): a row in one of them is in flight
+ * whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says. Research R18's "flag ON or
+ * rows exist" rule reads this set — with the flag off, a surface that would
+ * otherwise stay dark (the nav's waiting count) still shows while any row is
+ * here, so an in-flight E-Blast is never invisible to the people who must act
+ * on it. `expired_no_member_response` is not in it: it is closed, and nobody
+ * acts on a closed row.
+ *
+ * Defined HERE (PR #392 review C4) so the chip set below derives from it and a
+ * client component may read both; `domain/stage/in-progress-statuses.ts`
+ * re-exports it and asserts it is a subset of the in-progress statuses.
+ */
+export const APPROVAL_ROUND_STATUSES = [
+  'in_design',
+  'awaiting_member_approval',
+  'changes_requested',
+  'member_approved',
+] as const satisfies readonly BroadcastStatus[];
+
+/**
+ * F119 T116 / T151 (research R18) — the stages that exist only because of the
+ * approval round (migration 0308). Their filter chip is offered while the round
+ * is switched on OR while the tenant has a row in that stage: never a filter
+ * that can only return zero rows (the retired-status rule above), and never a
+ * stage an in-flight E-Blast is sitting in hidden from the people who must act
+ * on it.
+ *
+ * UX review M2 — it lives HERE, beside `OFFERED_BROADCAST_STATUSES`, because
+ * two surfaces size from it: the chip strip (`queue-filters.tsx`, a client
+ * component that may import this file but not `domain/stage/**`) and the
+ * queue's loading skeleton, which reserves 8 chips with the round off and 13
+ * with it on. `queue-filters-flag-visibility.test.tsx` pins the five.
+ *
+ * PR #392 review C4 — derived from {@link APPROVAL_ROUND_STATUSES} (the four
+ * in-flight round stages) plus the round's own closed stage, so the two sets
+ * cannot drift apart.
+ */
+export const APPROVAL_ROUND_ONLY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
+  ...APPROVAL_ROUND_STATUSES,
+  'expired_no_member_response',
+]);
+
 export const TERMINAL_BROADCAST_STATUSES = [
   'sent',
   'rejected',
   'cancelled',
   'failed_to_dispatch',
   'partial_delivery_accepted',
+  // F119 — the day-30 close of an unanswered version (FR-022a). Frees the
+  // allowance: it is in neither the reserved nor the consumed set (§ 9).
+  'expired_no_member_response',
 ] as const satisfies readonly BroadcastStatus[];
 
 const TERMINAL_BROADCAST_STATUS_SET: ReadonlySet<BroadcastStatus> = new Set(

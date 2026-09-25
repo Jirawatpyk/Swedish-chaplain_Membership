@@ -500,16 +500,14 @@ export default async function RenewalsPipelinePage({
   //   - actor role is `member` — but route already redirects member to
   //     /portal at L77, so this server component only runs for
   //     admin / manager.
-  // 016 T030 — VIEW projection (not an audit stamp): manager keeps the
-  // manager widget view; admin AND super_admin (D16) get the admin view.
-  // rbac-narrow-ok: chooses which widget VARIANT to render — never an
-  // authorization decision, and deliberately total over the admitted roles.
-  const widgetActorRole: 'admin' | 'manager' =
-    currentUser.role === 'manager' ? 'manager' : 'admin';
+  // Its per-row Snooze posts to a `renewals.write` route, so it is gated on
+  // `canMutate` below — not on a role projection, which answered wrongly for
+  // any role that is neither manager nor admin.
 
   // Fix round 3 (manager money-CTA gating) — threaded into `<PipelineTable>`
-  // to hide the admin-only row mutation affordances ("Send reminder" /
-  // "Mark paid") from a read-only manager. Server-side 403 guards on those
+  // and `<AtRiskWidget>` to hide the admin-only row mutation affordances
+  // ("Send reminder" / "Mark paid" / "Snooze") from a read-only manager.
+  // Server-side 403 guards on those
   // routes stay in place as defence-in-depth; this only fixes the client
   // affordance so a manager never sees a CTA that would just 403.
   // 016 T030 — evaluator-derived (the old `role === 'admin'` literal hid
@@ -695,7 +693,7 @@ export default async function RenewalsPipelinePage({
             // Suspense island, so the eager-promise pattern does not apply
             // (its fetch already starts client-side, independent of
             // `loadPipeline`). Intentionally left as-is.
-            needsAction={<AtRiskWidget actorRole={widgetActorRole} />}
+            needsAction={<AtRiskWidget canSnooze={canMutate} />}
             needsActionBadge={
               <Suspense fallback={null}>
                 <NeedsActionCountBadge

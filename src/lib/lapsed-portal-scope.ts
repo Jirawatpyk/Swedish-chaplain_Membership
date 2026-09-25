@@ -119,6 +119,43 @@ export const LAPSED_PORTAL_ALLOWED_PREFIXES: readonly string[] = [
   // check; documented as defensively-allowed in the policy review.
 ];
 
+/** A UUID path segment — the E-Blast `[id]` (any version, case-insensitive: what `parseBroadcastId` accepts). */
+const UUID_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+/**
+ * F119 T074 (spec § Edge Cases, "Member's membership lapses … mid-flow") — a
+ * terminated member may still OPEN their own E-Blast and DECIDE on a pending
+ * version, or cancel it: reading and deciding are not benefit actions, and a
+ * member whose membership ended must still be able to stop an E-Blast going
+ * out under their name. Sending is blocked by the existing standing rules, not
+ * here — they run at submit, approve-as-submitted and confirm-schedule's
+ * promotion (`_member-send-standing.ts`), NOT at dispatch, so an E-Blast
+ * already `approved` before the membership ended still sends unless it is
+ * cancelled (quickstart § 3.6).
+ *
+ * EXACT paths, never prefixes: `/api/broadcasts/**` also holds the benefit-
+ * consuming routes (`submit`, `draft/**`, `inline-image-upload`, `preview`,
+ * `test-copy`, `quota`, `recipient-count`, `templates/**`), and a prefix entry
+ * would reopen every one of them. Each pattern is anchored at both ends and on
+ * a UUID `[id]` segment, so a literal sibling (`draft`, `submit`) can never
+ * satisfy it, and nothing may follow the named leaf. A `?query` suffix is
+ * tolerated (the page gate may see one); a trailing slash is not.
+ *
+ * Path-only, not method-aware, and that is enough: `[id]/route.ts` exports GET
+ * only and `[id]/decision` + `[id]/cancel` export POST only, so Next answers
+ * 405 to any other verb before a handler runs; `[id]/versions` (T087) is a
+ * GET-only read. A route that later adds a mutating verb to one of these
+ * paths MUST revisit this list. The use cases still enforce ownership (a
+ * member reaches only their own E-Blast — cross-member probes answer 404).
+ */
+export const LAPSED_EBLAST_SIGNOFF_ROUTES: readonly RegExp[] = [
+  new RegExp(`^/api/broadcasts/${UUID_SEGMENT}(?:\\?.*)?$`, 'i'), // GET the E-Blast
+  new RegExp(`^/api/broadcasts/${UUID_SEGMENT}/versions(?:\\?.*)?$`, 'i'), // GET the version thread (T087)
+  new RegExp(`^/api/broadcasts/${UUID_SEGMENT}/decision(?:\\?.*)?$`, 'i'), // POST approve / request changes / withdraw
+  new RegExp(`^/api/broadcasts/${UUID_SEGMENT}/cancel(?:\\?.*)?$`, 'i'), // POST cancel
+  new RegExp(`^/portal/broadcasts/${UUID_SEGMENT}(?:\\?.*)?$`, 'i'), // the sign-off page
+];
+
 /**
  * Denylist for a `suspended` member (allow-by-default). The real enforcement
  * for broadcast submission is the `submitBroadcast` use-case precondition
@@ -275,9 +312,27 @@ export async function checkPortalAccess(
  */
 export function isTerminatedAllowedRoute(pathname: string): boolean {
   if (matchesExactOrQuery(pathname, '/portal')) return true;
+  if (LAPSED_EBLAST_SIGNOFF_ROUTES.some((route) => route.test(pathname))) return true;
   return LAPSED_PORTAL_ALLOWED_PREFIXES.some(
     (prefix) => prefix !== '/portal' && matchesScopePrefix(pathname, prefix),
   );
+}
+
+/**
+ * F119 UX review M5 — the route half of {@link checkPortalAccess}, without
+ * the cycle read and WITHOUT the audit: whether a member whose access is
+ * `access` may open `pathname`. For a page choosing where a link points (the
+ * E-Blast sign-off page's Back link), where asking is not a blocked action and
+ * must not write a `lapsed_member_action_blocked` row. Pair it with the
+ * request-cached `loadMembershipAccess`; `checkPortalAccess` stays the gate.
+ */
+export function isPortalPathAllowed(
+  access: 'full' | 'suspended' | 'terminated',
+  pathname: string,
+): boolean {
+  if (access === 'full') return true;
+  if (access === 'terminated') return isTerminatedAllowedRoute(pathname);
+  return !isSuspendedDeniedRoute(pathname);
 }
 
 /** Whether `pathname` is on the `suspended`-member denylist. */

@@ -26,6 +26,7 @@ import type {
   EmailTransactionalPort,
   SendEmailInput,
 } from '@/modules/broadcasts/application/ports/email-transactional-port';
+import { makeFakeSendStanding, type FakeSendStandingOpts } from '../../../helpers/eblast-approval-fakes';
 
 interface MemberCallRecord {
   to: string;
@@ -90,6 +91,16 @@ function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
 
 interface RepoOpts {
   readonly lockedStatus?: BroadcastStatus | null;
+  /**
+   * T166 S-H1 — the row the approval re-reads under the lock (for its owning
+   * member). Default: a `submitted` row; `null` = it vanished.
+   */
+  readonly row?: Broadcast | null;
+  /**
+   * T166 follow-up — the NON-locking pre-read the standing read keys on
+   * (`findById`, before the tx). Default: the same row as `row`.
+   */
+  readonly preRead?: Broadcast | null;
   readonly applyTransitionThrows?: boolean;
   readonly refreshAfterRace?: Broadcast | null;
   readonly withTxThrows?: Error | string;
@@ -143,6 +154,12 @@ function makeBroadcast(
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
     ...fields,
@@ -154,6 +171,7 @@ function makeRepo(opts: RepoOpts): {
   transitions: Array<{ status: string; fields: unknown }>;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
+  let findInTxCalls = 0;
   return {
     transitions,
     port: {
@@ -171,9 +189,14 @@ function makeRepo(opts: RepoOpts): {
         throw new Error('not used in approve-broadcast fixture');
       },
       async findById() {
-        return null;
+        if (opts.preRead !== undefined) return opts.preRead;
+        return opts.row === undefined ? makeBroadcast('submitted') : opts.row;
       },
       async findByIdInTx() {
+        // The first read is the approval's own (T166 S-H1); a later one is the
+        // concurrency refresh after a lost transition.
+        findInTxCalls += 1;
+        if (findInTxCalls === 1) return opts.row === undefined ? makeBroadcast('submitted') : opts.row;
         return opts.refreshAfterRace ?? null;
       },
       async lockForUpdate() {
@@ -234,6 +257,8 @@ function makeRepo(opts: RepoOpts): {
 const baseInput = {
   broadcastId,
   actorUserId: 'admin-7',
+  // T166 follow-up — the session role, recorded as held on a standing-refusal audit row.
+  actorRole: 'marketing',
   decision: { mode: 'send_now' as const },
   requestId: 'req-1',
 };
@@ -254,6 +279,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -279,6 +305,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -296,6 +323,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -327,6 +355,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -348,6 +377,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -369,6 +399,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -388,10 +419,13 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
         .fn()
         .mockRejectedValue(new Error('bridge boom')),
     } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    const { logger } = await import('@/lib/logger');
+    const warn = vi.spyOn(logger, 'warn');
     const result = await approveBroadcast(
       {
         tenant,
         broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -401,6 +435,10 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     );
     expect(result.ok).toBe(true);
     expect(email.memberCalls[0]?.locale).toBe('sv'); // input fallback
+    // T166 follow-up (R-M4 class) — the error CLASS, never the message.
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ err: 'Error' }), 'broadcasts.locale_resolve_failed');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('bridge boom');
+    warn.mockRestore();
   });
 
   // ---- send_now path ---------------------------------------------------
@@ -409,7 +447,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(true);
@@ -433,7 +471,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: 'submitted' });
     await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
     const evt = audit.emits.find((e) => e.eventType === 'broadcast_approved');
@@ -455,7 +493,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const future = new Date(FROZEN_NOW.getTime() + 60 * 60 * 1000); // +1h
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       { ...baseInput, decision: { mode: 'schedule', scheduledFor: future } },
     );
     expect(result.ok).toBe(true);
@@ -469,7 +507,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const future = new Date(FROZEN_NOW.getTime() + 30 * 60 * 1000); // +30min
     await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       { ...baseInput, decision: { mode: 'schedule', scheduledFor: future } },
     );
     const evt = audit.emits.find((e) => e.eventType === 'broadcast_approved');
@@ -486,7 +524,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const tooSoon = new Date(FROZEN_NOW.getTime() + 4 * 60 * 1000); // +4min
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       { ...baseInput, decision: { mode: 'schedule', scheduledFor: tooSoon } },
     );
     expect(result.ok).toBe(false);
@@ -504,7 +542,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const past = new Date(FROZEN_NOW.getTime() - 60 * 1000);
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       { ...baseInput, decision: { mode: 'schedule', scheduledFor: past } },
     );
     expect(result.ok).toBe(false);
@@ -516,7 +554,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const repo = makeRepo({ lockedStatus: 'submitted' });
     const boundary = new Date(FROZEN_NOW.getTime() + 5 * 60 * 1000);
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       { ...baseInput, decision: { mode: 'schedule', scheduledFor: boundary } },
     );
     expect(result.ok).toBe(true);
@@ -536,7 +574,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: s });
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -553,7 +591,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ lockedStatus: null });
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -570,7 +608,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       refreshAfterRace: makeBroadcast('cancelled'),
     });
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -590,7 +628,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       refreshAfterRace: null,
     });
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
     if (!result.ok && result.error.kind === 'broadcast_concurrent_action_blocked') {
@@ -604,28 +642,195 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: new Error('db down') });
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe('approve.server_error');
-      if (result.error.kind === 'approve.server_error') {
-        expect(result.error.message).toBe('db down');
-      }
-    }
+    // T166 follow-up (R-M4 class) — the error CLASS only; the raw message
+    // (a Neon error's bound parameters) never reaches the route's log.
+    expect(result).toEqual({ ok: false, error: { kind: 'approve.server_error', errKind: 'Error' } });
   });
 
   it('non-Error thrown โ’ approve.server_error with "unknown error" message', async () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: 'string-error' });
     const result = await approveBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, sendStanding: makeFakeSendStanding(), audit: audit.port, clock },
       baseInput,
     );
-    if (!result.ok && result.error.kind === 'approve.server_error') {
-      expect(result.error.message).toBe('unknown error');
-    }
+    expect(result).toEqual({ ok: false, error: { kind: 'approve.server_error', errKind: 'unknown' } });
+  });
+
+  // ---- T166 S-H1 — the send-time standing + halt rules ----------------
+  //
+  // Submit always read both; approve-as-submitted (the live, unflagged path)
+  // read neither, so a member halted or lapsed after submitting was approved
+  // and sent anyway. The approval now re-reads them, under the row lock, with
+  // the SAME helper submit uses.
+
+  const approveWith = (
+    standing: FakeSendStandingOpts,
+    repoOpts: RepoOpts = { lockedStatus: 'submitted' },
+    input: typeof baseInput | Omit<typeof baseInput, 'actorRole'> & { actorRole: string | null } = baseInput,
+  ) => {
+    const repo = makeRepo(repoOpts);
+    const sendStanding = makeFakeSendStanding(standing);
+    const audit = makeAudit();
+    return {
+      repo,
+      sendStanding,
+      audit,
+      result: approveBroadcast({ tenant, broadcastsRepo: repo.port, sendStanding, audit: audit.port, clock }, input),
+    };
+  };
+
+  it.each([
+    { standing: { halted: ['m-1'] }, error: { kind: 'member_halted', memberId: 'm-1' } },
+    { standing: { access: 'terminated' as const }, error: { kind: 'member_not_in_good_standing', memberId: 'm-1' } },
+    { standing: { access: 'suspended' as const }, error: { kind: 'member_not_in_good_standing', memberId: 'm-1' } },
+  ])('T166 S-H1: $error.kind ($standing) → refused, no transition, the OWNING member was asked', async ({ standing, error }) => {
+    const { repo, sendStanding, result } = approveWith(standing);
+    expect(await result).toEqual({ ok: false, error });
+    expect(repo.transitions).toHaveLength(0);
+    expect(sendStanding.membershipAccess.getMembershipAccess.mock.calls.every((c) => c[1] === 'm-1')).toBe(true);
+  });
+
+  // F119 round-4 B3 — the route logs `errKind`; it carries WHICH read failed
+  // and its cause, not the bare `Error` every dependency fault used to read as.
+  it.each([
+    { standing: { haltReadThrows: true }, errKind: 'ApprovalDependencyError:member_halt_flag:Error' },
+    {
+      standing: { access: 'lookup_error' as const },
+      errKind: 'ApprovalDependencyError:membership_access:membership_access.lookup_error',
+    },
+  ])(
+    'T166 S-H1: a standing read that cannot be answered ($standing) fails CLOSED → approve.server_error naming the cause, no transition, no refusal audit',
+    async ({ standing, errKind }) => {
+      const { repo, audit, result } = approveWith(standing);
+      const r = await result;
+      expect(r).toEqual({ ok: false, error: { kind: 'approve.server_error', errKind } });
+      expect(repo.transitions).toHaveLength(0);
+      // The gate was never decided — recording a refusal would be a false row.
+      expect(audit.emits).toEqual([]);
+    },
+  );
+
+  // T166 follow-up — submit audits the same two refusals; approve now does too,
+  // with the SAME event types, so "why was this member's E-Blast refused" is
+  // one query whichever surface refused it. Staff act → `related_member_id`
+  // (never `member_id`: the 0009 last_activity_at trigger must not fire).
+  it.each([
+    { standing: { halted: ['m-1'] }, eventType: 'broadcast_member_halted_pending_review' },
+    { standing: { access: 'terminated' as const }, eventType: 'broadcast_membership_suspended_blocked' },
+    { standing: { access: 'suspended' as const }, eventType: 'broadcast_membership_suspended_blocked' },
+  ])('T166 follow-up: the $eventType refusal is audited — ids only, the session role as held', async ({ standing, eventType }) => {
+    const { audit, result } = approveWith(standing);
+    expect((await result).ok).toBe(false);
+    expect(audit.emits).toEqual([
+      {
+        tenantId: 'test-tenant',
+        eventType,
+        actorUserId: 'admin-7',
+        requestId: 'req-1',
+        summary: `Approve refused (${eventType}) for member m-1`,
+        payload: { related_member_id: 'm-1', broadcast_id: broadcastId, surface: 'approve_as_submitted', actor_role: 'marketing' },
+      },
+    ]);
+  });
+
+  it('T166 follow-up: a refusal with no session role records actor_role null — never a stand-in', async () => {
+    const { audit, result } = approveWith({ halted: ['m-1'] }, { lockedStatus: 'submitted' }, { ...baseInput, actorRole: null });
+    await result;
+    expect(audit.emits[0]!.payload).toMatchObject({ actor_role: null });
+  });
+
+  // T166 follow-up — the halt / access reads go through the members bridges,
+  // each on its OWN pool connection. Made inside the tx they held a second
+  // connection per call while the row lock sat on the first (the R-L3 class);
+  // they are read before the tx now, keyed on the immutable owning member.
+  it('T166 follow-up: the standing is read with NO transaction open', async () => {
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    let open = false;
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) =>
+      inner(async (tx) => {
+        open = true;
+        try {
+          return await fn(tx);
+        } finally {
+          open = false;
+        }
+      })) as BroadcastsRepo['withTx'];
+    const sendStanding = makeFakeSendStanding();
+    const seen: boolean[] = [];
+    sendStanding.membersBridge.getMembersHaltedInTenant.mockImplementation(async () => {
+      seen.push(open);
+      return [];
+    });
+    sendStanding.membershipAccess.getMembershipAccess.mockImplementation(async () => {
+      seen.push(open);
+      return { ok: true as const, value: { access: 'full' as const, reason: 'in_good_standing' as const } };
+    });
+    const r = await approveBroadcast({ tenant, broadcastsRepo: repo.port, sendStanding, audit: makeAudit().port, clock }, baseInput);
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([false, false]);
+  });
+
+  // F119 round-4 B5 — the member's preferred locale is a members-bridge read
+  // on its OWN pool connection too; made inside the tx it held a second
+  // connection while the row lock sat on the first (the R-L3 class).
+  it('round-4 B5: the preferred locale is read with NO transaction open, for the owning member, and still used', async () => {
+    const repo = makeRepo({ lockedStatus: 'submitted' });
+    let open = false;
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) =>
+      inner(async (tx) => {
+        open = true;
+        try {
+          return await fn(tx);
+        } finally {
+          open = false;
+        }
+      })) as BroadcastsRepo['withTx'];
+    const seen: boolean[] = [];
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(async () => {
+        seen.push(open);
+        return 'th' as const;
+      }),
+    } as unknown as NonNullable<Parameters<typeof approveBroadcast>[0]['membersBridge']>;
+    const email = makeEmail();
+    const r = await approveBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        sendStanding: makeFakeSendStanding(),
+        audit: makeAudit().port,
+        clock,
+        emailTransactional: email.port,
+        membersBridge,
+      },
+      baseInput,
+    );
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([false]);
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(email.memberCalls[0]?.locale).toBe('th');
+  });
+
+  it('T166 follow-up: a row that reached submitted after the non-locking pre-read → approve.server_error (fail closed), nothing written', async () => {
+    const { repo, audit, sendStanding, result } = approveWith({}, { lockedStatus: 'submitted', preRead: makeBroadcast('draft') });
+    const r = await result;
+    expect(r.ok ? null : r.error.kind).toBe('approve.server_error');
+    expect(sendStanding.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toEqual([]);
+  });
+
+  it('T166 S-H1: the row vanishing under the lock → broadcast_not_found, no standing read, no transition', async () => {
+    const { repo, sendStanding, result } = approveWith({}, { lockedStatus: 'submitted', row: null });
+    expect(await result).toEqual({ ok: false, error: { kind: 'broadcast_not_found', broadcastId } });
+    expect(sendStanding.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
+    expect(repo.transitions).toHaveLength(0);
   });
 
   // ---- Atomic guarantees --------------------------------------------
@@ -656,7 +861,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
       },
     };
     await approveBroadcast(
-      { tenant, broadcastsRepo: wrappedRepo, audit: wrappedAudit, clock },
+      { tenant, broadcastsRepo: wrappedRepo, sendStanding: makeFakeSendStanding(), audit: wrappedAudit, clock },
       baseInput,
     );
     expect(auditWasInsideTx).toBe(true);

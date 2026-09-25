@@ -74,6 +74,7 @@ export {
   type QuotaCounterError,
 } from './domain/value-objects/quota-counter';
 export {
+  APPROVAL_ROUND_ONLY_STATUSES,
   BROADCAST_STATUSES,
   OFFERED_BROADCAST_STATUSES,
   TERMINAL_BROADCAST_STATUSES,
@@ -115,6 +116,12 @@ export {
 // per Constitution III boundary; the ERROR CLASS is a value-level
 // API surface analogous to `BroadcastTransitionError` above.
 export { BroadcastConcurrentMutationError } from './application/ports/broadcasts-repo';
+// F119 round-4 B3 — an approval dependency failure that keeps its cause for the log.
+export {
+  ApprovalDependencyError,
+  approvalErrKind,
+  type ApprovalDependency,
+} from './application/approval-dependency-error';
 
 // --- Application audit-event types (T028) --------------------------------
 // Exported for F1+F2+F3 audit-log consumers + observability dashboards.
@@ -297,7 +304,24 @@ export {
   audienceCeiling,
   DELIVERABLE_RECIPIENTS_PER_TICK,
 } from './domain/audience-ceiling';
-export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
+export type { BroadcastApprovalCounter, MarketingQueueCounts } from './application/ports/broadcast-approval-counter';
+// F119 T116 / T117 / T119 — the staff dashboard (contracts/dashboard-and-notifications.md § 1):
+// per-stage counts, batched delivery results, time in stage and the stalled flag.
+export type { BroadcastQueueReads, DeliveryResult } from './application/ports/broadcast-queue-reads';
+export { makeBroadcastQueueReads } from './infrastructure/broadcasts-deps';
+export type { ListByTenantStatusSort } from './application/ports/broadcasts-repo';
+export {
+  stageAgeOf,
+  SLA_AMBER_HOURS,
+  SLA_RED_HOURS,
+  MEMBER_STALLED_HOURS,
+  type StageAge,
+  type StageAgeLevel,
+} from './domain/stage/stage-age';
+export { hasConfirmedSendTime } from './domain/stage/broadcast-stage';
+// F119 T166 R-M1 — the notification arms tell "closed without sending" from
+// "handed over" (a confirmed-schedule email still renders for the latter).
+export { hasSendingStarted } from './domain/stage/in-progress-statuses';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------
 export {
@@ -352,6 +376,13 @@ export {
   type ListMemberBroadcastImagesInput,
   type MemberBroadcastImage,
 } from './application/use-cases/list-member-broadcast-images';
+// F119 T083 — the member's E-Blast approval rounds, for the F9 GDPR archive
+export {
+  listMemberBroadcastVersions,
+  type ListMemberBroadcastVersionsInput,
+  type ListMemberBroadcastVersionsOutput,
+  type MemberBroadcastVersionThread,
+} from './application/use-cases/list-member-broadcast-versions';
 
 // --- Composition root factories (Phase 5 US3) ----------------------------
 export {
@@ -359,6 +390,7 @@ export {
   makeGetMemberBroadcastDeps,
   makeListMemberBroadcastsDeps,
   makeListMemberBroadcastImagesDeps,
+  makeListMemberBroadcastVersionsDeps,
 } from './infrastructure/broadcasts-deps';
 
 // --- Application use-cases (Phase 7 US5) ---------------------------------
@@ -469,6 +501,10 @@ export type {
 // MembersBridge instance — exposed for the admin queue server component
 // which reads halt-state inline.
 export { membersBridge } from './infrastructure/members-bridge';
+// F119 T166 S-H1 — the F8 membership-access read, for the approval-round
+// composition root (`src/lib/broadcast-approval-deps.ts`): the promotion
+// re-reads standing the way submit does.
+export { membershipAccessBridge } from './infrastructure/membership-access-bridge';
 export { makeTickMemoizedMembersBridge } from './infrastructure/tick-memoized-members-bridge';
 
 // F7 audit adapter — exposed at the barrel because the
@@ -781,3 +817,166 @@ export {
   type RenderBroadcastPreviewOutput,
 } from './application/use-cases/render-broadcast-preview';
 export { isEblastMemberApprovalEnabled } from './infrastructure/feature-flags';
+// ---------------------------------------------------------------------------
+// F119 PR-2 — the approval round (T055 / T056 / T057 / T058 / T061).
+// Ports + Drizzle repos for `broadcast_versions` and the append-only
+// `broadcast_member_decisions`; the three staff formatting use cases; the
+// composition root is `src/lib/broadcast-approval-deps.ts` (it crosses into
+// the auth barrel for staff display names).
+// ---------------------------------------------------------------------------
+export type { BroadcastVersion } from './domain/approval/broadcast-version';
+export { isVersionEditable } from './domain/approval/broadcast-version';
+export type { MemberDecision, MemberDecisionKind } from './domain/approval/member-decision';
+export { stageOf, type BroadcastStage } from './domain/stage/broadcast-stage';
+export type {
+  BroadcastVersionsRepo,
+  BroadcastVersionsTx,
+  NewBroadcastVersion,
+  WorkingCopyWrite,
+} from './application/ports/broadcast-versions-repo';
+export type {
+  BroadcastDecisionsRepo,
+  BroadcastDecisionsTx,
+  NewMemberDecision,
+} from './application/ports/broadcast-decisions-repo';
+export type { ActorNameDirectoryPort } from './application/ports/actor-name-directory-port';
+export type { ApprovalBroadcastsRepo } from './application/use-cases/approval/_approval-tx';
+export { drizzleBroadcastVersionsRepo } from './infrastructure/db/drizzle-broadcast-versions-repo';
+export { drizzleBroadcastDecisionsRepo } from './infrastructure/db/drizzle-broadcast-decisions-repo';
+export { makeValidateImageSourceAllowlistDeps } from './infrastructure/broadcasts-deps';
+export {
+  startFormattedVersion,
+  type StartFormattedVersionDeps,
+  type StartFormattedVersionError,
+  type StartFormattedVersionInput,
+  type StartFormattedVersionOutput,
+} from './application/use-cases/approval/start-formatted-version';
+export {
+  saveFormattedVersion,
+  FORMATTED_VERSION_SUBJECT_MAX,
+  type SaveFormattedVersionDeps,
+  type SaveFormattedVersionError,
+  type SaveFormattedVersionInput,
+  type SaveFormattedVersionOutput,
+} from './application/use-cases/approval/save-formatted-version';
+export {
+  listBroadcastVersions,
+  type BroadcastVersionThread,
+  type ListBroadcastVersionsDeps,
+  type ListBroadcastVersionsError,
+  type ListBroadcastVersionsInput,
+  type StaffThreadDecision,
+  type VersionThreadEntry,
+} from './application/use-cases/approval/list-broadcast-versions';
+// T059 / T060 — send a version to the member; confirm, change or cancel the
+// send time (with the promotion). Two narrow ports composed in
+// `src/lib/broadcast-approval-deps.ts`: the member's portal contacts and the
+// ids-only approval-round outbox.
+export {
+  sendVersionToMember,
+  type SendVersionToMemberDeps,
+  type SendVersionToMemberError,
+  type SendVersionToMemberInput,
+  type SendVersionToMemberOutput,
+} from './application/use-cases/approval/send-version-to-member';
+// T130 — the daily approval-lifecycle tick (reminders, the day-23 warning, the
+// day-30 expiry), a block of the `prune-expired-drafts` cron. Composed in
+// `src/lib/broadcast-approval-deps.ts` (the member's contacts + the marketing
+// roster cross module boundaries).
+export {
+  expireStaleMemberApprovals,
+  APPROVAL_LIFECYCLE_BATCH,
+  type ExpireStaleMemberApprovalsDeps,
+  type ExpireStaleMemberApprovalsError,
+  type ExpireStaleMemberApprovalsInput,
+  type ExpireStaleMemberApprovalsOutput,
+} from './application/use-cases/approval/expire-stale-member-approvals';
+export { drizzleApprovalLifecycleScan } from './infrastructure/db/drizzle-approval-lifecycle-scan';
+export type {
+  ApprovalLifecycleScanPort,
+  AwaitingApprovalCandidate,
+  AwaitingApprovalScanQuery,
+} from './application/ports/approval-lifecycle-scan-port';
+export {
+  confirmSchedule,
+  type ConfirmScheduleDeps,
+  type ConfirmScheduleError,
+  type ConfirmScheduleInput,
+  type ConfirmScheduleOutput,
+  type ScheduleMode,
+} from './application/use-cases/approval/confirm-schedule';
+// T078 — the member's decision (approve · request changes · withdraw an
+// approval), composed in `src/lib/broadcast-approval-deps.ts` with the
+// marketing hand-off roster (`src/lib/broadcast-marketing-deps.ts`).
+export {
+  recordMemberDecision,
+  type RecordMemberDecisionDeps,
+  type RecordMemberDecisionError,
+  type RecordMemberDecisionInput,
+  type RecordMemberDecisionOutput,
+} from './application/use-cases/approval/record-member-decision';
+// T087 — the member's version thread; T141a — the workflow half of the member
+// detail. One member projection behind both (`_member-view.ts`), composed in
+// `src/lib/broadcast-approval-deps.ts`.
+export {
+  getMemberVersionThread,
+  type GetMemberVersionThreadDeps,
+  type GetMemberVersionThreadError,
+  type GetMemberVersionThreadInput,
+  type MemberThreadDecision,
+  type MemberVersionThread,
+} from './application/use-cases/approval/get-member-version-thread';
+export {
+  readMemberEblastView,
+  type MemberEblastView,
+  type ReadMemberEblastViewDeps,
+} from './application/use-cases/approval/read-member-eblast-view';
+export type {
+  MemberVisibleAuthor,
+  MemberVisibleDecision,
+  MemberVisibleVersion,
+  MemberWorkflowSummary,
+} from './application/use-cases/approval/_member-view';
+// T082 — the erasure reach into the approval round (versions, reasons, pending hand-offs).
+export type { BroadcastApprovalScrubPort } from './application/ports/broadcast-approval-scrub-port';
+// T063 — the staff detail page's stage header ("whose turn", FR-026) and its
+// two standing warnings (no portal user; an image off the allow-list).
+export { isWaitingView, turnOf, MARKETING_TURN_STATUSES, type WhoseTurn } from './domain/stage/whose-turn';
+export {
+  readFormattingWarnings,
+  type FormattingWarnings,
+  type ReadFormattingWarningsDeps,
+  type ReadFormattingWarningsError,
+  type ReadFormattingWarningsInput,
+} from './application/use-cases/approval/read-formatting-warnings';
+export type { MemberPortalRecipientPort, PortalContact } from './application/ports/member-portal-recipient-port';
+export {
+  F119_NOTIFICATION_TYPES,
+  type EblastNotificationEnqueue,
+  type EblastNotificationOutboxPort,
+  type F119NotificationType,
+} from './application/ports/eblast-notification-outbox-port';
+export { eblastNotificationOutbox } from './infrastructure/email-transactional-bridge';
+// T129a — the five approval-round email builders, called from the outbox
+// dispatcher arms (T065 / T129 / T131) through `src/lib/broadcast-approval-notifications.ts`.
+export {
+  EBLAST_LIFECYCLE_KINDS,
+  EBLAST_MEMBER_DECIDED_KINDS,
+  buildEblastApprovalLifecycleEmail,
+  buildEblastMemberDecidedMarketingEmail,
+  buildEblastScheduleConfirmedMemberEmail,
+  buildEblastSubmittedMarketingEmail,
+  buildEblastVersionSentMemberEmail,
+  type BuiltEblastEmail,
+  type EblastApprovalLifecycleInput,
+  type EblastLifecycleKind,
+  type EblastMemberDecidedKind,
+  type EblastStaffHandoffInput,
+} from './infrastructure/email/broadcast-approval-emails';
+// T065 — the send-time recipient rule shared by the enqueue (T059 / T060) and
+// the dispatcher arm, so both pick the same contact.
+export { chooseApprovalRecipient } from './application/use-cases/approval/_approval-recipient';
+// T066 — who "marketing" is for a hand-off (FR-021a), composed in
+// `src/lib/broadcast-marketing-deps.ts`.
+export type { MarketingDirectoryPort, MarketingRecipient } from './application/ports/marketing-directory-port';
+export type { UnsafeImageSource } from './domain/value-objects/image-source-allowlist';

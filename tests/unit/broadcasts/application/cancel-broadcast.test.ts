@@ -11,6 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { cancelBroadcast } from '@/modules/broadcasts/application/use-cases/cancel-broadcast';
+import {
+  makeFakeBroadcastImagesRepo,
+  makeFakeEblastOutbox,
+  makeFakeMarketingDirectory,
+} from '../../../helpers/eblast-approval-fakes';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import {
@@ -65,16 +70,23 @@ const tenant: TenantContext = asTenantContext('test-tenant');
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 const broadcastId = asBroadcastId('22222222-2222-2222-2222-222222222222');
 
-function makeAudit(): { emits: Array<AuditEmitInput>; port: AuditPort } {
+/** The tx handle the fake `withTx` passes its callback — what an in-tx write must receive. */
+const TX = { fake: 'cancel-tx' };
+
+function makeAudit(): { emits: Array<AuditEmitInput>; txs: unknown[]; port: AuditPort } {
   const emits: Array<AuditEmitInput> = [];
+  const txs: unknown[] = [];
   return {
     emits,
+    txs,
     port: {
-      async emit(_tx, e) {
+      async emit(tx, e) {
         emits.push(e);
+        txs.push(tx);
       },
-      async emitTyped(_tx, e) {
+      async emitTyped(tx, e) {
         emits.push(e as AuditEmitInput);
+        txs.push(tx);
       },
     },
   };
@@ -128,6 +140,12 @@ function makeBroadcast(
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };
@@ -161,7 +179,7 @@ function makeRepo(opts: RepoOpts): {
         // Mimic db.transaction: commit on normal return, rollback + rethrow
         // on throw. Lets the bug #5 test distinguish the two outcomes.
         try {
-          const result = await fn(null);
+          const result = await fn(TX);
           opts.onTxOutcome?.('committed');
           return result;
         } catch (e) {
@@ -178,8 +196,9 @@ function makeRepo(opts: RepoOpts): {
       async updateDraftFromTemplate() {
         throw new Error('not used in cancel-broadcast fixture');
       },
+      // Round-4 B5 — the non-locking pre-read the locale read keys on.
       async findById() {
-        return null;
+        return opts.existing ?? null;
       },
       async findByIdInTx() {
         findCallCount += 1;
@@ -251,9 +270,17 @@ const memberActor = {
 const baseInput = {
   broadcastId,
   actor: adminActor,
+  actorRole: 'admin',
   cancellationReason: 'Wrong send list',
   requestId: 'req-1',
 } as const;
+
+/** F119 T081 — the three deps the widened cancel adds (images, roster, eblast outbox). */
+const t081Deps = () => ({
+  imagesRepo: makeFakeBroadcastImagesRepo(),
+  marketingDirectory: makeFakeMarketingDirectory([]),
+  eblastOutbox: makeFakeEblastOutbox(),
+});
 
 const clock = { now: (): Date => FROZEN_NOW };
 
@@ -271,6 +298,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        ...t081Deps(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -283,6 +311,54 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     expect(call.templateKey).toBe('broadcast_cancelled');
     expect(call.locale).toBe('th');
     expect(call.payload['cancellationReason']).toBe(baseInput.cancellationReason);
+    // Whole-branch review LOW-5 — no template reads the prior stage; it lives
+    // on the audit row (`previousStatus`), never in the notification payload.
+    expect(call.payload).not.toHaveProperty('fromStatus');
+  });
+
+  it('T166 R-L3: a member withdrawal reads the roster BEFORE its tx and reports an empty one once, after the commit; a staff cancel reads none', async () => {
+    const member = { kind: 'member', memberId: 'm-1', userId: 'u-1' } as const;
+    const order: string[] = [];
+    const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-1') });
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) => {
+      order.push('withTx');
+      return inner(fn as never);
+    }) as BroadcastsRepo['withTx'];
+    const directory = makeFakeMarketingDirectory([]);
+    directory.readRoster.mockImplementation(async () => {
+      order.push('readRoster');
+      return [];
+    });
+    const deps = { ...t081Deps(), marketingDirectory: directory };
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...deps, audit: makeAudit().port, clock },
+      { ...baseInput, actor: member, cancellationReason: null },
+    );
+    expect(result.ok).toBe(true);
+    expect(directory.readRoster).toHaveBeenCalledTimes(1);
+    expect(directory.listRecipients).not.toHaveBeenCalled();
+    expect(directory.reportEmptyRoster).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['readRoster', 'withTx']);
+
+    // A staff cancel is not a hand-off: no roster read at all.
+    const staffDir = makeFakeMarketingDirectory([]);
+    await cancelBroadcast(
+      { tenant, broadcastsRepo: makeRepo({ existing: makeBroadcast('submitted') }).port, ...t081Deps(), marketingDirectory: staffDir, audit: makeAudit().port, clock },
+      baseInput,
+    );
+    expect(staffDir.readRoster).not.toHaveBeenCalled();
+    expect(staffDir.reportEmptyRoster).not.toHaveBeenCalled();
+  });
+
+  it('T166 R-L3: a member withdrawal refused inside its tx (not the owner) reads the roster but never reports it', async () => {
+    const directory = makeFakeMarketingDirectory([]);
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: makeRepo({ existing: makeBroadcast('submitted', 'm-OTHER') }).port, ...t081Deps(), marketingDirectory: directory, audit: makeAudit().port, clock },
+      { ...baseInput, actor: { kind: 'member', memberId: 'm-1', userId: 'u-1' }, cancellationReason: null },
+    );
+    expect(result.ok).toBe(false);
+    expect(directory.reportEmptyRoster).not.toHaveBeenCalled();
   });
 
   it('D1 G2: member self-cancel ALSO sends notification (gap fix)', async () => {
@@ -296,6 +372,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        ...t081Deps(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -320,6 +397,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        ...t081Deps(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -338,7 +416,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(true);
@@ -353,7 +431,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('approved') });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(true);
@@ -363,7 +441,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-1') });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       { ...baseInput, actor: memberActor },
     );
     expect(result.ok).toBe(true);
@@ -372,6 +450,86 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     expect((evt?.payload as { actorRole: string }).actorRole).toBe(
       'member_self_service',
     );
+  });
+
+  // ===== F119 round-4 B4 / B5 — the row lock and the pool reads ==========
+
+  // B4 — a dispatcher attach that commits between an UNLOCKED read and the
+  // status-only CAS let the row end `cancelled` with a Resend id set. The row
+  // is locked before it is read, so `hasDispatchBegun` sees the attach.
+  it('round-4 B4: the row is locked (lockForUpdate) inside the tx BEFORE it is read', async () => {
+    const order: string[] = [];
+    const repo = makeRepo({ existing: makeBroadcast('approved') });
+    const lock = repo.port.lockForUpdate.bind(repo.port);
+    const read = repo.port.findByIdInTx.bind(repo.port);
+    repo.port.lockForUpdate = (async (...args: Parameters<BroadcastsRepo['lockForUpdate']>) => {
+      order.push('lock');
+      return lock(...args);
+    }) as BroadcastsRepo['lockForUpdate'];
+    repo.port.findByIdInTx = (async (...args: Parameters<BroadcastsRepo['findByIdInTx']>) => {
+      order.push('read');
+      return read(...args);
+    }) as BroadcastsRepo['findByIdInTx'];
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: makeAudit().port, clock },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(['lock', 'read']);
+  });
+
+  // B5 — the member's preferred locale is a members-bridge read on its OWN
+  // pool connection; made inside the tx it held a second connection while
+  // the row lock sat on the first (the R-L3 class).
+  it('round-4 B5: the preferred locale is read with NO transaction open, for the owning member, and still used', async () => {
+    let open = false;
+    const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-1') });
+    const inner = repo.port.withTx.bind(repo.port);
+    repo.port.withTx = (async (fn: (tx: unknown) => Promise<unknown>) =>
+      inner(async (tx) => {
+        open = true;
+        try {
+          return await fn(tx);
+        } finally {
+          open = false;
+        }
+      })) as BroadcastsRepo['withTx'];
+    const seen: boolean[] = [];
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(async () => {
+        seen.push(open);
+        return 'sv' as const;
+      }),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    const email = makeEmail();
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: makeAudit().port, clock, emailTransactional: email.port, membersBridge },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual([false]);
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(email.memberCalls[0]?.locale).toBe('sv');
+  });
+
+  it("round-4 B5: a member cancelling another member's E-Blast reads no locale for it (and still sees not found)", async () => {
+    const membersBridge = {
+      getMemberPreferredLocale: vi.fn(async () => 'sv' as const),
+    } as unknown as NonNullable<Parameters<typeof cancelBroadcast>[0]['membersBridge']>;
+    const result = await cancelBroadcast(
+      {
+        tenant,
+        broadcastsRepo: makeRepo({ existing: makeBroadcast('submitted', 'm-other') }).port,
+        ...t081Deps(),
+        audit: makeAudit().port,
+        clock,
+        emailTransactional: makeEmail().port,
+        membersBridge,
+      },
+      { ...baseInput, actor: memberActor, cancellationReason: null },
+    );
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_not_found', broadcastId } });
+    expect(vi.mocked(membersBridge.getMemberPreferredLocale)).not.toHaveBeenCalled();
   });
 
   // ===== R5 verify-fix Tests-H5 (2026-05-02) โ€” locale chain =====
@@ -386,6 +544,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        ...t081Deps(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -407,6 +566,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        ...t081Deps(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -428,6 +588,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        ...t081Deps(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -451,6 +612,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        ...t081Deps(),
         audit: audit.port,
         clock,
         emailTransactional: email.port,
@@ -464,18 +626,56 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
 
   // ---- Cutoff (FR-004a) ------------------------------------------------
 
+  // F119 T081 — from `sending` onward the refusal is `sending_started`
+  // (the send completes); the audit row is still `broadcast_cancel_too_late`.
+  it.each<BroadcastStatus>(['sending', 'sent', 'partially_sent', 'partial_delivery_accepted'])(
+    'rejects when status=%s → sending_started + broadcast_cancel_too_late audit, nothing transitioned',
+    async (s) => {
+      const audit = makeAudit();
+      const repo = makeRepo({ existing: makeBroadcast(s) });
+      const result = await cancelBroadcast(
+        { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
+        baseInput,
+      );
+      expect(result.ok ? null : result.error).toEqual({ kind: 'sending_started', observedStatus: s });
+      expect(audit.emits.find((e) => e.eventType === 'broadcast_cancel_too_late')).toBeDefined();
+      expect(repo.transitions).toHaveLength(0);
+    },
+  );
+
+  // T166 R-H1, the cancel's share — `approved` but already handed over (the
+  // dispatch leg commits its lock before calling Resend, so the status has not
+  // moved yet). Every other exit from `approved` refuses here; a cancel that
+  // did not would read `cancelled` and free the allowance while the email went
+  // out. Same refusal + audit as the status cut-off, nothing written.
+  it.each([
+    { leg: 'legacy leg', ids: { resendBroadcastId: 'rb-live-1' } },
+    { leg: 'import leg', ids: { audienceImportId: 'imp-live-1' } },
+  ])('approved once dispatch has begun ($leg) → sending_started + broadcast_cancel_too_late audit, nothing transitioned', async ({ ids }) => {
+    const audit = makeAudit();
+    const images = makeFakeBroadcastImagesRepo();
+    const repo = makeRepo({ existing: { ...makeBroadcast('approved'), ...ids } });
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), imagesRepo: images, audit: audit.port, clock },
+      baseInput,
+    );
+    expect(result.ok ? null : result.error).toEqual({ kind: 'sending_started', observedStatus: 'approved' });
+    expect(audit.emits.map((e) => e.eventType)).toEqual(['broadcast_cancel_too_late']);
+    expect(repo.transitions).toHaveLength(0);
+    expect(images.markDeletedByOwner).not.toHaveBeenCalled();
+  });
+
   it.each<BroadcastStatus>([
-    'sending',
-    'sent',
     'rejected',
     'cancelled',
     'failed_to_dispatch',
+    'expired_no_member_response',
     'draft',
   ])('rejects when status=%s โ’ broadcast_cancel_too_late + audit emitted', async (s) => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast(s) });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -499,7 +699,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: null });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -510,7 +710,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted', 'm-OTHER') });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       { ...baseInput, actor: memberActor },
     );
     expect(result.ok).toBe(false);
@@ -524,7 +724,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       { ...baseInput, cancellationReason: null },
     );
     expect(result.ok).toBe(true);
@@ -535,7 +735,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const tooLong = 'r'.repeat(501);
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       { ...baseInput, cancellationReason: tooLong },
     );
     expect(result.ok).toBe(false);
@@ -552,7 +752,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     const reason = 'r'.repeat(500);
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       { ...baseInput, cancellationReason: reason },
     );
     expect(result.ok).toBe(true);
@@ -568,7 +768,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       refreshAfterRace: makeBroadcast('sending'),
     });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -588,7 +788,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       refreshAfterRace: null,
     });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     if (!result.ok && result.error.kind === 'broadcast_concurrent_action_blocked') {
@@ -603,7 +803,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ existing: makeBroadcast('submitted') });
     await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     const evt = audit.emits.find((e) => e.eventType === 'broadcast_cancelled');
@@ -617,8 +817,26 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     expect(evt?.actorUserId).toBe('admin-7');
   });
 
+  // PR #392 review D2 — the refusal audit rode a null tx (a SECOND pool
+  // connection) while this tx held the row lock. It is the branch's only
+  // write, so it goes on the tx: committing just the audit row is correct.
+  it.each([
+    ['a closed E-Blast', makeBroadcast('rejected')],
+    ['an approved row the dispatcher already handed over', { ...makeBroadcast('approved'), resendBroadcastId: 'rb-live-2' }],
+  ] as const)('D2: %s — the broadcast_cancel_too_late audit is emitted on the cancel tx, not a second connection', async (_label, existing) => {
+    const audit = makeAudit();
+    const repo = makeRepo({ existing });
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    expect(audit.emits.map((e) => e.eventType)).toEqual(['broadcast_cancel_too_late']);
+    expect(audit.txs).toEqual([TX]);
+  });
+
   it('cancel_too_late audit best-effort โ€” failed audit does NOT mask the error', async () => {
-    const repo = makeRepo({ existing: makeBroadcast('sent') });
+    const repo = makeRepo({ existing: makeBroadcast('rejected') });
     const auditPort: AuditPort = {
       async emit() {
         throw new Error('audit table down');
@@ -628,7 +846,7 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
       },
     };
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: auditPort, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: auditPort, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
@@ -641,14 +859,16 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: new Error('db down') });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe('cancel.server_error');
       if (result.error.kind === 'cancel.server_error') {
-        expect(result.error.message).toBe('db down');
+        // T166 R-M4 — the error CLASS, never the message.
+        expect(result.error.errKind).toBe('Error');
+        expect(JSON.stringify(result.error)).not.toContain('db down');
       }
     }
   });
@@ -657,11 +877,9 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     const audit = makeAudit();
     const repo = makeRepo({ withTxThrows: 'string-error' });
     const result = await cancelBroadcast(
-      { tenant, broadcastsRepo: repo.port, audit: audit.port, clock },
+      { tenant, broadcastsRepo: repo.port, ...t081Deps(), audit: audit.port, clock },
       baseInput,
     );
-    if (!result.ok && result.error.kind === 'cancel.server_error') {
-      expect(result.error.message).toBe('unknown error');
-    }
+    expect(result).toEqual({ ok: false, error: { kind: 'cancel.server_error', errKind: 'unknown' } });
   });
 });

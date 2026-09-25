@@ -25,11 +25,22 @@ export interface ReviewActionsProps {
    * before approving.
    */
   readonly recipientCount?: number;
+  /**
+   * F119 B1 — which half of the pair to offer (both default `true`, so the
+   * queue rows are unchanged). The detail page offers Approve (approve-AS-
+   * SUBMITTED) on `submitted` only, and Reject wherever the Domain
+   * `canTransition(status, 'rejected')` admits it; an absent half mounts
+   * neither its trigger nor its dialog.
+   */
+  readonly showApprove?: boolean;
+  readonly showReject?: boolean;
 }
 
 export function ReviewActions({
   broadcastId,
   recipientCount,
+  showApprove = true,
+  showReject = true,
 }: ReviewActionsProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approveDialog');
   const tReject = useTranslations('admin.broadcasts.rejectDialog');
@@ -48,35 +59,43 @@ export function ReviewActions({
     // shadcn-customizations.md base + ux-standards § 19. Previously
     // size="sm" (h-7) failed WCAG 2.5.5 minimum touch target on mobile.
     <div className="flex flex-wrap items-center gap-2">
-      <Button
-        variant="default"
-        ref={approveTriggerRef}
-        onClick={() => setApproveOpen(true)}
-      >
-        <CheckCircle2 className="mr-1 size-4" aria-hidden="true" />
-        {t('confirm')}
-      </Button>
-      <Button
-        variant="destructive-outline"
-        ref={rejectTriggerRef}
-        onClick={() => setRejectOpen(true)}
-      >
-        <XCircle className="mr-1 size-4" aria-hidden="true" />
-        {tReject('confirm')}
-      </Button>
-      <ApproveDialog
-        broadcastId={broadcastId}
-        open={approveOpen}
-        onOpenChange={setApproveOpen}
-        triggerRef={approveTriggerRef}
-        {...(recipientCount !== undefined ? { recipientCount } : {})}
-      />
-      <RejectDialog
-        broadcastId={broadcastId}
-        open={rejectOpen}
-        onOpenChange={setRejectOpen}
-        triggerRef={rejectTriggerRef}
-      />
+      {showApprove ? (
+        <>
+          <Button
+            variant="default"
+            ref={approveTriggerRef}
+            onClick={() => setApproveOpen(true)}
+          >
+            <CheckCircle2 className="mr-1 size-4" aria-hidden="true" />
+            {t('confirm')}
+          </Button>
+          <ApproveDialog
+            broadcastId={broadcastId}
+            open={approveOpen}
+            onOpenChange={setApproveOpen}
+            triggerRef={approveTriggerRef}
+            {...(recipientCount !== undefined ? { recipientCount } : {})}
+          />
+        </>
+      ) : null}
+      {showReject ? (
+        <>
+          <Button
+            variant="destructive-outline"
+            ref={rejectTriggerRef}
+            onClick={() => setRejectOpen(true)}
+          >
+            <XCircle className="mr-1 size-4" aria-hidden="true" />
+            {tReject('confirm')}
+          </Button>
+          <RejectDialog
+            broadcastId={broadcastId}
+            open={rejectOpen}
+            onOpenChange={setRejectOpen}
+            triggerRef={rejectTriggerRef}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

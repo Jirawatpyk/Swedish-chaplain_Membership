@@ -6,8 +6,9 @@
  *
  * PR-1 registers the two preview instruments T032 emits:
  *   counter   broadcasts_preview_rendered_total{tenant,surface}
- *   histogram broadcasts_preview_render_ms{tenant}
- * PR-2 (T122) adds the five workflow counters and `broadcasts_member_decide_ms`.
+ *   histogram broadcasts_preview_render_ms{tenant,surface}
+ * PR-2 (T122) adds the five workflow counters, `broadcasts_member_decide_ms`
+ * and the F119 span-name registry (`F119_BROADCASTS_SPANS`, § 4.4).
  *
  * Fake meter harness mirrors `tests/unit/lib/metrics-auto-invoice.test.ts`:
  * it captures every `Counter.add` / `Histogram.record` by instrument name so
@@ -58,6 +59,7 @@ vi.mock('@/lib/logger', () => ({
 
 // Import AFTER vi.mock so the module picks up the fake meter.
 import { broadcastsMetrics } from '@/lib/metrics';
+import { F119_BROADCASTS_SPANS } from '@/lib/otel-tracer';
 import { renderBroadcastPreview } from '@/modules/broadcasts/application/use-cases/render-broadcast-preview';
 
 const TENANT = 'tenant-f119';
@@ -136,5 +138,62 @@ describe('T122a — preview metrics registration (PR-1)', () => {
     expect(r.ok).toBe(false);
     expect(counterAdds.get('broadcasts_preview_rendered_total')).toBeUndefined();
     expect(histogramRecords.get('broadcasts_preview_render_ms')).toBeUndefined();
+  });
+});
+
+// T122 (PR-2) — REGISTRATION only. The emitters (T058 save, T059 send, T066
+// hand-off, T078 decide, T130 expiry sweep) arrive in later tasks and pin
+// "exactly once per action" in their own tests; what is pinned here is that
+// each field exists under its § 4.2 name with exactly its § 4.2 label set.
+describe('T122 — workflow metrics registration (PR-2)', () => {
+  it('versionSent emits `broadcasts_version_sent_total{tenant,round}` once per call', () => {
+    broadcastsMetrics.versionSent(TENANT, 1);
+    broadcastsMetrics.versionSent(TENANT, 2);
+    expect(counterAdds.get('broadcasts_version_sent_total')).toEqual([
+      { value: 1, attrs: { tenant: TENANT, round: 1 } },
+      { value: 1, attrs: { tenant: TENANT, round: 2 } },
+    ]);
+  });
+
+  it('memberDecision emits `broadcasts_member_decision_total{tenant,decision}` for each decision', () => {
+    broadcastsMetrics.memberDecision(TENANT, 'approved');
+    broadcastsMetrics.memberDecision(TENANT, 'changes_requested');
+    broadcastsMetrics.memberDecision(TENANT, 'approval_withdrawn');
+    expect(counterAdds.get('broadcasts_member_decision_total')).toEqual([
+      { value: 1, attrs: { tenant: TENANT, decision: 'approved' } },
+      { value: 1, attrs: { tenant: TENANT, decision: 'changes_requested' } },
+      { value: 1, attrs: { tenant: TENANT, decision: 'approval_withdrawn' } },
+    ]);
+  });
+
+  it('the four tenant-only counters record under their exact names with `{tenant}` alone', () => {
+    broadcastsMetrics.approvalExpired(TENANT);
+    broadcastsMetrics.noMarketingRecipient(TENANT);
+    broadcastsMetrics.versionSaved(TENANT);
+    // F119 round-4 B8 — the lifecycle tick's failed rows (observability § 29.2).
+    broadcastsMetrics.approvalLifecycleRowFailed(TENANT);
+    expect(counterAdds.get('broadcasts_approval_expired_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
+    expect(counterAdds.get('broadcasts_no_marketing_recipient_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
+    expect(counterAdds.get('broadcasts_version_saved_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
+    expect(counterAdds.get('broadcasts_approval_lifecycle_row_failed_total')).toEqual([{ value: 1, attrs: { tenant: TENANT } }]);
+  });
+
+  it('memberDecideMs records `broadcasts_member_decide_ms{tenant}` in ms', () => {
+    broadcastsMetrics.memberDecideMs(TENANT, 123);
+    expect(histogramRecords.get('broadcasts_member_decide_ms')).toEqual([{ value: 123, attrs: { tenant: TENANT } }]);
+  });
+
+  it('a null tenant is labelled `unknown`, like the preview pair', () => {
+    broadcastsMetrics.approvalExpired(null);
+    expect(counterAdds.get('broadcasts_approval_expired_total')).toEqual([{ value: 1, attrs: { tenant: 'unknown' } }]);
+  });
+
+  it('the four F119 span names are registered under the § 4.4 names', () => {
+    expect(F119_BROADCASTS_SPANS).toEqual({
+      previewRender: 'broadcasts.preview.render',
+      versionSend: 'broadcasts.version.send',
+      memberDecide: 'broadcasts.member.decide',
+      scheduleConfirm: 'broadcasts.schedule.confirm',
+    });
   });
 });

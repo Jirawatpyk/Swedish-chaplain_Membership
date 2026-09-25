@@ -12,7 +12,7 @@
  * Ids + addresses only — the caller renders the staff email to the address.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { db, type TenantTx } from '@/lib/db';
 import type { Role } from '../../domain/role';
 import { users } from './schema';
 
@@ -28,4 +28,31 @@ export async function listActiveUsersByRole(roles: readonly Role[]): Promise<rea
     .from(users)
     .where(and(eq(users.status, 'active'), inArray(users.role, [...roles])))
     .orderBy(users.email);
+}
+
+/**
+ * F119 T059 — which of `ids` are ACTIVE users holding `role`. The E-Blast
+ * send-to-member precondition asks it of the portal logins linked to a
+ * member's contacts (`role = 'member'`): a linked login that is still only
+ * invited, or disabled, cannot sign in to approve, so it does not count.
+ * Same cross-tenant read as `listActiveUsersByRole`, bounded by the caller's
+ * id list.
+ *
+ * T166 follow-up — `tx`, when given, carries the read: its callers run inside
+ * a transaction that holds a broadcast row's `FOR UPDATE` lock, and a second
+ * pool connection taken per call while that one sits locked starves the pool
+ * under concurrency. `users` has no `tenant_id` and no RLS, and `chamber_app`
+ * holds `SELECT` on it (0006), so a tenant tx reads it the same way.
+ */
+export async function listActiveUserIdsWithRole(
+  ids: readonly string[],
+  role: Role,
+  tx?: TenantTx,
+): Promise<ReadonlySet<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await (tx ?? db)
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.status, 'active'), eq(users.role, role), inArray(users.id, [...ids])));
+  return new Set(rows.map((r) => r.id));
 }

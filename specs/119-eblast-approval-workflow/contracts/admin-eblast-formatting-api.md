@@ -38,14 +38,23 @@ bucket of **30 requests / 60 seconds**, refused
 as `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, over the existing
 `broadcastsRateLimiter` (`src/modules/broadcasts/infrastructure/rate-limiter.ts:14`) and the
 `RECIPIENT_COUNT_RATE_MAX` / `_WINDOW_SECONDS` shape (`src/lib/broadcasts-recipient-count.ts:30-31`),
-with an **atomic** check, never peek-then-act. **The two staff routes T081 widens —
-`POST …/[id]/reject` and `POST …/[id]/cancel` — take the same 30 / 60 s bucket** (round 4 M6): T081
-widens both to `IN_PROGRESS_BROADCAST_STATUSES`, and a state-changing staff route that carries no
-bucket at all is the gap this section exists to close, not one it may leave open.
+with an **atomic** check, never peek-then-act. **`POST …/[id]/reject`, which T081 widens, takes the
+same 30 / 60 s bucket** (round 4 M6): T081 widens it to `IN_PROGRESS_BROADCAST_STATUSES`, and a
+state-changing staff route that carries no bucket at all is the gap this section exists to close.
+**`POST …/[id]/cancel` is the one deliberate exception — it carries NO bucket** (whole-branch
+review HIGH-3, 2026-09-24). The rule above assumes one staff call per staff decision, and the cancel
+route breaks that assumption: the review queue's bulk send-now **Undo** fans out one cancel per
+approved row from one actor (`queue-bulk-action-bar.tsx`, `BULK_CAP` = 100). With the bucket, rows
+31 and up answered 429 inside the 60 s window, were reported to the admin as "still approved", and
+**dispatched although the admin had clicked Undo** — a regression of a capability that works on
+`main`. An unbucketed cancel costs little: it can only move an E-Blast toward a closed state, it
+needs `broadcasts.write`, and every call is audited. `…/reject` has no fan-out, so it keeps the
+bucket. The Undo client still classifies a 429 on its own (the row is still approved and will
+send), so a limiter added in front later cannot silently read as "too late".
 **Built by T026a in PR-1** (`…/brand` PATCH,
 `…/images`, `templates/[id]/images`), **T062a in PR-2** (`…/version` POST+PATCH,
-`…/version/send`, `…/schedule`) **and T081 in PR-2** (`…/reject`, `…/cancel`, in the same edit that
-widens their stage set): the bucket was stated here and in spec
+`…/version/send`, `…/schedule`) **and T081 in PR-2** (`…/reject`, in the same edit that
+widens its stage set): the bucket was stated here and in spec
 § Roles but no task built it until round 3 (`/speckit.analyze` round 3 H3).
 **"Keep the existing staff buckets" was wrong — checked against `main`
 (`/speckit.analyze` M14)**: `approve`, `reject` and `cancel` carry no rate limit at all today, so
@@ -126,6 +135,9 @@ Permission `broadcasts.write`. Stage must be `in_design`.
   "expectedUpdatedAt": "2026-09-24T09:10:00.000Z" }
 ```
 
+- **Order of checks** (T166 S-INFO): PATCH consumes the staff write bucket BEFORE reading the body; a
+  malformed body still answers 400 but spends one call, and an exhausted bucket answers 429 without
+  parsing up to 2 MB.
 - **Optimistic concurrency** (FR-033, the "two marketing users" edge case): `expectedUpdatedAt` must
   equal the row's `updated_at` → otherwise **409 `version_changed`** with `currentUpdatedAt` and the
   current content, so the client can show "someone else changed this" rather than overwrite. There is
@@ -160,6 +172,25 @@ Permission `broadcasts.write`. Stage must be `in_design`; a working copy must ex
 content rules **again** at this moment (FR-004 — "cannot be sent to the member until it passes"),
 including the allow-list re-check below.
 
+```jsonc
+// request — optional; an empty body sends whatever working copy is under the lock (round-4 B1)
+{ "expectedUpdatedAt": "2026-09-24T09:10:00.000Z" }
+```
+
+- **Optimistic concurrency** (FR-033, round-4 B1): the **same field and the same check as the
+  save** (`PATCH`). `expectedUpdatedAt`, when present, must equal the working copy's `updated_at`,
+  compared under the broadcast row lock → otherwise **409 `version_changed`** with the same
+  `details` as the save's (`currentUpdatedAt` + the current content), and **nothing is sent**: no
+  send stamp, no round, no stage change, no audit row, no outbox row. Without it, a marketing user
+  whose screen was clean but stale sent content another user had just saved, which they had never
+  seen — FR-033 says the loser is told the E-Blast changed. The workspace always sends it: the
+  `updatedAt` its own save just returned when Send saved first, otherwise the one it loaded or last
+  saved. It stays optional so a caller that sends no body keeps today's behaviour.
+- The body is read only for that field: unknown keys — an audience key included — are ignored
+  (FR-005). A body that is not JSON, or an `expectedUpdatedAt` that is not an ISO date-time, is
+  **400 `invalid_body`**. The staff write bucket is consumed **before** the body is read, as the
+  save's is.
+
 **Preconditions checked here, not assumed:**
 
 | precondition | refusal |
@@ -189,7 +220,9 @@ language (FR-024).
 
 | code | when |
 |---|---|
+| 400 `invalid_body` | the body is not JSON, or `expectedUpdatedAt` is not an ISO date-time |
 | 409 `stage_changed` · `no_working_copy` · `content_unsafe` · **`no_portal_user`** | as above |
+| 409 `version_changed` | `expectedUpdatedAt` differs from the working copy's `updated_at` (round-4 B1) — nothing sent |
 | 422 `validation_error` · the block codes · **`image_source_not_allowlisted`** | subject/body limits, FR-041 block rules, a de-allow-listed image |
 
 `current_round` is incremented **here and only here** — a round is a version sent to the member
@@ -249,8 +282,12 @@ Rules:
   difference explicitly when `differs` (FR-018).
 
 ```jsonc
-200 { "stage": "approved", "confirmedSendAt": "…", "proposedSendAt": "…", "differs": true }
+200 { "status": "approved", "confirmedSendAt": "…", "proposedSendAt": "…", "differs": true }
 ```
+
+`status` is the row's new **status** (`approved`, or `changes_requested` after `cancel`). It is
+not named `stage`: on this endpoint a 409's `details.stage` carries the `stageOf` display vocabulary
+(`scheduled`, …), and one key must not carry two vocabularies (PR #392 review C5).
 
 **FR-012a proof**: the promotion is the *only* write of `subject`/`body_html` after submit, it
 happens on the *only* edge the trigger exempts, and it copies from `approved_version_id` — the row
@@ -268,18 +305,19 @@ named, not inferred (`/speckit.analyze` M8; task T081).
 
 Contracts otherwise unchanged. The accepted stage set widens to `IN_PROGRESS_BROADCAST_STATUSES` (FR-015 —
 marketing may reject with a reason at any stage before **sending begins**, i.e. before entry into
-`sending`; from `sending` onward the route answers **409 `sending_started`** and the send completes),
-and the member notification gains the stage it was rejected from. Reuses the existing
+`sending`; from `sending` onward the route answers **409 `sending_started`** and the send completes).
+The stage it was rejected / cancelled from is on the audit row (`previousStatus`), not in the member
+notification — no template reads it (whole-branch review LOW-5). Reuses the existing
 `broadcast_rejected` / `broadcast_cancelled` audit events and the existing
 `broadcast_rejected_notification` / `broadcast_cancelled_notification` outbox types. Rejecting is
 also FR-011's alternative when marketing disagrees with a change request and will not send another
 version.
 
-**Both gain the staff write bucket** — 30 requests / 60 seconds per (tenant, actor), atomic check,
-refused `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, exactly as the formatting
-routes above. Neither carries one today (`/speckit.analyze` M14), and widening their accepted stage
-set without one leaves the only two unbucketed state-changing staff routes in the feature
-(round 4 M6). Built by **T081** itself, in the same edit that widens the stage set.
+**`…/reject` gains the staff write bucket** — 30 requests / 60 seconds per (tenant, actor), atomic
+check, refused `429 broadcast_rate_limit_exceeded` with `retryAfterSeconds`, exactly as the
+formatting routes above (round 4 M6). Built by **T081** itself, in the same edit that widens the
+stage set. **`…/cancel` does not** — the bulk send-now Undo fans out to it; see § Rate limits
+(whole-branch review HIGH-3).
 
 ## `POST /api/admin/broadcasts/[id]/images` — staff image on the E-Blast being formatted (FR-040)
 
@@ -290,9 +328,11 @@ plan Amendment 6):
 | PR | accepted stages | what it serves | refusal outside the set |
 |---|---|---|---|
 | **PR-1** (`0304`, task T106) | `draft`, `submitted` | the staff **compose-on-behalf** draft — the half of US3-AS3 PR-1 can honestly satisfy | 409 `stage_changed` |
-| **PR-2** (`0305`, task T106a) | `draft`, `submitted`, **`in_design`** | marketing illustrating the formatted version — the other half of US3-AS3 | 409 `stage_changed` |
+| **PR-2** (`0308`, task T106a) | `draft`, `submitted`, **`in_design`** | marketing illustrating the formatted version — the other half of US3-AS3 | 409 `stage_changed` |
 
-`in_design` is a `broadcast_status` value migration `0305` introduces, so a PR-1 route gated on it
+*Renumbered at merge (2026-09-24): `main` took `0305`–`0307` while PR-2 was open, so the F119 bundle ships as `0308` (`idx 309`, `when 1798544100000`); see `data-model.md`.*
+
+`in_design` is a `broadcast_status` value migration `0308` introduces, so a PR-1 route gated on it
 could only ever answer 409 and its success path could never go green. A **sent** version is
 read-only (FR-003), so `awaiting_member_approval` and everything after it stay refused in both PRs.
 Together with the tenant check this is the "a staff user adds an image to another member's E-Blast:
@@ -538,7 +578,9 @@ forgotten.
   `round_zero` in both states); every other route behaves identically in both states, and a broadcast
   already in `in_design` can still be saved, sent, decided and scheduled with the flag off (FR-034).
 - **Concurrency**: two `PATCH`es with the same `expectedUpdatedAt` → the second is
-  409 `version_changed`; `PATCH` after `send` → 409 `stage_changed`.
+  409 `version_changed`; `PATCH` after `send` → 409 `stage_changed`; a `send` carrying an
+  `expectedUpdatedAt` older than another user's save → 409 `version_changed` and nothing sent
+  (round-4 B1).
 - **Schedule**: `keep_proposal` with a past proposal → 422 `broadcast_schedule_too_soon`;
   `keep_proposal` with no proposal → 409 `no_proposal`; the audit row carries
   `differs: true` when the confirmed time is not the proposal.

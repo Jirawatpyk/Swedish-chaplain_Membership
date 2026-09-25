@@ -21,6 +21,7 @@ import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
 import { staffNavAllowedHrefs } from '@/lib/nav-permissions';
 import { readPendingChangeRequestsForNav } from '@/lib/pending-change-requests';
+import { readEblastWaitingCountForNav } from '@/lib/eblast-waiting-count';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 
 /**
@@ -62,7 +63,13 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   // `statement_timeout 5s` + `connect_timeout 3`, so an unbounded badge read
   // could add ~8 s to every staff page's TTFB for a number in the sidebar.
   const tenant = resolveTenantFromHeaders(await headers());
-  const pendingChanges = await readPendingChangeRequestsForNav(tenant, user.role);
+  // F119 T132 (FR-023) — the E-Blasts waiting on marketing, the same shape and
+  // the same deadline as the change-request badge, read in parallel with it so
+  // the two bounded reads cost one deadline, not two.
+  const [pendingChanges, eblastWaiting] = await Promise.all([
+    readPendingChangeRequestsForNav(tenant, user.role),
+    readEblastWaitingCountForNav(tenant, user.role),
+  ]);
 
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -96,6 +103,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             // `hidden` and `unavailable` are both "no badge" here — a count we
             // do not have is never rendered as a zero the nav would hide anyway.
             '/admin/change-requests': pendingChanges.kind === 'ok' ? pendingChanges.summary.count : 0,
+            '/admin/broadcasts': eblastWaiting.kind === 'ok' ? eblastWaiting.count : 0,
           }}
         />
 

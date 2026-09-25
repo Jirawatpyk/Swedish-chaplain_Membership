@@ -20,6 +20,10 @@ const cancelBroadcastMock = vi.fn();
 vi.mock('@/lib/member-context', () => ({
   requireMemberContext: (...args: unknown[]) => requireMemberContextMock(...args),
 }));
+vi.mock('@/lib/broadcast-marketing-deps', async () => {
+  const { makeFakeMarketingDirectory } = await import('../../helpers/eblast-approval-fakes');
+  return { makeMarketingDirectory: () => makeFakeMarketingDirectory([]) };
+});
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -32,6 +36,8 @@ vi.mock('@/modules/broadcasts', () => ({
       ? { ok: true, value: id }
       : { ok: false, error: { kind: 'invalid_uuid' } },
   tenantDefaultLocaleFor: () => 'en',
+  // F119 T081 — the widened route consumes the write bucket first.
+  broadcastsRateLimiter: { checkLimit: async () => ({ ok: true, value: true }) },
 }));
 
 const VALID_ID = '33333333-3333-3333-3333-333333333333';
@@ -135,6 +141,14 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 afterEach(() => vi.clearAllMocks());
+
+/** T166 R-M4 — every `logger.error` object the route wrote, as JSON (the leak check reads it). */
+async function loggedErrors(): Promise<{ calls: unknown[][]; json: string }> {
+  const { logger } = await import('@/lib/logger');
+  const calls = (logger.error as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  return { calls, json: JSON.stringify(calls) };
+}
+
 
 describe('POST /api/broadcasts/[id]/cancel — DV-12 member path (T113)', () => {
   // ── Success paths ─────────────────────────────────────────────────────────
@@ -299,21 +313,24 @@ describe('POST /api/broadcasts/[id]/cancel — DV-12 member path (T113)', () => 
 
   // ── Server errors (500) ───────────────────────────────────────────────────
 
-  it('500 internal_error: use-case throws unexpectedly', async () => {
+  it('500 internal_error: use-case throws unexpectedly — logged by class + errorId, never the message', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
-    cancelBroadcastMock.mockRejectedValueOnce(new Error('db down'));
+    cancelBroadcastMock.mockRejectedValueOnce(new Error('db down SECRET-7c1e'));
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({});
     const res = await POST(req, ctx);
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('internal_error');
+    const logged = await loggedErrors();
+    expect(logged.calls[0]![0]).toMatchObject({ err: 'Error', errorId: 'M119.portal.cancel.unexpected' });
+    expect(logged.json).not.toContain('SECRET-7c1e');
   });
 
-  it('500 internal_error: use-case returns cancel.server_error', async () => {
+  it('500 internal_error: use-case returns cancel.server_error — T166 R-M4: logged with errKind + errorId (it was a silent 500)', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     cancelBroadcastMock.mockResolvedValueOnce(
-      err({ kind: 'cancel.server_error', message: 'db down' }),
+      err({ kind: 'cancel.server_error', errKind: 'TypeError' }),
     );
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({});
@@ -321,6 +338,9 @@ describe('POST /api/broadcasts/[id]/cancel — DV-12 member path (T113)', () => 
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('internal_error');
+    const logged = await loggedErrors();
+    expect(logged.calls).toHaveLength(1);
+    expect(logged.calls[0]![0]).toMatchObject({ err: 'TypeError', errorId: 'M119.portal.cancel.server_error' });
   });
 
   // ── Observability ─────────────────────────────────────────────────────────

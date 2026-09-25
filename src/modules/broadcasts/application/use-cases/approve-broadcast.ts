@@ -13,12 +13,22 @@
  *   - status='sending' transition (cron worker owns it)
  *
  * State-check: status must be `submitted`.
+ * Send-time standing (F119 T166 S-H1): the owning member must not be halted
+ * and must hold full F8 membership access — the rules submit applies, re-read
+ * just BEFORE the row-lock tx (the bridges take their own pool connections)
+ * and applied under the lock (`member_halted` / `member_not_in_good_standing`,
+ * 409).
+ * Each refusal writes submit's own refusal audit row (T166 follow-up) on the
+ * approval's tx — a `return err()` inside it commits, and nothing else was
+ * written, so the row lands under the tenant GUC with no null-tx question.
  * Schedule defence: scheduledFor must be ≥ now+5min (Ultraplan AD8).
  *
  * Atomic: applyTransition('approved') + audit `broadcast_approved` +
  * member-notification outbox enqueue inside single tx.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { assertNever } from '@/lib/assert-never';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
@@ -27,7 +37,13 @@ import type { AuditPort } from '../ports/audit-port';
 import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import { ApprovalDependencyError, approvalErrKind, standingUnavailableError } from '../approval-dependency-error';
 import { enqueueBroadcastMemberNotification } from '../enqueue-member-notification';
+import {
+  readMemberSendStanding,
+  standingRefusalAuditEvent,
+  type MemberSendStandingDeps,
+} from './_member-send-standing';
 // Verify-fix R4 (Types-#1, 2026-05-02): re-export canonical `Locale`
 // from `@/i18n/config` instead of duplicating the union literal in
 // every use-case file. Single source of truth; adding a 4th locale
@@ -35,7 +51,8 @@ import { enqueueBroadcastMemberNotification } from '../enqueue-member-notificati
 import type { Locale } from '@/i18n/config';
 export type NotificationLocale = Locale;
 
-const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
+/** The `now + 5 min` schedule floor — shared with F119 `confirmSchedule` (T060). */
+export const MIN_SCHEDULE_LEAD_MS = 5 * 60 * 1000;
 
 export type ApproveDecision =
   | { readonly mode: 'send_now' }
@@ -52,7 +69,16 @@ export type ApproveBroadcastError =
       readonly observedStatus: string;
     }
   | { readonly kind: 'broadcast_schedule_too_soon'; readonly scheduledFor: Date }
-  | { readonly kind: 'approve.server_error'; readonly message: string };
+  /** F119 T166 S-H1 — the owning member's broadcasts are halted pending admin review. */
+  | { readonly kind: 'member_halted'; readonly memberId: string }
+  /** F119 T166 S-H1 — the owning member's membership is suspended or terminated (F8). */
+  | { readonly kind: 'member_not_in_good_standing'; readonly memberId: string }
+  /**
+   * An infrastructure fault. `errKind` is the error CLASS only (T166 follow-up,
+   * the R-M4 class): the raw message can carry a Neon error's bound
+   * parameters, and the route logs what it is handed.
+   */
+  | { readonly kind: 'approve.server_error'; readonly errKind: string };
 
 export interface ApproveBroadcastDeps {
   readonly tenant: TenantContext;
@@ -76,11 +102,22 @@ export interface ApproveBroadcastDeps {
    * test back-compat.
    */
   readonly membersBridge?: MembersBridgePort;
+  /**
+   * F119 T166 S-H1 — the send-time rules submit applies (halt flag + F8
+   * membership access), re-read before the approval. REQUIRED: a security
+   * gate is never optional in the composition.
+   */
+  readonly sendStanding: MemberSendStandingDeps;
 }
 
 export interface ApproveBroadcastInput {
   readonly broadcastId: BroadcastId;
   readonly actorUserId: string;
+  /**
+   * T166 follow-up — the session role, recorded as held (`?? null`, never a
+   * literal stand-in) on a standing-refusal audit row.
+   */
+  readonly actorRole: string | null;
   readonly decision: ApproveDecision;
   readonly requestId: string | null;
   /**
@@ -119,6 +156,24 @@ export async function approveBroadcast(
     input.decision.mode === 'send_now' ? now : input.decision.scheduledFor;
 
   try {
+    // F119 T166 follow-up — the halt / access reads go through the members
+    // bridges, each on its OWN pool connection, so they are made BEFORE the
+    // tx, never while it holds the row lock (the R-L3 class: ~10 concurrent
+    // approvals would starve the pool). `requested_by_member_id` is immutable
+    // after submit, so a non-locking pre-read of the row names the member the
+    // locked row will; a missing row falls through to the not-found handling
+    // below. Only a `submitted` row can be approved, so only it is read for.
+    const preRead = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+    const owner = preRead?.status === 'submitted' ? preRead.requestedByMemberId : null;
+    const standing = owner !== null ? await readMemberSendStanding(deps.sendStanding, deps.tenant, owner) : null;
+    // F119 round-4 B5 — the member's preferred locale (for the post-approval
+    // email) is a members-bridge read on its own pool connection too, so it is
+    // made here, before the lock, keyed on the same immutable owning member.
+    const memberPreferred =
+      owner !== null && deps.emailTransactional && deps.membersBridge
+        ? await readPreferredLocale(deps.membersBridge, deps.tenant, owner)
+        : null;
+
     return await deps.broadcastsRepo.withTx(async (tx) => {
       const lockedStatus = await deps.broadcastsRepo.lockForUpdate(
         tx,
@@ -136,6 +191,59 @@ export async function approveBroadcast(
           kind: 'broadcast_invalid_state_transition',
           observedStatus: lockedStatus,
         });
+      }
+
+      // F119 T166 S-H1 — approving makes the row dispatchable, so the owning
+      // member's halt flag and F8 membership access (read just before this tx,
+      // exactly as submit reads them) are applied here, once the lock confirms
+      // the row is still `submitted`. This is the LAST check on this path:
+      // dispatch does not re-check standing (quickstart § 3.6). Refusals
+      // return BEFORE any write (a `return err()` inside the tx commits
+      // nothing written so far).
+      const row = await deps.broadcastsRepo.findByIdInTx(
+        tx,
+        deps.tenant.slug,
+        input.broadcastId,
+      );
+      if (row === null) {
+        return err({
+          kind: 'broadcast_not_found',
+          broadcastId: input.broadcastId as string,
+        });
+      }
+      // The row reached `submitted` between the pre-read and the lock, so no
+      // standing was read for it: fail CLOSED rather than approve unchecked.
+      if (standing === null) throw new ApprovalDependencyError('member_send_standing', 'not_read_before_lock');
+      switch (standing.kind) {
+        case 'halted':
+        case 'not_in_good_standing': {
+          const refusal = standingRefusalAuditEvent({
+            refusal: standing.kind,
+            surface: 'approve_as_submitted',
+            tenantSlug: deps.tenant.slug,
+            memberId: row.requestedByMemberId,
+            broadcastId: input.broadcastId as string,
+            actorUserId: input.actorUserId,
+            actorRole: input.actorRole,
+            requestId: input.requestId,
+          });
+          await deps.audit.emit(tx, refusal);
+          broadcastsMetrics.auditEmitCount(deps.tenant.slug, refusal.eventType);
+          return err({
+            kind: standing.kind === 'halted' ? 'member_halted' : 'member_not_in_good_standing',
+            memberId: row.requestedByMemberId,
+          });
+        }
+        case 'halt_read_failed':
+        case 'access_unavailable':
+          // Fail CLOSED: the gate was not decided → approve.server_error,
+          // naming WHICH read failed and why (round-4 B3).
+          throw standingUnavailableError(standing);
+        case 'ok':
+          break;
+        default:
+          // Round-4 B2 — an unknown kind is never read as "may send".
+          return assertNever(standing);
       }
 
       let approved: Broadcast;
@@ -211,30 +319,9 @@ export async function approveBroadcast(
       // identical helpers across approve/reject/cancel; now one).
       // Verify-fix R4 (Types-#6): locale resolution priority chain
       // `memberPreferred ?? notificationLocale (route default) ?? 'en'`.
-      // Best-effort lookup — bridge throw → falls through to next.
+      // Best-effort lookup (read before the tx, round-4 B5) — a bridge throw
+      // falls through to the next.
       if (deps.emailTransactional) {
-        let memberPreferred: 'en' | 'th' | 'sv' | null = null;
-        if (deps.membersBridge) {
-          try {
-            memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
-              deps.tenant,
-              approved.requestedByMemberId,
-            );
-          } catch (e) {
-            // R5 verify-fix Errors-H3 (2026-05-02): log before swallow
-            // so a degraded membersBridge produces a forensic trail
-            // (was empty catch, locale downgrade was invisible).
-            logger.warn(
-              {
-                err: e instanceof Error ? e.message : String(e),
-                tenantId: deps.tenant.slug,
-                memberId: approved.requestedByMemberId,
-                useCase: 'approve-broadcast',
-              },
-              'broadcasts.locale_resolve_failed',
-            );
-          }
-        }
         await enqueueBroadcastMemberNotification({
           tenant: deps.tenant,
           emailTransactional: deps.emailTransactional,
@@ -256,10 +343,28 @@ export async function approveBroadcast(
       });
     });
   } catch (e) {
-    return err({
-      kind: 'approve.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
+    return err({ kind: 'approve.server_error', errKind: approvalErrKind(e) });
+  }
+}
+
+/**
+ * The owning member's preferred locale, best-effort: a bridge throw is logged
+ * (R5 verify-fix Errors-H3 — a degraded bridge leaves a forensic trail, the
+ * error CLASS only) and answers null, so the chain falls through.
+ */
+async function readPreferredLocale(
+  membersBridge: MembersBridgePort,
+  tenant: TenantContext,
+  memberId: string,
+): Promise<'en' | 'th' | 'sv' | null> {
+  try {
+    return await membersBridge.getMemberPreferredLocale(tenant, memberId);
+  } catch (e) {
+    logger.warn(
+      { err: errKind(e), tenantId: tenant.slug, memberId, useCase: 'approve-broadcast' },
+      'broadcasts.locale_resolve_failed',
+    );
+    return null;
   }
 }
 

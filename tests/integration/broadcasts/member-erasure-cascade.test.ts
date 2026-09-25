@@ -92,6 +92,12 @@ function makeBroadcast(
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
     templateProvenance: null,
+    proposedSendAt: null,
+    stageEnteredAt: new Date('2026-01-01T00:00:00Z'),
+    currentRound: 0,
+    approvedVersionId: null,
+    memberReminderStage: 0,
+    memberExpiryNotifiedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -119,9 +125,17 @@ function makeStubRepo(opts: {
     },
     insertDraft: () => Promise.reject(new Error('not used')),
     updateDraft: () => Promise.reject(new Error('not used')),
-    findById: () => Promise.resolve(null),
-    findByIdInTx: () => Promise.resolve(null),
-    lockForUpdate: () => Promise.reject(new Error('not used')),
+    // T166 R-M3 — the cascade re-reads a row whose CAS it lost; the racer
+    // this stub throws for has moved on to `sending` (out of progress).
+    findById: (_tenant: unknown, broadcastId: unknown): Promise<Broadcast | null> => {
+      const original = opts.inFlight.find((b) => (b.broadcastId as unknown as string) === (broadcastId as string));
+      return Promise.resolve(original === undefined ? null : ({ ...original, status: 'sending' } as Broadcast));
+    },
+    // PR #392 review D1 — each attempt locks the row and reads it under the
+    // lock; here the row is as listed (nothing handed over to the dispatcher).
+    findByIdInTx: (_tx: unknown, _tenant: unknown, broadcastId: unknown): Promise<Broadcast | null> =>
+      Promise.resolve(opts.inFlight.find((b) => (b.broadcastId as unknown as string) === (broadcastId as string)) ?? null),
+    lockForUpdate: () => Promise.resolve(null),
     async applyTransition(
       _tx: unknown,
       _tenantId: string,

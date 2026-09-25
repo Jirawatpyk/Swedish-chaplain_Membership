@@ -1,14 +1,25 @@
 /**
  * T108 — GET `/api/admin/broadcasts`.
  *
- * Admin review queue list. Supports server-side filter (status, member,
- * segment, date range) + sort + cursor pagination via the existing
- * `BroadcastsRepo.listByTenantStatus` method.
+ * Admin review queue list. Supports server-side filter (status, member)
+ * + sort + cursor pagination via `BroadcastsRepo.listByTenantStatus`.
  *
  * Authz: admin OR manager (manager is read-only on this surface per Q12
- * spec § 2.1). Member display-name enrichment via raw SQL LEFT JOIN
- * inline; both `broadcasts` + `members` tables are tenant-scoped via
- * RLS so `runInTenant` keeps the JOIN scoped.
+ * spec § 2.1).
+ *
+ * F119 T109 / T110 / T112 — the dashboard contract
+ * (contracts/dashboard-and-notifications.md § 1): each item carries the
+ * FR-026 columns and, on sent rows, FR-029's delivery results (the SAME
+ * projection the page renders — `loadAdminBroadcastQueue`); the body carries
+ * the per-stage counts (FR-025, `null` when that read failed); and
+ * `?status=approved&sort=scheduled_for&from=now` is the Upcoming sends preset
+ * (FR-028). `from` accepts `now` only — any other value is refused rather than
+ * read as "no bound". No contact-level field is selected anywhere (FR-036).
+ *
+ * FR-030 — `fromDate` / `toDate` (`YYYY-MM-DD`, the names the filter bar
+ * writes) bound `submitted_at` as whole calendar days in the tenant's timezone
+ * (`tenantDayRangeUtc`). A day that is not a real calendar day is refused (400),
+ * never read as "no bound".
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -17,7 +28,7 @@ import { z } from 'zod';
 import {
   BROADCAST_STATUSES,
   type BroadcastStatus,
-  makeGetBroadcastDeps,
+  type ListByTenantStatusSort,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import {
@@ -27,13 +38,27 @@ import {
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
+import { isYmd, tenantDayRangeUtc } from '@/lib/tenant-day-range';
+import { isUpcomingPreset, loadAdminBroadcastQueue, queueSortFor, upcomingFrom } from '@/lib/admin-broadcast-queue';
+import { readEblastStageChips } from '@/lib/eblast-waiting-count';
+
+/** URL sort tokens → the repo's orders. `scheduled_for` is the Upcoming sends preset's token. */
+const SORT_TOKENS = {
+  submitted_at_asc: 'submitted_at_asc',
+  submitted_at_desc: 'submitted_at_desc',
+  created_at_desc: 'created_at_desc',
+  stage_entered_at_asc: 'stage_entered_at_asc',
+  stage_entered_at_desc: 'stage_entered_at_desc',
+  scheduled_for: 'scheduled_for_asc',
+} as const satisfies Record<string, ListByTenantStatusSort>;
 
 const ListQuerySchema = z.object({
   status: z
     .union([z.string(), z.array(z.string())])
     .optional()
     .transform((v) => {
-      if (v === undefined) return ['submitted'];
+      if (v === undefined) return ['submitted'] as BroadcastStatus[];
       const arr = Array.isArray(v) ? v : [v];
       return arr.filter((s) =>
         (BROADCAST_STATUSES as readonly string[]).includes(s),
@@ -42,23 +67,30 @@ const ListQuerySchema = z.object({
   memberId: z.string().uuid().optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  // UX review H1 — no default token: an absent sort is the view's own order
+  // (`queueSortFor`, shared with the page), never one order for every view.
   sort: z
-    .enum(['submitted_at_asc', 'submitted_at_desc', 'created_at_desc'])
-    .default('submitted_at_asc'),
-});
-
-interface QueueItem {
-  readonly broadcastId: string;
-  readonly status: BroadcastStatus;
-  readonly subject: string;
-  readonly requestedByMemberId: string;
-  readonly requestedByMemberDisplayName: string;
-  readonly actorRole: string;
-  readonly segmentType: string;
-  readonly estimatedRecipientCount: number;
-  readonly submittedAt: string | null;
-  readonly createdAt: string;
-}
+    .enum([
+      'submitted_at_asc',
+      'submitted_at_desc',
+      'created_at_desc',
+      'stage_entered_at_asc',
+      'stage_entered_at_desc',
+      'scheduled_for',
+    ])
+    .optional(),
+  from: z.literal('now').optional(),
+  fromDate: z.string().refine(isYmd).optional(),
+  toDate: z.string().refine(isYmd).optional(),
+})
+  // F119 round-4 B7 — the send-time order is the Upcoming preset's, bounded by
+  // `from=now` (`isUpcomingPreset`): unbounded, the keyset over the nullable
+  // `scheduled_for` drops every unscheduled row after page 1. Refused, never
+  // served incomplete.
+  .refine((q) => q.sort !== 'scheduled_for' || isUpcomingPreset(q.sort, q.from), {
+    path: ['sort'],
+    message: 'sort=scheduled_for requires from=now',
+  });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();
@@ -87,43 +119,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
   }
 
-  const deps = makeGetBroadcastDeps(tenantCtx.slug);
   try {
-    const result = await deps.broadcastsRepo.listByTenantStatus(
-      tenantCtx.slug,
-      {
-        ...(parsed.data.cursor !== undefined && { cursor: parsed.data.cursor }),
+    const scheduledFrom = upcomingFrom(parsed.data.from);
+    const submitted = tenantDayRangeUtc(parsed.data.fromDate, parsed.data.toDate, env.tenant.timezone);
+    const [page, chips] = await Promise.all([
+      loadAdminBroadcastQueue(tenantCtx, {
+        statusFilter: parsed.data.status,
         pageSize: parsed.data.limit,
-        ...(parsed.data.status.length > 0 && {
-          statusFilter: parsed.data.status as ReadonlyArray<BroadcastStatus>,
-        }),
-        ...(parsed.data.memberId !== undefined && {
-          memberIdFilter: parsed.data.memberId,
-        }),
-        sort: parsed.data.sort,
-      },
-    );
-
-    // Member display-name enrichment via single LEFT JOIN
-    const memberIds = Array.from(
-      new Set(result.rows.map((r) => r.requestedByMemberId)),
-    );
-    const memberDisplayMap = new Map<string, string>();
-    if (memberIds.length > 0) {
-      const memberRows = await runInTenant(tenantCtx, async (tx) => {
-        return (await tx.execute(sql`
-          SELECT member_id, company_name FROM members
-          WHERE tenant_id = ${tenantCtx.slug}
-            AND member_id::text = ANY(ARRAY[${sql.join(
-              memberIds.map((id) => sql`${id}`),
-              sql`, `,
-            )}]::text[])
-        `)) as unknown as Array<{ member_id: string; company_name: string }>;
-      });
-      for (const row of memberRows) {
-        memberDisplayMap.set(row.member_id, row.company_name);
-      }
-    }
+        sort:
+          parsed.data.sort !== undefined
+            ? SORT_TOKENS[parsed.data.sort]
+            : queueSortFor(parsed.data.status, false),
+        ...(parsed.data.cursor !== undefined && { cursor: parsed.data.cursor }),
+        ...(parsed.data.memberId !== undefined && { memberId: parsed.data.memberId }),
+        ...(scheduledFrom !== undefined && { scheduledFrom }),
+        ...(submitted.fromInclusive !== undefined && { submittedFrom: submitted.fromInclusive }),
+        ...(submitted.toExclusive !== undefined && { submittedBefore: submitted.toExclusive }),
+      }),
+      readEblastStageChips(tenantCtx, 'M119.api.admin_broadcasts.stage_counts_failed'),
+    ]);
 
     // Pending count (badge)
     const pendingCountRows = await runInTenant(tenantCtx, async (tx) => {
@@ -136,25 +150,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
     const totalPending = pendingCountRows[0]?.n ?? 0;
 
-    const items: ReadonlyArray<QueueItem> = result.rows.map((row) => ({
-      broadcastId: row.broadcastId as string,
-      status: row.status,
-      subject: row.subject,
-      requestedByMemberId: row.requestedByMemberId,
-      requestedByMemberDisplayName:
-        memberDisplayMap.get(row.requestedByMemberId) ?? row.requestedByMemberId,
-      actorRole: row.actorRole,
-      segmentType: row.segmentType,
-      estimatedRecipientCount: row.estimatedRecipientCount,
-      submittedAt: row.submittedAt?.toISOString() ?? null,
-      createdAt: row.createdAt.toISOString(),
-    }));
-
     return NextResponse.json(
       {
-        items,
-        nextCursor: result.nextCursor,
+        items: page.items,
+        nextCursor: page.nextCursor,
         totalPending,
+        stageCounts: chips.kind === 'ok' ? chips.counts : null,
       },
       { status: 200, headers: baseHeaders(correlationId) },
     );
