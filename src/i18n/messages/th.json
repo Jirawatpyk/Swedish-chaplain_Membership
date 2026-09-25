@@ -2427,7 +2427,8 @@
           "pdf": "PDF",
           "pdfAria": "ดาวน์โหลด PDF ใบลดหนี้ {number}",
           "clearFilters": "ล้างตัวกรอง"
-        }
+        },
+        "cardAria": "ใบลดหนี้ {number}"
       },
       "detail": {
         "meta": {

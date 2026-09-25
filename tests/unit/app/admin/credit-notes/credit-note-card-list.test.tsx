@@ -15,7 +15,13 @@ import type { ListCreditNotesRow } from '@/modules/invoicing';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteCardList } from '@/app/(staff)/admin/credit-notes/_components/credit-note-card-list';
 
-const t = createTranslator({ locale: 'en', messages: en, namespace: 'admin.creditNotes.list' });
+// Widened to the component's `t` prop shape (the page passes next-intl's
+// namespaced translator the same way).
+const t = createTranslator({
+  locale: 'en',
+  messages: en,
+  namespace: 'admin.creditNotes.list',
+}) as unknown as (key: string, values?: Record<string, string | number>) => string;
 
 function row(overrides: Partial<ListCreditNotesRow> = {}): ListCreditNotesRow {
   return {

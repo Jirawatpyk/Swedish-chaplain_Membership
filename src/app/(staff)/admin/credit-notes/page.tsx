@@ -12,6 +12,7 @@
  *   - Filters: fiscal year (exact) + document-number search
  *     (case-insensitive substring)
  *   - Per-row actions: View + Download PDF
+ *   - <md: the rows collapse to `CreditNoteCardList` cards
  *
  * RBAC: the page declares `invoicing.read` via `requirePagePermission`, which
  * both admin and manager hold (manager is finance-read per CLAUDE.md and this
@@ -42,6 +43,8 @@ import {
 } from '@/components/ui/table';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteFilters } from './_components/credit-note-filters';
+import { CreditNoteCardList } from './_components/credit-note-card-list';
+import { formatSatang } from './_utils/format-satang';
 import {
   CreditNoteOriginalReceipt,
   CreditNoteRefundBadge,
@@ -53,17 +56,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 const PAGE_SIZE = 50;
-
-function formatSatang(sRaw: string): string {
-  // Same deterministic formatter the invoice list uses — pinned
-  // `'en-US'` locale per FR-005 for tax-amount display
-  // consistency across surfaces.
-  const n = BigInt(sRaw);
-  const abs = n < 0n ? -n : n;
-  const sign = n < 0n ? '-' : '';
-  return `${sign}${(abs / 100n).toLocaleString('en-US')}.${(abs % 100n).toString().padStart(2, '0')}`;
-}
-
 
 export default async function AdminCreditNotesDirectoryPage({
   searchParams,
@@ -128,7 +120,8 @@ export default async function AdminCreditNotesDirectoryPage({
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              {/* ≥md: the table. <md: the card list below (same rows). */}
+              <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -251,6 +244,12 @@ export default async function AdminCreditNotesDirectoryPage({
                   </TableBody>
                 </Table>
               </div>
+              <CreditNoteCardList
+                rows={rows}
+                locale={locale}
+                t={t}
+                className="md:hidden"
+              />
               <TablePagination
                 page={page}
                 pageSize={PAGE_SIZE}

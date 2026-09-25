@@ -2427,7 +2427,8 @@
           "pdf": "PDF",
           "pdfAria": "Ladda ner PDF för kreditnota {number}",
           "clearFilters": "Rensa filter"
-        }
+        },
+        "cardAria": "Kreditnota {number}"
       },
       "detail": {
         "meta": {
