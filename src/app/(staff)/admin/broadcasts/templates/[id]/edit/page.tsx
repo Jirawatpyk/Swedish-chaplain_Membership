@@ -13,6 +13,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import {
   Card,
   CardContent,
@@ -78,6 +79,7 @@ export default async function AdminBroadcastEditTemplatePage({
 
   return (
     <FormContainer>
+      <DynamicBreadcrumbLabel segment={id} label={template.name} />
       <PageHeader
         title={t('editPageTitle')}
         subtitle={t('editPageDescription')}

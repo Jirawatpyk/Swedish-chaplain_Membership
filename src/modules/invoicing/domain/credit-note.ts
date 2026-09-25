@@ -104,8 +104,54 @@ export interface CreditNote {
    */
   readonly sourceRefundId: string | null;
 
+  /**
+   * The receipt this note reduces and the document behind it, for display.
+   * Populated by the repo's single-note read (joined from the original
+   * invoice); absent on a note the issue path has just built in memory.
+   */
+  readonly originalDocuments?: CreditNoteOriginalDocuments;
+
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/**
+ * What a credit note refers back to, as the admin + portal surfaces show it:
+ *   - `receiptNumberRaw` — the tax receipt the note reduces, i.e. the number
+ *     the credit-note PDF prints: the payment-time RC/RE when the invoice row
+ *     has one, else the §87 invoice number a legacy combined receipt reuses
+ *     (mirrors `receiptDocNum` in issue-credit-note).
+ *   - `related` — the second line under it: the 088 SC bill the receipt paid,
+ *     a legacy separate-mode INV invoice, or `combined` when the receipt IS
+ *     the tax invoice (legacy INV, or an as-paid combined receipt).
+ * Both null only for a row with no number at all (orphan / corrupt).
+ */
+export interface CreditNoteOriginalDocuments {
+  readonly receiptNumberRaw: string | null;
+  readonly related:
+    | { readonly kind: 'bill'; readonly numberRaw: string }
+    | { readonly kind: 'invoice'; readonly numberRaw: string }
+    | { readonly kind: 'combined' }
+    | null;
+}
+
+/** Pure — see {@link CreditNoteOriginalDocuments}. */
+export function resolveCreditNoteOriginalDocuments(inv: {
+  readonly receiptDocumentNumberRaw: string | null;
+  readonly documentNumberRaw: string | null;
+  readonly billDocumentNumberRaw: string | null;
+}): CreditNoteOriginalDocuments {
+  const receiptNumberRaw = inv.receiptDocumentNumberRaw ?? inv.documentNumberRaw;
+  if (receiptNumberRaw === null) return { receiptNumberRaw: null, related: null };
+  if (inv.billDocumentNumberRaw !== null) {
+    return { receiptNumberRaw, related: { kind: 'bill', numberRaw: inv.billDocumentNumberRaw } };
+  }
+  // A separate receipt number next to a §87 invoice number = legacy separate
+  // mode; otherwise the receipt is itself the tax invoice.
+  if (inv.receiptDocumentNumberRaw !== null && inv.documentNumberRaw !== null) {
+    return { receiptNumberRaw, related: { kind: 'invoice', numberRaw: inv.documentNumberRaw } };
+  }
+  return { receiptNumberRaw, related: { kind: 'combined' } };
 }
 
 /**

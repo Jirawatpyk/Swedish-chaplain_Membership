@@ -90,4 +90,58 @@ describe('SignInForm', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it.each([
+    [500, 'server-error'],
+    [400, 'invalid-input'],
+    [502, undefined],
+  ])(
+    'a %i %s response is "Something went wrong", never "Email or password is incorrect"',
+    async (status, code) => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => (code === undefined ? {} : { error: code }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = renderForm();
+      fireEvent.change(container.querySelector('#email')!, {
+        target: { value: 'user@example.com' },
+      });
+      fireEvent.change(container.querySelector('#password')!, {
+        target: { value: 'some-password' },
+      });
+      fireEvent.submit(container.querySelector('form')!);
+
+      const banner = await screen.findByText((_t, node) => node?.id === 'signin-error');
+      expect(banner.textContent).toBe(enMessages.errors.generic);
+      expect(banner.textContent).not.toBe(enMessages.auth.signIn.errors.invalidCredentials);
+
+      vi.unstubAllGlobals();
+    },
+  );
+
+  it('a 401 invalid-credentials response keeps the generic credentials message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'invalid-credentials' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { container } = renderForm();
+    fireEvent.change(container.querySelector('#email')!, {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.change(container.querySelector('#password')!, {
+      target: { value: 'some-password' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+
+    const banner = await screen.findByText((_t, node) => node?.id === 'signin-error');
+    expect(banner.textContent).toBe(enMessages.auth.signIn.errors.invalidCredentials);
+
+    vi.unstubAllGlobals();
+  });
 });

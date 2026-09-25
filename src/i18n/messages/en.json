@@ -15,7 +15,8 @@
         "accountDisabled": "Your account has been disabled. Contact an administrator.",
         "accountLocked": "Too many failed attempts. Try again later.",
         "rateLimited": "Too many requests. Please wait and try again."
-      }
+      },
+      "linkInvalidBanner": "That link is no longer valid. Sign in to continue."
     },
     "signOut": {
       "label": "Sign out"
@@ -276,10 +277,7 @@
       "search": {
         "label": "Search directory",
         "placeholder": "Search by company, industry, or description",
-        "tier": "Tier",
-        "tierAll": "All tiers",
         "listedOnly": "Listed only",
-        "submit": "Search",
         "clear": "Clear"
       },
       "resultCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
@@ -2411,11 +2409,11 @@
         "columns": {
           "documentNumber": "Number",
           "issueDate": "Issued",
-          "originalInvoice": "Original invoice",
           "member": "Member",
           "reason": "Reason",
           "total": "Total",
-          "actions": "Actions"
+          "actions": "Actions",
+          "originalReceipt": "Original tax invoice"
         },
         "filters": {
           "search": "Search document number",
@@ -2456,11 +2454,10 @@
         "fields": {
           "issueDate": "Issue date",
           "issuedBy": "Issued by",
-          "originalInvoice": "Original invoice",
-          "originalInvoiceLinkLabel": "Open invoice",
           "creditAmount": "Credit amount (excl. VAT)",
           "vat": "VAT",
-          "total": "Total credit (incl. VAT)"
+          "total": "Total credit (incl. VAT)",
+          "originalReceipt": "Original tax invoice"
         },
         "reason": {
           "heading": "Reason"
@@ -2572,7 +2569,8 @@
           "buyer": "Buyer",
           "method": "Method",
           "receiptNumber": "Receipt No.",
-          "queue": "Queue"
+          "queue": "Queue",
+          "totalPending": "Not calculated until issued"
         },
         "subjectChip": {
           "event": "Event",
@@ -2725,14 +2723,22 @@
           "rc": "§86/4 (RC)",
           "re": "§105 (RE)",
           "gross": "Gross output VAT",
-          "creditNote": "less §86/10 credit notes",
-          "note": "Net standard-rated output VAT for the period: §86/4 tax-receipt + §105 receipt streams (cancelled receipts excluded), less §86/10 credit notes issued this period — the figure to report on ภ.พ.30. §80/1(5) zero-rate sales add 0. The table below shows only the selected register."
+          "creditNote": "§86/10 credit notes",
+          "note": "Net standard-rated output VAT for the period: §86/4 tax-receipt + §105 receipt streams (cancelled receipts excluded), less §86/10 credit notes issued this period. §80/1(5) zero-rate sales add 0. The table below shows only the selected register.",
+          "status": {
+            "closedMonth": "Output VAT to report on ภ.พ.30 for the selected month, as of today.",
+            "monthToDate": "Month to date — the period is not closed.",
+            "notAMonth": "Not a single calendar month — ภ.พ.30 is filed per calendar month.",
+            "closedMonthIncomplete": "Incomplete — {count, plural, one {# combined tax invoice + receipt} other {# combined tax invoices + receipts}} (INV number, no RC/RE) issued this month {count, plural, one {is} other {are}} not in this figure. Include {count, plural, one {it} other {them}} before filing ภ.พ.30."
+          },
+          "less": "minus"
         },
         "summary": {
           "count": "{count, plural, one {# receipt} other {# receipts}}",
           "subtotal": "Subtotal",
           "vat": "VAT",
-          "total": "Total"
+          "total": "Total",
+          "cancelled": "({count} cancelled — not in totals)"
         },
         "columns": {
           "receiptNo": "Receipt No.",
@@ -2753,7 +2759,8 @@
         "empty": "No tax documents in this period.",
         "errors": {
           "invalidRange": "From-date must be on or before To-date, within one year.",
-          "loadFailed": "Could not load the register. Please try again."
+          "loadFailed": "Could not load the register. Please try again.",
+          "invalidDate": "Enter a real calendar date (YYYY-MM-DD)."
         }
       },
       "new": {
@@ -3020,8 +3027,12 @@
             "bank_transfer": "Bank transfer",
             "cheque": "Cheque",
             "cash": "Cash",
-            "other": "Other"
-          }
+            "other": "Other",
+            "card_online": "Card (online)",
+            "promptpay_online": "PromptPay (online)",
+            "online": "Online payment"
+          },
+          "recordedBySystem": "System (Stripe webhook)"
         },
         "voidDetails": {
           "title": "Voided",
@@ -4055,6 +4066,8 @@
         "viewInvoice": "View invoice",
         "invoiceCoveredLabel": "Covered",
         "invoiceCoveredTitle": "This renewal period is already covered by an earlier payment — no renewal invoice is linked yet.",
+        "billIssuedLabel": "Bill issued",
+        "billIssuedTitle": "A renewal bill for the next term has been issued. The current period is paid, so benefits continue until the current period ends.",
         "noRows": "No members in this bucket.",
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "noRowsInMonth": "No members renew in {month}.",
@@ -5953,7 +5966,26 @@
     "compliance": "Compliance",
     "erasureLog": "Erasure log",
     "marketing": "Marketing",
-    "audience": "Audience"
+    "audience": "Audience",
+    "memberBenefits": "Benefits",
+    "memberTimeline": "Timeline",
+    "events": "Events",
+    "eventDetail": "Event",
+    "eventImport": "Import CSV",
+    "importHistory": "Import history",
+    "eventErasure": "Erase by email",
+    "eventRegistrations": "Registrations",
+    "registrationDetail": "Registration",
+    "eraseRegistration": "Erase personal data",
+    "taxRegisters": "Tax registers",
+    "escalationTasks": "Escalation tasks",
+    "tierUpgrades": "Tier upgrade queue",
+    "memberChanges": "Member change approval",
+    "changeRequests": "Change requests",
+    "changeRequestDetail": "Review",
+    "broadcastDetail": "Details",
+    "proxySubmit": "Submit on behalf of member",
+    "templateDetail": "Template"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -6294,11 +6326,10 @@
         },
         "fields": {
           "issueDate": "Issue date",
-          "originalInvoice": "Original invoice",
-          "originalInvoiceLinkLabel": "Open invoice",
           "creditAmount": "Credit amount (excl. VAT)",
           "vat": "VAT",
-          "total": "Total credit (incl. VAT)"
+          "total": "Total credit (incl. VAT)",
+          "originalReceipt": "Original tax invoice"
         },
         "reason": {
           "heading": "Reason"
@@ -7633,6 +7664,13 @@
           "generic": "Something went wrong. Please try again."
         }
       }
+    },
+    "creditNoteOriginal": {
+      "bill": "Bill {number}",
+      "invoice": "Invoice {number}",
+      "combined": "Combined tax invoice + receipt",
+      "refund": "Refund",
+      "refundHint": "Issued by a card or PromptPay refund"
     }
   },
   "email": {
@@ -7944,7 +7982,9 @@
     "warning": {
       "title": "You're not using all your benefits",
       "body": "At {elapsed}% of the year you've used {consumed}% of your benefits. Make the most of your membership.",
-      "action": "Use a benefit"
+      "action": "Use a benefit",
+      "staffTitle": "Under-using their benefits",
+      "staffBody": "At {elapsed}% of the year, {company} has used {consumed}% of its benefits."
     }
   },
   "gdprExport": {

@@ -6,7 +6,8 @@
  * (FR-026/027) with a recent-exports list + private download links. Staff-only
  * (admin + manager; member never reaches `/admin/*`). Gated behind
  * `FEATURE_F9_DASHBOARD` (notFound when dark). Server-rendered; the client
- * `<DirectorySearchFilters>` syncs filters to the URL.
+ * `<DirectorySearchFilters>` syncs filters to the URL, and the shared
+ * `<TablePagination>` pages through the results keeping `q` / `listed`.
  */
 import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
@@ -15,6 +16,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { TablePagination } from '@/components/layout/table-pagination';
 import { DirectorySearchFilters } from '@/components/directory/directory-search-filters';
 import { DirectoryTable, type DirectoryTableRow } from '@/components/directory/directory-table';
 import { GenerateExportActions } from '@/components/directory/generate-export-actions';
@@ -44,6 +46,8 @@ function str(v: string | string[] | undefined): string {
   const raw = Array.isArray(v) ? v[0] : v;
   return (raw ?? '').trim();
 }
+
+const PAGE_SIZE = 50;
 
 function locationText(city: string | null, country: string | null): string | null {
   const parts = [city, country].filter((p): p is string => p !== null && p !== '');
@@ -80,10 +84,19 @@ export default async function DirectoryPage({
     ...(q ? { q } : {}),
     ...(listedOnly ? { listedOnly: true } : {}),
     page: pageNum,
-    pageSize: 50,
+    pageSize: PAGE_SIZE,
   };
 
-  const result = await searchDirectory(input, meta, tenant, makeSearchDirectoryDeps(tenant.slug));
+  const searchDeps = makeSearchDirectoryDeps(tenant.slug);
+  let result = await searchDirectory(input, meta, tenant, searchDeps);
+  // A stale or hand-edited `?page` past the end: show the last page rather
+  // than an empty table under a "Showing 101–131 of 131" pager.
+  if (result.ok && result.value.items.length === 0 && result.value.total > 0) {
+    const lastPage = Math.ceil(result.value.total / PAGE_SIZE);
+    if (pageNum > lastPage) {
+      result = await searchDirectory({ ...input, page: lastPage }, meta, tenant, searchDeps);
+    }
+  }
   const exportsResult = await listDirectoryExports(
     meta,
     tenant,
@@ -163,6 +176,15 @@ export default async function DirectoryPage({
               emptyTitle: t('table.emptyTitle'),
               empty: t('table.empty'),
             }}
+          />
+
+          {/* The sr-only status above already announces the count. */}
+          <TablePagination
+            page={result.value.page}
+            pageSize={result.value.pageSize}
+            total={result.value.total}
+            baseHref="/admin/directory"
+            live={false}
           />
         </CardContent>
       </Card>

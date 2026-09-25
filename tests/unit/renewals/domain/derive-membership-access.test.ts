@@ -25,6 +25,7 @@ function cycle(over: Partial<RenewalCycle>): RenewalCycle {
     linkedInvoiceId: null,
     anchoredAt: null,
     anchorInvoiceId: null,
+    awaitingEnteredAt: null,
     createdAt: PAST,
     updatedAt: PAST,
     closedAt: null,
@@ -41,6 +42,18 @@ describe('deriveMembershipAccess', () => {
     ['upcoming, PAST expiry (cron gap)', { status: 'upcoming', expiresAt: PAST },             'suspended',  'unpaid'],
     ['reminded, PAST expiry',         { status: 'reminded', expiresAt: PAST },                'suspended',  'unpaid'],
     ['awaiting_payment',              { status: 'awaiting_payment', expiresAt: PAST },        'suspended',  'unpaid'],
+    // Early bill (member confirm / auto-drafted issue / orphan relink) flipped
+    // a PAID `upcoming|reminded` cycle → `awaiting_payment` before its period
+    // ended. The period the member already paid for is still running, so
+    // access stays full until `expiresAt`; only then does the unpaid renewal
+    // bill suspend them.
+    ['awaiting_payment early-flipped, FUTURE expiry', { status: 'awaiting_payment', expiresAt: FUTURE, awaitingEnteredAt: PAST }, 'full', 'in_good_standing'],
+    ['awaiting_payment early-flipped, PAST expiry',   { status: 'awaiting_payment', expiresAt: PAST, awaitingEnteredAt: PAST },   'suspended', 'unpaid'],
+    ['awaiting_payment early-flipped, malformed expiry', { status: 'awaiting_payment', expiresAt: 'not-a-date', awaitingEnteredAt: PAST }, 'suspended', 'unpaid'],
+    // 065 §5.3 — BORN `awaiting_payment` (new member / admin lapsed-comeback):
+    // no paid period behind it, so a far-future `expiresAt = period_to` must
+    // NOT buy access. `awaitingEnteredAt` is null because it was never flipped.
+    ['awaiting_payment born (065 §5.3), FUTURE expiry', { status: 'awaiting_payment', expiresAt: FUTURE, awaitingEnteredAt: null }, 'suspended', 'unpaid'],
     ['pending_admin_reactivation',    { status: 'pending_admin_reactivation', expiresAt: PAST, enteredPendingAt: PAST }, 'suspended', 'pending_review'],
     ['completed, PAST expiry',        { status: 'completed', expiresAt: PAST, closedAt: PAST, closedReason: 'paid', linkedInvoiceId: 'inv1' }, 'full', 'in_good_standing'],
     ['completed, future expiry',      { status: 'completed', expiresAt: FUTURE, closedAt: PAST, closedReason: 'paid', linkedInvoiceId: 'inv1' }, 'full', 'in_good_standing'],
@@ -60,6 +73,12 @@ describe('deriveMembershipAccess', () => {
     const d = deriveMembershipAccess(cycle(over), NOW);
     expect(d.access).toBe(access);
     expect(d.reason).toBe(reason);
+  });
+
+  it('awaiting_payment with the 0309 marker MISSING (undefined) fails closed → suspended', () => {
+    const c = { ...cycle({ status: 'awaiting_payment', expiresAt: FUTURE }) } as Record<string, unknown>;
+    delete c['awaitingEnteredAt'];
+    expect(deriveMembershipAccess(c as unknown as RenewalCycle, NOW)).toEqual({ access: 'suspended', reason: 'unpaid' });
   });
 
   it('null cycle → full', () => {

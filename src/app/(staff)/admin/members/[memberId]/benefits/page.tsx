@@ -1,10 +1,12 @@
 /**
  * F9 US4 (T066) — /admin/members/[memberId]/benefits (staff benefit view).
  *
- * Staff (admin + manager) see any member's benefit usage — identical figures
- * to what the member sees (AS-4), plus an admin-only "send reminder" action
- * (a mailto to the member's primary contact, no new endpoint). Reuses the
- * shared `BenefitUsageCard` so member + staff variants never diverge.
+ * Staff (every role holding `members.read`) see any member's benefit usage —
+ * identical figures to what the member sees (AS-4), worded about the member
+ * in the third person, plus an admin-only "send reminder" action (a mailto to
+ * the member's primary contact, no new endpoint) gated on `members.write`.
+ * Reuses the shared `BenefitUsageCard` so member + staff variants never
+ * diverge.
  *
  * AS-4 lists two illustrative admin actions ("send reminder / suggest usage").
  * The "suggest usage" nudge is folded into the reminder: the localised mailto
@@ -21,7 +23,7 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon, MailIcon } from 'lucide-react';
-import { requirePagePermission } from '@/lib/rbac';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
@@ -36,6 +38,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
 
 const UUID_RE =
@@ -144,9 +147,13 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
   });
 
   // Admin-only "send reminder" → mailto the active primary contact (AS-4).
+  // The page gate (`members.read`) also admits manager + marketing, so the
+  // action needs its own check: `members.write` is admin + super_admin, and
+  // the evaluator (not ROLE_BUNDLES) is what grants super_admin its keys.
+  const canSendReminder = canPerform(session.user.role, 'members.write');
   const primaryEmail = contacts.find((c) => c.isPrimary && c.removedAt === null)?.email;
   const reminderHref =
-    primaryEmail === undefined
+    !canSendReminder || primaryEmail === undefined
       ? undefined
       : `mailto:${primaryEmail}?subject=${encodeURIComponent(
           t('staffActions.reminderSubject', { company: member.companyName }),
@@ -154,6 +161,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
 
   return (
     <DetailContainer>
+      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
       <PageHeader
         title={t('title')}
         subtitle={member.companyName}
@@ -176,6 +184,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
         aggregateConsumedPct={usage.aggregateConsumedPct}
         underUseWarning={usage.underUseWarning}
         suspended={membershipAccess.access === 'suspended'}
+        staffSubjectName={member.companyName}
         staffActions={
           reminderHref !== undefined ? (
             <a

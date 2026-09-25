@@ -104,12 +104,14 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
       }
 
       const errorBody = (await response.json().catch(() => ({}))) as { error?: string };
-      const errorCode = errorBody.error ?? 'invalid-credentials';
 
       // Surface every server rejection in the inline root banner (+ focus the
       // email) so the reason persists on-page and is announced — a toast can be
       // missed/dismissed and isn't associated with the form (audit XF-01).
       // invalid-credentials stays generic so neither field is revealed (FR-016).
+      // Anything else — a 500 `server-error`, a 400 `invalid-input`, or a body
+      // with no code at all — is OUR failure, not wrong credentials: telling the
+      // user their password is wrong would send them to reset a good one.
       const messageByCode: Record<string, string> = {
         'account-disabled': t('errors.accountDisabled'),
         'account-locked': t('errors.accountLocked'),
@@ -117,7 +119,9 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
         'invalid-credentials': t('errors.invalidCredentials'),
       };
       setError('root', {
-        message: messageByCode[errorCode] ?? t('errors.invalidCredentials'),
+        message:
+          (errorBody.error !== undefined ? messageByCode[errorBody.error] : undefined) ??
+          tErrors('generic'),
       });
       setFocus('email');
     } catch {

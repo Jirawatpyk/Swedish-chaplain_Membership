@@ -2,19 +2,20 @@
  * Phase 3 of the F4 receipt-surface plan — CSV export of paid invoices
  * for the Thai VAT monthly-filing workflow.
  *
- * Pulls every paid invoice whose `paidAt` falls inside `[from, to]`
+ * Pulls every paid receipt whose §78/1 tax point falls inside `[from, to]`
  * (both inclusive, ISO-date `YYYY-MM-DD` interpreted as Bangkok-local
  * day) and renders the bookkeeper-facing CSV per the plan's column
- * schema (12 columns, UTF-8 BOM, RFC-4180 escaping).
+ * schema (13 columns, UTF-8 BOM, RFC-4180 escaping).
  *
- * --- Why filter in memory ----------------------------------------
- * `listInvoicesPaged` does not currently expose a `paidAtFrom/To`
- * filter. Adding one would touch the repo SQL + 3 callers. For
- * chamber scale (~131 members × ~10 invoices/year ≈ 1.3k rows/year),
- * fetching all paid rows for the tenant and post-filtering in memory
- * costs <1MB / <50ms — well under any meaningful budget. The plan's
- * future-streaming TODO (10k+ tenants) is explicitly out-of-scope
- * here (see `.claude/plans/jolly-shimmying-sundae.md` § Risks).
+ * --- Same rows as the ภ.พ.30 register ----------------------------
+ * Rows come from `TaxRegisterRepo.listForExport`, which buckets by the
+ * register's tax point (`payment_date`, else `paid_at`) over every
+ * non-void status. The export used to filter `status = 'paid'` by
+ * `paidAt` in memory, so a back-dated payment landed in a different
+ * month from the register and a receipt credited later dropped out
+ * entirely — the CSV's VAT no longer matched the register's
+ * `rcVat + reVat`. Combined-mode INV rows (no RC/RE number) are also
+ * exported, on their ISSUE date — see the port doc.
  *
  * --- Cross-module port for F5 payment methods --------------------
  * `paymentMethodLookup` is a F4-owned port; the composition root
@@ -35,7 +36,8 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
-import type { InvoiceRepo } from '../ports/invoice-repo';
+import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
+import type { TaxRegisterRepo } from '../ports/tax-register-repo';
 import type { AuditPort } from '../ports/audit-port';
 import { billFirstDocumentNumber, type Invoice } from '../../domain/invoice';
 
@@ -46,9 +48,15 @@ export const exportPaidInvoicesCsvSchema = z.object({
   actorUserId: z.string().min(1),
   requestId: z.string().nullable().optional(),
   /** Inclusive `YYYY-MM-DD` Bangkok-local. */
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD'),
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
+    .refine(isValidCalendarDate, { message: 'not a real calendar date' }),
   /** Inclusive `YYYY-MM-DD` Bangkok-local. */
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD'),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
+    .refine(isValidCalendarDate, { message: 'not a real calendar date' }),
 });
 
 export type ExportPaidInvoicesCsvInput = z.infer<
@@ -56,7 +64,11 @@ export type ExportPaidInvoicesCsvInput = z.infer<
 >;
 
 export type ExportPaidInvoicesCsvError =
-  | { readonly code: 'invalid_range'; readonly reason: 'inverted' | 'too_wide' }
+  | {
+      readonly code: 'invalid_range';
+      /** `not_a_date` — a shape-valid but impossible date such as `2026-02-30`. */
+      readonly reason: 'not_a_date' | 'inverted' | 'too_wide';
+    }
   | { readonly code: 'list_failed' };
 
 export interface ExportPaidInvoicesCsvOutput {
@@ -78,14 +90,13 @@ export type PaymentMethodLookupPort = (
 ) => Promise<ReadonlyMap<string, 'card' | 'promptpay'>>;
 
 export interface ExportPaidInvoicesCsvDeps {
-  readonly invoiceRepo: InvoiceRepo;
+  readonly registerRepo: TaxRegisterRepo;
   readonly audit: AuditPort;
   readonly paymentMethodLookup: PaymentMethodLookupPort;
 }
 
 // --- Constants ---------------------------------------------------------
 
-const PAGE_SIZE = 100;
 const MAX_DAYS = 366; // 1 year inclusive — plan § Phase 3 validation
 const CSV_HEADERS: readonly string[] = [
   'Issue Date',
@@ -100,6 +111,10 @@ const CSV_HEADERS: readonly string[] = [
   'Currency',
   'Paid At',
   'Payment Method',
+  // The §78/1 tax point the row is bucketed by — see `taxPointDate`.
+  // Appended last so existing column positions stay put; it explains why a
+  // back-dated row sits in this month.
+  'Tax Point Date',
 ];
 
 // --- Public use-case ---------------------------------------------------
@@ -109,6 +124,9 @@ export async function exportPaidInvoicesCsv(
   input: ExportPaidInvoicesCsvInput,
 ): Promise<Result<ExportPaidInvoicesCsvOutput, ExportPaidInvoicesCsvError>> {
   // 1. Range validation. Zod handles shape; we own semantics.
+  if (!isValidCalendarDate(input.from) || !isValidCalendarDate(input.to)) {
+    return err({ code: 'invalid_range', reason: 'not_a_date' });
+  }
   if (input.from > input.to) {
     return err({ code: 'invalid_range', reason: 'inverted' });
   }
@@ -116,31 +134,18 @@ export async function exportPaidInvoicesCsv(
     return err({ code: 'invalid_range', reason: 'too_wide' });
   }
 
-  // 2. Page through every paid invoice for the tenant + filter to range.
+  // 2. The period's receipts, bucketed exactly like the register.
   // F5R3 SB-2 (2026-05-16) — wrap in try/catch so a Neon transient
-  // (connection pool exhaust mid-scan, RLS misconfig, etc.) returns
-  // the typed `list_failed` Result.err instead of bubbling as a bare
-  // throw → opaque Next.js 500 with no log/audit trail. The route
-  // layer maps `code: 'list_failed'` to 500 + `logger.error`.
-  const inRange: Invoice[] = [];
-  let offset = 0;
-  let total = 0;
+  // (connection pool exhaust, RLS misconfig, etc.) returns the typed
+  // `list_failed` Result.err instead of bubbling as a bare throw →
+  // opaque Next.js 500 with no log/audit trail. The route layer maps
+  // `code: 'list_failed'` to 500 + `logger.error`.
+  let inRange: readonly Invoice[];
   try {
-    do {
-      const { rows, total: t } = await deps.invoiceRepo.listPaged(input.tenantId, {
-        offset,
-        pageSize: PAGE_SIZE,
-        status: 'paid',
-        includeDrafts: false,
-      });
-      total = t;
-      for (const r of rows) {
-        if (r.paidAt === null) continue;
-        const paidYmd = paidAtToBangkokYmd(r.paidAt);
-        if (paidYmd >= input.from && paidYmd <= input.to) inRange.push(r);
-      }
-      offset += PAGE_SIZE;
-    } while (offset < total);
+    inRange = await deps.registerRepo.listForExport(input.tenantId, {
+      from: input.from,
+      to: input.to,
+    });
   } catch (e) {
     // P2 Wave-0 — the use-case RETURNS `list_failed` (does not re-throw), so the
     // route never sees `e`; without this log a Neon transient during the paid-
@@ -242,8 +247,21 @@ function buildRow(
     inv.currency,
     paidIso,
     method,
+    taxPointDate(inv),
   ];
   return cells.map(escapeCsv).join(',');
+}
+
+/**
+ * The date that puts a row in its period, mirroring `listForExport`:
+ *   - an RC/RE receipt — the payment date (`payment_date`, else the Bangkok
+ *     date of `paid_at`): the tax invoice is issued at payment;
+ *   - a combined-mode INV (no RC/RE) — its issue date: it was a §86/4 tax
+ *     invoice at issue, which fixes the §78/1(1)(ก) tax point there.
+ */
+function taxPointDate(inv: Invoice): string {
+  if (inv.receiptDocumentNumberRaw === null) return inv.issueDate ?? '';
+  return inv.paymentDate ?? (inv.paidAt !== null ? bangkokLocalDate(inv.paidAt) : '');
 }
 
 /**
@@ -281,19 +299,4 @@ function daysBetween(fromYmd: string, toYmd: string): number {
   const from = Date.parse(`${fromYmd}T12:00:00Z`);
   const to = Date.parse(`${toYmd}T12:00:00Z`);
   return Math.round((to - from) / 86_400_000) + 1;
-}
-
-/**
- * Convert an `inv.paidAt` ISO timestamp to a Bangkok-local `YYYY-MM-DD`
- * for range comparison. Pure UTC offset (+07:00, no DST in TH) — avoids
- * pulling js-joda for a single boundary.
- */
-function paidAtToBangkokYmd(paidAtIso: string): string {
-  const ms = Date.parse(paidAtIso);
-  if (Number.isNaN(ms)) return '';
-  const d = new Date(ms + 7 * 60 * 60 * 1000);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }

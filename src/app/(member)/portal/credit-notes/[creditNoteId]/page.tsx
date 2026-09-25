@@ -29,7 +29,6 @@
  *     invoice") instead of admin-neutral labels
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -49,6 +48,7 @@ import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
+import { CreditNoteOriginalReceipt } from '@/components/invoices/credit-note-original-receipt';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.creditNotes.detail.meta');
@@ -135,11 +135,17 @@ export default async function PortalCreditNoteDetailPage({
             <dt className="text-muted-foreground">{t('fields.issueDate')}</dt>
             <dd>{formatTaxDocDate(cn.issueDate, locale)}</dd>
 
-            <dt className="text-muted-foreground">{t('fields.originalInvoice')}</dt>
+            <dt className="text-muted-foreground">{t('fields.originalReceipt')}</dt>
             <dd>
-              <Link href={invoiceHref} className="font-mono underline-offset-2 hover:underline">
-                {t('fields.originalInvoiceLinkLabel')}
-              </Link>
+              {cn.originalDocuments ? (
+                <CreditNoteOriginalReceipt
+                  original={cn.originalDocuments}
+                  invoiceHref={invoiceHref}
+                  size="touch"
+                />
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
             </dd>
 
             <dt className="text-muted-foreground">{t('fields.creditAmount')}</dt>

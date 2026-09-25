@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/inline-alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
+import { formatSatangThb } from '@/lib/format-thb';
 import { routeCreditNoteError } from './credit-note-error-routing';
 
 /** F-2 (2026-07-08) — membership-effect intent, mirrors the use-case's enum. */
@@ -77,18 +78,16 @@ type Props = {
   readonly onlineRefundState: OnlineRefundState;
 };
 
-function formatSatang(satang: string): string {
+/** The creditable remainder via the shared THB formatter ("38,520.00 THB"). */
+function formatRemaining(satang: string, locale: string, currency: string): string {
   // SG-1 — clamp negatives to 0 defensively. Under normal state the
   // remainder is always ≥ 0 (DB CHECK `invoices_credited_total_in_range`
   // enforces it), but a stale-server-render race mid-rollup could
   // momentarily surface a negative value. Showing "0.00" reads
-  // cleaner than "-0.-01" and matches the enforce policy's own
+  // cleaner than "-0.01" and matches the enforce policy's own
   // `remainingSatang < 0n ? 0n` clamp.
   const raw = BigInt(satang);
-  const n = raw < 0n ? 0n : raw;
-  const whole = n / 100n;
-  const rem = n % 100n;
-  return `${whole.toString()}.${rem.toString().padStart(2, '0')}`;
+  return formatSatangThb(raw < 0n ? 0n : raw, locale, currency);
 }
 
 export function CreditNoteForm({
@@ -314,7 +313,7 @@ export function CreditNoteForm({
         <p className="mt-1">
           {t('remainingLabel')}{' '}
           <span className="font-medium tabular-nums">
-            {formatSatang(remainingSatang)} {currencySymbol}
+            {formatRemaining(remainingSatang, locale, currencySymbol)}
           </span>
         </p>
         <p className="mt-1">
@@ -396,7 +395,7 @@ export function CreditNoteForm({
         {exceedsRemainder && (
           <p role="alert" className="text-xs text-destructive">
             {t('exceedsRemainder', {
-              remaining: `${formatSatang(remainingSatang)} ${currencySymbol}`,
+              remaining: formatRemaining(remainingSatang, locale, currencySymbol),
             })}
           </p>
         )}

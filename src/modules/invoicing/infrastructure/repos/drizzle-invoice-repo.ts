@@ -1776,6 +1776,44 @@ export function makeDrizzleInvoiceRepo(
  *     are ISSUED, so `sumPeriodOutputVat` also returns the period credit-note
  *     VAT for the use-case to subtract (net = RC + RE − credit notes).
  */
+/**
+ * The §78/1 tax point every register method — and the CSV export — buckets by:
+ * the admin-entered Bangkok-local `payment_date`, falling back to the server
+ * `paid_at` (as a Bangkok-local date) only when a row has none. ONE definition
+ * so the ภ.พ.30 register and the bookkeeper's CSV can never disagree about
+ * which month a receipt belongs to.
+ */
+const TAX_POINT = sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date)`;
+
+/** Inclusive `[from, to]` on {@link TAX_POINT}; a date-less row never matches. */
+function taxPointBetween(from: string, to: string) {
+  return [sql`${TAX_POINT} >= ${from}`, sql`${TAX_POINT} <= ${to}`];
+}
+
+/**
+ * Combined-mode tax invoices dated in `[from, to]`: rows whose §87 invoice
+ * number IS the §86/4 tax invoice (`document_number` set, no RC/RE and no SC
+ * bill) — issued before the tax-at-payment switch or with
+ * `FEATURE_088_TAX_AT_PAYMENT` off. Outside both registers.
+ *
+ * Their tax point is the ISSUE date, not the payment: a tax invoice issued
+ * before payment fixes the §78/1(1)(ก) tax point at issue. Callers add the
+ * status filter (the export wants paid-family rows; the register's count also
+ * wants issued-unpaid ones, which are already tax invoices).
+ */
+function combinedTaxInvoicesIssuedBetween(from: string, to: string) {
+  return [
+    isNull(invoices.receiptDocumentNumberRaw),
+    isNull(invoices.billDocumentNumberRaw),
+    isNotNull(invoices.documentNumber),
+    sql`${invoices.issueDate} >= ${from}`,
+    sql`${invoices.issueDate} <= ${to}`,
+  ];
+}
+
+/** Per-row tax point for ordering the export: issue date for combined rows. */
+const ROW_TAX_POINT = sql`CASE WHEN ${invoices.receiptDocumentNumberRaw} IS NULL THEN ${invoices.issueDate} ELSE ${TAX_POINT} END`;
+
 export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
   const ctx = asTenantContext(tenantId);
 
@@ -1794,8 +1832,7 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
           // tax invoice must STILL appear in the sales report (marked
           // cancelled), so void rows stay LISTED here; they are excluded only
           // from the period output-VAT TOTAL (`sumPeriodOutputVat`).
-          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
-          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
+          ...taxPointBetween(opts.from, opts.to),
         ];
         if (opts.kind === 're_register') {
           // §105 RE stream only (no-TIN event/member receipts).
@@ -1843,8 +1880,7 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
               eq(invoices.tenantId, tenantIdArg),
               isNotNull(invoices.receiptDocumentNumberRaw),
               ne(invoices.status, 'void'),
-              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
-              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
+              ...taxPointBetween(opts.from, opts.to),
             ),
           );
 
@@ -1866,11 +1902,62 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
             ),
           );
 
+        // (3) Combined-mode tax invoices issued in the period (outside both
+        // streams) — every non-void, non-draft one, paid or not: each is
+        // already a §86/4 tax invoice with its tax point at issue.
+        const [legacyAgg] = await tx
+          .select({ n: sql<number>`COUNT(*)::int` })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              sql`${invoices.status} IN ('issued', 'paid', 'credited', 'partially_credited')`,
+              ...combinedTaxInvoicesIssuedBetween(opts.from, opts.to),
+            ),
+          );
+
         return {
           rcVatSatang: agg?.rcVat ?? '0',
           reVatSatang: agg?.reVat ?? '0',
           creditNoteVatSatang: cnAgg?.cnVat ?? '0',
+          legacyCombinedCount: Number(legacyAgg?.n ?? 0),
         };
+      });
+    },
+
+    async listForExport(tenantIdArg, opts) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx
+          .select()
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              ne(invoices.status, 'void'),
+              or(
+                // §86/4 RC + §105 RE receipts — exactly the rows
+                // `sumPeriodOutputVat` counts: same tax point, every non-void
+                // status.
+                and(
+                  isNotNull(invoices.receiptDocumentNumberRaw),
+                  ...taxPointBetween(opts.from, opts.to),
+                ),
+                // Combined mode: the paid INV tax invoices issued in the
+                // period (tax point = issue date).
+                and(
+                  sql`${invoices.status} IN ('paid', 'credited', 'partially_credited')`,
+                  ...combinedTaxInvoicesIssuedBetween(opts.from, opts.to),
+                ),
+              ),
+            ),
+          )
+          .orderBy(
+            asc(ROW_TAX_POINT),
+            asc(invoices.receiptDocumentNumberRaw),
+            asc(invoices.sequenceNumber),
+          )) as InvoiceRow[];
+
+        return rows.map((r) => rowsToInvoice(r, []));
       });
     },
   };

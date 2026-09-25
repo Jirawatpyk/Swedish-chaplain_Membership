@@ -43,9 +43,12 @@ import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
 export async function MemberBenefitsPreviewSection({
   tenant,
   memberId,
+  companyName,
 }: {
   readonly tenant: TenantContext;
   readonly memberId: string;
+  /** Names the member in the staff wording of the under-use warning. */
+  readonly companyName: string;
 }): Promise<React.JSX.Element | null> {
   const locale = await getLocale();
 
@@ -82,6 +85,7 @@ export async function MemberBenefitsPreviewSection({
         aggregateConsumedPct={usage.aggregateConsumedPct}
         underUseWarning={usage.underUseWarning}
         suspended={membershipAccess.access === 'suspended'}
+        staffSubjectName={companyName}
         compact
         previewHref={`/admin/members/${memberId}/benefits`}
         className="h-full flex flex-col"

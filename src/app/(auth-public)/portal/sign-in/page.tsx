@@ -49,6 +49,9 @@ export default async function MemberSignInPage({
   // H3 (Round 2): see admin/sign-in/page.tsx for rationale.
   const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
   const showSecurityBanner = reasonCandidate === 'security-update';
+  // The renewal redeem-link route sends EVERY failure here (expired, used,
+  // tampered) without saying which — keep the banner equally unspecific.
+  const showLinkInvalidBanner = reasonCandidate === 'link_invalid';
 
   const current = await getCurrentSession();
   if (current) {
@@ -81,6 +84,9 @@ export default async function MemberSignInPage({
             <CardContent className="space-y-4">
               {showSecurityBanner ? (
                 <SecurityUpdateBanner message={t('securityUpdateBanner')} />
+              ) : null}
+              {showLinkInvalidBanner ? (
+                <SecurityUpdateBanner message={t('linkInvalidBanner')} />
               ) : null}
               <SignInForm portal="member" returnTo={validatedReturnTo} />
             </CardContent>

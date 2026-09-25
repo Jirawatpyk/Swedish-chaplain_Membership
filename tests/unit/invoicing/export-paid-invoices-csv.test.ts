@@ -18,7 +18,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 
 const BOM = '﻿';
 const HEADER_LINE =
-  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method';
+  'Issue Date,Invoice No.,Receipt No.,Customer Legal Name,Customer Tax ID,Subtotal,VAT %,VAT,Total,Currency,Paid At,Payment Method,Tax Point Date';
 
 function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
   const base = {
@@ -81,17 +81,18 @@ function makeDeps(
   paymentMethodMap: ReadonlyMap<string, 'card' | 'promptpay'> = new Map(),
 ): ExportPaidInvoicesCsvDeps & {
   audit: { emit: ReturnType<typeof vi.fn> };
+  registerRepo: { listForExport: ReturnType<typeof vi.fn> };
 } {
   const audit = { emit: vi.fn(async () => {}) };
   return {
     audit,
-    invoiceRepo: {
-      // Only `listPaged` is exercised by the use-case.
-      listPaged: vi.fn(async () => ({
-        rows: paidInvoices,
-        total: paidInvoices.length,
-      })),
-    } as unknown as ExportPaidInvoicesCsvDeps['invoiceRepo'],
+    registerRepo: {
+      // The repo owns the period predicate (the register's tax point); the
+      // use-case writes whatever it returns. Only `listForExport` is used.
+      listForExport: vi.fn(async () => paidInvoices),
+      listForPeriod: vi.fn(),
+      sumPeriodOutputVat: vi.fn(),
+    },
     paymentMethodLookup: vi.fn(async () => paymentMethodMap),
   };
 }
@@ -210,7 +211,7 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,manual\r?\n?$/);
+    expect(result.value.csv).toMatch(/,manual,2026-05-15\r?\n?$/);
   });
 
   it('labels F5-paid rows by their PaymentMethod', async () => {
@@ -226,13 +227,13 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.csv).toMatch(/,promptpay\r?\n?$/);
+    expect(result.value.csv).toMatch(/,promptpay,2026-05-15\r?\n?$/);
   });
 
   it('includes an AS-PAID event invoice with its paidAt + payment date rendered (064 T15 pin)', async () => {
     // issueEventInvoiceAsPaid lands draft→paid directly with
     // issue_date = due_date = payment_date and pdfDocKind receipt_combined.
-    // The export keys on status='paid' + paidAt-in-range — an as-paid row
+    // The export keys on the register's tax point (payment_date) — an as-paid row
     // (never 'issued') MUST appear in the bookkeeper CSV exactly like a
     // two-step paid row, with the as-paid date pin visible in Issue Date.
     const asPaid = makeInvoice({
@@ -265,20 +266,22 @@ describe('exportPaidInvoicesCsv', () => {
     expect(result.value.csv).toContain('2026-05-16T03:00:00Z');
   });
 
-  it('filters out rows whose paidAt falls outside the inclusive range', async () => {
-    const insideMay = makeInvoice({
-      invoiceId: asInvoiceId('i-may'),
-      paidAt: '2026-05-16T03:00:00Z', // Bangkok 2026-05-16
+  it('takes its rows from the register repo for the same inclusive period', async () => {
+    // The period predicate (COALESCE(payment_date, paid_at), every non-void
+    // status) lives in the repo so the CSV and the ภ.พ.30 register cannot
+    // bucket a receipt differently. The use-case must not re-filter by paidAt:
+    // a back-dated payment has a paidAt outside the period it belongs to.
+    const backDated = makeInvoice({
+      invoiceId: asInvoiceId('i-back-dated'),
+      receiptDocumentNumberRaw: 'RC-2026-000031',
+      paymentDate: '2026-05-31',
+      paidAt: '2026-06-02T03:00:00Z', // Bangkok 2026-06-02 — outside May
     });
-    const beforeRange = makeInvoice({
-      invoiceId: asInvoiceId('i-apr'),
-      paidAt: '2026-04-30T16:30:00Z', // Bangkok 2026-04-30 23:30 (just before)
+    const credited = makeInvoice({
+      invoiceId: asInvoiceId('i-credited'),
+      status: 'credited',
     });
-    const afterRange = makeInvoice({
-      invoiceId: asInvoiceId('i-jun'),
-      paidAt: '2026-06-01T01:00:00Z', // Bangkok 2026-06-01 08:00
-    });
-    const deps = makeDeps([insideMay, beforeRange, afterRange]);
+    const deps = makeDeps([backDated, credited]);
     const result = await exportPaidInvoicesCsv(deps, {
       tenantId: 't',
       actorUserId: 'u',
@@ -286,7 +289,48 @@ describe('exportPaidInvoicesCsv', () => {
       to: '2026-05-31',
     });
     if (!result.ok) throw new Error('expected ok');
-    expect(result.value.rowCount).toBe(1);
+    expect(deps.registerRepo.listForExport).toHaveBeenCalledWith('t', {
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    expect(result.value.rowCount).toBe(2);
+    // "Paid At" is when it was marked paid; the trailing "Tax Point Date"
+    // column is the date that put the row in this month.
+    expect(result.value.csv).toMatch(/2026-06-02T03:00:00Z,manual,2026-05-31\r\n/);
+  });
+
+  it('a combined-mode row (no RC/RE) takes its issue date as the tax point', async () => {
+    // The §87 INV was a §86/4 tax invoice at issue, so §78/1(1)(ก) fixes the
+    // tax point at issue — not at the later payment.
+    const combined = makeInvoice({
+      issueDate: '2026-04-28',
+      paymentDate: '2026-05-10',
+      paidAt: '2026-05-10T03:00:00Z',
+      receiptDocumentNumberRaw: null,
+    });
+    const deps = makeDeps([combined]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-04-01',
+      to: '2026-04-30',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.csv).toMatch(/,manual,2026-04-28\r\n/);
+  });
+
+  it('refuses an impossible calendar date without querying', async () => {
+    const deps = makeDeps([]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-02-30',
+      to: '2026-03-31',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ code: 'invalid_range', reason: 'not_a_date' });
+    expect(deps.registerRepo.listForExport).not.toHaveBeenCalled();
   });
 
   it('emits the `invoices_csv_exported` audit event with payload', async () => {

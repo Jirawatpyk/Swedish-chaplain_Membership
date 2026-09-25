@@ -11,6 +11,7 @@ import { asSatang } from '@/lib/money';
 import type { CreditNoteRepo } from '../../application/ports/credit-note-repo';
 import {
   asCreditNoteId,
+  resolveCreditNoteOriginalDocuments,
   assertCreditNoteVatBalance,
   type CreditNote,
   type CreditNoteId,
@@ -299,6 +300,10 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
             // its member_id is null). The old `!originalInvoiceMemberId` check
             // conflated the two and dropped valid event CNs.
             originalInvoiceId: invoices.invoiceId,
+            // For `originalDocuments` — the receipt + bill the note refers to.
+            originalReceiptDocumentNumberRaw: invoices.receiptDocumentNumberRaw,
+            originalDocumentNumberRaw: invoices.documentNumber,
+            originalBillDocumentNumberRaw: invoices.billDocumentNumberRaw,
           })
           .from(creditNotes)
           .leftJoin(
@@ -328,10 +333,14 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         );
         return null;
       }
-      return rowToCreditNote(
-        result.creditNote as CreditNoteRow,
-        result.originalInvoiceMemberId,
-      );
+      return {
+        ...rowToCreditNote(result.creditNote as CreditNoteRow, result.originalInvoiceMemberId),
+        originalDocuments: resolveCreditNoteOriginalDocuments({
+          receiptDocumentNumberRaw: result.originalReceiptDocumentNumberRaw,
+          documentNumberRaw: result.originalDocumentNumberRaw,
+          billDocumentNumberRaw: result.originalBillDocumentNumberRaw,
+        }),
+      };
     },
 
     async findByOriginalInvoice(
@@ -405,7 +414,10 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         readonly documentNumberRaw: string;
         readonly issueDate: string;
         readonly originalInvoiceId: string;
-        readonly originalInvoiceNumberRaw: string | null;
+        readonly originalReceiptDocumentNumberRaw: string | null;
+        readonly originalDocumentNumberRaw: string | null;
+        readonly originalBillDocumentNumberRaw: string | null;
+        readonly sourceRefundId: string | null;
         readonly memberLegalName: string;
         readonly totalSatang: import('@/lib/money').Satang;
         readonly reason: string;
@@ -440,7 +452,13 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
             documentNumberRaw: creditNotes.documentNumber,
             issueDate: creditNotes.issueDate,
             originalInvoiceId: creditNotes.originalInvoiceId,
-            originalInvoiceNumberRaw: invoices.documentNumber,
+            // An 088 bill has NO §87 document_number — the receipt the note
+            // reduces is the payment-time RC; project all three numbers and
+            // let the domain resolver pick (same rule as the CN PDF).
+            originalReceiptDocumentNumberRaw: invoices.receiptDocumentNumberRaw,
+            originalDocumentNumberRaw: invoices.documentNumber,
+            originalBillDocumentNumberRaw: invoices.billDocumentNumberRaw,
+            sourceRefundId: creditNotes.sourceRefundId,
             memberIdentitySnapshot: creditNotes.memberIdentitySnapshot,
             totalSatang: creditNotes.totalSatang,
             reason: creditNotes.reason,
@@ -469,8 +487,8 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         // 054-event-fee-invoices (Task 8 reviewer note) — intentionally NO
         // orphan-id filter here (unlike findByOriginalInvoice* which drop rows
         // where the joined invoice id is null). `listPaged` projects a NARROW
-        // DTO whose `originalInvoiceNumberRaw: string | null` field already
-        // gracefully surfaces an orphan as null in the admin list, so a future
+        // DTO whose nullable `original*DocumentNumberRaw` fields already
+        // gracefully surface an orphan as "—" in the admin list, so a future
         // hard-deleted-invoice edge case is visible rather than silently dropped.
         // The three aggregate-return paths (findById / findByOriginalInvoice /
         // findByOriginalInvoiceInTx) DO apply the orphan filter because they must
@@ -482,7 +500,10 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
             documentNumberRaw: r.documentNumberRaw,
             issueDate: r.issueDate,
             originalInvoiceId: r.originalInvoiceId,
-            originalInvoiceNumberRaw: r.originalInvoiceNumberRaw,
+            originalReceiptDocumentNumberRaw: r.originalReceiptDocumentNumberRaw,
+            originalDocumentNumberRaw: r.originalDocumentNumberRaw,
+            originalBillDocumentNumberRaw: r.originalBillDocumentNumberRaw,
+            sourceRefundId: r.sourceRefundId,
             memberLegalName: snap?.legal_name ?? '—',
             // F5R3 H-5 (2026-05-16) — brand at DB→Domain boundary.
             totalSatang: asSatang(BigInt(r.totalSatang as unknown as string)),

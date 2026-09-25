@@ -50,6 +50,10 @@ import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteMoreMenu } from '../_components/credit-note-more-menu';
+import {
+  CreditNoteOriginalReceipt,
+  CreditNoteRefundBadge,
+} from '@/components/invoices/credit-note-original-receipt';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import { logger } from '@/lib/logger';
 
@@ -176,6 +180,7 @@ export default async function CreditNoteDetailPage({
             <Badge variant="default" aria-label={t('status.issued')}>
               {t('status.issued')}
             </Badge>
+            {cn.sourceRefundId !== null ? <CreditNoteRefundBadge /> : null}
           </span>
         }
         subtitle={t('subtitle')}
@@ -209,14 +214,13 @@ export default async function CreditNoteDetailPage({
             <dt className="text-muted-foreground">{t('fields.issuedBy')}</dt>
             <dd className="break-all">{issuerLabel}</dd>
 
-            <dt className="text-muted-foreground">{t('fields.originalInvoice')}</dt>
+            <dt className="text-muted-foreground">{t('fields.originalReceipt')}</dt>
             <dd>
-              <Link
-                href={invoiceHref}
-                className="font-mono underline-offset-2 hover:underline"
-              >
-                {t('fields.originalInvoiceLinkLabel')}
-              </Link>
+              {cn.originalDocuments ? (
+                <CreditNoteOriginalReceipt original={cn.originalDocuments} invoiceHref={invoiceHref} />
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
             </dd>
 
             <dt className="text-muted-foreground">{t('fields.creditAmount')}</dt>

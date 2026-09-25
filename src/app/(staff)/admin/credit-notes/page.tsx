@@ -22,7 +22,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { ArrowUpRightIcon, DownloadIcon, EyeIcon } from 'lucide-react';
+import { DownloadIcon, EyeIcon } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
@@ -42,6 +42,10 @@ import {
 } from '@/components/ui/table';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteFilters } from './_components/credit-note-filters';
+import {
+  CreditNoteOriginalReceipt,
+  CreditNoteRefundBadge,
+} from '@/components/invoices/credit-note-original-receipt';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.creditNotes.list.meta');
@@ -144,7 +148,7 @@ export default async function AdminCreditNotesDirectoryPage({
                         scope="col"
                         className="text-xs uppercase tracking-wide text-muted-foreground"
                       >
-                        {t('columns.originalInvoice')}
+                        {t('columns.originalReceipt')}
                       </TableHead>
                       <TableHead
                         scope="col"
@@ -176,31 +180,24 @@ export default async function AdminCreditNotesDirectoryPage({
                     {rows.map((r) => (
                       <TableRow key={r.creditNoteId}>
                         <TableCell className="font-mono font-medium">
-                          <Link
-                            href={`/admin/credit-notes/${r.creditNoteId}`}
-                            className="hover:underline"
-                          >
-                            {r.documentNumberRaw}
-                          </Link>
+                          <span className="inline-flex items-center gap-2">
+                            <Link
+                              href={`/admin/credit-notes/${r.creditNoteId}`}
+                              className="hover:underline"
+                            >
+                              {r.documentNumberRaw}
+                            </Link>
+                            {r.isRefund ? <CreditNoteRefundBadge /> : null}
+                          </span>
                         </TableCell>
                         <TableCell className="tabular-nums">
                           {formatTaxDocDate(r.issueDate, locale)}
                         </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {r.originalInvoiceNumberRaw ? (
-                            <Link
-                              href={`/admin/invoices/${r.originalInvoiceId}`}
-                              className="inline-flex items-center gap-1 hover:underline"
-                            >
-                              {r.originalInvoiceNumberRaw}
-                              <ArrowUpRightIcon
-                                className="size-3.5 text-muted-foreground"
-                                aria-hidden="true"
-                              />
-                            </Link>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
+                        <TableCell className="text-sm">
+                          <CreditNoteOriginalReceipt
+                            original={r.original}
+                            invoiceHref={`/admin/invoices/${r.originalInvoiceId}`}
+                          />
                         </TableCell>
                         <TableCell>{r.memberLegalName}</TableCell>
                         <TableCell

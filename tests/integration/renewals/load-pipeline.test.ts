@@ -46,6 +46,8 @@ interface SeedCycle {
   tier: 'thai_alumni' | 'start_up' | 'regular' | 'premium' | 'partnership';
   /** Defaults to 'upcoming'. */
   status?: 'upcoming' | 'awaiting_payment';
+  /** 0309 — stamp `awaiting_entered_at` (flipped early from a paid period). */
+  awaitingEnteredAt?: Date;
 }
 
 describe('F8 loadPipeline — integration (T075)', () => {
@@ -93,6 +95,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
           frozenPlanPriceThb: '50000.00',
           frozenPlanTermMonths: 12,
           frozenPlanCurrency: 'THB',
+          ...(s.awaitingEnteredAt ? { awaitingEnteredAt: s.awaitingEnteredAt } : {}),
         }),
       );
     }
@@ -131,6 +134,17 @@ describe('F8 loadPipeline — integration (T075)', () => {
         expiresAt: new Date(now + 120 * 86_400_000),
         tier: 'regular',
         status: 'awaiting_payment',
+      },
+      // 0309 — an EARLY renewal bill on a paid period that runs another 120
+      // days: access is full, so the outside-window SUSPENDED leg must NOT
+      // count it (the count above stays 1, the born-awaiting row only).
+      {
+        cycleId: randomUUID(),
+        memberId: randomUUID(),
+        expiresAt: new Date(now + 120 * 86_400_000),
+        tier: 'regular',
+        status: 'awaiting_payment',
+        awaitingEnteredAt: new Date(now - 86_400_000),
       },
     ]);
     await seedCycles(tenantB, [
@@ -352,9 +366,11 @@ describe('F8 loadPipeline — integration (T075)', () => {
     try {
       const now = Date.now();
       // All offsets are within the 90-day pipeline window so every row lands in
-      // the summary aggregate. The FUTURE awaiting_payment / pending rows are
-      // the crux: access is 'suspended' regardless of a far-off expiry, so they
-      // must NOT read as a t-* countdown.
+      // the summary aggregate. The FUTURE born-awaiting / pending rows are the
+      // crux: access is 'suspended' regardless of a far-off expiry, so they
+      // must NOT read as a t-* countdown. The 0309 early-flipped rows are the
+      // mirror case: a renewal bill issued before T-0 against a PAID period
+      // keeps access 'full' (a t-* countdown) until that period ends.
       const cases: ReadonlyArray<{
         status:
           | 'awaiting_payment'
@@ -363,13 +379,19 @@ describe('F8 loadPipeline — integration (T075)', () => {
           | 'reminded'
           | 'lapsed';
         offsetDays: number;
+        /** 0309 — flipped `upcoming|reminded → awaiting_payment` (early bill). */
+        earlyFlipped?: boolean;
+        /** The intended access. Pins behaviour, not just SQL⇄domain parity. */
+        access: 'full' | 'suspended' | 'terminated';
       }> = [
-        { status: 'awaiting_payment', offsetDays: 40 }, // future but unpaid → suspended
-        { status: 'pending_admin_reactivation', offsetDays: 40 }, // held → suspended
-        { status: 'upcoming', offsetDays: -10 }, // expired non-terminal → suspended
-        { status: 'reminded', offsetDays: -10 }, // expired non-terminal → suspended
-        { status: 'upcoming', offsetDays: 40 }, // future, not expired → full (t-*)
-        { status: 'lapsed', offsetDays: -5 }, // terminal → terminated
+        { status: 'awaiting_payment', offsetDays: 40, access: 'suspended' }, // born-awaiting (065 §5.3), future but unpaid
+        { status: 'awaiting_payment', offsetDays: 40, earlyFlipped: true, access: 'full' }, // early bill, paid period still running (t-*)
+        { status: 'awaiting_payment', offsetDays: -10, earlyFlipped: true, access: 'suspended' }, // early bill, period ended unpaid
+        { status: 'pending_admin_reactivation', offsetDays: 40, access: 'suspended' }, // held
+        { status: 'upcoming', offsetDays: -10, access: 'suspended' }, // expired non-terminal
+        { status: 'reminded', offsetDays: -10, access: 'suspended' }, // expired non-terminal
+        { status: 'upcoming', offsetDays: 40, access: 'full' }, // future, not expired (t-*)
+        { status: 'lapsed', offsetDays: -5, access: 'terminated' }, // terminal
       ];
 
       const planId = `f8-drift-${randomUUID().slice(0, 8)}`;
@@ -419,6 +441,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
             // CHECK `closed_at_iff_terminal`: closed_at must be set iff status is
             // terminal (completed/lapsed/cancelled), null otherwise.
             ...(c.status === 'lapsed' ? { closedAt: new Date() } : {}),
+            ...(c.earlyFlipped ? { awaitingEnteredAt: new Date(now - 86_400_000) } : {}),
           }),
         );
       }
@@ -429,9 +452,16 @@ describe('F8 loadPipeline — integration (T075)', () => {
         const cycleLike = {
           status: c.status,
           expiresAt: new Date(now + c.offsetDays * 86_400_000).toISOString(),
+          awaitingEnteredAt: c.earlyFlipped
+            ? new Date(now - 86_400_000).toISOString()
+            : null,
         } as unknown as RenewalCycle;
         return deriveMembershipAccess(cycleLike, nowDate).access;
       });
+      // Parity alone would stay green if BOTH sides drifted the same way (the
+      // pre-0309 bug: an early bill suspended a paid member in the domain AND
+      // the pipeline), so the domain must also match the intended access.
+      expect(expected).toEqual(cases.map((c) => c.access));
       const expectSuspended = expected.filter((a) => a === 'suspended').length;
       const expectTerminated = expected.filter((a) => a === 'terminated').length;
       const expectFull = expected.filter((a) => a === 'full').length;
