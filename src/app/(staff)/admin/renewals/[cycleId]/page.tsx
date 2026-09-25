@@ -37,6 +37,7 @@ import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { CycleStatusBadge } from './_components/cycle-status-badge';
 import { PendingReactivationActions } from './_components/pending-reactivation-actions';
 import { CycleAdminActions } from './_components/cycle-admin-actions';
+import { resolveLiveLinkedBill } from '../_lib/mark-paid-gate';
 // Phase 6 review-round 2 A2 — display-data fetchers extracted to a
 // testable module so unit tests can drive the C4 error semantics
 // (null-vs-throw) + TD1 zod parse without booting Drizzle.
@@ -347,17 +348,12 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   // human-meaningful info via Tier badge + frozen price/term.
   const planName = planDisplay ? planDisplay.localisedName : '—';
 
-  // The linked bill as the admin actions see it: live unless F4 reports it
-  // void. A degraded F4 fetch (`status: 'unknown'`) still counts as live —
-  // the link exists, and offering mint-and-pay there would only earn a
-  // `membership_bill_already_exists` refusal.
-  const liveLinkedBill =
-    c.linkedInvoiceId !== null && v.linkedInvoice?.status !== 'void'
-      ? {
-          invoiceId: c.linkedInvoiceId,
-          billNumber: v.linkedInvoice?.invoiceNumber ?? null,
-        }
-      : null;
+  // The linked bill as the admin actions see it (live unless F4 reports it
+  // void) — decides "Record payment on {bill}" vs "Mark paid offline".
+  const liveLinkedBill = resolveLiveLinkedBill(
+    c.linkedInvoiceId,
+    v.linkedInvoice,
+  );
   const breadcrumbLabel = member ? member.companyName : shortId;
 
   return (

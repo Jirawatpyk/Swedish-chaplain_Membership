@@ -19,9 +19,12 @@
  * is member-scoped and also catches a live bill that is NOT linked to the
  * cycle, which this UI gate cannot see.
  *
- * `linkedInvoiceId` non-null ⇒ live bill for an OPEN cycle: voiding the linked
- * invoice clears the link (`clearLinkedInvoiceForVoidInTx`), so an open cycle
- * never keeps pointing at a void one.
+ * `linkedInvoiceId` is USUALLY a live bill for an open cycle — the ordinary
+ * void clears the link (`clearLinkedInvoiceForVoidInTx`) — but not always: the
+ * void-on-reissue supersede path and pre-unlink voids can leave an open cycle
+ * linked to a void invoice. The pipeline row has no invoice status, so it
+ * treats any link as live; the cycle-detail page knows the status and uses
+ * {@link resolveLiveLinkedBill}.
  */
 import type { CycleStatus } from '@/modules/renewals/client';
 
@@ -47,4 +50,26 @@ export function shouldOfferRecordPaymentOnBill(
   linkedInvoiceId: string | null,
 ): linkedInvoiceId is string {
   return PAYABLE_STATUSES.has(status) && linkedInvoiceId !== null;
+}
+
+/**
+ * The cycle-detail page's view of the linked bill: live unless F4 reports it
+ * void. A degraded F4 fetch (hydrated as `status: 'unknown'`, or absent) still
+ * counts as live — the link exists, and offering mint-and-pay there would only
+ * earn a `membership_bill_already_exists` refusal (fail-closed).
+ */
+export function resolveLiveLinkedBill(
+  linkedInvoiceId: string | null,
+  linkedInvoice: {
+    readonly invoiceNumber: string | null;
+    readonly status: string;
+  } | null,
+): { readonly invoiceId: string; readonly billNumber: string | null } | null {
+  if (linkedInvoiceId === null || linkedInvoice?.status === 'void') {
+    return null;
+  }
+  return {
+    invoiceId: linkedInvoiceId,
+    billNumber: linkedInvoice?.invoiceNumber ?? null,
+  };
 }
