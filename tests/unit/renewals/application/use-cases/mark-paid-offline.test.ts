@@ -1128,6 +1128,47 @@ describe('markPaidOffline — error paths', () => {
   // returned `f4_orphan_invoice` inside `runInTenant` would COMMIT the counter
   // increment: a burned receipt number with no document behind it (the same
   // mechanism confirm-payment.ts documents as F-1). The outer tx must roll back.
+  // Review M1 — the rollback above also undoes the stale-link clear (#409).
+  // Left linked to the void bill, the cycle cannot be completed when the
+  // operator records the payment on the orphan invoice (the F8 on-paid
+  // resolver's link CAS rejects it and only warns) — a paying member's cycle
+  // stays open. The idempotent clear must be re-applied in a committed tx.
+  it('re-applies the stale-link clear in a committed tx after rolling back on record_payment_failed', async () => {
+    const f = fakeDeps(
+      buildCycle({ status: 'awaiting_payment', linkedInvoiceId: 'inv-void' }),
+      async () => ({
+        ok: false,
+        error: {
+          kind: 'record_payment_failed',
+          reason: 'pdf_render_failed',
+          orphanInvoiceId: 'orphan-inv-7',
+        },
+      }),
+    );
+    f.findMembershipInvoiceInTxMock.mockResolvedValueOnce({
+      invoiceId: 'inv-void',
+      memberId: 'mem-1',
+      planYear: 2026,
+      planId: 'plan-x',
+      status: 'void',
+      origin: 'renewal',
+    });
+    txOutcome.last = null;
+
+    const r = await markPaidOffline(f.deps, baseInput);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('f4_orphan_invoice');
+    expect(f.clearStaleLinkedInvoiceInTxMock).toHaveBeenCalledTimes(2);
+    expect(f.clearStaleLinkedInvoiceInTxMock).toHaveBeenLastCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      VALID_UUID,
+      'inv-void',
+    );
+    expect(txOutcome.last).toBe('committed');
+  });
+
   it('rolls the outer tx back on record_payment_failed, so no §87 receipt number is burned', async () => {
     const { deps } = fakeDeps(buildCycle(), async () => ({
       ok: false,
