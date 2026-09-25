@@ -121,6 +121,8 @@ interface Recorder {
   readonly gatewayCalls: GatewayMethod[];
   /** F119 PR-E — every `markDispatchRetryStarted` stamp (the FR-021 clock). */
   readonly retryStamps: Date[];
+  /** F119 PR-E (H1 / M1) — every `clearDispatchRetryClock` call, in gateway-call order. */
+  readonly retryClears: number[];
 }
 
 /**
@@ -249,6 +251,13 @@ function makeDeps(opts: {
   readonly dispatchFirstFailedAt?: Date | null;
   /** F119 PR-E — the stamp write itself fails. */
   readonly retryStampThrows?: boolean;
+  /**
+   * F119 PR-E (L3) — what the stamp's `RETURNING` answers, overriding the
+   * default COALESCE over the snapshot. `null` = the row left `approved`.
+   */
+  readonly retryStampReturns?: Date | null;
+  /** F119 PR-E (H1 / M1) — the clock reset itself fails. */
+  readonly retryClearThrows?: boolean;
 }): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
@@ -262,6 +271,7 @@ function makeDeps(opts: {
     completionStamps: [],
     gatewayCalls: [],
     retryStamps: [],
+    retryClears: [],
   };
 
   const broadcast = {
@@ -449,6 +459,17 @@ function makeDeps(opts: {
         async markDispatchRetryStarted(_tx: unknown, _t: unknown, _b: unknown, at: Date) {
           rec.retryStamps.push(at);
           if (opts.retryStampThrows === true) {
+            throw new Error('57P01 terminating connection due to administrator command');
+          }
+          if (opts.retryStampReturns !== undefined) return opts.retryStampReturns;
+          // The adapter's COALESCE, over the row this harness serves.
+          return broadcast.dispatchFirstFailedAt ?? at;
+        },
+        async clearDispatchRetryClock() {
+          // Recorded as "how many gateway calls had been made", so a test can
+          // say the reset came AFTER the send.
+          rec.retryClears.push(rec.gatewayCalls.length);
+          if (opts.retryClearThrows === true) {
             throw new Error('57P01 terminating connection due to administrator command');
           }
         },
@@ -2401,8 +2422,9 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
     });
     expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
     expect(rec.transitions[0]?.failureReason).toBe('retry_budget_exhausted');
-    // Already stamped — a later failure does not restart the clock.
-    expect(rec.retryStamps).toEqual([]);
+    // The stamp write runs on every failure (L3) and COALESCE keeps the first:
+    // the budget counted from the returned 61-minute stamp, not from now.
+    expect(rec.retryStamps).toEqual([NOW]);
     expect(rec.memberEmails).toHaveLength(1);
   });
 
@@ -2444,5 +2466,142 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
     // `errKind`, never the raw error: a Neon error carries bound parameters.
     expect(stampLog?.[0]).toMatchObject({ err: 'Error', broadcastId: BROADCAST_ID });
     expect(JSON.stringify(stampLog?.[0])).not.toContain('administrator command');
+  });
+
+  it('L1 — a failed stamp write is COUNTED, not only logged (a stamp that always fails means endless retries)', async () => {
+    const counter = vi.spyOn(broadcastsMetrics, 'dispatchRetryStampFailed');
+    const { deps } = makeDeps({ resendAudienceId: null, throwOn: RETRYABLE, retryStampThrows: true });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(counter).toHaveBeenCalledWith('test-tenant');
+  });
+
+  it('a failed stamp write on an ALREADY-stamped row still measures from the stamp — a storage fault cannot extend a spent budget', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      dispatchFirstFailedAt: minutesAgo(61),
+      retryStampThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'retry_budget_exhausted' });
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  /**
+   * L3 — the Step-1 snapshot can be stale. An admin re-times the row after the
+   * read (which clears the clock; the row stays `approved`), then this tick
+   * fails: budgeting from the snapshot's 61-minute stamp would kill the freshly
+   * re-timed row. The epoch is what the stamp's RETURNING says the row carries.
+   */
+  it('L3 — a re-time between the read and the failure: the budget uses the RETURNED stamp, not the stale snapshot', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      dispatchFirstFailedAt: minutesAgo(61),
+      retryStampReturns: NOW,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.kind).toBe('dispatch.server_error');
+    expect(rec.retryStamps).toEqual([NOW]);
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+  });
+
+  it('L3 — the stamp matches no row (another writer moved it out of approved) → stop, no terminal write, nobody told', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'dispatchBudgetExhausted');
+    const { deps, rec } = makeDeps({
+      resendAudienceId: null,
+      throwOn: RETRYABLE,
+      dispatchFirstFailedAt: minutesAgo(61),
+      retryStampReturns: null,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({
+      ok: false,
+      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' },
+    });
+    expect(rec.transitions).toHaveLength(0);
+    expect(rec.audits).toHaveLength(0);
+    expect(rec.memberEmails).toHaveLength(0);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * H1 — a HOLD resets the clock. It used to write nothing, so a failure → a
+   * two-day hold → the member pays → ONE blip ended in retry_budget_exhausted.
+   * The reset is the one write a hold makes; still no audit row, no email.
+   */
+  it.each([
+    ['tick 1 (no import yet)', {}],
+    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }],
+  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row) => {
+    const { deps, rec } = makeDeps({ ...row, dispatchFirstFailedAt: minutesAgo(30), standing: { access: 'suspended' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.retryClears).toEqual([0]);
+    expect(rec.retryStamps).toEqual([]);
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+    expect(rec.gatewayCalls).toEqual([]);
+  });
+
+  it('H1 — the reset failing is logged (class only) and the tick is still HELD, never an error', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({
+      dispatchFirstFailedAt: minutesAgo(30),
+      standing: { access: 'suspended' },
+      retryClearThrows: true,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.transitions).toEqual([]);
+    const clearLog = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.retry_clock_clear_failed');
+    expect(clearLog?.[0]).toMatchObject({ err: 'Error', broadcastId: BROADCAST_ID });
+    expect(JSON.stringify(clearLog?.[0])).not.toContain('administrator command');
+  });
+
+  /**
+   * M1 — once the provider has taken the send there is nothing left to budget:
+   * the clock is reset right after `sendBroadcast` succeeds. This leg has no
+   * probe, so a stamp surviving a delivered send would be inherited by any later
+   * budgeted failure on the row.
+   */
+  it('M1 — a successful send resets a stamped clock, AFTER the send', async () => {
+    const { deps, rec } = makeDeps({ ...POLLING, dispatchFirstFailedAt: minutesAgo(5) });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(true);
+    expect(rec.retryClears).toEqual([rec.gatewayCalls.indexOf('sendBroadcast') + 1]);
+  });
+
+  it('M1 — the post-send reset failing is logged and the send still completes', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({ ...POLLING, dispatchFirstFailedAt: minutesAgo(5), retryClearThrows: true });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.retry_clock_clear_failed')).toBe(true);
   });
 });

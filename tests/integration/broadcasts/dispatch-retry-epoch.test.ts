@@ -13,9 +13,13 @@
  *      0311 actually changes — without it the scrub could restart or erase a
  *      row's retry clock. A positive control (subject still moves) proves the
  *      GUC took effect, so "refused" cannot come from a GUC that was never set.
- *   3. `markDispatchRetryStarted` keeps the FIRST stamp (COALESCE) and cannot
- *      reach a row that is not `approved`.
- *   4. `applyTransition` clears it on a status change and on a re-time.
+ *   3. `markDispatchRetryStarted` keeps the FIRST stamp (COALESCE), RETURNS
+ *      the stamp the row carries (review L3 — the budget's epoch), and cannot
+ *      reach a row that is not `approved` (returns null).
+ *   4. `applyTransition` clears it on a status change and on a re-time — and a
+ *      failure after a re-time is measured from its own stamp (L3).
+ *   5. `clearDispatchRetryClock` (a hold, a successful send) clears it on an
+ *      `approved` row without touching the status.
  *
  * Probes that must not persist run in a SAVEPOINT that is always rolled back;
  * a probe that matched no row is a failure, never a false "ok". Requires 0311
@@ -153,17 +157,21 @@ describe('F119 PR-E — broadcasts.dispatch_first_failed_at (mig 0311)', () => {
     const submitted = await seed('submitted');
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
 
-    await runInTenant(tenant.ctx, (tx) =>
+    const first = await runInTenant(tenant.ctx, (tx) =>
       repo.markDispatchRetryStarted(tx, tenant.ctx.slug, approved, FIRST_FAILURE),
     );
-    await runInTenant(tenant.ctx, (tx) =>
+    const later = await runInTenant(tenant.ctx, (tx) =>
       repo.markDispatchRetryStarted(tx, tenant.ctx.slug, approved, LATER_FAILURE),
     );
     // A row outside `approved` is not in a dispatch attempt: no stamp, no error.
-    await runInTenant(tenant.ctx, (tx) =>
+    const outside = await runInTenant(tenant.ctx, (tx) =>
       repo.markDispatchRetryStarted(tx, tenant.ctx.slug, submitted, FIRST_FAILURE),
     );
 
+    // RETURNING answers the stamp the row carries: the first failure, both times.
+    expect(first?.toISOString()).toBe(FIRST_FAILURE.toISOString());
+    expect(later?.toISOString()).toBe(FIRST_FAILURE.toISOString());
+    expect(outside).toBeNull();
     expect((await readStamp(approved))?.toISOString()).toBe(FIRST_FAILURE.toISOString());
     expect(await readStamp(submitted)).toBeNull();
     // The status was not touched.
@@ -192,5 +200,37 @@ describe('F119 PR-E — broadcasts.dispatch_first_failed_at (mig 0311)', () => {
     expect(moved.dispatchFirstFailedAt).toBeNull();
     expect(await readStamp(leaving)).toBeNull();
     expect(await readStamp(retimed)).toBeNull();
+  });
+
+  it('review L3 — after a re-time, the next failure RETURNS its own stamp, not the one the dispatcher read before it', async () => {
+    const id = await seed('approved');
+    const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+    // The dispatcher's Step-1 read would see this 61-minute-old stamp …
+    await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, FIRST_FAILURE));
+    // … then an admin re-times the row (it stays approved; the clock clears) …
+    await runInTenant(tenant.ctx, (tx) =>
+      repo.applyTransition(tx, tenant.ctx.slug, id, 'approved', { scheduledFor: LATER_FAILURE }, 'approved'),
+    );
+    // … and the same tick fails: the epoch the budget uses is the returned one.
+    const epoch = await runInTenant(tenant.ctx, (tx) =>
+      repo.markDispatchRetryStarted(tx, tenant.ctx.slug, id, LATER_FAILURE),
+    );
+
+    expect(epoch?.toISOString()).toBe(LATER_FAILURE.toISOString());
+  });
+
+  it('clearDispatchRetryClock clears a stamped approved row and leaves its status alone; a clean row is a no-op', async () => {
+    const stamped = await seed('approved');
+    const clean = await seed('approved');
+    const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+    await runInTenant(tenant.ctx, (tx) => repo.markDispatchRetryStarted(tx, tenant.ctx.slug, stamped, FIRST_FAILURE));
+
+    await runInTenant(tenant.ctx, (tx) => repo.clearDispatchRetryClock(tx, tenant.ctx.slug, stamped));
+    await runInTenant(tenant.ctx, (tx) => repo.clearDispatchRetryClock(tx, tenant.ctx.slug, clean));
+
+    expect(await readStamp(stamped)).toBeNull();
+    expect(await readStamp(clean)).toBeNull();
+    const row = await runInTenant(tenant.ctx, (tx) => repo.findByIdInTx(tx, tenant.ctx.slug, stamped));
+    expect(row?.status).toBe('approved');
   });
 });

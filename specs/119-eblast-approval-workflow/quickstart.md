@@ -1473,8 +1473,9 @@ PR-2 builds on PR-1.
   every transaction. Three answers besides "send" (the maintainer's decision, R1):
   - **Held** — a `suspended` membership (an unpaid renewal whose paid period has ended, a new
     member's unpaid first bill, or `pending_admin_reactivation`; since #397 an early renewal bill
-    no longer suspends a member who paid for the current period). Nothing is sent or
-    written, no audit row, no email; the row stays `approved` with its slot reserved and every
+    no longer suspends a member who paid for the current period). Nothing is sent, no audit
+    row, no email; the only write is the FR-021 retry-clock reset (F119 PR-E — only on a row
+    whose clock was running); the row stays `approved` with its slot reserved and every
     tick re-checks it. It sends once the cycle completes (possibly after `scheduled_for`) and is
     refused once the cycle lapses. Counted by `broadcasts_dispatch_standing_held_total` and the
     cron's `held` bucket; the staff detail page shows a "held" note once the send time has passed.
@@ -1490,8 +1491,10 @@ PR-2 builds on PR-1.
 
   Mail a prior tick already handed to Resend is never refused. The interim "cancel `approved`
   rows by hand" step is retired. The FR-021 retry budget counts from the first retryable failure
-  of the attempt (`dispatch_first_failed_at`, migration `0311`, F119 PR-E), so a held row that
-  resumes late gets its full hour. **Known limitation:** a held row sits in
+  of the attempt (`dispatch_first_failed_at`, migration `0311`, F119 PR-E), and every held tick
+  resets it, so a held row that resumes late gets its full hour even if it had failed before the
+  hold. A `READ_ONLY_MODE` freeze does not reset it (residual + re-time mitigation, and the PR-E
+  rollback note: runbook § Dispatch standing refusal). **Known limitation:** a held row sits in
   `broadcasts_approved_overdue_count` (its alarm stays on for the hold); that cannot be fixed
   without recording the hold on the row. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch
   standing refusal.

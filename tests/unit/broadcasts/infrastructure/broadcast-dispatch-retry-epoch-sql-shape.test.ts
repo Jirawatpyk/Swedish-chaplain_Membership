@@ -28,8 +28,12 @@ interface Sent {
   readonly params: readonly unknown[];
 }
 
-/** A Drizzle handle whose driver records every statement instead of running it. */
-function recordingTx(): { tx: unknown; sent: Sent[] } {
+/**
+ * A Drizzle handle whose driver records every statement instead of running it.
+ * `returned` is what an UPDATE … RETURNING answers (pg-proxy rows are arrays of
+ * column values); default none, i.e. no row matched.
+ */
+function recordingTx(returned: unknown[][] = []): { tx: unknown; sent: Sent[] } {
   const sent: Sent[] = [];
   const tx = drizzle(async (sqlText, params) => {
     sent.push({ sql: sqlText, params });
@@ -37,6 +41,7 @@ function recordingTx(): { tx: unknown; sent: Sent[] } {
     if (sqlText.includes("current_setting('app.current_tenant'")) {
       return { rows: [{ current_tenant: TENANT }] };
     }
+    if (/\breturning\b/i.test(sqlText)) return { rows: returned };
     return { rows: [] };
   });
   return { tx, sent };
@@ -80,13 +85,50 @@ describe('markDispatchRetryStarted — SQL shape', () => {
     expect(update.params).toContain(AT.toISOString());
   });
 
-  it('matching no row (the row left approved) is not an error — there is no attempt left to time', async () => {
+  it('matching no row (the row left approved) is not an error — it answers null: there is no attempt left to time', async () => {
     const { tx } = recordingTx();
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
     await expect(
       repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
+  });
+
+  it('review L3 — RETURNS the stamp the row carries (the budget epoch), not the instant it was asked to write', async () => {
+    const earlier = '2026-09-26T01:30:00.000Z';
+    const { tx, sent } = recordingTx([[earlier]]);
+    const repo = makeDrizzleBroadcastsRepo(TENANT);
+
+    const stamp = await repo.markDispatchRetryStarted(tx, TENANT as never, BROADCAST_ID, AT);
+
+    expect(theUpdate(sent).sql).toMatch(/\breturning\s+"dispatch_first_failed_at"/i);
+    expect(stamp).toEqual(new Date(earlier));
+  });
+});
+
+describe('clearDispatchRetryClock — SQL shape', () => {
+  it('writes NULL only on a STAMPED row still approved, and never writes status', async () => {
+    const { tx, sent } = recordingTx();
+    const repo = makeDrizzleBroadcastsRepo(TENANT);
+
+    await expect(repo.clearDispatchRetryClock(tx, TENANT as never, BROADCAST_ID)).resolves.toBeUndefined();
+
+    expect(sent[0]?.sql).toContain("current_setting('app.current_tenant'");
+    const update = theUpdate(sent);
+    const set = setClause(update.sql);
+    const slot = /"dispatch_first_failed_at"\s*=\s*\$(\d+)/.exec(set);
+    expect(slot, 'the SET list does not write dispatch_first_failed_at').not.toBeNull();
+    expect(update.params[Number(slot?.[1]) - 1]).toBeNull();
+    expect(set).not.toMatch(/"status"/);
+    const where = update.sql.slice(update.sql.search(/\bwhere\b/i));
+    expect(where).toMatch(/"broadcasts"\."tenant_id"\s*=\s*\$\d+/);
+    expect(where).toMatch(/"broadcasts"\."broadcast_id"\s*=\s*\$\d+/);
+    expect(where).toMatch(/"broadcasts"\."status"\s*=\s*\$\d+/);
+    // A hold on a clean row must be a 0-row UPDATE (no updated_at bump per tick).
+    expect(where).toMatch(/"broadcasts"\."dispatch_first_failed_at"\s+is\s+not\s+null/i);
+    expect(update.params).toContain('approved');
+    expect(update.params).toContain(TENANT);
+    expect(update.params).toContain(BROADCAST_ID);
   });
 });
 

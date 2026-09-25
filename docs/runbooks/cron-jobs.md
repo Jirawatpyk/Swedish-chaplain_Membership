@@ -161,7 +161,7 @@ with the exceptions below):
 | F8 reminder retry pass (inside the dispatch worker) | — | A reminder whose 24 h `retry_until` budget expires during the freeze is marked exhausted without a retry. |
 | F8 `reconcile-pending-reactivations-coordinator` | Catches up | Missed day-23/27/29 reminders collapse into one pass; if the request passes day 30 during the freeze the timeout + refund run first and the reminders are never sent. |
 | F7 `prune-expired-drafts` — E-Blast approval lifecycle | Catches up | Only the latest due reminder is sent (a missed day 3 is replaced by day 7). The 30-day clock keeps running: a freeze across day 30 expires the E-Blast (`expired_no_member_response`) without the day-23 warning. |
-| F7 `dispatch-scheduled` | Catches up — every overdue `approved` E-Blast sends on the first tick | Nothing on a clean row: the FR-021 retry hour counts from the first retryable Resend failure (`dispatch_first_failed_at`, mig `0311`), not from `scheduled_for`. A row that had ALREADY failed before the freeze keeps its clock, so a freeze longer than the rest of its hour makes its next retryable failure terminal. |
+| F7 `dispatch-scheduled` | Catches up — every overdue `approved` E-Blast sends on the first tick | Nothing on a clean row: the FR-021 retry hour counts from the first retryable Resend failure (`dispatch_first_failed_at`, mig `0311`), not from `scheduled_for`. **Residual (not fixed, by design — a paused cron cannot write):** a row that had ALREADY failed before the freeze keeps its clock, so a freeze longer than the rest of its hour makes its next retryable failure terminal (a hold, by contrast, resets the clock every tick). **Mitigation:** after lifting a long freeze, re-time each `approved` row with `dispatch_first_failed_at IS NOT NULL` from the staff page — a re-time clears the clock (`eblast-approval.md` § Dispatch standing refusal). |
 | `auto-draft-coordinator` | Catches up inside the lead window | A cycle whose `expires_at` passes during the freeze never gets an auto-draft (window `expires_at > now AND <= now + lead`, lead ≈ 30 days) — only a freeze of about a month reaches this. |
 | `enter-awaiting-payment`, `lapse-cycles-on-grace-expiry`, `prune-auto-drafts`, `reconcile-issued-orphans`, `reconcile-coverage-ends`, weekly at-risk / tier-upgrade / prune-consumed-tokens / reconcile-pending-applications | Catch up fully | Predicates compare against `now` or current state. A late lapse still waits for its 14-day statutory warning. |
 | Redactions, retention sweeps, `outbox-purge`, `prune-orphaned-zero-rate-certs`, `prune-expired-invitations`, `lockout-cleanup`, `reclaim-orphan-audiences`, `cleanup-audiences`, `reconcile-stuck-sending`, `reconcile-erasures`, F9 export jobs + snapshot refresh | Catch up fully | Cutoffs are `now − retention`; `sweep-error-csv-blobs` drains 100 per run, so a backlog takes several days. An expired lockout is already ignored at sign-in; the cron only tidies the row. |
@@ -169,7 +169,9 @@ with the exceptions below):
 **Operator checklist when lifting a freeze that lasted more than a day:** watch
 the first `dispatch-scheduled` and `outbox-dispatch` ticks for Resend errors;
 for a freeze longer than 7 days, list the renewal reminder steps that fell
-outside the look-back and send them by hand from the renewals pipeline.
+outside the look-back and send them by hand from the renewals pipeline. For a
+freeze longer than an hour, re-time every `approved` E-Blast whose
+`dispatch_first_failed_at` is set (the `dispatch-scheduled` row above).
 
 ## F4 — redact-expired-event-buyers (NEW — 054 Task 15)
 

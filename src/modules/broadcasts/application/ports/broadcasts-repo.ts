@@ -35,7 +35,8 @@ import type { ChamberSubstitutedBody } from '../../domain/value-objects/template
  *
  * One adapter-owned write is deliberately OFF this tuple: the adapter resets
  * `dispatchFirstFailedAt` (F119 PR-E, 0311) to NULL on a status change or a
- * re-time by itself. No caller sets it; only `markDispatchRetryStarted` stamps it.
+ * re-time by itself. No caller sets it; only `markDispatchRetryStarted` stamps it
+ * and only `clearDispatchRetryClock` resets it outside a transition.
  */
 export const TRANSITION_FIELDS = [
   'submittedAt',
@@ -454,18 +455,42 @@ export interface BroadcastsRepo {
    * - The FIRST failure of an attempt wins: COALESCE never moves an existing
    *   stamp, so an overlapping tick cannot restart the budget.
    * - No status change and not through `applyTransition` — the row stays
-   *   `approved` for the next tick. `applyTransition` is what clears it.
-   * - Zero rows matched is NOT an error, unlike the `attach*` siblings: the
-   *   only way to miss is a row that left `approved` since the dispatcher read
-   *   it (a cancel, a withdrawal) or is gone, and in both cases there is no
-   *   attempt left to time. Those siblings throw because a lost CAS there means
-   *   a Resend resource must be reclaimed; nothing is minted here.
+   *   `approved` for the next tick. `applyTransition` and
+   *   `clearDispatchRetryClock` are what clear it.
+   * - Returns the EFFECTIVE stamp (`RETURNING`), which is the budget's epoch.
+   *   The caller's Step-1 snapshot can be stale: an admin re-time between the
+   *   read and this failure clears the column and leaves the row `approved`,
+   *   and budgeting from the snapshot would kill the freshly re-timed row.
+   * - `null` = zero rows matched. NOT an error, unlike the `attach*` siblings:
+   *   the only way to miss is a row that left `approved` since the dispatcher
+   *   read it (a cancel, a withdrawal, another tick's transition) or is gone,
+   *   and in every case there is no attempt left to time — the caller stops
+   *   without a terminal write. Those siblings throw because a lost CAS there
+   *   means a Resend resource must be reclaimed; nothing is minted here.
    */
   markDispatchRetryStarted(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     at: Date,
+  ): Promise<Date | null>;
+
+  /**
+   * F119 PR-E (migration 0311) — reset the FR-021 retry clock
+   * (`dispatch_first_failed_at = NULL`) on a row still `approved`, WITHOUT a
+   * status change. Called by both dispatch legs when the attempt's clock stops
+   * meaning anything: a HOLD (a suspended member — the row may sit for days)
+   * and a successful `sendBroadcast` (the provider took the mail; nothing left
+   * to budget). In its own tx, outside any row lock.
+   *
+   * Matches only a STAMPED row (`dispatch_first_failed_at IS NOT NULL`), so a
+   * hold on a clean row writes nothing — no `broadcasts_set_updated_at` bump
+   * every five minutes for a days-long hold. Zero rows matched is not an error.
+   */
+  clearDispatchRetryClock(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
   ): Promise<void>;
 
   /**

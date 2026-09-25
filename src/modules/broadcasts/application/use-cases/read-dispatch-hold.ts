@@ -4,7 +4,7 @@
  * The staff detail page (`/admin/broadcasts/[id]`) shows a note on an
  * `approved` E-Blast whose `scheduled_for` has passed while the member's
  * membership is `suspended` (awaiting payment): the dispatch cron holds such a
- * row every tick — nothing sent, nothing written — until the cycle completes
+ * row every tick — nothing sent, only the FR-021 retry clock reset — until the cycle completes
  * (it sends) or lapses (it is refused). Without the note the row reads as an
  * overdue send with no explanation.
  *

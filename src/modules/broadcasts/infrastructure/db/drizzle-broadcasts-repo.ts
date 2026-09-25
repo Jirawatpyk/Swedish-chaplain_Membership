@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -1172,18 +1172,19 @@ export function makeDrizzleBroadcastsRepo(
     /**
      * F119 PR-E (0311) — see the port docblock. COALESCE keeps the first stamp,
      * the status predicate keeps it off a row that left `approved`, and a
-     * 0-row match returns quietly (nothing was minted, so there is nothing to
-     * reclaim — unlike the `attach*` CAS writes above).
+     * 0-row match answers `null` (nothing was minted, so there is nothing to
+     * reclaim — unlike the `attach*` CAS writes above). `RETURNING` hands back
+     * the stamp the row actually carries, which is the budget's epoch.
      */
     async markDispatchRetryStarted(
       txUnknown,
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       at: Date,
-    ): Promise<void> {
+    ): Promise<Date | null> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'markDispatchRetryStarted');
-      await tx
+      const rows = await tx
         .update(broadcasts)
         .set({
           // ISO text + explicit cast: a raw `Date` inside a `sql` template is
@@ -1196,6 +1197,33 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
             eq(broadcasts.status, 'approved'),
+          ),
+        )
+        .returning({ dispatchFirstFailedAt: broadcasts.dispatchFirstFailedAt });
+      return rows[0]?.dispatchFirstFailedAt ?? null;
+    },
+
+    /**
+     * F119 PR-E (0311) — see the port docblock. Only a STAMPED row still
+     * `approved` matches, so a hold on a clean row is a 0-row UPDATE (no
+     * `broadcasts_set_updated_at` bump); 0 rows is not an error.
+     */
+    async clearDispatchRetryClock(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'clearDispatchRetryClock');
+      await tx
+        .update(broadcasts)
+        .set({ dispatchFirstFailedAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'approved'),
+            isNotNull(broadcasts.dispatchFirstFailedAt),
           ),
         );
     },

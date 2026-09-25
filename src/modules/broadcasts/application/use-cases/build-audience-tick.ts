@@ -54,7 +54,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { classifyThrown, isRetryableThrow } from './_classify-thrown';
-import { dispatchRetryEpoch, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
+import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import type { TenantContext } from '@/modules/tenants';
@@ -454,7 +454,10 @@ export async function buildAudienceTick(
  * anything else is the tick's answer.
  *
  * - `hold` (R1, a `suspended` membership) — `dispatch_held_member_suspended`:
- *   nothing sent, nothing written, nobody told; the next tick asks again.
+ *   nothing sent, nobody told, no audit; the ONE write is the FR-021 retry-clock
+ *   reset (F119 PR-E, review H1 — best-effort, own tx, a stamped row only), so a
+ *   failure before a days-long hold cannot make the first blip after it
+ *   terminal. The next tick asks again.
  * - `refuse` (halted, or the membership ENDED) — PERMANENT, and writes BOTH
  *   audit rows in the terminal transaction: the `broadcast_failed_to_dispatch`
  *   row every terminal failure writes, and the standing refusal under submit's
@@ -477,6 +480,8 @@ async function applySendStanding(
   if (standing.kind === 'send') return null;
   if (standing.kind === 'hold') {
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
+    // Outside every tx: the Step-1 lock tx has committed.
+    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
   if (standing.kind === 'refuse') {
@@ -758,6 +763,12 @@ async function onRetryable(
     now,
     'broadcasts.audience_import.retry_epoch_stamp_failed',
   );
+  if (epoch === null) {
+    // Review L3 — the stamp matched no `approved` row: another writer moved it
+    // since Step 1. No attempt is left to fail, so no terminal write, nobody
+    // told; the cron buckets this as a concurrent skip.
+    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+  }
   const elapsedMs = now.getTime() - epoch.getTime();
   if (elapsedMs <= RETRY_BUDGET_MS) {
     return err({ kind: 'dispatch.server_error', message, phase: 'gateway' });
@@ -1316,6 +1327,12 @@ async function confirmImport(
       'broadcasts.audience_import.send_idempotency_replay',
     );
   }
+  // F119 PR-E (review M1) — the provider has the mail: nothing is left to
+  // budget, so reset the FR-021 clock before the writes below that may fail.
+  // This leg has no inherited-id probe, so a stamp surviving a delivered send
+  // would be inherited by any later budgeted failure on the row. Own tx,
+  // best-effort (never throws).
+  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
 
   // ## Round 3 finding 3-6 — the cancel window, and why the ids go FIRST
   //

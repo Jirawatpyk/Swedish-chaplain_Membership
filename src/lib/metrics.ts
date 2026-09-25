@@ -2080,6 +2080,25 @@ export const broadcastsMetrics = {
     });
   },
 
+  /**
+   * `broadcasts_dispatch_retry_stamp_failed_total{tenant}` — F119 PR-E (0311,
+   * review L1). The FR-021 clock write (`markDispatchRetryStarted`) failed on a
+   * retryable gateway failure, so that tick measured its budget from `now` (or
+   * from the row's existing stamp). A stamp that fails EVERY tick means the
+   * budget never starts and the row retries for ever; the warn log
+   * `broadcasts.{dispatch,audience_import}.retry_epoch_stamp_failed` alone was
+   * the only trace. Steady state 0; sustained non-zero = the stamp write is
+   * broken (observability.md, next to the budget rows).
+   */
+  dispatchRetryStampFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_dispatch_retry_stamp_failed_total',
+        'FR-021 retry-clock stamp write failed; the budget did not start this tick',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
   // --- T172 (Phase 9) — full F7 metrics catalogue --------------------------
   // Wires the remaining metrics from observability.md § 22.1 + plan.md
   // § Performance & Capacity Metrics list. Cardinality discipline:

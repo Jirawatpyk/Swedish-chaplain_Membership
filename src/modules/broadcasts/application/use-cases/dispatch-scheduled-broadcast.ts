@@ -88,7 +88,7 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 // dispatcher's per-attempt permanent-fail decision). The budget fires only when
 // WE attempt and Resend rejects; a paused cron, a hold or the read-only freeze
 // never spends it, because nothing failed.
-import { dispatchRetryEpoch, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
+import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -556,10 +556,38 @@ export async function dispatchScheduledBroadcast(
     try {
       probe = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
     } catch (e) {
-      // The same rules as every other gateway throw — including the FR-021
-      // budget for a retryable one. This is not the Step-3 try, so it cannot
-      // borrow that catch; it borrows the function the catch calls.
-      return await settleGatewayThrow(deps, input, broadcast, now, e, classifyThrown(e));
+      const shape = classifyThrown(e);
+      // F119 PR-E (review M1) — a RETRYABLE probe throw is retried and never
+      // budgeted (nor stamped). Follow-up (4) put it on the FR-021 budget as
+      // "just another gateway call", but a probe that cannot be answered says
+      // nothing about whether this inherited resource was already handed to
+      // `/send` — the same reason the `unknown` arm below refuses without a
+      // clock. The sequence that made it concrete: first blip stamped at T0 →
+      // the send SUCCEEDS at T0+5 but the `sending` flip hits a DB fault that
+      // lasts an hour (the post-send clock reset in `advanceToSending` fails
+      // with it) → the next tick's probe throws one blip → budget from T0 →
+      // `failed_to_dispatch`, a false member email and a released quota slot
+      // for mail that went out. The budget still bounds the SEND: once the
+      // probe answers `draft`, a failing send is measured from the row's stamp.
+      // The operator signal for a probe that never answers is the same as the
+      // `unknown` arm's: `broadcasts_approved_overdue_count`.
+      if (shape.kind === 'retryable') {
+        const subKind = (shape.subKind as 'network' | 'timeout' | 'server_5xx' | 'api') ?? 'api';
+        logger.warn(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            subKind,
+          },
+          'broadcasts.dispatch.inherited_probe_retryable',
+        );
+        return err({ kind: 'gateway_retryable', subKind, reason: shape.reason ?? 'retryable' });
+      }
+      // Every other class follows the rules of every other gateway throw. This
+      // is not the Step-3 try, so it cannot borrow that catch; it borrows the
+      // function the catch calls.
+      return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
     }
     if (probe.kind === 'present') {
       observedResendStatus = probe.resource.status;
@@ -665,8 +693,9 @@ export async function dispatchScheduledBroadcast(
   // rule approve and confirm-schedule follow).
   //
   // The decision is `_dispatch-standing-gate.ts`'s, shared with the import
-  // leg: a `suspended` membership (awaiting payment) is HELD — nothing sent or
-  // written, the row stays `approved`, the next tick asks again (R1); a halt
+  // leg: a `suspended` membership (awaiting payment) is HELD — nothing sent, the
+  // only write the FR-021 retry-clock reset, the row stays `approved`, the next
+  // tick asks again (R1); a halt
   // (re-read uncached first, R2) or an ENDED membership is a PERMANENT
   // refusal; a read that fails decides nothing — fail CLOSED, nothing is sent.
   if (!alreadyHandedToSend) {
@@ -677,6 +706,11 @@ export async function dispatchScheduledBroadcast(
     );
     if (standing.kind === 'hold') {
       recordDispatchHold(deps.tenant.slug, input.broadcastId as string, 'live');
+      // F119 PR-E (review H1) — the one write a hold makes: reset the FR-021
+      // clock, so a failure → a two-day hold → the member pays → one blip is
+      // not `retry_budget_exhausted`. Own tx, no row lock held (the Step-1 tx
+      // committed); a stamped row only, and best-effort — still held on failure.
+      await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed');
       return ok({ kind: 'dispatch_held_member_suspended' });
     }
     if (standing.kind === 'refuse') {
@@ -1435,6 +1469,14 @@ async function advanceToSending(ctx: {
     observedResendStatus,
     resendSentAt,
   } = ctx;
+  // F119 PR-E (review M1) — every caller reaches here with the provider holding
+  // the mail: this tick's `sendBroadcast` succeeded, a post-send 409 replayed
+  // it, or the probe saw an earlier tick's send. Nothing is left to budget, so
+  // reset the FR-021 clock FIRST, before the write below that may fail. Own tx,
+  // best-effort (never throws). It cannot close M1 alone — in a DB fault it
+  // fails with that write — which is why the probe's retryable throw is not
+  // budgeted either.
+  await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed');
   try {
     const sentRow = await deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.attachResendIds(
@@ -1735,6 +1777,10 @@ async function advanceToSending(ctx: {
  * hour late on its FIRST blip; the leak that made unbounded retry costly there
  * is closed by `reclaimMintedBroadcast`).
  *
+ * Nor to a RETRYABLE throw of the inherited-id probe (F119 PR-E, review M1): an
+ * unanswered probe cannot say whether the mail already went out, so it is
+ * retried without a clock (see the probe's catch).
+ *
  * F119 PR-E — the budget now counts from the first retryable failure
  * (`dispatchRetryEpoch`), which removes the "an hour late on its first blip"
  * defect for THIS arm. It does not by itself make the DB-fault arms above safe
@@ -1772,6 +1818,15 @@ async function applyRetryBudget(
     now,
     'broadcasts.dispatch.retry_epoch_stamp_failed',
   );
+  if (epochForBudget === null) {
+    // Review L3 — the stamp matched no `approved` row: another writer moved it
+    // since Step 1 (a cancel, a withdrawal, another tick). No attempt is left
+    // to fail, so no terminal write and nobody told — the Step-1 answer.
+    return err({
+      kind: 'broadcast_invalid_state_transition',
+      observedStatus: 'unknown_or_already_processed',
+    });
+  }
   const elapsedMs = now.getTime() - epochForBudget.getTime();
   const pastBudget = elapsedMs > RETRY_BUDGET_MS;
 
@@ -1854,7 +1909,9 @@ async function applyRetryBudget(
  * loss and NOT a post-send 409 (the two arms the Step-3 catch keeps for itself).
  * 2026-09-10 follow-ups (3)/(4): the inherited-id probe moved ahead of Step 2
  * into its own try, and its throws must be settled by the SAME rules as the
- * rest of the gateway — one reader, as `_classify-thrown.ts` says.
+ * rest of the gateway — one reader, as `_classify-thrown.ts` says. (Except a
+ * RETRYABLE probe throw, which the probe's catch keeps off the budget — F119
+ * PR-E, review M1.)
  */
 async function settleGatewayThrow(
   deps: DispatchScheduledBroadcastDeps,
