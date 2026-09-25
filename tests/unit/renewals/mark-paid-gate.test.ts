@@ -10,13 +10,24 @@
 import { describe, expect, it } from 'vitest';
 import {
   PAYABLE_STATUSES,
+  resolveLiveLinkedBill,
   shouldOfferMarkPaid,
 } from '@/app/(staff)/admin/renewals/_lib/mark-paid-gate';
 
 describe('mark-paid gate', () => {
   it('offers mark-paid only for payable statuses (mirrors the route guard)', () => {
-    expect(shouldOfferMarkPaid('upcoming')).toBe(true);
-    expect(shouldOfferMarkPaid('awaiting_payment')).toBe(true);
+    expect(shouldOfferMarkPaid('upcoming', null)).toBe(true);
+    expect(shouldOfferMarkPaid('awaiting_payment', null)).toBe(true);
+  });
+
+  // A payable-status cycle that already carries a live linked bill (e.g. an
+  // `awaiting_payment` cycle after the member confirmed early) is refused by
+  // the use-case with `membership_bill_already_exists` — mint-and-pay must
+  // never be offered there; staff record the payment on that bill instead.
+  it('never offers mark-paid when the cycle already has a live linked bill', () => {
+    const invoiceId = '22222222-2222-2222-2222-222222222222';
+    expect(shouldOfferMarkPaid('awaiting_payment', invoiceId)).toBe(false);
+    expect(shouldOfferMarkPaid('upcoming', invoiceId)).toBe(false);
   });
 
   it('never offers mark-paid for terminal / reminded / pending statuses', () => {
@@ -27,11 +38,44 @@ describe('mark-paid gate', () => {
       'cancelled',
       'pending_admin_reactivation',
     ] as const) {
-      expect(shouldOfferMarkPaid(s)).toBe(false);
+      expect(shouldOfferMarkPaid(s, null)).toBe(false);
     }
   });
 
   it('PAYABLE_STATUSES has exactly the two the cycle-detail control uses', () => {
     expect([...PAYABLE_STATUSES].sort()).toEqual(['awaiting_payment', 'upcoming']);
+  });
+});
+
+describe('resolveLiveLinkedBill (cycle-detail page)', () => {
+  const invoiceId = '22222222-2222-2222-2222-222222222222';
+
+  it('is null when the cycle has no linked invoice', () => {
+    expect(resolveLiveLinkedBill(null, null)).toBeNull();
+  });
+
+  it('carries the printed bill number for a live linked bill', () => {
+    expect(
+      resolveLiveLinkedBill(invoiceId, {
+        invoiceNumber: 'SC-2026-000412',
+        status: 'issued',
+      }),
+    ).toEqual({ invoiceId, billNumber: 'SC-2026-000412' });
+  });
+
+  it('is null when F4 reports the linked invoice void', () => {
+    expect(
+      resolveLiveLinkedBill(invoiceId, { invoiceNumber: 'SC-2026-000412', status: 'void' }),
+    ).toBeNull();
+  });
+
+  it('treats a degraded F4 fetch as live (fail-closed: never offer mint-and-pay)', () => {
+    expect(
+      resolveLiveLinkedBill(invoiceId, { invoiceNumber: null, status: 'unknown' }),
+    ).toEqual({ invoiceId, billNumber: null });
+    expect(resolveLiveLinkedBill(invoiceId, null)).toEqual({
+      invoiceId,
+      billNumber: null,
+    });
   });
 });
