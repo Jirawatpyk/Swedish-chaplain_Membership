@@ -20,7 +20,7 @@
  * canonical gate — this UI affordance is defence-in-depth.
  */
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Plus,
@@ -44,6 +44,7 @@ import {
 import { StepCard } from './step-card';
 import { ReminderTimeline } from './reminder-timeline';
 import { composeUniqueStepId, composeTemplateId } from './step-id-composer';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 // ---------------------------------------------------------------------------
 // Wire-shape types — match the route-handler JSON contract.
@@ -222,7 +223,7 @@ export function ScheduleEditor({
   // J1-B8: locale-aware date formatter (next-intl) replaces raw
   // `toLocaleString()` which leaks browser default locale and never
   // surfaces Buddhist Era for `th-TH` users.
-  const fmt = useFormatter();
+  const locale = useLocale();
   const [byBucket, setByBucket] = useState(() => policiesByBucket(initialPolicies));
   // Follow-up (`.superpowers/sdd/followup-saverace-brief.md`) — a ref
   // mirror of `byBucket` so `handleSave`'s success branch can read the
@@ -618,7 +619,7 @@ export function ScheduleEditor({
                   {lastSavedAt ? (
                     <span>
                       {t('lastSaved', {
-                        date: fmt.dateTime(new Date(lastSavedAt), 'dateTimeMedium'),
+                        date: formatDatePreset(lastSavedAt, locale, 'dateTimeMedium'),
                       })}
                     </span>
                   ) : null}

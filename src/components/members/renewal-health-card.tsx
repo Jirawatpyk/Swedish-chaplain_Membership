@@ -13,13 +13,13 @@
  * band are rendered as visible TEXT labels, never colour-alone. The Badge
  * variant is decorative; the localised label carries the meaning.
  *
- * Localisation: the expiry date is formatted via next-intl `useFormatter`
+ * Localisation: the expiry date is formatted via `formatDatePreset` (en-GB for English)
  * so th-TH renders Buddhist-Era years (display-only) — the prop is an ISO
  * 8601 UTC string, never a pre-formatted/raw `.toISOString()` slice.
  */
 import Link from 'next/link';
 import { ArrowRightIcon, CalendarClockIcon } from 'lucide-react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useFormatter, useLocale, useTranslations } from 'next-intl';
 import {
   Card,
   CardContent,
@@ -30,6 +30,7 @@ import { buttonVariants } from '@/components/ui/button';
 import type { CycleStatus } from '@/modules/renewals/client';
 import type { EngagementBand } from '@/modules/insights';
 import { RenewLapsedMemberDialog } from '@/components/members/renew-lapsed-member-dialog';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface RenewalHealthCardProps {
   /**
@@ -118,6 +119,7 @@ export function RenewalHealthCard({
   const t = useTranslations('admin.members.detail.renewalHealth');
   const tBand = useTranslations('admin.members.directory.engagementBand');
   const format = useFormatter();
+  const locale = useLocale();
 
   const hasEngagement = engagementScore !== null && engagementBand !== null;
 
@@ -192,7 +194,7 @@ export function RenewalHealthCard({
                 {expiryIso !== null ? (
                   <div className="flex flex-col">
                     <span>
-                      {format.dateTime(new Date(expiryIso), 'dateMedium2Digit')}
+                      {formatDatePreset(expiryIso, locale, 'dateMedium2Digit')}
                     </span>
                     {daysRemaining !== null && (
                       <span className="text-caption text-muted-foreground">

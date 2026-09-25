@@ -1,10 +1,15 @@
 import { type Locale } from './config';
 
 /**
- * Named dateTime format presets for next-intl.
+ * Named dateTime format presets.
  *
- * `th` gets `calendar: 'buddhist'` explicitly so all `format.dateTime(d, 'preset')`
- * calls render Buddhist-Era years without relying on ICU's fragile bare-'th' default.
+ * Rendered through `formatDatePreset` (src/lib/format-date-localised.ts), which
+ * maps English to en-GB; next-intl's own `format.dateTime` is banned by
+ * `scripts/check-dates.ts` because it formats English en-US. The presets stay
+ * wired into next-intl's `formats` config as well.
+ *
+ * `th` gets `calendar: 'buddhist'` explicitly so every preset renders
+ * Buddhist-Era years without relying on ICU's fragile bare-'th' default.
  * `en` and `sv` use Gregorian (no calendar override).
  *
  * Exported for unit-testing: `buildFormats('th').dateTime.dateMedium` must include
@@ -25,7 +30,8 @@ import { type Locale } from './config';
 /**
  * Union of the six named dateTime preset keys understood by `buildFormats()`.
  *
- * Exported so that `GraceFormatter` (format-grace-timestamp.ts) and the
+ * Exported so that `formatDatePreset` (src/lib/format-date-localised.ts), which
+ * renders these presets en-GB for English, and the
  * `src/i18n/next-intl.d.ts` AppConfig augmentation can reference the canonical
  * set without duplicating string literals.  Adding or removing a key here is a
  * compile error at every call site that uses the preset-name overload.

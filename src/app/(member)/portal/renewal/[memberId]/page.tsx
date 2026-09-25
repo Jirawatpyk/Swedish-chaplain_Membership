@@ -15,7 +15,7 @@
  * is already established.
  */
 import { notFound, redirect } from 'next/navigation';
-import { getFormatter, getLocale, getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -45,6 +45,7 @@ import { resolvePlanName } from '@/lib/resolve-plan-name';
 // dashboard's "Renew now" CTA gates on the SAME predicate, so the two can
 // never disagree. Lives in `portal/_lib` (not this route's `_lib`).
 import { isRenewalPayable } from '../../_lib/is-renewal-payable';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 export default async function RenewalPortalPage({
   params,
@@ -64,7 +65,6 @@ export default async function RenewalPortalPage({
   // is added without a matching key (matches K28 cycle-detail pattern).
   const tTier = await getTranslations('admin.renewals.tierBadge');
   // I16 review-fix: locale-aware date formatting via next-intl.
-  const formatter = await getFormatter();
   const locale = await getLocale();
 
   // Resolve the session-member.
@@ -258,7 +258,7 @@ export default async function RenewalPortalPage({
             <dt className="text-muted-foreground">{tField('expiry')}</dt>
             <dd>
               <time dateTime={summary.expiresAt}>
-                {formatter.dateTime(new Date(summary.expiresAt), 'dateLong')}
+                {formatDatePreset(summary.expiresAt, locale, 'dateLong')}
               </time>
             </dd>
           </dl>

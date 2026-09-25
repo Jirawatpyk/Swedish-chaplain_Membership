@@ -23,7 +23,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { InfoIcon } from 'lucide-react';
 import { Stepper, type StepperStep } from '@/components/ui/stepper';
@@ -64,7 +64,7 @@ interface GeneratedSecret {
 
 export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardProps) {
   const t = useTranslations('admin.integrations.eventcreate.wizard');
-  const format = useFormatter();
+  const locale = useLocale();
   const router = useRouter();
 
   // Initial phase derives from props: configured tenants land on
@@ -194,11 +194,11 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   // `secretConfigured: true` branch (type-design C4).
   const configured = view.secretConfigured ? view : null;
   // 05-13 (UX F-01/F-02) — format ISO
-  // timestamp via `next-intl`'s `useFormatter().dateTime()` so TH/SV
-  // see locale-correct date+time strings instead of the raw ISO
+  // timestamp via `formatGraceTimestamp` (the central date helper) so
+  // TH/SV/EN see locale-correct date+time strings instead of the raw ISO
   // form. Falls back to the raw ISO if `Date` rejects the input.
   const graceActiveUntilDisplay = configured?.graceActiveUntil
-    ? formatGraceTimestamp(format, configured.graceActiveUntil)
+    ? formatGraceTimestamp(locale, configured.graceActiveUntil)
     : null;
 
   return (

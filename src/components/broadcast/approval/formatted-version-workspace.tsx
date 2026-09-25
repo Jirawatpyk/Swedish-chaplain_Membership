@@ -50,7 +50,7 @@
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Loader2Icon, Save, Send } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useFormatter, useLocale, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -81,6 +81,7 @@ import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import { approvalErrorMessage, readRouteError, type RouteError } from './approval-error';
 import { InlineError } from './inline-error';
 import { TestCopyButton } from './test-copy-button';
+import { formatLocalisedDate, TIME_HH_MM } from '@/lib/format-date-localised';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
@@ -171,7 +172,6 @@ export function FormattedVersionWorkspace({
   const tContent = useTranslations('admin.broadcasts.approval.content');
   const tSend = useTranslations('admin.broadcasts.approval.send');
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
-  const format = useFormatter();
   const locale = useLocale();
   const router = useRouter();
   const readOnlyToast = useReadOnlyToast();
@@ -487,7 +487,7 @@ export function FormattedVersionWorkspace({
               {guard.savedAt !== null ? (
                 // Not a live region: the save's toast is the one announcement.
                 <p className="text-xs text-muted-foreground sm:mr-auto">
-                  {t('savedAt', { time: format.dateTime(guard.savedAt, { hour: '2-digit', minute: '2-digit' }) })}
+                  {t('savedAt', { time: formatLocalisedDate(guard.savedAt, locale, TIME_HH_MM) })}
                 </p>
               ) : null}
               <TestCopyButton

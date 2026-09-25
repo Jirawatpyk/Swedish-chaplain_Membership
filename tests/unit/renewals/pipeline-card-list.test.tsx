@@ -133,7 +133,7 @@ describe('<PipelineCardList>', () => {
     expect(screen.getByText('Renews in 30d')).toBeInTheDocument();
     // Expires (CycleExpiresCell) — a <time> element carrying the ISO
     // instant (not asserting the exact locale-formatted text, which is
-    // `useFormatter`'s concern and already covered where `CycleExpiresCell`
+    // `formatDatePreset`'s concern and already covered where `CycleExpiresCell`
     // is unit-tested directly).
     const expiresTime = card.querySelector('time');
     expect(expiresTime).toHaveAttribute('dateTime', '2026-12-01T00:00:00.000Z');
