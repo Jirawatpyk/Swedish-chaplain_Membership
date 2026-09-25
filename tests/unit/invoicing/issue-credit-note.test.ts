@@ -1453,7 +1453,7 @@ describe('issueCreditNote — US6 credited annotation re-targets the tax receipt
     expect(cnRender!.lines[0]!.descriptionTh).toBe(`ลดหนี้ตาม ${invNumber}`);
 
     const annotation = annotationRenderInput(deps);
-    expect(annotation.documentNumber.raw).toBe('RC-2026-000045');
+    expect(annotation.documentNumber?.raw).toBe('RC-2026-000045');
     expect(annotationUploadKey(deps)).toBe(invoice.receiptPdf!.blobKey);
 
     const issued = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls

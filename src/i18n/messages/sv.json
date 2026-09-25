@@ -7644,10 +7644,10 @@
     },
     "creditNoteOriginal": {
       "bill": "Räkning {number}",
-      "invoice": "Faktura {number}",
       "combined": "Kombinerad faktura + kvitto",
       "refund": "Återbetalning",
-      "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay"
+      "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay",
+      "receipt": "Kvitto {number}"
     }
   },
   "email": {

@@ -65,6 +65,8 @@ describe('credit-note original receipt / bill numbers (live Neon)', () => {
 
   const billInvoiceId = randomUUID(); // 088: SC bill paid → RC receipt
   const legacyInvoiceId = randomUUID(); // pre-088 combined: INV is the receipt
+  const legacySeparateInvoiceId = randomUUID(); // pre-088 separate: INV + own receipt no.
+  const cnLegacySeparate = randomUUID();
   const cnManual = randomUUID();
   const cnRefund = randomUUID();
   const paymentId = randomUUID();
@@ -191,6 +193,13 @@ describe('credit-note original receipt / bill numbers (live Neon)', () => {
           sequenceNumber: 52,
           documentNumber: 'INV-2026-000052',
         }),
+        paid({
+          invoiceId: legacySeparateInvoiceId,
+          bill: null,
+          rc: 'RC-2026-000039',
+          sequenceNumber: 53,
+          documentNumber: 'INV-2026-000053',
+        }),
       ]);
       await tx.insert(payments).values({
         id: paymentId,
@@ -239,6 +248,12 @@ describe('credit-note original receipt / bill numbers (live Neon)', () => {
           sequenceNumber: 15,
           sourceRefundId: refundId,
         }),
+        creditNote({
+          creditNoteId: cnLegacySeparate,
+          originalInvoiceId: legacySeparateInvoiceId,
+          sequenceNumber: 16,
+          sourceRefundId: null,
+        }),
       ]);
     });
   }, 60_000);
@@ -268,6 +283,13 @@ describe('credit-note original receipt / bill numbers (live Neon)', () => {
       related: { kind: 'combined' },
     });
     expect(byId.get(cnRefund)?.isRefund).toBe(true);
+
+    // Legacy separate mode: the INV was the §86/4 tax invoice at issue — the
+    // note cites it; the receipt number is the related document.
+    expect(byId.get(cnLegacySeparate)?.original).toEqual({
+      receiptNumberRaw: 'INV-2026-000053',
+      related: { kind: 'receipt', numberRaw: 'RC-2026-000039' },
+    });
   });
 
   it('the detail read returns the same original documents', async () => {
