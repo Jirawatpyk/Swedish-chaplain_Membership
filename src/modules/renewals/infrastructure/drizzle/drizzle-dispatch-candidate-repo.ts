@@ -121,6 +121,7 @@ const dispatchCandidateProjection = {
   cycleEnteredPendingAt: renewalCycles.enteredPendingAt,
   cycleLinkedInvoiceId: renewalCycles.linkedInvoiceId,
   cycleAnchoredAt: renewalCycles.anchoredAt,
+  cycleAwaitingEnteredAt: renewalCycles.awaitingEnteredAt,
   cycleAnchorInvoiceId: renewalCycles.anchorInvoiceId,
   cycleLinkedCreditNoteId: renewalCycles.linkedCreditNoteId,
   cycleClosedAt: renewalCycles.closedAt,
@@ -164,6 +165,7 @@ type DispatchCandidateRow = {
   cycleEnteredPendingAt: Date | null;
   cycleLinkedInvoiceId: string | null;
   cycleAnchoredAt: Date | null;
+  cycleAwaitingEnteredAt: Date | null;
   cycleAnchorInvoiceId: string | null;
   cycleLinkedCreditNoteId: string | null;
   cycleClosedAt: Date | null;
@@ -212,6 +214,7 @@ function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
     // domain field and this repo needs to actually surface it.
     autoDraftInvoiceId: null,
     anchoredAt: r.cycleAnchoredAt,
+    awaitingEnteredAt: r.cycleAwaitingEnteredAt,
     anchorInvoiceId: r.cycleAnchorInvoiceId,
     linkedCreditNoteId: r.cycleLinkedCreditNoteId,
     // F8-RP follow-up (migration 0243) — the async reject-with-refund marker

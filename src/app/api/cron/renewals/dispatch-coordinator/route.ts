@@ -74,9 +74,11 @@ async function observeCycleStateGaugesForTenant(
           -- 059-membership-suspension Task 18 — mirrors
           -- deriveMembershipAccess's suspended branch 1:1
           -- (src/modules/renewals/domain/renewal-cycle.ts): pending
-          -- admin-reactivation review, OR an unpaid awaiting_payment cycle
+          -- admin-reactivation review, OR a born awaiting_payment cycle
           -- (regardless of grace window), OR a non-terminal upcoming/
-          -- reminded cycle whose period already ended (cron-gap suspend).
+          -- reminded cycle — or an early-flipped awaiting_payment one
+          -- (0309 awaiting_entered_at set: a renewal bill issued before
+          -- T-0 on a paid period) — whose period already ended.
           --
           -- Unlike active/in_grace/lapsed_total above — which are raw
           -- per-CYCLE status tallies (pre-existing convention) — this
@@ -94,13 +96,13 @@ async function observeCycleStateGaugesForTenant(
           (
             SELECT COUNT(*)::int
             FROM (
-              SELECT DISTINCT ON (member_id) status, expires_at
+              SELECT DISTINCT ON (member_id) status, expires_at, awaiting_entered_at
               FROM renewal_cycles
               ORDER BY member_id, created_at DESC, cycle_id DESC
             ) latest
             WHERE latest.status = 'pending_admin_reactivation'
-               OR latest.status = 'awaiting_payment'
-               OR (latest.status IN ('upcoming','reminded') AND latest.expires_at < NOW())
+               OR (latest.status = 'awaiting_payment' AND latest.awaiting_entered_at IS NULL)
+               OR (latest.status IN ('upcoming','reminded','awaiting_payment') AND latest.expires_at < NOW())
           ) AS suspended_total
         FROM renewal_cycles
       `);

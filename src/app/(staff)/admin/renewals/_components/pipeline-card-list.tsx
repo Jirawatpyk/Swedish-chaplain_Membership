@@ -71,6 +71,7 @@ import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
+import { BillIssuedBadge } from '@/components/renewals/bill-issued-badge';
 import { isPastDeadlineUrgency } from '@/components/renewals/urgency';
 import { RelativeTime } from '@/components/ui/relative-time';
 import {
@@ -178,7 +179,16 @@ export function PipelineCardList({
                           <CycleTierCell tier={original.tierBucket} />
                         </div>
                       </div>
-                      <UrgencyPill urgency={original.urgency} className="shrink-0" />
+                      {/* 0309 — early renewal bill marker, stacked under the
+                          countdown pill so the card header keeps its width. */}
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <UrgencyPill urgency={original.urgency} />
+                        <BillIssuedBadge
+                          status={original.status}
+                          urgency={original.urgency}
+                          linkedInvoiceId={original.linkedInvoiceId}
+                        />
+                      </div>
                     </div>
                     {/* FIX 3 (I-2, WCAG 1.3.1) — the table's "Expires" meaning
                         comes from its `<th>`; a card has no such header

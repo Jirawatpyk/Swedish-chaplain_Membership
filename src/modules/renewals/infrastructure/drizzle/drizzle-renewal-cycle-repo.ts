@@ -61,6 +61,7 @@ import {
   type SettlementPreviewRow,
   type UrgencyBucket,
 } from '../../application/ports/renewal-cycle-repo';
+import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import type { MembershipBillCoverageRow } from '../../domain/membership-bill-coverage';
 import {
   asCycleId,
@@ -277,6 +278,10 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     // conversion pattern as closedAt/enteredPendingAt below.
     anchoredAt: row.anchoredAt ? row.anchoredAt.toISOString() : null,
     anchorInvoiceId: row.anchorInvoiceId ?? null,
+    // Migration 0309 — early-flip discriminator (Date-or-null, as above).
+    awaitingEnteredAt: row.awaitingEnteredAt
+      ? row.awaitingEnteredAt.toISOString()
+      : null,
     // F8-RP follow-up (migration 0243) — async reject-with-refund marker.
     // Same Date-or-null conversion as anchoredAt/closedAt; the id + actor
     // are plain text columns.
@@ -664,9 +669,10 @@ function buildPipelineNextCursor(
  * The two access-state tail buckets are STATUS-first (no date window) and
  * mirror deriveMembershipAccess (renewal-cycle.ts) — the old 30-day 'grace'
  * window was removed (policy 059/065 dropped benefit-bearing grace):
- *   suspended:  status IN ('awaiting_payment','pending_admin_reactivation'),
- *               OR an expired non-terminal cycle (upcoming/reminded past
- *               expiry — the CASE ELSE arm)
+ *   suspended:  status='pending_admin_reactivation', OR a born
+ *               `awaiting_payment` (no 0309 early-flip marker), OR an expired
+ *               non-terminal cycle (upcoming/reminded/early-flipped
+ *               awaiting_payment past expiry — the CASE ELSE arm)
  *   terminated: status='lapsed'
  */
 /**
@@ -736,12 +742,17 @@ function monthBoundPredicate(key: string, nowIso: string): SQL {
 // :399-436). It is checked STATUS-FIRST, exactly as the domain predicate does,
 // so the urgency pill/tabs never contradict the member's REAL access:
 //   status='lapsed'                                   → 'terminated'
-//   status IN (awaiting_payment, pending_admin_react) → 'suspended'
-//   expired non-terminal (upcoming/reminded)          → 'suspended'  (ELSE)
+//   status='pending_admin_reactivation'               → 'suspended'
+//   status='awaiting_payment' NOT early-flipped       → 'suspended'
+//   expired non-terminal (upcoming/reminded, or an
+//     early-flipped awaiting_payment)                 → 'suspended'  (ELSE)
 //   not-yet-expired non-terminal (access = full)      → 't-*' countdown
+// An early-flipped `awaiting_payment` (0309: `awaiting_entered_at` set — a
+// renewal bill issued before T-0 against a PAID period) is `full` until its
+// period ends, so it falls through to the countdown like an `upcoming` row.
 // COLUMN PARITY (the anti-drift contract): deriveMembershipAccess reads
-// `status` + `expiresAt` — the same two columns bound here — so this SQL can
-// mirror it faithfully. (0306: it also reads `closedReason`, but only on the
+// `status` + `expiresAt` + `awaitingEnteredAt` — the same three columns bound
+// here — so this SQL can mirror it faithfully. (0306: it also reads `closedReason`, but only on the
 // `cancelled` arm, and `cancelled` rows never reach this urgency SQL.) A live-Neon reconciliation test seeds a status×expiry
 // matrix and asserts this CASE agrees with deriveMembershipAccess, locking the
 // two against silent drift (the CASE string literals are NOT type-checked).
@@ -752,7 +763,9 @@ function monthBoundPredicate(key: string, nowIso: string): SQL {
 const URGENCY_CASE_SQL = sql<UrgencyBucket>`
   CASE
     WHEN ${renewalCycles.status} = 'lapsed' THEN 'terminated'
-    WHEN ${renewalCycles.status} IN ('awaiting_payment','pending_admin_reactivation') THEN 'suspended'
+    WHEN ${renewalCycles.status} = 'pending_admin_reactivation' THEN 'suspended'
+    WHEN ${renewalCycles.status} = 'awaiting_payment'
+      AND ${renewalCycles.awaitingEnteredAt} IS NULL THEN 'suspended'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '60 days' THEN 't-90'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '30 days' THEN 't-60'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '14 days' THEN 't-30'
@@ -766,6 +779,52 @@ const URGENCY_CASE_SQL = sql<UrgencyBucket>`
 // ---------------------------------------------------------------------------
 // Adapter factory (per-call, mirrors F7 broadcasts-deps pattern)
 // ---------------------------------------------------------------------------
+
+/**
+ * The settled-predecessor count behind `classifyMembershipPayment`'s
+ * first_payment-vs-renewal split (see the `countSettledCyclesForMemberInTx`
+ * port method, which delegates here). Module-level so `transitionStatus` can
+ * reuse the SAME predicate for the 0309 early-bill marker.
+ */
+async function countSettledCyclesForMember(
+  txDb: typeof db,
+  memberId: string,
+  excludeCycleId: string,
+): Promise<number> {
+  // Same two-arm effective-paid join as findMaxPaidThroughForMemberInTx —
+  // each PK seek yields ≤1 row so count(*) is not inflated.
+  const linkedInvoice = alias(invoices, 'linked_invoice');
+  const anchorInvoice = alias(invoices, 'anchor_invoice');
+  const rows = await txDb
+    .select({ count: sql<number>`count(*)::int` })
+    .from(renewalCycles)
+    .leftJoin(
+      linkedInvoice,
+      and(
+        eq(linkedInvoice.tenantId, renewalCycles.tenantId),
+        eq(linkedInvoice.invoiceId, renewalCycles.linkedInvoiceId),
+      ),
+    )
+    .leftJoin(
+      anchorInvoice,
+      and(
+        eq(anchorInvoice.tenantId, renewalCycles.tenantId),
+        eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
+      ),
+    )
+    .where(
+      and(
+        eq(renewalCycles.memberId, memberId),
+        ne(renewalCycles.cycleId, excludeCycleId),
+        effectivePaidCoverageSql(
+          renewalCycles,
+          linkedInvoice,
+          anchorInvoice,
+        ),
+      ),
+    );
+  return rows[0]?.count ?? 0;
+}
 
 export function makeDrizzleRenewalCycleRepo(
   tenant: TenantContext,
@@ -1471,10 +1530,23 @@ export function makeDrizzleRenewalCycleRepo(
         // the tracked fix (design doc § Post-review follow-ups) is keyset
         // pagination on `(expires_at, cycle_id)` + a page loop with a time
         // budget in the use-case + batching the per-member invoice probe.
+        //
+        // 0309 — EXCEPT an early-flipped cycle whose paid period is still
+        // running (`awaiting_entered_at` set AND `expires_at > now()`): its
+        // access is `full` (deriveMembershipAccess), and the due+60 clock
+        // of a bill issued >90 days before T-0 would otherwise terminate a
+        // member inside the period they already paid for. It re-enters this
+        // list the moment its period ends. Born-awaiting rows (marker NULL)
+        // are unaffected, so the §5.3 cohort above is still selected.
         const rows = await tx
           .select()
           .from(renewalCycles)
-          .where(eq(renewalCycles.status, 'awaiting_payment'))
+          .where(
+            and(
+              eq(renewalCycles.status, 'awaiting_payment'),
+              sql`NOT (${renewalCycles.awaitingEnteredAt} IS NOT NULL AND ${renewalCycles.expiresAt} > NOW())`,
+            ),
+          )
           .orderBy(sql`${renewalCycles.expiresAt} ASC`)
           .limit(args.pageSize);
 
@@ -2262,6 +2334,56 @@ export function makeDrizzleRenewalCycleRepo(
       if (args.linkedCreditNoteId !== undefined) {
         setClause.linkedCreditNoteId = args.linkedCreditNoteId;
       }
+      // Migration 0309 — the early-bill marker `deriveMembershipAccess` reads.
+      // Stamp it ONLY on a flip out of a PAID period
+      // (`upcoming|reminded → awaiting_payment`); every other edge into
+      // `awaiting_payment` (e.g. `lapsed →`) has no paid period behind it, so
+      // it is cleared, and so is every edge OUT of `awaiting_payment`, so a
+      // stale stamp can never outlive the state it describes. Postgres
+      // `now()` (the tx start), like the column defaults — this method takes
+      // no clock.
+      //
+      // Stamped only when the member's bill is a RENEWAL (financial-integrity
+      // B1): an un-anchored cycle with no settled predecessor classifies
+      // `first_payment`, and its bill charges the CURRENT period
+      // (confirm-renewal `omitMembershipCoverage`, 107 A-2), so that period is
+      // NOT paid and must stay suspended / due+60-terminable exactly as before
+      // 0309. Same inputs as the billing path's `classifyMembershipPayment`.
+      if (args.to === 'awaiting_payment') {
+        let paidPeriod = false;
+        if (args.from === 'upcoming' || args.from === 'reminded') {
+          const [current] = await txDb
+            .select({
+              memberId: renewalCycles.memberId,
+              anchoredAt: renewalCycles.anchoredAt,
+            })
+            .from(renewalCycles)
+            .where(eq(renewalCycles.cycleId, cycleId))
+            .limit(1);
+          if (current) {
+            const settled = await countSettledCyclesForMember(
+              txDb,
+              current.memberId,
+              cycleId,
+            );
+            paidPeriod =
+              classifyMembershipPayment({
+                cycleCountForMember: 1,
+                settledCycleCountForMember: settled,
+                openCycle: {
+                  status: 'upcoming',
+                  anchoredAt: current.anchoredAt
+                    ? current.anchoredAt.toISOString()
+                    : null,
+                },
+                memberErased: false,
+              }).kind === 'renewal';
+          }
+        }
+        setClause.awaitingEnteredAt = paidPeriod ? sql`now()` : null;
+      } else if (args.from === 'awaiting_payment') {
+        setClause.awaitingEnteredAt = null;
+      }
 
       // 107-auto-invoice Task 9 (review Minor 4) — when this call ALSO writes
       // `linked_invoice_id`, carry `linkInvoice`'s own CAS predicate
@@ -2546,8 +2668,14 @@ export function makeDrizzleRenewalCycleRepo(
               WHERE ${URGENCY_CASE_SQL} = 'suspended'
                 AND ${renewalCycles.status} NOT IN ('cancelled','completed')
                 AND ${renewalCycles.expiresAt} <= ${windowEnd}))::int`,
+            // 0309 — an early-flipped `awaiting_payment` (marker set) is
+            // `full` while its period runs; beyond `windowEnd` its period is
+            // by definition still running, so only the born-awaiting rows
+            // (marker NULL) count here, matching `URGENCY_CASE_SQL`.
             outsideWindow: sql<number>`(COUNT(*) FILTER (
-              WHERE ${renewalCycles.status} IN ('awaiting_payment','pending_admin_reactivation')
+              WHERE (${renewalCycles.status} = 'pending_admin_reactivation'
+                  OR (${renewalCycles.status} = 'awaiting_payment'
+                      AND ${renewalCycles.awaitingEnteredAt} IS NULL))
                 AND ${renewalCycles.expiresAt} > ${windowEnd}))::int`,
           })
           .from(renewalCycles)
@@ -2918,40 +3046,7 @@ export function makeDrizzleRenewalCycleRepo(
       memberId: string,
       excludeCycleId: string,
     ): Promise<number> {
-      const txDb = tx as typeof db;
-      // Same two-arm effective-paid join as findMaxPaidThroughForMemberInTx —
-      // each PK seek yields ≤1 row so count(*) is not inflated.
-      const linkedInvoice = alias(invoices, 'linked_invoice');
-      const anchorInvoice = alias(invoices, 'anchor_invoice');
-      const rows = await txDb
-        .select({ count: sql<number>`count(*)::int` })
-        .from(renewalCycles)
-        .leftJoin(
-          linkedInvoice,
-          and(
-            eq(linkedInvoice.tenantId, renewalCycles.tenantId),
-            eq(linkedInvoice.invoiceId, renewalCycles.linkedInvoiceId),
-          ),
-        )
-        .leftJoin(
-          anchorInvoice,
-          and(
-            eq(anchorInvoice.tenantId, renewalCycles.tenantId),
-            eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
-          ),
-        )
-        .where(
-          and(
-            eq(renewalCycles.memberId, memberId),
-            ne(renewalCycles.cycleId, excludeCycleId),
-            effectivePaidCoverageSql(
-              renewalCycles,
-              linkedInvoice,
-              anchorInvoice,
-            ),
-          ),
-        );
-      return rows[0]?.count ?? 0;
+      return countSettledCyclesForMember(tx as typeof db, memberId, excludeCycleId);
     },
 
     /**
@@ -3059,6 +3154,9 @@ export function makeDrizzleRenewalCycleRepo(
           periodFrom: new Date(args.periodFrom),
           periodTo: new Date(args.periodTo),
           status: 'upcoming', // sanctioned TRANSITIONS bypass — spec rev 2 §2
+          // 0309 — leaving `awaiting_payment` by this bypass too: drop the
+          // early-bill marker, as `transitionStatus` does.
+          awaitingEnteredAt: null,
           anchoredAt: new Date(args.anchoredAt),
           anchorInvoiceId: args.anchorInvoiceId,
           linkedInvoiceId: null,

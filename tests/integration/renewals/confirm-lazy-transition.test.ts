@@ -45,8 +45,10 @@ import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-
 import {
   confirmRenewal,
   enterAwaitingPaymentOnExpiry,
+  loadPipeline,
   makeRenewalsDeps,
 } from '@/modules/renewals';
+import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
 import type { ConfirmRenewalDeps } from '@/modules/renewals/application/use-cases/confirm-renewal';
 import type {
   F4InvoicingForRenewalBridge,
@@ -216,7 +218,14 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
   /** Seed one member + a renewal cycle in the given start status. */
   async function seedMemberWithCycle(
     status: 'upcoming' | 'reminded' | 'awaiting_payment',
+    opts: {
+      /** Default 2027-06-01. */
+      readonly expiresAt?: Date;
+      /** Stamp `anchored_at` so the cycle reads as a PAID renewal period. */
+      readonly anchored?: boolean;
+    } = {},
   ): Promise<{ memberId: string; cycleId: string }> {
+    const expiresAt = opts.expiresAt ?? new Date('2027-06-01T00:00:00Z');
     const memberId = randomUUID();
     const cycleId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
@@ -246,8 +255,9 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
         memberId,
         status,
         periodFrom: new Date('2026-06-01T00:00:00Z'),
-        periodTo: new Date('2027-06-01T00:00:00Z'),
-        expiresAt: new Date('2027-06-01T00:00:00Z'),
+        periodTo: expiresAt,
+        expiresAt,
+        ...(opts.anchored ? { anchoredAt: new Date('2026-06-01T00:00:00Z') } : {}),
         cycleLengthMonths: 12,
         tierAtCycleStart: 'regular',
         planIdAtCycleStart: planId,
@@ -440,5 +450,216 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
     // the winner emitted once; the loser re-read cleanly and did NOT
     // emit a duplicate.
     expect(await countEnterAudits(cycleId)).toBe(1);
+  }, 120_000);
+  // 0309 — an EARLY renewal bill must not suspend a member whose current
+  // period is paid. Before the fix `confirmRenewal`'s lazy flip moved the
+  // cycle to `awaiting_payment`, `deriveMembershipAccess` returned
+  // `suspended` for that status whatever the expiry, and the pipeline filed
+  // the member under "Suspended" for the rest of the period they had paid for.
+  it('early confirm on a PAID period keeps benefit access full + the cycle in its T-bucket until expiry', async () => {
+    const expiresAt = new Date(Date.now() + 20 * 86_400_000); // → t-30
+    const { memberId, cycleId } = await seedMemberWithCycle('upcoming', {
+      expiresAt,
+      anchored: true,
+    });
+
+    const result = await confirmRenewal(makeConfirmDeps(), {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'member',
+      correlationId: `early-${cycleId}`,
+    });
+    if (!result.ok) {
+      throw new Error(`confirm failed: ${JSON.stringify(result.error)}`);
+    }
+
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          awaitingEnteredAt: renewalCycles.awaitingEnteredAt,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row?.status).toBe('awaiting_payment');
+    // The flip out of a paid `upcoming` period is recorded.
+    expect(row?.awaitingEnteredAt).toBeInstanceOf(Date);
+
+    // Benefit access (the E-Blast submit gate reads this bridge) stays full.
+    const access = await membershipAccessBridge.getMembershipAccess(
+      tenant.ctx,
+      memberId,
+    );
+    expect(access.ok && access.value.access).toBe('full');
+
+    // Staff pipeline: the cycle stays in its countdown bucket, not Suspended.
+    const pipeline = await loadPipeline(makeRenewalsDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      urgency: 't-30',
+      limit: 50,
+    });
+    if (!pipeline.ok) throw new Error('loadPipeline failed');
+    expect(pipeline.value.rows.find((r) => r.cycleId === cycleId)?.urgency).toBe(
+      't-30',
+    );
+
+    // The lapse cron must not see a cycle whose paid period is still running
+    // (its due+60 clock could otherwise terminate a paid member early).
+    const lapsePage = await makeRenewalsDeps(
+      tenant.ctx.slug,
+    ).cyclesRepo.listCyclesEligibleForLapse(tenant.ctx.slug, { pageSize: 1000 });
+    expect(lapsePage.items.some((c) => c.cycleId === cycleId)).toBe(false);
+  }, 120_000);
+
+  it('a BORN-awaiting cycle (065 §5.3, never paid) stays suspended + lapse-eligible despite a future expiry', async () => {
+    const expiresAt = new Date(Date.now() + 20 * 86_400_000);
+    const { memberId, cycleId } = await seedMemberWithCycle('awaiting_payment', {
+      expiresAt,
+    });
+
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ awaitingEnteredAt: renewalCycles.awaitingEnteredAt })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row?.awaitingEnteredAt).toBeNull();
+
+    const access = await membershipAccessBridge.getMembershipAccess(
+      tenant.ctx,
+      memberId,
+    );
+    expect(access.ok && access.value.access).toBe('suspended');
+
+    const pipeline = await loadPipeline(makeRenewalsDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      urgency: 'suspended',
+      limit: 50,
+    });
+    if (!pipeline.ok) throw new Error('loadPipeline failed');
+    expect(pipeline.value.rows.find((r) => r.cycleId === cycleId)?.urgency).toBe(
+      'suspended',
+    );
+
+    const lapsePage = await makeRenewalsDeps(
+      tenant.ctx.slug,
+    ).cyclesRepo.listCyclesEligibleForLapse(tenant.ctx.slug, { pageSize: 1000 });
+    expect(lapsePage.items.some((c) => c.cycleId === cycleId)).toBe(true);
+  }, 120_000);
+
+  // financial-integrity B1 — an UN-anchored cycle with no settled
+  // predecessor (e.g. an imported member the R4 backfill skipped) classifies
+  // `first_payment`: its early bill charges the CURRENT period, which is
+  // therefore unpaid. The marker must NOT be stamped, so the pre-0309 answer
+  // holds: suspended, and still due+60-terminable.
+  it('early confirm on a FIRST-PAYMENT cycle (bill charges the current period) stays suspended + lapse-eligible', async () => {
+    const expiresAt = new Date(Date.now() + 20 * 86_400_000);
+    const { memberId, cycleId } = await seedMemberWithCycle('upcoming', { expiresAt });
+
+    const result = await confirmRenewal(makeConfirmDeps(), {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'member',
+      correlationId: `early-fp-${cycleId}`,
+    });
+    if (!result.ok) {
+      throw new Error(`confirm failed: ${JSON.stringify(result.error)}`);
+    }
+
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          awaitingEnteredAt: renewalCycles.awaitingEnteredAt,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row?.status).toBe('awaiting_payment');
+    expect(row?.awaitingEnteredAt).toBeNull();
+
+    const access = await membershipAccessBridge.getMembershipAccess(
+      tenant.ctx,
+      memberId,
+    );
+    expect(access.ok && access.value.access).toBe('suspended');
+
+    const lapsePage = await makeRenewalsDeps(
+      tenant.ctx.slug,
+    ).cyclesRepo.listCyclesEligibleForLapse(tenant.ctx.slug, { pageSize: 1000 });
+    expect(lapsePage.items.some((c) => c.cycleId === cycleId)).toBe(true);
+  }, 120_000);
+
+  it('an early-flipped cycle whose paid period has ENDED re-enters the lapse candidates', async () => {
+    const { memberId, cycleId } = await seedMemberWithCycle('awaiting_payment', {
+      expiresAt: new Date(Date.now() - 2 * 86_400_000),
+    });
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ awaitingEnteredAt: new Date(Date.now() - 40 * 86_400_000) })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+
+    const lapsePage = await makeRenewalsDeps(
+      tenant.ctx.slug,
+    ).cyclesRepo.listCyclesEligibleForLapse(tenant.ctx.slug, { pageSize: 1000 });
+    expect(lapsePage.items.some((c) => c.cycleId === cycleId)).toBe(true);
+    const access = await membershipAccessBridge.getMembershipAccess(
+      tenant.ctx,
+      memberId,
+    );
+    expect(access.ok && access.value.access).toBe('suspended');
+  }, 120_000);
+
+  it('reanchorPeriodInTx clears the flip marker (awaiting → upcoming bypass)', async () => {
+    const { cycleId } = await seedMemberWithCycle('awaiting_payment');
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ awaitingEnteredAt: new Date() })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+    const repo = makeRenewalsDeps(tenant.ctx.slug).cyclesRepo;
+    const out = await runInTenant(tenant.ctx, (tx) =>
+      repo.reanchorPeriodInTx(tx, tenant.ctx.slug, cycleId as never, {
+        periodFrom: '2026-06-01T00:00:00.000Z',
+        periodTo: '2027-06-01T00:00:00.000Z',
+        anchoredAt: new Date().toISOString(),
+        anchorInvoiceId: null,
+        frozenPlanPriceThb: FROZEN_THB as never,
+        frozenPlanTermMonths: 12,
+      }),
+    );
+    expect(out?.cycle.status).toBe('upcoming');
+    expect(out?.cycle.awaitingEnteredAt).toBeNull();
+  }, 120_000);
+
+  it('the flip marker is cleared when the cycle leaves awaiting_payment', async () => {
+    const { cycleId } = await seedMemberWithCycle('upcoming', { anchored: true });
+    const repo = makeRenewalsDeps(tenant.ctx.slug).cyclesRepo;
+    await runInTenant(tenant.ctx, (tx) =>
+      repo.transitionStatus(tx, tenant.ctx.slug, cycleId as never, {
+        from: 'upcoming',
+        to: 'awaiting_payment',
+      }),
+    );
+    const flipped = await runInTenant(tenant.ctx, (tx) =>
+      repo.transitionStatus(tx, tenant.ctx.slug, cycleId as never, {
+        from: 'awaiting_payment',
+        to: 'lapsed',
+        closedAt: new Date().toISOString(),
+        closedReason: 'lapsed',
+      }),
+    );
+    expect(flipped.awaitingEnteredAt).toBeNull();
   }, 120_000);
 });

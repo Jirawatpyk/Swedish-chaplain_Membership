@@ -4029,6 +4029,8 @@
         "viewInvoice": "Visa faktura",
         "invoiceCoveredLabel": "Täckt",
         "invoiceCoveredTitle": "Denna förnyelseperiod täcks redan av en tidigare betalning — ingen förnyelsefaktura är kopplad ännu.",
+        "billIssuedLabel": "Faktura utfärdad",
+        "billIssuedTitle": "En förnyelsefaktura för nästa period har utfärdats. Nuvarande period är betald, så förmånerna gäller tills den nuvarande perioden tar slut.",
         "noRows": "Inga medlemmar i detta intervall.",
         "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskeflik för att se väntande förnyelser.",
         "noRowsInMonth": "Inga medlemmar förnyas i {month}.",
