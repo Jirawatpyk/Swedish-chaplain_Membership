@@ -4,10 +4,9 @@
  *
  * A §86/10 credit note references the original §86/4 tax invoice
  * (ใบกำกับภาษีเดิม), so that is the number shown first — the payment-time RC
- * tax receipt (or a legacy combined INV), the same number the credit-note PDF
- * prints. The second line names the
- * document behind it (the 088 SC bill, a legacy INV invoice, or "combined")
- * and links to the invoice page in-app.
+ * tax receipt (or a legacy INV), the same number the credit-note PDF cites.
+ * The second line names the document behind it (the 088 SC bill, a legacy
+ * separate-mode receipt, or "combined") and links to the invoice page in-app.
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -39,8 +38,8 @@ export function CreditNoteOriginalReceipt({
       ? null
       : related.kind === 'bill'
         ? t('bill', { number: related.numberRaw })
-        : related.kind === 'invoice'
-          ? t('invoice', { number: related.numberRaw })
+        : related.kind === 'receipt'
+          ? t('receipt', { number: related.numberRaw })
           : t('combined');
   return (
     <span className="flex flex-col gap-0.5">

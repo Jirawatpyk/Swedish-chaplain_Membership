@@ -1428,6 +1428,40 @@ describe('issueCreditNote — US6 credited annotation re-targets the tax receipt
     expect(cnRender!.lines[0]!.descriptionTh).toContain('RC-2026-000045');
   });
 
+  it('legacy separate mode (INV tax invoice + its own receipt number, no bill) → the CN cites the INV, the annotation still stamps the receipt blob', async () => {
+    // Before the 088 switch a tenant in separate mode issued the §87 INV as
+    // the §86/4 tax invoice and gave the payment its own receipt number. The
+    // §86/10 ใบลดหนี้ must cite the ORIGINAL tax invoice — the INV, dated at
+    // its issue date — not the later receipt. The credited stamp still lands
+    // on the receipt blob, re-rendered with the number it was printed with.
+    const invoice = makeIssuedEventInvoice({
+      receiptDocumentNumberRaw: 'RC-2026-000045',
+      billDocumentNumberRaw: null,
+    });
+    const invNumber = invoice.documentNumber!.raw;
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-legacy-separate' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    const cnRender = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0] as PdfRenderInput)
+      .find((c) => c.kind === 'credit_note');
+    expect(cnRender!.creditNote?.originalDocumentNumber).toBe(invNumber);
+    expect(cnRender!.creditNote?.originalIssueDate).toBe('2026-04-18');
+    expect(cnRender!.lines[0]!.descriptionEn).toBe(`Credit against ${invNumber}`);
+    expect(cnRender!.lines[0]!.descriptionTh).toBe(`ลดหนี้ตาม ${invNumber}`);
+
+    const annotation = annotationRenderInput(deps);
+    expect(annotation.documentNumber?.raw).toBe('RC-2026-000045');
+    expect(annotationUploadKey(deps)).toBe(invoice.receiptPdf!.blobKey);
+
+    const issued = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[1] as { eventType: string; summary: string })
+      .find((e) => e.eventType === 'credit_note_issued');
+    expect(issued?.summary).toContain(`issued against ${invNumber}`);
+  });
+
   it('V2 REGRESSION — MEMBERSHIP 088 new-flow parent (documentNumber NULL, SC bill + RC receipt) → SUCCEEDS + CN targets the RC number, never no_snapshot_on_invoice', async () => {
     // The 088 PRIMARY production path: a membership bill in the tax-at-payment
     // flow carries `documentNumber = NULL` — its non-§87 number lives in

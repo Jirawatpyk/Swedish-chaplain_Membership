@@ -4,8 +4,8 @@
  *
  * Pulls every paid receipt whose §78/1 tax point falls inside `[from, to]`
  * (both inclusive, ISO-date `YYYY-MM-DD` interpreted as Bangkok-local
- * day) and renders the bookkeeper-facing CSV per the plan's column
- * schema (13 columns, UTF-8 BOM, RFC-4180 escaping).
+ * day), plus every §86/10 credit note issued in the range, and renders the
+ * bookkeeper-facing CSV (15 columns, UTF-8 BOM, RFC-4180 escaping).
  *
  * --- Same rows as the ภ.พ.30 register ----------------------------
  * Rows come from `TaxRegisterRepo.listForExport`, which buckets by the
@@ -16,6 +16,21 @@
  * entirely — the CSV's VAT no longer matched the register's
  * `rcVat + reVat`. Combined-mode INV rows (no RC/RE number) are also
  * exported, on their ISSUE date — see the port doc.
+ *
+ * --- Credit notes as negative rows ------------------------------
+ * A §86/10 credit note reduces output VAT in the month it is ISSUED. Each
+ * one issued in the range follows the invoice rows with negative Subtotal /
+ * VAT / Total, Status `Credit note` and the original tax invoice in
+ * `Reference Document No.`, so the VAT column sums to the register's NET
+ * figure (`rcVat + reVat − creditNoteVat`, the ภ.พ.30 output VAT) — the
+ * repo shares the register's credit-note predicate. Not the whole period
+ * when combined-mode INVs were issued in it: the file carries only the PAID
+ * ones, which the register leaves out, and the register flags such a month
+ * `closed_month_incomplete` (`legacyCombinedCount`).
+ *
+ * `Status` is the invoice's status AS OF THE EXPORT, not as of the period:
+ * re-exporting June after a July credit note shows the June receipt as
+ * `Credited`, still positive — its reduction is the July negative row.
  *
  * --- Cross-module port for F5 payment methods --------------------
  * `paymentMethodLookup` is a F4-owned port; the composition root
@@ -28,7 +43,8 @@
  *
  * --- Audit ---------------------------------------------------------
  * Emits `invoices_csv_exported` (5y retention) on success, including
- * `row_count` so an RD audit can correlate the bookkeeper's filing
+ * `row_count` (every data row) and `credit_note_count` (the negative
+ * subset) so an RD audit can correlate the bookkeeper's filing
  * spreadsheet to the export action without reconstructing the byte
  * stream. Failure paths return a typed Result and DO NOT emit (the
  * caller surfaces 5xx).
@@ -37,9 +53,10 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
 import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
-import type { TaxRegisterRepo } from '../ports/tax-register-repo';
+import type { CreditNoteExportRow, TaxRegisterRepo } from '../ports/tax-register-repo';
 import type { AuditPort } from '../ports/audit-port';
 import { billFirstDocumentNumber, type Invoice } from '../../domain/invoice';
+import { resolveCreditNoteOriginalDocuments } from '../../domain/credit-note';
 
 // --- Input + Output ----------------------------------------------------
 
@@ -74,6 +91,7 @@ export type ExportPaidInvoicesCsvError =
 export interface ExportPaidInvoicesCsvOutput {
   readonly csv: string;
   readonly filename: string;
+  /** Every data row — invoice rows plus credit-note rows. */
   readonly rowCount: number;
 }
 
@@ -115,7 +133,23 @@ const CSV_HEADERS: readonly string[] = [
   // Appended last so existing column positions stay put; it explains why a
   // back-dated row sits in this month.
   'Tax Point Date',
+  // `Paid` / `Credited` / `Partially credited`, or `Credit note` on a
+  // negative §86/10 row — see `STATUS_LABEL`.
+  'Status',
+  // Credit-note rows only: the original tax invoice the note reduces.
+  'Reference Document No.',
 ];
+
+/**
+ * English labels (the CSV is a bookkeeping file, not a localised page — the
+ * headers are English too). `listForExport` never returns other statuses.
+ */
+const STATUS_LABEL: Partial<Record<Invoice['status'], string>> = {
+  paid: 'Paid',
+  credited: 'Credited',
+  partially_credited: 'Partially credited',
+};
+const CREDIT_NOTE_STATUS = 'Credit note';
 
 // --- Public use-case ---------------------------------------------------
 
@@ -141,11 +175,13 @@ export async function exportPaidInvoicesCsv(
   // opaque Next.js 500 with no log/audit trail. The route layer maps
   // `code: 'list_failed'` to 500 + `logger.error`.
   let inRange: readonly Invoice[];
+  let creditNotes: readonly CreditNoteExportRow[];
   try {
-    inRange = await deps.registerRepo.listForExport(input.tenantId, {
-      from: input.from,
-      to: input.to,
-    });
+    const range = { from: input.from, to: input.to };
+    [inRange, creditNotes] = await Promise.all([
+      deps.registerRepo.listForExport(input.tenantId, range),
+      deps.registerRepo.listCreditNotesForExport(input.tenantId, range),
+    ]);
   } catch (e) {
     // P2 Wave-0 — the use-case RETURNS `list_failed` (does not re-throw), so the
     // route never sees `e`; without this log a Neon transient during the paid-
@@ -173,7 +209,11 @@ export async function exportPaidInvoicesCsv(
   for (const inv of inRange) {
     lines.push(buildRow(inv, methodMap));
   }
+  for (const cn of creditNotes) {
+    lines.push(buildCreditNoteRow(cn));
+  }
   const csv = '﻿' + lines.join('\r\n') + '\r\n';
+  const rowCount = inRange.length + creditNotes.length;
 
   // 5. Audit emit (best-effort but propagating per AuditPort contract —
   //    the route layer wraps for 5xx mapping; same convention as
@@ -186,11 +226,12 @@ export async function exportPaidInvoicesCsv(
     requestId: input.requestId ?? null,
     eventType: 'invoices_csv_exported',
     actorUserId: input.actorUserId,
-    summary: `CSV export ${input.from} → ${input.to} (${inRange.length} rows)`,
+    summary: `CSV export ${input.from} → ${input.to} (${rowCount} rows, ${creditNotes.length} credit notes)`,
     payload: {
       from: input.from,
       to: input.to,
-      row_count: inRange.length,
+      row_count: rowCount,
+      credit_note_count: creditNotes.length,
       actor_user_id: input.actorUserId,
       route: 'export-paid-invoices-csv',
     },
@@ -199,7 +240,7 @@ export async function exportPaidInvoicesCsv(
   return ok({
     csv,
     filename: `invoices-paid-${input.from}-to-${input.to}.csv`,
-    rowCount: inRange.length,
+    rowCount,
   });
 }
 
@@ -248,6 +289,40 @@ function buildRow(
     paidIso,
     method,
     taxPointDate(inv),
+    STATUS_LABEL[inv.status] ?? inv.status,
+    '',
+  ];
+  return cells.map(escapeCsv).join(',');
+}
+
+/**
+ * A §86/10 credit note as a NEGATIVE row in the same columns: dated (and
+ * bucketed) by its issue date, numbered in `Invoice No.`, with no receipt or
+ * payment, and the original tax invoice — the number the credit-note PDF
+ * prints — in `Reference Document No.`.
+ */
+function buildCreditNoteRow(cn: CreditNoteExportRow): string {
+  const original = resolveCreditNoteOriginalDocuments({
+    receiptDocumentNumberRaw: cn.originalReceiptDocumentNumberRaw,
+    documentNumberRaw: cn.originalDocumentNumberRaw,
+    billDocumentNumberRaw: cn.originalBillDocumentNumberRaw,
+  });
+  const cells: readonly string[] = [
+    cn.issueDate,
+    cn.creditNoteNumberRaw,
+    '',
+    cn.legalName,
+    cn.taxId,
+    formatMoney(-cn.creditAmountSatang),
+    cn.originalVatRateRaw !== null ? formatVatRatePct(cn.originalVatRateRaw) : '',
+    formatMoney(-cn.vatSatang),
+    formatMoney(-cn.totalSatang),
+    cn.currency,
+    '',
+    '',
+    cn.issueDate,
+    CREDIT_NOTE_STATUS,
+    original.receiptNumberRaw ?? '',
   ];
   return cells.map(escapeCsv).join(',');
 }

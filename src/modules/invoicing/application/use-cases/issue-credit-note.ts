@@ -75,6 +75,7 @@ import {
 import { asInvoiceLineId } from '@/modules/invoicing/domain/invoice-line';
 import {
   asCreditNoteId,
+  isLegacySeparateReceipt,
   type CreditNote,
 } from '@/modules/invoicing/domain/credit-note';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -664,6 +665,21 @@ export async function issueCreditNote(
       } else {
         return err({ code: 'no_snapshot_on_invoice' });
       }
+      // The §86/10 ORIGINAL TAX INVOICE the credit note cites. Usually the
+      // receipt above; but in legacy SEPARATE mode the §87 INV was issued as
+      // the §86/4 tax invoice and the payment got its own receipt number, so the
+      // note cites the INV (dated at issue — `receiptIssueDate` below already
+      // is, since `documentNumber` is set). The J2 annotation still re-renders
+      // the receipt blob with `receiptDocNum`, the number it was printed with.
+      const originalTaxInvoiceNum =
+        loaded.documentNumber !== null &&
+        isLegacySeparateReceipt({
+          receiptDocumentNumberRaw: loaded.receiptDocumentNumberRaw,
+          documentNumberRaw: loaded.documentNumber.raw,
+          billDocumentNumberRaw: loaded.billDocumentNumberRaw ?? null,
+        })
+          ? loaded.documentNumber
+          : receiptDocNum;
 
       // 088 US6 review fix (HIGH / §86/10 + SC-003) — the receipt date must match
       // what the §86/4 receipt was ACTUALLY rendered with, so the CREDITED
@@ -884,8 +900,8 @@ export async function issueCreditNote(
       const syntheticLine = {
         lineId: asInvoiceLineId(creditNoteId),
         kind: 'registration_fee' as const,
-        descriptionTh: `ลดหนี้ตาม ${receiptDocNum.raw}`,
-        descriptionEn: `Credit against ${receiptDocNum.raw}`,
+        descriptionTh: `ลดหนี้ตาม ${originalTaxInvoiceNum.raw}`,
+        descriptionEn: `Credit against ${originalTaxInvoiceNum.raw}`,
         unitPrice: creditAmount,
         quantity: '1.0000',
         proRateFactor: null,
@@ -921,8 +937,9 @@ export async function issueCreditNote(
             total,
             creditNote: {
               // 088 US6 (T047) — reference the §86/4 RC tax receipt (its number
-              // + payment date), NOT the non-tax ใบแจ้งหนี้ bill.
-              originalDocumentNumber: receiptDocNum.raw,
+              // + payment date), NOT the non-tax ใบแจ้งหนี้ bill; the INV on a
+              // legacy separate-mode row (see `originalTaxInvoiceNum`).
+              originalDocumentNumber: originalTaxInvoiceNum.raw,
               originalIssueDate: receiptIssueDate,
               reason: input.reason,
             },
@@ -1223,7 +1240,7 @@ export async function issueCreditNote(
       //   and omitting `member_id` entirely. Mirrors the `emitNonTimelineDraftCreated`
       //   precedent in create-event-invoice-draft.ts + the issue-invoice.ts
       //   non-member branch.
-      const creditNoteSummary = `Credit note ${docNum.value.raw} issued against ${receiptDocNum.raw}`;
+      const creditNoteSummary = `Credit note ${docNum.value.raw} issued against ${originalTaxInvoiceNum.raw}`;
       const creditNotePayloadBase: Record<string, unknown> = {
         credit_note_id: creditNoteId,
         original_invoice_id: invoiceId,

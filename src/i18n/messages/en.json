@@ -2680,7 +2680,7 @@
         "trigger": "Export CSV…",
         "dialog": {
           "title": "Export paid invoices to CSV",
-          "description": "For Thai VAT monthly filing (ภ.พ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
+          "description": "For Thai VAT monthly filing (ภ.พ.30). The CSV lists every tax receipt in the range below, dated by its tax point as on the VAT register, and each credit note issued in it as a negative row. Check the VAT register before filing — it flags months with older combined-mode tax invoices that this file does not fully cover."
         },
         "fields": {
           "from": "From",
@@ -7644,10 +7644,10 @@
     },
     "creditNoteOriginal": {
       "bill": "Bill {number}",
-      "invoice": "Invoice {number}",
       "combined": "Combined tax invoice + receipt",
       "refund": "Refund",
-      "refundHint": "Issued by a card or PromptPay refund"
+      "refundHint": "Issued by a card or PromptPay refund",
+      "receipt": "Receipt {number}"
     }
   },
   "email": {

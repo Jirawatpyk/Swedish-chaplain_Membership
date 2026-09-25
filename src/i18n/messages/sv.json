@@ -2680,7 +2680,7 @@
         "trigger": "Exportera CSV…",
         "dialog": {
           "title": "Exportera betalda fakturor till CSV",
-          "description": "För månatlig thailändsk momsdeklaration (ภ.พ.30). CSV-filen innehåller alla betalda fakturor vars betalningsdatum ligger inom intervallet nedan."
+          "description": "För månatlig thailändsk momsdeklaration (ภ.พ.30). CSV-filen listar alla skattekvitton inom intervallet nedan, daterade efter skattepunkt som i momsregistret, och varje kreditnota som utfärdats under perioden som en negativ rad. Kontrollera momsregistret före deklarationen – det flaggar månader med äldre kombinerade skattefakturor som den här filen inte helt täcker."
         },
         "fields": {
           "from": "Från",
@@ -7644,10 +7644,10 @@
     },
     "creditNoteOriginal": {
       "bill": "Räkning {number}",
-      "invoice": "Faktura {number}",
       "combined": "Kombinerad faktura + kvitto",
       "refund": "Återbetalning",
-      "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay"
+      "refundHint": "Utfärdad vid en återbetalning via kort eller PromptPay",
+      "receipt": "Kvitto {number}"
     }
   },
   "email": {

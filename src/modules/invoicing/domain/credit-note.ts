@@ -117,22 +117,42 @@ export interface CreditNote {
 
 /**
  * What a credit note refers back to, as the admin + portal surfaces show it:
- *   - `receiptNumberRaw` — the tax receipt the note reduces, i.e. the number
- *     the credit-note PDF prints: the payment-time RC/RE when the invoice row
- *     has one, else the §87 invoice number a legacy combined receipt reuses
- *     (mirrors `receiptDocNum` in issue-credit-note).
+ *   - `receiptNumberRaw` — the ORIGINAL TAX INVOICE the note reduces, i.e. the
+ *     number the credit-note PDF cites (mirrors `originalTaxInvoiceNum` in
+ *     issue-credit-note): the payment-time RC/RE on an 088 bill or as-paid
+ *     receipt, else the §87 INV — a legacy combined receipt reuses it, and in
+ *     legacy separate mode it was the tax invoice at issue.
  *   - `related` — the second line under it: the 088 SC bill the receipt paid,
- *     a legacy separate-mode INV invoice, or `combined` when the receipt IS
- *     the tax invoice (legacy INV, or an as-paid combined receipt).
+ *     a legacy separate-mode receipt, or `combined` when the receipt IS the
+ *     tax invoice (legacy INV, or an as-paid combined receipt).
  * Both null only for a row with no number at all (orphan / corrupt).
  */
 export interface CreditNoteOriginalDocuments {
   readonly receiptNumberRaw: string | null;
   readonly related:
     | { readonly kind: 'bill'; readonly numberRaw: string }
-    | { readonly kind: 'invoice'; readonly numberRaw: string }
+    | { readonly kind: 'receipt'; readonly numberRaw: string }
     | { readonly kind: 'combined' }
     | null;
+}
+
+/**
+ * Legacy SEPARATE mode (before the 088 tax-at-payment switch): the §87 INV
+ * (`document_number`) was issued as the §86/4 tax invoice, and the payment got
+ * its own receipt number (`receipt_document_number_raw`) — with no 088 SC
+ * bill. A §86/10 credit note on such a row cites the INV: it is the original
+ * tax invoice, and its issue date is the §78/1(1)(ก) tax point.
+ */
+export function isLegacySeparateReceipt(inv: {
+  readonly receiptDocumentNumberRaw: string | null;
+  readonly documentNumberRaw: string | null;
+  readonly billDocumentNumberRaw: string | null;
+}): boolean {
+  return (
+    inv.documentNumberRaw !== null &&
+    inv.receiptDocumentNumberRaw !== null &&
+    inv.billDocumentNumberRaw === null
+  );
 }
 
 /** Pure — see {@link CreditNoteOriginalDocuments}. */
@@ -141,16 +161,18 @@ export function resolveCreditNoteOriginalDocuments(inv: {
   readonly documentNumberRaw: string | null;
   readonly billDocumentNumberRaw: string | null;
 }): CreditNoteOriginalDocuments {
+  if (isLegacySeparateReceipt(inv)) {
+    return {
+      receiptNumberRaw: inv.documentNumberRaw,
+      related: { kind: 'receipt', numberRaw: inv.receiptDocumentNumberRaw! },
+    };
+  }
   const receiptNumberRaw = inv.receiptDocumentNumberRaw ?? inv.documentNumberRaw;
   if (receiptNumberRaw === null) return { receiptNumberRaw: null, related: null };
   if (inv.billDocumentNumberRaw !== null) {
     return { receiptNumberRaw, related: { kind: 'bill', numberRaw: inv.billDocumentNumberRaw } };
   }
-  // A separate receipt number next to a §87 invoice number = legacy separate
-  // mode; otherwise the receipt is itself the tax invoice.
-  if (inv.receiptDocumentNumberRaw !== null && inv.documentNumberRaw !== null) {
-    return { receiptNumberRaw, related: { kind: 'invoice', numberRaw: inv.documentNumberRaw } };
-  }
+  // Otherwise the receipt is itself the tax invoice.
   return { receiptNumberRaw, related: { kind: 'combined' } };
 }
 
