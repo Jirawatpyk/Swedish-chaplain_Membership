@@ -21,9 +21,12 @@
  * again at SEND time (F119 PR-A). An `approved` E-Blast scheduled days ahead
  * used to be sent even if the member was halted, suspended or lost coverage in
  * between — including by a refund or full credit note, which ends coverage
- * immediately since migration 0306 (#383). A dispatch refusal is PERMANENT
- * (`failed_to_dispatch`, halted members included — the maintainer's rule);
- * mail a prior tick already handed to Resend is never refused.
+ * immediately since migration 0306 (#383). At dispatch the answer goes through
+ * `_dispatch-standing-gate.ts`: a `suspended` membership is HELD (nothing sent,
+ * the row stays `approved`, re-checked every tick); a halt or an ENDED
+ * (`terminated`) membership is a PERMANENT refusal (`failed_to_dispatch`) —
+ * the maintainer's rule. Mail a prior tick already handed to Resend is never
+ * refused.
  *
  * Fail CLOSED, never open: a halt read that throws is `halt_read_failed`, an
  * access lookup error is `access_unavailable` — each caller turns both into a

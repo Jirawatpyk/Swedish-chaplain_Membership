@@ -65,6 +65,7 @@ vi.mock('@/lib/broadcast-detail-body', () => ({
 vi.mock('@/lib/broadcast-approval-deps', () => ({
   makeListBroadcastVersionsDeps: () => ({}),
   makeReadFormattingWarningsDeps: () => ({}),
+  makeReadDispatchHoldDeps: () => ({}),
 }));
 vi.mock('@/components/ui/relative-time', () => ({ RelativeTime: () => <time /> }));
 vi.mock('@/components/broadcast/cancel-broadcast-action', () => ({
@@ -120,6 +121,8 @@ vi.mock('@/components/broadcast/use-preview-html', () => ({
 const findByIdMock = vi.fn();
 const listVersionsMock = vi.fn();
 const warningsMock = vi.fn();
+/** F119 PR-A R1 — the page's "held for the member's payment" read; default: not held. */
+const holdMock = vi.fn(async (..._args: unknown[]): Promise<{ ok: true; value: boolean }> => ({ ok: true, value: false }));
 vi.mock('@/modules/broadcasts', async () => {
   const cutoff = await vi.importActual<typeof import('@/modules/broadcasts/domain/policies/cancel-cutoff-policy')>(
     '@/modules/broadcasts/domain/policies/cancel-cutoff-policy',
@@ -144,6 +147,7 @@ vi.mock('@/modules/broadcasts', async () => {
     parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
     listBroadcastVersions: (...args: unknown[]) => listVersionsMock(...args),
     readFormattingWarnings: (...args: unknown[]) => warningsMock(...args),
+    readDispatchHold: (...args: unknown[]) => holdMock(...args),
   };
 });
 
@@ -568,5 +572,81 @@ describe('F119 PR-A — the staff detail page shows why an E-Blast was not sent'
     for (const status of ['approved', 'sent', 'cancelled', 'rejected'] as const) {
       expect(has(await renderFailed('member_halted', status), 'eblast-failure-reason'), status).toBe(false);
     }
+  });
+
+  /**
+   * R6.7 — the two STANDING refusals are decisions about the member (warning);
+   * every other token is a delivery failure (destructive). The sentence gets
+   * Thai-safe line height: Thai diacritics clip at the default `text-sm`
+   * leading.
+   */
+  it.each([
+    ['member_halted', 'warning'],
+    ['member_not_in_good_standing', 'warning'],
+    ['audience_import_stuck', 'destructive'],
+    ['gateway_permanent', 'destructive'],
+    ['retry_budget_exhausted_after_1h:server_5xx:x', 'destructive'],
+  ] as const)('failed_to_dispatch (%s) → tone %s, relaxed leading', async (reason, tone) => {
+    const block = reasonBlock(await renderFailed(reason));
+    expect(block).toContain(`data-tone="${tone}"`);
+    expect(block).toContain('leading-relaxed');
+  });
+});
+
+/**
+ * F119 PR-A R1 — a due `approved` E-Blast whose member's membership is
+ * `suspended` (awaiting payment) is HELD by the dispatch cron every tick. Staff
+ * see why it has not gone out, and what happens next.
+ */
+describe('F119 PR-A — the staff detail page says when a due E-Blast is held for payment', () => {
+  const PAST = new Date(Date.now() - 3_600_000);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    missingKeys = new Set();
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+    holdMock.mockResolvedValue({ ok: true, value: false });
+  });
+
+  async function renderApproved(): Promise<string> {
+    findByIdMock.mockResolvedValue(makeBroadcast({ status: 'approved', scheduledFor: PAST, approvedAt: PAST }));
+    listVersionsMock.mockResolvedValue(threadFor('approved', 0));
+    const Page = (await import('@/app/(staff)/admin/broadcasts/[id]/page')).default;
+    return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: ID }) }));
+  }
+
+  it('held → an info note with the held title and sentence, and the read names the row and the member', async () => {
+    holdMock.mockResolvedValue({ ok: true, value: true });
+    const html = await renderApproved();
+
+    expect(has(html, 'eblast-dispatch-held')).toBe(true);
+    const at = html.indexOf('data-testid="eblast-dispatch-held"');
+    const block = html.slice(html.lastIndexOf('<div', at), html.indexOf('</div></div>', at));
+    expect(block).toContain('role="note"');
+    expect(block).toContain('data-tone="info"');
+    expect(block).toContain('dispatchHeldTitle');
+    expect(block).toContain('dispatchHeldBody');
+    expect(holdMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { status: 'approved', scheduledFor: PAST, memberId: 'member-1' },
+    );
+  });
+
+  it('not held → no note', async () => {
+    expect(has(await renderApproved(), 'eblast-dispatch-held')).toBe(false);
+  });
+
+  it('the read FAILS → no note (never "held" on a guess), and the failure is logged', async () => {
+    holdMock.mockResolvedValue({ ok: false, error: { kind: 'server_error', errClass: 'Error' } } as never);
+    const html = await renderApproved();
+    expect(has(html, 'eblast-dispatch-held')).toBe(false);
+    const { logger } = await import('@/lib/logger');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ errorId: 'M119.admin.detail.dispatch_hold', err: 'Error' }),
+      'broadcasts.detail_page.dispatch_hold_read_failed',
+    );
   });
 });

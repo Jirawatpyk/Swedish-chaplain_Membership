@@ -90,8 +90,9 @@ vi.mock('@/modules/broadcasts', () => ({
   dispatchScheduledBroadcast: (...args: unknown[]) => dispatchScheduledBroadcastMock(...args),
   makeDispatchScheduledBroadcastDeps: async () => ({
     membersBridge: STUB_BRIDGE,
-    // F119 PR-A — the factory wires the RAW bridge; the route must swap in its memo.
-    sendStanding: { membersBridge: STUB_BRIDGE, membershipAccess: STUB_ACCESS },
+    // F119 PR-A — the factory wires the RAW bridge; the route must swap in its
+    // memo for `membersBridge` and leave `haltReadFresh` raw (R2).
+    sendStanding: { membersBridge: STUB_BRIDGE, haltReadFresh: STUB_BRIDGE, membershipAccess: STUB_ACCESS },
   }),
   // A marker wrapper, not the identity: with `(inner) => inner` nothing here
   // could tell whether the route passed the memo or the raw bridge on.
@@ -512,6 +513,48 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
     },
   );
 
+  /**
+   * R1 — a `suspended` member's due E-Blast is HELD: an ok answer that sent
+   * nothing. Its own `held` bucket — never `succeeded` (nothing was
+   * delivered), never `unknown_error` (which pages), and no resolve-failed
+   * counter (nothing failed).
+   */
+  it.each([
+    ['legacy', false],
+    ['import', true],
+  ] as const)('%s leg: a HELD row → held:1, not succeeded, not unknown_error, no counter, no page', async (_leg, importOn) => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(importOn);
+    oneRow();
+    const held = { ok: true, value: { kind: 'dispatch_held_member_suspended' } };
+    dispatchScheduledBroadcastMock.mockResolvedValue(held);
+    buildAudienceTickMock.mockResolvedValue(held);
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
+
+    expect(body['held']).toBe(1);
+    expect(body['succeeded']).toBe(0);
+    expect(body['import_pending']).toBe(0);
+    expect(body['unknown_error']).toBe(0);
+    expect(body['retryable']).toBe(0);
+    expect(dispatchResolveFailedTotalSpy).not.toHaveBeenCalled();
+    expect(cronUnknownErrorCountSpy).not.toHaveBeenCalled();
+  });
+
+  it('legacy leg: a terminal write that did not commit → retryable, counted under phase `terminal_write`', async () => {
+    oneRow();
+    dispatchScheduledBroadcastMock.mockResolvedValue(
+      err({ kind: 'dispatch.server_error', message: 'terminal_write_failed', phase: 'terminal_write' }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const body = (await (await POST(makeRequest({ auth: 'Bearer test-cron-secret' }))).json()) as Record<string, number>;
+
+    expect(body['retryable']).toBe(1);
+    expect(body['permanent_failed']).toBe(0);
+    expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant', 'terminal_write');
+  });
+
   it('a failed standing read → retryable, counted under phase `standing`', async () => {
     oneRow();
     dispatchScheduledBroadcastMock.mockResolvedValue(
@@ -533,12 +576,18 @@ describe('cron dispatch-scheduled — member standing at dispatch (F119 PR-A)', 
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
 
     const [legacyDeps] = dispatchScheduledBroadcastMock.mock.calls[0] as [
-      { membersBridge: unknown; sendStanding: { membersBridge: unknown; membershipAccess: unknown } },
+      {
+        membersBridge: unknown;
+        sendStanding: { membersBridge: unknown; membershipAccess: unknown; haltReadFresh?: unknown };
+      },
     ];
     expect(legacyDeps.sendStanding.membersBridge).toEqual({ memoOf: STUB_BRIDGE });
     // The SAME memo instance the resolver reads, so one tick = one cache.
     expect(legacyDeps.sendStanding.membersBridge).toBe(legacyDeps.membersBridge);
     expect(legacyDeps.sendStanding.membershipAccess).toBe(STUB_ACCESS);
+    // R2 — the re-read before a permanent refusal stays the RAW bridge: the
+    // route swaps the memo in for `membersBridge` only.
+    expect(legacyDeps.sendStanding.haltReadFresh).toBe(STUB_BRIDGE);
 
     isF7ImportAudienceEnabledMock.mockReturnValue(true);
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'import_pending', importId: 'imp-1' } });

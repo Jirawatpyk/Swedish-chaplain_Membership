@@ -1462,16 +1462,31 @@ PR-2 builds on PR-1.
 - ~~**The member-standing gate does not run at dispatch**~~ — **FIXED** (F119 PR-A, PR #TBD;
   unflagged, live for every F7 send on merge). Both dispatch legs (`dispatchScheduledBroadcast`
   and `buildAudienceTick`, the latter before its submit/confirm branch so it covers both ticks)
-  now read `readMemberSendStanding` before any Resend call, outside every transaction. A halted
-  member → `failed_to_dispatch` with `failure_reason = member_halted`; a suspended or terminated
-  one (a refund or full credit note included, since `0306`) → `member_not_in_good_standing`. Both
-  are PERMANENT (maintainer's rule, halted members included): the quota slot is released, the
-  member gets the FR-021 email, and two audit rows land in the terminal transaction —
-  `broadcast_failed_to_dispatch` and submit's own refusal type with `surface: 'dispatch'` (actor
-  `system:cron`, role `null`). A failed standing read sends nothing and leaves the row `approved`
-  (`dispatch.server_error`, phase `standing`); the next tick asks again. Mail a prior tick already
-  handed to Resend is never refused. The interim "cancel `approved` rows by hand" step is retired.
-  Runbook: `docs/runbooks/eblast-approval.md` § Dispatch standing refusal.
+  now decide the member's standing (`decideDispatchStanding`) before any Resend call, outside
+  every transaction. Three answers besides "send" (the maintainer's decision, R1):
+  - **Held** — a `suspended` membership (`awaiting_payment` from the moment the renewal bill is
+    issued, `pending_admin_reactivation`, or an unpaid period that has ended). Nothing is sent or
+    written, no audit row, no email; the row stays `approved` with its slot reserved and every
+    tick re-checks it. It sends once the cycle completes (possibly after `scheduled_for`) and is
+    refused once the cycle lapses. Counted by `broadcasts_dispatch_standing_held_total` and the
+    cron's `held` bucket; the staff detail page shows a "held" note once the send time has passed.
+  - **Refused, PERMANENTLY** — a halted member (the halt re-read uncached first) →
+    `failed_to_dispatch` with `failure_reason = member_halted`; an ENDED membership (F8
+    `terminated`: lapsed, cancelled / coverage ended, a refund or full credit note since `0306`) →
+    `member_not_in_good_standing`. The quota slot is released, the member gets the FR-021 email
+    (with the standing reassurance), and two audit rows land in the terminal transaction —
+    `broadcast_failed_to_dispatch` and submit's own refusal type with `surface: 'dispatch'` (actor
+    `system:cron`, role `null`); the counters move only after it commits.
+  - **Undecided** — a failed standing read sends nothing and leaves the row `approved`
+    (`dispatch.server_error`, phase `standing`); the next tick asks again.
+
+  Mail a prior tick already handed to Resend is never refused. The interim "cancel `approved`
+  rows by hand" step is retired. **Known limitation:** the FR-021 retry budget is measured from
+  `scheduled_for` on both legs, so a held row that resumes more than an hour late and then hits a
+  single retryable Resend failure goes straight to `retry_budget_exhausted`; and a held row sits
+  in `broadcasts_approved_overdue_count` (its alarm stays on for the hold). Neither can be fixed
+  without recording the hold on the row. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch
+  standing refusal.
 - **Type seams and smaller follow-ups from the PR #392 review round 3** are tracked in issue #400:
   the `applyTransition` field allowlist as a type, branded ids across the F119 ports, a typed
   `contextData` per `eblast_*` type, a distinct `read_failed` outbox failure reason, the `stage`

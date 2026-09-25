@@ -20,10 +20,12 @@
  * RLS slice.
  *
  * F119 PR-A — the SAME reads at SEND time, on both dispatch legs: a halted and
- * a suspended member each end `failed_to_dispatch` with their reason, the quota
- * slot is released, Resend (a recording fake) is never called, and on the
- * import leg a tick-2 refusal leaves the tick-1 audience where
- * `cleanup-audiences` reaps it.
+ * a terminated (lapsed) member each end `failed_to_dispatch` with their reason,
+ * the quota slot is released, Resend (a recording fake) is never called, and on
+ * the import leg a tick-2 refusal leaves the tick-1 audience where
+ * `cleanup-audiences` reaps it. A SUSPENDED member (an `awaiting_payment` cycle
+ * whose paid period has not ended) is HELD on both legs (R1): the row is left
+ * exactly as it was, the slot stays reserved, and no refusal row is written.
  */
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -320,7 +322,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
 
   it.each([
     { standing: 'halted' as const, reason: 'member_halted' as const },
-    { standing: 'suspended' as const, reason: 'member_not_in_good_standing' as const },
+    { standing: 'terminated' as const, reason: 'member_not_in_good_standing' as const },
   ])('legacy dispatch for a $standing member → failed_to_dispatch ($reason), the slot freed, no Resend call', async ({ standing, reason }) => {
     const memberId = await seedMember(standing);
     const row = approvedRow(memberId);
@@ -355,6 +357,79 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       surface: 'dispatch',
       actor_role: null,
     });
+  });
+
+  // ---- R1 — a SUSPENDED membership is HELD, never refused ------------------
+  //
+  // The seeded `suspended` member's latest cycle is `awaiting_payment` with a
+  // FUTURE `expires_at` — the renewal bill is out and the paid period has not
+  // ended, which F8 already reports as `suspended`. Refusing there killed the
+  // E-Blast of a member in good faith. Held: nothing sent, nothing written,
+  // the row stays `approved` with its slot reserved, and no refusal row exists.
+
+  it('legacy dispatch for a SUSPENDED member (awaiting_payment, future expiry) → held: row approved, slot kept, nothing audited, no Resend call', async () => {
+    const memberId = await seedMember('suspended');
+    const row = approvedRow(memberId);
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = recordingGateway();
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await reserved(memberId)).toBe(1);
+    expect(gw.calls).toEqual([]);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('import leg, tick 2, a SUSPENDED member → held: row approved with its import and audience, nothing audited, no Resend call', async () => {
+    const memberId = await seedMember('suspended');
+    const row = approvedRow(memberId, {
+      resendAudienceId: `aud-held-${randomUUID()}`,
+      audienceImportId: `imp-held-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = recordingGateway();
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await reserved(memberId)).toBe(1);
+    expect(gw.calls).toEqual([]);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('import leg, tick 1, a TERMINATED (lapsed) member → failed_to_dispatch (member_not_in_good_standing), permanently, no Resend call', async () => {
+    const memberId = await seedMember('terminated');
+    const row = approvedRow(memberId);
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = recordingGateway();
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_not_in_good_standing' });
+    const after = await readRow(row.broadcastId!);
+    expect(after.status).toBe('failed_to_dispatch');
+    expect(after.failureReason).toBe('member_not_in_good_standing');
+    expect(await reserved(memberId)).toBe(0);
+    expect(gw.calls).toEqual([]);
+    expect((await dispatchAudits(row.broadcastId!)).map((a) => a.eventType)).toContain(EVENT_OF.member_not_in_good_standing);
   });
 
   it('import leg, tick 2, a member halted after the import was submitted → failed_to_dispatch, no Resend call, and the tick-1 audience is a cleanup candidate', async () => {

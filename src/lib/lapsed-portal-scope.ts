@@ -131,7 +131,9 @@ const UUID_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
  * here — they run at submit, approve-as-submitted, confirm-schedule's
  * promotion AND at dispatch (`_member-send-standing.ts`; F119 PR-A), so an
  * E-Blast already `approved` before the membership ended is refused at send
- * time (`failed_to_dispatch`, `member_not_in_good_standing`).
+ * time (`failed_to_dispatch`, `member_not_in_good_standing`); one whose
+ * membership is only suspended (awaiting payment) is held until it is paid or
+ * lapses (`_dispatch-standing-gate.ts`).
  *
  * EXACT paths, never prefixes: `/api/broadcasts/**` also holds the benefit-
  * consuming routes (`submit`, `draft/**`, `inline-image-upload`, `preview`,

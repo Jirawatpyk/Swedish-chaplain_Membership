@@ -89,6 +89,7 @@ vi.mock('@/components/broadcast/admin/manager-readonly-banner', () => ({
 vi.mock('@/lib/broadcast-approval-deps', () => ({
   makeListBroadcastVersionsDeps: () => ({}),
   makeReadFormattingWarningsDeps: () => ({}),
+  makeReadDispatchHoldDeps: () => ({}),
 }));
 vi.mock('@/components/ui/relative-time', () => ({ RelativeTime: () => null }));
 vi.mock('@/components/shell/refresh-page-button', () => ({
@@ -130,6 +131,8 @@ vi.mock('@/modules/broadcasts', async () => ({
   isF71aUs2Enabled: () => false,
   listBroadcastVersions: vi.fn(async () => ({ ok: false, error: { kind: 'not_found' } })),
   readFormattingWarnings: vi.fn(async () => ({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } })),
+  // F119 PR-A R1 — the "held for payment" note; this file renders none.
+  readDispatchHold: vi.fn(async () => ({ ok: true, value: false })),
 }));
 vi.mock('@/lib/broadcast-brand-deps', () => ({
   makeRenderBroadcastPreviewDeps: vi

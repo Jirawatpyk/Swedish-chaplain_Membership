@@ -270,7 +270,7 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
       broadcastId: asBroadcastId(broadcastId),
     });
     expect(second.ok).toBe(true);
-    if (!second.ok) throw new Error('expected the retry to succeed');
+    if (!second.ok || second.value.kind !== 'sent') throw new Error('expected the retry to succeed');
     expect(second.value.resendBroadcastId).toBe(mintedId);
 
     // No second mint, no second push; one probe; the send retried once.

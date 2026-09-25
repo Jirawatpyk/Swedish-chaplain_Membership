@@ -216,7 +216,9 @@ function makeDeps(opts: {
      * that branch's catch was uncovered despite a test that looked like it drove
      * it.
      */
-    | 'broadcast_dispatch_failure_notif_skipped_no_email';
+    | 'broadcast_dispatch_failure_notif_skipped_no_email'
+    /** F119 PR-A R4 — the standing refusal's own row, the SECOND insert of the terminal tx. */
+    | 'broadcast_member_halted_pending_review';
   /**
    * Round 4 T4/M12 — a WIRING bug rather than a storage hiccup. The use case
    * rethrows `AuditPortInvariantError` out of its fail-soft envelope on purpose;
@@ -2090,14 +2092,15 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
 /**
  * F119 PR-A — the member-standing gate on the IMPORT leg, read before the
  * submit/confirm branch so it covers both ticks. Same rule as the legacy leg:
- * a refusal is PERMANENT and goes through `failTerminally` (the terminal
- * transition is what hands a tick-1 Resend audience to `cleanup-audiences`); a
+ * a refusal (halted, or the membership ENDED) is PERMANENT and goes through
+ * `failTerminally` (the terminal transition is what hands a tick-1 Resend
+ * audience to `cleanup-audiences`); a SUSPENDED membership is HELD (R1); a
  * read that fails decides nothing and the row stays `approved`.
  */
 describe('buildAudienceTick — member standing at send time (F119 PR-A)', () => {
   it.each([
     ['halted', { halted: ['m-1'] }, 'member_halted', 'broadcast_member_halted_pending_review'],
-    ['suspended', { access: 'suspended' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked'],
+    ['terminated', { access: 'terminated' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked'],
   ] as const)('tick 1, a %s member → failed_to_dispatch (%s) before any Resend call', async (_label, standing, reason, refusalEvent) => {
     const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
     const { deps, rec } = makeDeps({ standing });
@@ -2165,6 +2168,135 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     expect(rec.transitions).toEqual([]);
     expect(rec.audits).toEqual([]);
     expect(rec.memberEmails).toEqual([]);
+    expect(rec.gatewayCalls).toEqual([]);
+  });
+
+  /**
+   * R1 — a `suspended` membership (awaiting payment) is HELD on both ticks:
+   * nothing reaches Resend, nothing is written, nobody is emailed, and the row
+   * stays `approved` for the next tick.
+   */
+  it.each([
+    ['tick 1 (no import yet)', {}],
+    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }],
+  ] as const)('%s, a SUSPENDED member → held: ok, no transition, no audit, no email, no Resend call', async (_label, row) => {
+    const heldSpy = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({ ...row, standing: { access: 'suspended' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+    expect(rec.gatewayCalls).toEqual([]);
+    expect(rec.importsSubmitted).toEqual([]);
+    expect(heldSpy).toHaveBeenCalledWith('test-tenant');
+    expect(failedSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * R1 import leg — a hold on tick 2 must not later be misjudged as
+   * `audience_import_stuck` when the row resumes. The stuck rule
+   * (`IMPORT_STUCK_AFTER_MS`, 30 min from the SUBMIT) is evaluated only while
+   * the provider reports the job NOT completed; a held tick returns before the
+   * poll, so it cannot fire while held, and a resumed row whose job completed
+   * during the hold proceeds to the send however long the hold lasted.
+   */
+  it('held on tick 2 for longer than the stuck window, then resumed → proceeds to the send (not audience_import_stuck)', async () => {
+    const submittedLongAgo = new Date(NOW.getTime() - 6 * 60 * 60 * 1000);
+    const held = makeDeps({ ...POLLING, audienceImportSubmittedAt: submittedLongAgo, standing: { access: 'suspended' } });
+    expect(await buildAudienceTick(held.deps as never, { broadcastId: BROADCAST_ID })).toEqual({
+      ok: true,
+      value: { kind: 'dispatch_held_member_suspended' },
+    });
+    expect(held.rec.gatewayCalls).toEqual([]);
+
+    // The member paid: the cycle completed, access `full`.
+    const resumed = makeDeps({ ...POLLING, audienceImportSubmittedAt: submittedLongAgo });
+    const res = await buildAudienceTick(resumed.deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
+    expect(resumed.rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(resumed.rec.sends).toEqual(['rb-1']);
+  });
+
+  /** R2 — the per-tick halt memo is re-read UNCACHED before a permanent refusal. */
+  it('halted in the tick memo but CLEARED on the fresh re-read → not refused; the tick proceeds', async () => {
+    const { deps, rec } = makeDeps({ standing: { halted: ['m-1'], haltReadFresh: { halted: [] } } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value.kind : res.error).toBe('import_submitted');
+    expect(deps.sendStanding.haltReadFresh?.getMembersHaltedInTenant).toHaveBeenCalledTimes(1);
+    expect(rec.transitions).toEqual([]);
+  });
+
+  it('halted in the memo AND on the fresh re-read → refused permanently (member_halted)', async () => {
+    const { deps, rec } = makeDeps({ standing: { halted: ['m-1'], haltReadFresh: { halted: ['m-1'] } } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
+    expect(rec.transitions.map((t) => t.failureReason)).toEqual(['member_halted']);
+    expect(rec.gatewayCalls).toEqual([]);
+  });
+
+  /**
+   * R4 — the counters moved inside the terminal tx, before the refusal's own
+   * audit INSERT: when that INSERT throws, the tx rolls back and nothing is
+   * recorded, but `failed_to_dispatch.count` / `audit_emit.count` had already
+   * moved. They move only after the commit now.
+   */
+  it('the refusal audit (extraAudit) THROWS → terminal_write, and no counter moves', async () => {
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const emitSpy = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const { deps, rec } = makeDeps({
+      standing: { halted: ['m-1'] },
+      auditThrowsOn: 'broadcast_member_halted_pending_review',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'terminal_write_failed', phase: 'terminal_write' },
+    });
+    expect(failedSpy).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalled();
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  /**
+   * R5 — the skip is narrowed to ids THIS leg attached. On the import leg
+   * `resend_broadcast_id` is written only after the send and only on a row
+   * that already carries `audience_import_id`; a row carried over from the
+   * LEGACY leg across a flag flip has the id from that leg's pre-send
+   * `attachBroadcastId` and no import id, so its tick 1 is still gated.
+   */
+  it('a legacy-leg carry-over (resend_broadcast_id set, NO import id) is still gated on tick 1', async () => {
+    const { deps, rec } = makeDeps({ resendBroadcastId: 'rb-from-legacy-leg', standing: { halted: ['m-1'] } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(deps.sendStanding.membersBridge.getMembersHaltedInTenant).toHaveBeenCalled();
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
+    expect(rec.gatewayCalls).toEqual([]);
+  });
+
+  /** R8.5 — an EMPTY id is not an id: the row is still gated (fail closed). */
+  it("an empty resend_broadcast_id ('') on an import-leg row is not a handed-to-send marker — still gated", async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: '',
+      standing: { halted: ['m-1'] },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
     expect(rec.gatewayCalls).toEqual([]);
   });
 

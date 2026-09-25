@@ -211,6 +211,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     import_submitted: 0,
     import_pending: 0,
     /**
+     * F119 PR-A R1 — due rows HELD because the requesting member's membership
+     * is `suspended` (awaiting payment). Nothing was sent or written; the row
+     * stays `approved` and the next tick re-checks it. Neither a success nor a
+     * failure, and never `unknown_error` (which pages): it sends once the
+     * member pays, and is refused once the cycle lapses. The use case counts
+     * `broadcasts.dispatch_standing_held.total`.
+     */
+    held: 0,
+    /**
      * Round 2 R2-1/R2-44 + round 3 finding 3-13 — the row is no longer what the
      * claim query saw: a cancel landed, another worker won the transition, or an
      * row was deleted between the claim and the write. Normal, self-healing,
@@ -310,12 +319,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             broadcastId: asBroadcastId(row.broadcast_id),
           });
           if (built.ok) {
-            // Three distinct outcomes, counted apart. `import_submitted` and
-            // `import_pending` are NOT successes: nothing has been delivered,
-            // and folding them into `succeeded` would have the dashboard claim
-            // sends that have not happened.
+            // Four distinct outcomes, counted apart. `import_submitted`,
+            // `import_pending` and a HOLD are NOT successes: nothing has been
+            // delivered, and folding them into `succeeded` would have the
+            // dashboard claim sends that have not happened.
             if (built.value.kind === 'sent') summary.succeeded++;
             else if (built.value.kind === 'import_submitted') summary.import_submitted++;
+            else if (built.value.kind === 'dispatch_held_member_suspended') summary.held++;
             else summary.import_pending++;
             continue;
           }
@@ -416,7 +426,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           broadcastId: asBroadcastId(row.broadcast_id),
         });
         if (result.ok) {
-          summary.succeeded++;
+          // F119 PR-A R1 — a held row sent nothing; it is not a success.
+          if (result.value.kind === 'dispatch_held_member_suspended') summary.held++;
+          else summary.succeeded++;
           continue;
         }
         switch (result.error.kind) {
@@ -587,6 +599,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     cronSpan.setAttribute('cron.succeeded', summary.succeeded);
     cronSpan.setAttribute('cron.import_submitted', summary.import_submitted);
     cronSpan.setAttribute('cron.import_pending', summary.import_pending);
+    cronSpan.setAttribute('cron.held', summary.held);
     cronSpan.setAttribute('cron.retryable', summary.retryable);
     cronSpan.setAttribute('cron.permanent_failed', summary.permanent_failed);
     cronSpan.setAttribute('cron.concurrent_skip', summary.concurrent_skip);

@@ -183,8 +183,9 @@ its time is an F7 dispatch problem — see `docs/runbooks/broadcasts-dispatch-fa
 expired**. The schedule dialog here offers "Choose another time", "Send now" and "Cancel the
 confirmed time" (→ Changes requested, approval and time both cleared) — not "keep the proposal".
 To stop it otherwise: start a new version (voids the approval) or cancel the E-Blast. Reject is
-not offered here. When it comes due, the dispatcher re-checks the member's standing and refuses a
-halted, suspended or terminated member — see § Dispatch standing refusal.
+not offered here. When it comes due, the dispatcher re-checks the member's standing: it HOLDS the
+send while the membership is awaiting payment, and refuses a halted member or an ended membership
+— see § Dispatch standing refusal.
 
 ### `expired_no_member_response` — Expired (closed)
 
@@ -194,39 +195,78 @@ free (`quota_year_consumed` stays NULL). The member submits a new E-Blast if the
 ## Dispatch standing refusal
 
 F119 PR-A — unflagged, so it applies to every F7 send, flag on or off. Just before any Resend
-call, both dispatch legs re-read the rules submit applies (`readMemberSendStanding`): the F7 halt
-flag and F8 membership access. The approval edges read them too, but an E-Blast can sit
-`approved` for days, and a refund or full credit note ends coverage at once (`0306`).
+call, both dispatch legs re-read the rules submit applies (`decideDispatchStanding` →
+`readMemberSendStanding`): the F7 halt flag and F8 membership access. The approval edges read
+them too, but an E-Blast can sit `approved` for days, and a refund or full credit note ends
+coverage at once (`0306`).
+
+The answer is one of three (the maintainer's decision, R1):
+
+- **Held** — the membership is `suspended`: the renewal bill is out and unpaid (`awaiting_payment`,
+  entered as soon as the bill is issued, ~T-30 — usually while the current period is still paid),
+  `pending_admin_reactivation`, or an unpaid period that has ended. Nothing is sent.
+- **Refused, permanently** — the member's E-Blasts are **halted** (the complaint-rate auto-halt),
+  or the membership has **ended** (F8 `terminated`: cancelled / coverage ended, lapsed, refunded).
+- **Undecided** — the standing read failed. Nothing is sent; the next tick asks again.
 
 **What it looks like**
 
-| Signal | Refusal (halted / not in good standing) | Read failure |
-|---|---|---|
-| Row | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick (5 min) asks again |
-| Staff detail page | a "Why this E-Blast was not sent" note under the status, naming the cause | nothing new |
-| Audit | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx) | none |
-| Member | the FR-021 "did not go out" email, with a factual reason and "contact the chamber" | nothing |
-| Quota | the slot is released (design D1) | unchanged (still reserved) |
-| Metrics | `broadcasts_failed_to_dispatch_count{failure_reason="member_ineligible"}` — never `app_error` | `broadcasts_dispatch_resolve_failed_total{phase="standing"}` + a `cron.broadcasts.dispatch.server_error` warn with `errClass` |
+| Signal | Held (awaiting payment) | Refusal (halted / membership ended) | Read failure |
+|---|---|---|---|
+| Row | stays `approved`, untouched — every tick (5 min) re-checks it | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick asks again |
+| Staff detail page | once `scheduled_for` has passed: an info note "Held — the member's membership is awaiting payment; the E-Blast will send automatically once it is settled, or fail if the membership ends" | a "Why this E-Blast was not sent" note under the status, naming the cause | nothing new |
+| Audit | **none** (a row every 5 min would bury the log) | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx) | none |
+| Member | nothing | the FR-021 "did not go out" email: a factual reason, "contact the chamber", and that they can submit the content as a new E-Blast once the chamber has resolved it | nothing |
+| Quota | unchanged (still reserved) | the slot is released (design D1) | unchanged (still reserved) |
+| Logs / metrics | `broadcasts.dispatch.standing_held` (info; `broadcastId`, `leg`) + `broadcasts_dispatch_standing_held_total` (+1 per tick); the cron summary's `held` bucket | `broadcasts_failed_to_dispatch_count{failure_reason="member_ineligible"}` — never `app_error` | `broadcasts_dispatch_resolve_failed_total{phase="standing"}` + a `cron.broadcasts.dispatch.server_error` warn with `errClass` |
+
+**How a held row resumes.** Nothing to do by hand. The moment the member pays and the cycle
+completes, F8 answers `full` and the next tick sends — after `scheduled_for`, by however long the
+hold lasted (the `broadcast_send_started` row's `delaySeconds` records how late). If the member
+never pays, the cycle lapses (`terminated`) and the next tick refuses it permanently
+(`member_not_in_good_standing`, member emailed, slot released). To stop a held E-Blast sooner,
+cancel it (an `approved` row is cancellable).
+
+**Side effects of a hold, know them before triaging an alarm:**
+
+- `broadcasts_approved_overdue_count` counts a held row after an hour and its alarm (≥ 1 for 30
+  min) stays on for the whole hold. `broadcasts_dispatch_standing_held_total` climbing for the
+  same tenant means "waiting for payment", not "stuck".
+- **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold on tick 2 keeps the tick-1 Resend
+  audience (and its submitted import) until the row resumes or is refused — one of the Free plan's
+  three audiences. On resume the completion rule still applies: an audience that changed during
+  the hold is refused as `count_mismatch` (FR-044 a), not sent.
+- **Both legs:** the FR-021 retry budget is measured from `scheduled_for`. A row resuming more than
+  an hour late that then hits ONE retryable Resend failure goes straight to
+  `retry_budget_exhausted` (the member told "unreachable for over an hour"). Nothing on the row
+  records the hold, so the budget cannot tell a hold from a slow provider — a known limitation.
 
 A refusal is **permanent by the maintainer's rule, halted members included**: there is no edge out
-of `failed_to_dispatch`, and clearing a halt does not revive the row. Mail a prior tick already
-handed to Resend is never refused (legacy leg: the inherited-id probe; import leg: a
-`resend_broadcast_id` already attached).
+of `failed_to_dispatch`, and clearing a halt does not revive the row. A halt is re-read UNCACHED
+before it refuses (the cron memoises the halt list per tick), so a halt cleared mid-tick is not made
+permanent by the memo. Mail a prior tick already handed to Resend is never refused (legacy leg: the
+inherited-id probe; import leg: a `resend_broadcast_id` this leg attached, i.e. on a row that also
+carries `audience_import_id` — a legacy-leg row carried across a flag flip IS gated).
 
 **What staff do**
 
-1. Open `/admin/broadcasts/<id>`; the note names the cause. The member has already been emailed.
-2. **Halted** — the member's E-Blasts were on hold (complaint-rate auto-halt). Review the halt as
-   usual (`/admin/broadcasts` halt banner → Clear halt). Nothing to do on this row.
-3. **Not in good standing** — the membership is suspended (unpaid / pending reactivation) or
-   terminated (lapsed, refunded, fully credited). Resolve the membership in F8 if that is wrong.
-4. If the member still wants the content sent, they (or staff by proxy) submit a **new** E-Blast
-   once eligible. The released slot is available to it.
-5. **Read failures** that persist (`phase="standing"` > 0 for 15 min) mean the F3 halt read or the
+1. Open `/admin/broadcasts/<id>`; the note says held, or names the refusal. On a refusal the
+   member has already been emailed.
+2. **Held** — nothing to do on the row; it sends by itself once paid. Chase the renewal payment in
+   F8 if appropriate, or cancel the E-Blast if it should not go out late.
+3. **Halted** — the member's E-Blasts were halted by the complaint-rate auto-halt. Review the halt
+   as usual (`/admin/broadcasts` halt banner → Clear halt). Nothing to do on this row.
+4. **Membership ended** — terminated (lapsed, refunded, fully credited, cancelled). Resolve the
+   membership in F8 if that is wrong.
+5. If the member still wants refused content sent, they (or staff by proxy) submit a **new**
+   E-Blast once eligible. The released slot is available to it.
+6. **Read failures** that persist (`phase="standing"` > 0 for 15 min) mean the F3 halt read or the
    F8 renewal-cycle read is failing: check Neon, the `errClass` on the cron's warn line, and the
    `[membership-access-bridge] access lookup failed — failing closed` warns. Nothing is sent while
    it lasts, so a scheduled send slips; `broadcasts_approved_overdue_count` notices after an hour.
+7. `phase="terminal_write"` on the live leg means a refusal (or any terminal failure) could not be
+   written: nothing was recorded and nobody was told; the row stays `approved` and the next tick
+   tries again. Persisting → Neon.
 
 **Query** — standing refusals in the last 7 days:
 

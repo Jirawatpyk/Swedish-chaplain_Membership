@@ -51,6 +51,20 @@ function reassuranceFor(locale: (typeof LOCALES)[number]): string {
   return msgs.email.broadcastFailedToDispatch.reassurance;
 }
 
+/**
+ * F119 PR-A R6.1 — the reassurance for the two STANDING reasons. The general
+ * one invites the member to submit a new E-Blast, which a halted or ended
+ * member cannot do until the chamber has resolved it with them.
+ */
+function standingReassuranceFor(locale: (typeof LOCALES)[number]): string {
+  const msgs = { en: enMessages, th: thMessages, sv: svMessages }[locale] as {
+    email: { broadcastFailedToDispatch: { reassuranceStanding: string } };
+  };
+  return msgs.email.broadcastFailedToDispatch.reassuranceStanding;
+}
+
+const STANDING_REASONS: ReadonlySet<string> = new Set(['member_halted', 'member_not_in_good_standing']);
+
 function build(reason: string, locale: (typeof LOCALES)[number]) {
   return buildBroadcastFailedToDispatchEmail({
     toEmail: 'member@example.test',
@@ -122,10 +136,12 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
       // weaker "is some text present" assertion.
       expect(mail.text, `${reason} fell through to generic`).not.toBe(generic.text);
       // And the reassurance paragraph, which is now the ONLY paragraph after
-      // the reason line and carries the quota answer.
-      expect(mail.text, `${reason} lost its reassurance`).toContain(
-        reassuranceFor(locale),
-      );
+      // the reason line and carries the quota answer — the standing variant for
+      // the two standing reasons (R6.1), the general one for every other.
+      const expected = STANDING_REASONS.has(reason) ? standingReassuranceFor(locale) : reassuranceFor(locale);
+      const other = STANDING_REASONS.has(reason) ? reassuranceFor(locale) : standingReassuranceFor(locale);
+      expect(mail.text, `${reason} lost its reassurance`).toContain(expected);
+      expect(mail.text, `${reason} carries the wrong reassurance`).not.toContain(other);
     }
   });
 
@@ -172,17 +188,59 @@ describe('buildBroadcastFailedToDispatchEmail — the reason a MEMBER reads', ()
  * to wait for, or look for, an action that does not exist.
  */
 describe('buildBroadcastFailedToDispatchEmail — member standing and the quota promise (F119 PR-A)', () => {
-  it('en: a halt says the account is under review and whom to contact, without accusing', () => {
+  it('en: a halt says E-Blasts are paused for review and whom to contact, without accusing', () => {
     const text = build('member_halted', 'en').text;
-    expect(text).toMatch(/under review/i);
-    expect(text).toMatch(/contact/i);
+    expect(text).toMatch(/paused for review/i);
+    expect(text).toMatch(/contact the chamber/i);
     expect(text).not.toMatch(/complain|spam|violat|abuse/i);
   });
 
-  it('en: a lapsed or suspended membership says it is not currently active, and whom to contact', () => {
-    const text = build('member_not_in_good_standing', 'en').text;
-    expect(text).toMatch(/not currently active/i);
-    expect(text).toMatch(/contact/i);
+  /**
+   * R1 — a `suspended` membership is now HELD, never refused, so this token
+   * reaches a member only when the membership has ENDED. "Not currently
+   * active" (and any "suspended") described a state that no longer refuses.
+   */
+  it.each([
+    ['en', /has ended/i, /suspended|not currently active/i],
+    ['th', /สิ้นสุดลงแล้ว/, /ระงับ|ไม่อยู่ในสถานะใช้งาน/],
+    ['sv', /har upphört/i, /avstängt|inte aktivt för närvarande/i],
+  ] as const)('%s: an ended membership says it has ended, and whom to contact', (locale, ended, stale) => {
+    const text = build('member_not_in_good_standing', locale).text;
+    expect(text).toMatch(ended);
+    expect(text).not.toMatch(stale);
+  });
+
+  it.each(LOCALES)('%s: a standing reason reads the standing reassurance — no invitation to resubmit before it is resolved', (locale) => {
+    for (const reason of STANDING_REASONS) {
+      const mail = build(reason, locale);
+      expect(mail.text).toContain(standingReassuranceFor(locale));
+      expect(mail.html).toContain(standingReassuranceFor(locale).replace(/'/g, '&#39;'));
+    }
+  });
+
+  it('en: the standing reassurance releases the slot and ties a resubmission to the chamber resolving it', () => {
+    const text = standingReassuranceFor('en');
+    expect(text).toMatch(/did not count against your annual allowance/i);
+    expect(text).toMatch(/once the chamber has resolved this with you/i);
+  });
+
+  it('en: the general reassurance says "E-Blast" throughout, never "broadcast"', () => {
+    expect(reassuranceFor('en')).toMatch(/^This E-Blast /);
+    expect(reassuranceFor('en')).not.toMatch(/broadcast/i);
+  });
+
+  it('th: every new-E-Blast invitation says ยื่น (submit), never ส่ง', () => {
+    for (const text of [reassuranceFor('th'), standingReassuranceFor('th')]) {
+      expect(text).toContain('ยื่น E-Blast ฉบับใหม่');
+      expect(text).not.toContain('ส่ง E-Blast ฉบับใหม่');
+    }
+  });
+
+  it('sv: no "som det är" calque, and the quota is "dragits från"', () => {
+    for (const text of [reassuranceFor('sv'), standingReassuranceFor('sv')]) {
+      expect(text).not.toMatch(/som det är/);
+      expect(text).toContain('dragits från');
+    }
   });
 
   it.each([
