@@ -97,11 +97,16 @@ stage does not change.
 **Expect**: a banner saying it is your turn and the date to respond by; the formatted version
 **first**, the original beside it (on a phone: below it, on the same page); the note from the
 chamber; the proposed and confirmed send times (the proposed time is the one picked in step 1; the
-confirmed time reads "Not set" because marketing has not confirmed one yet).
+confirmed time reads "—" because marketing has not confirmed one yet; a screen reader announces it
+as "Not set").
 
-2. Click **Request changes** and leave the reason empty, then confirm.
+2. Click **Request changes** and leave the reason empty.
 
-**Expect**: refused — "Tell the chamber what should change."
+**Expect**: the **Request changes** confirm button in the dialog stays disabled while the reason is
+blank. Click in the reason field, then click the dialog's text outside it (its title or
+description): the field shows "Tell the chamber what should change." Nothing is sent. (Moving to
+**Keep reviewing** — which is where Tab goes while the confirm button is disabled — shows no
+message: leaving for Keep reviewing is not treated as a blank answer.)
 
 3. Enter a reason (for example "Please move the date into the heading") and confirm **Request
    changes**.

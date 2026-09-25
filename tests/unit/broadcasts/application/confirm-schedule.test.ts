@@ -101,14 +101,17 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
     // T166 follow-up — the refusal is audited with submit's own event types,
     // AFTER the rollback (tx null: a row written on the refused tx would roll
     // back with it). Staff act → `related_member_id`; the session role as held.
+    // PR-D — the membership refusal carries WHICH access refused it, from the
+    // pre-read standing through the rolled-back refusal into the audit row;
+    // a halt carries none.
     it.each([
-      { standing: { halted: [MEMBER] }, kind: 'member_halted', eventType: 'broadcast_member_halted_pending_review' },
-      { standing: { access: 'terminated' as const }, kind: 'member_not_in_good_standing', eventType: 'broadcast_membership_suspended_blocked' },
-      { standing: { access: 'suspended' as const }, kind: 'member_not_in_good_standing', eventType: 'broadcast_membership_suspended_blocked' },
-    ])('$kind ($standing) → refused, nothing written, no member email, one $eventType row', async ({ standing, kind, eventType }) => {
+      { standing: { halted: [MEMBER] }, kind: 'member_halted', eventType: 'broadcast_member_halted_pending_review', access: {} },
+      { standing: { access: 'terminated' as const }, kind: 'member_not_in_good_standing', eventType: 'broadcast_membership_suspended_blocked', access: { access: 'terminated' } },
+      { standing: { access: 'suspended' as const }, kind: 'member_not_in_good_standing', eventType: 'broadcast_membership_suspended_blocked', access: { access: 'suspended' } },
+    ])('$kind ($standing) → refused, nothing written, no member email, one $eventType row', async ({ standing, kind, eventType, access }) => {
       const { store, audit, run, sendStanding } = setup(promotable(), standing);
       const b = promotable();
-      expect(await run({ actorRole: 'marketing' })).toEqual({ ok: false, error: { kind, memberId: MEMBER } });
+      expect(await run({ actorRole: 'marketing' })).toEqual({ ok: false, error: { kind, memberId: MEMBER, ...access } });
       expect(sendStanding.membershipAccess.getMembershipAccess.mock.calls.every((c) => c[1] === MEMBER)).toBe(true);
       expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
       expect(store.outbox.rows()).toHaveLength(0);
@@ -118,7 +121,7 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
           eventType,
           actorUserId: '44444444-4444-4444-8444-444444444444',
           tenantId: 'test-tenant',
-          payload: { related_member_id: MEMBER, broadcast_id: b.broadcastId, surface: 'schedule_confirm', actor_role: 'marketing' },
+          payload: { related_member_id: MEMBER, broadcast_id: b.broadcastId, surface: 'schedule_confirm', ...access, actor_role: 'marketing' },
         },
       ]);
     });

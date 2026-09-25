@@ -216,7 +216,7 @@ The answer is one of three (the maintainer's decision, R1):
 |---|---|---|---|
 | Row | stays `approved` — every tick (5 min) re-checks it; the only write is the FR-021 retry-clock reset (`dispatch_first_failed_at = NULL`, only if it was set) | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick asks again |
 | Staff detail page | once `scheduled_for` has passed: an info note "Held — the member's membership is awaiting payment; the E-Blast will send automatically once it is settled, or fail if the membership ends" | a "Why this E-Blast was not sent" note under the status, naming the cause | nothing new |
-| Audit | **none** (a row every 5 min would bury the log) | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx) | none |
+| Audit | **none** (a row every 5 min would bury the log) | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx). The membership row also carries `access` — always `terminated` here (a suspended member is held); at submit / approve / schedule confirm it is `suspended` or `terminated` | none |
 | Member | nothing | the FR-021 "did not go out" email: a factual reason, "contact the chamber", and that they can submit the content as a new E-Blast once the chamber has resolved it | nothing |
 | Quota | unchanged (still reserved) | the slot is released (design D1) | unchanged (still reserved) |
 | Logs / metrics | `broadcasts.dispatch.standing_held` (info; `broadcastId`, `leg`) + `broadcasts_dispatch_standing_held_total` (+1 per tick); the cron summary's `held` bucket | `broadcasts_failed_to_dispatch_count{failure_reason="member_ineligible"}` — never `app_error` | `broadcasts_dispatch_resolve_failed_total{phase="standing"}` + a `cron.broadcasts.dispatch.server_error` warn with `errClass` |
@@ -237,6 +237,17 @@ cancel it (an `approved` row is cancellable).
   audience (and its submitted import) until the row resumes or is refused — one of the Free plan's
   three audiences. On resume the completion rule still applies: an audience that changed during
   the hold is refused as `count_mismatch` (FR-044 a), not sent.
+- **Import leg only — false import-stuck alarm.** The hold returns before `confirmImport`, so a
+  row held on tick 2 or later keeps `audience_import_id` set and `audience_import_completed_at`
+  NULL while its status stays `approved`. `broadcasts.audience_import_stuck_count` matches exactly
+  that shape (`broadcasts-gauges`: `status = 'approved'`, import submitted more than 30 min ago), so
+  it counts the held row and its alarm stays on until the member pays (the next tick confirms the
+  import) or the cycle lapses (the refusal makes the row terminal). It reads as "Resend's import
+  pipeline has stopped answering" when it is really a wait for payment. The gauge cannot tell a
+  held row apart without reading member standing, so the code is unchanged; **resolve this before
+  `FEATURE_F7_IMPORT_AUDIENCE` is turned on** (dormant while it is off, as it is in prod). Until
+  then: a stuck count on one tenant with `broadcasts_dispatch_standing_held_total` climbing for the
+  same tenant is a hold.
 - **Both legs:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
   PR-E) the hour counts from the FIRST retryable Resend failure of the dispatch attempt
   (`broadcasts.dispatch_first_failed_at`), not from `scheduled_for`, so a row resuming days late
@@ -298,7 +309,8 @@ carries `audience_import_id` — a legacy-leg row carried across a flag flip IS 
 
 ```sql
 SELECT timestamp, event_type, payload->>'broadcast_id' AS broadcast_id,
-       payload->>'related_member_id' AS member_id
+       payload->>'related_member_id' AS member_id,
+       payload->>'access' AS access  -- membership rows only; NULL on a halt and on rows written before PR-D
   FROM audit_log
  WHERE tenant_id = '<tenant>'
    AND event_type IN ('broadcast_member_halted_pending_review', 'broadcast_membership_suspended_blocked')

@@ -1357,7 +1357,9 @@ step 5's flip safe to take immediately after this merge.
      `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` — with
      `related_member_id`, `broadcast_id`, `surface` (`approve_as_submitted` | `schedule_confirm`)
      and the session `actor_role`. A query on either type now returns staff refusals as well as
-     member submits; submit's own rows keep their `memberId` payload;
+     member submits; submit's own rows keep their `memberId` payload. Since PR-D every
+     `broadcast_membership_suspended_blocked` row (submit, both staff surfaces, and `dispatch`)
+     also carries `access` (`suspended` | `terminated`) — one event type covers both;
    - **`PATCH …/version` spends the staff write bucket before parsing its body** (S-INFO).
 
    **Not on this list, deliberately: the staff "new submission" email.** `eblast_submitted_marketing`

@@ -585,7 +585,7 @@ $$ LANGUAGE plpgsql;
 | 30c | `member_acknowledged_broadcasts_terms` | info | member_id, user_id, acknowledged_at, banner_locale |
 | 31 | `broadcast_webhook_signature_rejected` | high | source_ip, failure_reason |
 | 32 | `broadcast_sent_with_expired_member_plan` | warning | broadcast_id, member_id, plan_id_at_submit, plan_id_at_send |
-| 32a | `broadcast_membership_suspended_blocked` | warning | broadcast_id (null), member_id, membership_access_state (`suspended`\|`terminated`) |
+| 32a | `broadcast_membership_suspended_blocked` | warning | `access` (`suspended`\|`terminated`) on every surface. Submit (member actor): `memberId`, no broadcast. Staff approve-as-submitted, schedule-confirm and dispatch (F119): `related_member_id`, `broadcast_id`, `surface`. At dispatch only `terminated` is refused (a suspended member is held, F119 #403) |
 
 **Amended 2026-07-13 (059-membership-suspension)**: row 32a added for FR-002 precondition (l) — a suspended/terminated member's submission is rejected before any broadcast row is inserted (`broadcast_id` is null, mirroring the other pre-insert precondition rejections in this table). The F8-side semantics (`deriveMembershipAccess`, `suspended` vs `terminated`) live in `specs/011-renewal-reminders/spec.md` FR-003/FR-004/FR-005, not here. This is the only new event this amendment adds to F7's taxonomy — the sibling `membership_suspended_action_blocked` / `membership_access_fail_open` / `renewal_lapse_deferred_invoice_not_due` events belong to F8's own taxonomy (`renewal-audit-emitter.ts`), not F7's.
 
