@@ -2,9 +2,10 @@
  * `resolveCreditNoteOriginalDocuments` — which receipt (and which bill) a
  * credit note reduces, as shown on the admin + portal credit-note surfaces.
  *
- * Mirrors the number the credit-note PDF prints (issue-credit-note's
- * `receiptDocNum`): the payment-time RC/RE when the row has one, else the
- * §87 invoice number a legacy combined receipt reuses. An 088 bill has no §87
+ * Mirrors the original tax invoice the credit-note PDF cites (issue-credit-
+ * note's `originalTaxInvoiceNum`): the payment-time RC/RE on an 088 bill or
+ * as-paid receipt, else the §87 INV — a legacy combined receipt reuses it, and
+ * in legacy separate mode it was the tax invoice at issue. An 088 bill has no §87
  * `document_number`, so reading that column alone showed "—" for every
  * 088 credit note.
  */
@@ -45,7 +46,9 @@ describe('resolveCreditNoteOriginalDocuments', () => {
     ).toEqual({ receiptNumberRaw: 'RC-2026-000041', related: { kind: 'combined' } });
   });
 
-  it('legacy separate mode: an INV invoice plus its own receipt number', () => {
+  it('legacy separate mode: the INV is the original tax invoice, its receipt the related document', () => {
+    // The §87 INV was the §86/4 tax invoice at issue; the separate receipt
+    // number came later at payment. §86/10 cites the original tax invoice.
     expect(
       resolveCreditNoteOriginalDocuments({
         receiptDocumentNumberRaw: 'RC-2026-000007',
@@ -53,8 +56,8 @@ describe('resolveCreditNoteOriginalDocuments', () => {
         billDocumentNumberRaw: null,
       }),
     ).toEqual({
-      receiptNumberRaw: 'RC-2026-000007',
-      related: { kind: 'invoice', numberRaw: 'INV-2026-000010' },
+      receiptNumberRaw: 'INV-2026-000010',
+      related: { kind: 'receipt', numberRaw: 'RC-2026-000007' },
     });
   });
 
