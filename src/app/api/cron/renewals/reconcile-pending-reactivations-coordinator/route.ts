@@ -21,6 +21,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -71,13 +72,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Phase 9 / T241 — READ_ONLY_MODE short-circuit (200 + skipped, no
   // audit) so cron-job.org does not retry-storm during maintenance.
   // See dispatch-coordinator for the full rationale.
-  if (env.flags.readOnlyMode) {
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/reconcile-pending-reactivations-coordinator');
+  if (frozen) {
     // Phase 9 verify-fix — emit observability signal.
     renewalsMetrics.coordinatorSkippedReadOnly('reconcile');
-    return NextResponse.json(
-      { skipped: true, reason: 'read_only_mode' },
-      { status: 200 },
-    );
+    return frozen;
   }
 
   const correlationId = uuidv7();

@@ -33,6 +33,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { runInTenant } from '@/lib/db';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -307,16 +308,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // hits the external Bearer-protected route and must NOT 503 (that would
   // trigger cron-job.org retry-storm) — so we return 200 like the
   // feature-flag short-circuit.
-  if (env.flags.readOnlyMode) {
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/dispatch-coordinator');
+  if (frozen) {
     // Phase 9 verify-fix — emit observability signal so a flag-flap
     // leaving READ_ONLY_MODE=true past the maintenance window is
     // dashboardable (otherwise this 200 looks identical to a
     // normal cron response from outside).
     renewalsMetrics.coordinatorSkippedReadOnly('dispatch');
-    return NextResponse.json(
-      { skipped: true, reason: 'read_only_mode' },
-      { status: 200 },
-    );
+    return frozen;
   }
 
   // K1-C1: generate a fresh server-side UUID rather than honouring an

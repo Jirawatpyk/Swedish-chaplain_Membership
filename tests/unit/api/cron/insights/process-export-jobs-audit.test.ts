@@ -8,16 +8,16 @@
  * Mirrors `snapshot-refresh-tenant-guard.test.ts`: env + cron-auth + module
  * deps are mocked so the test isolates the sweep→audit branch.
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import type { NextRequest } from 'next/server';
 
-vi.mock('@/lib/env', () => ({
-  env: {
-    cron: { secret: 'test-secret-32-bytes-long-aaaaaa' },
-    features: { f9Dashboard: true },
-    tenant: { slug: 'tenanta' },
-  },
+const envMock = vi.hoisted(() => ({
+  cron: { secret: 'test-secret-32-bytes-long-aaaaaa' },
+  features: { f9Dashboard: true },
+  flags: { readOnlyMode: false },
+  tenant: { slug: 'tenanta' },
 }));
+vi.mock('@/lib/env', () => ({ env: envMock }));
 
 const gateMock = vi.hoisted(() => vi.fn(async () => null));
 vi.mock('@/lib/cron-auth', () => ({ gateCronBearerOrRespond: gateMock }));
@@ -100,6 +100,30 @@ describe('process-export-jobs cron — data_export_expired emit (S1-P1-15)', () 
         payload: { job_id: 'job-expired-1' },
       }),
     );
+  });
+});
+
+describe('process-export-jobs cron — READ_ONLY_MODE (#408)', () => {
+  afterEach(() => {
+    envMock.flags.readOnlyMode = false;
+  });
+
+  it('freeze on → 200 skipped; no job claimed, reclaimed, swept or purged, no audit', async () => {
+    envMock.flags.readOnlyMode = true;
+    repoMock.listRequestedIds.mockClear();
+    repoMock.listStuckProcessing.mockClear();
+    repoMock.listSweepable.mockClear();
+    repoMock.purgeRetiredInTx.mockClear();
+    auditRecordMock.mockClear();
+
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+    expect(repoMock.listRequestedIds).not.toHaveBeenCalled();
+    expect(repoMock.listStuckProcessing).not.toHaveBeenCalled();
+    expect(repoMock.listSweepable).not.toHaveBeenCalled();
+    expect(repoMock.purgeRetiredInTx).not.toHaveBeenCalled();
+    expect(auditRecordMock).not.toHaveBeenCalled();
   });
 });
 

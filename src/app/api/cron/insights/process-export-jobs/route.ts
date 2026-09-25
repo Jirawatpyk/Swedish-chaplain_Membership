@@ -22,6 +22,7 @@ import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { insightsMetrics } from '@/lib/metrics';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export const runtime = 'nodejs';
@@ -71,6 +72,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       insightsMetrics.auditEmitFailed('cron_auth_audit_emit_failed', env.tenant.slug),
   });
   if (gate) return gate;
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/insights/process-export-jobs');
+  if (frozen) return frozen;
 
   if (!env.features.f9Dashboard) {
     return NextResponse.json({ skipped: true, reason: 'feature_disabled' }, { status: 200 });

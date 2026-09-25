@@ -21,6 +21,8 @@ import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
+import { renewalsMetrics } from '@/lib/metrics';
 import { uuidv7 } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
 import {
@@ -46,6 +48,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { error: { code: 'unauthorized' } },
       { status: 401 },
     );
+  }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/reconcile-pending-applications');
+  if (frozen) {
+    renewalsMetrics.coordinatorSkippedReadOnly('reconcile_pending_applications');
+    return frozen;
   }
 
   if (!env.features.f8Renewals) {

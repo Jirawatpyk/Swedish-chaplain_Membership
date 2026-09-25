@@ -37,6 +37,7 @@ import { createHash } from 'node:crypto';
 import { and, count, eq, lt, lte, ne, notInArray, type SQL } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
  
 import {
   auditLog,
@@ -1404,6 +1405,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     logger.warn({ requestId }, 'cron.outbox_dispatch.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/outbox-dispatch');
+  if (frozen) return frozen;
 
   const now = new Date();
 

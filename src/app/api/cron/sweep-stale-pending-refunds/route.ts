@@ -59,6 +59,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 // Cron path: bulk read across tenants + per-tenant use-case
 // invocation. No top-level Application use case exists for cross-
 // tenant orchestration — it is a maintenance path, not a user
@@ -102,6 +103,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     logger.warn({ requestId }, 'cron.sweep_stale_pending_refunds.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/sweep-stale-pending-refunds');
+  if (frozen) return frozen;
 
   // Operator override via query param (`?olderThanHours=2` for
   // manual deeper sweeps during incident response). Validated +

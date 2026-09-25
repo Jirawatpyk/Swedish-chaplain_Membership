@@ -23,9 +23,9 @@
  * `env.features.*` gate to check.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { pruneExpiredInvitations } from '@/modules/auth';
 
@@ -49,12 +49,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // READ_ONLY_MODE short-circuit — REQUIRED here (see header comment):
   // GET is not caught by the proxy write-freeze, and this handler DELETEs
   // rows. 200 (not 503) so the cron does not retry-storm.
-  if (env.flags.readOnlyMode) {
-    return NextResponse.json(
-      { skipped: true, reason: 'read_only_mode' },
-      { status: 200 },
-    );
-  }
+  const frozen = cronReadOnlyGuard(ROUTE);
+  if (frozen) return frozen;
 
   const requestId = uuidv7();
   const startedAt = Date.now();

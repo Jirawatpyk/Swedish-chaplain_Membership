@@ -36,6 +36,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -139,6 +140,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
   });
   if (authResponse) return authResponse;
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/tier-upgrade-evaluate-coordinator');
+  if (frozen) {
+    renewalsMetrics.coordinatorSkippedReadOnly('tier_upgrade_evaluate');
+    return frozen;
+  }
 
   if (!env.features.f8Renewals) {
     return NextResponse.json(

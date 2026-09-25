@@ -62,6 +62,7 @@ import { and, eq, isNotNull, lt, or, sql } from 'drizzle-orm';
 
 import { db, runInTenant } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
@@ -111,6 +112,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     logger.warn({ requestId }, 'cron.receipt_pdf_reconcile.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/internal/cron/receipt-pdf-reconcile');
+  if (frozen) return frozen;
 
   // Bulk read invoices that need reconciliation across tenants. RLS
   // bypass is intentional here (cross-tenant ops surface gated by

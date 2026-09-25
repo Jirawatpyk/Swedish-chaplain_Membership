@@ -26,6 +26,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -269,12 +270,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // READ_ONLY_MODE short-circuit (200 + skipped, no audit) so
   // cron-job.org / Vercel cron does not retry-storm during maintenance.
   // See lapse-coordinator for the full rationale.
-  if (env.flags.readOnlyMode) {
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/auto-draft-coordinator');
+  if (frozen) {
     renewalsMetrics.coordinatorSkippedReadOnly('auto_draft');
-    return NextResponse.json(
-      { skipped: true, reason: 'read_only_mode' },
-      { status: 200 },
-    );
+    return frozen;
   }
 
   const correlationId = uuidv7();

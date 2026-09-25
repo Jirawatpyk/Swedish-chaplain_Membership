@@ -47,6 +47,7 @@ import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { logger } from '@/lib/logger';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
@@ -78,6 +79,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
     return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/members/reconcile-erasures');
+  if (frozen) return frozen;
 
   const tenant = asTenantContext(resolveTenantFromRequest(request).slug);
 

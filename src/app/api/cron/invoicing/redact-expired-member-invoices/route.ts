@@ -68,6 +68,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
@@ -344,6 +345,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     logger.warn({ requestId, route: ROUTE }, 'cron.redact_expired_member_invoices.unauthorized');
     return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard(ROUTE);
+  if (frozen) return frozen;
 
   // Tenant list — every tenant that has invoice settings can own member
   // invoices. Reads bypass tenant RLS (owner role, no app.current_tenant)

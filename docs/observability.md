@@ -2566,3 +2566,30 @@ broadcast, plus one uncached halt read per would-be halt refusal. A refusal also
 refusal audit row under submit's own event types with `surface: 'dispatch'` (actor `system:cron`,
 `actor_role: null`) in the terminal transaction; the counters move only after that transaction
 commits. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch standing refusal.
+
+## 30. Scheduled crons under `READ_ONLY_MODE` (#408)
+
+Every `vercel.json` cron route calls `cronReadOnlyGuard` (`src/lib/cron-read-only-guard.ts`)
+right after its Bearer check. While `READ_ONLY_MODE=true` it answers
+`200 { ok: true, skipped: true, reason: 'read_only_mode' }` and logs ONE info line per tick:
+
+| Log message | Level | Fields | Meaning |
+|---|---|---|---|
+| `cron.read_only_mode.skipped` | info | `route` (the cron path — no tenant, no PII) | The tick did nothing: no write, no external call |
+
+The F8 renewals routes also keep counting `renewals_coordinator_skipped_read_only_total{cron_kind}`
+(two kinds added: `tier_upgrade_evaluate`, `reconcile_pending_applications`), and
+`reconcile-coverage-ends` still reports `renewals_coverage_end_reconcile_runs_total{outcome="skipped_read_only"}`.
+
+**Expected alarms during a freeze** (these are the freeze, not a second incident):
+- the coverage-end heartbeat (§ 28) stops pinging and pages after its 2 h budget;
+- `broadcasts.approved_overdue_count` (§ 22) rises for every E-Blast whose `scheduled_for` passes
+  during the freeze, because dispatch is paused;
+- outbox rows age past their `next_retry_at`; the "stuck rows" check lives inside the paused
+  dispatcher, so it reports them on the first tick after the freeze lifts.
+
+Five gauge routes are deliberately NOT guarded — they only read and emit metrics, and they are how
+the operator watches the incident: `stale-pending-count`, `unprocessed-events-count`,
+`broadcasts-gauges`, `recompute-match-rate`, `plan-change-divergence`. The exemptions and their
+reasons live in `tests/unit/architecture/cron-read-only-guard-coverage.test.ts`. A skip line that
+keeps appearing after the freeze was meant to end is the signal that `READ_ONLY_MODE` was left on.

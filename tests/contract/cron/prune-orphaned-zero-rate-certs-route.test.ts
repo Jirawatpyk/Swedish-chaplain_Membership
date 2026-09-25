@@ -17,9 +17,13 @@ import type { NextRequest } from 'next/server';
 
 const CRON_SECRET = 'test-secret-32-bytes-long-aaaaaa';
 
+// #408 — mutable so the READ_ONLY_MODE case can flip it.
+const flagsMock = vi.hoisted(() => ({ readOnlyMode: false }));
+
 vi.mock('@/lib/env', () => ({
   env: {
     cron: { secret: 'test-secret-32-bytes-long-aaaaaa' },
+    flags: flagsMock,
     log: { level: 'silent' },
     isProduction: false,
     isDevelopment: false,
@@ -70,6 +74,18 @@ describe('POST /api/cron/invoicing/prune-orphaned-zero-rate-certs — contract',
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('unauthorized');
     expect(runPruneMock).not.toHaveBeenCalled();
+  });
+
+  it('#408 READ_ONLY_MODE on → 200 skipped; no cert blob or row pruned', async () => {
+    flagsMock.readOnlyMode = true;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+      expect(runPruneMock).not.toHaveBeenCalled();
+    } finally {
+      flagsMock.readOnlyMode = false;
+    }
   });
 
   it('500 scan_failed when the sweep reports kind:"scan_failed"', async () => {

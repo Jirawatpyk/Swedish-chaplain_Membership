@@ -35,6 +35,7 @@ import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 
 // /code-review (2026-05-19 post-ship) — explicit Node runtime + force-
 // dynamic to match the project-wide cron-route convention (precedent:
@@ -65,6 +66,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     logger.error({ requestId }, 'cron.lockout_cleanup.no_secret_configured');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/lockout-cleanup');
+  if (frozen) return frozen;
 
   const now = new Date();
 
