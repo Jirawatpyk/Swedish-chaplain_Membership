@@ -250,15 +250,22 @@ describe('F8 markPaidOffline — duplicate membership-bill guard', () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant();
     planId = `f8-dup-${randomUUID().slice(0, 8)}`;
-    await runInTenant(tenant.ctx, (tx) =>
-      seedF8MembershipPlan(tx, {
-        tenantSlug: tenant.ctx.slug,
-        planId,
-        planName: { en: 'Duplicate-guard Plan' },
-        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
-        createdBy: user.userId,
-      }),
-    );
+    // `invoices_plan_fk` is composite — (tenant_id, plan_id, plan_year) →
+    // membership_plans (migration 0019 L188). The other-plan-year case seeds a
+    // 2025 invoice against this same planId, so the 2025 parent row has to
+    // exist or the seed dies with 23503 before the use case is ever called.
+    for (const planYear of [2026, 2025]) {
+      await runInTenant(tenant.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: tenant.ctx.slug,
+          planId,
+          planYear,
+          planName: { en: 'Duplicate-guard Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+    }
   }, 120_000);
 
   afterAll(async () => {
