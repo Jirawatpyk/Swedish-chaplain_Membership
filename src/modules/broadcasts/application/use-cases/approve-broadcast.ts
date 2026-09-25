@@ -218,7 +218,7 @@ export async function approveBroadcast(
         case 'halted':
         case 'not_in_good_standing': {
           const refusal = standingRefusalAuditEvent({
-            refusal: standing.kind,
+            refusal: standing,
             surface: 'approve_as_submitted',
             tenantSlug: deps.tenant.slug,
             memberId: row.requestedByMemberId,

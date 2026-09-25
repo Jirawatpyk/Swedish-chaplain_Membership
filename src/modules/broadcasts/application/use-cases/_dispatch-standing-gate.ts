@@ -39,7 +39,7 @@ import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
-import { readMemberSendStanding, type MemberSendStandingDeps } from './_member-send-standing';
+import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
 
 /** The standing reads a dispatch leg makes. */
 export interface DispatchStandingDeps extends MemberSendStandingDeps {
@@ -57,8 +57,8 @@ export type DispatchStandingDecision =
   | { readonly kind: 'hold' }
   | {
       readonly kind: 'refuse';
-      /** Which refusal audit row (`standingRefusalAuditEvent`) to write. */
-      readonly refusal: 'halted' | 'not_in_good_standing';
+      /** Which refusal audit row (`standingRefusalAuditEvent`) to write — the standing itself, so the row names its `access`. */
+      readonly refusal: StandingRefusal;
       /** The member-facing / `failure_reason` token. */
       readonly reason: 'member_halted' | 'member_not_in_good_standing';
     }
@@ -84,11 +84,11 @@ export async function decideDispatchStanding(
     case 'ok':
       return { kind: 'send' };
     case 'halted':
-      return { kind: 'refuse', refusal: 'halted', reason: 'member_halted' };
+      return { kind: 'refuse', refusal: standing, reason: 'member_halted' };
     case 'not_in_good_standing':
       return standing.access === 'suspended'
         ? { kind: 'hold' }
-        : { kind: 'refuse', refusal: 'not_in_good_standing', reason: 'member_not_in_good_standing' };
+        : { kind: 'refuse', refusal: standing, reason: 'member_not_in_good_standing' };
     case 'halt_read_failed':
       return { kind: 'undecided', message: 'member_standing_halt_read_failed', errClass: standing.errKind };
     case 'access_unavailable':

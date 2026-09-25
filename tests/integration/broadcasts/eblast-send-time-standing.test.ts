@@ -208,9 +208,9 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
   }
 
   it.each([
-    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' as const },
-    { standing: 'halted' as const, kind: 'member_halted' as const },
-  ])('the promotion (member_approved → approved) for a $standing member → $kind, the row untouched, the refusal audited', async ({ standing, kind }) => {
+    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' as const, access: { access: 'terminated' as const } },
+    { standing: 'halted' as const, kind: 'member_halted' as const, access: {} },
+  ])('the promotion (member_approved → approved) for a $standing member → $kind, the row untouched, the refusal audited', async ({ standing, kind, access }) => {
     const memberId = await seedMember(standing);
     const id = await seedMemberApproved(memberId);
     const before = await readRow(id);
@@ -222,21 +222,21 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       requestId,
       mode: { mode: 'send_now' },
     });
-    expect(r.ok ? r.value.status : r.error).toEqual({ kind, memberId });
+    expect(r.ok ? r.value.status : r.error).toEqual({ kind, memberId, ...access });
     expect(await readRow(id)).toEqual(before);
     expect(await readAudits(requestId)).toEqual([
       {
         eventType: EVENT_OF[kind],
         actorUserId: MARKETER,
-        payload: { related_member_id: memberId, broadcast_id: id, surface: 'schedule_confirm', actor_role: 'marketing' },
+        payload: { related_member_id: memberId, broadcast_id: id, surface: 'schedule_confirm', ...access, actor_role: 'marketing' },
       },
     ]);
   });
 
   it.each([
-    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' as const },
-    { standing: 'halted' as const, kind: 'member_halted' as const },
-  ])('approve-as-submitted (submitted → approved) for a $standing member → $kind, the row untouched, the refusal audited', async ({ standing, kind }) => {
+    { standing: 'terminated' as const, kind: 'member_not_in_good_standing' as const, access: { access: 'terminated' as const } },
+    { standing: 'halted' as const, kind: 'member_halted' as const, access: {} },
+  ])('approve-as-submitted (submitted → approved) for a $standing member → $kind, the row untouched, the refusal audited', async ({ standing, kind, access }) => {
     const memberId = await seedMember(standing);
     const row = baseRow(memberId, {});
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
@@ -255,7 +255,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       {
         eventType: EVENT_OF[kind],
         actorUserId: MARKETER,
-        payload: { related_member_id: memberId, broadcast_id: row.broadcastId, surface: 'approve_as_submitted', actor_role: 'marketing' },
+        payload: { related_member_id: memberId, broadcast_id: row.broadcastId, surface: 'approve_as_submitted', ...access, actor_role: 'marketing' },
       },
     ]);
   });
@@ -321,9 +321,9 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     });
 
   it.each([
-    { standing: 'halted' as const, reason: 'member_halted' as const },
-    { standing: 'terminated' as const, reason: 'member_not_in_good_standing' as const },
-  ])('legacy dispatch for a $standing member → failed_to_dispatch ($reason), the slot freed, no Resend call', async ({ standing, reason }) => {
+    { standing: 'halted' as const, reason: 'member_halted' as const, access: {} },
+    { standing: 'terminated' as const, reason: 'member_not_in_good_standing' as const, access: { access: 'terminated' as const } },
+  ])('legacy dispatch for a $standing member → failed_to_dispatch ($reason), the slot freed, no Resend call', async ({ standing, reason, access }) => {
     const memberId = await seedMember(standing);
     const row = approvedRow(memberId);
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
@@ -355,6 +355,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       related_member_id: memberId,
       broadcast_id: row.broadcastId,
       surface: 'dispatch',
+      ...access,
       actor_role: null,
     });
   });

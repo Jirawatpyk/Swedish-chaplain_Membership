@@ -4820,12 +4820,15 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
     vi.restoreAllMocks();
   });
 
+  // PR-D — the membership refusal row names the access that refused it (at
+  // dispatch always `terminated`: a suspended member is held); a halt row
+  // carries no `access`.
   it.each([
-    ['halted', { halted: ['m-1'] }, 'member_halted', 'broadcast_member_halted_pending_review'],
-    ['terminated', { access: 'terminated' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked'],
+    ['halted', { halted: ['m-1'] }, 'member_halted', 'broadcast_member_halted_pending_review', {}],
+    ['terminated', { access: 'terminated' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked', { access: 'terminated' }],
   ] as const)(
     'a %s member → failed_to_dispatch (%s), both audit rows, the member told, nothing sent',
-    async (_label, opts, reason, refusalEvent) => {
+    async (_label, opts, reason, refusalEvent, access) => {
       const { broadcastsMetrics } = await import('@/lib/metrics');
       const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
       const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding(opts));
@@ -4848,6 +4851,13 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
       });
       expect(audit.emits[1]?.summary).toMatch(/^Dispatch refused/);
       expect(audit.emits[1]?.payload).not.toHaveProperty('member_id');
+      expect(audit.emits[1]?.payload).toEqual({
+        related_member_id: 'm-1',
+        broadcast_id: broadcastId,
+        surface: 'dispatch',
+        ...access,
+        actor_role: null,
+      });
       // Not an infrastructure fault: its own label, never `app_error`.
       expect(failedSpy).toHaveBeenCalledWith('test-tenant', 'member_ineligible');
       expect(email.memberCalls).toHaveLength(1);

@@ -70,6 +70,8 @@ Never raise `audienceCeiling` by hand for one member: the ceiling is a Resend-fa
 
 4. **`broadcasts.audience_import_stuck_count` ≥ 1 for 30 min — a Contacts-Import has not completed** (108 US5, T106). Alarm, not page.
 
+   **First rule out a hold** (F119 PR-A): a row whose member's membership is awaiting payment is HELD before `confirmImport` on every tick, so it matches this gauge until the member pays or the cycle lapses. One tenant, with `broadcasts_dispatch_standing_held_total` climbing on it, is a hold — see `eblast-approval.md` § Dispatch standing refusal, nothing here applies. (Dormant while `FEATURE_F7_IMPORT_AUDIENCE` is off; to be resolved before it flips.)
+
    `buildAudienceTick` already turns such a row terminal (`audience_import_stuck`), but only on a tick that reaches that broadcast. This gauge counts them independently, and that is why it is worth reading first: **several broadcasts, or broadcasts across tenants, means "Resend's import pipeline has stopped answering", not "this broadcast is unhappy"**. No per-broadcast status can tell you that.
 
    The row is `approved` with `audience_import_id` set and `audience_import_completed_at` NULL. **Nothing has been sent** — the send happens only after the completion rule passes — so there is no partial delivery to unwind. Once the use case marks it `failed_to_dispatch` the member gets the FR-021 notification and can re-submit.
