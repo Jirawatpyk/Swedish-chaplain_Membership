@@ -34,6 +34,7 @@ import {
 } from '@/lib/broadcast-approval-deps';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asMemberId } from '@/modules/members';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { saveFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/save-formatted-version';
@@ -124,7 +125,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
       { ...makeStartFormattedVersionDeps(tenant.ctx.slug), memberApprovalEnabled: true },
       { broadcastId, ...actor },
     );
-    expect(started.ok ? started.value.stage : started.error).toBe('in_design');
+    expect(started.ok ? started.value.status : started.error).toBe('in_design');
     if (!started.ok) return;
 
     // 3. …saves it…
@@ -151,7 +152,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
       { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([MARKETER]) },
       {
         broadcastId,
-        memberId,
+        memberId: asMemberId(memberId),
         actorUserId: portalUser.userId,
         actorRole: 'member',
         contactId,
@@ -161,7 +162,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
         requestId: null,
       },
     );
-    expect(decided.ok ? decided.value.stage : decided.error).toBe('member_approved');
+    expect(decided.ok ? decided.value.status : decided.error).toBe('member_approved');
 
     // 6. Marketing confirms the send time — the promotion.
     const confirmed = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { broadcastId, ...actor, mode: { mode: 'send_now' } });
@@ -354,7 +355,7 @@ describe('F119 FR-016 — the proposal written at submit is kept, then survives 
       { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: makeFakeMarketingDirectory([MARKETER]) },
       {
         broadcastId,
-        memberId,
+        memberId: asMemberId(memberId),
         actorUserId: portalUser.userId,
         actorRole: 'member',
         contactId,
@@ -364,7 +365,7 @@ describe('F119 FR-016 — the proposal written at submit is kept, then survives 
         requestId: null,
       },
     );
-    expect(decided.ok ? decided.value.stage : decided.error).toBe('member_approved');
+    expect(decided.ok ? decided.value.status : decided.error).toBe('member_approved');
 
     // 1. Keep the member's time — the promotion.
     const kept = await confirmSchedule(makeConfirmScheduleDeps(tenant.ctx.slug), { broadcastId, ...actor, mode: { mode: 'keep_proposal' } });

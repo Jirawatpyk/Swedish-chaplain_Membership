@@ -4,7 +4,7 @@
  *
  *   `broadcasts.write` (marketing / admin / super_admin; a manager and a member
  *   session are refused by the gate) → 200
- *   { stage, whoseTurn, round, expiresAt }
+ *   { status, whoseTurn, round, expiresAt }
  *
  * Order of checks is the contract: gate → id (a malformed id is a 404 before
  * any read) → the 30 / 60 s per-(tenant, actor) staff write bucket, an
@@ -80,13 +80,13 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         requestId: ctx.requestId ?? correlationId,
         ...(expected !== undefined && { expectedUpdatedAt: new Date(expected) }),
       }),
-    (sent) => ({ stage: stageOf(sent.stage), round: sent.round }),
+    (sent) => ({ stage: stageOf(sent.status), round: sent.round }),
   );
   if (!result.ok) return sendErrorResponse(result.error, correlationId);
 
   return NextResponse.json(
     {
-      stage: result.value.stage,
+      status: result.value.status,
       whoseTurn: result.value.whoseTurn,
       round: result.value.round,
       expiresAt: result.value.expiresAt.toISOString(),

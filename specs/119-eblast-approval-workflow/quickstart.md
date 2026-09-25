@@ -684,7 +684,14 @@ design-block keys added to `admin.broadcasts.templates.errors` in EN + TH + SV.
 (skeleton drift on the six files outside this record's PR-1 screens) · **U13** (no template
 delete UI) · **U14** (chip focus ring) · **U15** (toolbar Arrow Up/Down + `aria-orientation`) ·
 **U20**–**U26**. (2026-09-24: U14 and U12's `/admin/broadcasts/loading.tsx` part were closed by
-T086a V4 / V3 — see the T086a record; U12's other five files are still open.)
+T086a V4 / V3 — see the T086a record. 2026-09-25: **U12 is CLOSED.** Its "six files" counted U1's
+file (the portal detail skeleton, closed on its own — "U1 is closed" below), so after the queue file FOUR were left, not the five this
+line used to say; #400 PR-B fixed all four: `/portal/broadcasts/new/loading.tsx` (the four-counter
+quota card and the wrap of 44 px toolbar controls) and `/admin/broadcasts/new/loading.tsx` (the
+two-column grid) now share `ComposeFormSkeleton`; `templates/loading.tsx` puts the button in the
+header and adds the three filter pills; `settings/broadcasts/brand/loading.tsx` reserves the
+first-visit default-colour hint and missing-address warning. Test:
+`compose-and-settings-skeletons.test.tsx` (went RED on all four).)
 
 Two measurement debts remain from the record above and are NOT discharged by this round: the three
 member-portal surfaces were walked from code only (the `E2E_MEMBER_EMAIL_EMPTY` persona does not
@@ -1488,11 +1495,30 @@ PR-2 builds on PR-1.
   in `broadcasts_approved_overdue_count` (its alarm stays on for the hold). Neither can be fixed
   without recording the hold on the row. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch
   standing refusal.
-- **Type seams and smaller follow-ups from the PR #392 review round 3** are tracked in issue #400:
-  the `applyTransition` field allowlist as a type, branded ids across the F119 ports, a typed
-  `contextData` per `eblast_*` type, a distinct `read_failed` outbox failure reason, the `stage`
-  key on the decision and send 200 responses, and read-only handling in the older F7 staff
-  approve/reject dialogs. None is a live defect.
+- ~~**Type seams and smaller follow-ups from the PR #392 review round 3** (issue #400)~~ —
+  **CLOSED** (#400 PR-B, PR #404): the `applyTransition` field allowlist as a type (a
+  `Partial<Broadcast>` variable is refused too, not only a literal), branded ids across the F119
+  ports, a typed `contextData` per `eblast_*` type (the dispatcher's kind tuples derived from the
+  port / Domain ones), a distinct `read_failed` outbox failure reason (the F114 change-request arms
+  included), `ApprovalRefusal` tag and payload as one type, the `status` key on the decision and
+  send 200 responses, and read-only handling in the older F7 staff approve/reject dialogs.
+
+  **Unflagged on merge** (live for every tenant, whatever `FEATURE_EBLAST_MEMBER_APPROVAL` says):
+  - the staff nav's Broadcasts link and the staff home's "waiting on marketing" card open the
+    waiting-on-marketing preset **only while the approval round is visible** (R18: the flag is on,
+    or a row sits in a round stage — the nav badge's own read); otherwise plain `/admin/broadcasts`;
+  - the queue's "Waiting on marketing" toggle follows the same rule (offered while the flag is on,
+    a row is in a round stage, the stage counts are unavailable, or the preset arrived by URL);
+  - the F7 approve / reject / clear-halt dialogs show the read-only warning inside the dialog;
+  - the members directory's bulk-bar Clear keeps keyboard focus on the select-all checkbox (it
+    fell to `<body>`: the header checkbox remounted on every selection change);
+  - the four loading skeletons (member + staff compose, templates, brand settings) — the compose
+    toolbar reserves 11 controls, 13 with `FEATURE_F71A_US2_IMAGES` on; the brand skeleton
+    reserves the saved state; no help line overflows 320 px;
+  - `read_failed` as `last_error` / audit `reason` / `outbox_permanent_failures_total{reason}` for
+    an `eblast_*` or F114 change-request row whose read failed (it was `no_template_handler`).
+
+  Rollback: a code revert; none of these has a flag.
 
 ---
 
@@ -1542,11 +1568,13 @@ own:
 **Three first-week observations** (watched by hand; not alerts — they have no threshold and page
 nobody):
 
-- `email_dispatch_failed` audit rows whose `notification_type` starts `eblast_` — in particular
-  `no_template_handler`, which means the payload builder returned null: a transient read (logged
-  `M119.outbox_dispatch.eblast.read_failed`), malformed `context_data`, or a type with no arm. The
-  row retries after 60 s, 5 min, 30 min and 3 h and the fifth failure is terminal — about 3.6 hours,
-  not the "up to 16 hours" this line used to say (the 12 h step is never waited).
+- `email_dispatch_failed` audit rows whose `notification_type` starts `eblast_` — `read_failed`
+  means a read the arm depends on failed on every attempt (logged
+  `M119.outbox_dispatch.eblast.read_failed`; #400 item 4 — it used to end as
+  `no_template_handler`); `no_template_handler` means the payload builder returned null: malformed
+  `context_data` or a type with no arm. The row retries after 60 s, 5 min, 30 min and 3 h and the
+  fifth failure is terminal — about 3.6 hours, not the "up to 16 hours" this line used to say (the
+  12 h step is never waited).
 - `broadcasts_marketing_turn_count` versus the nav badge — a divergence means the gauge and the live
   count are reading different predicates.
 - The first week's `broadcast_schedule_confirmed` rows with `differs: true` — if marketing is

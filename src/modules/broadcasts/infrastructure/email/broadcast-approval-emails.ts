@@ -35,7 +35,8 @@ import {
   MEMBER_APPROVAL_REMINDER_DAYS,
   MEMBER_APPROVAL_TIMELINE_DAYS,
 } from '../../domain/approval/approval-schedule-policy';
-import { scheduleDiffers } from '../../domain/approval/member-decision';
+import { MEMBER_DECISION_KINDS, scheduleDiffers } from '../../domain/approval/member-decision';
+import { EBLAST_APPROVAL_LIFECYCLE_KINDS } from '../../application/ports/eblast-notification-outbox-port';
 
 export interface BuiltEblastEmail {
   readonly subject: string;
@@ -48,12 +49,16 @@ export interface BuiltEblastEmail {
  * than `MemberDecisionKind`: `withdrawn` is the whole-E-Blast withdrawal (a
  * member cancel from any in-progress stage); it carries no version, and no
  * round before the first one.
+ *
+ * DERIVED from the Domain tuple (#400 T3): it used to be a literal list that
+ * only happened to match, so a decision kind added to `MEMBER_DECISION_KINDS`
+ * would have been refused here as `malformed_context` at send time.
  */
-export const EBLAST_MEMBER_DECIDED_KINDS = ['approved', 'changes_requested', 'approval_withdrawn', 'withdrawn'] as const;
+export const EBLAST_MEMBER_DECIDED_KINDS = [...MEMBER_DECISION_KINDS, 'withdrawn'] as const;
 export type EblastMemberDecidedKind = (typeof EBLAST_MEMBER_DECIDED_KINDS)[number];
 
-/** The `kind` of `eblast_approval_lifecycle` (FR-022, FR-022a). */
-export const EBLAST_LIFECYCLE_KINDS = ['reminder_day3', 'reminder_day7', 'expiry_warning_day23', 'expired_day30'] as const;
+/** The `kind` of `eblast_approval_lifecycle` (FR-022, FR-022a) — the port's own tuple (#400 T3). */
+export const EBLAST_LIFECYCLE_KINDS = EBLAST_APPROVAL_LIFECYCLE_KINDS;
 export type EblastLifecycleKind = (typeof EBLAST_LIFECYCLE_KINDS)[number];
 
 interface TitledCopy {

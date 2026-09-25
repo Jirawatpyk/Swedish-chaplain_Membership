@@ -73,7 +73,8 @@ const CARDS = 4;
 
 export default async function AdminBroadcastsLoading(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
-  const chipCount = isEblastMemberApprovalEnabled()
+  const approvalRoundEnabled = isEblastMemberApprovalEnabled();
+  const chipCount = approvalRoundEnabled
     ? OFFERED_BROADCAST_STATUSES.length
     : OFFERED_BROADCAST_STATUSES.filter((s) => !APPROVAL_ROUND_ONLY_STATUSES.has(s)).length;
   return (
@@ -128,6 +129,12 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
         </div>
         {/* The Upcoming sends button — no label above it. */}
         <Skeleton data-skeleton="upcoming-sends" className="h-9 w-40" />
+        {/* #400 item 8 — the Waiting on marketing button beside it, as wide as
+            the button (U6). Withheld with the round off, like the round chips
+            above (#400 U2: the strip offers the toggle by R18). */}
+        {approvalRoundEnabled ? (
+          <Skeleton data-skeleton="waiting-on-marketing" className="h-9 w-52" />
+        ) : null}
       </div>
       {/* The order hint (`text-xs`) above the list. */}
       <Skeleton data-skeleton="order-hint" className="h-4 w-48" aria-hidden="true" />

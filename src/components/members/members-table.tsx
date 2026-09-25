@@ -41,6 +41,7 @@ import {
   getFilteredRowModel,
   flexRender,
   createColumnHelper,
+  type HeaderContext,
   type RowSelectionState,
 } from '@tanstack/react-table';
 import {
@@ -220,6 +221,32 @@ function isMemberRowSelectable(row: MembersTableRow): boolean {
 }
 
 const columnHelper = createColumnHelper<MembersTableRow>();
+
+/**
+ * Select-all header checkbox. Module-level so its identity is stable across
+ * the `columns` rebuilds (see the `select` column) — the checked and
+ * indeterminate state is read live from `table` on every render.
+ */
+function SelectAllHeader({ table }: HeaderContext<MembersTableRow, unknown>) {
+  const t = useTranslations('admin.members.directory');
+  return (
+    <Checkbox
+      checked={table.getIsAllPageRowsSelected()}
+      // Base UI exposes indeterminate as its own prop (sets
+      // aria-checked="mixed") — show it when SOME but not ALL page
+      // rows are selected so the header reflects a partial selection.
+      indeterminate={
+        table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()
+      }
+      onCheckedChange={(checked) => table.toggleAllPageRowsSelected(!!checked)}
+      // The bulk bar's Clear hands focus here (the bar unmounts with the
+      // selection it clears — `bulk-action-bar.tsx`).
+      data-testid="members-select-all"
+      aria-label={t('selectAll')}
+      className="min-h-[24px] min-w-[24px]"
+    />
+  );
+}
 
 /**
  * Per-column server-default sort order — single source of truth for the arrow
@@ -582,23 +609,12 @@ export function MembersTable({
       ? [
           columnHelper.display({
             id: 'select',
-            header: ({ table }) => (
-              <Checkbox
-                checked={table.getIsAllPageRowsSelected()}
-                // Base UI exposes indeterminate as its own prop (sets
-                // aria-checked="mixed") — show it when SOME but not ALL page
-                // rows are selected so the header reflects a partial selection.
-                indeterminate={
-                  table.getIsSomePageRowsSelected() &&
-                  !table.getIsAllPageRowsSelected()
-                }
-                onCheckedChange={(checked) =>
-                  table.toggleAllPageRowsSelected(!!checked)
-                }
-                aria-label={t('selectAll')}
-                className="min-h-[24px] min-w-[24px]"
-              />
-            ),
+            // A STABLE component, never an inline arrow: `columns` is rebuilt
+            // on every selection change, and `flexRender` renders a function
+            // header with `createElement`, so a fresh arrow each time REMOUNTS
+            // the checkbox — the node the bulk bar's Clear had just focused
+            // was discarded by the reset and focus fell to <body>.
+            header: SelectAllHeader,
             cell: ({ row }) => (
               <Checkbox
                 checked={row.getIsSelected()}

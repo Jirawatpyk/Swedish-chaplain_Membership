@@ -112,7 +112,7 @@ In one `runInTenant`, with throw-to-rollback:
    and T056 carried it (`/speckit.analyze` round 4 M5).
 
 ```jsonc
-201 { "stage": "in_design", "version": { "id": "uuid", "versionNo": 1, "subject": "…",
+201 { "status": "in_design", "version": { "id": "uuid", "versionNo": 1, "subject": "…",
       "bodyHtml": "…", "noteToMember": null, "updatedAt": "…" },
       "memberOriginal": { "id": "uuid", "versionNo": 0, "subject": "…", "bodyHtml": "…" } }
 ```
@@ -214,9 +214,13 @@ enqueue one `eblast_version_sent_member` outbox row to the member's contact in t
 language (FR-024).
 
 ```jsonc
-200 { "stage": "awaiting_member_approval", "whoseTurn": "member", "round": 2,
+200 { "status": "awaiting_member_approval", "whoseTurn": "member", "round": 2,
       "expiresAt": "2026-10-24T09:12:00.000Z" }
 ```
+
+`status` is the row's new status. This response and the 201 of `POST …/version` above said `stage`
+until #400 item 6 renamed both, for the reason confirm-schedule gives below: a 409 here carries
+`details.stage` in the `stageOf` vocabulary, and one key must not carry two vocabularies.
 
 | code | when |
 |---|---|

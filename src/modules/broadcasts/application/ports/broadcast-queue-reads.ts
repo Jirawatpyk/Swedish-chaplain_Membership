@@ -12,6 +12,7 @@
  * the 108 Marketing audience page's job.
  */
 import type { TenantContext } from '@/modules/tenants';
+import type { BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 
 /** The FR-029 delivery results of one sent E-Blast, from the `broadcast_deliveries` aggregate. */
@@ -34,6 +35,6 @@ export interface BroadcastQueueReads {
    */
   deliveryCountsFor(
     ctx: TenantContext,
-    broadcastIds: readonly string[],
+    broadcastIds: readonly BroadcastId[],
   ): Promise<ReadonlyMap<string, DeliveryResult>>;
 }

@@ -532,6 +532,9 @@ export const outboxMetrics = {
       | 'request_gone'
       | 'recipient_gone'
       | 'request_not_decided'
+      // F119 (#400 item 4) — an `eblast_*` row whose dependency read kept
+      // failing; it used to end under `no_template_handler`.
+      | 'read_failed'
       // (`request_superseded` is NOT a failure — see `superseded` below)
       // R17-02 — void two-phase-commit Phase 2 sync failure: Blob
       // prefetch bytes don't match the sha256 committed by Phase 1.

@@ -22,7 +22,8 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { TenantSlug } from '@/modules/tenants';
-import type { BroadcastActorRole, BroadcastId } from '../../domain/broadcast';
+import type { MemberId } from '@/modules/members';
+import type { BroadcastActorRole, BroadcastId, BroadcastVersionId } from '../../domain/broadcast';
 import type { BroadcastVersion } from '../../domain/approval/broadcast-version';
 
 /** Opaque tx handle from `BroadcastsRepo.withTx` (see `BrandSettingsTx`). */
@@ -68,7 +69,7 @@ export interface BroadcastVersionsRepo {
    */
   listSentByMember(
     tenantId: TenantSlug,
-    memberId: string,
+    memberId: MemberId,
     limit: number,
     tx: BroadcastVersionsTx,
   ): Promise<readonly BroadcastVersion[]>;
@@ -89,7 +90,7 @@ export interface BroadcastVersionsRepo {
    */
   updateWorkingCopy(
     tenantId: TenantSlug,
-    versionId: string,
+    versionId: BroadcastVersionId,
     write: WorkingCopyWrite,
     tx: BroadcastVersionsTx,
   ): Promise<BroadcastVersion | null>;
@@ -104,7 +105,7 @@ export interface BroadcastVersionsRepo {
    */
   markSent(
     tenantId: TenantSlug,
-    versionId: string,
+    versionId: BroadcastVersionId,
     sentAt: Date,
     tx: BroadcastVersionsTx,
   ): Promise<BroadcastVersion | null>;

@@ -338,6 +338,36 @@ describe('outbox dispatcher — member_change_request_submitted_staff (T037)', (
     expect(mine[0]?.text).toContain(`/admin/change-requests?submitter=${user.userId}&state=pending`);
   });
 
+  it('a TRANSIENT read failure stays on the retry ladder under read_failed, never no_template_handler (#400 W3)', async () => {
+    const r = await submit({ contact: { phone: '+66844444444' } });
+    expect(r.ok && r.value.outcome).toBe('submitted');
+    const requestId = r.ok && r.value.outcome === 'submitted' ? r.value.request.id : '';
+    // The member read fails for THIS member only — the shared dev outbox may
+    // hold other suites' F114 rows, which keep the real read.
+    const realFindById = drizzleMemberRepo.findById.bind(drizzleMemberRepo);
+    const spy = vi
+      .spyOn(drizzleMemberRepo, 'findById')
+      .mockImplementation(async (ctx, id) =>
+        (id as string) === memberId ? { ok: false as const, error: { code: 'repo.unexpected' as const } } : realFindById(ctx, id),
+      );
+    try {
+      let mine: typeof notificationsOutbox.$inferSelect | undefined;
+      for (let i = 0; i < 8 && (mine === undefined || mine.attempts === 0); i += 1) {
+        await tick();
+        const rows = await db
+          .select()
+          .from(notificationsOutbox)
+          .where(and(eq(notificationsOutbox.tenantId, tenant.ctx.slug), eq(notificationsOutbox.notificationType, 'member_change_request_submitted_staff')));
+        mine = rows.find((x) => (x.contextData as { requestId?: string }).requestId === requestId);
+      }
+      expect(mine?.attempts).toBe(1);
+      expect(mine?.status).toBe('pending');
+      expect(mine?.lastError).toBe('read_failed');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('a hard-deleted request row permanently fails the outbox row on the first tick with reason request_gone', async () => {
     // Withdraw the pending one first so a fresh request can be created, then
     // delete that fresh request's row before the dispatcher sees its outbox row.

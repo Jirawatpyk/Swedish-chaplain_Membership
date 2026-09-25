@@ -24,7 +24,9 @@ import { NextRequest } from 'next/server';
 import { err, ok } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
-import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastVersionId, type Broadcast } from '@/modules/broadcasts/domain/broadcast';
+// Type-only: a runtime import of the members barrel boots `@/lib/db` here.
+import type { MemberId } from '@/modules/members';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import {
   APPROVAL_LIFECYCLE_BATCH,
@@ -36,6 +38,7 @@ import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
 import { dompurifySanitizer } from '@/modules/broadcasts/infrastructure/sanitizer/dompurify-sanitizer';
 import {
+  contextOf,
   makeApprovalBroadcast,
   makeApprovalVersion,
   makeFakeApprovalLifecycleScan,
@@ -55,8 +58,8 @@ vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: 
 
 const TENANT = 'test-tenant';
 const tenant = asTenantContext(TENANT);
-const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
-const V1 = 'aaaaaaaa-0000-4000-8000-000000000001';
+const MEMBER_ID = '22222222-2222-4222-8222-222222222222' as MemberId;
+const V1 = asBroadcastVersionId('aaaaaaaa-0000-4000-8000-000000000001');
 const DAY = 86_400_000;
 /** 04:30 UTC — the cron's own hour (`30 4 * * *`, 11:30 Asia/Bangkok). */
 const T0 = new Date('2026-09-01T04:30:00.000Z');
@@ -111,7 +114,7 @@ async function run(h: Harness, from: number, to: number): Promise<Fired[]> {
       const before = h.store.outbox.rows().length;
       await h.tick(day, ms);
       for (const r of h.store.outbox.rows().slice(before)) {
-        fired.push({ day, kind: r.contextData.kind, audience: r.contextData.audience, round: r.contextData.round, to: r.toEmail });
+        fired.push({ day, kind: contextOf(r).kind, audience: contextOf(r).audience, round: contextOf(r).round, to: r.toEmail });
       }
     }
   }
@@ -155,10 +158,10 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
   it('the outbox rows carry ids and discriminators only; the staff row names its roster recipient', async () => {
     const h = harness({ broadcasts: [awaitingRow()] });
     await run(h, 0, 23);
-    const staff = h.store.outbox.rows().find((r) => r.contextData.audience === 'staff')!;
+    const staff = h.store.outbox.rows().find((r) => contextOf(r).audience === 'staff')!;
     expect(staff).toMatchObject({ type: 'eblast_approval_lifecycle', locale: 'en' });
     expect(staff.contextData).toEqual({ tenantId: TENANT, broadcastId: awaitingRow().broadcastId, versionId: V1, round: 1, kind: 'expiry_warning_day23', audience: 'staff', recipientUserId: MARKETER.userId });
-    const member = h.store.outbox.rows().find((r) => r.contextData.audience === 'member')!;
+    const member = h.store.outbox.rows().find((r) => contextOf(r).audience === 'member')!;
     expect(member).toMatchObject({ locale: 'th' });
     expect(member.contextData).toEqual({ tenantId: TENANT, broadcastId: awaitingRow().broadcastId, versionId: V1, round: 1, kind: 'reminder_day3', audience: 'member' });
   });
@@ -272,7 +275,7 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
       expect(h.deps.marketingDirectory.readRoster).toHaveBeenCalledTimes(1);
       expect(h.deps.marketingDirectory.listRecipients).not.toHaveBeenCalled();
       expect(order).toEqual(['roster', 'lock', 'lock']);
-      expect(h.store.outbox.rows().filter((r) => r.contextData.audience === 'staff')).toHaveLength(2);
+      expect(h.store.outbox.rows().filter((r) => contextOf(r).audience === 'staff')).toHaveLength(2);
       spy.mockRestore();
     });
 
@@ -306,7 +309,7 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
       const { logger } = await import('@/lib/logger');
       vi.mocked(logger.warn).mockClear();
       expect(await h.tick(3)).toMatchObject({ remindersSent: 1, warningsSent: 0, rowsFailed: 1 });
-      expect(h.store.outbox.rows().map((r) => r.contextData.kind)).toEqual(['reminder_day3']);
+      expect(h.store.outbox.rows().map((r) => contextOf(r).kind)).toEqual(['reminder_day3']);
       // F119 round-4 B3 — the failed row's log names the roster and its cause,
       // not the bare `Error` the staff step used to throw.
       expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
@@ -383,7 +386,7 @@ describe('T130 — bounds, failure isolation', () => {
     const rows = [...warned, due];
     const h = harness({ broadcasts: rows, versions: rows.map((b) => makeApprovalVersion({ id: V1, broadcastId: b.broadcastId, versionNo: 1, sentToMemberAt: b.stageEnteredAt })) });
     expect(await h.tick(0)).toMatchObject({ scanned: 1, remindersSent: 1 });
-    expect(h.store.outbox.rows().map((r) => r.contextData.kind)).toEqual(['reminder_day7']);
+    expect(h.store.outbox.rows().map((r) => contextOf(r).kind)).toEqual(['reminder_day7']);
     // The expiry list is NOT bounded by the stage: a warned row still closes on day 30.
     const expiries = h.deps.lifecycleScan.listAwaitingMemberApprovalInTx.mock.calls.map((c) => c[2]);
     expect(expiries.map((q) => q.reminderStageBelow)).toEqual([3, undefined]);

@@ -255,7 +255,7 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     it('dirty: the save runs first and the send carries the updatedAt that save returned', async () => {
       fetchMock
         .mockResolvedValueOnce(jsonResponse(200, { version: { updatedAt: '2026-09-20T09:30:00.000Z' } }))
-        .mockResolvedValueOnce(jsonResponse(200, { stage: 'awaiting_member_approval' }));
+        .mockResolvedValueOnce(jsonResponse(200, { status: 'awaiting_member_approval' }));
       renderWorkspace();
       fireEvent.change(screen.getByLabelText(t.workspace.subjectLabel), { target: { value: 'Edited' } });
       await sendAndConfirm();
@@ -265,7 +265,7 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     });
 
     it('clean: the send carries the updatedAt the screen loaded', async () => {
-      fetchMock.mockResolvedValueOnce(jsonResponse(200, { stage: 'awaiting_member_approval' }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { status: 'awaiting_member_approval' }));
       renderWorkspace();
       await sendAndConfirm();
       await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t.send.sent));
@@ -276,7 +276,7 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     it('saved earlier, then sent clean: the send carries the token of that earlier save', async () => {
       fetchMock
         .mockResolvedValueOnce(jsonResponse(200, { version: { updatedAt: '2026-09-20T10:00:00.000Z' } }))
-        .mockResolvedValueOnce(jsonResponse(200, { stage: 'awaiting_member_approval' }));
+        .mockResolvedValueOnce(jsonResponse(200, { status: 'awaiting_member_approval' }));
       renderWorkspace();
       fireEvent.change(screen.getByLabelText(t.workspace.subjectLabel), { target: { value: 'Edited' } });
       fireEvent.click(saveButton());

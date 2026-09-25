@@ -14,7 +14,8 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { TenantSlug } from '@/modules/tenants';
-import type { BroadcastId } from '../../domain/broadcast';
+import type { MemberId } from '@/modules/members';
+import type { BroadcastId, BroadcastVersionId } from '../../domain/broadcast';
 import type { MemberDecision, MemberDecisionKind } from '../../domain/approval/member-decision';
 
 /** Opaque tx handle from `BroadcastsRepo.withTx`. */
@@ -22,7 +23,7 @@ export type BroadcastDecisionsTx = unknown;
 
 export interface NewMemberDecision {
   readonly broadcastId: BroadcastId;
-  readonly versionId: string;
+  readonly versionId: BroadcastVersionId;
   readonly round: number;
   readonly decision: MemberDecisionKind;
   readonly reason: string | null;
@@ -45,7 +46,7 @@ export interface BroadcastDecisionsRepo {
    */
   listByMember(
     tenantId: TenantSlug,
-    memberId: string,
+    memberId: MemberId,
     limit: number,
     tx: BroadcastDecisionsTx,
   ): Promise<readonly MemberDecision[]>;

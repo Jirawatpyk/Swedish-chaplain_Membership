@@ -16,6 +16,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { MemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
 
 export interface PortalContact {
@@ -31,7 +32,7 @@ export interface PortalContact {
 export interface MemberPortalRecipientPort {
   listActivePortalContacts(
     tenant: TenantContext,
-    memberId: string,
+    memberId: MemberId,
     tx: unknown,
   ): Promise<readonly PortalContact[]>;
 }

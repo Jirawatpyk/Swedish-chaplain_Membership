@@ -4,6 +4,9 @@ import {
   defineGuard,
   type SurfaceGuard,
 } from '@/modules/auth/domain/permissions/surface-guard';
+// A literal with no runtime imports (the staff home imports it too), pinned to
+// the Domain's MARKETING_TURN_STATUSES by `queue-view.test.ts`.
+import { MARKETING_TURN_QUEUE_HREF } from '@/app/(staff)/admin/broadcasts/_lib/queue-view';
 import {
   LayoutDashboardIcon,
   FileTextIcon,
@@ -52,7 +55,26 @@ export interface NavItem {
    */
   readonly shortTitleKey?: string;
   readonly icon: LucideIcon;
+  /**
+   * The item's IDENTITY: the page its `guard` protects, the key its badge count
+   * is resolved under ({@link applyNavBadges}), and — unless {@link linkHref}
+   * says otherwise — where the link goes.
+   */
   readonly href: string;
+  /**
+   * #400 item 8 — where the link goes when that is not `href` itself: a
+   * filtered view of the same page (a query string only, so `activePattern`
+   * still matches on the pathname). Never a different page — the permission
+   * parity and the badge both key on `href`.
+   */
+  readonly linkHref?: string;
+  /**
+   * #400 U2 — {@link linkHref} applies only while this runtime flag is `true`;
+   * otherwise {@link filterNavConfig} drops it and the link goes to `href`. For
+   * a filtered view that is only meaningful in some states (a preset whose
+   * stages cannot hold rows yet would open as empty chips and a Reset button).
+   */
+  readonly linkHrefFlag?: NavVisibilityFlag;
   /** URL pattern for active-state matching (see {@link ActivePattern}). */
   readonly activePattern: ActivePattern;
     /**
@@ -120,7 +142,11 @@ export type NavVisibilityFlag =
   | 'eventsEnabled'
   // F114 — `env.features.memberChangeApproval`: the change-request queue
   // 404s while the platform flag is OFF, so its nav item is dropped too.
-  | 'memberChangeApproval';
+  | 'memberChangeApproval'
+  // F119 #400 U2 — the E-Blast approval round is VISIBLE (R18: the flag is on,
+  // or a row still sits in a round-only stage). Resolved by the staff layout
+  // from the nav badge's own read; gates a link target, never an item.
+  | 'eblastApprovalRoundVisible';
 
 export type NavVisibilityFlags = Readonly<
   Partial<Record<NavVisibilityFlag, boolean>>
@@ -231,13 +257,20 @@ export function filterNavConfig(
     if (!item.visibilityFlag) return true;
     return flags[item.visibilityFlag] === true;
   }
+  // #400 U2 — a conditional link target whose flag is not `true` is dropped,
+  // so the link falls back to `href` (fail-closed to the page itself).
+  function resolveLink(item: NavItem): NavItem {
+    if (item.linkHrefFlag === undefined || flags[item.linkHrefFlag] === true) return item;
+    const { linkHref: _linkHref, linkHrefFlag: _linkHrefFlag, ...rest } = item;
+    return rest;
+  }
   function filterEntry(item: NavItem | NavGroup): NavItem | NavGroup | null {
     if (isNavGroup(item)) {
-      const children = item.children.filter(keepNavItem);
+      const children = item.children.filter(keepNavItem).map(resolveLink);
       if (children.length === 0) return null;
       return { ...item, children };
     }
-    return keepNavItem(item) ? item : null;
+    return keepNavItem(item) ? resolveLink(item) : null;
   }
   return {
     sections: config.sections
@@ -417,6 +450,15 @@ export const staffNavConfig: NavConfig = {
           // request in the staff layout (`readEblastWaitingCountForNav`) and
           // applied through `applyNavBadges`; this carries the sr-only noun only.
           badge: { labelKey: 'nav.staff.broadcastsBadge' },
+          // #400 item 8 — the link opens the view the badge counts (every
+          // marketing-turn stage), not the submitted-only FR-010 default —
+          // but only while the approval round is visible (#400 U2, the badge's
+          // own R18 rule). With the round dark the three round-only stages
+          // cannot hold rows, and the preset opened as three checked chips
+          // counting 0, a pressed toggle and a Reset button; the plain queue
+          // is the right target there.
+          linkHref: MARKETING_TURN_QUEUE_HREF,
+          linkHrefFlag: 'eblastApprovalRoundVisible',
         },
         // F6 Events — EventCreate-imported event list + attendee detail.
         // Manager has read-only access via the same route (FR-035).

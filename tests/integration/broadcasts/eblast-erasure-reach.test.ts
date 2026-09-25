@@ -42,7 +42,7 @@ import {
   makeStartFormattedVersionDeps,
 } from '@/lib/broadcast-approval-deps';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { asBroadcastId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId, type BroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { saveFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/save-formatted-version';
 import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/approval/send-version-to-member';
@@ -201,11 +201,11 @@ describe('F119 T076 — a member erased at Awaiting member approval: nothing the
       { ...makeRecordMemberDecisionDeps(tenant.ctx.slug), marketingDirectory: roster },
       {
         broadcastId,
-        memberId,
+        memberId: asMemberId(memberId),
         actorUserId: portalUser.userId,
         actorRole: 'member',
         contactId: subject.contactId,
-        versionId: round1.versionId,
+        versionId: asBroadcastVersionId(round1.versionId),
         decision: 'changes_requested',
         reason: 'The date is wrong — ask Khun Somchai (somchai@erasure-reach.example).',
         requestId: null,

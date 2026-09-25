@@ -23,6 +23,70 @@ import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 
+/**
+ * #400 item 1 — the ONLY `Broadcast` fields `applyTransition` writes besides
+ * `status` / `updated_at`. The Drizzle adapter loops over this tuple, so a
+ * key off the list used to be silently DROPPED; typing the parameter as
+ * {@link TransitionFields} turns that into a compile error instead.
+ *
+ * Adding a key: check the immutability trigger first
+ * (`broadcasts_immutable_after_submit_fn`, 0308) — a column it blocks after
+ * submit must not ride a transition unless the trigger exempts that edge.
+ */
+export const TRANSITION_FIELDS = [
+  'submittedAt',
+  'approvedAt',
+  'approvedByUserId',
+  'rejectedAt',
+  'rejectedByUserId',
+  'rejectionReason',
+  'scheduledFor',
+  'sendingStartedAt',
+  'sentAt',
+  'cancelledAt',
+  'cancelledByUserId',
+  'cancellationReason',
+  'failedToDispatchAt',
+  'failureReason',
+  'quotaYearConsumed',
+  'quotaConsumedAt',
+  'estimatedRecipientCount',
+  // F119 (0308) — the approval-round bookkeeping a transition writes. Not in
+  // the immutability trigger's blocklist; `scheduledFor` above is the one that
+  // needs an exempt edge (E2).
+  'stageEnteredAt',
+  'currentRound',
+  'approvedVersionId',
+  'memberReminderStage',
+  'memberExpiryNotifiedAt',
+  // F119 FR-016 — the member's proposal, written by the `draft → submitted`
+  // transition ONLY. Any post-draft write of it is refused by the
+  // immutability trigger (0308 F1), loud, never silent.
+  'proposedSendAt',
+  // F119 T060 — the PROMOTION of the member-approved version. It must ride the
+  // SAME statement as the `member_approved → approved` flip: that edge is the
+  // immutability trigger's only content exemption (E1), so on every other
+  // transition (or a separate UPDATE) the trigger still raises
+  // `broadcast_immutable_after_submit` — loud, not silent.
+  'subject',
+  'bodyHtml',
+  'bodySource',
+] as const satisfies ReadonlyArray<keyof Broadcast>;
+
+type TransitionKey = (typeof TRANSITION_FIELDS)[number];
+
+/**
+ * The fields a transition may write — {@link TRANSITION_FIELDS}, nothing else.
+ *
+ * Every OTHER `Broadcast` key is typed `?: never` (#400 T1): excess-property
+ * checks cover object LITERALS only, so a `Partial<Broadcast>` variable passed
+ * as `fields` used to compile with any column on it — and the adapter dropped
+ * the unlisted ones. Now such a variable is refused wherever it is passed.
+ */
+export type TransitionFields = Partial<Pick<Broadcast, TransitionKey>> & {
+  readonly [K in Exclude<keyof Broadcast, TransitionKey>]?: never;
+};
+
 export interface NewBroadcastDraftInput {
   readonly tenantId: TenantSlug;
   readonly broadcastId: BroadcastId;
@@ -228,7 +292,7 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     target: BroadcastStatus,
-    fields: Partial<Broadcast>,
+    fields: TransitionFields,
     expectedFromStatus: BroadcastStatus,
   ): Promise<Broadcast>;
 

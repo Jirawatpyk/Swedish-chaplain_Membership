@@ -68,7 +68,7 @@ describe('POST …/version/send — the version goes to the member (T040, US1-AS
     expect(res.status).toBe(200);
     const now = harness.store.now;
     expect(await res.json()).toEqual({
-      stage: 'awaiting_member_approval',
+      status: 'awaiting_member_approval',
       whoseTurn: 'member',
       round: 1,
       expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),

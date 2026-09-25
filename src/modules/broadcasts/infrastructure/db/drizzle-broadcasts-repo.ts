@@ -40,10 +40,12 @@ import type {
   ListByTenantStatusResult,
   ListByTenantStatusSort,
   NewBroadcastDraftInput,
+  TransitionFields,
 } from '../../application/ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
+  TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
@@ -857,7 +859,7 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       target: BroadcastStatus,
-      fields: Partial<Broadcast>,
+      fields: TransitionFields,
       expectedFromStatus: BroadcastStatus,
     ): Promise<Broadcast> {
       const tx = txUnknown as TenantTx;
@@ -873,48 +875,10 @@ export function makeDrizzleBroadcastsRepo(
         status: target,
         updatedAt: new Date(),
       };
-      // Whitelist mutable lifecycle fields the caller may pass through.
-      const passthrough: ReadonlyArray<keyof Broadcast> = [
-        'submittedAt',
-        'approvedAt',
-        'approvedByUserId',
-        'rejectedAt',
-        'rejectedByUserId',
-        'rejectionReason',
-        'scheduledFor',
-        'sendingStartedAt',
-        'sentAt',
-        'cancelledAt',
-        'cancelledByUserId',
-        'cancellationReason',
-        'failedToDispatchAt',
-        'failureReason',
-        'quotaYearConsumed',
-        'quotaConsumedAt',
-        'estimatedRecipientCount',
-        // F119 (0308) — the approval-round bookkeeping a transition writes.
-        // Not in the immutability trigger's blocklist; `scheduledFor` above is
-        // the one that needs an exempt edge (E2). A key missing here is
-        // silently DROPPED, so every F119 transition field must be listed.
-        'stageEnteredAt',
-        'currentRound',
-        'approvedVersionId',
-        'memberReminderStage',
-        'memberExpiryNotifiedAt',
-        // F119 FR-016 — the member's proposal, written by the `draft →
-        // submitted` transition ONLY. Any post-draft write of it is refused by
-        // the immutability trigger (0308 F1), loud, never silent.
-        'proposedSendAt',
-        // F119 T060 — the PROMOTION of the member-approved version. It must
-        // ride the SAME statement as the `member_approved → approved` flip:
-        // that edge is the immutability trigger's only content exemption (E1),
-        // so on every other transition (or a separate UPDATE) the trigger
-        // still raises `broadcast_immutable_after_submit` — loud, not silent.
-        'subject',
-        'bodyHtml',
-        'bodySource',
-      ];
-      for (const key of passthrough) {
+      // #400 item 1 — the port's `TRANSITION_FIELDS` is the whitelist, and the
+      // parameter's type is built from it, so a caller can no longer pass a
+      // key this loop would drop. See that tuple for what each group is for.
+      for (const key of TRANSITION_FIELDS) {
         if (fields[key] !== undefined) {
           setClause[key] = fields[key];
         }

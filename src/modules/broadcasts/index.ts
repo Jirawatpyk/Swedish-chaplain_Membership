@@ -24,6 +24,7 @@
 // --- Domain branded types + aggregates (T027) -----------------------------
 export {
   asBroadcastId,
+  asBroadcastVersionId,
   parseBroadcastId,
   phaseOf,
   type Broadcast,
@@ -31,6 +32,7 @@ export {
   type BroadcastId,
   type BroadcastIdError,
   type BroadcastPhase,
+  type BroadcastVersionId,
 } from './domain/broadcast';
 export {
   asBroadcastDeliveryId,
@@ -968,6 +970,8 @@ export {
 export type { MemberPortalRecipientPort, PortalContact } from './application/ports/member-portal-recipient-port';
 export {
   F119_NOTIFICATION_TYPES,
+  type EblastApprovalLifecycleKind,
+  type EblastNotificationContexts,
   type EblastNotificationEnqueue,
   type EblastNotificationOutboxPort,
   type F119NotificationType,

@@ -212,12 +212,15 @@ Side effects, all in **one** `runInTenant` with throw-to-rollback:
 | `approval_withdrawn` | `member_approved → changes_requested` **or** `approved → changes_requested` | decision row; `approved_version_id = NULL`; **`scheduled_for = NULL`** (trigger exemption E2 — FR-015a "a confirmed schedule is cancelled"); `stage_entered_at`; audit `broadcast_member_approval_withdrawn { …, cancelled_schedule_at }`; outbox per marketing recipient |
 
 ```jsonc
-200 { "stage": "member_approved", "whoseTurn": "marketing", "round": 2,
+200 { "status": "member_approved", "whoseTurn": "marketing", "round": 2,
       "decision": { "id": "uuid", "versionId": "uuid", "decision": "approved", "decidedAt": "…" } }
 ```
 
-The response carries the new `stage` and `whoseTurn` precisely so the page can show the member where
+The response carries the new `status` and `whoseTurn` precisely so the page can show the member where
 the E-Blast now stands **and a way back to their E-Blast list** without a second fetch (FR-009).
+The key is `status`, not `stage` (#400 item 6, amended after PR #392): its value is a status, and a
+409 on this endpoint carries `details.stage` in the `stageOf` display vocabulary — one key must not
+carry two vocabularies (the rule confirm-schedule adopted in PR #392 review C5).
 
 Idempotency: a repeat of an identical body after the transition answers **409 `stage_changed`**
 carrying the decision already recorded — the correct answer, not a replay (research R19).

@@ -20,6 +20,12 @@ import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skelet
  * `<BrandSettingsForm />` — colour field + swatch + readout, textarea +
  * counter, logo preview + source + link — so the skeleton→content swap does
  * not shift layout.
+ *
+ * #400 U5 — it reserves the SAVED state. Two lines render only before the
+ * first save (the default-colour hint, `colour.defaultHint`, while the field
+ * is empty; the missing-address `InlineAlert`, `address.missing`), and every
+ * visit after that save is a returning one — so the common visit is the one
+ * that must not shift. The one-off first visit grows by those two rows.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.settings.broadcasts.brand');
@@ -42,7 +48,8 @@ export default async function Loading() {
                   <SkeletonBlock className="h-[var(--input-height)] sm:w-40" />
                   <SkeletonBlock className="h-9 w-14 shrink-0" />
                 </div>
-                <SkeletonBlock className="h-3 w-2/3" />
+                {/* The colour hint (`text-sm`). */}
+                <SkeletonBlock className="h-4 w-2/3" />
               </div>
               {/* Contrast readout. */}
               <SkeletonBlock className="h-4 w-56" />
@@ -57,7 +64,8 @@ export default async function Loading() {
             <CardContent className="space-y-2">
               <SkeletonBlock className="h-4 w-44" />
               <SkeletonBlock className="h-24 w-full" />
-              <SkeletonBlock className="h-3 w-32" />
+              {/* The counter (`text-sm`). */}
+              <SkeletonBlock className="h-4 w-32" />
             </CardContent>
           </Card>
 

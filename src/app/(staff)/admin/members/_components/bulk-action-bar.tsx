@@ -369,6 +369,22 @@ export function BulkActionBar({
     setArchiveDialogOpen(false);
   }, [executeBulk]);
 
+  // Clear empties the selection, so this bar returns null and the focused
+  // Clear button goes with it: focus fell to `<body>`. Hand it to the table's
+  // select-all checkbox FIRST, while both are mounted (it survives the clear).
+  // Below `md` the table is hidden, where `.focus()` does nothing — then the
+  // `#main-content` landmark. Only the explicit Clear moves focus: a bulk
+  // action's own clear leaves focus to its dialog's `finalFocus`. The E-Blast
+  // queue's bar does the same (`queue-bulk-action-bar.tsx`, T086a V2).
+  const handleClearClick = useCallback(() => {
+    const selectAll = document.querySelector<HTMLElement>('[data-testid="members-select-all"]');
+    selectAll?.focus();
+    if (selectAll === null || document.activeElement !== selectAll) {
+      document.getElementById('main-content')?.focus({ preventScroll: true });
+    }
+    onClear();
+  }, [onClear]);
+
   if (count === 0) return null;
 
   return (
@@ -526,7 +542,7 @@ export function BulkActionBar({
           <Button
             variant="ghost"
             size="sm"
-            onClick={onClear}
+            onClick={handleClearClick}
             className="min-h-11"
           >
             <XIcon className="mr-1 h-4 w-4" />

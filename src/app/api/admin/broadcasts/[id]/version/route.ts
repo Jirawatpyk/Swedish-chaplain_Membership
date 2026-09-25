@@ -102,7 +102,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   const { version, memberOriginal } = result.value;
   return NextResponse.json(
     {
-      stage: result.value.stage,
+      status: result.value.status,
       version: {
         id: version.id,
         versionNo: version.versionNo,

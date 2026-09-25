@@ -73,7 +73,7 @@ describe('POST /api/admin/broadcasts/[id]/version — start a formatted version'
       noteToMember: null,
     });
     expect(body).toEqual({
-      stage: 'in_design',
+      status: 'in_design',
       version: {
         id: v1!.id,
         versionNo: 1,

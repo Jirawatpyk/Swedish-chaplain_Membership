@@ -43,6 +43,7 @@ import {
   readPendingChangeRequests,
   type PendingChangeRequestsRead,
 } from '@/lib/pending-change-requests';
+import { readEblastWaitingCount } from '@/lib/eblast-waiting-count';
 import {
   listDashboard,
   hasFinanceMetrics,
@@ -137,7 +138,7 @@ export default async function StaffHomePage() {
 
   // allSettled (not all) so a thrown activity-feed read can never take down the
   // whole dashboard — the feed is the least-critical widget (FR-003 vs FR-005).
-  const [dashSettled, feedSettled, pendingChangesSettled] = await Promise.allSettled([
+  const [dashSettled, feedSettled, pendingChangesSettled, eblastWaitingSettled] = await Promise.allSettled([
     listDashboard(meta, tenant, makeListDashboardDeps(tenant.slug, canFinance)),
     activityFeedQuery(
       { limit: 15 },
@@ -161,7 +162,17 @@ export default async function StaffHomePage() {
     // The dashboard keeps the FULL read (no nav-style deadline): it is one
     // page an operator opened, not a shell on every route.
     readPendingChangeRequests(tenant, user.role, 'M114.dashboard.pending_count_failed'),
+    // F119 #400 U2 — the nav badge's R18 read, for the E-Blast card's LINK
+    // only (the card's number stays the snapshot's): `ok` = the approval
+    // round is visible, so the card may open the waiting-on-marketing preset.
+    readEblastWaitingCount(tenant, user.role, 'M119.dashboard.eblast_round_failed'),
   ]);
+  // Anything but `ok` — the round is dark, the read failed, or it threw — is
+  // "not shown to be visible": the card opens the plain queue, never a preset
+  // of round-only stages that cannot hold rows (empty chips + a Reset button).
+  // The helper logs its own failures; a rejection here is above its try.
+  const eblastRoundVisible =
+    eblastWaitingSettled.status === 'fulfilled' && eblastWaitingSettled.value.kind === 'ok';
   const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
   // An allSettled REJECTION is the same fact as an `unavailable` answer: the
   // helper swallows both channels itself, so this arm only fires on a throw
@@ -362,8 +373,9 @@ export default async function StaffHomePage() {
         id: 'broadcasts',
         n: metrics.needsAttention.broadcastsAwaitingApproval,
         label: t('needsAttention.broadcasts'),
-        // F119 T132 — the count is the marketing-turn set; open exactly it.
-        href: MARKETING_TURN_QUEUE_HREF,
+        // F119 T132 — the count is the marketing-turn set; open exactly it —
+        // while the approval round is visible (#400 U2, the nav link's rule).
+        href: eblastRoundVisible ? MARKETING_TURN_QUEUE_HREF : '/admin/broadcasts',
       },
       // F114 US6 (FR-033) — live pending change requests → the queue. Count
       // and age come from `readPendingChangeRequests` above; anything but

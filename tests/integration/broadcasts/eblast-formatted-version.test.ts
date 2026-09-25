@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId } from '@/modules/broadcasts/domain/broadcast';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
 import { saveFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/save-formatted-version';
 import { listBroadcastVersions } from '@/modules/broadcasts/application/use-cases/approval/list-broadcast-versions';
@@ -180,7 +180,7 @@ describe('F119 formatting round — real repos on live Postgres', () => {
     await runInTenant(tenant.ctx, (tx) =>
       drizzleBroadcastDecisionsRepo.insert(
         tenant.ctx.slug,
-        { broadcastId: asBroadcastId(row.broadcastId!), versionId: v1Id, round: 1, decision: 'approved', reason: null, decidedByUserId: randomUUID(), decidedByContactId: randomUUID() },
+        { broadcastId: asBroadcastId(row.broadcastId!), versionId: asBroadcastVersionId(v1Id), round: 1, decision: 'approved', reason: null, decidedByUserId: randomUUID(), decidedByContactId: randomUUID() },
         tx,
       ),
     );
