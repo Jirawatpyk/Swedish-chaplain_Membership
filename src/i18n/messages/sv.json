@@ -3471,6 +3471,29 @@
           "event_attendees_last_90d": "Deltagare (senaste 90 dagarna)",
           "custom": "Anpassad mottagarlista"
         },
+        "dispatchHeldTitle": "Pausad",
+        "dispatchHeldBody": "Medlemmens medlemskap väntar på betalning. E-Blasten skickas automatiskt när betalningen är klar, eller misslyckas om medlemskapet upphör.",
+        "failureReasonTitle": "Varför E-Blasten inte skickades",
+        "failureReason": {
+          "member_halted": "Medlemmens E-Blasts var spärrade (automatisk spärr på grund av klagomålsfrekvens) när denna skulle skickas. Granska och häv vid behov spärren i E-Blast-listan; medlemmen kan därefter skicka in en ny E-Blast.",
+          "member_not_in_good_standing": "Medlemskapet hade upphört när denna skulle skickas. Medlemmen kan skicka in en ny E-Blast när medlemskapet är aktivt igen.",
+          "failed_rows": "Resend avvisade några mottagaradresser i kontaktimporten.",
+          "counts_incoherent": "Kontaktimportens antal gick inte ihop, så utskicket stoppades.",
+          "count_mismatch": "Antalet importerade mottagare stämde inte med målgruppen vid utskickstillfället.",
+          "provider_failed": "Resend rapporterade att kontaktimporten misslyckades.",
+          "gateway_permanent": "Resend avvisade begäran (ett permanent fel). Kontrollera Resend-kontot och planens gränser.",
+          "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange denna E-Blasts ID.",
+          "malformed_segment": "Den sparade målgruppen för denna E-Blast är ofullständig (en nivåmålgrupp utan nivåer).",
+          "audience_too_large": "Målgruppen växte förbi den tillåtna storleken mellan godkännande och utskick.",
+          "retry_budget_exhausted": "Resend gick inte att nå på över en timme, så utskicket slutade försöka.",
+          "audience_post_suppression_empty": "Inga mottagare återstod när avregistreringar och avanmälningar hade tillämpats.",
+          "audience_membership_drift": "Resend-målgruppen innehöll fler kontakter än som beräknats, så utskicket stoppades.",
+          "audience_import_stuck": "Kontaktimporten blev inte klar inom 30 minuter.",
+          "resend_resource_missing": "En Resend-resurs för denna E-Blast finns inte längre. Kontrollera Resend-kontot.",
+          "resend_resource_404": "Resend har inte längre detta utskick (upptäckt vid 24-timmarsavstämningen).",
+          "no_resend_resource_attached": "Inget Resend-utskick kopplades någonsin till denna E-Blast (upptäckt vid 24-timmarsavstämningen).",
+          "generic": "Utskicket misslyckades. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange denna E-Blasts ID."
+        },
         "audit": {
           "title": "Livscykelstidslinje",
           "drafted": "Utkast skapat",
@@ -7716,9 +7739,12 @@
         "gateway_permanent": "vår e-postleverantör avvisade begäran – din kammaradministratör behöver kontrollera kontot",
         "gateway_unknown": "ett oväntat problem uppstod när utskicket förbereddes",
         "audience_import_stuck": "det tog för lång tid att förbereda mottagarlistan, så vi avbröt i stället för att skicka vid en oväntad tidpunkt",
+        "member_halted": "utskick från din organisation är pausade för granskning – kontakta handelskammaren för mer information",
+        "member_not_in_good_standing": "ditt medlemskap har upphört – kontakta handelskammaren för mer information",
         "generic": "ett tekniskt problem hindrade leveransen"
       },
-      "reassurance": "Din utskickskvot har INTE förbrukats och är fortfarande reserverad. Du kan schemalägga om samma utskick från administrationskön, eller låta din kammaradministratör skicka det manuellt.",
+      "reassurance": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. Det kan inte skickas på nytt; skicka in ett nytt utskick om du vill skicka innehållet.",
+      "reassuranceStanding": "Utskicket har inte dragits från din årliga kvot – platsen har frigjorts. När handelskammaren har löst detta med dig kan du skicka in innehållet igen som ett nytt utskick.",
       "ctaRescheduleLabel": "Öppna utskicksdetaljer",
       "footerSignOff": "Om du behöver hjälp, vänligen kontakta din kammaradministratör."
     },

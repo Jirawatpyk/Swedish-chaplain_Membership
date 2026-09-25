@@ -9,7 +9,8 @@
  * gate answered "in good standing" for a result it never understood. Each
  * switch now throws on it (`assertNever`), so the row is not made
  * dispatchable. The unknown kind is forced here through the one reader all
- * three share.
+ * three share — and, since F119 PR-A, both dispatch legs, whose switches
+ * answer a transient `dispatch.server_error` instead (nothing is sent).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,6 +24,8 @@ import { asTenantContext } from '@/modules/tenants';
 import { approveBroadcast } from '@/modules/broadcasts/application/use-cases/approve-broadcast';
 import { submitBroadcast } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
+import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import {
   makeApprovalBroadcast,
   makeApprovalVersion,
@@ -85,5 +88,39 @@ describe('an unknown MemberSendStanding kind is never read as "may send"', () =>
     );
     expect(r).toEqual({ ok: false, error: { kind: 'server_error', errKind: 'Error' } });
     expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+  });
+
+  /**
+   * F119 PR-A — the two SEND-time switches. An unknown kind did not decide the
+   * gate, so nothing is sent: the same transient answer a failed read gets
+   * (the row stays `approved`), and Resend is never called.
+   */
+  it.each([
+    ['dispatchScheduledBroadcast', dispatchScheduledBroadcast],
+    ['buildAudienceTick', buildAudienceTick],
+  ] as const)('%s → dispatch.server_error (phase standing), nothing sent, nothing written', async (_name, useCase) => {
+    const row = makeApprovalBroadcast({ status: 'approved' });
+    const store = makeFakeApprovalStore({ broadcasts: [row] });
+    const gatewayCalls: string[] = [];
+    const gateway = new Proxy(
+      {},
+      { get: (_t, prop) => (prop === 'then' ? undefined : async () => void gatewayCalls.push(String(prop))) },
+    );
+    const r = await useCase(
+      {
+        tenant,
+        broadcastsRepo: store.broadcastsRepo,
+        broadcastsGateway: gateway,
+        sendStanding: makeFakeSendStanding(),
+        clock: { now: () => store.now },
+      } as never,
+      { broadcastId: row.broadcastId },
+    );
+    expect(r).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'member_standing_unrouted', errClass: 'gate', phase: 'standing' },
+    });
+    expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+    expect(gatewayCalls).toEqual([]);
   });
 });

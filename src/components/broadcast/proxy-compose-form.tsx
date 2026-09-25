@@ -44,7 +44,7 @@
 
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFormatter, useLocale, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -82,6 +82,7 @@ import {
 } from './compose/template-picker-field';
 import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
 import { saveComposeDraft } from './compose/save-compose-draft';
+import { formatLocalisedDate, TIME_HH_MM } from '@/lib/format-date-localised';
 
 // F119 T145 — the SAME loader and the SAME editor the member compose form
 // uses, now with the same `imagesEnabled` / `draftId` props too: the staff
@@ -251,7 +252,6 @@ export function ProxyComposeForm({
   const locale = useLocale();
   // F119 T145 (FR-045) — the "Saved at" receipt, formatted by next-intl in the
   // staff user's locale, never by hand.
-  const format = useFormatter();
   const router = useRouter();
 
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -816,10 +816,7 @@ export function ProxyComposeForm({
                   aria-live="polite"
                 >
                   {t('savedAt', {
-                    time: format.dateTime(dirtyGuard.savedAt, {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    }),
+                    time: formatLocalisedDate(dirtyGuard.savedAt, locale, TIME_HH_MM),
                   })}
                 </p>
               ) : null}

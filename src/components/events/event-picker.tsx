@@ -19,7 +19,7 @@
  *   - aria-live announces the fuzzy-match hint when filename changes.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useTranslations, useFormatter } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { Check, ChevronsUpDown, Plus, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface EventPickerOption {
   readonly eventId: string;
@@ -157,7 +158,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   // the browser locale. Avoids the th-TH (BE) vs en-US (CE) mix on
   // pages where some surfaces use locale-aware formatters and others
   // don't.
-  const formatter = useFormatter();
+  const locale = useLocale();
   const popoverContentId = useId();
   const [open, setOpen] = useState(false);
   const [fetchedEvents, setFetchedEvents] = useState<
@@ -351,7 +352,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                   purely decorative shimmer per ux-standards.md § 2.1. */}
               {selected !== null ? (
                 <span className="truncate">
-                  {`${selected.name} — ${formatter.dateTime(new Date(selected.startDate), 'medium')}`}
+                  {`${selected.name} — ${formatDatePreset(selected.startDate, locale, 'medium')}`}
                 </span>
               ) : loading ? (
                 <Skeleton aria-hidden="true" className="h-4 w-48" />
@@ -430,7 +431,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                     <div className="flex flex-col">
                       <span>{event.name}</span>
                       <span className="text-caption text-muted-foreground">
-                        {formatter.dateTime(new Date(event.startDate), 'medium')}
+                        {formatDatePreset(event.startDate, locale, 'medium')}
                       </span>
                     </div>
                   </CommandItem>

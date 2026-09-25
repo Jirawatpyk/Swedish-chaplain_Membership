@@ -50,6 +50,10 @@ import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/pla
 import type { EmailTransactionalPort } from '@/modules/broadcasts/application/ports/email-transactional-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
+
+/** F119 PR-A — the member-standing reads every dispatch now makes; default: in good standing. */
+const OK_STANDING = makeFakeSendStanding();
 
 /** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
 const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
@@ -657,6 +661,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       locale: 'en' as const,
       plansBridge: makePlansBridge(),
       emailTransactional: makeEmailTransactional().port,
+      sendStanding: OK_STANDING,
       brandChrome: NO_BRAND_CHROME,
     };
     const r1 = await dispatchScheduledBroadcast({ ...base, brandChrome: { load: async () => brand } }, baseInput);
@@ -703,6 +708,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -771,6 +777,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -804,6 +811,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -836,6 +844,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -877,6 +886,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -928,6 +938,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -994,6 +1005,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1060,6 +1072,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1106,6 +1119,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1154,6 +1168,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1195,6 +1210,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1251,6 +1267,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1306,6 +1323,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1355,6 +1373,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1393,6 +1412,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1433,6 +1453,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1489,6 +1510,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1532,6 +1554,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1580,6 +1603,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1636,6 +1660,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1689,6 +1714,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1737,6 +1763,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1778,6 +1805,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1840,6 +1868,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1918,6 +1947,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -1999,6 +2029,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2069,6 +2100,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2143,6 +2175,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2210,6 +2243,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2263,6 +2297,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2332,6 +2367,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2400,6 +2436,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2442,6 +2479,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2502,6 +2540,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2572,6 +2611,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2626,6 +2666,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2693,6 +2734,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2761,6 +2803,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2803,6 +2846,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2873,6 +2917,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2930,6 +2975,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -2986,6 +3032,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3040,6 +3087,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3103,6 +3151,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3152,6 +3201,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3201,6 +3251,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3259,6 +3310,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3306,6 +3358,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3350,6 +3403,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3400,6 +3454,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3459,6 +3514,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3500,6 +3556,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3544,6 +3601,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3608,6 +3666,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3661,6 +3720,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3744,6 +3804,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3797,6 +3858,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         // Plan still matches snapshot's planId 'p' โ’ no expired-plan audit
         plansBridge: makePlansBridge({ planId: 'p' }),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3837,6 +3899,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         // Snapshot is 'p'; current plan is 'p2' โ’ expired-plan audit fires
         plansBridge: makePlansBridge({ planId: 'p2' }),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3880,6 +3943,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           lookupError: { kind: 'plan_lookup.member_no_plan', memberId: 'm-1' },
         }),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3920,6 +3984,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge({ shouldThrow: true }),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -3968,6 +4033,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4021,6 +4087,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4081,6 +4148,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4125,6 +4193,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4183,6 +4252,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4227,6 +4297,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4278,6 +4349,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4335,6 +4407,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           locale: 'en' as const,
           plansBridge: makePlansBridge(),
           emailTransactional: email.port,
+          sendStanding: OK_STANDING,
           brandChrome: NO_BRAND_CHROME,
         },
         baseInput,
@@ -4377,6 +4450,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: email.port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4437,6 +4511,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4496,6 +4571,7 @@ describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4551,6 +4627,7 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
     };
@@ -4666,6 +4743,7 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         locale: 'en' as const,
         plansBridge: makePlansBridge(),
         emailTransactional: makeEmailTransactional().port,
+        sendStanding: OK_STANDING,
         brandChrome: NO_BRAND_CHROME,
       },
       baseInput,
@@ -4681,5 +4759,293 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
     expect(gw.audienceCalls).toHaveLength(0);
     expect(gw.contactsCalls).toHaveLength(0);
     expect(gw.sendCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * F119 PR-A — the member-standing gate at DISPATCH.
+ *
+ * Until this, standing (the F7 halt flag + F8 membership access) was read only
+ * at submit, approve-as-submitted and the promotion, so an `approved` E-Blast
+ * scheduled days ahead went out after its member was halted, suspended,
+ * terminated or refunded. The maintainer's rule (R1): a halted member or an
+ * ENDED membership is refused PERMANENTLY (`failed_to_dispatch`); a SUSPENDED
+ * one (awaiting payment) is HELD — nothing sent or written, retried every
+ * tick. A read that fails decides nothing: the row stays `approved` and the
+ * next tick retries.
+ */
+describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-A)', () => {
+  function standingDeps(
+    sendStanding: ReturnType<typeof makeFakeSendStanding>,
+    broadcast: Broadcast = makeBroadcast('approved'),
+    gatewayOpts: GatewayOpts = {},
+  ) {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast });
+    const gw = makeGateway(gatewayOpts);
+    const email = makeEmailTransactional();
+    return {
+      audit,
+      repo,
+      gw,
+      email,
+      deps: {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com'), recipient('m-2', 'two@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+        brandChrome: NO_BRAND_CHROME,
+        sendStanding,
+      },
+    };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['halted', { halted: ['m-1'] }, 'member_halted', 'broadcast_member_halted_pending_review'],
+    ['terminated', { access: 'terminated' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked'],
+  ] as const)(
+    'a %s member → failed_to_dispatch (%s), both audit rows, the member told, nothing sent',
+    async (_label, opts, reason, refusalEvent) => {
+      const { broadcastsMetrics } = await import('@/lib/metrics');
+      const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+      const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding(opts));
+
+      const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+      expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason } });
+      expect(repo.transitions).toEqual([
+        { status: 'failed_to_dispatch', fields: { failedToDispatchAt: FROZEN_NOW, failureReason: reason } },
+      ]);
+      expect(audit.emits.map((e) => e.eventType)).toEqual(['broadcast_failed_to_dispatch', refusalEvent]);
+      // The refusal row: ids only, the cron as actor, NO role (a system act
+      // holds none), and `related_member_id` — never snake `member_id`, which
+      // would fire the 0009 `last_activity_at` trigger for an act the member
+      // did not perform.
+      expect(audit.emits[1]).toMatchObject({
+        actorUserId: 'system:cron',
+        requestId: null,
+        payload: { related_member_id: 'm-1', broadcast_id: broadcastId, surface: 'dispatch', actor_role: null },
+      });
+      expect(audit.emits[1]?.summary).toMatch(/^Dispatch refused/);
+      expect(audit.emits[1]?.payload).not.toHaveProperty('member_id');
+      // Not an infrastructure fault: its own label, never `app_error`.
+      expect(failedSpy).toHaveBeenCalledWith('test-tenant', 'member_ineligible');
+      expect(email.memberCalls).toHaveLength(1);
+      expect(email.memberCalls[0]?.payload.reason).toBe(reason);
+      expect(gw.audienceCalls).toHaveLength(0);
+      expect(gw.contactsCalls).toHaveLength(0);
+      expect(gw.sendCalls).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    ['the halt read throws', { haltReadThrows: true }, 'Error'],
+    ['the access lookup answers its error arm', { access: 'lookup_error' }, 'membership_access.lookup_error'],
+  ] as const)('%s → dispatch.server_error phase standing; the row stays approved, nothing sent, nothing audited', async (_label, opts, errClass) => {
+    const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding(opts));
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'standing', errClass });
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toHaveLength(0);
+    expect(email.memberCalls).toHaveLength(0);
+    expect(gw.audienceCalls).toHaveLength(0);
+    expect(gw.sendCalls).toHaveLength(0);
+  });
+
+  it('mail a prior tick already handed to Resend is never refused: the standing read is skipped entirely', async () => {
+    const standing = makeFakeSendStanding({ halted: ['m-1'] });
+    const handed: Broadcast = {
+      ...makeBroadcast('approved'),
+      resendAudienceId: 'aud-from-previous-tick',
+      resendBroadcastId: 'rb-from-previous-tick',
+    };
+    const { repo, gw, deps } = standingDeps(standing, handed, { retrieveStatus: 'sent', retrieveSentAt: '2026-06-15T04:55:00.000Z' });
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(standing.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
+    expect(standing.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    expect(repo.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(gw.sendCalls).toHaveLength(0);
+  });
+
+  it('a member in good standing proceeds to the send, and the read names the requesting member', async () => {
+    const standing = makeFakeSendStanding();
+    const { repo, gw, deps } = standingDeps(standing);
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.value.kind : null).toBe('sent');
+    expect(standing.membersBridge.getMembersHaltedInTenant).toHaveBeenCalledTimes(1);
+    expect(standing.membershipAccess.getMembershipAccess).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(gw.sendCalls).toHaveLength(1);
+    expect(repo.transitions.map((t) => t.status)).toEqual(['sending']);
+  });
+
+  /**
+   * R1 (maintainer decision) — `suspended` is HELD, not refused. F8 maps
+   * `awaiting_payment` to `suspended` the moment the renewal bill is issued
+   * (~T-30), while the member has usually paid for the current period; a
+   * permanent refusal killed the E-Blast and told the member their membership
+   * was not active. Held: nothing sent, nothing written, nobody emailed — the
+   * row stays `approved` and the next tick asks again.
+   */
+  it('a SUSPENDED member (awaiting payment) → held: ok, no transition, no audit, no email, no Resend call', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const heldSpy = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding({ access: 'suspended' }));
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(repo.transitions).toEqual([]);
+    expect(repo.attachBroadcastIdCalls).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+    expect(gw.audienceCalls).toHaveLength(0);
+    expect(gw.contactsCalls).toHaveLength(0);
+    expect(gw.sendCalls).toHaveLength(0);
+    expect(heldSpy).toHaveBeenCalledWith('test-tenant');
+    expect(failedSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * R2 — the halt list is memoised per tick, so a halt cleared mid-tick would
+   * still read as halted for every later row. A `halted` answer is therefore
+   * re-read UNCACHED before the permanent refusal; only a fresh `halted`
+   * refuses.
+   */
+  it('halted in the tick memo but CLEARED on the fresh re-read → not refused; the send proceeds', async () => {
+    const standing = makeFakeSendStanding({ halted: ['m-1'], haltReadFresh: { halted: [] } });
+    const { audit, repo, gw, deps } = standingDeps(standing);
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok ? result.value.kind : result.error).toBe('sent');
+    expect(standing.haltReadFresh?.getMembersHaltedInTenant).toHaveBeenCalledTimes(1);
+    expect(standing.membershipAccess.getMembershipAccess).toHaveBeenCalledWith(tenant, 'm-1');
+    expect(repo.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(audit.emits.map((e) => e.eventType)).not.toContain('broadcast_member_halted_pending_review');
+    expect(gw.sendCalls).toHaveLength(1);
+  });
+
+  it('halted in the memo AND on the fresh re-read → refused permanently (member_halted)', async () => {
+    const standing = makeFakeSendStanding({ halted: ['m-1'], haltReadFresh: { halted: ['m-1'] } });
+    const { repo, gw, deps } = standingDeps(standing);
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' } });
+    expect(standing.haltReadFresh?.getMembersHaltedInTenant).toHaveBeenCalledTimes(1);
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(gw.sendCalls).toHaveLength(0);
+  });
+
+  it('the fresh halt re-read THROWS → dispatch.server_error phase standing; nothing refused, nothing sent', async () => {
+    const standing = makeFakeSendStanding({ halted: ['m-1'], haltReadFresh: { throws: true } });
+    const { audit, repo, gw, deps } = standingDeps(standing);
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'standing', errClass: 'Error' });
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(gw.sendCalls).toHaveLength(0);
+  });
+
+  /**
+   * R3 — `failDispatchAndAudit` swallows a failed terminal tx (it logs
+   * `cleanup_failed`), and the caller still answered `broadcast_failed_to_dispatch`,
+   * which the cron buckets `permanent_failed` ("finished, nothing to do") while
+   * the row sat `approved`. The honest answer is the import leg's:
+   * `dispatch.server_error`, phase `terminal_write`; the next tick retries.
+   */
+  it('the terminal write FAILS → dispatch.server_error phase terminal_write, the member NOT emailed', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { repo, email, deps } = standingDeps(makeFakeSendStanding({ access: 'terminated' }));
+    const brokenRepo = {
+      ...repo.port,
+      async applyTransition() {
+        throw new Error('40001 could not serialize access');
+      },
+    };
+
+    const result = await dispatchScheduledBroadcast({ ...deps, broadcastsRepo: brokenRepo }, baseInput);
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'terminal_write_failed', phase: 'terminal_write' },
+    });
+    expect(email.memberCalls).toEqual([]);
+    expect(failedSpy).not.toHaveBeenCalled();
+  });
+
+  it('the terminal write fails on a NON-standing refusal too (malformed segment) → terminal_write', async () => {
+    const malformed: Broadcast = { ...makeBroadcast('approved'), segmentType: 'tier', segmentParams: null };
+    const { repo, deps } = standingDeps(makeFakeSendStanding(), malformed);
+    const brokenRepo = {
+      ...repo.port,
+      async applyTransition() {
+        throw new Error('40001 could not serialize access');
+      },
+    };
+
+    const result = await dispatchScheduledBroadcast({ ...deps, broadcastsRepo: brokenRepo }, baseInput);
+
+    expect(result.ok ? null : result.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'terminal_write' });
+  });
+
+  /**
+   * R4 — the counters fired INSIDE the terminal tx, before the standing
+   * refusal's own audit row. When that second INSERT throws, the tx rolls back
+   * and nothing is recorded, yet `failed_to_dispatch.count` and
+   * `audit_emit.count` had already moved. They are counted after the commit.
+   */
+  it('the refusal audit (extraAudit) THROWS → the tx rolls back and no counter moves', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const emitSpy = vi.spyOn(broadcastsMetrics, 'auditEmitCount');
+    const { audit, deps } = standingDeps(makeFakeSendStanding({ access: 'terminated' }));
+    const throwingAudit = {
+      ...audit.port,
+      async emit(tx: unknown, e: AuditEmitInput) {
+        if (e.eventType === 'broadcast_membership_suspended_blocked') throw new Error('audit insert failed');
+        return audit.port.emit(tx as never, e);
+      },
+    };
+
+    const result = await dispatchScheduledBroadcast({ ...deps, audit: throwingAudit }, baseInput);
+
+    expect(result.ok ? null : result.error).toMatchObject({ kind: 'dispatch.server_error', phase: 'terminal_write' });
+    expect(failedSpy).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalled();
   });
 });

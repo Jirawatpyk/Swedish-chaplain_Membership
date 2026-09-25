@@ -90,6 +90,12 @@ interface BroadcastFailedCopy {
    */
   readonly failureReason: Readonly<Record<string, string>>;
   readonly reassurance: string;
+  /**
+   * F119 PR-A R6.1 — the quota line for the two STANDING refusals. The general
+   * one invites a new E-Blast straight away, which a halted or ended member
+   * cannot submit until the chamber has resolved it with them.
+   */
+  readonly reassuranceStanding: string;
   readonly ctaRescheduleLabel: string;
   readonly footerSignOff: string;
 }
@@ -157,9 +163,20 @@ function formatEmailDate(
   }
 }
 
+/**
+ * F119 PR-A R7 — the MEMBER's view of the E-Blast. Every builder in this file
+ * is addressed to the requesting member (approved / rejected / cancelled to the
+ * broadcast's reply-to, the dispatch failure to the primary contact), and this
+ * used to build `/admin/broadcasts/{id}`, sending a member to the staff area.
+ * `/portal/broadcasts/{id}` stays reachable when the membership has ended
+ * (`lapsed-portal-scope.ts`), which is when the failure email needs it most.
+ */
 function broadcastDetailUrl(broadcastId: string): string {
-  return `${env.app.baseUrl.replace(/\/$/, '')}/admin/broadcasts/${encodeURIComponent(broadcastId)}`;
+  return `${env.app.baseUrl.replace(/\/$/, '')}/portal/broadcasts/${encodeURIComponent(broadcastId)}`;
 }
+
+/** F119 PR-A R6.1 — the reasons that read `reassuranceStanding` instead of `reassurance`. */
+const STANDING_FAILURE_REASONS: ReadonlySet<string> = new Set(['member_halted', 'member_not_in_good_standing']);
 
 function benefitsPortalUrl(): string {
   return `${env.app.baseUrl.replace(/\/$/, '')}/portal/benefits`;
@@ -263,6 +280,7 @@ export function buildBroadcastFailedToDispatchEmail(
   // Staff review 2026-09-07 (Pass 4, 🟡-1): translate the token, never print it.
   const reasonText = copy.failureReason[input.reason] ?? copy.failureReason['generic'] ?? '';
   const reasonLine = fillTemplate(copy.failureReasonLabel, { reason: reasonText });
+  const reassurance = STANDING_FAILURE_REASONS.has(input.reason) ? copy.reassuranceStanding : copy.reassurance;
   const ctaUrl = broadcastDetailUrl(input.broadcastId);
   // Round 4 L8 — `body2` is GONE, along with the allowlist that gated it.
   //
@@ -278,7 +296,8 @@ export function buildBroadcastFailedToDispatchEmail(
   // rendered for exactly two of fourteen reason keys; both of those state its
   // content themselves; the other twelve never saw it. Every reader still gets
   // `body1` (the broadcast did not go out), the reason sentence, and
-  // `reassurance` (the quota slot is still reserved). So the deletion costs no
+  // `reassurance` (the fate of the quota slot — released, since F119 PR-A
+  // corrected a sentence that claimed it stayed reserved). So the deletion costs no
   // reader anything, and removes a paragraph that had been wrong twice.
 
   const html = `<!doctype html>
@@ -289,7 +308,7 @@ export function buildBroadcastFailedToDispatchEmail(
     <p style="line-height:1.6;">${escapeHtml(copy.greeting)}</p>
     <p style="line-height:1.6;">${escapeHtml(body1)}</p>
     <p style="line-height:1.6;color:#555;font-size:14px;">${escapeHtml(scheduledLine)}<br>${escapeHtml(reasonLine)}</p>
-    <p style="line-height:1.6;background:#fff7e6;border-left:4px solid #f5a623;padding:12px 16px;border-radius:4px;">${escapeHtml(copy.reassurance)}</p>
+    <p style="line-height:1.6;background:#fff7e6;border-left:4px solid #f5a623;padding:12px 16px;border-radius:4px;">${escapeHtml(reassurance)}</p>
     <p style="margin:24px 0;">
       <a href="${ctaUrl}" style="display:inline-block;background:${EMAIL_BRAND_PRIMARY};color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;">${escapeHtml(copy.ctaRescheduleLabel)}</a>
     </p>
@@ -302,7 +321,7 @@ export function buildBroadcastFailedToDispatchEmail(
     `${copy.greeting}\n\n` +
     `${body1}\n\n` +
     `${scheduledLine}\n${reasonLine}\n\n` +
-    `${copy.reassurance}\n\n` +
+    `${reassurance}\n\n` +
     `${copy.ctaRescheduleLabel}: ${ctaUrl}\n\n` +
     `${copy.footerSignOff}\n`;
 

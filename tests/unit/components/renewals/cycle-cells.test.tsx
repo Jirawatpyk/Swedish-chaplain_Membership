@@ -17,7 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { CycleCompanyCell } from '@/components/renewals/cycle-cells';
+import { CycleCompanyCell, CycleExpiresCell } from '@/components/renewals/cycle-cells';
 
 const messages = {
   admin: {
@@ -88,5 +88,27 @@ describe('<CycleCompanyCell>', () => {
     });
     expect(screen.getByText('(Unknown company)')).toBeDefined();
     expect(screen.getByLabelText(/Email unverified/i)).toBeDefined();
+  });
+});
+
+describe('<CycleExpiresCell>', () => {
+  function renderExpires(locale: string) {
+    return render(
+      <NextIntlClientProvider locale={locale} messages={messages} timeZone="Asia/Bangkok">
+        <CycleExpiresCell expiresAt="2026-05-29T07:10:00.000Z" />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('renders English day-first (en-GB, ux-standards § 12.3), not "May 29, 2026"', () => {
+    renderExpires('en');
+    const time = screen.getByText('29 May 2026');
+    expect(time.tagName).toBe('TIME');
+    expect(time).toHaveAttribute('dateTime', '2026-05-29T07:10:00.000Z');
+  });
+
+  it('renders the Buddhist-Era year for th', () => {
+    renderExpires('th');
+    expect(screen.getByText(/2569/)).toBeInTheDocument();
   });
 });

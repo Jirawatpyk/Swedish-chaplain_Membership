@@ -228,3 +228,12 @@ describe('<EscalationTaskQueue> — task-type filter (shadcn Select)', () => {
     expect(url).not.toContain('all');
   });
 });
+
+describe('<EscalationTaskQueue> — dates', () => {
+  it('renders the due date day-first (en-GB), not "Apr 10, 2026"', () => {
+    renderQueue([makeTask({ taskId: 't1', taskType: 'phone_call' })]);
+    // dueAt 2026-04-10T00:00Z = 10 April in Bangkok.
+    expect(screen.getAllByText('10 Apr 2026').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Apr 10, 2026')).toBeNull();
+  });
+});

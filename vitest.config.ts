@@ -854,6 +854,17 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F119 PR-A — the SEND-time decision both dispatch legs share (send /
+        // hold a suspended member / refuse a halted or ended one / fail closed),
+        // incl. the uncached halt re-read before a permanent refusal. Same bar
+        // as the reader it wraps. Measured 100/100/100/100 under the unit +
+        // contract broadcasts suites (2026-09-25).
+        'src/modules/broadcasts/application/use-cases/_dispatch-standing-gate.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // F119 T166 — the working-copy save (sanitise + optimistic-concurrency
         // token + image allowlist). Measured 100/100/100/100 under the unit +
         // contract broadcasts suites.

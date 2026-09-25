@@ -18,6 +18,14 @@
  * (tx null → the pool-global `db`), so only a read-back on live Postgres
  * proves it lands under RLS + FORCE; it is read here inside the tenant's own
  * RLS slice.
+ *
+ * F119 PR-A — the SAME reads at SEND time, on both dispatch legs: a halted and
+ * a terminated (lapsed) member each end `failed_to_dispatch` with their reason,
+ * the quota slot is released, Resend (a recording fake) is never called, and on
+ * the import leg a tick-2 refusal leaves the tick-1 audience where
+ * `cleanup-audiences` reaps it. A SUSPENDED member (an `awaiting_payment` cycle
+ * whose paid period has not ended) is HELD on both legs (R1): the row is left
+ * exactly as it was, the slot stays reserved, and no refusal row is written.
  */
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -28,6 +36,17 @@ import { makeConfirmScheduleDeps } from '@/lib/broadcast-approval-deps';
 import { asBroadcastId, makeApproveBroadcastDeps } from '@/modules/broadcasts';
 import { approveBroadcast } from '@/modules/broadcasts/application/use-cases/approve-broadcast';
 import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
+import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
+import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import {
+  currentQuotaYear,
+  makeBuildAudienceTickDeps,
+  makeDispatchScheduledBroadcastDeps,
+  makeDrizzleBroadcastsRepo,
+} from '@/modules/broadcasts';
+import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
+import { asMemberId } from '@/modules/members';
 import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
@@ -64,8 +83,12 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     if (user) await deleteTestUser(user).catch(() => {});
   }, 120_000);
 
-  /** A member who is `terminated` (a lapsed latest cycle) or `halted` (the F7 halt flag). */
-  async function seedMember(standing: 'terminated' | 'halted'): Promise<string> {
+  /**
+   * A member who is `terminated` (a lapsed latest cycle), `suspended` (an
+   * `awaiting_payment` latest cycle: F8 access `suspended`) or `halted` (the
+   * F7 halt flag).
+   */
+  async function seedMember(standing: 'terminated' | 'halted' | 'suspended'): Promise<string> {
     const memberId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(members).values({
@@ -78,6 +101,24 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
         planYear: 2026,
         broadcastsHaltedUntilAdminReview: standing === 'halted',
       });
+      if (standing === 'suspended') {
+        const periodTo = new Date('2027-01-01T00:00:00Z');
+        await tx.insert(renewalCycles).values({
+          tenantId: tenant.ctx.slug,
+          cycleId: randomUUID(),
+          memberId,
+          status: 'awaiting_payment',
+          periodFrom: new Date('2026-01-01T00:00:00Z'),
+          periodTo,
+          expiresAt: periodTo,
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: planId,
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+        });
+      }
       if (standing === 'terminated') {
         const periodFrom = new Date('2024-01-01T00:00:00Z');
         const periodTo = new Date('2025-01-01T00:00:00Z');
@@ -217,5 +258,212 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
         payload: { related_member_id: memberId, broadcast_id: row.broadcastId, surface: 'approve_as_submitted', actor_role: 'marketing' },
       },
     ]);
+  });
+
+  // ---- F119 PR-A — the SEND-time gate, on both dispatch legs -----------------
+  //
+  // The three edges above make a row dispatchable; nothing re-read standing
+  // after them, so an E-Blast approved days ahead went out after its member was
+  // halted or suspended. Driven through the REAL composition roots (the real
+  // halt read and the real F8 access bridge); only Resend is a fake, and it
+  // RECORDS every call — a refusal must make none.
+
+  const NO_BRAND = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
+
+  /** A Resend double that records every call and refuses all of them. */
+  function recordingGateway(): { calls: string[]; port: BroadcastsGatewayPort } {
+    const calls: string[] = [];
+    const port = new Proxy(
+      {},
+      {
+        get: (_t, prop) =>
+          prop === 'then'
+            ? undefined
+            : async () => {
+                calls.push(String(prop));
+                throw new Error(`gateway.${String(prop)} must not be called on a standing refusal`);
+              },
+      },
+    ) as BroadcastsGatewayPort;
+    return { calls, port };
+  }
+
+  /** The member's reserved (submitted / approved) count for this quota year. */
+  const reserved = async (memberId: string) =>
+    (
+      await makeDrizzleBroadcastsRepo(tenant.ctx.slug).countForMemberQuota(
+        tenant.ctx.slug,
+        asMemberId(memberId),
+        currentQuotaYear(new Date(), 'Asia/Bangkok'),
+      )
+    ).submittedOrApproved;
+
+  /** The dispatch audit rows for one broadcast (the cron writes them with no request id). */
+  const dispatchAudits = async (id: string) =>
+    (
+      await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select({ eventType: auditLog.eventType, actorUserId: auditLog.actorUserId, payload: auditLog.payload })
+          .from(auditLog)
+          .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.actorUserId, 'system:cron'))),
+      )
+    ).filter((a) => {
+      const p = a.payload as Record<string, unknown>;
+      return p['broadcastId'] === id || p['broadcast_id'] === id;
+    });
+
+  const approvedRow = (memberId: string, patch: Partial<NewBroadcastRow> = {}): NewBroadcastRow =>
+    baseRow(memberId, {
+      status: 'approved',
+      approvedAt: new Date(Date.now() - 3_600_000),
+      scheduledFor: new Date(Date.now() - 60_000),
+      ...patch,
+    });
+
+  it.each([
+    { standing: 'halted' as const, reason: 'member_halted' as const },
+    { standing: 'terminated' as const, reason: 'member_not_in_good_standing' as const },
+  ])('legacy dispatch for a $standing member → failed_to_dispatch ($reason), the slot freed, no Resend call', async ({ standing, reason }) => {
+    const memberId = await seedMember(standing);
+    const row = approvedRow(memberId);
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    expect(await reserved(memberId)).toBe(1);
+    const gw = recordingGateway();
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason } });
+    const after = await readRow(row.broadcastId!);
+    expect(after.status).toBe('failed_to_dispatch');
+    expect(after.failureReason).toBe(reason);
+    expect(await reserved(memberId)).toBe(0);
+    expect(gw.calls).toEqual([]);
+    const audits = await dispatchAudits(row.broadcastId!);
+    // The seeded member has no primary contact, so the FR-021 notice is skipped
+    // and audited as such (`…_notif_skipped_no_email`) — the member-notice leg
+    // is unchanged here; the two rows this gate writes are the other two.
+    expect(audits.map((a) => a.eventType).sort()).toEqual(
+      ['broadcast_failed_to_dispatch', 'broadcast_dispatch_failure_notif_skipped_no_email', EVENT_OF[reason]].sort(),
+    );
+    // Landed under RLS + FORCE, and keyed `related_member_id` — the cron's act
+    // must not fire the 0009 `last_activity_at` trigger (`member_id`).
+    expect(audits.find((a) => a.eventType === EVENT_OF[reason])?.payload).toEqual({
+      related_member_id: memberId,
+      broadcast_id: row.broadcastId,
+      surface: 'dispatch',
+      actor_role: null,
+    });
+  });
+
+  // ---- R1 — a SUSPENDED membership is HELD, never refused ------------------
+  //
+  // The seeded `suspended` member's latest cycle is `awaiting_payment` with a
+  // FUTURE `expires_at` — the renewal bill is out and the paid period has not
+  // ended, which F8 already reports as `suspended`. Refusing there killed the
+  // E-Blast of a member in good faith. Held: nothing sent, nothing written,
+  // the row stays `approved` with its slot reserved, and no refusal row exists.
+
+  it('legacy dispatch for a SUSPENDED member (awaiting_payment, future expiry) → held: row approved, slot kept, nothing audited, no Resend call', async () => {
+    const memberId = await seedMember('suspended');
+    const row = approvedRow(memberId);
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = recordingGateway();
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await reserved(memberId)).toBe(1);
+    expect(gw.calls).toEqual([]);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('import leg, tick 2, a SUSPENDED member → held: row approved with its import and audience, nothing audited, no Resend call', async () => {
+    const memberId = await seedMember('suspended');
+    const row = approvedRow(memberId, {
+      resendAudienceId: `aud-held-${randomUUID()}`,
+      audienceImportId: `imp-held-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = recordingGateway();
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await reserved(memberId)).toBe(1);
+    expect(gw.calls).toEqual([]);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('import leg, tick 1, a TERMINATED (lapsed) member → failed_to_dispatch (member_not_in_good_standing), permanently, no Resend call', async () => {
+    const memberId = await seedMember('terminated');
+    const row = approvedRow(memberId);
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = recordingGateway();
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_not_in_good_standing' });
+    const after = await readRow(row.broadcastId!);
+    expect(after.status).toBe('failed_to_dispatch');
+    expect(after.failureReason).toBe('member_not_in_good_standing');
+    expect(await reserved(memberId)).toBe(0);
+    expect(gw.calls).toEqual([]);
+    expect((await dispatchAudits(row.broadcastId!)).map((a) => a.eventType)).toContain(EVENT_OF.member_not_in_good_standing);
+  });
+
+  it('import leg, tick 2, a member halted after the import was submitted → failed_to_dispatch, no Resend call, and the tick-1 audience is a cleanup candidate', async () => {
+    const memberId = await seedMember('halted');
+    const audienceId = `aud-standing-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: audienceId,
+      audienceImportId: `imp-standing-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = recordingGateway();
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
+    const after = await readRow(row.broadcastId!);
+    expect(after.status).toBe('failed_to_dispatch');
+    expect(after.failureReason).toBe('member_halted');
+    expect(after.resendAudienceId).toBe(audienceId);
+    expect(await reserved(memberId)).toBe(0);
+    expect(gw.calls).toEqual([]);
+    // The reaper's own query sees it: terminal, with a live audience. A
+    // shortcut that left the row `approved` would orphan the audience (the
+    // Resend Free plan holds three).
+    const candidates = await makeDrizzleBroadcastsRepo(tenant.ctx.slug).listTerminalBroadcastsWithLiveAudience(
+      tenant.ctx.slug,
+      new Date(Date.now() + 3_600_000),
+      500,
+    );
+    expect(candidates).toContainEqual({ broadcastId: row.broadcastId, resendAudienceId: audienceId });
   });
 });

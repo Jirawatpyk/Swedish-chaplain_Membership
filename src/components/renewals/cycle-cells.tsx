@@ -10,11 +10,12 @@
 
 import Link from 'next/link';
 import { MailX } from 'lucide-react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { TierBadge } from './tier-badge';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { TierBucket } from '@/modules/renewals/client';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 export function CycleTierCell({ tier }: { readonly tier: TierBucket }) {
   return <TierBadge tier={tier} />;
@@ -102,10 +103,10 @@ export function CycleExpiresCell({
    */
   readonly label?: string;
 }) {
-  const fmt = useFormatter();
+  const locale = useLocale();
   const time = (
     <time dateTime={expiresAt} className="tabular-nums text-foreground/80">
-      {fmt.dateTime(new Date(expiresAt), 'dateMedium')}
+      {formatDatePreset(expiresAt, locale, 'dateMedium')}
     </time>
   );
   if (label === undefined) {

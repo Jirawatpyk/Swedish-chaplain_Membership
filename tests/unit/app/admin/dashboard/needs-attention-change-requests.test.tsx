@@ -157,8 +157,9 @@ describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => 
     h.count.mockResolvedValue({ ok: true, value: { count: 2, oldestAgeSeconds: 45 * 86_400 + 3_600 } });
     const html = await renderPage();
     expect(html).toContain('Change requests waiting (oldest 45 days)');
-    // the relative-time helper's >30-day fallback: "(oldest Aug 1, 2026)"
-    expect(html).not.toMatch(/\(oldest [A-Z][a-z]{2} \d/);
+    // the relative-time helper's >30-day fallback: "(oldest 1 Aug 2026)" in
+    // en-GB — guard both orders so a locale change can't hide a regression.
+    expect(html).not.toMatch(/\(oldest (?:[A-Z][a-z]{2} \d|\d{1,2} [A-Z][a-z]{2})/);
   });
 
   it('under a day → "today"; exactly one day → "1 day" (UX M2)', async () => {

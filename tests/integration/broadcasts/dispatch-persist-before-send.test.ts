@@ -47,6 +47,14 @@ import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/res
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
+
+/**
+ * F119 PR-A — the send-time standing reads, REAL on both halves (the F3 halt
+ * list + the F8 access bridge): the seeded requesting member is neither halted
+ * nor has a renewal cycle, so both answer "in good standing" and the send runs.
+ */
+const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge };
 
 /** F119 — dispatch deps require a brand port; these cases send with no brand configured. */
 const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
@@ -231,6 +239,7 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
       locale: 'en' as const,
       plansBridge,
       emailTransactional: emailTransactionalBridge,
+      sendStanding: LIVE_STANDING,
       brandChrome: NO_BRAND_CHROME,
     });
 
@@ -261,7 +270,7 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
       broadcastId: asBroadcastId(broadcastId),
     });
     expect(second.ok).toBe(true);
-    if (!second.ok) throw new Error('expected the retry to succeed');
+    if (!second.ok || second.value.kind !== 'sent') throw new Error('expected the retry to succeed');
     expect(second.value.resendBroadcastId).toBe(mintedId);
 
     // No second mint, no second push; one probe; the send retried once.

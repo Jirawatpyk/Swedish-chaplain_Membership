@@ -18,7 +18,7 @@
  *   - WCAG 2.5.8 target size: buttons inherit `min-h-11` from primitives.
  */
 import { useId } from 'react';
-import { useTranslations, useFormatter } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
 import {
   AlertDialog,
@@ -30,6 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface PriorImportEntry {
   readonly recordId: string;
@@ -59,7 +60,7 @@ export function EventMismatchWarningDialog(
   const t = useTranslations('admin.events.import.eventMismatch');
   // UX-C-2 (Round 1) — locale-aware date/time via next-intl, not
   // `Date.prototype.toLocaleString()` which uses browser locale.
-  const formatter = useFormatter();
+  const locale = useLocale();
   const describedById = useId();
   return (
     <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -93,7 +94,7 @@ export function EventMismatchWarningDialog(
                   </span>
                   <span className="text-caption text-muted-foreground">
                     {t('priorImportRow', {
-                      uploadedAt: formatter.dateTime(new Date(p.uploadedAt), 'mediumWithTime'),
+                      uploadedAt: formatDatePreset(p.uploadedAt, locale, 'mediumWithTime'),
                     })}
                   </span>
                 </li>

@@ -196,8 +196,8 @@ export async function approveBroadcast(
       // F119 T166 S-H1 — approving makes the row dispatchable, so the owning
       // member's halt flag and F8 membership access (read just before this tx,
       // exactly as submit reads them) are applied here, once the lock confirms
-      // the row is still `submitted`. This is the LAST check on this path:
-      // dispatch does not re-check standing (quickstart § 3.6). Refusals
+      // the row is still `submitted`. Dispatch re-checks it at send time
+      // (F119 PR-A), so a standing lost after this approval is refused too. Refusals
       // return BEFORE any write (a `return err()` inside the tx commits
       // nothing written so far).
       const row = await deps.broadcastsRepo.findByIdInTx(

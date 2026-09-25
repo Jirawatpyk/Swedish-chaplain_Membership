@@ -951,6 +951,14 @@ export {
   type ReadFormattingWarningsError,
   type ReadFormattingWarningsInput,
 } from './application/use-cases/approval/read-formatting-warnings';
+// F119 PR-A R1 — the detail page's "held for the member's payment" note: the
+// same standing decision the dispatch legs act on.
+export {
+  readDispatchHold,
+  type ReadDispatchHoldDeps,
+  type ReadDispatchHoldError,
+  type ReadDispatchHoldInput,
+} from './application/use-cases/read-dispatch-hold';
 export type { MemberPortalRecipientPort, PortalContact } from './application/ports/member-portal-recipient-port';
 export {
   F119_NOTIFICATION_TYPES,

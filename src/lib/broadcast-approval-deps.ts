@@ -51,6 +51,7 @@ import {
   type GetMemberVersionThreadDeps,
   type ReadMemberEblastViewDeps,
   type ListBroadcastVersionsDeps,
+  type ReadDispatchHoldDeps,
   type ReadFormattingWarningsDeps,
   type RecordMemberDecisionDeps,
   type MemberPortalRecipientPort,
@@ -207,6 +208,18 @@ export function makeReadFormattingWarningsDeps(tenantId: string): ReadFormatting
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     portalRecipients: memberPortalRecipients,
     imageAllowlist: makeValidateImageSourceAllowlistDeps(tenantId).allowlistPort,
+  };
+}
+
+/**
+ * F119 PR-A R1 — the detail page's "held" note (read-only). The same two
+ * standing reads the dispatch cron makes, unmemoised (a page renders one row).
+ */
+export function makeReadDispatchHoldDeps(tenantId: string): ReadDispatchHoldDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    sendStanding: { membersBridge, membershipAccess: membershipAccessBridge },
+    clock: systemClock,
   };
 }
 

@@ -360,8 +360,8 @@ export async function submitBroadcast(
   // ---- Preconditions (k) halt flag + (l) membership access -----------
   // Read through `readMemberSendStanding` — the SAME reading approve-as-
   // submitted and the approval-round promotion apply when they make the row
-  // dispatchable (F119 T166 S-H1), so the three cannot drift. Dispatch itself
-  // does not re-read it (quickstart § 3.6).
+  // dispatchable (F119 T166 S-H1), and BOTH dispatch legs re-read at send time
+  // (F119 PR-A), so none of them can drift.
   //
   // (k) Review 2026-09-07 — the bridge THROWS on a failed read (it used to
   // answer `[]`, which let a halted member through during a Neon blip). A read

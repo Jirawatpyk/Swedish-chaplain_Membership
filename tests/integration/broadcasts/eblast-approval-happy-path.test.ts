@@ -58,6 +58,14 @@ import { broadcastMemberDecisions, broadcasts, broadcastVersions } from '@/modul
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { seedPortalMemberWithContact, seedPortalPlan } from '../helpers/portal-seed';
+import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
+
+/**
+ * F119 PR-A — the send-time standing reads, REAL on both halves (the F3 halt
+ * list + the F8 access bridge): the seeded requesting member is neither halted
+ * nor has a renewal cycle, so both answer "in good standing" and the send runs.
+ */
+const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge };
 
 const MARKETER = { userId: randomUUID(), email: 'marketing-happy@example.com', locale: 'en' as const };
 const APPROVED_SUBJECT = 'Autumn mixer — งานพบปะฤดูใบไม้ร่วง ✓';
@@ -246,6 +254,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
         locale: 'en' as const,
         plansBridge,
         emailTransactional: emailTransactionalBridge,
+        sendStanding: LIVE_STANDING,
         brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
       },
       { broadcastId },

@@ -1000,20 +1000,41 @@ export interface FakeSendStandingOpts {
   readonly access?: 'full' | 'suspended' | 'terminated' | 'lookup_error';
   /** The halt read THROWS (the bridge's failed-read contract). */
   readonly haltReadThrows?: boolean;
+  /**
+   * F119 PR-A R2 — the dispatch legs' UNMEMOISED halt read, consulted only
+   * before a permanent `halted` refusal. Absent → no `haltReadFresh` port (the
+   * gate falls back to `membersBridge`).
+   */
+  readonly haltReadFresh?: { readonly halted?: readonly string[]; readonly throws?: boolean };
 }
+
+const haltedRows = (ids: readonly string[] | undefined) =>
+  (ids ?? []).map((memberId) => ({ memberId, displayName: 'Halted Co', haltedSinceAt: APPROVAL_NOW }));
 
 /** The two reads submit, approve-as-submitted and the promotion share; default: in good standing. */
 export function makeFakeSendStanding(opts: FakeSendStandingOpts = {}): MemberSendStandingDeps & {
   readonly membersBridge: { readonly getMembersHaltedInTenant: ReturnType<typeof vi.fn> };
   readonly membershipAccess: { readonly getMembershipAccess: ReturnType<typeof vi.fn> };
+  readonly haltReadFresh?: { readonly getMembersHaltedInTenant: ReturnType<typeof vi.fn> };
 } {
+  const fresh = opts.haltReadFresh;
   return {
     membersBridge: {
       getMembersHaltedInTenant: vi.fn(async () => {
         if (opts.haltReadThrows === true) throw new Error('halt read failed');
-        return (opts.halted ?? []).map((memberId) => ({ memberId, displayName: 'Halted Co', haltedSinceAt: APPROVAL_NOW }));
+        return haltedRows(opts.halted);
       }),
     },
+    ...(fresh === undefined
+      ? {}
+      : {
+          haltReadFresh: {
+            getMembersHaltedInTenant: vi.fn(async () => {
+              if (fresh.throws === true) throw new Error('fresh halt read failed');
+              return haltedRows(fresh.halted);
+            }),
+          },
+        }),
     membershipAccess: {
       getMembershipAccess: vi.fn(async () =>
         opts.access === 'lookup_error'

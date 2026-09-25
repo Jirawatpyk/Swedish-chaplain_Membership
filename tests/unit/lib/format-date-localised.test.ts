@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { getDateFormatLocale, formatLocalisedDate } from '@/lib/format-date-localised';
+import {
+  getDateFormatLocale,
+  formatLocalisedDate,
+  formatDatePreset,
+} from '@/lib/format-date-localised';
 
 describe('getDateFormatLocale', () => {
   it('maps th → th-TH-u-ca-buddhist', () => {
@@ -10,8 +14,13 @@ describe('getDateFormatLocale', () => {
     expect(getDateFormatLocale('sv')).toBe('sv-SE');
     expect(getDateFormatLocale('sv-SE')).toBe('sv-SE');
   });
-  it('passes en through unchanged', () => {
-    expect(getDateFormatLocale('en')).toBe('en');
+  it('maps en → en-GB (ux-standards § 12.3: day-first English dates)', () => {
+    expect(getDateFormatLocale('en')).toBe('en-GB');
+    expect(getDateFormatLocale('en-US')).toBe('en-GB');
+    expect(getDateFormatLocale('en-GB')).toBe('en-GB');
+  });
+  it('passes other locales through unchanged', () => {
+    expect(getDateFormatLocale('de')).toBe('de');
   });
 });
 
@@ -22,9 +31,10 @@ describe('formatLocalisedDate', () => {
     expect(out).toContain('2569');
     expect(out).not.toContain('๒๕๖๙');
   });
-  it('renders Gregorian for en', () => {
+  it('renders Gregorian, day-first for en', () => {
     const out = formatLocalisedDate(iso, 'en', { year: 'numeric', month: 'short', day: 'numeric' });
     expect(out).toContain('2026');
+    expect(out).toMatch(/^29 May 2026$/);
   });
   it('sv output is identical to bare-sv (no regression from sv→sv-SE)', () => {
     const opts: Intl.DateTimeFormatOptions = { dateStyle: 'medium' };
@@ -109,5 +119,52 @@ describe('formatLocalisedDate', () => {
       expect(out).toContain('2569');
       expect(out).toContain('15');
     });
+  });
+});
+
+describe('formatDatePreset (the next-intl presets, rendered through the helper)', () => {
+  // 07:10 UTC = 14:10 Bangkok on 29 May 2026.
+  const iso = '2026-05-29T07:10:00.000Z';
+
+  it('en dateMedium is day-first en-GB, not the en-US "May 29, 2026"', () => {
+    expect(formatDatePreset(iso, 'en', 'dateMedium')).toBe('29 May 2026');
+  });
+
+  it('en dateLong spells the month out, day-first', () => {
+    expect(formatDatePreset(iso, 'en', 'dateLong')).toBe('29 May 2026');
+    expect(formatDatePreset('2026-09-23T07:10:00.000Z', 'en', 'dateLong')).toBe('23 September 2026');
+  });
+
+  it('en dateTimeMedium is day-first with a 24-hour Bangkok time', () => {
+    const out = formatDatePreset(iso, 'en', 'dateTimeMedium');
+    expect(out).toMatch(/^29 May 2026,? 14:10$/);
+    expect(out).not.toMatch(/AM|PM/);
+  });
+
+  it('en mediumWithTime has no AM/PM', () => {
+    expect(formatDatePreset(iso, 'en', 'mediumWithTime')).not.toMatch(/AM|PM/i);
+  });
+
+  it('th renders the Buddhist-Era year', () => {
+    expect(formatDatePreset(iso, 'th', 'dateMedium')).toContain('2569');
+  });
+
+  it('accepts a Date as well as an ISO string', () => {
+    expect(formatDatePreset(new Date(iso), 'en', 'dateMedium')).toBe('29 May 2026');
+  });
+
+  it('an invalid date renders an em-dash', () => {
+    expect(formatDatePreset('not-a-date', 'en', 'dateMedium')).toBe('—');
+  });
+});
+
+describe('formatLocalisedDate — Date input', () => {
+  it('accepts a Date (time-only "saved at" labels)', () => {
+    const out = formatLocalisedDate(new Date('2026-05-29T07:10:00.000Z'), 'en', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    expect(out).toBe('14:10');
   });
 });

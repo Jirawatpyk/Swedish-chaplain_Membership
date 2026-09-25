@@ -59,7 +59,7 @@ export function formatPaymentAmount(
  */
 export function formatPaymentDateTime(
   date: Date = new Date(),
-  locale: string = 'en-US',
+  locale: string = 'en',
 ): string {
   // Cache key uses the resolved BCP-47 locale (th → th-TH-u-ca-buddhist)
   // so Thai renders Buddhist Era and the cache does not duplicate entries
