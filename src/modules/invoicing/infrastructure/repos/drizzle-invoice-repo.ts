@@ -1811,6 +1811,19 @@ function combinedTaxInvoicesIssuedBetween(from: string, to: string) {
   ];
 }
 
+/**
+ * §86/10 credit notes issued in `[from, to]` — a credit note reduces output VAT
+ * in the month of its `issue_date`. ONE definition for the register's
+ * `creditNoteVatSatang` and the CSV's negative rows.
+ */
+function creditNotesIssuedBetween(tenantIdArg: string, from: string, to: string) {
+  return [
+    eq(creditNotes.tenantId, tenantIdArg),
+    sql`${creditNotes.issueDate} >= ${from}`,
+    sql`${creditNotes.issueDate} <= ${to}`,
+  ];
+}
+
 /** Per-row tax point for ordering the export: issue date for combined rows. */
 const ROW_TAX_POINT = sql`CASE WHEN ${invoices.receiptDocumentNumberRaw} IS NULL THEN ${invoices.issueDate} ELSE ${TAX_POINT} END`;
 
@@ -1894,13 +1907,7 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
             cnVat: sql<string>`COALESCE(SUM(${creditNotes.vatSatang}), 0)::text`,
           })
           .from(creditNotes)
-          .where(
-            and(
-              eq(creditNotes.tenantId, tenantIdArg),
-              sql`${creditNotes.issueDate} >= ${opts.from}`,
-              sql`${creditNotes.issueDate} <= ${opts.to}`,
-            ),
-          );
+          .where(and(...creditNotesIssuedBetween(tenantIdArg, opts.from, opts.to)));
 
         // (3) Combined-mode tax invoices issued in the period (outside both
         // streams) — every non-void, non-draft one, paid or not: each is
@@ -1958,6 +1965,58 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
           )) as InvoiceRow[];
 
         return rows.map((r) => rowsToInvoice(r, []));
+      });
+    },
+
+    async listCreditNotesForExport(tenantIdArg, opts) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select({
+            creditNoteNumberRaw: creditNotes.documentNumber,
+            issueDate: creditNotes.issueDate,
+            memberIdentitySnapshot: creditNotes.memberIdentitySnapshot,
+            creditAmountSatang: creditNotes.creditAmountSatang,
+            vatSatang: creditNotes.vatSatang,
+            totalSatang: creditNotes.totalSatang,
+            currency: invoices.currency,
+            originalReceiptDocumentNumberRaw: invoices.receiptDocumentNumberRaw,
+            originalDocumentNumberRaw: invoices.documentNumber,
+            originalBillDocumentNumberRaw: invoices.billDocumentNumberRaw,
+            originalVatRateRaw: invoices.vatRateSnapshot,
+          })
+          .from(creditNotes)
+          // LEFT JOIN, like the credit-note list: an orphaned note still
+          // reduces the period's output VAT, so it must still be exported.
+          .leftJoin(
+            invoices,
+            and(
+              eq(invoices.tenantId, creditNotes.tenantId),
+              eq(invoices.invoiceId, creditNotes.originalInvoiceId),
+            ),
+          )
+          .where(and(...creditNotesIssuedBetween(tenantIdArg, opts.from, opts.to)))
+          .orderBy(asc(creditNotes.issueDate), asc(creditNotes.documentNumber));
+
+        return rows.map((r) => {
+          const snap = r.memberIdentitySnapshot as {
+            legal_name?: string;
+            tax_id?: string | null;
+          } | null;
+          return {
+            creditNoteNumberRaw: r.creditNoteNumberRaw,
+            issueDate: r.issueDate,
+            legalName: snap?.legal_name ?? '',
+            taxId: snap?.tax_id ?? '',
+            creditAmountSatang: r.creditAmountSatang,
+            vatSatang: r.vatSatang,
+            totalSatang: r.totalSatang,
+            currency: r.currency ?? 'THB',
+            originalReceiptDocumentNumberRaw: r.originalReceiptDocumentNumberRaw,
+            originalDocumentNumberRaw: r.originalDocumentNumberRaw,
+            originalBillDocumentNumberRaw: r.originalBillDocumentNumberRaw,
+            originalVatRateRaw: r.originalVatRateRaw,
+          };
+        });
       });
     },
   };

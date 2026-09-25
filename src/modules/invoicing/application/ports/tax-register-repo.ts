@@ -79,6 +79,31 @@ export interface PeriodOutputVatSummary {
   readonly legacyCombinedCount: number;
 }
 
+/**
+ * One §86/10 credit note for the CSV export — a narrow projection (no PDF or
+ * line hydration) joined to the invoice it reduces, so the use-case can name
+ * the original tax invoice (`resolveCreditNoteOriginalDocuments`) and its VAT
+ * rate. Amounts are the positive stored values; the export negates them.
+ */
+export interface CreditNoteExportRow {
+  readonly creditNoteNumberRaw: string;
+  /** `YYYY-MM-DD` — the month the note reduces output VAT in. */
+  readonly issueDate: string;
+  /** From the credit note's own member snapshot. */
+  readonly legalName: string;
+  readonly taxId: string;
+  readonly creditAmountSatang: bigint;
+  readonly vatSatang: bigint;
+  readonly totalSatang: bigint;
+  /** The original invoice's currency (`THB` when the join finds no row). */
+  readonly currency: string;
+  readonly originalReceiptDocumentNumberRaw: string | null;
+  readonly originalDocumentNumberRaw: string | null;
+  readonly originalBillDocumentNumberRaw: string | null;
+  /** The original invoice's `vat_rate_snapshot`, e.g. `"0.0700"`. */
+  readonly originalVatRateRaw: string | null;
+}
+
 export interface TaxRegisterRepo {
   /**
    * Return every receipt whose PAYMENT date (`payment_date` tax point, else
@@ -152,4 +177,20 @@ export interface TaxRegisterRepo {
       readonly to: string;
     },
   ): Promise<readonly Invoice[]>;
+
+  /**
+   * Every §86/10 credit note ISSUED in the inclusive `[from, to]` range — the
+   * SAME predicate as {@link sumPeriodOutputVat}'s `creditNoteVatSatang`, so
+   * the CSV's negative rows sum to exactly that figure. Ordered by issue date,
+   * then credit-note number. RLS-scoped via `runInTenant`.
+   */
+  listCreditNotesForExport(
+    tenantId: string,
+    opts: {
+      /** Inclusive `YYYY-MM-DD` Bangkok-local. */
+      readonly from: string;
+      /** Inclusive `YYYY-MM-DD` Bangkok-local. */
+      readonly to: string;
+    },
+  ): Promise<readonly CreditNoteExportRow[]>;
 }

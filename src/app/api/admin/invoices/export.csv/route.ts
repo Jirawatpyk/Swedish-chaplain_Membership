@@ -4,8 +4,9 @@
  *
  * Staff read surface — `invoicing.read` (admin + manager allowed on both legs;
  * member/marketing 403; anonymous 401). Streams a CSV of every paid
- * invoice whose `paidAt` (Bangkok-local YYYY-MM-DD) falls inside the
- * inclusive range. The CSV is encoded UTF-8 with a leading BOM so
+ * receipt whose §78/1 tax point (Bangkok-local YYYY-MM-DD, the same
+ * bucketing as the ภ.พ.30 register) falls inside the inclusive range, plus
+ * each §86/10 credit note issued in it as a negative row. The CSV is encoded UTF-8 with a leading BOM so
  * Excel-TH renders Thai legal names without forcing the import wizard.
  *
  * Audit: `invoices_csv_exported` (5y retention) emitted by the
