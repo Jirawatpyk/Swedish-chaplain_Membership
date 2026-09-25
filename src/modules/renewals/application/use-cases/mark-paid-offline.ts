@@ -496,7 +496,11 @@ export async function markPaidOffline(
       // keeps the clear — benign, because it is audit-free (logger.info only)
       // and idempotent (a CAS on the observed id; a no-op if a concurrent
       // writer re-linked). A throw rolls it back. Same argument as
-      // confirm-renewal. Nothing below reads `lockedCycle.linkedInvoiceId`.
+      // confirm-renewal. `cycleForSettlement` is the locked cycle as the
+      // settlement sees it: the re-anchor helper reads its IN-MEMORY
+      // `linkedInvoiceId` (and would otherwise raise a false "orphaned
+      // invoice — staff must void" alarm for the already-void bill).
+      let cycleForSettlement: RenewalCycle = lockedCycle;
       if (lockedCycle.linkedInvoiceId !== null) {
         const linkedInvoice = await deps.cyclesRepo.findMembershipInvoiceInTx(
           tx,
@@ -543,6 +547,15 @@ export async function markPaidOffline(
           },
           '[mark-paid-offline] cleared a stale linked_invoice_id (target is not a live bill) before minting',
         );
+        // The status narrowing only re-proves PAYABLE_STATUSES (checked above
+        // under the lock) for the compiler — `completed` requires a link.
+        if (
+          cleared &&
+          (lockedCycle.status === 'upcoming' ||
+            lockedCycle.status === 'awaiting_payment')
+        ) {
+          cycleForSettlement = { ...lockedCycle, linkedInvoiceId: null };
+        }
       }
 
       // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
@@ -693,7 +706,7 @@ export async function markPaidOffline(
             },
             evt,
             tx,
-            lockedCycle,
+            cycleForSettlement,
           );
           if (!reanchored) {
             // Should be unreachable: this closure runs inside the SAME tx
