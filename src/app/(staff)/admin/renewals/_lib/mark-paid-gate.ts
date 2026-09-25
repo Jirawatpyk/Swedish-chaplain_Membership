@@ -24,7 +24,8 @@
  * void-on-reissue supersede path and pre-unlink voids can leave an open cycle
  * linked to a void invoice. The pipeline row has no invoice status, so it
  * treats any link as live; the cycle-detail page knows the status and uses
- * {@link resolveLiveLinkedBill}.
+ * {@link resolveLiveLinkedBill}, offering mark-paid on a void link — safe,
+ * because the use-case clears such a stale link before minting.
  */
 import type { CycleStatus } from '@/modules/renewals/client';
 
