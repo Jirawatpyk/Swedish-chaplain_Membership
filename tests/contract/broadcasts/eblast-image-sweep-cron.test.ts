@@ -30,7 +30,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('@/lib/env', () => ({
-  env: { cron: { secret: 'cron-secret-for-test' }, features: { f7Broadcasts: true } },
+  env: { cron: { secret: 'cron-secret-for-test' }, features: { f7Broadcasts: true }, flags: { readOnlyMode: false } },
 }));
 vi.mock('@/modules/broadcasts', () => ({
   pruneExpiredDrafts: (...args: unknown[]) => pruneMock(...args),

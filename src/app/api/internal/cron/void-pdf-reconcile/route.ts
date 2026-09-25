@@ -31,6 +31,7 @@ import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 // Deep infra import, allowlisted in `invoicing-presentation-imports.test.ts`
@@ -365,6 +366,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     logger.warn({ requestId }, 'cron.void_pdf_reconcile.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/internal/cron/void-pdf-reconcile');
+  if (frozen) return frozen;
 
   const renderTimeoutMs =
     Number(process.env.VOID_RECONCILE_RENDER_TIMEOUT_MS) || DEFAULT_RENDER_TIMEOUT_MS;

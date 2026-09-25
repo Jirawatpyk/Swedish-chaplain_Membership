@@ -425,13 +425,16 @@ describe('T130 — bounds, failure isolation', () => {
 // The route wire — the block rides `prune-expired-drafts` (no new cron job)
 // ---------------------------------------------------------------------------
 
-const route = vi.hoisted(() => ({ prune: vi.fn(), reclaim: vi.fn(), lifecycle: vi.fn(), f7: true }));
+const route = vi.hoisted(() => ({ prune: vi.fn(), reclaim: vi.fn(), lifecycle: vi.fn(), f7: true, readOnly: false }));
 vi.mock('@/lib/tenant-context', () => ({ resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }) }));
 vi.mock('@/lib/env', () => ({
   env: {
     cron: { secret: 'cron-secret-for-test' },
     get features() {
       return { f7Broadcasts: route.f7 };
+    },
+    get flags() {
+      return { readOnlyMode: route.readOnly };
     },
   },
 }));
@@ -453,6 +456,7 @@ describe('prune-expired-drafts — the approval-lifecycle block (T130)', () => {
   beforeEach(() => {
     vi.resetModules();
     route.f7 = true;
+    route.readOnly = false;
     route.prune.mockReset().mockResolvedValue(ok({ prunedCount: 2, cutoff: '2026-08-19T00:00:00.000Z' }));
     route.reclaim.mockReset().mockResolvedValue(ok({ scanned: 0, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 0 }));
     route.lifecycle.mockReset().mockResolvedValue(ok(lifecycleOk));
@@ -505,6 +509,17 @@ describe('prune-expired-drafts — the approval-lifecycle block (T130)', () => {
     const { POST } = await importRoute();
     const res = await POST(req('POST'));
     expect(await res.json()).toEqual({ skipped: true, reason: 'feature_disabled' });
+    expect(route.lifecycle).not.toHaveBeenCalled();
+  });
+
+  it('#408 READ_ONLY_MODE on → 200 skipped; no prune, no image sweep, no lifecycle email', async () => {
+    route.readOnly = true;
+    const { GET } = await importRoute();
+    const res = await GET(req('GET'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+    expect(route.prune).not.toHaveBeenCalled();
+    expect(route.reclaim).not.toHaveBeenCalled();
     expect(route.lifecycle).not.toHaveBeenCalled();
   });
 });

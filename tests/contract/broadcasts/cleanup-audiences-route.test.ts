@@ -23,6 +23,7 @@ const cleanupOrphanedAudiencesMock = vi.fn();
 
 const envMock = {
   features: { f7Broadcasts: true },
+  flags: { readOnlyMode: false },
   cron: { secret: 'test-cron-secret' },
   tenant: { slug: 'test-tenant' },
 };
@@ -58,6 +59,7 @@ function makeRequest(opts: { auth?: string }): NextRequest {
 
 beforeEach(() => {
   envMock.features.f7Broadcasts = true;
+  envMock.flags.readOnlyMode = false;
   cleanupOrphanedAudiencesMock.mockReset();
 });
 
@@ -142,6 +144,17 @@ describe('cron cleanup-audiences — wire contract', () => {
     const body = (await res.json()) as { skipped?: boolean; reason?: string };
     expect(body.skipped).toBe(true);
     expect(body.reason).toBe('feature_disabled');
+    expect(cleanupOrphanedAudiencesMock).not.toHaveBeenCalled();
+  });
+
+  it('#408 READ_ONLY_MODE on → 200 skipped; no Resend audience deleted', async () => {
+    envMock.flags.readOnlyMode = true;
+    const { POST } = await import(
+      '@/app/api/cron/broadcasts/cleanup-audiences/route'
+    );
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
     expect(cleanupOrphanedAudiencesMock).not.toHaveBeenCalled();
   });
 });

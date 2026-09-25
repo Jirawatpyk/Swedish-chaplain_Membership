@@ -154,6 +154,8 @@ The audit_log has an append-only trigger (`drizzle/migrations/0001_audit_log_app
 
 When an incident requires us to stop all state mutations without taking the site down, set `READ_ONLY_MODE=true` in Vercel env vars and redeploy. The proxy (`src/proxy.ts`) returns `503 {"error":"read-only-mode"}` on every state-changing `/api/**` route while keeping sign-in and reads alive.
 
+Scheduled crons pause as well (#408): each `vercel.json` route checks the flag after its Bearer check and answers `200 { ok: true, skipped: true, reason: 'read_only_mode' }`, logging `cron.read_only_mode.skipped`. Scheduled E-Blasts and outbox emails (invitations, password resets, invoices) are sent late, once the freeze lifts. Per-job catch-up: `docs/runbooks/cron-jobs.md` § Read-only mode.
+
 **Reversible in ~30 seconds without a code deploy** — flip the env var back to `false` and redeploy.
 
 Use cases:

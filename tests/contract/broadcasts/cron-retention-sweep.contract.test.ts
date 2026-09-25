@@ -116,7 +116,7 @@ describe('/api/cron/broadcasts/retention-sweep', () => {
     const { GET } = await importRoute();
     const res = await GET(req('GET'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ skipped: true, reason: 'read_only_mode' });
+    expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
     expect(sweepMock).not.toHaveBeenCalled();
     expect(makeDepsMock).not.toHaveBeenCalled();
   });

@@ -32,6 +32,7 @@ import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 
 // /code-review (2026-05-19 post-ship) — explicit Node runtime +
 // force-dynamic to match the project-wide cron-route convention
@@ -56,6 +57,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     logger.warn({ requestId }, 'cron.outbox_purge.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/outbox-purge');
+  if (frozen) return frozen;
 
   const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60_000);
 

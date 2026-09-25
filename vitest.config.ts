@@ -183,6 +183,15 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // #408 — the READ_ONLY_MODE short-circuit every scheduled cron calls
+        // after its Bearer check; its skip branch is the whole emergency
+        // write freeze for crons.
+        'src/lib/cron-read-only-guard.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // 108 T019 — the money-email recipient resolver. Every F4 auto-email and
         // the F5 PromptPay billing address flow through this one function, and
         // its wrong branch is invisible: mail simply arrives at the wrong

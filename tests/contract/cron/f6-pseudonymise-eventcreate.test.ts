@@ -123,6 +123,35 @@ describe('Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate'
     vi.resetModules();
   });
 
+  it('#408 READ_ONLY_MODE on → 200 skipped; no attendee row pseudonymised', async () => {
+    vi.resetModules();
+    vi.doMock('@/lib/env', async () => {
+      const actual =
+        await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
+      return {
+        ...actual,
+        env: {
+          ...actual.env,
+          features: { ...actual.env.features, f6EventCreate: true },
+          flags: { ...actual.env.flags, readOnlyMode: true },
+          tenant: { slug: 'test-swecham' },
+          eventcreate: { piiPseudonymSalt: 'test-salt' },
+        },
+      };
+    });
+    try {
+      const { POST } = await loadRoute();
+      const res = await POST(makeRequest());
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+    expect(runInTenantMock).not.toHaveBeenCalled();
+    expect(pseudonymiseStaleNonMemberPiiMock).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock('@/lib/env');
+      vi.resetModules();
+    }
+  });
+
   it('returns 200 with perTenant success on happy path', async () => {
     pseudonymiseStaleNonMemberPiiMock.mockResolvedValue({
       ok: true,

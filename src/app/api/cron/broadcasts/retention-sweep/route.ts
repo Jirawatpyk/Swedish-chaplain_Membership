@@ -22,7 +22,7 @@
  * already held, whether or not the tenant still uses the marketing feature.
  * A tenant that switched F7 off still holds rows that must expire.
  *
- * READ_ONLY_MODE: skipped with 200 `{ skipped: true, reason: 'read_only_mode' }`
+ * READ_ONLY_MODE: skipped with 200 `{ ok: true, skipped: true, reason: 'read_only_mode' }` (cronReadOnlyGuard)
  * (the `prune-expired-invitations` pattern). Vercel Cron invokes GET, and the
  * proxy's write-freeze stops only POST/PUT/PATCH/DELETE, so without this check
  * an emergency freeze would still delete rows (and Resend copies) nightly. 200,
@@ -43,6 +43,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { makeSweepExpiredBroadcastsDeps, sweepExpiredBroadcasts } from '@/modules/broadcasts';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { pgErrorCode } from '@/lib/db-errors';
 import { env } from '@/lib/env';
 import { errKind, rootCause } from '@/lib/log-id';
@@ -88,12 +89,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
   }
 
-  // READ_ONLY_MODE short-circuit — REQUIRED here: GET is not caught by the
-  // proxy write-freeze, and this handler DELETEs rows and Resend copies.
-  if (env.flags.readOnlyMode) {
-    logger.info({}, 'cron.broadcasts.retention_sweep.read_only_mode');
-    return NextResponse.json({ skipped: true, reason: 'read_only_mode' }, { status: 200 });
-  }
+  // READ_ONLY_MODE (#408) — GET is not caught by the proxy write-freeze, and
+  // this handler DELETEs rows and Resend copies.
+  const frozen = cronReadOnlyGuard('/api/cron/broadcasts/retention-sweep');
+  if (frozen) return frozen;
 
   const startedAt = Date.now();
   const perTenant: TenantOutcome[] = [];

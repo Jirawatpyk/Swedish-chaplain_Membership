@@ -43,6 +43,7 @@ const buildDepsArgs: unknown[][] = [];
 const envMock = {
   cron: { secret: 'test-cron-secret' },
   features: { f7Broadcasts: true },
+  flags: { readOnlyMode: false },
   isDevelopment: false,
 };
 
@@ -124,6 +125,7 @@ const BROADCAST_ID = '33333333-3333-4333-8333-333333333333';
 
 beforeEach(() => {
   envMock.features.f7Broadcasts = true;
+  envMock.flags.readOnlyMode = false;
   runInTenantMock.mockReset();
   isF71aUs1EnabledMock.mockReturnValue(true);
   isF7ImportAudienceEnabledMock.mockReturnValue(false);
@@ -155,6 +157,23 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ skipped: true, reason: 'feature_disabled' });
     expect(runInTenantMock).not.toHaveBeenCalled();
+  });
+
+  it('#408 READ_ONLY_MODE on → 200 skipped; no claim query, nothing dispatched', async () => {
+    envMock.flags.readOnlyMode = true;
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+    expect(runInTenantMock).not.toHaveBeenCalled();
+    expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
+    expect(buildAudienceTickMock).not.toHaveBeenCalled();
+  });
+
+  it('#408 READ_ONLY_MODE on + wrong Bearer → still 401 (the freeze state is not leaked)', async () => {
+    envMock.flags.readOnlyMode = true;
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    expect((await POST(makeRequest({ auth: 'Bearer wrong-secret' }))).status).toBe(401);
   });
 
   it('valid bearer + zero eligible rows → 200 + processed:0', async () => {

@@ -60,12 +60,13 @@ vi.mock('@/lib/otel-tracer', () => ({
 }));
 
 const coordinatorTenantsFailedMock = vi.hoisted(() => vi.fn());
+const coordinatorSkippedReadOnlyMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
     cronBearerAuthRejected: vi.fn(),
     coordinatorAuditEmitFailed: vi.fn(),
     redisFallback: vi.fn(),
-    coordinatorSkippedReadOnly: vi.fn(),
+    coordinatorSkippedReadOnly: coordinatorSkippedReadOnlyMock,
     coordinatorTenantsEnqueued: vi.fn(),
     coordinatorTenantsSucceeded: vi.fn(),
     coordinatorTenantsFailed: coordinatorTenantsFailedMock,
@@ -100,6 +101,40 @@ describe('cron tier-upgrade-evaluate-coordinator route (W0-09)', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       env.features.f8Renewals = true;
+    }
+  });
+
+  it('#408 — 200 + skipped on READ_ONLY_MODE=true (no audit, no fan-out, metered)', async () => {
+    const env = (await import('@/lib/env')).env as { flags: { readOnlyMode: boolean } };
+    env.flags.readOnlyMode = true;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(auditEmitMock).not.toHaveBeenCalled();
+      expect(coordinatorSkippedReadOnlyMock).toHaveBeenCalledWith('tier_upgrade_evaluate');
+    } finally {
+      env.flags.readOnlyMode = false;
+    }
+  });
+
+  it('#408 — the F8 kill-switch is checked BEFORE the freeze (same order as the other F8 routes)', async () => {
+    const env = (await import('@/lib/env')).env as {
+      features: { f8Renewals: boolean };
+      flags: { readOnlyMode: boolean };
+    };
+    env.features.f8Renewals = false;
+    env.flags.readOnlyMode = true;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      expect((await res.json()).reason).toBe('feature_flag_disabled');
+      expect(coordinatorSkippedReadOnlyMock).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      env.features.f8Renewals = true;
+      env.flags.readOnlyMode = false;
     }
   });
 

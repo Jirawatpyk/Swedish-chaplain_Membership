@@ -32,6 +32,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { pingCronHeartbeat } from '@/lib/cron-heartbeat';
@@ -58,10 +59,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     renewalsMetrics.coverageEndReconcileRunCompleted(env.tenant.slug, 'skipped_flag_disabled');
     return NextResponse.json({ skipped: true, reason: 'feature_flag_disabled' }, { status: 200 });
   }
-  if (env.flags.readOnlyMode) {
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/reconcile-coverage-ends');
+  if (frozen) {
     renewalsMetrics.coordinatorSkippedReadOnly('reconcile_coverage_ends');
     renewalsMetrics.coverageEndReconcileRunCompleted(env.tenant.slug, 'skipped_read_only');
-    return NextResponse.json({ skipped: true, reason: 'read_only_mode' }, { status: 200 });
+    return frozen;
   }
 
   const correlationId = uuidv7();

@@ -34,6 +34,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -62,6 +63,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard(ROUTE);
+  if (frozen) return frozen;
 
   try {
     const result = await runPruneOrphanedZeroRateCerts({});

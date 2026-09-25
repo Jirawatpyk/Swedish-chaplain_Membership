@@ -31,6 +31,7 @@ import {
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
 import { verifyCronBearer } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { logger } from '@/lib/logger';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
@@ -69,6 +70,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 401 },
     );
   }
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard('/api/cron/broadcasts/cleanup-audiences');
+  if (frozen) return frozen;
 
   const tenantCtx = resolveTenantFromRequest(request);
   const tenant = asTenantContext(tenantCtx.slug);

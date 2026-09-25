@@ -27,9 +27,13 @@ import type { NextRequest } from 'next/server';
 // VALID_AUTH header (which is NOT hoisted).
 const CRON_SECRET = 'test-secret-32-bytes-long-aaaaaa';
 
+// #408 — mutable so the READ_ONLY_MODE case can flip it.
+const flagsMock = vi.hoisted(() => ({ readOnlyMode: false }));
+
 vi.mock('@/lib/env', () => ({
   env: {
     cron: { secret: 'test-secret-32-bytes-long-aaaaaa' },
+    flags: flagsMock,
     log: { level: 'silent' },
     // The route imports `db`/`runInTenant` from `@/lib/db` (mocked below); the
     // real module reads `env.database.url` at init. Stub so the partial-env
@@ -105,6 +109,20 @@ describe('redact-expired-member-invoices cron — scan-level branches (COMP-1 US
     vi.clearAllMocks();
     tenantListImpl.mockResolvedValue([]);
     runInTenantImpl.mockResolvedValue({ tenantRedacted: 0, purgeWork: [] });
+  });
+
+  it('#408 READ_ONLY_MODE on → 200 skipped; no tenant listed, nothing redacted, no audit', async () => {
+    flagsMock.readOnlyMode = true;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+      expect(tenantListImpl).not.toHaveBeenCalled();
+      expect(runInTenantImpl).not.toHaveBeenCalled();
+      expect(auditEmitMock).not.toHaveBeenCalled();
+    } finally {
+      flagsMock.readOnlyMode = false;
+    }
   });
 
   it('(1) 401 + unauthorized on a MISSING Authorization header (gate before DB access)', async () => {

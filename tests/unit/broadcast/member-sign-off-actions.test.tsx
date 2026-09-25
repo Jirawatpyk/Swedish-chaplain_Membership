@@ -234,6 +234,13 @@ describe('PR #392 review C3 — a repeated decision after a lost response', () =
 // PR #392 review C1 — while READ_ONLY_MODE is on the proxy answers every
 // write 503 with a FLAT `{ error: 'read-only-mode' }` (main #390).
 describe('PR #392 review C1 — a decision refused by the read-only proxy', () => {
+  // The dialog moves focus inside itself on open (Base UI initial focus), and
+  // on a loaded runner that can land AFTER a refusal focused its alert — the
+  // test acted within the open transition, faster than any user. Wait for the
+  // open focus to settle first, as a user's own pace guarantees.
+  const openFocusSettled = (dialog: HTMLElement) =>
+    waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
   const readOnly503 = () =>
     new Response(JSON.stringify({ error: 'read-only-mode', message: 'read-only', retryAfterSeconds: 300 }), {
       status: 503,
@@ -250,6 +257,7 @@ describe('PR #392 review C1 — a decision refused by the read-only proxy', () =
       async () => {
         fireEvent.click(screen.getByTestId('eblast-approve'));
         const dialog = await screen.findByRole('alertdialog');
+        await openFocusSettled(dialog);
         fireEvent.click(within(dialog).getByTestId('eblast-approve-confirm'));
         return dialog;
       },
@@ -258,6 +266,7 @@ describe('PR #392 review C1 — a decision refused by the read-only proxy', () =
       'Request changes',
       async () => {
         const { dialog, reason } = await openRequestChanges();
+        await openFocusSettled(dialog);
         fireEvent.change(reason, { target: { value: 'The date is wrong.' } });
         fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.confirm }));
         return dialog;

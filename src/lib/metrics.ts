@@ -4960,7 +4960,9 @@ export const renewalsMetrics = {
       | 'auto_draft'
       | 'prune_auto_drafts'
       | 'reconcile_issued_orphans'
-      | 'reconcile_coverage_ends',
+      | 'reconcile_coverage_ends'
+      | 'tier_upgrade_evaluate'
+      | 'reconcile_pending_applications',
   ): void {
     safeMetric(() => {
       counter(

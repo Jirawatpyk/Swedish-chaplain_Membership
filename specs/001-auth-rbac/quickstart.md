@@ -360,6 +360,16 @@ When `READ_ONLY_MODE=true`:
   tolerated as a read-after-write exception)
 - Reads continue to work normally — users can still sign in, view data,
   and navigate the UI
+- **Scheduled crons pause too** (#408). Vercel Cron calls every
+  `vercel.json` path with GET, which the proxy does not freeze, so each
+  cron route checks the flag itself right after its Bearer check and
+  answers **200 `{ ok: true, skipped: true, reason: 'read_only_mode' }`**
+  (200, not 503, so the scheduler does not retry-storm). Nothing is
+  written and no external service is called — scheduled E-Blasts and
+  queued outbox emails go out **late**, on the first tick after the
+  freeze lifts. Five read-only gauge routes keep running so the incident
+  stays observable. Catch-up behaviour per job:
+  `docs/runbooks/cron-jobs.md` § Read-only mode
 - A banner appears on every authenticated page: "Read-only mode active —
   changes are temporarily disabled"
 - The env-var change is **reversible in 30 seconds** without a code deploy

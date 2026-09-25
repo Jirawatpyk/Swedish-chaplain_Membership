@@ -2599,3 +2599,43 @@ broadcast, plus one uncached halt read per would-be halt refusal. A refusal also
 refusal audit row under submit's own event types with `surface: 'dispatch'` (actor `system:cron`,
 `actor_role: null`) in the terminal transaction; the counters move only after that transaction
 commits. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch standing refusal.
+
+## 30. Scheduled crons under `READ_ONLY_MODE` (#408)
+
+Every `vercel.json` cron route calls `cronReadOnlyGuard` (`src/lib/cron-read-only-guard.ts`)
+right after its Bearer check. While `READ_ONLY_MODE=true` it answers
+`200 { ok: true, skipped: true, reason: 'read_only_mode' }` and logs ONE info line per tick:
+
+| Log message | Level | Fields | Meaning |
+|---|---|---|---|
+| `cron.read_only_mode.skipped` | info | `route` (the cron path — no tenant, no PII) | The tick did nothing: no write, no external call |
+
+The F8 renewals routes also keep counting `renewals_coordinator_skipped_read_only_total{cron_kind}`
+(two kinds added: `tier_upgrade_evaluate`, `reconcile_pending_applications`), and
+`reconcile-coverage-ends` still reports `renewals_coverage_end_reconcile_runs_total{outcome="skipped_read_only"}`.
+
+**Expected alarms during a freeze** (these are the freeze, not a second incident):
+- the coverage-end heartbeat (§ 28) stops pinging and pages after its 2 h budget;
+- `broadcasts.approved_overdue_count` (§ 22) rises for every E-Blast whose `scheduled_for` passes
+  during the freeze, because dispatch is paused;
+- outbox rows age past their `next_retry_at`; the "stuck rows" check lives inside the paused
+  dispatcher, so it reports them on the first tick after the freeze lifts;
+- `broadcasts.audience_import_stuck_count ≥ 1 sustained 30 min` (§ 22) fires about **60 min** into
+  the freeze for an E-Blast that was mid-import: only the paused `dispatch-scheduled` tick
+  (`buildAudienceTick`) stamps `audience_import_completed_at`, the exempt `broadcasts-gauges` route
+  counts the row once its import is 30 min old (`IMPORT_STUCK_AFTER_MS`), and the rule wants 30 min
+  more;
+- `broadcasts.stuck_sending_count ≥ 1` (§ 22) fires once a freeze has lasted **more than 24 h**
+  (`STUCK_SENDING_HOURS`) with a row in `sending`: `reconcile-stuck-sending` is paused, and the
+  proxy also 503s the Resend broadcasts webhook, so nothing can move the row out of `sending`;
+- the F9 snapshot-staleness P3 rule (§ 25.3, snapshot age p95 > 15 min over 15 min): the age passes
+  15 min about **15 min** into the freeze (the refresh runs every 5 min and is paused), and the
+  rule's own 15-min window puts the alert at about 30 min. Its gauge,
+  `insights_snapshot_age_seconds`, is still deferred (§ 25.1) — nothing in `src/` emits it — so
+  today this rule cannot fire; the visible sign is `insights_snapshot_refresh_total` going flat.
+
+Five gauge routes are deliberately NOT guarded — they only read and emit metrics, and they are how
+the operator watches the incident: `stale-pending-count`, `unprocessed-events-count`,
+`broadcasts-gauges`, `recompute-match-rate`, `plan-change-divergence`. The exemptions and their
+reasons live in `tests/unit/architecture/cron-read-only-guard-coverage.test.ts`. A skip line that
+keeps appearing after the freeze was meant to end is the signal that `READ_ONLY_MODE` was left on.

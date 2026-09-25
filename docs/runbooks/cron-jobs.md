@@ -107,11 +107,69 @@ should look but harness MUST NOT retry":
 | 500 + `server_error > 0` | Use-case Result.err (transition guard, RLS probe, etc.) | Harness MAY retry; investigate stack trace in logs |
 | 401 | Bearer token mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org headers |
 | 200 + `{ skipped: true, reason: 'feature_disabled' }` | `FEATURE_F7_BROADCASTS=false` (kill-switch) | Expected during dark-launch; do nothing. The route deliberately returns 200 + skips (NOT 503) so cron-job.org does not retry-storm. |
+| 200 + `{ ok: true, skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE=true` (emergency write freeze) — every guarded cron, see § Read-only mode | Expected during a freeze; do nothing. If it keeps appearing after the freeze should have ended, `READ_ONLY_MODE` was left on. |
 
 **Why disable failure-retry**: cron-job.org's default retry storm
 (every 30s for 1 hour) on a 500 response would hammer the endpoint
 during a Resend outage. The 15-min cadence already provides natural
 retry; the 500 status is purely a dashboard-paint-red signal.
+
+## Read-only mode (`READ_ONLY_MODE`) — every cron pauses (#408)
+
+`READ_ONLY_MODE=true` is the emergency write freeze (quickstart § 7.3,
+`docs/runbook/auth.md` § 3). `src/proxy.ts` freezes only POST / PUT / PATCH /
+DELETE, and Vercel Cron calls every path here with **GET**, so the proxy never
+reached a cron. Each route therefore freezes itself: `cronReadOnlyGuard`
+(`src/lib/cron-read-only-guard.ts`) runs right after the Bearer check (a bad
+Bearer still gets 401) and before any lock, write or external call, and answers
+**200 `{ ok: true, skipped: true, reason: 'read_only_mode' }`** plus one
+`cron.read_only_mode.skipped` info line carrying only `route`
+(`docs/observability.md` § 30). 200, not 503, so the scheduler does not
+retry-storm.
+
+**What pauses: everything that writes or calls out, dispatch included.**
+Scheduled E-Blasts and queued outbox emails (invitations, password resets,
+invoice / receipt emails, E-Blast approval notices) are sent **late**, on the
+first tick after the freeze lifts. Nothing is lost from the outbox: it drains
+`status='pending' AND next_retry_at <= now()` with no age limit, 50 rows a
+minute, so a long freeze drains over the following minutes. A link inside a
+late email may already have expired (invitation / reset TTLs keep running).
+
+**What keeps running (exempt, read-only gauges):** `stale-pending-count`,
+`unprocessed-events-count`, `broadcasts-gauges`, `recompute-match-rate`,
+`plan-change-divergence`. They only SELECT and emit metrics, and they are how
+the incident is watched. The reasons are written in the gate,
+`tests/unit/architecture/cron-read-only-guard-coverage.test.ts`, which fails
+when a `vercel.json` path resolves to no route, a route does not call the guard
+(or calls it before the Bearer check, or does not return its result), or an
+exemption goes stale. A new cron
+job gets the guard or a written exemption; there is no third option. Count on
+2026-09-25: 39 `vercel.json` paths — 34 call the guard (12 of them replaced an
+inline `READ_ONLY_MODE` check: the 10 F8 renewals routes,
+`auth/prune-expired-invitations` and `broadcasts/retention-sweep`) and 5 are
+exempt. The unscheduled per-tenant worker `renewals/auto-draft/[tenantId]`
+calls it too.
+
+**Catch-up after the freeze lifts** (checked 2026-09-25 against the selection
+predicates; a missed daily or weekly run is picked up by the next scheduled run,
+with the exceptions below):
+
+| Job | After a missed run | Where it can lose or change work |
+|---|---|---|
+| F8 `dispatch-coordinator` — reminder ladder | Catches up, **one due-day per pass**, newest first | `findDueStepsForDate` looks back only `REMINDER_CATCH_UP_LOOKBACK_DAYS` = 7 days. A step that fell due more than 7 days before the freeze lifts is **dropped for good**. On a schedule whose steps are closer than 7 days apart, an older step can go out the day after a newer one. |
+| F8 `dispatch-coordinator` — due track (`due+7` / `due+30`) | Catches up | When both are due only the most severe (`due+30`) is sent; `due+7` never is. |
+| F8 reminder retry pass (inside the dispatch worker) | — | A reminder whose 24 h `retry_until` budget expires during the freeze is marked exhausted without a retry. |
+| F8 `reconcile-pending-reactivations-coordinator` | Catches up | Missed day-23/27/29 reminders collapse into one pass; if the request passes day 30 during the freeze the timeout + refund run first and the reminders are never sent. |
+| F7 `prune-expired-drafts` — E-Blast approval lifecycle | Catches up | Only the latest due reminder is sent (a missed day 3 is replaced by day 7). The 30-day clock keeps running: a freeze across day 30 expires the E-Blast (`expired_no_member_response`) without the day-23 warning. |
+| F7 `dispatch-scheduled` | Catches up — every overdue `approved` E-Blast sends on the first tick | An E-Blast already > 1 h past `scheduled_for` has no retry budget left (`RETRY_BUDGET_MS`), so its first retryable Resend error is terminal. |
+| `auto-draft-coordinator` | Catches up inside the lead window | A cycle whose `expires_at` passes during the freeze never gets an auto-draft (window `expires_at > now AND <= now + lead`, lead ≈ 30 days) — only a freeze of about a month reaches this. |
+| `enter-awaiting-payment`, `lapse-cycles-on-grace-expiry`, `prune-auto-drafts`, `reconcile-issued-orphans`, `reconcile-coverage-ends`, weekly at-risk / tier-upgrade / prune-consumed-tokens / reconcile-pending-applications | Catch up fully | Predicates compare against `now` or current state. A late lapse still waits for its 14-day statutory warning. |
+| Redactions, retention sweeps, `outbox-purge`, `prune-orphaned-zero-rate-certs`, `prune-expired-invitations`, `lockout-cleanup`, `reclaim-orphan-audiences`, `cleanup-audiences`, `reconcile-stuck-sending`, `reconcile-erasures`, F9 export jobs + snapshot refresh | Catch up fully | Cutoffs are `now − retention`; `sweep-error-csv-blobs` drains 100 per run, so a backlog takes several days. An expired lockout is already ignored at sign-in; the cron only tidies the row. |
+
+**Operator checklist when lifting a freeze that lasted more than a day:** watch
+the first `dispatch-scheduled` and `outbox-dispatch` ticks for Resend errors;
+for a freeze longer than 7 days, list the renewal reminder steps that fell
+outside the look-back and send them by hand from the renewals pipeline.
 
 ## F4 — redact-expired-event-buyers (NEW — 054 Task 15)
 
@@ -860,9 +918,10 @@ Nothing is expected to be swept before ~2031 (the first prod E-Blast plus
 5 years). A steady `swept_count: 0` until then is correct.
 
 **READ_ONLY_MODE** stops it: the route answers 200
-`{ skipped: true, reason: 'read_only_mode' }` and touches nothing. (Vercel Cron
-calls GET, which the proxy's write-freeze does not cover, so the check is in the
-route.)
+`{ ok: true, skipped: true, reason: 'read_only_mode' }` through the shared
+`cronReadOnlyGuard` and touches nothing. (Vercel Cron calls GET, which the
+proxy's write-freeze does not cover, so the check is in the route — see
+§ Read-only mode.)
 
 ### Resend copies — NOT MEASURED, to measure before 2031
 
@@ -1055,7 +1114,7 @@ leftovers; it does not need validating.
 | 200 + a tenant with `outcome: 'error'` | That tenant's run failed (`sweptCount`, when present, is what DID commit — it stays deleted). Other tenants ran | Vercel logs `cron.broadcasts.retention_sweep.server_error` (fields `err` = the error class, `code` = the SQLSTATE; never the message — a Drizzle message quotes the query's params) / `.uncaught_error` (errorId `F7.cron.retention_sweep.*`); the next daily tick retries. `broadcasts_retention_sweep_failed_total{tenant}` increments. `code: '55P03'` = a batch waited more than 5 s for a lock (the cascade into a row another transaction held) — that batch rolled back; nothing to do unless it repeats |
 | 200 + `providerCopyRetainedAtProcessor > 0` | Rows deleted although Resend refused to delete their copy; the copy stays under Resend's retention | None — expected for sent E-Blasts (§ "Resend copies" above) |
 | 200 + `providerCopyKeptTransient > 0` | Rows kept with their key because a Resend delete failed transiently | None unless it persists — § "Resend copies" above |
-| 200 + `{ skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE` is on; nothing ran | None — it resumes the day after the freeze lifts |
+| 200 + `{ ok: true, skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE` is on; nothing ran (§ Read-only mode) | None — it resumes the day after the freeze lifts |
 | 401 | Bearer mismatch | Rotate / fix `CRON_SECRET` |
 
 ### Alert rules

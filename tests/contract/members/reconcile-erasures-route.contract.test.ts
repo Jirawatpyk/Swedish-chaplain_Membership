@@ -31,6 +31,7 @@ const erasureOutcomeMock = vi.fn();
 
 const envMock = {
   features: { memberErasureReconcile: true },
+  flags: { readOnlyMode: false },
   cron: { secret: 'test-cron-secret' },
   tenant: { slug: 'test-tenant' },
 };
@@ -89,6 +90,7 @@ function stubStuck(rows: ReadonlyArray<{ memberId: string; reason: string }>) {
 
 beforeEach(() => {
   envMock.features.memberErasureReconcile = true;
+  envMock.flags.readOnlyMode = false;
   eraseMemberMock.mockReset();
   runInTenantMock.mockReset();
   findStuckErasuresInTxMock.mockReset();
@@ -120,6 +122,18 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     );
     const res = await POST(makeRequest({ auth: 'Bearer wrong-secret' }));
     expect(res.status).toBe(401);
+    expect(runInTenantMock).not.toHaveBeenCalled();
+    expect(eraseMemberMock).not.toHaveBeenCalled();
+  });
+
+  it('#408 READ_ONLY_MODE on → 200 skipped; no stuck-erasure read, eraseMember NOT called', async () => {
+    envMock.flags.readOnlyMode = true;
+    const { POST } = await import(
+      '@/app/api/cron/members/reconcile-erasures/route'
+    );
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
     expect(runInTenantMock).not.toHaveBeenCalled();
     expect(eraseMemberMock).not.toHaveBeenCalled();
   });

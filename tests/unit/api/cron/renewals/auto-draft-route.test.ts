@@ -8,9 +8,9 @@
  *   - `FEATURE_AUTO_INVOICE=false` (either of the two dark-ship env keys
  *     off — `f8Renewals` or `autoInvoice`) → 200 + skipped, use-case never
  *     invoked / no fan-out.
- *   - READ_ONLY_MODE → 200 + skipped (coordinator short-circuit only —
- *     mirrors every other F8 coordinator; the worker has no read-only
- *     check of its own, matching the enter-awaiting-payment precedent).
+ *   - READ_ONLY_MODE → 200 + skipped, on the coordinator AND the worker —
+ *     both through `cronReadOnlyGuard`, so a direct authenticated call
+ *     during the freeze creates no draft (#408).
  *   - valid Bearer → invokes `autoDraftDueRenewals` (worker) / fans out +
  *     returns per-tenant counts + emits `cron_dispatch_orchestrated`
  *     (`cron_kind: 'auto_draft'`) (coordinator).
@@ -215,6 +215,21 @@ describe('cron auto-draft per-tenant worker route (auto-invoice #2 / Task 8)', (
       expect(autoDraftMock).not.toHaveBeenCalled();
     } finally {
       env.features.autoInvoice = true;
+    }
+  });
+
+  it('#408 — 200 + the shared cronReadOnlyGuard body on READ_ONLY_MODE=true; no draft', async () => {
+    const env = (await import('@/lib/env')).env as {
+      flags: { readOnlyMode: boolean };
+    };
+    env.flags.readOnlyMode = true;
+    try {
+      const res = await perTenantPOST(makeRequest(VALID_AUTH), params(TENANT_SLUG));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, skipped: true, reason: 'read_only_mode' });
+      expect(autoDraftMock).not.toHaveBeenCalled();
+    } finally {
+      env.flags.readOnlyMode = false;
     }
   });
 

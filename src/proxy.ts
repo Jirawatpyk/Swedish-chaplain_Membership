@@ -280,27 +280,21 @@ export function proxy(request: NextRequest): NextResponse {
   // 1. READ_ONLY_MODE — block all writes with 503 (used for rollback /
   //    scheduled maintenance per .env.local README).
   //
-  //    CAVEAT — this gate sees only POST/PUT/PATCH/DELETE. Native Vercel
-  //    Cron invokes every `/api/cron/**` route with GET (`export const
-  //    GET = POST`), so a scheduled run is NOT stopped here: a cron handler
-  //    that writes must check `env.flags.readOnlyMode` itself and answer 200
-  //    `{ skipped: true, reason: 'read_only_mode' }` (e.g.
-  //    `cron/auth/prune-expired-invitations`,
-  //    `cron/broadcasts/retention-sweep`). The rationale below still
-  //    describes the intent, which a manual POST to a cron route still gets:
-  //    an emergency write-freeze IS
-  //    intended to halt all state-mutating server work, including
-  //    scheduled jobs — otherwise a cron pass during the freeze could
-  //    corrupt state the operator is trying to stabilise. Cron-job.org
-  //    will log 503s but does not retry-storm because each cron entry
-  //    has retry-disabled per `docs/runbooks/cron-jobs.md` § "Retry
-  //    policy contract". F8 cron specifically: missed dispatch /
-  //    lapse-cycle / at-risk passes during a typical <24h freeze
-  //    window are acceptable — the next pass picks up where the
-  //    previous one left off (idempotent FR-011 + state-machine
-  //    convergence). If a future feature has time-critical cron that
-  //    MUST run during freeze (e.g., regulatory deadline), add an
-  //    explicit carve-out here with a paired Constitution amendment.
+  //    This gate does NOT reach the scheduled crons (#408): Vercel Cron
+  //    invokes every `vercel.json` path with GET, which is not a
+  //    state-changing verb here. Each cron route freezes ITSELF instead
+  //    — `cronReadOnlyGuard` (`src/lib/cron-read-only-guard.ts`), right
+  //    after its Bearer check, answers 200 `{ skipped: true }` so the
+  //    scheduler does not retry-storm. A manual POST to a cron path is
+  //    still caught here first (503). The freeze is meant to halt all
+  //    state-mutating server work, scheduled jobs included; skipped
+  //    passes run on the next tick after it lifts. The gate
+  //    `tests/unit/architecture/cron-read-only-guard-coverage.test.ts`
+  //    fails when a scheduled route neither calls the guard nor carries a
+  //    written exemption. Runbook: `docs/runbooks/cron-jobs.md`
+  //    § Read-only mode. If a future cron MUST run during a freeze
+  //    (e.g. a regulatory deadline), exempt it there with a reason and a
+  //    paired Constitution amendment.
   if (env.flags.readOnlyMode && isStateChanging) {
     return build503(
       'read-only-mode',

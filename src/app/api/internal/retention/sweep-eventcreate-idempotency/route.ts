@@ -20,6 +20,7 @@ import { logger } from '@/lib/logger';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { asTenantContext } from '@/modules/tenants';
 import { asTenantId } from '@/modules/members';
 import {
@@ -57,6 +58,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // for audit + IP rate-limit consistency with sweep-error-csv-blobs.
   const gate = await gateF6Cron(request, ROUTE);
   if (gate) return gate;
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard(ROUTE);
+  if (frozen) return frozen;
 
   if (!env.features.f6EventCreate) {
     return NextResponse.json({ ok: true, skipped: 'feature_off' }, { status: 200 });

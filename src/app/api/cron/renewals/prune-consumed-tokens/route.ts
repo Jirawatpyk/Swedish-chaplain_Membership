@@ -38,6 +38,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { pruneConsumedTokens, makeRenewalsDeps } from '@/modules/renewals';
@@ -85,12 +86,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // pattern. 200 + skipped (NOT 503) so cron-job.org does not retry-
   // storm; the metric counter makes a flag-flap leaving READ_ONLY=
   // true past the maintenance window dashboardable from outside.
-  if (env.flags.readOnlyMode) {
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/prune-consumed-tokens');
+  if (frozen) {
     renewalsMetrics.coordinatorSkippedReadOnly('prune_consumed_tokens');
-    return NextResponse.json(
-      { skipped: true, reason: 'read_only_mode' },
-      { status: 200 },
-    );
+    return frozen;
   }
 
   const correlationId = uuidv7();

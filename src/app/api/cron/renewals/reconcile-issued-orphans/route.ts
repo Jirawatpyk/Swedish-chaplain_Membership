@@ -26,6 +26,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { reconcileIssuedOrphans, makeRenewalsDeps } from '@/modules/renewals';
@@ -58,12 +59,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  if (env.flags.readOnlyMode) {
+  const frozen = cronReadOnlyGuard('/api/cron/renewals/reconcile-issued-orphans');
+  if (frozen) {
     renewalsMetrics.coordinatorSkippedReadOnly('reconcile_issued_orphans');
-    return NextResponse.json(
-      { skipped: true, reason: 'read_only_mode' },
-      { status: 200 },
-    );
+    return frozen;
   }
 
   const correlationId = uuidv7();

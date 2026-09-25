@@ -30,6 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { gateF6Cron } from '@/lib/events-cron-deps';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { runSweepExpiredErrorCsvBlobs } from '@/lib/events-csv-import-deps';
 
 export const runtime = 'nodejs';
@@ -63,6 +64,11 @@ export async function POST(request: NextRequest): Promise<Response> {
   // flagged as a Constitution Principle I clause 4 violation.
   const gate = await gateF6Cron(request, ROUTE);
   if (gate) return gate;
+
+  // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
+  // write-freeze does not cover, so the route skips by itself.
+  const frozen = cronReadOnlyGuard(ROUTE);
+  if (frozen) return frozen;
 
   const startedAtMs = Date.now();
   const requestId = randomUUID();
