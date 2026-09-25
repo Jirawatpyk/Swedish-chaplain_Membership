@@ -145,3 +145,14 @@ describe('check-dates scanSource — edge cases', () => {
     expect(bare.length).toBe(1);
   });
 });
+
+describe('check-dates scanSource — next-intl dateTime', () => {
+  it("flags format.dateTime(…) — next-intl formats with plain 'en' (en-US order)", () => {
+    expect(hasViolation("const s = format.dateTime(d, 'dateMedium');", 'next-intl-dateTime')).toBe(true);
+    expect(hasViolation('return fmt.dateTime(new Date(x), { dateStyle: "long" });', 'next-intl-dateTime')).toBe(true);
+  });
+
+  it('does not flag the JSX dateTime attribute', () => {
+    expect(hasNoViolations('const el = <time dateTime={iso}>{label}</time>;')).toBe(true);
+  });
+});

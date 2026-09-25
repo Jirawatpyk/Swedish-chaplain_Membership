@@ -72,6 +72,7 @@ import {
   type BulkApproveConfirmDialogProps,
 } from '@/components/broadcast/admin/bulk-approve-confirm-dialog';
 import { bangkokInputToIso } from '@/components/broadcast/bangkok-datetime';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -214,7 +215,8 @@ describe('BulkApproveConfirmDialog', () => {
 
     // The preview must show a FORMATTED date resolved from the shared TZ
     // helper — not the raw datetime-local string echoed back verbatim.
-    const expectedPreview = new Intl.DateTimeFormat('en', {
+    // English renders en-GB via the shared helper (ux-standards § 12.3).
+    const expectedPreview = new Intl.DateTimeFormat(getDateFormatLocale('en'), {
       dateStyle: 'medium',
       timeStyle: 'short',
       timeZone: 'Asia/Bangkok',
