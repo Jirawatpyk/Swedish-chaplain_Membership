@@ -3,43 +3,24 @@
  *
  * Form-shape skeleton so the transition from the broadcasts queue doesn't
  * flash the parent segment's table-shaped loading.tsx during navigation
- * (FR-007). Mirrors the proxy-compose-form layout: member picker → segment
- * → subject → body → schedule → submit.
+ * (FR-007). U12 (#400 PR-B) — it reserved ONE full-width card while the page is
+ * the T148 two-column grid (the editor beside the 600 px email preview from
+ * `lg` up) with the template picker above it; the shape is now
+ * `ComposeFormSkeleton`, shared with the member compose skeleton: member picker
+ * → recipients → subject → the message editor → schedule → the action row.
  */
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { ComposeFormSkeleton } from '@/components/broadcast/compose-form-skeleton';
+import { env } from '@/lib/env';
 
 export default async function Loading(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('pageSubtitle')} />
-      <Card>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-60 w-full" />
-          </div>
-          <div className="flex justify-end border-t pt-4">
-            <Skeleton className="h-9 w-28" />
-          </div>
-        </CardContent>
-      </Card>
+      <ComposeFormSkeleton variant="staff" imageControls={env.features.f71aUs2Images} />
     </DetailContainer>
   );
 }

@@ -44,7 +44,7 @@ function NavItemLink({ item }: { readonly item: RenderedNavItem }) {
       <SidebarMenuButton
         render={
           <Link
-            href={item.href}
+            href={item.linkHref ?? item.href}
             onClick={() => {
               if (isMobile) setOpenMobile(false);
             }}
@@ -134,7 +134,7 @@ function NavGroupCollapsible({ group }: { readonly group: RenderedNavGroup }) {
                   <SidebarMenuSubButton
                     render={
                       <Link
-                        href={child.href}
+                        href={child.linkHref ?? child.href}
                         onClick={() => {
                           if (isMobile) setOpenMobile(false);
                         }}

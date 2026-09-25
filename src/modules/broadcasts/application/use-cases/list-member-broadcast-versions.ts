@@ -59,11 +59,10 @@ export async function listMemberBroadcastVersions(
   input: ListMemberBroadcastVersionsInput,
 ): Promise<ListMemberBroadcastVersionsOutput> {
   const slug = deps.tenant.slug;
-  const memberKey = input.memberId as unknown as string;
   const { versions, decisions } = await deps.broadcastsRepo.withTx(async (tx) => ({
     // Sequential on purpose: one tx is one connection.
-    versions: await deps.versionsRepo.listSentByMember(slug, memberKey, input.limit + 1, tx),
-    decisions: await deps.decisionsRepo.listByMember(slug, memberKey, input.limit + 1, tx),
+    versions: await deps.versionsRepo.listSentByMember(slug, input.memberId, input.limit + 1, tx),
+    decisions: await deps.decisionsRepo.listByMember(slug, input.memberId, input.limit + 1, tx),
   }));
   const truncated = versions.length > input.limit || decisions.length > input.limit;
 

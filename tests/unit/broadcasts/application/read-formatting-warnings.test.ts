@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
 import { ApprovalDependencyError } from '@/modules/broadcasts/application/approval-dependency-error';
+import { asMemberId } from '@/modules/members';
 import {
   readFormattingWarnings,
   type ReadFormattingWarningsDeps,
@@ -21,7 +22,7 @@ import {
   makePortalContact,
 } from '../../../helpers/eblast-approval-fakes';
 
-const MEMBER = '22222222-2222-4222-8222-222222222222';
+const MEMBER = asMemberId('22222222-2222-4222-8222-222222222222');
 const ALLOWED = 'https://assets.swecham.zyncdata.app/a.png';
 const REMOVED = 'https://old-cdn.example.org/b.png';
 

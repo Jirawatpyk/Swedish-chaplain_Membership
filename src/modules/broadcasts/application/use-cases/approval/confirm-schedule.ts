@@ -85,7 +85,7 @@ import {
 } from '../../../domain/value-objects/image-source-allowlist';
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
-import type { BroadcastsRepo } from '../../ports/broadcasts-repo';
+import type { BroadcastsRepo, TransitionFields } from '../../ports/broadcasts-repo';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
@@ -102,7 +102,8 @@ import {
   type MemberSendStanding,
   type MemberSendStandingDeps,
 } from '../_member-send-standing';
-import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ApprovalRefusal, isOwnRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ownerMemberId } from './_owner-member-id';
 import { chooseApprovalRecipient } from './_approval-recipient';
 
 export type ScheduleMode =
@@ -220,7 +221,7 @@ export async function confirmSchedule(
         const timing = resolveTiming(mode, broadcast, now, floorOk);
         const confirmed = timing.kind === 'cancel' ? null : timing.at;
 
-        let fields: Partial<Broadcast>;
+        let fields: TransitionFields;
         if (promoting) {
           // T166 S-H1 — the promotion is the send-time edge of the round (the
           // row becomes dispatchable here), so the rules that block sending
@@ -273,7 +274,7 @@ export async function confirmSchedule(
         });
 
         if (timing.kind === 'confirm') {
-          const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, broadcast.requestedByMemberId, tx);
+          const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, ownerMemberId(broadcast), tx);
           const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId);
           if (recipient === null) {
             logger.warn(
@@ -295,7 +296,9 @@ export async function confirmSchedule(
     );
   } catch (e) {
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
-    const refusal = e.refusal as ConfirmScheduleError;
+    // #400 item 5 — a refusal another use case raised is not ours to map.
+    if (!isOwnRefusal(e, 'confirm-schedule')) throw e;
+    const refusal = e.refusal;
     if (refusal.kind === 'not_found') {
       await emitCrossTenantProbe({
         audit: deps.audit,
@@ -397,5 +400,5 @@ function resolveTiming(mode: ScheduleMode, broadcast: Broadcast, now: Date, floo
 
 /** Throw-to-rollback: the refusal leaves the tx, which rolls back (`_approval-tx.ts`). */
 function refuse(refusal: ConfirmScheduleError): never {
-  throw new ApprovalRefusal<ConfirmScheduleError>(refusal);
+  throw new ApprovalRefusal('confirm-schedule', refusal);
 }

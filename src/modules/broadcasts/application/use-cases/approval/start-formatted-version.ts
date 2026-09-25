@@ -59,7 +59,7 @@ import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
-import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ApprovalRefusal, isOwnRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
 
 export interface StartFormattedVersionDeps {
   readonly tenant: TenantContext;
@@ -80,7 +80,8 @@ export interface StartFormattedVersionInput {
 }
 
 export interface StartFormattedVersionOutput {
-  readonly stage: 'in_design';
+  /** The new status (#400 item 6: `status`, not `stage` — the value is a status). */
+  readonly status: 'in_design';
   /** false on the idempotent arm (the working copy already existed). */
   readonly started: boolean;
   readonly version: BroadcastVersion;
@@ -111,7 +112,7 @@ export async function startFormattedVersion(
         await deps.broadcastsRepo.lockForUpdate(tx, slug, input.broadcastId);
         const broadcast = await deps.broadcastsRepo.findByIdInTx(tx, slug, input.broadcastId);
         if (broadcast === null) {
-          throw new ApprovalRefusal<StartFormattedVersionError>({ kind: 'not_found', reason: 'unknown' });
+          throw new ApprovalRefusal('start-formatted-version', { kind: 'not_found', reason: 'unknown' });
         }
         const voiding = admitStage(broadcast, deps.memberApprovalEnabled);
 
@@ -125,7 +126,7 @@ export async function startFormattedVersion(
           if (existingOriginal === undefined || existingWorkingCopy === undefined) {
             throw new Error('in_design broadcast without a member original and a working copy');
           }
-          return { stage: 'in_design' as const, started: false, version: existingWorkingCopy, memberOriginal: existingOriginal };
+          return { status: 'in_design' as const, started: false, version: existingWorkingCopy, memberOriginal: existingOriginal };
         }
 
         const now = deps.clock.now();
@@ -209,12 +210,14 @@ export async function startFormattedVersion(
           },
         });
 
-        return { stage: 'in_design' as const, started: true, version, memberOriginal };
+        return { status: 'in_design' as const, started: true, version, memberOriginal };
       }),
     );
   } catch (e) {
     if (e instanceof ApprovalRefusal) {
-      const refusal = e.refusal as StartFormattedVersionError;
+      // #400 item 5 — a refusal another use case raised is not ours to map.
+      if (!isOwnRefusal(e, 'start-formatted-version')) throw e;
+      const refusal = e.refusal;
       if (refusal.kind === 'not_found' && refusal.reason === 'unknown') {
         await emitCrossTenantProbe({
           audit: deps.audit,
@@ -239,7 +242,7 @@ function admitStage(broadcast: Broadcast, memberApprovalEnabled: boolean): boole
     case 'submitted':
       // T152 — the only flagged edge: `submitted → in_design`.
       if (!memberApprovalEnabled) {
-        throw new ApprovalRefusal<StartFormattedVersionError>({ kind: 'not_found', reason: 'flag_off' });
+        throw new ApprovalRefusal('start-formatted-version', { kind: 'not_found', reason: 'flag_off' });
       }
       return false;
     case 'changes_requested':
@@ -248,19 +251,19 @@ function admitStage(broadcast: Broadcast, memberApprovalEnabled: boolean): boole
     case 'member_approved':
     case 'approved':
       if (broadcast.currentRound < 1) {
-        throw new ApprovalRefusal<StartFormattedVersionError>({ kind: 'round_zero' });
+        throw new ApprovalRefusal('start-formatted-version', { kind: 'round_zero' });
       }
       // T166 R-H1 — voiding an approval the dispatcher has already handed
       // over (its lock committed before the provider call) cannot stop that
       // send, and would leave its id for the next round to inherit.
       if (hasDispatchBegun(broadcast)) {
-        throw new ApprovalRefusal<StartFormattedVersionError>({ kind: 'sending_started', status: broadcast.status });
+        throw new ApprovalRefusal('start-formatted-version', { kind: 'sending_started', status: broadcast.status });
       }
       return true;
     default:
       // Fail-CLOSED: every other status (draft, sending, awaiting the member,
       // every closed one) is refused — never `return _exhaustive`.
-      throw new ApprovalRefusal<StartFormattedVersionError>({ kind: 'stage_changed', status: broadcast.status });
+      throw new ApprovalRefusal('start-formatted-version', { kind: 'stage_changed', status: broadcast.status });
   }
 }
 

@@ -25,6 +25,13 @@
  * deterministic + lets us flag forgotten new tables (the failure case
  * "table exists in schema but not in allow-list" is what we want to
  * surface to the engineer adding a table without registering it here).
+ *
+ * #400 PR-B — that failure case was only ever a promise: nothing compared the
+ * allow-list with the schema, and fifteen `tenant_id` tables sat unregistered
+ * (so unchecked) while the gate reported OK. The positive control
+ * (`scripts/lib/multi-tenant-coverage.ts`) now parses every Drizzle table
+ * that declares `tenant_id` and fails when one is in none of SCOPED_TABLES,
+ * LEGACY_KNOWN_GAPS or EXEMPT, or when the parse finds nothing at all.
  */
 // `package.json` invokes this script via `node --env-file=.env.local`
 // so `process.env.DATABASE_URL` and the rest of the zod-validated env
@@ -32,113 +39,14 @@
 // runs the schema validator.
 import { db } from '@/lib/db';
 import { sql } from 'drizzle-orm';
-
-/**
- * Tables in the SCOPED set — these MUST pass every check. CI fails
- * if any of these regress.
- *
- * Wave C scope (per /speckit.tasks T029 + the E18 round 1 spec
- * "scope-cut to F8 tables only and defer the broader registry to
- * Phase 10" decision documented in plan.md):
- *
- *   * All 9 F8-owned tables (Wave C migrations 0086–0094).
- *   * Tables whose tenant isolation has been audited + verified post-
- *     F8 (F2, F3 except email_change_tokens, F4 except notifications_
- *     outbox + credit_note_lines, F5 except processor_events,
- *     F7 broadcasts module — all already shipped + reviewed).
- *
- * Adding a new tenant-scoped table = adding it here. Adding a row to
- * `LEGACY_KNOWN_GAPS` instead is reserved for fixing-later debt that
- * predates this script.
- */
-const SCOPED_TABLES = [
-  // F2 plans
-  'membership_plans',
-  // F3 members
-  'members',
-  'contacts',
-  'email_change_tokens',
-  // F114 member change requests (migration 0300) — RLS ENABLE + FORCE +
-  // the strict 0209 policy on both tables.
-  'member_change_requests',
-  'member_change_request_fields',
-  // F4 invoicing
-  'invoices',
-  'invoice_lines',
-  'credit_notes',
-  'tenant_invoice_settings',
-  'tenant_document_sequences',
-  'notifications_outbox',
-  // F5 payments
-  'payments',
-  'refunds',
-  'tenant_payment_settings',
-  // F7 broadcasts
-  'broadcasts',
-  'broadcast_deliveries',
-  'marketing_unsubscribes',
-  'broadcast_segment_definitions',
-  // F119 E-Blast approval (migration 0304) — the image lifecycle record, RLS
-  // ENABLE + FORCE + the 0064 policy; and the pre-existing-but-unlisted
-  // tenant_broadcast_settings (RLS since 0166), which 0304 turns into a
-  // tenant-authored WRITE surface (brand colour + postal address).
-  'broadcast_images',
-  'tenant_broadcast_settings',
-  // F119 PR-2 (migration 0308) — the approval round's version history and
-  // the append-only member decisions; RLS ENABLE + FORCE + the 0064 policy.
-  'broadcast_versions',
-  'broadcast_member_decisions',
-  // F8 renewals (Wave C)
-  'scheduled_plan_changes',
-  'renewal_cycles',
-  'renewal_reminder_events',
-  'tenant_renewal_settings',
-  'tenant_renewal_schedule_policies',
-  'at_risk_outreach',
-  'tier_upgrade_suggestions',
-  'renewal_escalation_tasks',
-  'consumed_link_tokens',
-] as const;
-
-/**
- * Pre-existing tables with documented isolation gaps that PREDATE
- * this readiness script. Audited at /speckit.implement Wave C T029
- * (2026-05-04) and triaged below. Each entry is a known item awaiting
- * a follow-up sweep (deferred to Phase 10 polish per plan.md).
- *
- * The script REPORTS on these but DOES NOT fail on them — separating
- * "new regression" (SCOPED_TABLES) from "old debt" (this list) lets
- * CI block the former without churning on the latter.
- *
- * Triage notes:
- *   * `users`/`sessions`/`invitations` — F1 identity tables; user
- *     accounts are intentionally GLOBAL (cross-tenant) per the F1
- *     design so admins can hold roles in multiple tenants. NOT
- *     tenant-scoped → not a gap; remove from any future "tenant
- *     readiness" lists.
- *   * `audit_log` — append-only F1 table; tenant_id is a row-level
- *     attribute but RLS isn't enabled because audit reads happen
- *     through dedicated read paths that already filter. Documented
- *     pattern; not a gap requiring schema change.
- *   * `rate_limit_state` — F1 Upstash mirror, no tenant_id column;
- *     keyed by user/IP. Not tenant-scoped → not in scope.
- *   * `credit_note_lines` — F4 child rows scoped via FK to
- *     credit_notes (no own tenant_id column). Indirect tenant
- *     isolation through cascade. Acceptable; not a gap.
- *   * `processor_events` — F5 webhook events, 53 orphan NULL-tenant
- *     rows (likely from system-bootstrap inserts). **Real gap.** Phase 10.
- *
- * Resolved at /speckit.implement Phase 10 backlog item A (2026-05-04):
- *   * `email_change_tokens` — RLS+FORCE+POLICY added via migration 0097;
- *     promoted to SCOPED_TABLES.
- *   * `notifications_outbox` — RLS+FORCE+POLICY added + 10 orphan rows
- *     deleted + tenant_id ALTER NOT NULL via migration 0098; promoted
- *     to SCOPED_TABLES.
- */
-const LEGACY_KNOWN_GAPS: ReadonlyArray<string> = [
-  'audit_log',
-  'processor_events',
-];
+import {
+  checkCoverage,
+  parseTenantScopedTables,
+  readSchemaSources,
+} from './lib/multi-tenant-coverage';
+// #400 W1 — the lists live in `./lib/multi-tenant-registry` (with their triage
+// notes), so the unit suite can hold the real schema against them.
+import { EXEMPT, LEGACY_KNOWN_GAPS, SCOPED_TABLES } from './lib/multi-tenant-registry';
 
 /**
  * Tables that are tenant-scoped but DON'T have a literal `tenant_id`
@@ -252,7 +160,33 @@ function classifyFailures(results: readonly CheckResult[]): Failure[] {
   return failures;
 }
 
+/**
+ * #400 PR-B — the positive control: the lists above must cover the schema.
+ * Runs before any database read, so a blind or stale list fails even when the
+ * database is unreachable.
+ */
+function assertListsCoverSchema(): void {
+  const parsed = parseTenantScopedTables(readSchemaSources(process.cwd()));
+  const { failures } = checkCoverage(parsed, {
+    scoped: SCOPED_TABLES,
+    legacy: LEGACY_KNOWN_GAPS,
+    exempt: EXEMPT,
+  });
+  if (failures.length > 0) {
+    console.error(
+      `[check:multi-tenant] ✗ the allow-lists do not cover the schema (${parsed.tables.length} tenant_id tables parsed):`,
+    );
+    for (const f of failures) console.error(`  • ${f}`);
+    process.exit(1);
+  }
+  console.log(
+    `[check:multi-tenant] ✓ positive control: ${parsed.tables.length} tenant_id tables parsed from the Drizzle schema, ` +
+      `all registered (${SCOPED_TABLES.length} scoped + ${LEGACY_KNOWN_GAPS.length} legacy + ${EXEMPT.length} exempt)`,
+  );
+}
+
 async function main(): Promise<void> {
+  assertListsCoverSchema();
   console.log(
     `[check:multi-tenant] auditing ${SCOPED_TABLES.length} scoped tables ` +
       `+ ${LEGACY_KNOWN_GAPS.length} legacy-tracked tables…`,

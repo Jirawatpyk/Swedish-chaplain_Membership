@@ -3397,6 +3397,7 @@
           "toDate": "Submitted to",
           "reset": "Reset filters",
           "upcomingSends": "Upcoming sends",
+          "waitingOnMarketing": "Waiting on marketing",
           "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}",
           "chipCountsScope": "Counts are for every E-Blast in each stage — the member, date and Upcoming sends filters do not change them."
         },

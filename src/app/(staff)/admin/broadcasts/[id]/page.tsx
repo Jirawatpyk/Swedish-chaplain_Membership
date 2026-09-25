@@ -49,6 +49,7 @@ import { logger } from '@/lib/logger';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { asMemberId } from '@/modules/members';
 
 /** `CardTitle`'s type on a real `<h2>` — the shadcn `CardTitle` is a `<div>`, outside the heading tree. */
 const CARD_HEADING = 'font-heading text-base leading-snug font-medium';
@@ -603,7 +604,7 @@ async function readWarnings(
   bodyHtml: string,
 ): Promise<FormattingWarnings | null> {
   if (!PORTAL_USER_STATUSES.has(status) && !IMAGE_CHECK_STATUSES.has(status)) return null;
-  const result = await readFormattingWarnings(makeReadFormattingWarningsDeps(tenantSlug), { memberId, bodyHtml });
+  const result = await readFormattingWarnings(makeReadFormattingWarningsDeps(tenantSlug), { memberId: asMemberId(memberId), bodyHtml });
   if (result.ok) return result.value;
   // A failed read shows no warning (logged, so it is not silent); the send
   // and the promotion still refuse under their row lock.

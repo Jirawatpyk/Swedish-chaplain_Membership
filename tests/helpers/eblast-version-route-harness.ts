@@ -378,6 +378,8 @@ export async function broadcastsBarrelMock() {
     enforceTenantContext: async (_deps: unknown, input: { observedTenantId: string }) =>
       input.observedTenantId === HARNESS_TENANT ? ok(undefined) : { ok: false as const, error: { kind: 'cross_tenant' } },
     parseBroadcastId: broadcast.parseBroadcastId,
+    // #400 item 2 — the decision route brands the body's `versionId`.
+    asBroadcastVersionId: broadcast.asBroadcastVersionId,
     stageOf: stage.stageOf,
     turnOf: turn.turnOf,
     broadcastsRateLimiter: { checkLimit: (...args: unknown[]) => harness.checkLimit(...args) },

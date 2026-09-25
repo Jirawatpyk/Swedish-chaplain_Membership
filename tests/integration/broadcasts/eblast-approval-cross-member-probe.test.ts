@@ -21,7 +21,7 @@ import { makeFakeMarketingDirectory } from '../../helpers/eblast-approval-fakes'
 import { db, runInTenant } from '@/lib/db';
 import { makeRecordMemberDecisionDeps } from '@/lib/broadcast-approval-deps';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId } from '@/modules/broadcasts/domain/broadcast';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import { getMemberBroadcast } from '@/modules/broadcasts/application/use-cases/get-member-broadcast';
 import { makeGetMemberBroadcastDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
@@ -63,11 +63,11 @@ describe('F119 T073 — member B cannot read or decide member A\'s E-Blast (live
   const decideAs = (slug: string, who: { userId: string; memberId: string; contactId: string }, requestId: string) =>
     recordMemberDecision(deps(slug), {
       broadcastId: asBroadcastId(broadcastId),
-      memberId: who.memberId,
+      memberId: asMemberId(who.memberId),
       actorUserId: who.userId,
       actorRole: 'member',
       contactId: who.contactId,
-      versionId: v1Id,
+      versionId: asBroadcastVersionId(v1Id),
       decision: 'approved',
       reason: null,
       requestId,
@@ -162,7 +162,7 @@ describe('F119 T073 — member B cannot read or decide member A\'s E-Blast (live
   it('positive control: member A decides the same row → member_approved, one decision row, the audit carries snake_case member_id', async () => {
     const requestId = `f119-probe-a-${randomUUID()}`;
     const r = await decideAs(tenant.ctx.slug, { userId: userA.userId, memberId: memberA, contactId: contactA }, requestId);
-    expect(r.ok ? r.value.stage : r.error).toBe('member_approved');
+    expect(r.ok ? r.value.status : r.error).toBe('member_approved');
     expect(await readRow()).toMatchObject({ status: 'member_approved', approvedVersionId: v1Id });
     const audits = await auditsFor(tenant.ctx.slug, requestId);
     expect(audits.map((a) => a.eventType)).toEqual(['broadcast_member_approved']);

@@ -203,10 +203,9 @@ export async function scrubBroadcastContentForMember(
 
       // F119 T082 — the approval round's child tables and pending hand-offs,
       // in this same tx so they co-commit with the parent redaction.
-      const memberKey = input.memberId as unknown as string;
-      const versions = await deps.approvalScrub.redactVersionsForMemberInTx(tx, tenantSlug, memberKey);
-      const reasons = await deps.approvalScrub.redactDecisionReasonsForMemberInTx(tx, tenantSlug, memberKey);
-      const notifications = await deps.approvalScrub.cancelPendingNotificationsForMemberInTx(tx, tenantSlug, memberKey);
+      const versions = await deps.approvalScrub.redactVersionsForMemberInTx(tx, tenantSlug, input.memberId);
+      const reasons = await deps.approvalScrub.redactDecisionReasonsForMemberInTx(tx, tenantSlug, input.memberId);
+      const notifications = await deps.approvalScrub.cancelPendingNotificationsForMemberInTx(tx, tenantSlug, input.memberId);
 
       // 108 PR-C T104 (FR-056): null `member_id` + `contact_id` on the
       // member's suppression rows; the email-keyed rows survive. Review

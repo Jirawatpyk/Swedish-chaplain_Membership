@@ -177,14 +177,18 @@ test.describe('T062 RBAC v2 — four-persona navigation walk (ON leg)', () => {
         test.skip(denied === undefined, 'super_admin holds every key — nothing to deny');
 
         await page.goto('/admin', { waitUntil: 'domcontentloaded' });
-        const hrefs = await sidebarHrefs(page);
+        // By PATHNAME (#400 W7): an item with a `linkHref` renders a query
+        // URL (the Broadcasts link can open `/admin/broadcasts?status=…`), so
+        // an exact-string `not.toContain('/admin/broadcasts')` could never
+        // fail for it — a denied item offered with a query would pass.
+        const paths = (await sidebarHrefs(page)).map((href) => new URL(href, 'http://localhost').pathname);
         // Positive anchor FIRST. A loop of `not.toContain` over an empty array
         // passes every assertion, so a selector that stopped matching would
         // read as "nothing denied is offered" — the strongest possible result
         // from the weakest possible evidence.
-        expect(hrefs, `${persona.name} sees an empty sidebar`).toContain('/admin');
+        expect(paths, `${persona.name} sees an empty sidebar`).toContain('/admin');
         for (const href of denied!) {
-          expect(hrefs, `${persona.name} must not be offered ${href}`).not.toContain(href);
+          expect(paths, `${persona.name} must not be offered ${href}`).not.toContain(href);
         }
       });
 

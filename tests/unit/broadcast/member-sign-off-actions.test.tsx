@@ -136,7 +136,7 @@ describe('F119 T084 — the member sign-off controls', () => {
 
   it('Approve states both consequences, then posts the version with the optional note', async () => {
     const fetchMock = vi.fn(async () =>
-      json(200, { stage: 'member_approved', whoseTurn: 'marketing', round: 2, decision: {} }),
+      json(200, { status: 'member_approved', whoseTurn: 'marketing', round: 2, decision: {} }),
     );
     vi.stubGlobal('fetch', fetchMock);
     renderActions();

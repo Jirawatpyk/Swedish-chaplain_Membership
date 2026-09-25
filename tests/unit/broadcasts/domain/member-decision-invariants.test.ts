@@ -19,7 +19,7 @@ import {
   scheduleDiffers,
   validateDecisionReason,
 } from '@/modules/broadcasts/domain/approval/member-decision';
-import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId } from '@/modules/broadcasts/domain/broadcast';
 import {
   MEMBER_APPROVAL_EXPIRY_DAYS,
   memberApprovalExpiresAt,
@@ -115,7 +115,7 @@ describe('requiresReason / reasonBounds', () => {
 
 describe('isVersionEditable', () => {
   const version: BroadcastVersion = {
-    id: 'v-1',
+    id: asBroadcastVersionId('v-1'),
     tenantId: 'test',
     broadcastId: asBroadcastId('11111111-1111-4111-8111-111111111111'),
     versionNo: 1,

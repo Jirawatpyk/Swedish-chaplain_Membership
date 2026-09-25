@@ -14,6 +14,11 @@ import {
  * Mirrors `/admin/broadcasts/loading.tsx` convention — real PageHeader
  * + Card chrome from i18n; skeleton only the interactive table rows
  * to avoid title flicker on navigation (per Round-3-Final Phase H7).
+ *
+ * U12 (#400 PR-B) — matches `page.tsx` + `AdminTemplateLibrary`: the New
+ * template button sits in the PageHeader's actions (the skeleton used to draw a
+ * separate button row the page does not have), then the three filter pills
+ * (default `h-9` buttons, which it omitted), then the full-bleed table card.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.broadcasts.templates');
@@ -22,11 +27,18 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
       <TableContainer>
-        <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-        <div className="flex items-center justify-end mb-4">
-          <SkeletonBlock className="h-9 w-32" />
+        <PageHeader
+          title={t('pageTitle')}
+          subtitle={t('pageDescription')}
+          actions={<SkeletonBlock className="h-9 w-32" />}
+        />
+        {/* The All / Starter / Admin-authored filter pills. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <SkeletonBlock data-skeleton="template-filter-pill" className="h-9 w-12" />
+          <SkeletonBlock data-skeleton="template-filter-pill" className="h-9 w-20" />
+          <SkeletonBlock data-skeleton="template-filter-pill" className="h-9 w-32" />
         </div>
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-0">
             <div className="space-y-0">
               {[0, 1, 2, 3, 4].map((i) => (

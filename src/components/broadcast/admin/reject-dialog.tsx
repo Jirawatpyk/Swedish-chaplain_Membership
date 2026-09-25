@@ -25,11 +25,15 @@
  *     dialog open for a retry, reason intact, and say so INSIDE it (the shared
  *     dialog's `refusal`, `role="alert"`, focused — ux-standards § 6.4): a
  *     toast would render behind the modal.
+ *   - 503 READ_ONLY_MODE (#400 item 7) keeps it open too, with main #390's
+ *     read-only warning (title AND "nothing was changed", warning tone) in
+ *     place of the generic error.
  */
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
 import {
   ReasonConfirmationDialog,
   useDialogFinalFocus,
@@ -65,6 +69,8 @@ export function RejectDialog({
   // The staff write bucket's refusal — the same copy the approval-round
   // actions read for the same 429 (`broadcast_rate_limit_exceeded`).
   const tApprovalErrors = useTranslations('admin.broadcasts.approval.errors');
+  // #400 item 7 — main #390's read-only warning, word for word (root `errors`).
+  const tReadOnly = useTranslations('errors');
   const router = useRouter();
   // F7-A11Y-1 — raised on the success / 409 close (both run router.refresh() →
   // the ReviewActions trigger Button unmounts). finalFocus reads it to SKIP the
@@ -80,9 +86,20 @@ export function RejectDialog({
   // A retryable failure, said inside the open dialog. `seq` makes a repeat a
   // new node (announced again) — this runs inside the shared dialog's
   // transition, so the clear below never commits on its own.
-  const [refusal, setRefusal] = useState<{ message: string; field: null; seq: number } | null>(null);
-  const refuse = (message: string): void =>
-    setRefusal((prev) => ({ message, field: null, seq: (prev?.seq ?? 0) + 1 }));
+  const [refusal, setRefusal] = useState<{
+    message: string;
+    field: null;
+    seq: number;
+    tone?: 'warning';
+    description?: string;
+  } | null>(null);
+  const refuse = (message: string, warning?: { readonly description: string }): void =>
+    setRefusal((prev) => ({
+      message,
+      field: null,
+      seq: (prev?.seq ?? 0) + 1,
+      ...(warning !== undefined && { tone: 'warning' as const, description: warning.description }),
+    }));
 
   async function onConfirm(reason: string): Promise<void> {
     setRefusal(null);
@@ -110,6 +127,8 @@ export function RejectDialog({
             : tToast('concurrentRace'),
         );
         router.refresh();
+      } else if (await isReadOnlyResponse(res)) {
+        refuse(tReadOnly('readOnlyMode'), { description: tReadOnly('readOnlyNothingChanged') });
       } else if (res.status === 429) {
         refuse(tApprovalErrors('broadcast_rate_limit_exceeded'));
       } else {

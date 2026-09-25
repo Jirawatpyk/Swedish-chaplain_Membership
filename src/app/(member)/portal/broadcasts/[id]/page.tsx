@@ -565,7 +565,7 @@ export default async function BroadcastDetailPage(props: {
 async function readMemberThread(
   tenantSlug: string,
   broadcastId: Parameters<typeof getMemberVersionThread>[1]['broadcastId'],
-  memberId: string,
+  memberId: Parameters<typeof getMemberVersionThread>[1]['memberId'],
   actorUserId: string,
   requestId: string,
 ): Promise<MemberVersionThread | null> {

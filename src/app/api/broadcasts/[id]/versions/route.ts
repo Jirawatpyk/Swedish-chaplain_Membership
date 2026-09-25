@@ -51,7 +51,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 
   const result = await getMemberVersionThread(makeGetMemberVersionThreadDeps(ctx.tenant.slug), {
     broadcastId: parsedId.value,
-    memberId: ctx.memberId as string,
+    memberId: ctx.memberId,
     actorUserId: ctx.current.user.id,
     requestId: ctx.requestId ?? correlationId,
   });

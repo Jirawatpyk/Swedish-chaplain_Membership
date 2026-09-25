@@ -128,9 +128,11 @@ export const APPROVAL_ROUND_STATUSES = [
  *
  * UX review M2 — it lives HERE, beside `OFFERED_BROADCAST_STATUSES`, because
  * two surfaces size from it: the chip strip (`queue-filters.tsx`, a client
- * component that may import this file but not `domain/stage/**`) and the
- * queue's loading skeleton, which reserves 8 chips with the round off and 13
- * with it on. `queue-filters-flag-visibility.test.tsx` pins the five.
+ * component that cannot import the module barrel — it boots server-only
+ * infrastructure — so each Domain file it reads is a deliberate row in the
+ * `broadcasts-barrel.test.ts` allowlist: this file and `stage/whose-turn`) and
+ * the queue's loading skeleton, which reserves 8 chips with the round off and
+ * 13 with it on. `queue-filters-flag-visibility.test.tsx` pins the five.
  *
  * PR #392 review C4 — derived from {@link APPROVAL_ROUND_STATUSES} (the four
  * in-flight round stages) plus the round's own closed stage, so the two sets

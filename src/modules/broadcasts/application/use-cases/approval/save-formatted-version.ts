@@ -42,7 +42,7 @@ import type { HtmlSanitizerPort } from '../../ports/html-sanitizer-port';
 import type { ImageAllowlistPort } from '../../ports/image-allowlist-port';
 import { emitCrossTenantProbe } from '../_emit-cross-tenant-probe';
 import { emitUnsafeImageSourcesAudit } from '../validate-image-source-allowlist';
-import { ApprovalRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
+import { ApprovalRefusal, isOwnRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
 import { checkVersionContent } from './_version-content';
 
 export { FORMATTED_VERSION_SUBJECT_MAX } from './_version-content';
@@ -125,15 +125,15 @@ export async function saveFormattedVersion(
     saved = await deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.lockForUpdate(tx, slug, input.broadcastId);
       const broadcast = await deps.broadcastsRepo.findByIdInTx(tx, slug, input.broadcastId);
-      if (broadcast === null) throw new ApprovalRefusal<SaveFormattedVersionError>({ kind: 'not_found' });
+      if (broadcast === null) throw new ApprovalRefusal('save-formatted-version', { kind: 'not_found' });
       if (broadcast.status !== 'in_design') {
-        throw new ApprovalRefusal<SaveFormattedVersionError>({ kind: 'stage_changed', status: broadcast.status });
+        throw new ApprovalRefusal('save-formatted-version', { kind: 'stage_changed', status: broadcast.status });
       }
       const versions = await deps.versionsRepo.listByBroadcast(slug, input.broadcastId, tx);
       const workingCopy = versions.find((v) => v.sentToMemberAt === null);
-      if (workingCopy === undefined) throw new ApprovalRefusal<SaveFormattedVersionError>({ kind: 'no_working_copy' });
+      if (workingCopy === undefined) throw new ApprovalRefusal('save-formatted-version', { kind: 'no_working_copy' });
       if (workingCopy.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
-        throw new ApprovalRefusal<SaveFormattedVersionError>({ kind: 'version_changed', current: workingCopy });
+        throw new ApprovalRefusal('save-formatted-version', { kind: 'version_changed', current: workingCopy });
       }
 
       // Strictly later than the token the client holds, even inside one ms.
@@ -155,7 +155,9 @@ export async function saveFormattedVersion(
     });
   } catch (e) {
     if (e instanceof ApprovalRefusal) {
-      const refusal = e.refusal as SaveFormattedVersionError;
+      // #400 item 5 — a refusal another use case raised is not ours to map.
+      if (!isOwnRefusal(e, 'save-formatted-version')) throw e;
+      const refusal = e.refusal;
       if (refusal.kind === 'not_found') {
         await emitCrossTenantProbe({
           audit: deps.audit,

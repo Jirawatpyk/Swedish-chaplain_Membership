@@ -48,6 +48,23 @@ export function parseBroadcastId(
   return ok(raw as BroadcastId);
 }
 
+declare const BroadcastVersionIdBrand: unique symbol;
+/**
+ * F119 (#400 item 2) — the id of one `broadcast_versions` row. A brand of its
+ * own, distinct from {@link BroadcastId}, so a version slot refuses an E-Blast
+ * id: `versionsRepo.markSent(slug, broadcastId, …)` no longer compiles.
+ */
+export type BroadcastVersionId = string & { readonly [BroadcastVersionIdBrand]: true };
+
+/**
+ * Unchecked brand cast, for the same TRUSTED contexts as {@link asBroadcastId}
+ * (a DB row, a generated id, a fixture) plus a request body whose `versionId`
+ * the route's zod schema has already checked is a uuid.
+ */
+export function asBroadcastVersionId(raw: string): BroadcastVersionId {
+  return raw as BroadcastVersionId;
+}
+
 /**
  * Submission origin (Q12 dual-actor + N1 remediation 2026-04-29).
  * Mirrors the `broadcastActorRoleEnum` 3 values. Owned at Domain
@@ -80,7 +97,15 @@ export interface Broadcast {
   readonly tenantId: string;
   readonly broadcastId: BroadcastId;
 
-  // Originator (FR-005 + Q12 dual-actor)
+  // Originator (FR-005 + Q12 dual-actor). A plain string ON PURPOSE, not the
+  // members module's `MemberId`: this Domain imports no other module, and every
+  // actor id on the aggregate is a string. The brand starts at the Application
+  // seams (the F119 use-case inputs and ports take a `MemberId`, #400 item 2),
+  // where a caller holding this field re-brands it: an approval use case with
+  // `ownerMemberId` (`approval/_owner-member-id.ts`, a type-only brand — a
+  // runtime members-barrel import there closes an import cycle), a caller
+  // outside this module (`src/lib/**`, a page) with the members barrel's
+  // `asMemberId`.
   readonly requestedByMemberId: string;
   readonly requestedByMemberPlanIdSnapshot: string;
   readonly submittedByUserId: string;
@@ -201,6 +226,9 @@ export interface Broadcast {
   readonly proposedSendAt: Date | null;
   readonly stageEnteredAt: Date;
   readonly currentRound: number;
+  // Left a plain string (#400 item 2): ~90 test fixtures write it as a
+  // literal. `BroadcastVersion.id` and the version ports carry the
+  // `BroadcastVersionId` brand; a branded id still assigns to this field.
   readonly approvedVersionId: string | null;
   readonly memberReminderStage: MemberReminderStage;
   readonly memberExpiryNotifiedAt: Date | null;

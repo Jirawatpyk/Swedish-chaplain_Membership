@@ -125,6 +125,11 @@ const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   // deep imports are gone from the backlog.
   // /components/broadcast/* (5) — F7 MVP queue + status display + F7.1a US7 template form
   "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
+  // #400 PR-B item 8 — the "Waiting on marketing" preset needs the Domain's
+  // MARKETING_TURN_STATUSES in the same CLIENT component, for the same reason as
+  // the line above: the barrel boots server-only infrastructure. A pure Domain
+  // constant file (no imports beyond the status VO); one row added, knowingly.
+  "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/stage/whose-turn",
   "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",
   // F119 T098/T102 — the two `tiptap-editor.tsx` entries that used to sit here
   // are GONE, not deferred: the editor now builds its extension list from

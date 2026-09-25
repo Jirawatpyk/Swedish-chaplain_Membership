@@ -10,7 +10,7 @@
 import { and, asc, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { TenantTx } from '@/lib/db';
 import type { TenantSlug } from '@/modules/tenants';
-import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId, type BroadcastId } from '../../domain/broadcast';
 import type { BroadcastVersion } from '../../domain/approval/broadcast-version';
 import type {
   BroadcastVersionsRepo,
@@ -22,7 +22,7 @@ import { broadcastVersions, type BroadcastVersionRow } from '../schema';
 
 function toVersion(row: BroadcastVersionRow): BroadcastVersion {
   return {
-    id: row.id,
+    id: asBroadcastVersionId(row.id),
     tenantId: row.tenantId,
     broadcastId: asBroadcastId(row.broadcastId),
     versionNo: row.versionNo,
