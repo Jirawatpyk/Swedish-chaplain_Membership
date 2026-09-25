@@ -236,6 +236,22 @@ function isPermanentF4Reason(
 // same `awaiting_payment` codepath; the urgency derivation is read-only.
 const PAYABLE_STATUSES = new Set(['awaiting_payment', 'upcoming']);
 
+/**
+ * Thrown inside the outer `runInTenant` callback on the bridge's
+ * `record_payment_failed` so the tx ROLLS BACK (a returned `err` would
+ * commit); caught at the use-case boundary and mapped to
+ * `f4_orphan_invoice`. Module-private — never escapes `markPaidOffline`.
+ */
+class OrphanInvoiceRollback extends Error {
+  constructor(
+    readonly orphanInvoiceId: string,
+    readonly reason: string,
+  ) {
+    super('mark-paid-offline: record_payment_failed — rolling back the outer tx');
+    this.name = 'OrphanInvoiceRollback';
+  }
+}
+
 export async function markPaidOffline(
   deps: RenewalsDeps,
   rawInput: MarkPaidOfflineInput,
@@ -889,12 +905,23 @@ export async function markPaidOffline(
       if (!bridgeResult.ok) {
         // Distinct error code on the orphan-invoice path so the route
         // handler can surface "DO NOT retry — resume from F4 list".
+        //
+        // THROW, never `return err(...)`: recordPayment ran on THIS tx
+        // (`externalTx`, no savepoint) and, with FEATURE_088_TAX_AT_PAYMENT,
+        // had already allocated the §87 RECEIPT number before the sync PDF
+        // render / upload that failed — and it reports that failure by
+        // RETURNING err. A returned err inside `runInTenant` COMMITS, which
+        // would burn the receipt number with no document behind it (the
+        // mechanism confirm-payment.ts documents as F-1). Throwing rolls the
+        // whole outer tx back (counter + the benign stale-link clear); the
+        // catch below turns it back into the same `f4_orphan_invoice`. The
+        // draft+issued bill from steps 1–2 committed in its own txs and stays
+        // — that is the orphan this code tells the operator about.
         if (bridgeResult.error.kind === 'record_payment_failed') {
-          return err({
-            kind: 'f4_orphan_invoice' as const,
-            orphanInvoiceId: bridgeResult.error.orphanInvoiceId,
-            reason: bridgeResult.error.reason,
-          });
+          throw new OrphanInvoiceRollback(
+            bridgeResult.error.orphanInvoiceId,
+            bridgeResult.error.reason,
+          );
         }
         // Cluster 5 (Finding 2) — the failure is at step 1 (create draft) or
         // step 2 (issue), BEFORE any §87 number was burned, so there is no
@@ -1016,6 +1043,15 @@ export async function markPaidOffline(
 
     return result;
   } catch (e) {
+    // The rollback sentinel thrown on `record_payment_failed` (see above) —
+    // the tx is rolled back; surface the same orphan code as before.
+    if (e instanceof OrphanInvoiceRollback) {
+      return err({
+        kind: 'f4_orphan_invoice' as const,
+        orphanInvoiceId: e.orphanInvoiceId,
+        reason: e.reason,
+      });
+    }
     logger.error(
       {
         err: e instanceof Error ? e : new Error(String(e)),
