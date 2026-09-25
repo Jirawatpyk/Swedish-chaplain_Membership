@@ -6,7 +6,10 @@
  * invokes every `vercel.json` path with GET (the routes alias `GET = POST`),
  * so the proxy never froze a cron: dispatch kept sending E-Blasts, sweeps kept
  * deleting rows and Resend audiences, all while the operator believed writes
- * were stopped. Two routes guarded themselves by hand; the rest did not.
+ * were stopped. Twelve scheduled routes (the 10 F8 renewals coordinators and
+ * sweeps, `auth/prune-expired-invitations`, `broadcasts/retention-sweep`) plus
+ * the unscheduled worker `renewals/auto-draft/[tenantId]` guarded themselves
+ * by hand, each with its own inline check; the rest did not.
  *
  * Rules, for every `crons[].path` in `vercel.json`:
  *   1. the path resolves to `src/app<path>/route.ts`;

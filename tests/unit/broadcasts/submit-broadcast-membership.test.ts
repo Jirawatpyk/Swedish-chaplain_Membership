@@ -374,9 +374,10 @@ describe('submit-broadcast — precondition (l) membership access (Task 5)', () 
     await submitBroadcast(deps, baseInput);
 
     expect(audit.emits).toHaveLength(1);
+    // PR-D — the row names WHICH access refused it (one event type covers both).
     expect(audit.emits[0]).toMatchObject({
       eventType: 'broadcast_membership_suspended_blocked',
-      payload: { memberId: baseInput.memberId },
+      payload: { memberId: baseInput.memberId, access: 'suspended' },
     });
   });
 
@@ -392,7 +393,7 @@ describe('submit-broadcast — precondition (l) membership access (Task 5)', () 
     expect(audit.emits).toHaveLength(1);
     expect(audit.emits[0]).toMatchObject({
       eventType: 'broadcast_membership_suspended_blocked',
-      payload: { memberId: baseInput.memberId },
+      payload: { memberId: baseInput.memberId, access: 'terminated' },
     });
   });
 

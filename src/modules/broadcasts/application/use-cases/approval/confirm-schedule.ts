@@ -165,8 +165,16 @@ export type ConfirmScheduleError =
   | { readonly kind: 'no_proposal' }
   /** T166 S-H1 — the owning member's broadcasts are halted pending admin review. */
   | { readonly kind: 'member_halted'; readonly memberId: string }
-  /** T166 S-H1 — the owning member's membership is suspended or terminated (F8). */
-  | { readonly kind: 'member_not_in_good_standing'; readonly memberId: string }
+  /**
+   * T166 S-H1 — the owning member's membership is suspended or terminated (F8).
+   * `access` (PR-D) carries which one through the rollback into the refusal
+   * audit row; the route answers only the code.
+   */
+  | {
+      readonly kind: 'member_not_in_good_standing';
+      readonly memberId: string;
+      readonly access: 'suspended' | 'terminated';
+    }
   | { readonly kind: 'schedule_too_soon'; readonly scheduledFor: Date }
   | { readonly kind: 'image_source_not_allowlisted'; readonly images: readonly UnsafeImageSource[] }
   /** An infrastructure fault; `errKind` is the error CLASS only (never `e.message` — F7-5). */
@@ -313,7 +321,10 @@ export async function confirmSchedule(
       // (a row on the refused tx would roll back with it): best-effort on
       // autocommit, exactly like the cross-tenant probe above.
       const event = standingRefusalAuditEvent({
-        refusal: refusal.kind === 'member_halted' ? 'halted' : 'not_in_good_standing',
+        refusal:
+          refusal.kind === 'member_halted'
+            ? { kind: 'halted' }
+            : { kind: 'not_in_good_standing', access: refusal.access },
         surface: 'schedule_confirm',
         tenantSlug: slug,
         memberId: refusal.memberId,
@@ -351,7 +362,7 @@ function assertMemberMaySend(standing: MemberSendStanding | null, memberId: stri
     case 'halted':
       return refuse({ kind: 'member_halted', memberId });
     case 'not_in_good_standing':
-      return refuse({ kind: 'member_not_in_good_standing', memberId });
+      return refuse({ kind: 'member_not_in_good_standing', memberId, access: standing.access });
     case 'halt_read_failed':
     case 'access_unavailable':
       // Round-4 B3 — naming WHICH read failed and why, for the route's log.

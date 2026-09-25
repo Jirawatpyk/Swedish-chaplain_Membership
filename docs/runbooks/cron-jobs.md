@@ -161,7 +161,7 @@ with the exceptions below):
 | F8 reminder retry pass (inside the dispatch worker) | — | A reminder whose 24 h `retry_until` budget expires during the freeze is marked exhausted without a retry. |
 | F8 `reconcile-pending-reactivations-coordinator` | Catches up | Missed day-23/27/29 reminders collapse into one pass; if the request passes day 30 during the freeze the timeout + refund run first and the reminders are never sent. |
 | F7 `prune-expired-drafts` — E-Blast approval lifecycle | Catches up | Only the latest due reminder is sent (a missed day 3 is replaced by day 7). The 30-day clock keeps running: a freeze across day 30 expires the E-Blast (`expired_no_member_response`) without the day-23 warning. |
-| F7 `dispatch-scheduled` | Catches up — every overdue `approved` E-Blast sends on the first tick | An E-Blast already > 1 h past `scheduled_for` has no retry budget left (`RETRY_BUDGET_MS`), so its first retryable Resend error is terminal. |
+| F7 `dispatch-scheduled` | Catches up — on the first tick every overdue `approved` E-Blast is re-checked against its member's standing: a **suspended** member's is **HELD** (stays `approved`, sends once the member pays); a **halted** or **terminated** member's is **REFUSED** permanently (`failed_to_dispatch`, member emailed, slot released); the rest send. See [eblast-approval.md § Dispatch standing refusal](./eblast-approval.md#dispatch-standing-refusal) | An E-Blast already > 1 h past `scheduled_for` has no retry budget left (`RETRY_BUDGET_MS`), so its first retryable Resend error is terminal. |
 | `auto-draft-coordinator` | Catches up inside the lead window | A cycle whose `expires_at` passes during the freeze never gets an auto-draft (window `expires_at > now AND <= now + lead`, lead ≈ 30 days) — only a freeze of about a month reaches this. |
 | `enter-awaiting-payment`, `lapse-cycles-on-grace-expiry`, `prune-auto-drafts`, `reconcile-issued-orphans`, `reconcile-coverage-ends`, weekly at-risk / tier-upgrade / prune-consumed-tokens / reconcile-pending-applications | Catch up fully | Predicates compare against `now` or current state. A late lapse still waits for its 14-day statutory warning. |
 | Redactions, retention sweeps, `outbox-purge`, `prune-orphaned-zero-rate-certs`, `prune-expired-invitations`, `lockout-cleanup`, `reclaim-orphan-audiences`, `cleanup-audiences`, `reconcile-stuck-sending`, `reconcile-erasures`, F9 export jobs + snapshot refresh | Catch up fully | Cutoffs are `now − retention`; `sweep-error-csv-blobs` drains 100 per run, so a backlog takes several days. An expired lockout is already ignored at sign-in; the cron only tidies the row. |
@@ -2025,9 +2025,10 @@ is the recipient.
 |-----------|------|-----------------|
 | 200 + `sweptCount` ≥ 0 | `{ok:true, candidatesScanned, sweptCount, skippedCount, cutoff, durationMs}` | Success — log shows steady-state daily volume |
 | 200 + `skippedCount > 0` sustained | Blob delete OR DB clear failed for some rows | Inspect pino `f6_error_csv_sweep_blob_delete_failed` / `f6_error_csv_sweep_clear_failed`; next-day re-run retries |
+| 200 + `skipped: true` | `{ok:true, skipped:true, reason:'read_only_mode'}` — `READ_ONLY_MODE=true` (#408): the guard runs after the Bearer check, before any read or delete; one `cron.read_only_mode.skipped` info line | Expected during a write freeze; nothing is swept. The first run after the freeze lifts catches up (§ Read-only mode) |
 | 401 | Bearer mismatch | Rotate `CRON_SECRET` in Vercel + update cron-job.org header |
 | 500 + `sweep_cron_failed` | Use-case threw at outer level (rare) | Check Vercel runtime logs; manual recovery via § Manual recovery |
-| 503 | Currently unreachable — handler does NOT check feature flags (cron always runs) | Should not occur; if observed, investigate |
+| 503 | Currently unreachable — the handler checks no feature flag, and `READ_ONLY_MODE` answers 200 skip (row above), not 503 | Should not occur; if observed, investigate |
 
 ### Manual recovery
 

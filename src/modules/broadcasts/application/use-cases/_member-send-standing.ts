@@ -55,6 +55,9 @@ export type MemberSendStanding =
   /** The access lookup answered its error arm — the gate was not decided. */
   | { readonly kind: 'access_unavailable'; readonly errorKind: MembershipAccessLookupError['kind'] };
 
+/** The two standings that refuse a send — the arms of {@link MemberSendStanding} that decided "no". */
+export type StandingRefusal = Extract<MemberSendStanding, { readonly kind: 'halted' | 'not_in_good_standing' }>;
+
 /**
  * T166 follow-up — the audit row a STAFF or DISPATCH refusal writes, under the
  * SAME event types submit's refusals use (`broadcast_member_halted_pending_review`,
@@ -64,9 +67,15 @@ export type MemberSendStanding =
  * system act is not member activity and must not fire the 0009
  * `last_activity_at` trigger (#336/#337); `actor_role` is the session role as
  * held (`?? null`) — `null` for the cron, which holds none.
+ *
+ * PR-D — one event type covers both F8 accesses, so the membership row carries
+ * `access` (`suspended` | `terminated`) from the standing itself: an auditor
+ * must be able to tell a suspension refused at approve from an ended
+ * membership refused at dispatch. A halt row carries none — a halted member
+ * can be in full standing.
  */
 export interface StandingRefusalAuditInput {
-  readonly refusal: 'halted' | 'not_in_good_standing';
+  readonly refusal: StandingRefusal;
   /** F119 PR-A — `dispatch` is either send leg (actor `system:cron`). */
   readonly surface: 'approve_as_submitted' | 'schedule_confirm' | 'dispatch';
   readonly tenantSlug: string;
@@ -85,8 +94,9 @@ const REFUSAL_VERB: Readonly<Record<StandingRefusalAuditInput['surface'], string
 };
 
 export function standingRefusalAuditEvent(input: StandingRefusalAuditInput): AuditEmitInput {
+  const { refusal } = input;
   const eventType: F7AuditEventType =
-    input.refusal === 'halted' ? 'broadcast_member_halted_pending_review' : 'broadcast_membership_suspended_blocked';
+    refusal.kind === 'halted' ? 'broadcast_member_halted_pending_review' : 'broadcast_membership_suspended_blocked';
   const verb = REFUSAL_VERB[input.surface];
   return {
     tenantId: input.tenantSlug,
@@ -98,6 +108,7 @@ export function standingRefusalAuditEvent(input: StandingRefusalAuditInput): Aud
       related_member_id: input.memberId,
       broadcast_id: input.broadcastId,
       surface: input.surface,
+      ...(refusal.kind === 'not_in_good_standing' ? { access: refusal.access } : {}),
       actor_role: input.actorRole ?? null,
     },
   };

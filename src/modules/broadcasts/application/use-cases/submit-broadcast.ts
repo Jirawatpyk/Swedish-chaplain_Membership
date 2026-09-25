@@ -403,8 +403,11 @@ export async function submitBroadcast(
         message: `membership_access_error: ${standing.errorKind}`,
       });
     case 'not_in_good_standing':
+      // PR-D — `access` tells a suspension from an ended membership: one
+      // event type covers both.
       await emitReject(deps, input, 'broadcast_membership_suspended_blocked', {
         memberId: input.memberId,
+        access: standing.access,
       });
       return err({
         kind: 'broadcast_membership_suspended_blocked',

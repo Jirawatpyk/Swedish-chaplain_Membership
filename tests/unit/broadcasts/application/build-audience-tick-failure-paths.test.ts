@@ -2098,10 +2098,13 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
  * read that fails decides nothing and the row stays `approved`.
  */
 describe('buildAudienceTick — member standing at send time (F119 PR-A)', () => {
+  // PR-D — the membership refusal row names the access that refused it (at
+  // dispatch always `terminated`: a suspended member is held); a halt row
+  // carries no `access`.
   it.each([
-    ['halted', { halted: ['m-1'] }, 'member_halted', 'broadcast_member_halted_pending_review'],
-    ['terminated', { access: 'terminated' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked'],
-  ] as const)('tick 1, a %s member → failed_to_dispatch (%s) before any Resend call', async (_label, standing, reason, refusalEvent) => {
+    ['halted', { halted: ['m-1'] }, 'member_halted', 'broadcast_member_halted_pending_review', {}],
+    ['terminated', { access: 'terminated' }, 'member_not_in_good_standing', 'broadcast_membership_suspended_blocked', { access: 'terminated' }],
+  ] as const)('tick 1, a %s member → failed_to_dispatch (%s) before any Resend call', async (_label, standing, reason, refusalEvent, access) => {
     const spy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
     const { deps, rec } = makeDeps({ standing });
 
@@ -2125,6 +2128,13 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
       payload: { related_member_id: 'm-1', broadcast_id: BROADCAST_ID, surface: 'dispatch', actor_role: null },
     });
     expect(rec.audits[1]?.payload).not.toHaveProperty('member_id');
+    expect(rec.audits[1]?.payload).toEqual({
+      related_member_id: 'm-1',
+      broadcast_id: BROADCAST_ID,
+      surface: 'dispatch',
+      ...access,
+      actor_role: null,
+    });
     expect(spy).toHaveBeenCalledWith('test-tenant', 'member_ineligible');
     expect(rec.memberEmails).toEqual([{ templateKey: 'broadcast_failed_to_dispatch', reason }]);
     expect(rec.gatewayCalls).toEqual([]);

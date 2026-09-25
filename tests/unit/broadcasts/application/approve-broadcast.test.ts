@@ -720,11 +720,14 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
   // with the SAME event types, so "why was this member's E-Blast refused" is
   // one query whichever surface refused it. Staff act → `related_member_id`
   // (never `member_id`: the 0009 last_activity_at trigger must not fire).
+  // PR-D — the membership row names WHICH access refused it (`suspended` vs
+  // `terminated` share one event type); a halt carries no `access` at all (a
+  // halted member can be in full standing).
   it.each([
-    { standing: { halted: ['m-1'] }, eventType: 'broadcast_member_halted_pending_review' },
-    { standing: { access: 'terminated' as const }, eventType: 'broadcast_membership_suspended_blocked' },
-    { standing: { access: 'suspended' as const }, eventType: 'broadcast_membership_suspended_blocked' },
-  ])('T166 follow-up: the $eventType refusal is audited — ids only, the session role as held', async ({ standing, eventType }) => {
+    { standing: { halted: ['m-1'] }, eventType: 'broadcast_member_halted_pending_review', access: {} },
+    { standing: { access: 'terminated' as const }, eventType: 'broadcast_membership_suspended_blocked', access: { access: 'terminated' } },
+    { standing: { access: 'suspended' as const }, eventType: 'broadcast_membership_suspended_blocked', access: { access: 'suspended' } },
+  ])('T166 follow-up: the $eventType refusal is audited — ids only, the session role as held', async ({ standing, eventType, access }) => {
     const { audit, result } = approveWith(standing);
     expect((await result).ok).toBe(false);
     expect(audit.emits).toEqual([
@@ -734,7 +737,7 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
         actorUserId: 'admin-7',
         requestId: 'req-1',
         summary: `Approve refused (${eventType}) for member m-1`,
-        payload: { related_member_id: 'm-1', broadcast_id: broadcastId, surface: 'approve_as_submitted', actor_role: 'marketing' },
+        payload: { related_member_id: 'm-1', broadcast_id: broadcastId, surface: 'approve_as_submitted', ...access, actor_role: 'marketing' },
       },
     ]);
   });
