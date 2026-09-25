@@ -14,6 +14,8 @@
  *   5. EN / TH / SV render without key leaks;
  *   6. 320 px: the table scrolls inside its container, never the page, and
  *      the switch stays reachable at ≥ 24×24 px (FR-035c);
+ *   6b. 1440 px (staff sidebar expanded): the table fits its content box —
+ *      no horizontal scroll in any locale;
  *   7. member detail: the primary badge descriptor, the state badge, and the
  *      switch for marketing / none for manager (FR-031 / FR-034).
  *
@@ -198,7 +200,26 @@ test.describe('108 PR-D — Marketing audience page @a11y @i18n', () => {
     expect(box!.height).toBeGreaterThanOrEqual(24);
   });
 
-  test('7. member detail: Primary descriptor, state badge, switch for marketing — none for manager', async ({ page }) => {
+  test('6b. 1440 px with the staff sidebar in EVERY locale: the table fits — no horizontal scroll at all', async ({ page, context }) => {
+    // The fixed columns used to total 1,332 px against a ~1,072-px content
+    // box, so the audience table scrolled sideways on a standard desktop.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await signInAsMarketing(page);
+    for (const locale of LOCALES) {
+      await setLocale(context, locale);
+      await page.goto(`${PAGE}${FIXTURE_QUERY}`, { waitUntil: 'domcontentloaded' });
+      await expect(page.getByTestId('marketing-audience-table')).toBeVisible();
+      const containerScrolls = await page
+        .getByTestId('marketing-audience-table')
+        .evaluate((table) => {
+          const wrapper = table.parentElement;
+          return wrapper !== null && wrapper.scrollWidth > wrapper.clientWidth;
+        });
+      expect(containerScrolls, `[${locale}] the table must fit at 1440 px`).toBe(false);
+    }
+  });
+
+  test('7. member detail:Primary descriptor, state badge, switch for marketing — none for manager', async ({ page }) => {
     await signInAsMarketing(page);
     await page.goto(`/admin/members/${F.memberId}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByText(en.admin.members.detail.marketing.primaryDescriptor)).toBeVisible();

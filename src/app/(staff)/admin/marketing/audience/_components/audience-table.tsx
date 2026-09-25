@@ -7,8 +7,9 @@
  * Column allow-list is exactly FR-035: contact (name + email), marketing
  * state, the switch (only for `contacts.marketing` holders — a read-only
  * viewer gets the badge and NO disabled control), member (link), primary /
- * secondary, member status, changed by / at. No DoB, phone or any other
- * `pii_sensitive` field, no download (FR-035a).
+ * secondary, member status, last change (who, then when — one two-line
+ * column). No DoB, phone or any other `pii_sensitive` field, no download
+ * (FR-035a).
  *
  * Responsive (FR-035c): the `Table` primitive scrolls horizontally inside
  * its own wrapper, `table-fixed` + an explicit <colgroup> pin the column
@@ -18,6 +19,13 @@
  * would otherwise SHRINK columns to fit), and contact + state (+ switch) are
  * the FIRST columns so they stay in view at 320 px. Long SV/TH labels wrap
  * (`whitespace-normal`).
+ *
+ * Width budget: at a 1440-px viewport the staff content box is ~1,072 px
+ * (256 sidebar, 2×24 page and 2×24 card gutters, a scrollbar). The old fixed
+ * columns totalled 1,332 px and scrolled sideways there, so Contact now has
+ * NO fixed width — it takes whatever is left, never less than its minimum —
+ * and Member, the reason lines and the last change wrap instead of widening
+ * their columns.
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -52,22 +60,40 @@ export type AudienceTableRow = {
   readonly changedAt: string | null;
 };
 
-/** px — the skeleton mirrors these (audience-table-skeleton.tsx). */
+/**
+ * px — the skeleton mirrors these (audience-table-skeleton.tsx). `contact` is
+ * a MINIMUM: its <col> carries no width, so it flexes into the space the
+ * fixed columns leave.
+ */
 export const AUDIENCE_COLUMN_WIDTHS = {
-  contact: 220,
+  contact: 184,
   // Sized for the LONGEST locale (FR-050a): SV "Status ej tillgänglig" badge,
-  // SV "REGLAGE" header, EN "Broadcasts halted" badge — badges are atomic
-  // (`whitespace-nowrap overflow-hidden`), so the column, not the badge, wraps.
-  state: 200,
-  switch: 96,
-  member: 200,
-  kind: 110,
-  memberStatus: 176,
-  changedBy: 160,
-  changedAt: 170,
+  // SV "REGLAGE" header, EN "Broadcasts halted" badge, TH "ผู้ติดต่อรอง" role
+  // badge — badges are atomic (`whitespace-nowrap overflow-hidden`), so the
+  // column, not the badge, wraps.
+  state: 184,
+  switch: 112,
+  member: 168,
+  kind: 112,
+  memberStatus: 152,
+  lastChange: 136,
 } as const;
 
 type ColumnKey = keyof typeof AUDIENCE_COLUMN_WIDTHS;
+
+const COLUMNS_WITH_SWITCH: readonly ColumnKey[] = [
+  'contact', 'state', 'switch', 'member', 'kind', 'memberStatus', 'lastChange',
+];
+const COLUMNS_READ_ONLY: readonly ColumnKey[] = COLUMNS_WITH_SWITCH.filter((k) => k !== 'switch');
+
+const sumWidths = (columns: readonly ColumnKey[]): number =>
+  columns.reduce((sum, key) => sum + AUDIENCE_COLUMN_WIDTHS[key], 0);
+
+/** The table's min-width per shape — the skeleton must land on the same box. */
+export const AUDIENCE_MIN_WIDTH = {
+  withSwitch: sumWidths(COLUMNS_WITH_SWITCH),
+  readOnly: sumWidths(COLUMNS_READ_ONLY),
+} as const;
 
 export function AudienceTable({
   rows,
@@ -85,10 +111,8 @@ export function AudienceTable({
   const t = useTranslations('admin.marketing.audience');
   const tReason = useTranslations('shared.marketing.reason');
 
-  const columns: readonly ColumnKey[] = canMarketing
-    ? ['contact', 'state', 'switch', 'member', 'kind', 'memberStatus', 'changedBy', 'changedAt']
-    : ['contact', 'state', 'member', 'kind', 'memberStatus', 'changedBy', 'changedAt'];
-  const minWidth = columns.reduce((sum, key) => sum + AUDIENCE_COLUMN_WIDTHS[key], 0);
+  const columns = canMarketing ? COLUMNS_WITH_SWITCH : COLUMNS_READ_ONLY;
+  const minWidth = canMarketing ? AUDIENCE_MIN_WIDTH.withSwitch : AUDIENCE_MIN_WIDTH.readOnly;
 
   return (
     <Table
@@ -99,9 +123,13 @@ export function AudienceTable({
     >
       <caption className="sr-only">{t('tableCaption')}</caption>
       <colgroup>
-        {columns.map((key) => (
-          <col key={key} style={{ width: `${AUDIENCE_COLUMN_WIDTHS[key]}px` }} />
-        ))}
+        {columns.map((key) =>
+          key === 'contact' ? (
+            <col key={key} />
+          ) : (
+            <col key={key} style={{ width: `${AUDIENCE_COLUMN_WIDTHS[key]}px` }} />
+          ),
+        )}
       </colgroup>
       <TableHeader>
         <TableRow>
@@ -111,8 +139,7 @@ export function AudienceTable({
           <TableHead scope="col" className="whitespace-normal">{t('columns.member')}</TableHead>
           <TableHead scope="col" className="whitespace-normal">{t('columns.kind')}</TableHead>
           <TableHead scope="col" className="whitespace-normal">{t('columns.memberStatus')}</TableHead>
-          <TableHead scope="col" className="whitespace-normal">{t('columns.changedBy')}</TableHead>
-          <TableHead scope="col" className="whitespace-normal">{t('columns.changedAt')}</TableHead>
+          <TableHead scope="col" className="whitespace-normal">{t('columns.lastChange')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -128,7 +155,7 @@ export function AudienceTable({
                 {row.reasons.length > 0 && (
                   // `role="list"` — Tailwind preflight strips list-style, and
                   // Safari/VoiceOver drop list semantics with it (a11y 12).
-                  <ul role="list" className="text-xs text-muted-foreground">
+                  <ul role="list" className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
                     {row.reasons.map((reason) => (
                       <li key={reason}>{tReason(reason)}</li>
                     ))}
@@ -137,7 +164,9 @@ export function AudienceTable({
               </div>
             </TableCell>
             {canMarketing && (
-              <TableCell className="align-top">
+              // `whitespace-normal`: for a contact-owned opt-out the cell holds
+              // a short note instead of a switch, and it must wrap.
+              <TableCell className="whitespace-normal align-top">
                 <MarketingSwitch
                   contactId={row.contactId}
                   contactName={row.contactName}
@@ -149,7 +178,7 @@ export function AudienceTable({
             <TableCell className="whitespace-normal align-top">
               <Link
                 href={`/admin/members/${encodeURIComponent(row.memberId)}`}
-                className="font-medium text-primary underline-offset-4 hover:underline"
+                className="font-medium text-primary underline-offset-4 [overflow-wrap:anywhere] hover:underline"
               >
                 {row.companyName}
               </Link>
@@ -166,8 +195,12 @@ export function AudienceTable({
                 {row.memberErased && <Badge variant="outline">{t('memberStatus.erased')}</Badge>}
               </div>
             </TableCell>
-            <TableCell className="whitespace-normal align-top">{row.changedBy ?? '—'}</TableCell>
-            <TableCell className="whitespace-normal align-top">{row.changedAt ?? '—'}</TableCell>
+            <TableCell className="whitespace-normal align-top">
+              <div className="[overflow-wrap:anywhere]">{row.changedBy ?? '—'}</div>
+              {row.changedAt !== null && (
+                <div className="text-xs text-muted-foreground">{row.changedAt}</div>
+              )}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
