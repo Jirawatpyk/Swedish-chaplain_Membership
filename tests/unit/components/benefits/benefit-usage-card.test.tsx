@@ -66,6 +66,25 @@ describe('<BenefitUsageCard>', () => {
     expect(screen.getByText(/not using all your benefits/i)).toBeInTheDocument();
   });
 
+  it('AS-2: the staff variant words the warning about the member, not "you"', () => {
+    renderCard({ underUseWarning: true, staffSubjectName: 'Acme Co' });
+    expect(screen.getByText('Under-using their benefits')).toBeInTheDocument();
+    expect(
+      screen.getByText('At 62% of the year, Acme Co has used 33% of its benefits.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/not using all your benefits/i)).not.toBeInTheDocument();
+  });
+
+  it('AS-2: the member variant keeps the second-person copy', () => {
+    renderCard({ underUseWarning: true });
+    expect(screen.getByText("You're not using all your benefits")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "At 62% of the year you've used 33% of your benefits. Make the most of your membership.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('AS-4: staff actions render only when the slot is provided', () => {
     const { unmount } = renderCard();
     expect(screen.queryByRole('button', { name: /send reminder/i })).not.toBeInTheDocument();

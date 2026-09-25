@@ -276,10 +276,7 @@
       "search": {
         "label": "Sök i katalogen",
         "placeholder": "Sök på företag, bransch eller beskrivning",
-        "tier": "Nivå",
-        "tierAll": "Alla nivåer",
         "listedOnly": "Endast listade",
-        "submit": "Sök",
         "clear": "Rensa"
       },
       "resultCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
@@ -5930,7 +5927,26 @@
     "compliance": "Efterlevnad",
     "erasureLog": "Raderingslogg",
     "marketing": "Marknadsföring",
-    "audience": "Målgrupp"
+    "audience": "Målgrupp",
+    "memberBenefits": "Förmåner",
+    "memberTimeline": "Tidslinje",
+    "events": "Evenemang",
+    "eventDetail": "Evenemang",
+    "eventImport": "Importera CSV",
+    "importHistory": "Importhistorik",
+    "eventErasure": "Radera via e-post",
+    "eventRegistrations": "Registreringar",
+    "registrationDetail": "Registrering",
+    "eraseRegistration": "Radera personuppgifter",
+    "taxRegisters": "Skatteregister",
+    "escalationTasks": "Uppföljningsuppgifter",
+    "tierUpgrades": "Kö för medlemsnivåhöjning",
+    "memberChanges": "Godkännande av medlemsändringar",
+    "changeRequests": "Ändringsbegäranden",
+    "changeRequestDetail": "Granska",
+    "broadcastDetail": "Detaljer",
+    "proxySubmit": "Skicka in å medlems vägnar",
+    "templateDetail": "Mall"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
@@ -7918,7 +7934,9 @@
     "warning": {
       "title": "Du använder inte alla dina förmåner",
       "body": "Vid {elapsed}% av året har du använt {consumed}% av dina förmåner. Få ut mesta möjliga av ditt medlemskap.",
-      "action": "Använd en förmån"
+      "action": "Använd en förmån",
+      "staffTitle": "Använder inte sina förmåner fullt ut",
+      "staffBody": "Vid {elapsed}% av året har {company} använt {consumed}% av sina förmåner."
     }
   },
   "gdprExport": {

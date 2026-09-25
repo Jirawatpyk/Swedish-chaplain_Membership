@@ -36,6 +36,7 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { TimelineFilters } from '@/components/members/timeline-filters';
 import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
@@ -184,6 +185,7 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
 
   return (
     <DetailContainer>
+      <DynamicBreadcrumbLabel segment={memberId} label={member.companyName} />
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}

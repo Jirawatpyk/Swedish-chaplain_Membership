@@ -276,10 +276,7 @@
       "search": {
         "label": "Search directory",
         "placeholder": "Search by company, industry, or description",
-        "tier": "Tier",
-        "tierAll": "All tiers",
         "listedOnly": "Listed only",
-        "submit": "Search",
         "clear": "Clear"
       },
       "resultCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
@@ -5930,7 +5927,26 @@
     "compliance": "Compliance",
     "erasureLog": "Erasure log",
     "marketing": "Marketing",
-    "audience": "Audience"
+    "audience": "Audience",
+    "memberBenefits": "Benefits",
+    "memberTimeline": "Timeline",
+    "events": "Events",
+    "eventDetail": "Event",
+    "eventImport": "Import CSV",
+    "importHistory": "Import history",
+    "eventErasure": "Erase by email",
+    "eventRegistrations": "Registrations",
+    "registrationDetail": "Registration",
+    "eraseRegistration": "Erase personal data",
+    "taxRegisters": "Tax registers",
+    "escalationTasks": "Escalation tasks",
+    "tierUpgrades": "Tier upgrade queue",
+    "memberChanges": "Member change approval",
+    "changeRequests": "Change requests",
+    "changeRequestDetail": "Review",
+    "broadcastDetail": "Details",
+    "proxySubmit": "Submit on behalf of member",
+    "templateDetail": "Template"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -7918,7 +7934,9 @@
     "warning": {
       "title": "You're not using all your benefits",
       "body": "At {elapsed}% of the year you've used {consumed}% of your benefits. Make the most of your membership.",
-      "action": "Use a benefit"
+      "action": "Use a benefit",
+      "staffTitle": "Under-using their benefits",
+      "staffBody": "At {elapsed}% of the year, {company} has used {consumed}% of its benefits."
     }
   },
   "gdprExport": {

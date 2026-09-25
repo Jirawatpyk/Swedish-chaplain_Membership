@@ -25,27 +25,37 @@ export interface UnderUseWarningProps {
   readonly consumedPct: number;
   /** Optional deep link to act on the warning (e.g. compose an E-Blast). */
   readonly actionHref?: string;
+  /**
+   * Staff variant: the member company the figures belong to. When set, the
+   * copy names the company in the third person instead of addressing the
+   * viewer as "you" (the member portal omits it).
+   */
+  readonly subjectName?: string;
 }
 
 export function UnderUseWarning({
   elapsedYearPct,
   consumedPct,
   actionHref,
+  subjectName,
 }: UnderUseWarningProps): React.ReactElement {
   const t = useTranslations('benefits.warning');
+  // Round elapsed up + consumed down so the DISPLAYED gap is never smaller
+  // than the real ≥25-pt gap that fired this banner — avoids showing e.g.
+  // "62% / 38%" (24) under a warning (R#8).
+  const elapsed = Math.ceil(elapsedYearPct);
+  const consumed = Math.floor(consumedPct);
   return (
     <InlineAlert tone="warning">
       <TriangleAlert aria-hidden="true" />
-      <InlineAlertTitle>{t('title')}</InlineAlertTitle>
+      <InlineAlertTitle>
+        {subjectName === undefined ? t('title') : t('staffTitle')}
+      </InlineAlertTitle>
       <InlineAlertDescription>
         <p>
-          {/* Round elapsed up + consumed down so the DISPLAYED gap is never
-              smaller than the real ≥25-pt gap that fired this banner — avoids
-              showing e.g. "62% / 38%" (24) under a warning (R#8). */}
-          {t('body', {
-            elapsed: Math.ceil(elapsedYearPct),
-            consumed: Math.floor(consumedPct),
-          })}
+          {subjectName === undefined
+            ? t('body', { elapsed, consumed })
+            : t('staffBody', { elapsed, consumed, company: subjectName })}
         </p>
         {actionHref !== undefined && (
           <Link

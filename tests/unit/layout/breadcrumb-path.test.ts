@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildBreadcrumbStaticLabels,
   parseBreadcrumbPath,
   truncateForMobile,
 } from '@/components/layout/breadcrumb-path';
+import enMessages from '@/i18n/messages/en.json';
 
 describe('parseBreadcrumbPath', () => {
   const staticLabels = {
@@ -296,5 +298,117 @@ describe('truncateForMobile', () => {
       'Fee Configuration',
     ]);
     expect(result.hasEllipsis).toBe(true);
+  });
+});
+
+describe('buildBreadcrumbStaticLabels (real en.json breadcrumb copy)', () => {
+  // Mirrors next-intl: a key missing from `breadcrumb.*` throws, so the
+  // segment falls back to its raw slug — exactly the bug these cases pin.
+  const t = (key: string): string => {
+    const value = (enMessages.breadcrumb as Record<string, string>)[key];
+    if (value === undefined) throw new Error(`missing breadcrumb.${key}`);
+    return value;
+  };
+  const MEMBER = '0b6c2f3e-8a1d-4c55-9e2a-7f1b3c4d5e6f';
+  const OTHER = '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a';
+
+  const labelsFor = (
+    pathname: string,
+    dynamicLabels: ReadonlyMap<string, string> = new Map(),
+  ): string[] =>
+    parseBreadcrumbPath({
+      pathname,
+      staticLabels: buildBreadcrumbStaticLabels(t, pathname),
+      dynamicLabels,
+    }).map((s) => s.label);
+
+  it.each([
+    ['edit', 'Edit'],
+    ['benefits', 'Benefits'],
+    ['timeline', 'Timeline'],
+  ])('/admin/members/<id>/%s renders "%s", not the raw slug', (slug, label) => {
+    expect(labelsFor(`/admin/members/${MEMBER}/${slug}`)).toEqual([
+      'Members',
+      'Details',
+      label,
+    ]);
+  });
+
+  it('a registered company name replaces "Details" on member sub-pages', () => {
+    expect(
+      labelsFor(`/admin/members/${MEMBER}/edit`, new Map([[MEMBER, 'Siam Nordic Trading Co., Ltd.']])),
+    ).toEqual(['Members', 'Siam Nordic Trading Co., Ltd.', 'Edit']);
+  });
+
+  it('resolves a verb whose parent is a dynamic id against the resource above it', () => {
+    expect(labelsFor(`/admin/broadcasts/templates/${OTHER}/edit`).at(-1)).toBe('Edit Template');
+    expect(labelsFor(`/admin/plans/2026/${OTHER}/edit`).at(-1)).toBe('Edit');
+  });
+
+  it.each([
+    ['/admin/events/import', ['Events', 'Import CSV']],
+    ['/admin/events/import/history', ['Events', 'Import CSV', 'Import history']],
+    ['/admin/events/erasure', ['Events', 'Erase by email']],
+    [
+      `/admin/events/${MEMBER}/registrations/${OTHER}/erase`,
+      ['Events', 'Event', 'Registrations', 'Registration', 'Erase personal data'],
+    ],
+    ['/admin/invoices/registers', ['Invoices', 'Tax registers']],
+    ['/admin/renewals/tasks', ['Renewals', 'Escalation tasks']],
+    ['/admin/renewals/tier-upgrades', ['Renewals', 'Tier upgrade queue']],
+    ['/admin/settings/member-changes', ['Settings', 'Member change approval']],
+    [`/admin/change-requests/${OTHER}`, ['Change requests', 'Review']],
+    [`/admin/broadcasts/${OTHER}`, ['Broadcasts', 'Details']],
+    ['/admin/broadcasts/new', ['Broadcasts', 'Submit on behalf of member']],
+  ])('other admin routes: %s has no raw-slug crumbs', (pathname, labels) => {
+    expect(labelsFor(pathname)).toEqual(labels);
+  });
+
+  describe('template editor — /admin/broadcasts/templates/<id>/edit', () => {
+    const path = `/admin/broadcasts/templates/${OTHER}/edit`;
+    const parse = (dynamicLabels: ReadonlyMap<string, string> = new Map()) =>
+      parseBreadcrumbPath({
+        pathname: path,
+        staticLabels: buildBreadcrumbStaticLabels(t, path),
+        dynamicLabels,
+      });
+
+    it('the template-id crumb reads "Template", not the raw UUID, and is not a link to the page-less /templates/<id>', () => {
+      const trail = parse();
+      expect(trail.map((s) => s.label)).toEqual([
+        'Broadcasts',
+        'Templates',
+        'Template',
+        'Edit Template',
+      ]);
+      expect(trail[2]).toMatchObject({
+        isLinkable: false,
+        href: '/admin/broadcasts/templates',
+      });
+    });
+
+    it('a registered template name replaces the fallback label', () => {
+      expect(parse(new Map([[OTHER, 'Welcome email']]))[2]?.label).toBe('Welcome email');
+    });
+
+    it('a dynamic id WITH its own page stays a link (member detail)', () => {
+      const memberPath = `/admin/members/${MEMBER}/edit`;
+      const crumb = parseBreadcrumbPath({
+        pathname: memberPath,
+        staticLabels: buildBreadcrumbStaticLabels(t, memberPath),
+        dynamicLabels: new Map(),
+      })[1];
+      expect(crumb).toMatchObject({ isLinkable: true, href: `/admin/members/${MEMBER}` });
+    });
+  });
+
+  it('member-portal and existing verb mappings are unchanged', () => {
+    expect(labelsFor('/admin/members/new')).toEqual(['Members', 'New Member']);
+    expect(labelsFor(`/admin/invoices/${OTHER}/credit-notes/new`)).toEqual([
+      'Invoices',
+      'Details',
+      'Credit Notes',
+      'New Credit Note',
+    ]);
   });
 });
