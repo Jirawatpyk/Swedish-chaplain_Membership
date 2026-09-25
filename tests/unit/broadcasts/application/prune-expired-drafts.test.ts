@@ -147,6 +147,7 @@ function makeRepo(opts: {
       },
       async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in prune-expired-drafts fixture'); },
       async markAudienceDeletedInTx() { throw new Error('not used in prune-expired-drafts fixture'); },
+      async deleteExpiredForRetention() { throw new Error('not used in prune-expired-drafts fixture'); },
       async existingBroadcastIds() { throw new Error('not used in prune-expired-drafts fixture'); },
     },
   };

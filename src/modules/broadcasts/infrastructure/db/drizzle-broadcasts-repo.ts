@@ -29,6 +29,10 @@ import type { BroadcastStatus } from '../../domain/value-objects/broadcast-statu
 import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import { IN_PROGRESS_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
+import {
+  RETENTION_ANCHOR_FIELD,
+  type RetentionAnchorField,
+} from '../../domain/retention/broadcast-retention';
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
@@ -491,6 +495,39 @@ function inProgressStatusPredicate(): SQL {
     sql`, `,
   );
   return sql`${broadcasts.status}::text IN (${list})`;
+}
+
+/**
+ * F7 retention sweep (migration 0310) — the Domain's anchor fields as the
+ * `broadcasts` columns they name. A `Record` over the Domain union, so a new
+ * anchor field is a compile error here until it is mapped.
+ */
+const RETENTION_ANCHOR_COLUMN: Readonly<Record<RetentionAnchorField, AnyPgColumn>> = {
+  sentAt: broadcasts.sentAt,
+  partialDeliveryAcceptedAt: broadcasts.partialDeliveryAcceptedAt,
+  failedToDispatchAt: broadcasts.failedToDispatchAt,
+  rejectedAt: broadcasts.rejectedAt,
+  cancelledAt: broadcasts.cancelledAt,
+  stageEnteredAt: broadcasts.stageEnteredAt,
+};
+
+/**
+ * The retention anchor as SQL — one `CASE` arm per terminal status, built from
+ * `RETENTION_ANCHOR_FIELD` (Finding G: the Domain constant, never a literal
+ * list). Each arm is `COALESCE(<own column>, stage_entered_at)`; the
+ * `expired_no_member_response` arm is `stage_entered_at` itself
+ * (NOT NULL since 0308). A non-terminal status falls to `ELSE NULL`, and
+ * `NULL + interval <= now` is never true, so an open row can never match even
+ * if the status filter were dropped. Never `updated_at`.
+ */
+function retentionAnchorExpression(): SQL {
+  const arms = (Object.entries(RETENTION_ANCHOR_FIELD) as Array<[string, RetentionAnchorField]>).map(
+    ([status, field]) =>
+      field === 'stageEnteredAt'
+        ? sql`WHEN ${status} THEN ${broadcasts.stageEnteredAt}`
+        : sql`WHEN ${status} THEN COALESCE(${RETENTION_ANCHOR_COLUMN[field]}, ${broadcasts.stageEnteredAt})`,
+  );
+  return sql`(CASE ${broadcasts.status}::text ${sql.join(arms, sql` `)} ELSE NULL END)`;
 }
 
 /**
@@ -1461,6 +1498,56 @@ export function makeDrizzleBroadcastsRepo(
           })),
         };
       });
+    },
+
+    /**
+     * F7 retention sweep (migration 0310) — see the port for the eligibility
+     * rule. ONE statement: the sub-select picks the oldest `limit` expired rows
+     * (`FOR UPDATE SKIP LOCKED`, so a row a webhook or an erasure transaction
+     * holds is left for tomorrow rather than waited on), the DELETE removes
+     * them, and the children follow by ON DELETE CASCADE — deliveries (0310),
+     * versions + decisions (0308), batch manifests + their events (0163/0218).
+     * The RI cascade runs as the child table's owner, which is why no DELETE
+     * grant exists or is needed on any child, and why a direct DELETE by
+     * `chamber_app` on deliveries / decisions still fails.
+     *
+     * `now` is bound as an ISO string cast to TIMESTAMPTZ (the Neon driver
+     * does not serialise a JS Date in a raw `sql` param). The expiry is
+     * `anchor + make_interval(years => retention_years)` — per row, so a
+     * 10-year row is kept twice as long. A tenant-scoped seq scan: there is no
+     * index on the anchor expression, and the table is small per tenant.
+     */
+    async deleteExpiredForRetention(tenantIdArg, now, limit, txArg) {
+      const tx = txArg as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'deleteExpiredForRetention');
+      const terminalStatusList = sql.join(
+        TERMINAL_BROADCAST_STATUSES.map((s) => sql`${s}`),
+        sql`, `,
+      );
+      const anchor = retentionAnchorExpression();
+      const deleted = (await tx.execute(sql`
+        DELETE FROM broadcasts
+        WHERE tenant_id = ${tenantIdArg}
+          AND broadcast_id IN (
+            SELECT broadcast_id
+              FROM broadcasts
+             WHERE tenant_id = ${tenantIdArg}
+               AND status::text IN (${terminalStatusList})
+               AND (resend_audience_id IS NULL OR audience_deleted_at IS NOT NULL)
+               AND ${anchor} + make_interval(years => retention_years::int)
+                   <= ${now.toISOString()}::timestamptz
+             ORDER BY ${anchor}, broadcast_id
+             LIMIT ${limit}
+             FOR UPDATE SKIP LOCKED
+          )
+        RETURNING broadcast_id, requested_by_member_id
+      `)) as unknown as Array<{ broadcast_id: string; requested_by_member_id: string | null }>;
+      return {
+        swept: deleted.map((r) => ({
+          broadcastId: r.broadcast_id,
+          requestedByMemberId: r.requested_by_member_id,
+        })),
+      };
     },
 
     /**

@@ -249,6 +249,7 @@ function makeBroadcastsRepo(counters: CallCounters): BroadcastsRepo {
     async markAudienceDeletedInTx() {
       throw new Error('not used in membership-access fixture');
     },
+    async deleteExpiredForRetention() { throw new Error('not used in submit-broadcast-membership fixture'); },
     async existingBroadcastIds() {
       throw new Error('not used in membership-access fixture');
     },

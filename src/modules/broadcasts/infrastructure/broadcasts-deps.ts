@@ -60,6 +60,7 @@ import type { ProxySubmitBroadcastDeps } from '../application/use-cases/proxy-su
 import type { ClearHaltDeps } from '../application/use-cases/clear-halt';
 import type { DispatchScheduledBroadcastDeps } from '../application/use-cases/dispatch-scheduled-broadcast';
 import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expired-drafts';
+import type { SweepExpiredBroadcastsDeps } from '../application/use-cases/sweep-expired-broadcasts';
 import type { MarkOwnerImagesRemovedDeps } from '../application/use-cases/_mark-owner-images-removed';
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
@@ -541,6 +542,28 @@ export function makePruneExpiredDraftsDeps(
     audit: f7AuditAdapter,
     requestId,
     // Defaults to 30 days inside the use-case per FR-001a.
+  };
+}
+
+/**
+ * F7 retention sweep (migration 0310) — composition for
+ * `sweepExpiredBroadcasts`, one per tenant per cron tick. Same four adapters
+ * as the draft prune: the tenant-bound broadcasts repo (its `withTx` opens
+ * `runInTenant` per batch), the images repo for the in-tx stamp, the F7 audit
+ * adapter and the system clock. Batch size and time budget take the use
+ * case's defaults (200 rows, 60 s).
+ */
+export function makeSweepExpiredBroadcastsDeps(
+  tenantId: string,
+  requestId: string,
+): SweepExpiredBroadcastsDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    imagesRepo: drizzleBroadcastImagesRepo,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    requestId,
   };
 }
 

@@ -12,6 +12,7 @@
     { "path": "/api/cron/broadcasts/cleanup-audiences", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/broadcasts/reclaim-orphan-audiences", "schedule": "30 3 * * *" },
     { "path": "/api/cron/broadcasts/prune-expired-drafts", "schedule": "30 4 * * *" },
+    { "path": "/api/cron/broadcasts/retention-sweep", "schedule": "50 20 * * *" },
 
     { "path": "/api/cron/insights/snapshot-refresh-coordinator", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/insights/process-export-jobs", "schedule": "*/5 * * * *" },

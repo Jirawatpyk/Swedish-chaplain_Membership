@@ -212,6 +212,7 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async redactMemberEmailFromCustomRecipientsInTx() { return { redactedCount: 0 }; },
     async listTerminalBroadcastsWithLiveAudience() { throw new Error('not used in halt-flag-precondition fixture'); },
     async markAudienceDeletedInTx() { throw new Error('not used in halt-flag-precondition fixture'); },
+    async deleteExpiredForRetention() { throw new Error('not used in halt-flag-precondition fixture'); },
     async existingBroadcastIds() { throw new Error('not used in halt-flag-precondition fixture'); },
   };
 }

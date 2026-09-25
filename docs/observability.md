@@ -1519,6 +1519,30 @@ Extends § 22.1 with **2 metrics**, both emitted by `reclaimOrphanedImages` (the
 
 Routes per § 22.8 (alarm → `#oncall-platform`).
 
+### 22.13 F7 retention sweep (migration 0310)
+
+Extends § 22.1 with **2 counters**, both emitted by the route
+`/api/cron/broadcasts/retention-sweep` (daily 20:50 UTC) from the result of
+`sweepExpiredBroadcasts`, which deletes closed E-Blasts past their
+`retention_years` (children by cascade; images stamped for § 22.12's sweep).
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `broadcasts_retention_swept_total` | counter | `tenant` | Incremented by the number of E-Blasts the run deleted for the tenant — on the error path too, with the rows that committed before the failure (they stay deleted). Zero until ~2031 (the first prod E-Blast + 5 years) is correct. |
+| `broadcasts_retention_sweep_failed_total` | counter | `tenant` | One per tenant per run that returned an error or threw. The route still answers **200** with the tenant marked `outcome: 'error'` (a 500 would hide the tenants that succeeded), so this counter is the signal. Logs: `cron.broadcasts.retention_sweep.server_error` (errorId `F7.cron.retention_sweep.server_error`, truncated message) and `.uncaught_error` (errorId `F7.cron.retention_sweep.uncaught`, `err: errKind(e)` — the error class, never the message). |
+
+The durable record is the audit trail, not the counter (no alerting backend is
+bound in code): one counts-only `broadcast_retention_swept` row per tenant per
+run — `swept_count`, `images_marked`, `batches`, `budget_exhausted`,
+`completed`, `actor_role: 'system'`; no ids, no content — written even when
+nothing expired, plus `broadcast_image_removed { reason: 'retention_expired' }`
+per stamped image. No log line carries a broadcast id, a member id or content.
+
+| Alert | Severity | Threshold | Runbook |
+|---|---|---|---|
+| `broadcasts_retention_sweep_failed_total` increments on **two consecutive daily runs** for the same `tenant` | **alarm** | one failed run is retried the next day; two in a row means the retention the RoPA says is enforced is not being enforced | `docs/runbooks/cron-jobs.md` § F7 — broadcasts/retention-sweep |
+| No `broadcast_retention_swept` audit row for a tenant in **48 h** | **warn** | the cron did not run at all (it writes a row per run even when it deletes nothing) | same |
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability

@@ -533,6 +533,46 @@ export interface BroadcastsRepo {
   }>;
 
   /**
+   * F7 retention sweep (migration 0310) — delete up to `limit` CLOSED E-Blasts
+   * whose retention has run out, oldest anchor first, on the caller's `tx`, and
+   * return what was deleted.
+   *
+   * Eligible = ALL of:
+   *   - `status` in `TERMINAL_BROADCAST_STATUSES`;
+   *   - anchor + `retention_years` <= `now`, the anchor per status from
+   *     `RETENTION_ANCHOR_FIELD` (Domain) — never `updated_at`;
+   *   - NO live Resend audience (`resend_audience_id IS NULL OR
+   *     audience_deleted_at IS NOT NULL`). `cleanup-audiences` reaps the
+   *     audience first; deleting the row before it would orphan the audience
+   *     on the provider's side (Free plan: 3 segments), with nothing left in
+   *     the database that knows it exists.
+   *
+   * Children leave by ON DELETE CASCADE, never by a direct DELETE:
+   * `broadcast_deliveries` (FK + trigger amendment in 0310),
+   * `broadcast_versions` + `broadcast_member_decisions` (0308),
+   * `broadcast_batch_manifests` → `broadcast_batch_delivery_events`
+   * (0163 / 0218). `broadcast_images` has no FK (two possible parents): the
+   * CALLER stamps them in the same `tx` from the returned ids.
+   *
+   * `tx` is REQUIRED: the caller's image stamp must co-commit with this
+   * DELETE. Tenant isolation: `WHERE tenant_id = $1` plus RLS+FORCE plus the
+   * adapter's `assertTenantBoundTx`.
+   */
+  deleteExpiredForRetention(
+    tenantId: TenantSlug,
+    now: Date,
+    limit: number,
+    tx: unknown,
+  ): Promise<{
+    /** The E-Blasts this batch deleted; its `length` is the batch's count. */
+    readonly swept: readonly {
+      readonly broadcastId: string;
+      /** The owning member, for the image audit's `related_member_id`. */
+      readonly requestedByMemberId: string | null;
+    }[];
+  }>;
+
+  /**
    * F7 Phase 9 / T178a — list `submitted` + `approved` broadcasts owned
    * by `memberId`, used by the F3 archival/erasure cascade to
    * auto-cancel in-flight broadcasts when their originating member is

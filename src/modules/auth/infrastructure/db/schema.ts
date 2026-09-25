@@ -462,6 +462,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'broadcast_approval_reminder_sent',
   'broadcast_approval_expiry_warned',
   'broadcast_approval_expired',
+  // --- F7 retention sweep (migration 0310) — ONE counts-only row per tenant
+  //     per daily run of `sweepExpiredBroadcasts` (no ids, no content). 5y
+  //     retention. Same lockstep + parity coverage as the blocks above. ---
+  'broadcast_retention_swept',
   // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
   //     `InvoiceDueBridge` credit-window guard. Emitted by
   //     `lapseCyclesOnGraceExpiry` when a member past the grace window
