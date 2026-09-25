@@ -10,11 +10,11 @@
  *   - `send`      — in good standing; the leg carries on.
  *   - `hold`      — the membership is `suspended` (F8: `awaiting_payment`,
  *                   `pending_admin_reactivation`, or an unpaid period that has
- *                   ended). The maintainer's rule (R1): NOT a refusal. F8 enters
- *                   `awaiting_payment` the moment the renewal bill is issued
- *                   (~T-30), while the member has usually paid for the current
- *                   period, so refusing there killed E-Blasts of members in good
- *                   faith and told them their membership was not active. Held:
+ *                   ended). The maintainer's rule (R1): NOT a refusal. Suspension
+ *                   is recoverable by paying, and before #397 F8 even suspended a
+ *                   member whose renewal bill was issued early while the current
+ *                   period was still paid — refusing there killed E-Blasts of
+ *                   members in good faith. Held:
  *                   nothing is sent or written, the row stays `approved`, and
  *                   every tick asks again — it sends once the cycle completes
  *                   (possibly after `scheduled_for`), and is refused once the

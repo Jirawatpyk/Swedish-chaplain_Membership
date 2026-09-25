@@ -202,9 +202,9 @@ coverage at once (`0306`).
 
 The answer is one of three (the maintainer's decision, R1):
 
-- **Held** — the membership is `suspended`: the renewal bill is out and unpaid (`awaiting_payment`,
-  entered as soon as the bill is issued, ~T-30 — usually while the current period is still paid),
-  `pending_admin_reactivation`, or an unpaid period that has ended. Nothing is sent.
+- **Held** — the membership is `suspended`: an unpaid renewal whose paid period has ended, a new
+  member's first bill still unpaid, or `pending_admin_reactivation`. (Since #397 an early renewal
+  bill no longer suspends a member who paid for the current period.) Nothing is sent.
 - **Refused, permanently** — the member's E-Blasts are **halted** (the complaint-rate auto-halt),
   or the membership has **ended** (F8 `terminated`: cancelled / coverage ended, lapsed, refunded).
 - **Undecided** — the standing read failed. Nothing is sent; the next tick asks again.

@@ -1464,8 +1464,9 @@ PR-2 builds on PR-1.
   and `buildAudienceTick`, the latter before its submit/confirm branch so it covers both ticks)
   now decide the member's standing (`decideDispatchStanding`) before any Resend call, outside
   every transaction. Three answers besides "send" (the maintainer's decision, R1):
-  - **Held** — a `suspended` membership (`awaiting_payment` from the moment the renewal bill is
-    issued, `pending_admin_reactivation`, or an unpaid period that has ended). Nothing is sent or
+  - **Held** — a `suspended` membership (an unpaid renewal whose paid period has ended, a new
+    member's unpaid first bill, or `pending_admin_reactivation`; since #397 an early renewal bill
+    no longer suspends a member who paid for the current period). Nothing is sent or
     written, no audit row, no email; the row stays `approved` with its slot reserved and every
     tick re-checks it. It sends once the cycle completes (possibly after `scheduled_for`) and is
     refused once the cycle lapses. Counted by `broadcasts_dispatch_standing_held_total` and the
