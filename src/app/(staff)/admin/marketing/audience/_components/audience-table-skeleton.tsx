@@ -4,14 +4,19 @@
  *
  * Shape = the real table (review H5 / a11y 9): a 44-px header band and
  * 44-px rows (`--table-row-height`, the same token `TableRow` uses), column
- * widths mirroring `AudienceTable`'s <colgroup>, and the 8-column (switch)
+ * widths mirroring `AudienceTable`'s <colgroup>, and the 7-column (switch)
  * layout BY DEFAULT — admin / super_admin / marketing are the common case;
- * the read-only manager (7 columns) is the exception and passes `false`.
+ * the read-only manager (6 columns) is the exception and passes `false`.
  */
 import { Skeleton } from '@/components/ui/skeleton';
 
-/** px — mirrors `AUDIENCE_COLUMN_WIDTHS` in audience-table.tsx. */
-const WIDTHS = [220, 200, 96, 200, 110, 176, 160, 170] as const;
+/**
+ * px — mirrors `AUDIENCE_COLUMN_WIDTHS` in audience-table.tsx (a literal, not
+ * an import: that module is `'use client'`, and this skeleton renders on the
+ * server). The first track is Contact's MINIMUM — it flexes like the real
+ * table's width-less <col>.
+ */
+const WIDTHS = [184, 184, 112, 168, 112, 152, 136] as const;
 
 export function AudienceTableSkeleton({
   withSwitch = true,
@@ -20,7 +25,9 @@ export function AudienceTableSkeleton({
 } = {}) {
   const widths = withSwitch ? [...WIDTHS] : WIDTHS.filter((_, i) => i !== 2);
   const rows = 15;
-  const gridTemplateColumns = widths.map((w) => `${w}px`).join(' ');
+  const gridTemplateColumns = widths
+    .map((w, i) => (i === 0 ? `minmax(${w}px, 1fr)` : `${w}px`))
+    .join(' ');
   return (
     <div className="flex flex-col gap-4" aria-hidden>
       <Skeleton className="h-5 w-56" />

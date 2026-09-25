@@ -49,6 +49,39 @@ import { useSurvivingTargetFinalFocus } from '@/components/broadcast/unmounting-
 
 /** The list container — the element that outlives a removed row. */
 const ALLOWLIST_TABLE_ID = 'broadcast-image-allowlist-table';
+const HOSTNAME_HELP_ID = 'allowlist-hostname-help';
+const HOSTNAME_ERROR_ID = 'allowlist-hostname-error';
+
+/**
+ * The route answers in TWO shapes: use-case refusals are `{ error: '<kind>' }`,
+ * while `errorResponse` (400 `invalid_body` from the zod parse, 500
+ * `internal_error`) sends `{ error: { code, fieldErrors?, … } }`. Reading the
+ * object as a string built `errors.[object Object]`, so every hostname format
+ * refusal toasted "Unknown error.".
+ */
+type AllowlistErrorBody = {
+  readonly error?:
+    | string
+    | {
+        readonly code?: string;
+        readonly fieldErrors?: Readonly<Record<string, readonly string[]>>;
+      };
+};
+
+function readAllowlistError(body: AllowlistErrorBody): {
+  readonly code: string;
+  readonly hostnameInvalid: boolean;
+} {
+  const { error } = body;
+  if (typeof error === 'string') {
+    return { code: error, hostnameInvalid: error === 'invalid_hostname' };
+  }
+  const code = typeof error?.code === 'string' ? error.code : 'unknown';
+  const hostnameInvalid =
+    code === 'invalid_hostname' ||
+    (code === 'invalid_body' && (error?.fieldErrors?.hostname?.length ?? 0) > 0);
+  return { code, hostnameInvalid };
+}
 
 export interface AllowlistRow {
   readonly hostname: string;
@@ -65,6 +98,9 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   const [hostname, setHostname] = useState('');
   const [isPending, startTransition] = useTransition();
   const [announcement, setAnnouncement] = useState<string>('');
+  // A format refusal belongs ON the field (WCAG 3.3.1), not only in a toast
+  // that disappears; cleared as soon as the value is edited.
+  const [hostnameError, setHostnameError] = useState<string | null>(null);
   // U4 — raised on the CONFIRM click, not on the 200. `AlertDialogAction`
   // closes the dialog itself, so Base UI reads `finalFocus` synchronously with
   // that click, long before the fetch settles: deciding on the response would
@@ -86,10 +122,16 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
           body: JSON.stringify({ action, hostname: h }),
         });
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          const code = body.error ?? 'unknown';
+          const body = (await res
+            .json()
+            .catch(() => ({}))) as AllowlistErrorBody;
+          const { code, hostnameInvalid } = readAllowlistError(body);
+          if (action === 'add' && hostnameInvalid) {
+            const message = t('errors.invalid_hostname');
+            setHostnameError(message);
+            toast.error(message);
+            return;
+          }
           // T155 finding U8 — this site had no fallback at ALL: next-intl
           // returns the key PATH for a missing key rather than throwing, so
           // an unmapped code toasted
@@ -133,7 +175,11 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
         className="space-y-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (hostname.trim()) submit('add', hostname.trim());
+          // Hostnames are case-insensitive and the allowlist stores them
+          // lower-case (HOSTNAME_REGEX has no A-Z), so "CDN.Example.com" is
+          // the same host, not a format error.
+          const normalized = hostname.trim().toLowerCase();
+          if (normalized) submit('add', normalized);
         }}
       >
         <Label htmlFor="allowlist-hostname">{t('hostnameLabel')}</Label>
@@ -141,9 +187,17 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
           <Input
             id="allowlist-hostname"
             value={hostname}
-            onChange={(e) => setHostname(e.target.value)}
+            onChange={(e) => {
+              setHostname(e.target.value);
+              setHostnameError(null);
+            }}
             placeholder={t('hostnamePlaceholder')}
-            aria-describedby="allowlist-hostname-help"
+            aria-invalid={hostnameError ? true : undefined}
+            aria-describedby={
+              hostnameError
+                ? `${HOSTNAME_ERROR_ID} ${HOSTNAME_HELP_ID}`
+                : HOSTNAME_HELP_ID
+            }
             disabled={isPending}
             autoComplete="off"
             className="flex-1"
@@ -160,7 +214,12 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
             {t('addButton')}
           </Button>
         </div>
-        <p id="allowlist-hostname-help" className="text-caption">
+        {hostnameError ? (
+          <p id={HOSTNAME_ERROR_ID} className="text-caption text-destructive">
+            {hostnameError}
+          </p>
+        ) : null}
+        <p id={HOSTNAME_HELP_ID} className="text-caption">
           {t('hostnameHelp')}
         </p>
       </form>

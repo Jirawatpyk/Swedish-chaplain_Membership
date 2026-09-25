@@ -179,6 +179,9 @@ describe('AudienceTable — switch column never renders empty', () => {
       </NextIntlClientProvider>,
     );
     expect(screen.queryByRole('switch')).toBeNull();
-    expect(screen.getByText(en.shared.marketing.switch.readOnly.contact)).toBeInTheDocument();
+    const note = screen.getByText(en.shared.marketing.switch.readOnly.contact);
+    // The primitive's cell is `whitespace-nowrap`: without the override the
+    // note ran straight across the Member column.
+    expect(note.closest('td')?.className).toContain('whitespace-normal');
   });
 });

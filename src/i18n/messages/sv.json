@@ -5766,8 +5766,7 @@
           "member": "Medlem",
           "kind": "Roll",
           "memberStatus": "Medlemsstatus",
-          "changedBy": "Ändrad av",
-          "changedAt": "Ändrad"
+          "lastChange": "Senast ändrad"
         },
         "kind": {
           "primary": "Primär",
@@ -7654,6 +7653,10 @@
         "switchedOn": "Marknadsföring påslagen för {name}.",
         "undo": "Ångra",
         "unchanged": "Ingen ändring — kontakten hade redan det läget.",
+        "readOnly": {
+          "contact": "Bara personen själv kan ändra detta",
+          "unavailable": "Kan inte ändras just nu"
+        },
         "errors": {
           "suppressed": "Personen har avregistrerat sig själv. Det valet gäller och kan inte slås på igen av personal.",
           "selfOptedOut": "Personen stängde av marknadsföring själv. Bara personen själv kan slå på den igen.",

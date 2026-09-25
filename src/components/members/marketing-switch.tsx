@@ -22,7 +22,9 @@
  *   - "status unavailable" renders NO switch at all (code-review finding 3):
  *     a disabled switch still shows a POSITION, and `checked` is false for an
  *     unreadable state, so it asserted "off" about someone who might be on.
- *     The badge carries the state and the reason instead (FR-031a);
+ *     The badge carries the state and the reason instead (FR-031a), and
+ *     the switch's place holds a short visible line saying why there is no
+ *     control (`readOnly.*`) — the same for the person's own objection;
  *   - under a state-filtered view (`leavesView`, e.g. the FR-027a pre-flight
  *     preset) the row LEAVES the view on refresh: focus is handed to the next
  *     row's switch — else the count line, else the previous row — BEFORE the
@@ -211,7 +213,15 @@ export function MarketingSwitch({
     }
   }
 
-  if (!staffCanAct) return <></>;
+  // No control to offer — but never an EMPTY cell: in the audience table's
+  // switch column a blank reads as "failed to load". A short line says why.
+  if (!staffCanAct) {
+    return (
+      <span className="text-xs text-muted-foreground" data-marketing-state={state}>
+        {state === 'unavailable' ? t('readOnly.unavailable') : t('readOnly.contact')}
+      </span>
+    );
+  }
 
   return (
     <span className="inline-flex min-h-6 min-w-6 items-center">

@@ -1,7 +1,7 @@
 /**
  * 108 PR-D review cycle 11 (UX H5, a11y 9 / L4) — the audience skeleton is
  * shaped like the REAL table: 44-px row pitch (`--table-row-height`), a
- * 44-px header band, and the 8-column shape by default (admin / super_admin /
+ * 44-px header band, and the 7-column shape by default (admin / super_admin /
  * marketing — the common case; the read-only manager is the exception).
  */
 import { afterEach, describe, expect, it } from 'vitest';

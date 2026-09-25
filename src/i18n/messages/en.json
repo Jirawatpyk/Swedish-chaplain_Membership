@@ -5766,8 +5766,7 @@
           "member": "Member",
           "kind": "Role",
           "memberStatus": "Member status",
-          "changedBy": "Changed by",
-          "changedAt": "Changed"
+          "lastChange": "Last change"
         },
         "kind": {
           "primary": "Primary",
@@ -7654,6 +7653,10 @@
         "switchedOn": "Marketing switched on for {name}.",
         "undo": "Undo",
         "unchanged": "No change — the contact was already in that state.",
+        "readOnly": {
+          "contact": "Only they can change this",
+          "unavailable": "Can't change right now"
+        },
         "errors": {
           "suppressed": "This person unsubscribed themselves. Their choice takes precedence and cannot be switched back on by staff.",
           "selfOptedOut": "This person switched marketing off themselves. Only they can switch it back on.",
