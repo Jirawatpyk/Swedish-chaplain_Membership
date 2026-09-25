@@ -476,6 +476,7 @@ export function makeApprovalBroadcast(overrides: Partial<Broadcast> = {}): Broad
     approvedVersionId: null,
     memberReminderStage: 0,
     memberExpiryNotifiedAt: null,
+    dispatchFirstFailedAt: null,
     createdAt: new Date('2026-09-20T07:00:00.000Z'),
     updatedAt: new Date('2026-09-20T08:00:00.000Z'),
     ...overrides,

@@ -144,6 +144,7 @@ function makeRepo(opts: RepoOpts = {}): {
       // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
       async attachAudienceImport() {},
       async markAudienceImportCompleted() {},
+      async markDispatchRetryStarted() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },
@@ -235,6 +236,7 @@ function makeBroadcast(status: BroadcastStatus, fields: unknown): Broadcast {
     approvedVersionId: null,
     memberReminderStage: 0,
     memberExpiryNotifiedAt: null,
+    dispatchFirstFailedAt: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };

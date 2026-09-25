@@ -123,15 +123,13 @@ function makeDeps(opts: {
     //     into its own catch. Adding `membersBridge` removed the
     //     `member_lookup_failed` lines but left 7 `enqueue_failed` ones; the
     //     member still got nothing.
-    //  2. `budgetEpoch` is `scheduledFor ?? approvedAt ?? createdAt`. All three
-    //     undefined makes it `new Date(undefined).getTime()` → NaN, and every
-    //     comparison against NaN is false, so the FR-021 hour budget could not
-    //     fire in this file at all. That is why round 4's M11 mutant (deleting
-    //     the `?? approvedAt ?? createdAt` fallbacks) survived 71/71.
+    //  2. The FR-021 budget epoch was `scheduledFor ?? approvedAt ?? createdAt`,
+    //     and all three undefined made it NaN, so the hour budget could not
+    //     fire in this file at all (round 4's M11 mutant survived 71/71). Since
+    //     F119 PR-E the epoch is `dispatchFirstFailedAt`; the budget cases live
+    //     in `build-audience-tick-failure-paths.test.ts`.
     //
-    // `scheduledFor: null` is the send-now case, so the epoch resolves to
-    // `approvedAt` and `elapsedMs` is 0 — the budget is reachable and not
-    // spuriously exhausted.
+    // `scheduledFor: null` is the send-now case.
     scheduledFor: null,
     approvedAt: NOW,
     createdAt: NOW,

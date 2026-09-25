@@ -32,6 +32,10 @@ import type { ChamberSubstitutedBody } from '../../domain/value-objects/template
  * Adding a key: check the immutability trigger first
  * (`broadcasts_immutable_after_submit_fn`, 0308) — a column it blocks after
  * submit must not ride a transition unless the trigger exempts that edge.
+ *
+ * One adapter-owned write is deliberately OFF this tuple: the adapter resets
+ * `dispatchFirstFailedAt` (F119 PR-E, 0311) to NULL on a status change or a
+ * re-time by itself. No caller sets it; only `markDispatchRetryStarted` stamps it.
  */
 export const TRANSITION_FIELDS = [
   'submittedAt',
@@ -439,6 +443,29 @@ export interface BroadcastsRepo {
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
+  ): Promise<void>;
+
+  /**
+   * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp
+   * `dispatch_first_failed_at = COALESCE(dispatch_first_failed_at, at)` while
+   * the row is still `approved`. Called by BOTH dispatch legs on a retryable
+   * gateway failure, in its own tx (no row lock is held by then).
+   *
+   * - The FIRST failure of an attempt wins: COALESCE never moves an existing
+   *   stamp, so an overlapping tick cannot restart the budget.
+   * - No status change and not through `applyTransition` — the row stays
+   *   `approved` for the next tick. `applyTransition` is what clears it.
+   * - Zero rows matched is NOT an error, unlike the `attach*` siblings: the
+   *   only way to miss is a row that left `approved` since the dispatcher read
+   *   it (a cancel, a withdrawal) or is gone, and in both cases there is no
+   *   attempt left to time. Those siblings throw because a lost CAS there means
+   *   a Resend resource must be reclaimed; nothing is minted here.
+   */
+  markDispatchRetryStarted(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    at: Date,
   ): Promise<void>;
 
   /**

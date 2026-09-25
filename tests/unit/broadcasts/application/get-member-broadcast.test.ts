@@ -65,6 +65,9 @@ function makeRepoMocks(opts: {
     markAudienceImportCompleted: async () => {
       // no-op
     },
+    markDispatchRetryStarted: async () => {
+      // no-op — F119 PR-E; unused here.
+    },
     listByTenantStatus: async () => ({ rows: [], nextCursor: null }),
     countForMemberQuota: async () => ({ submittedOrApproved: 0, sent: 0 }),
     findByResendBroadcastIdBypassRls: async () => null,

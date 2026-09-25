@@ -206,6 +206,7 @@ function makeBroadcastsRepo(counters: CallCounters): BroadcastsRepo {
     // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
     async attachAudienceImport() {},
     async markAudienceImportCompleted() {},
+    async markDispatchRetryStarted() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },

@@ -295,6 +295,10 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     memberReminderStage: toMemberReminderStage(row.memberReminderStage),
     memberExpiryNotifiedAt: row.memberExpiryNotifiedAt,
 
+    // F119 PR-E (0311) — the FR-021 retry-budget anchor; NULL on every row
+    // that has not failed in its current dispatch attempt.
+    dispatchFirstFailedAt: row.dispatchFirstFailedAt,
+
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -909,6 +913,15 @@ export function makeDrizzleBroadcastsRepo(
       if (target !== expectedFromStatus && fields.stageEnteredAt === undefined) {
         setClause['stageEnteredAt'] = setClause['updatedAt'];
       }
+      // F119 PR-E (0311) — the FR-021 retry clock belongs to ONE dispatch
+      // attempt. A status change ends it (sent, failed, cancelled, withdrawn,
+      // re-opened), and so does a re-time (`approved → approved` with a new
+      // `scheduledFor`): the next failure is the first of a new attempt. Kept
+      // off `TRANSITION_FIELDS` on purpose — no caller sets it; only
+      // `markDispatchRetryStarted` stamps it.
+      if (target !== expectedFromStatus || fields.scheduledFor !== undefined) {
+        setClause['dispatchFirstFailedAt'] = null;
+      }
 
       // Verify-fix R4 (Types-#5, 2026-05-02): expectedFromStatus is
       // now REQUIRED. UPDATE adds `AND status = $expected` to its
@@ -1154,6 +1167,37 @@ export function makeDrizzleBroadcastsRepo(
       if (updated.length !== 1) {
         await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
       }
+    },
+
+    /**
+     * F119 PR-E (0311) — see the port docblock. COALESCE keeps the first stamp,
+     * the status predicate keeps it off a row that left `approved`, and a
+     * 0-row match returns quietly (nothing was minted, so there is nothing to
+     * reclaim — unlike the `attach*` CAS writes above).
+     */
+    async markDispatchRetryStarted(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      at: Date,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'markDispatchRetryStarted');
+      await tx
+        .update(broadcasts)
+        .set({
+          // ISO text + explicit cast: a raw `Date` inside a `sql` template is
+          // serialised by the driver, not by the column's mapper.
+          dispatchFirstFailedAt: sql`COALESCE(${broadcasts.dispatchFirstFailedAt}, ${at.toISOString()}::timestamptz)`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'approved'),
+          ),
+        );
     },
 
     async markAudienceImportCompleted(

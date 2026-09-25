@@ -293,6 +293,15 @@ export const broadcasts = pgTable(
       withTimezone: true,
     }),
 
+    // F119 PR-E (migration 0311) — the FR-021 retry-budget anchor: the first
+    // retryable gateway failure of the current dispatch attempt. Stamped with
+    // COALESCE while `approved` (`markDispatchRetryStarted`), reset to NULL by
+    // `applyTransition` on a status change or a re-time. Forbidden under the
+    // erasure GUC, like the 0308 bookkeeping above.
+    dispatchFirstFailedAt: timestamp('dispatch_first_failed_at', {
+      withTimezone: true,
+    }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

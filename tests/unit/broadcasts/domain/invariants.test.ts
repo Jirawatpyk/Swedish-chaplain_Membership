@@ -71,6 +71,7 @@ const baseBroadcast: Broadcast = {
   approvedVersionId: null,
   memberReminderStage: 0,
   memberExpiryNotifiedAt: null,
+  dispatchFirstFailedAt: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };

@@ -76,27 +76,19 @@ import type { MemberFacingFailureReason } from './build-audience-tick';
 import { recipientSegmentFromPersisted } from '../../domain/recipient-segment';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
 import { resendDashboardName } from '../format/resend-dashboard-name';
-
-/**
- * FR-021 retry budget — total wall-clock window from `scheduled_for`
- * during which retryable failures keep the row in 'approved' for the
- * cron handler to re-attempt every 5 min. Once the budget is exhausted,
- * the next retryable failure transitions the row to `failed_to_dispatch`
- * + emits the FR-021 / AS2 transactional notification to the member.
- *
- * Slice D (Phase 8 — 2026-05-02): the budget is enforced inside the
- * `gateway_retryable` branch of the dispatch use-case, NOT in a separate
- * "stuck-approved" reconciler. This keeps the dispatch path
- * self-contained (mirrors the F4 outbox dispatcher's per-attempt
- * permanent-fail decision) and avoids a second cron worker. The
- * downside: if Resend stays UP but the cron worker is offline for >1h
- * (cron-job.org outage), the row stays 'approved' until the next tick;
- * the budget only fires when WE attempt and Resend rejects. That edge
- * is acceptable because cron-job.org outages are rare and the next
- * tick will either succeed (budget moot) or fail and trigger terminal
- * transition.
- */
-const RETRY_BUDGET_MS = 60 * 60 * 1000;
+// FR-021 retry budget — `RETRY_BUDGET_MS` of retryable failures, counted from
+// the FIRST retryable failure of the current dispatch attempt (F119 PR-E,
+// migration 0311), during which the row stays `approved` for the next 5-min
+// tick. Once spent, the next retryable failure moves the row to
+// `failed_to_dispatch` and emits the FR-021 / AS2 member notification.
+//
+// Slice D (Phase 8 — 2026-05-02): enforced inside the `gateway_retryable`
+// branch of the dispatch use-case, NOT in a separate "stuck-approved"
+// reconciler — the dispatch path stays self-contained (mirrors the F4 outbox
+// dispatcher's per-attempt permanent-fail decision). The budget fires only when
+// WE attempt and Resend rejects; a paused cron, a hold or the read-only freeze
+// never spends it, because nothing failed.
+import { dispatchRetryEpoch, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -1742,6 +1734,12 @@ async function advanceToSending(ctx: {
  * exactly that, because it measured from `scheduled_for` and killed a row an
  * hour late on its FIRST blip; the leak that made unbounded retry costly there
  * is closed by `reclaimMintedBroadcast`).
+ *
+ * F119 PR-E — the budget now counts from the first retryable failure
+ * (`dispatchRetryEpoch`), which removes the "an hour late on its first blip"
+ * defect for THIS arm. It does not by itself make the DB-fault arms above safe
+ * to budget: a DB fault is not a provider fault, and the member email names the
+ * provider.
  */
 async function applyRetryBudget(
   deps: DispatchScheduledBroadcastDeps,
@@ -1754,39 +1752,32 @@ async function applyRetryBudget(
   Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>
 > {
   // ---- Retryable: row stays 'approved' for next tick ---------------
-  // Slice D (Phase 8 — FR-021 / AS2 1h retry budget): if the broadcast
-  // is past its 1-hour budget from `scheduled_for`, this retryable
-  // failure converts to a TERMINAL `broadcast_failed_to_dispatch` —
-  // we stop attempting + transition + emit AS2 member notification
-  // email. Within budget: original behaviour (row stays 'approved'
-  // for the next 5-min cron tick).
-  // Verify-fix R4 (Simplify-#4, 2026-05-02): hoist scheduledFor +
-  // elapsedMs locals so subsequent uses don't need `!` non-null
-  // assertions (previously 4 instances). pastBudget definition
-  // narrows scheduledFor to non-null implicitly, but TS doesn't
-  // propagate that narrowing across the if-block boundary.
+  // Slice D (Phase 8 — FR-021 / AS2 1h retry budget): past the budget, this
+  // retryable failure converts to a TERMINAL `broadcast_failed_to_dispatch` —
+  // stop attempting, transition, emit the AS2 member notification. Within it:
+  // the row stays 'approved' for the next 5-min cron tick.
   //
-  // R6 staff-review W-R1 fix — send-now broadcasts (`scheduledFor`
-  // is null because the admin hit "Approve & send now") MUST also
-  // honor the 1h retry budget. The prior code set
-  // `elapsedMs = 0` for null-scheduledFor, making pastBudget
-  // permanently false — a stuck send-now would retry forever.
-  // Fallback epoch order: scheduledFor → approvedAt → createdAt.
-  // approvedAt is the dispatcher-eligibility moment for send-now
-  // (status transitions submitted → approved → sending happen
-  // synchronously in the admin-approve-send-now use-case so the
-  // fallback approximates "time since dispatch attempt began").
+  // F119 PR-E (migration 0311) — the budget counts from the FIRST retryable
+  // failure of this dispatch attempt (`dispatchFirstFailedAt`), stamped here on
+  // that failure. It used to count from `scheduledFor ?? approvedAt ??
+  // createdAt`, which killed a row resumed more than an hour late (a hold, the
+  // read-only freeze) on its first blip. The send-now fallback that epoch
+  // needed (R6 W-R1) went with it: every row's clock starts at its failure.
+  // See `_dispatch-retry-epoch.ts`.
   const scheduledFor = broadcast.scheduledFor;
-  const epochForBudget =
-    scheduledFor ?? broadcast.approvedAt ?? broadcast.createdAt;
+  const epochForBudget = await dispatchRetryEpoch(
+    deps,
+    input.broadcastId,
+    broadcast,
+    now,
+    'broadcasts.dispatch.retry_epoch_stamp_failed',
+  );
   const elapsedMs = now.getTime() - epochForBudget.getTime();
   const pastBudget = elapsedMs > RETRY_BUDGET_MS;
 
   if (pastBudget) {
-    // R6 W-R1 fix — log both the scheduled epoch (if any) and the
-    // budget epoch actually used. For send-now, scheduledFor is
-    // null and the budget anchors on approvedAt (dispatch-eligibility
-    // moment).
+    // Both instants on the record: the schedule (if any) for context, and the
+    // first failure the budget actually counted from.
     const scheduledForIso = scheduledFor?.toISOString() ?? null;
     const epochForBudgetIso = epochForBudget.toISOString();
     logger.error(
@@ -1821,6 +1812,8 @@ async function applyRetryBudget(
         subKind,
         originalReason: reason,
         scheduledFor: scheduledForIso,
+        // F119 PR-E — what `elapsedMs` counts from.
+        dispatchFirstFailedAt: epochForBudgetIso,
         elapsedMs,
         failedAt: now.toISOString(),
       },

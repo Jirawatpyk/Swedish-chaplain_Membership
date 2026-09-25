@@ -3,8 +3,9 @@
  * notification on live Neon (FR-021 / AS2).
  *
  * Verifies the end-to-end Slice E flow:
- *   1. Seed a tenant + member + plan + approved broadcast with
- *      `scheduled_for = now() - 65min` (past 1h retry budget).
+ *   1. Seed a tenant + member + plan + approved broadcast whose current
+ *      dispatch attempt FIRST failed 65 min ago (`dispatch_first_failed_at`,
+ *      F119 PR-E / 0311 — the budget no longer counts from `scheduled_for`).
  *   2. Run `dispatchScheduledBroadcast` with a Resend gateway stub
  *      that throws `retryable`.
  *   3. Slice D budget logic kicks in → row transitions to
@@ -105,6 +106,11 @@ interface SeedSpec {
   readonly planId: string;
   readonly subject: string;
   readonly scheduledForMinutesAgo: number; // negative offset from FROZEN_NOW
+  /**
+   * F119 PR-E — when the attempt first failed (the FR-021 anchor). Omitted =
+   * NULL, i.e. no failure yet.
+   */
+  readonly firstFailedMinutesAgo?: number;
 }
 
 async function seedApprovedBroadcast(
@@ -114,6 +120,10 @@ async function seedApprovedBroadcast(
   const scheduledFor = new Date(
     FROZEN_NOW.getTime() - spec.scheduledForMinutesAgo * 60 * 1000,
   );
+  const firstFailedAt =
+    spec.firstFailedMinutesAgo === undefined
+      ? null
+      : new Date(FROZEN_NOW.getTime() - spec.firstFailedMinutesAgo * 60 * 1000).toISOString();
   await runInTenant(tenant.ctx, (tx) =>
     tx.execute(sql`
       INSERT INTO broadcasts (
@@ -123,7 +133,7 @@ async function seedApprovedBroadcast(
         reply_to_email, segment_type, segment_params,
         custom_recipient_emails, estimated_recipient_count, status,
         retention_years, scheduled_for, submitted_at, approved_at,
-        approved_by_user_id, created_at, updated_at
+        approved_by_user_id, created_at, updated_at, dispatch_first_failed_at
       ) VALUES (
         ${tenant.ctx.slug},
         ${spec.broadcastId}::uuid,
@@ -147,7 +157,8 @@ async function seedApprovedBroadcast(
         ${scheduledFor.toISOString()}::timestamptz,
         ${randomUUID()}::uuid,
         ${scheduledFor.toISOString()}::timestamptz,
-        ${scheduledFor.toISOString()}::timestamptz
+        ${scheduledFor.toISOString()}::timestamptz,
+        ${firstFailedAt}::timestamptz
       )
     `),
   );
@@ -200,7 +211,8 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
       memberId,
       planId: 'plan-x',
       subject: 'Failed dispatch test',
-      scheduledForMinutesAgo: 65, // past the 1h budget
+      scheduledForMinutesAgo: 65,
+      firstFailedMinutesAgo: 65, // past the 1h budget, counted from the first failure
     });
 
     const outboxCountBefore = await countOutboxRows(

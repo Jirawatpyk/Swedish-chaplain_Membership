@@ -237,10 +237,12 @@ cancel it (an `approved` row is cancellable).
   audience (and its submitted import) until the row resumes or is refused — one of the Free plan's
   three audiences. On resume the completion rule still applies: an audience that changed during
   the hold is refused as `count_mismatch` (FR-044 a), not sent.
-- **Both legs:** the FR-021 retry budget is measured from `scheduled_for`. A row resuming more than
-  an hour late that then hits ONE retryable Resend failure goes straight to
-  `retry_budget_exhausted` (the member told "unreachable for over an hour"). Nothing on the row
-  records the hold, so the budget cannot tell a hold from a slow provider — a known limitation.
+- **Both legs:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
+  PR-E) the hour counts from the FIRST retryable Resend failure of the dispatch attempt
+  (`broadcasts.dispatch_first_failed_at`), not from `scheduled_for`, so a row resuming days late
+  gets its full hour. The column is reset on every status change and on a re-time. Residual: a
+  hold (or a read-only freeze) that starts AFTER a retryable failure does not reset the clock — if
+  it outlasts the rest of the hour, the first failure after the resume is terminal.
 
 A refusal is **permanent by the maintainer's rule, halted members included**: there is no edge out
 of `failed_to_dispatch`, and clearing a halt does not revive the row. A halt is re-read UNCACHED

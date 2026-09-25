@@ -1489,10 +1489,10 @@ PR-2 builds on PR-1.
     (`dispatch.server_error`, phase `standing`); the next tick asks again.
 
   Mail a prior tick already handed to Resend is never refused. The interim "cancel `approved`
-  rows by hand" step is retired. **Known limitation:** the FR-021 retry budget is measured from
-  `scheduled_for` on both legs, so a held row that resumes more than an hour late and then hits a
-  single retryable Resend failure goes straight to `retry_budget_exhausted`; and a held row sits
-  in `broadcasts_approved_overdue_count` (its alarm stays on for the hold). Neither can be fixed
+  rows by hand" step is retired. The FR-021 retry budget counts from the first retryable failure
+  of the attempt (`dispatch_first_failed_at`, migration `0311`, F119 PR-E), so a held row that
+  resumes late gets its full hour. **Known limitation:** a held row sits in
+  `broadcasts_approved_overdue_count` (its alarm stays on for the hold); that cannot be fixed
   without recording the hold on the row. Runbook: `docs/runbooks/eblast-approval.md` § Dispatch
   standing refusal.
 - ~~**Type seams and smaller follow-ups from the PR #392 review round 3** (issue #400)~~ —
