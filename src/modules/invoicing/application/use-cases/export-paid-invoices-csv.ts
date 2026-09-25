@@ -23,7 +23,14 @@
  * VAT / Total, Status `Credit note` and the original tax invoice in
  * `Reference Document No.`, so the VAT column sums to the register's NET
  * figure (`rcVat + reVat − creditNoteVat`, the ภ.พ.30 output VAT) — the
- * repo shares the register's credit-note predicate.
+ * repo shares the register's credit-note predicate. Not the whole period
+ * when combined-mode INVs were issued in it: the file carries only the PAID
+ * ones, which the register leaves out, and the register flags such a month
+ * `closed_month_incomplete` (`legacyCombinedCount`).
+ *
+ * `Status` is the invoice's status AS OF THE EXPORT, not as of the period:
+ * re-exporting June after a July credit note shows the June receipt as
+ * `Credited`, still positive — its reduction is the July negative row.
  *
  * --- Cross-module port for F5 payment methods --------------------
  * `paymentMethodLookup` is a F4-owned port; the composition root

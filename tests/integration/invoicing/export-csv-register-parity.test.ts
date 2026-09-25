@@ -535,6 +535,27 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
           pdfSha256: 'b'.repeat(64),
           pdfTemplateVersion: 8,
         },
+        {
+          // Full credit of the combined-mode INV-502 (issued in April),
+          // issued in May: it cites the INV and nets May's output VAT.
+          tenantId: slug,
+          creditNoteId: randomUUID(),
+          originalInvoiceId: combinedCredited,
+          fiscalYear: 2026,
+          sequenceNumber: 3,
+          documentNumber: 'CN-2026-000093',
+          issueDate: '2026-05-20',
+          issuedByUserId: user.userId,
+          reason: 'combined credit',
+          creditAmountSatang: 100_000n,
+          vatSatang: 7_000n,
+          totalSatang: 107_000n,
+          tenantIdentitySnapshot: SNAP_TENANT,
+          memberIdentitySnapshot: SNAP_MEMBER,
+          pdfBlobKey: 'invoicing/parity/cn3.pdf',
+          pdfSha256: 'd'.repeat(64),
+          pdfTemplateVersion: 8,
+        },
       ]);
     });
   }, 60_000);
@@ -590,6 +611,11 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
     // May — the payment month holds none of them.
     const may = await exportMonth('2026-05-01', '2026-05-31');
     expect(csvInvoiceNumbers(may.csv)).toEqual([]);
+    // …but the credit note issued in May against INV-502 is there, citing
+    // the INV, and nets May exactly like the register.
+    expect(csvCreditNotes(may.csv)).toEqual([['CN-2026-000093', '-70.00', 'INV-2026-000502']]);
+    expect(csvVatSatang(may.csv)).toBe(-7_000n);
+    expect(csvVatSatang(may.csv)).toBe((await registerMonth('2026-05-01', '2026-05-31')).netVat);
 
     // The register lists only RC/RE, so April's figure is incomplete: the
     // three non-void combined INVs (unpaid one included — it is already a tax
