@@ -386,6 +386,10 @@ export async function markPaidOffline(
   // outer `runInTenant` tx commits. Set inside the in-tx `onPaid` closure
   // below; remains null on any path that never reaches the cycle flip.
   let paidEventForFinalise: F4InvoicePaidEvent | null = null;
+  // The stale link cleared inside the outer tx (null when none was). If that
+  // tx later rolls back on `record_payment_failed`, the clear is re-applied
+  // in its own committed tx — see the `OrphanInvoiceRollback` catch.
+  let clearedStaleLinkId: string | null = null;
 
   // Outer atomic boundary — F4 chain step 3 (recordPayment) reuses
   // this tx; cycle flip + audit emit ride along.
@@ -565,6 +569,7 @@ export async function markPaidOffline(
         );
         // The status narrowing only re-proves PAYABLE_STATUSES (checked above
         // under the lock) for the compiler — `completed` requires a link.
+        if (cleared) clearedStaleLinkId = staleId;
         if (
           cleared &&
           (lockedCycle.status === 'upcoming' ||
@@ -1046,6 +1051,40 @@ export async function markPaidOffline(
     // The rollback sentinel thrown on `record_payment_failed` (see above) —
     // the tx is rolled back; surface the same orphan code as before.
     if (e instanceof OrphanInvoiceRollback) {
+      // A thrown sentinel rather than a rollback-carrying value (cf.
+      // payments' tx-decision.ts): that primitive lives in another module's
+      // application layer, and this path only has to reach this one catch.
+      //
+      // The rollback also undid the stale-link clear. Left pointing at the
+      // void bill, the cycle could not complete when the operator records the
+      // payment on the orphan invoice (the F8 on-paid resolver's link CAS
+      // rejects it and only warns) — a paying member's cycle would stay open.
+      // Re-apply it: idempotent, CAS on the observed void id, audit-free.
+      // Best effort — a failure here only restores the pre-fix state.
+      const staleId = clearedStaleLinkId;
+      if (staleId !== null) {
+        try {
+          await runInTenant(deps.tenant, (tx) =>
+            deps.cyclesRepo.clearStaleLinkedInvoiceInTx(
+              tx,
+              input.tenantId,
+              cycleId,
+              staleId,
+            ),
+          );
+        } catch (clearErr) {
+          logger.warn(
+            {
+              err: clearErr instanceof Error ? clearErr : new Error(String(clearErr)),
+              cycleId,
+              tenantId: input.tenantId,
+              staleInvoiceId: staleId,
+              orphanInvoiceId: e.orphanInvoiceId,
+            },
+            'markPaidOffline: could not re-apply the stale-link clear after the orphan rollback — the cycle still points at a void invoice',
+          );
+        }
+      }
       return err({
         kind: 'f4_orphan_invoice' as const,
         orphanInvoiceId: e.orphanInvoiceId,
