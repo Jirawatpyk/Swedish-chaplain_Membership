@@ -346,6 +346,18 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   // an error-shaped "Couldn't load" message. Admin still gets the
   // human-meaningful info via Tier badge + frozen price/term.
   const planName = planDisplay ? planDisplay.localisedName : '—';
+
+  // The linked bill as the admin actions see it: live unless F4 reports it
+  // void. A degraded F4 fetch (`status: 'unknown'`) still counts as live —
+  // the link exists, and offering mint-and-pay there would only earn a
+  // `membership_bill_already_exists` refusal.
+  const liveLinkedBill =
+    c.linkedInvoiceId !== null && v.linkedInvoice?.status !== 'void'
+      ? {
+          invoiceId: c.linkedInvoiceId,
+          billNumber: v.linkedInvoice?.invoiceNumber ?? null,
+        }
+      : null;
   const breadcrumbLabel = member ? member.companyName : shortId;
 
   return (
@@ -479,12 +491,17 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
       {/* DV-5 — admin cancel-cycle + mark-paid-offline actions. The client
           component renders the right control(s) based on the cycle's status
           (cancel for upcoming/reminded/awaiting_payment; mark-paid for
-          upcoming/awaiting_payment) and nothing for terminal /
+          upcoming/awaiting_payment with no live linked bill, else "Record
+          payment on {bill}" → that invoice) and nothing for terminal /
           pending_admin_reactivation cycles. Admin-only — managers view this
           surface read-only; the route handlers also reject a manager POST
           with 403 + f8_role_violation_blocked audit. */}
       {canPerform(currentUser.role, 'renewals.write') && (
-        <CycleAdminActions cycleId={c.cycleId} status={c.status} />
+        <CycleAdminActions
+          cycleId={c.cycleId}
+          status={c.status}
+          liveLinkedBill={liveLinkedBill}
+        />
       )}
 
       {/* Staff-Review-2026-05-09 SUG-5 fix: surface F2/F3 lookup

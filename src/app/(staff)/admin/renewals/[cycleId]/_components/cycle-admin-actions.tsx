@@ -10,8 +10,12 @@
  * status where the action is valid — matching the route's state-machine
  * guards, so we never present an affordance that the API will reject):
  *   - Cancel:           upcoming | reminded | awaiting_payment
- *   - Mark paid offline: upcoming | awaiting_payment (via the shared
- *     `shouldOfferMarkPaid` gate — `_lib/mark-paid-gate.ts`)
+ *   - Mark paid offline: upcoming | awaiting_payment with NO live linked
+ *     bill (via the shared `shouldOfferMarkPaid` gate — `_lib/mark-paid-gate.ts`)
+ *   - Record payment on {bill}: upcoming | awaiting_payment WITH a live linked
+ *     bill — a primary link to that invoice's F4 Record payment flow, in
+ *     place of mark-paid (which the use-case would refuse with
+ *     `membership_bill_already_exists`).
  *   - Neither:          completed | lapsed | cancelled | pending_admin_reactivation
  *     (a pending_admin_reactivation cycle has its own approve/reject actions in
  *      `pending-reactivation-actions.tsx`).
@@ -27,6 +31,7 @@
 'use client';
 
 import { useRef, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -40,12 +45,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { CycleStatus } from '@/modules/renewals';
 import { MarkPaidOfflineDialog } from '../../_components/mark-paid-offline-dialog';
-import { shouldOfferMarkPaid } from '../../_lib/mark-paid-gate';
+import {
+  shouldOfferMarkPaid,
+  shouldOfferRecordPaymentOnBill,
+} from '../../_lib/mark-paid-gate';
 import { isCancelReasonInvalid, REASON_MAX } from './cycle-admin-validation';
 
 /** Statuses where the Cancel control is offered (matches the route guard). */
@@ -58,6 +66,15 @@ const CANCELLABLE_STATUSES = new Set<CycleStatus>([
 export interface CycleAdminActionsProps {
   readonly cycleId: string;
   readonly status: CycleStatus;
+  /**
+   * The cycle's linked bill when it is still live (not void), else null.
+   * `billNumber` is the printed number (SC-… / §86/4), null when unknown
+   * (a degraded F4 fetch) — the link label then falls back to generic copy.
+   */
+  readonly liveLinkedBill: {
+    readonly invoiceId: string;
+    readonly billNumber: string | null;
+  } | null;
 }
 
 /**
@@ -93,7 +110,11 @@ async function readError(res: Response): Promise<{
   }
 }
 
-export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
+export function CycleAdminActions({
+  cycleId,
+  status,
+  liveLinkedBill,
+}: CycleAdminActionsProps) {
   const t = useTranslations('admin.renewals.cycleDetail');
   const router = useRouter();
 
@@ -110,11 +131,16 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
   const [markPaidOpen, setMarkPaidOpen] = useState(false);
 
   const showCancel = CANCELLABLE_STATUSES.has(status);
-  const showMarkPaid = shouldOfferMarkPaid(status);
+  const linkedInvoiceId = liveLinkedBill?.invoiceId ?? null;
+  const showMarkPaid = shouldOfferMarkPaid(status, linkedInvoiceId);
+  const showRecordPayment = shouldOfferRecordPaymentOnBill(
+    status,
+    linkedInvoiceId,
+  );
 
-  // Render nothing for cycles where neither action is valid (terminal +
+  // Render nothing for cycles where no action is valid (terminal +
   // pending_admin_reactivation, which has its own approve/reject component).
-  if (!showCancel && !showMarkPaid) {
+  if (!showCancel && !showMarkPaid && !showRecordPayment) {
     return null;
   }
 
@@ -161,6 +187,20 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      {/* --- Record payment on the live linked bill (F4 flow) --- */}
+      {showRecordPayment && liveLinkedBill !== null && (
+        <Link
+          href={`/admin/invoices/${encodeURIComponent(liveLinkedBill.invoiceId)}`}
+          className={buttonVariants()}
+        >
+          {liveLinkedBill.billNumber !== null
+            ? t('recordPaymentOnBill.link', {
+                billNumber: liveLinkedBill.billNumber,
+              })
+            : t('recordPaymentOnBill.linkNoNumber')}
+        </Link>
+      )}
+
       {/* --- Mark paid offline (non-destructive) --- */}
       {showMarkPaid && (
         <>

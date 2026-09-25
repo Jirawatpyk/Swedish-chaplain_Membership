@@ -267,6 +267,7 @@ export function PipelineCardList({
                         memberId={original.memberId}
                         companyName={original.companyName}
                         status={original.status}
+                        linkedInvoiceId={original.linkedInvoiceId}
                         canMutate={canMutate}
                         onRecordOutreach={onRecordOutreach}
                         onMarkPaid={onMarkPaid}

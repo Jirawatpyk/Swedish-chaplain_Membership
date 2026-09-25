@@ -32,7 +32,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Loader2Icon, MoreHorizontal } from 'lucide-react';
 import { mergeRefs } from '@/lib/merge-refs';
-import { shouldOfferMarkPaid } from '../_lib/mark-paid-gate';
+import {
+  shouldOfferMarkPaid,
+  shouldOfferRecordPaymentOnBill,
+} from '../_lib/mark-paid-gate';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus } from '@/modules/renewals/client';
@@ -111,9 +114,11 @@ export function PipelineEmptyMessage({
  * button; the ⋯ menu keeps "Open" + "Mark contacted" (the latter now
  * opens the shared `OutreachDialog` via `onRecordOutreach`, lifted to
  * `PipelineTable` so the dialog survives this menu closing) + Task 5's
- * "Mark paid" (offered only when `shouldOfferMarkPaid(status)` — mirrors
- * the mark-paid-offline route's own state-machine guard so this row never
- * offers a control the API would reject).
+ * "Mark paid" (offered only when `shouldOfferMarkPaid(status,
+ * linkedInvoiceId)` — mirrors the mark-paid-offline route's own guards so
+ * this row never offers a control the API would reject). A payable row that
+ * already has a live linked bill gets "Record payment on invoice" instead — a
+ * link to that bill's F4 Record payment flow.
  *
  * Fix round 3 — `canMutate` additionally gates "Send reminder" and "Mark
  * paid" (both admin-only at the route) to `false` for a read-only manager.
@@ -130,6 +135,7 @@ export function RowActions({
   memberId,
   companyName,
   status,
+  linkedInvoiceId,
   canMutate,
   onRecordOutreach,
   onMarkPaid,
@@ -138,6 +144,7 @@ export function RowActions({
   readonly memberId: string;
   readonly companyName: string;
   readonly status: CycleStatus;
+  readonly linkedInvoiceId: string | null;
   readonly canMutate: boolean;
   readonly onRecordOutreach: (t: OutreachTarget) => void;
   readonly onMarkPaid: (t: MarkPaidTarget) => void;
@@ -381,7 +388,7 @@ export function RowActions({
               §86/4 tax invoice + completes the cycle (a money mutation),
               and the route 403s a manager — same mint-a-403 rationale as
               the "Send reminder" button above. */}
-          {canMutate && shouldOfferMarkPaid(status) ? (
+          {canMutate && shouldOfferMarkPaid(status, linkedInvoiceId) ? (
             <DropdownMenuItem
               onClick={() =>
                 onMarkPaid({
@@ -393,6 +400,42 @@ export function RowActions({
             >
               {tActions('markPaid')}
             </DropdownMenuItem>
+          ) : null}
+          {/* A payable row that already has a live linked bill: mark-paid
+              would be refused (`membership_bill_already_exists`), so link to
+              that bill's F4 Record payment flow instead. Same soft-nav shape
+              as "Open" above; admin-only for the same reason as Mark paid. */}
+          {canMutate &&
+          shouldOfferRecordPaymentOnBill(status, linkedInvoiceId) ? (
+            <DropdownMenuItem
+              render={(props) => (
+                <a
+                  {...props}
+                  href={`/admin/invoices/${encodeURIComponent(linkedInvoiceId)}`}
+                  aria-label={tActions('recordPaymentOnInvoiceAriaLabel', {
+                    company: companyName,
+                  })}
+                  onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
+                    if (
+                      event.defaultPrevented ||
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey ||
+                      event.button !== 0
+                    ) {
+                      return;
+                    }
+                    event.preventDefault();
+                    router.push(
+                      `/admin/invoices/${encodeURIComponent(linkedInvoiceId)}`,
+                    );
+                  }}
+                >
+                  {tActions('recordPaymentOnInvoice')}
+                </a>
+              )}
+            />
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>

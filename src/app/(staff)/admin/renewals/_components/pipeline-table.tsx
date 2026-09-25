@@ -452,6 +452,7 @@ export function PipelineTable({
             memberId={row.original.memberId}
             companyName={row.original.companyName}
             status={row.original.status}
+            linkedInvoiceId={row.original.linkedInvoiceId}
             canMutate={canMutate}
             onRecordOutreach={setOutreachFor}
             onMarkPaid={setMarkPaidFor}

@@ -4087,6 +4087,8 @@
       "actions": {
         "open": "Open cycle",
         "openAriaLabel": "Open cycle for {company}",
+        "recordPaymentOnInvoice": "Record payment on invoice",
+        "recordPaymentOnInvoiceAriaLabel": "Record payment on the invoice for {company}",
         "sendReminder": "Send reminder",
         "sendReminderAriaLabel": "Send reminder to {company}",
         "markContacted": "Mark contacted",
@@ -4515,6 +4517,10 @@
             "feature_disabled": "The renewals workflow is not enabled for this chamber.",
             "server_error": "Something went wrong. Please try again."
           }
+        },
+        "recordPaymentOnBill": {
+          "link": "Record payment on {billNumber}",
+          "linkNoNumber": "Record payment on the invoice"
         },
         "markPaidOffline": {
           "button": "Mark paid offline",

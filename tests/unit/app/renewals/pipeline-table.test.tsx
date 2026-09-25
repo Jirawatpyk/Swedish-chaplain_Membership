@@ -534,7 +534,7 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
     );
 
     const record = await within(desktopTable()).findByRole('menuitem', {
-      name: /record payment on invoice/i,
+      name: /record payment on the invoice for beta co/i,
     });
     expect(record).toHaveAttribute('href', '/admin/invoices/inv-9');
     expect(

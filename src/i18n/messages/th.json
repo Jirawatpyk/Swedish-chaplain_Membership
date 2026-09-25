@@ -4087,6 +4087,8 @@
       "actions": {
         "open": "เปิดรอบการต่ออายุ",
         "openAriaLabel": "เปิดรอบการต่ออายุของ {company}",
+        "recordPaymentOnInvoice": "บันทึกการชำระเงินในใบแจ้งหนี้",
+        "recordPaymentOnInvoiceAriaLabel": "บันทึกการชำระเงินในใบแจ้งหนี้ของ {company}",
         "sendReminder": "ส่งเตือน",
         "sendReminderAriaLabel": "ส่งเตือนถึง {company}",
         "markContacted": "ทำเครื่องหมายว่าติดต่อแล้ว",
@@ -4515,6 +4517,10 @@
             "feature_disabled": "ระบบการต่ออายุยังไม่ได้เปิดใช้งานสำหรับหอการค้านี้",
             "server_error": "เกิดข้อผิดพลาดบางอย่าง กรุณาลองใหม่อีกครั้ง"
           }
+        },
+        "recordPaymentOnBill": {
+          "link": "บันทึกการชำระเงินใน {billNumber}",
+          "linkNoNumber": "บันทึกการชำระเงินในใบแจ้งหนี้"
         },
         "markPaidOffline": {
           "button": "บันทึกชำระเงินนอกระบบ",

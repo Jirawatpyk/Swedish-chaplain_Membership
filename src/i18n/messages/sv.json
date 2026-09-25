@@ -4087,6 +4087,8 @@
       "actions": {
         "open": "Öppna cykel",
         "openAriaLabel": "Öppna cykel för {company}",
+        "recordPaymentOnInvoice": "Registrera betalning på fakturan",
+        "recordPaymentOnInvoiceAriaLabel": "Registrera betalning på fakturan för {company}",
         "sendReminder": "Skicka påminnelse",
         "sendReminderAriaLabel": "Skicka påminnelse till {company}",
         "markContacted": "Markera kontaktad",
@@ -4515,6 +4517,10 @@
             "feature_disabled": "Förnyelseflödet är inte aktiverat för denna handelskammare.",
             "server_error": "Något gick fel. Försök igen."
           }
+        },
+        "recordPaymentOnBill": {
+          "link": "Registrera betalning på {billNumber}",
+          "linkNoNumber": "Registrera betalning på fakturan"
         },
         "markPaidOffline": {
           "button": "Markera betald offline",
