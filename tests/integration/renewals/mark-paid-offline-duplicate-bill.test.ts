@@ -23,6 +23,12 @@
  *   - the legitimate path (no existing live bill) still completes;
  *   - a `void` bill does NOT block — an invoice voided for correction must
  *     stay re-issuable.
+ *   - a cycle still LINKED to a void bill (void-on-reissue supersede /
+ *     pre-unlink voids) settles cleanly: the stale link is cleared before
+ *     the mint, so `onPaid`'s link CAS accepts the new bill and no orphan
+ *     §86/4 is left behind;
+ *   - a cycle linked to a LIVE bill from another plan year (which the
+ *     plan-year guard does not match) is refused without minting.
  *
  * Fixture note (deliberate, and the reason this lives in its own file):
  * the bridge mock INSERTS the invoice row at call time rather than
@@ -426,6 +432,125 @@ describe('F8 markPaidOffline — duplicate membership-bill guard', () => {
       tx.select().from(renewalCycles).where(eq(renewalCycles.cycleId, cycleId)),
     );
     expect(cycleRows[0]?.status).toBe('completed');
+
+    bridgeSpy.mockRestore();
+  }, 60_000);
+
+  it('a cycle still LINKED to a void bill settles cleanly — the stale link is cleared, no orphan §86/4', async () => {
+    const { memberId, cycleId } = await seedMemberWithPayableCycle('Stale Link Co');
+    const voidInvoiceId = randomUUID();
+    await seedInvoice({
+      invoiceId: voidInvoiceId,
+      memberId,
+      planYear: 2026,
+      status: 'void',
+    });
+    // The state the void-on-reissue supersede path leaves behind: the
+    // invoice is void but the open cycle still points at it.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: voidInvoiceId })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const mintedInvoiceId = randomUUID();
+    const bridgeSpy = mockBridgeCreatingInvoice(deps, mintedInvoiceId);
+
+    const r = await markPaidOffline(deps, {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      paymentMethod: 'bank_transfer',
+      paymentReference: 'BT-STALE-0001',
+      paymentDate: '2026-05-15',
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.outcome).toBe('completed');
+    expect(r.value.invoiceId).toBe(mintedInvoiceId);
+    expect(bridgeSpy).toHaveBeenCalledTimes(1);
+
+    const cycleRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(renewalCycles).where(eq(renewalCycles.cycleId, cycleId)),
+    );
+    expect(cycleRows[0]?.status).toBe('completed');
+    expect(cycleRows[0]?.linkedInvoiceId).toBe(mintedInvoiceId);
+
+    // Exactly one live membership bill for the year — the one the cycle now
+    // links. No orphan issued §86/4 beside it.
+    const liveBills = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, tenant.ctx.slug),
+            eq(invoices.memberId, memberId),
+            eq(invoices.planYear, 2026),
+            eq(invoices.status, 'issued'),
+          ),
+        ),
+    );
+    expect(liveBills.map((b) => b.invoiceId)).toEqual([mintedInvoiceId]);
+
+    bridgeSpy.mockRestore();
+  }, 60_000);
+
+  it('a cycle linked to a LIVE bill from another plan year is refused — nothing minted, cycle untouched', async () => {
+    const { memberId, cycleId } = await seedMemberWithPayableCycle('Drift Co');
+    const otherYearInvoiceId = randomUUID();
+    await seedInvoice({
+      invoiceId: otherYearInvoiceId,
+      memberId,
+      planYear: 2025,
+      status: 'issued',
+    });
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: otherYearInvoiceId })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const bridgeSpy = vi
+      .spyOn(deps.f4InvoiceBridge, 'issueAndMarkPaid')
+      .mockImplementation(async () => {
+        throw new Error(
+          'f4InvoiceBridge.issueAndMarkPaid must NOT be reached — a live linked bill must be refused first',
+        );
+      });
+
+    const r = await markPaidOffline(deps, {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      paymentMethod: 'bank_transfer',
+      paymentReference: 'BT-DRIFT-0001',
+      paymentDate: '2026-05-15',
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('membership_bill_already_exists');
+      if (r.error.kind === 'membership_bill_already_exists') {
+        expect(r.error.existingInvoiceId).toBe(otherYearInvoiceId);
+      }
+    }
+    expect(bridgeSpy).not.toHaveBeenCalled();
+
+    const cycleRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(renewalCycles).where(eq(renewalCycles.cycleId, cycleId)),
+    );
+    expect(cycleRows[0]?.status).toBe('awaiting_payment');
+    expect(cycleRows[0]?.linkedInvoiceId).toBe(otherYearInvoiceId);
 
     bridgeSpy.mockRestore();
   }, 60_000);
