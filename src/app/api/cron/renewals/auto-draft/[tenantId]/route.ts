@@ -42,6 +42,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { cronReadOnlyGuard } from '@/lib/cron-read-only-guard';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { autoDraftDueRenewals, makeRenewalsDeps } from '@/modules/renewals';
@@ -74,14 +75,11 @@ export async function POST(
     );
   }
   // Write-freeze parity (audit: financial) — mirror the coordinator / prune /
-  // reconcile routes so a direct authenticated POST during READ_ONLY_MODE
-  // creates no draft rows.
-  if (env.flags.readOnlyMode) {
-    return NextResponse.json(
-      { skipped: true, reason: 'read_only_mode' },
-      { status: 200 },
-    );
-  }
+  // reconcile routes so a direct authenticated call during READ_ONLY_MODE
+  // creates no draft rows. Not in `vercel.json` (the coordinator fans out to
+  // it), but it answers the same shape as every scheduled cron (#408).
+  const frozen = cronReadOnlyGuard(ROUTE_LABEL);
+  if (frozen) return frozen;
 
   const { tenantId } = await context.params;
 

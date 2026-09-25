@@ -119,6 +119,25 @@ describe('cron tier-upgrade-evaluate-coordinator route (W0-09)', () => {
     }
   });
 
+  it('#408 — the F8 kill-switch is checked BEFORE the freeze (same order as the other F8 routes)', async () => {
+    const env = (await import('@/lib/env')).env as {
+      features: { f8Renewals: boolean };
+      flags: { readOnlyMode: boolean };
+    };
+    env.features.f8Renewals = false;
+    env.flags.readOnlyMode = true;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      expect((await res.json()).reason).toBe('feature_flag_disabled');
+      expect(coordinatorSkippedReadOnlyMock).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      env.features.f8Renewals = true;
+      env.flags.readOnlyMode = false;
+    }
+  });
+
   it('happy path → 200, cron_kind=tier_upgrade_evaluate, no tenants_failed metric', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

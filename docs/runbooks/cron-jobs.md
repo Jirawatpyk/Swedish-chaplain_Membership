@@ -141,8 +141,14 @@ late email may already have expired (invitation / reset TTLs keep running).
 the incident is watched. The reasons are written in the gate,
 `tests/unit/architecture/cron-read-only-guard-coverage.test.ts`, which fails
 when a `vercel.json` path resolves to no route, a route does not call the guard
-(or calls it before the Bearer check), or an exemption goes stale. A new cron
-job gets the guard or a written exemption; there is no third option.
+(or calls it before the Bearer check, or does not return its result), or an
+exemption goes stale. A new cron
+job gets the guard or a written exemption; there is no third option. Count on
+2026-09-25: 39 `vercel.json` paths — 34 call the guard (12 of them replaced an
+inline `READ_ONLY_MODE` check: the 10 F8 renewals routes,
+`auth/prune-expired-invitations` and `broadcasts/retention-sweep`) and 5 are
+exempt. The unscheduled per-tenant worker `renewals/auto-draft/[tenantId]`
+calls it too.
 
 **Catch-up after the freeze lifts** (checked 2026-09-25 against the selection
 predicates; a missed daily or weekly run is picked up by the next scheduled run,
@@ -912,9 +918,10 @@ Nothing is expected to be swept before ~2031 (the first prod E-Blast plus
 5 years). A steady `swept_count: 0` until then is correct.
 
 **READ_ONLY_MODE** stops it: the route answers 200
-`{ skipped: true, reason: 'read_only_mode' }` and touches nothing. (Vercel Cron
-calls GET, which the proxy's write-freeze does not cover, so the check is in the
-route.)
+`{ ok: true, skipped: true, reason: 'read_only_mode' }` through the shared
+`cronReadOnlyGuard` and touches nothing. (Vercel Cron calls GET, which the
+proxy's write-freeze does not cover, so the check is in the route — see
+§ Read-only mode.)
 
 ### Resend copies — NOT MEASURED, to measure before 2031
 
@@ -1107,7 +1114,7 @@ leftovers; it does not need validating.
 | 200 + a tenant with `outcome: 'error'` | That tenant's run failed (`sweptCount`, when present, is what DID commit — it stays deleted). Other tenants ran | Vercel logs `cron.broadcasts.retention_sweep.server_error` (fields `err` = the error class, `code` = the SQLSTATE; never the message — a Drizzle message quotes the query's params) / `.uncaught_error` (errorId `F7.cron.retention_sweep.*`); the next daily tick retries. `broadcasts_retention_sweep_failed_total{tenant}` increments. `code: '55P03'` = a batch waited more than 5 s for a lock (the cascade into a row another transaction held) — that batch rolled back; nothing to do unless it repeats |
 | 200 + `providerCopyRetainedAtProcessor > 0` | Rows deleted although Resend refused to delete their copy; the copy stays under Resend's retention | None — expected for sent E-Blasts (§ "Resend copies" above) |
 | 200 + `providerCopyKeptTransient > 0` | Rows kept with their key because a Resend delete failed transiently | None unless it persists — § "Resend copies" above |
-| 200 + `{ skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE` is on; nothing ran | None — it resumes the day after the freeze lifts |
+| 200 + `{ ok: true, skipped: true, reason: 'read_only_mode' }` | `READ_ONLY_MODE` is on; nothing ran (§ Read-only mode) | None — it resumes the day after the freeze lifts |
 | 401 | Bearer mismatch | Rotate / fix `CRON_SECRET` |
 
 ### Alert rules

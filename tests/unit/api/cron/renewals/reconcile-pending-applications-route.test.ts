@@ -71,6 +71,20 @@ describe('cron renewals reconcile-pending-applications — READ_ONLY_MODE (#408)
     expect(skippedReadOnlyMock).toHaveBeenCalledWith('reconcile_pending_applications');
   });
 
+  it('the F8 kill-switch is checked BEFORE the freeze (same order as the other F8 routes)', async () => {
+    envMock.flags.readOnlyMode = true;
+    envMock.features.f8Renewals = false;
+    try {
+      const res = await GET(makeRequest(`Bearer ${CRON_SECRET}`));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ skipped: true, reason: 'feature_flag_disabled' });
+      expect(skippedReadOnlyMock).not.toHaveBeenCalled();
+      expect(runInTenantMock).not.toHaveBeenCalled();
+    } finally {
+      envMock.features.f8Renewals = true;
+    }
+  });
+
   it('freeze on + wrong Bearer → still 401', async () => {
     envMock.flags.readOnlyMode = true;
     const res = await GET(makeRequest('Bearer wrong'));

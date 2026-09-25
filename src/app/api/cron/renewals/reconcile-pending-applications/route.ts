@@ -50,19 +50,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  if (!env.features.f8Renewals) {
+    return NextResponse.json(
+      { skipped: true, reason: 'feature_flag_disabled' },
+      { status: 200 },
+    );
+  }
+
   // #408 — READ_ONLY_MODE: Vercel Cron calls with GET, which the proxy
   // write-freeze does not cover, so the route skips by itself.
   const frozen = cronReadOnlyGuard('/api/cron/renewals/reconcile-pending-applications');
   if (frozen) {
     renewalsMetrics.coordinatorSkippedReadOnly('reconcile_pending_applications');
     return frozen;
-  }
-
-  if (!env.features.f8Renewals) {
-    return NextResponse.json(
-      { skipped: true, reason: 'feature_flag_disabled' },
-      { status: 200 },
-    );
   }
 
   const correlationId = uuidv7();

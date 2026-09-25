@@ -10,8 +10,9 @@
  *
  * Rules, for every `crons[].path` in `vercel.json`:
  *   1. the path resolves to `src/app<path>/route.ts`;
- *   2. that file CALLS the shared guard (`cronReadOnlyGuard(`), and the call
- *      sits AFTER the Bearer check, so an unauthenticated caller still gets
+ *   2. that file CALLS the shared guard (`cronReadOnlyGuard(`) and RETURNS its
+ *      answer (`const x = cronReadOnlyGuard(…)` then `if (x) return x`), and
+ *      the call sits AFTER the Bearer check, so an unauthenticated caller still gets
  *      401 rather than learning the freeze state — OR the path is in EXEMPT
  *      with a written reason (a route that writes nothing and calls nothing
  *      external);
@@ -22,8 +23,9 @@
  *
  * Positive controls, because a scan that cannot tell "nothing to find" from
  * "not looking" is not a check: the parse must yield at least MIN_CRON_PATHS
- * paths, and fixtures prove the matchers reject a comment-only mention, the
- * inline flag check, and a guard placed before the Bearer check.
+ * paths, and fixtures prove the matchers reject a comment-only mention (whole
+ * line or trailing), the inline flag check, a call whose answer is not
+ * returned, and a guard placed before the Bearer check.
  *
  * Comments are stripped before matching (this docblock names the symbols it
  * requires) and `\r` is stripped on read — the working tree is CRLF, and a
@@ -37,7 +39,7 @@ import { join, resolve } from 'node:path';
 const ROOT = resolve(__dirname, '../../..');
 
 /**
- * Floor for the parse, not a target: 38 paths are scheduled today. It sits
+ * Floor for the parse, not a target: 39 paths are scheduled today. It sits
  * below that so removing a job does not fail the gate, but a parse that
  * silently collapses to nothing does.
  */
@@ -64,17 +66,34 @@ const EXEMPT: Readonly<Record<string, string>> = {
 };
 
 const GUARD_CALL = /\bcronReadOnlyGuard\s*\(/;
+/**
+ * The guard only works if its answer is handed back: `const x = cronReadOnlyGuard(…)`
+ * followed IMMEDIATELY by `if (x) return x;` or by an `if (x) { … return x; }`
+ * block (the F8 routes meter the skip first). A bare `cronReadOnlyGuard(ROUTE);`
+ * logs the skip and then runs the job anyway.
+ */
+const RETURNED_GUARD =
+  /\bconst\s+(\w+)\s*=\s*cronReadOnlyGuard\s*\([^)]*\)\s*;?\s*if\s*\(\s*\1\s*\)\s*(?:return\s+\1\b|\{[^{}]{0,400}?\breturn\s+\1\b)/;
+const UNRETURNED =
+  'calls cronReadOnlyGuard( without returning its result (`const x = cronReadOnlyGuard(…); if (x) return x`)';
 const AUTH_CALL = /\b(?:verifyCronBearer|gateCronBearerOrRespond|gateF6Cron)\s*\(/;
 
-/** Strip block + line comments (line-ending agnostic) so prose is not parsed. */
+/**
+ * Strip block comments, then line comments — whole-line AND trailing. A `//`
+ * counts as a comment only at line start or after whitespace / `;` `,` `(` `)`
+ * `{` `}`, so the `//` in a URL literal (`'https://…'`, preceded by `:`)
+ * survives. A string holding ` // ` would be cut short; that can only remove
+ * code, so it fails the gate loudly — it can never make a route pass.
+ */
 function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\n)[ \t]*\/\/[^\n]*/g, '$1');
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[\s;,(){}])\/\/[^\n]*/gm, '$1');
 }
 
-/** Rule 2: `null` when the file calls the guard after its Bearer check, else why not. */
+/** Rule 2: `null` when the file returns the guard's answer after its Bearer check, else why not. */
 function guardViolation(code: string): string | null {
-  const guard = GUARD_CALL.exec(code);
-  if (!guard) return 'does not call cronReadOnlyGuard(';
+  if (!GUARD_CALL.test(code)) return 'does not call cronReadOnlyGuard(';
+  const guard = RETURNED_GUARD.exec(code);
+  if (!guard) return UNRETURNED;
   const auth = AUTH_CALL.exec(code);
   if (!auth) return 'has no recognised Bearer check (verifyCronBearer / gateCronBearerOrRespond / gateF6Cron)';
   if (guard.index < auth.index) return 'calls cronReadOnlyGuard( BEFORE the Bearer check';
@@ -143,5 +162,44 @@ describe('#408 — every scheduled cron honours READ_ONLY_MODE (architecture gat
     const after = 'const gate = await gateF6Cron(req, ROUTE); if (gate) return gate;\nconst ro = cronReadOnlyGuard(ROUTE); if (ro) return ro;';
     expect(guardViolation(before)).toBe('calls cronReadOnlyGuard( BEFORE the Bearer check');
     expect(guardViolation(after)).toBeNull();
+  });
+
+  it('positive control — a mention only in a TRAILING comment FAILS rule 2', () => {
+    const trailing = stripComments(`
+      if (!verifyCronBearer(auth, secret)) return unauthorized(); // then cronReadOnlyGuard(ROUTE)
+      return NextResponse.json({ ok: true });
+    `);
+    expect(guardViolation(trailing)).toBe('does not call cronReadOnlyGuard(');
+  });
+
+  it('positive control — a call whose result is not returned FAILS rule 2', () => {
+    const bare = stripComments(`
+      if (!verifyCronBearer(auth, secret)) return unauthorized();
+      cronReadOnlyGuard(ROUTE);
+      await sweep();
+    `);
+    const unreturned = stripComments(`
+      if (!verifyCronBearer(auth, secret)) return unauthorized();
+      const frozen = cronReadOnlyGuard(ROUTE);
+      await sweep();
+    `);
+    expect(guardViolation(bare)).toBe(UNRETURNED);
+    expect(guardViolation(unreturned)).toBe(UNRETURNED);
+  });
+
+  it('positive control — a URL literal survives the comment strip; the braced return form passes', () => {
+    const url = stripComments(`
+      const gate = await gateCronBearerOrRespond(req, { route: 'https://example.test/api/cron' });
+      if (gate) return gate;
+      const frozen = cronReadOnlyGuard('https://example.test/api/cron');
+      if (frozen) {
+        // metered, then returned
+        metrics.skipped('x');
+        metrics.completed('tenant', 'skipped_read_only');
+        return frozen;
+      }
+    `);
+    expect(url).toContain("'https://example.test/api/cron'");
+    expect(guardViolation(url)).toBeNull();
   });
 });
