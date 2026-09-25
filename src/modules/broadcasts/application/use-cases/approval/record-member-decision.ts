@@ -133,7 +133,11 @@ export type RecordMemberDecisionError =
 
 /** A refusal that is audited after the rollback, never returned as-is. */
 type ProbeRefusal = { readonly kind: 'probe'; readonly probe: 'cross_tenant' | 'cross_member' };
-type Refusal = Exclude<RecordMemberDecisionError, { kind: 'not_found' | 'server_error' }> | ProbeRefusal;
+/** What this use case throws as an `ApprovalRefusal` (`_approval-tx.ts` `RefusalByUseCase`). */
+export type RecordMemberDecisionRefusal =
+  | Exclude<RecordMemberDecisionError, { kind: 'not_found' | 'server_error' }>
+  | ProbeRefusal;
+type Refusal = RecordMemberDecisionRefusal;
 
 export async function recordMemberDecision(
   deps: RecordMemberDecisionDeps,
@@ -271,7 +275,7 @@ export async function recordMemberDecision(
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: errKind(e) });
     // #400 item 5 — a refusal another use case raised is not ours to map.
     if (!isOwnRefusal(e, 'record-member-decision')) throw e;
-    const refusal = e.refusal as Refusal;
+    const refusal = e.refusal;
     if (refusal.kind !== 'probe') return err(refusal);
     await emitProbe(deps, input, refusal.probe);
     return err({ kind: 'not_found' });
@@ -296,9 +300,9 @@ async function stageChangedRefusal(
   tx: unknown,
   broadcastId: BroadcastId,
   status: BroadcastStatus,
-): Promise<ApprovalRefusal<Refusal>> {
+): Promise<ApprovalRefusal<'record-member-decision'>> {
   const decisions = await deps.decisionsRepo.listByBroadcast(deps.tenant.slug, broadcastId, tx);
-  return new ApprovalRefusal<Refusal>('record-member-decision', { kind: 'stage_changed', status, recorded: decisions.at(-1) ?? null });
+  return new ApprovalRefusal('record-member-decision', { kind: 'stage_changed', status, recorded: decisions.at(-1) ?? null });
 }
 
 /**
@@ -334,5 +338,5 @@ async function emitProbe(
 
 /** Throw-to-rollback: the refusal leaves the tx, which rolls back (`_approval-tx.ts`). */
 function refuse(refusal: Refusal): never {
-  throw new ApprovalRefusal<Refusal>('record-member-decision', refusal);
+  throw new ApprovalRefusal('record-member-decision', refusal);
 }

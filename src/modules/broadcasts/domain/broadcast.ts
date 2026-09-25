@@ -101,7 +101,11 @@ export interface Broadcast {
   // members module's `MemberId`: this Domain imports no other module, and every
   // actor id on the aggregate is a string. The brand starts at the Application
   // seams (the F119 use-case inputs and ports take a `MemberId`, #400 item 2),
-  // where a caller holding this field re-brands it with `asMemberId`.
+  // where a caller holding this field re-brands it: an approval use case with
+  // `ownerMemberId` (`approval/_owner-member-id.ts`, a type-only brand — a
+  // runtime members-barrel import there closes an import cycle), a caller
+  // outside this module (`src/lib/**`, a page) with the members barrel's
+  // `asMemberId`.
   readonly requestedByMemberId: string;
   readonly requestedByMemberPlanIdSnapshot: string;
   readonly submittedByUserId: string;

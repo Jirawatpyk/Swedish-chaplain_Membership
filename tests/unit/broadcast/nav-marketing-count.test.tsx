@@ -31,8 +31,17 @@ import { asTenantContext } from '@/modules/tenants';
 import { BROADCAST_STATUSES } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { MARKETING_TURN_STATUSES, turnOf } from '@/modules/broadcasts/domain/stage/whose-turn';
 import { APPROVAL_ROUND_STATUSES } from '@/modules/broadcasts/domain/stage/in-progress-statuses';
-import { applyNavBadges, isNavGroup, isNavItemActive, staffNavConfig, type RenderedNavItem } from '@/config/nav';
+import {
+  applyNavBadges,
+  filterNavConfig,
+  isNavGroup,
+  isNavItemActive,
+  staffNavConfig,
+  type NavVisibilityFlags,
+  type RenderedNavItem,
+} from '@/config/nav';
 import { MARKETING_TURN_QUEUE_HREF } from '@/app/(staff)/admin/broadcasts/_lib/queue-view';
+import { staffNavAllowedHrefs } from '@/lib/nav-permissions';
 
 const h = vi.hoisted(() => ({
   features: { f7Broadcasts: true } as { f7Broadcasts: boolean },
@@ -235,5 +244,36 @@ describe('the staff layout seam: read → applyNavBadges → the Broadcasts link
     const layout = readFileSync(join(ROOT, 'src', 'app', '(staff)', 'admin', 'layout.tsx'), 'utf8');
     expect(layout).toMatch(/readEblastWaitingCountForNav\(/);
     expect(layout).toMatch(/'\/admin\/broadcasts':\s*\w+\.kind === 'ok' \? \w+\.count : 0/);
+  });
+});
+
+describe('#400 U2 — the link opens the waiting-on-marketing preset ONLY while the approval round is visible', () => {
+  // The sidebar's own path: filterNavConfig (visibility + link target) → applyNavBadges → NavEntry.
+  const renderedBroadcasts = (flags: NavVisibilityFlags) =>
+    applyNavBadges(filterNavConfig(staffNavConfig, flags, new Set(staffNavAllowedHrefs('marketing'))), {})
+      .sections.flatMap((s) => s.items.flatMap((i) => (isNavGroup(i) ? i.children : [i])))
+      .find((i) => i.href === '/admin/broadcasts') as RenderedNavItem;
+  const hrefOf = (item: RenderedNavItem) => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ul>
+          <NavEntry item={item} />
+        </ul>
+      </NextIntlClientProvider>,
+    );
+    return screen.getByRole('link', { name: 'Broadcasts' }).getAttribute('href');
+  };
+
+  it('round NOT visible (flag off, no row in the round — prod today): the plain queue, never three empty preset chips', () => {
+    expect(hrefOf(renderedBroadcasts({ broadcastsEnabled: true, eblastApprovalRoundVisible: false }))).toBe('/admin/broadcasts');
+  });
+
+  it('round visible (flag on, or a row still in the round): the preset view the badge counts', () => {
+    expect(hrefOf(renderedBroadcasts({ broadcastsEnabled: true, eblastApprovalRoundVisible: true }))).toBe(MARKETING_TURN_QUEUE_HREF);
+  });
+
+  it('the staff layout derives the flag from the SAME read as the badge (R18: `ok` = flag on or a round row)', () => {
+    const layout = readFileSync(join(ROOT, 'src', 'app', '(staff)', 'admin', 'layout.tsx'), 'utf8');
+    expect(layout).toMatch(/eblastApprovalRoundVisible:\s*eblastWaiting\.kind === 'ok'/);
   });
 });

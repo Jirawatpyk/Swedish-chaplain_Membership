@@ -20,6 +20,7 @@
 import { DetailContainer } from '@/components/layout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ComposeFormSkeleton } from '@/components/broadcast/compose-form-skeleton';
+import { env } from '@/lib/env';
 
 export default function ComposeLoading(): React.ReactElement {
   return (
@@ -28,7 +29,7 @@ export default function ComposeLoading(): React.ReactElement {
         <Skeleton className="h-7 w-48" />
         <Skeleton className="h-4 w-72" />
       </header>
-      <ComposeFormSkeleton variant="member" />
+      <ComposeFormSkeleton variant="member" imageControls={env.features.f71aUs2Images} />
     </DetailContainer>
   );
 }

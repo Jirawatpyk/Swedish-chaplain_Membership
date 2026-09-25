@@ -32,8 +32,19 @@ export const F119_NOTIFICATION_TYPES = [
 
 export type F119NotificationType = (typeof F119_NOTIFICATION_TYPES)[number];
 
-/** The `kind` of `eblast_approval_lifecycle` — the four steps of the approval clock (FR-022, FR-022a). */
-export type EblastApprovalLifecycleKind = 'reminder_day3' | 'reminder_day7' | 'expiry_warning_day23' | 'expired_day30';
+/**
+ * The `kind` of `eblast_approval_lifecycle` — the four steps of the approval
+ * clock (FR-022, FR-022a). The tuple is the one source: the dispatcher's
+ * `EBLAST_LIFECYCLE_KINDS` IS this tuple (#400 T3), so a step added here is a
+ * step the dispatcher's guard accepts.
+ */
+export const EBLAST_APPROVAL_LIFECYCLE_KINDS = [
+  'reminder_day3',
+  'reminder_day7',
+  'expiry_warning_day23',
+  'expired_day30',
+] as const;
+export type EblastApprovalLifecycleKind = (typeof EBLAST_APPROVAL_LIFECYCLE_KINDS)[number];
 
 /**
  * The two ids every approval-round row carries. A type alias, not an

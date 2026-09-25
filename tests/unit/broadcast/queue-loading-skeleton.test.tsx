@@ -59,11 +59,18 @@ describe('the queue loading skeleton (UX review M2)', () => {
     expect(slot!.className).toContain('h-9');
   });
 
-  it('#400 item 8: reserves an h-9 slot for the Waiting on marketing button too', async () => {
+  it('#400 item 8 / U6: reserves an h-9 slot for the Waiting on marketing button, as wide as the button (w-52)', async () => {
+    flag.on = true;
     const { container } = await renderSkeleton();
     const slot = container.querySelector('[data-skeleton="waiting-on-marketing"]');
     expect(slot).not.toBeNull();
     expect(slot!.className).toContain('h-9');
+    expect(slot!.className).toContain('w-52');
+  });
+
+  it('#400 U2: with the approval round off the slot is not reserved — the strip withholds the toggle like the round chips', async () => {
+    const { container } = await renderSkeleton();
+    expect(container.querySelector('[data-skeleton="waiting-on-marketing"]')).toBeNull();
   });
 });
 

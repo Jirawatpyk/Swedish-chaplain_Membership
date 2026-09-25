@@ -35,20 +35,27 @@ export interface PayloadTransient {
   readonly transient: 'read_failed';
 }
 
+/** The one transient today: a read the arm depends on failed this tick (the `eblast_*` and F114 arms). */
+export const READ_FAILED: PayloadTransient = { transient: 'read_failed' };
+
 /** Every way `buildPayload` can answer without a payload. */
 export type UnbuiltPayload = PayloadMiss | PayloadTransient | null;
 
 /** The labels `outbox_permanent_failures_total` takes for an unrendered row. */
 export type UnbuiltFailureReason = Exclude<PayloadMiss['miss'], 'request_superseded'> | PayloadTransient['transient'] | 'no_template_handler';
 
-export interface UnbuiltPayloadOutcome {
-  /** Close the row now (`permanently_failed`) rather than schedule a retry. */
-  readonly permanent: boolean;
-  /** `last_error` and the audit payload's `reason`. */
-  readonly reason: PayloadMiss['miss'] | UnbuiltFailureReason;
-  /** The failure-metric label; `null` for the silent `request_superseded`, which is no failure. */
-  readonly metricReason: UnbuiltFailureReason | null;
-}
+/**
+ * What the dispatcher does with the row (#400 T7 — one union, not three
+ * independent fields, so "skip it, but count a failure" cannot be said):
+ *   - `skip` — the silent `request_superseded`: closed (`permanently_failed`,
+ *     `last_error` = the reason), counted as superseded, never as a failure;
+ *   - `fail` — `reason` is `last_error`, the audit payload's `reason` and the
+ *     failure-metric label; `permanent` closes the row now instead of
+ *     scheduling a retry.
+ */
+export type UnbuiltPayloadOutcome =
+  | { readonly kind: 'skip'; readonly reason: 'request_superseded' }
+  | { readonly kind: 'fail'; readonly permanent: boolean; readonly reason: UnbuiltFailureReason };
 
 export function isPayloadMiss(v: unknown): v is PayloadMiss {
   return typeof v === 'object' && v !== null && 'miss' in v;
@@ -64,8 +71,10 @@ export function isPayloadTransient(v: unknown): v is PayloadTransient {
  */
 export function unbuiltPayloadOutcome(unbuilt: UnbuiltPayload, nextAttempt: number, maxAttempts: number): UnbuiltPayloadOutcome {
   if (isPayloadMiss(unbuilt)) {
-    return { permanent: true, reason: unbuilt.miss, metricReason: unbuilt.miss === 'request_superseded' ? null : unbuilt.miss };
+    return unbuilt.miss === 'request_superseded'
+      ? { kind: 'skip', reason: unbuilt.miss }
+      : { kind: 'fail', permanent: true, reason: unbuilt.miss };
   }
   const reason = unbuilt === null ? 'no_template_handler' : unbuilt.transient;
-  return { permanent: nextAttempt >= maxAttempts, reason, metricReason: reason };
+  return { kind: 'fail', permanent: nextAttempt >= maxAttempts, reason };
 }

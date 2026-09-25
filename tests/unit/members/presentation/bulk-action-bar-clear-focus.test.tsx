@@ -15,6 +15,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { MembersTable, type MembersTableRow } from '@/components/members/members-table';
 import { BulkActionBar } from '@/app/(staff)/admin/members/_components/bulk-action-bar';
+import { DirectoryWithBulk } from '@/app/(staff)/admin/members/_components/directory-with-bulk';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
@@ -25,6 +26,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 vi.mock('@/app/(staff)/admin/members/_components/bulk-progress-indicator', () => ({
   BulkProgressIndicator: () => null,
 }));
+vi.mock('@/components/layout/table-pagination', () => ({ TablePagination: () => null }));
 
 const CLEAR = enMessages.admin.members.bulk.clear;
 const SELECT_ALL = 'members-select-all';
@@ -108,6 +110,48 @@ describe('members bulk bar — Clear keeps keyboard focus on the page', () => {
     fireEvent.click(clear);
     expect(screen.getByTestId(SELECT_ALL)).toHaveFocus();
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('in the REAL directory composition, Clear leaves focus on the (surviving) select-all checkbox', () => {
+    // The stand-in above cannot see a remount: the real table rebuilt its
+    // columns on every selection change, so `flexRender` mounted a NEW
+    // select-all header — the node Clear had just focused was thrown away with
+    // the reset and focus fell to <body>.
+    const base = {
+      member_number_display: 'SCCM-0042',
+      country: 'SE',
+      plan_id: 'plan-1',
+      plan_year: 2026,
+      plan_display_name: 'Premium Corporate',
+      status: 'active',
+      membership_lapsed: false,
+      membership_suspended: false,
+      portal_state: null,
+      engagement: null,
+      last_activity_at: null,
+      primary_contact: null,
+    } as const;
+    const rows = [
+      { ...base, member_id: 'aaaa-1111', company_name: 'Fogmaker AB' },
+      { ...base, member_id: 'bbbb-2222', company_name: 'Volvo AB' },
+    ] as unknown as MembersTableRow[];
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <main id="main-content" tabIndex={-1}>
+          <DirectoryWithBulk rows={rows} page={1} pageSize={50} total={2} isAdmin />
+        </main>
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: enMessages.admin.members.directory.selectRow.replace('{company}', 'Fogmaker AB'),
+      }),
+    );
+    const clear = screen.getByRole('button', { name: CLEAR });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(screen.queryByRole('button', { name: CLEAR })).toBeNull();
+    expect(screen.getByTestId(SELECT_ALL)).toHaveFocus();
   });
 
   it('with no focusable select-all (the table is hidden below md), focus goes to #main-content', () => {

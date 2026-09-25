@@ -32,10 +32,15 @@ vi.mock('next/navigation', () => ({
 const ZERO = Object.fromEntries(BROADCAST_STATUSES.map((s) => [s, 0])) as Record<BroadcastStatus, number>;
 const LABEL = enMessages.admin.broadcasts.queue.filters.waitingOnMarketing;
 
-function filters() {
+function filters(
+  { stageCounts = ZERO, approvalRoundEnabled = true }: {
+    stageCounts?: Record<BroadcastStatus, number> | null;
+    approvalRoundEnabled?: boolean;
+  } = {},
+) {
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueFilters memberOptions={[]} stageCounts={ZERO} approvalRoundEnabled={false} />
+      <QueueFilters memberOptions={[]} stageCounts={stageCounts} approvalRoundEnabled={approvalRoundEnabled} />
     </NextIntlClientProvider>
   );
 }
@@ -90,5 +95,51 @@ describe('the Waiting on marketing preset (#400 item 8)', () => {
     fireEvent.click(presetButton());
     expect(lastUrl().searchParams.getAll('status')).toEqual([]);
     expect(lastUrl().search).toBe('');
+  });
+});
+
+/**
+ * #400 U2 — the toggle follows the nav badge's R18 rule. With the approval
+ * round dark (flag off, no row in a round stage — prod today) the preset
+ * would be `submitted` plus three stages that cannot hold rows, so it is not
+ * offered at all.
+ */
+describe('the preset is offered only while the approval round is visible (#400 U2)', () => {
+  const queryPreset = () => screen.queryByRole('button', { name: LABEL });
+
+  it('flag off and no row in the round: no toggle', () => {
+    render(filters({ approvalRoundEnabled: false }));
+    expect(queryPreset()).toBeNull();
+  });
+
+  it('flag off but a row still in the round: the toggle is offered', () => {
+    render(filters({ approvalRoundEnabled: false, stageCounts: { ...ZERO, awaiting_member_approval: 1 } }));
+    expect(queryPreset()).not.toBeNull();
+  });
+
+  it('the stage counts are unavailable: the toggle is offered, like every chip (never hide a stage that may hold work)', () => {
+    render(filters({ approvalRoundEnabled: false, stageCounts: null }));
+    expect(queryPreset()).not.toBeNull();
+  });
+
+  it('a preset that arrived by URL keeps its (pressed) toggle, so it can be turned off', () => {
+    nav.searchParams.current = new URL(MARKETING_TURN_QUEUE_HREF, 'http://x').searchParams;
+    render(filters({ approvalRoundEnabled: false }));
+    expect(presetButton()).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('turning that preset off unmounts the toggle — focus goes to the first Stage checkbox, never <body>', () => {
+    nav.searchParams.current = new URL(MARKETING_TURN_QUEUE_HREF, 'http://x').searchParams;
+    const { rerender } = render(filters({ approvalRoundEnabled: false }));
+    presetButton().focus();
+    fireEvent.click(presetButton());
+    // The navigation lands: back to the FR-010 default, where the round is not visible.
+    nav.searchParams.current = new URLSearchParams();
+    rerender(filters({ approvalRoundEnabled: false }));
+    expect(queryPreset()).toBeNull();
+    const firstStage = screen
+      .getByRole('group', { name: /stage/i })
+      .querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(document.activeElement).toBe(firstStage);
   });
 });

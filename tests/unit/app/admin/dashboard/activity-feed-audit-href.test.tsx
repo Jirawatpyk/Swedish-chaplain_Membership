@@ -100,6 +100,11 @@ vi.mock('@/lib/tenant-context', () => ({
 // absent from the env mock above, so the helper answers null without a query.
 vi.mock('@/lib/members-change-request-deps', () => ({ buildChangeRequestDeps: () => ({}) }));
 vi.mock('@/modules/members', () => ({ countPendingChangeRequests: vi.fn() }));
+// #400 U2 — the page reads the E-Blast waiting count for the card's link
+// target; this suite asserts nothing about it, so the read answers `hidden`.
+vi.mock('@/lib/eblast-waiting-count', () => ({
+  readEblastWaitingCount: vi.fn().mockResolvedValue({ kind: 'hidden', reason: 'flag_off' }),
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),

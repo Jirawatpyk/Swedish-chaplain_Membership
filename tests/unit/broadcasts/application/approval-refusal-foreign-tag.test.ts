@@ -12,10 +12,16 @@
 import { describe, expect, it } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId } from '@/modules/members';
-import { ApprovalRefusal } from '@/modules/broadcasts/application/use-cases/approval/_approval-tx';
-import { confirmSchedule } from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
+import { ApprovalRefusal, isOwnRefusal } from '@/modules/broadcasts/application/use-cases/approval/_approval-tx';
+import {
+  confirmSchedule,
+  type ConfirmScheduleError,
+} from '@/modules/broadcasts/application/use-cases/approval/confirm-schedule';
 import { recordMemberDecision } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
-import { saveFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/save-formatted-version';
+import {
+  saveFormattedVersion,
+  type SaveFormattedVersionError,
+} from '@/modules/broadcasts/application/use-cases/approval/save-formatted-version';
 import { sendVersionToMember } from '@/modules/broadcasts/application/use-cases/approval/send-version-to-member';
 import { startFormattedVersion } from '@/modules/broadcasts/application/use-cases/approval/start-formatted-version';
 import {
@@ -36,7 +42,8 @@ const passThrough = { sanitize: (html: string) => html };
 function harness() {
   const store = makeFakeApprovalStore({ broadcasts: [BROADCAST], versions: [makeApprovalVersion({ versionNo: 0 })] });
   // A refusal raised by ANOTHER use case, surfacing inside this one's tx.
-  const foreign = new ApprovalRefusal('some-other-use-case' as never, { kind: 'not_found' });
+  // (Both halves cast: the tag is not one of the five, so no payload type fits it.)
+  const foreign = new ApprovalRefusal('some-other-use-case' as never, { kind: 'not_found' } as never);
   store.broadcastsRepo.lockForUpdate.mockRejectedValueOnce(foreign);
   const common = {
     tenant: asTenantContext('test-tenant'),
@@ -133,5 +140,29 @@ describe('ApprovalRefusal — a refusal from another use case is rethrown, never
         { broadcastId: BROADCAST.broadcastId, actorUserId: ACTOR, actorRole: null, requestId: null, mode: { mode: 'send_now' } },
       ),
     ).rejects.toBe(foreign);
+  });
+});
+
+/**
+ * #400 T2 — the tag and the payload are ONE type: `ApprovalRefusal<U>` carries
+ * `RefusalByUseCase[U]`, so a use case can neither raise another's refusal
+ * under its own tag nor need a cast to read its own. The `@ts-expect-error`
+ * lines are the test (`pnpm typecheck` fails if a directive becomes unused).
+ */
+describe('ApprovalRefusal — the tag names the payload type (#400 T2)', () => {
+  it('a payload must be the tagged use case\'s error', () => {
+    const own = new ApprovalRefusal('confirm-schedule', { kind: 'round_zero' });
+    // @ts-expect-error — `no_working_copy` is a save-formatted-version refusal, not a confirm-schedule one
+    const mismatched = new ApprovalRefusal('confirm-schedule', { kind: 'no_working_copy' });
+    expect([own.useCase, mismatched.useCase]).toEqual(['confirm-schedule', 'confirm-schedule']);
+  });
+
+  it('isOwnRefusal narrows the payload to the tagged error — no cast at the catch site', () => {
+    const e: unknown = new ApprovalRefusal('save-formatted-version', { kind: 'no_working_copy' });
+    if (!isOwnRefusal(e, 'save-formatted-version')) throw new Error('expected its own refusal');
+    const refusal: SaveFormattedVersionError = e.refusal;
+    // @ts-expect-error — narrowed to save-formatted-version's error, which is not confirm-schedule's
+    const wrong: ConfirmScheduleError = e.refusal;
+    expect([refusal.kind, wrong.kind]).toEqual(['no_working_copy', 'no_working_copy']);
   });
 });

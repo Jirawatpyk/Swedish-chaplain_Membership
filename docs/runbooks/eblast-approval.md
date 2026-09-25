@@ -94,8 +94,9 @@ their detail pages.
    ```
    `pending` + `attempts = 0` + no `last_error` = held by the flag (or not yet ticked).
    `permanently_failed` + `last_error = 'request_superseded'` = stale at send time and closed on
-   purpose (§ After a re-flip). `last_error = 'no_template_handler'` → § The `no_template_handler`
-   symptom.
+   purpose (§ After a re-flip). `last_error = 'read_failed'` = a read the arm depends on failed
+   this tick; the row retries (§ The `read_failed` and `no_template_handler` symptoms).
+   `last_error = 'no_template_handler'` → the same section.
 4. **Open the E-Blast** at `/admin/broadcasts/<id>`: the approval-round card shows whose turn it
    is, the time in stage, the round and both send times; the version history sits below the
    workspace.
@@ -379,17 +380,24 @@ The reject/cancel stamping is **new with PR-2 and unflagged**: from the merge, r
 cancelling any E-Blast — including one in today's flow — stamps its images and the next sweep
 deletes their bytes.
 
-## The `no_template_handler` symptom
+## The `read_failed` and `no_template_handler` symptoms
 
-`last_error = 'no_template_handler'` on an `eblast_*` row means the dispatcher's payload builder
-returned **null**. All five `eblast_*` types have an arm (a contract test enumerates the enum with
-a positive control), so on a healthy deploy null means one of:
+**`last_error = 'read_failed'`** on an `eblast_*` row means a read the arm depends on failed this
+tick — the arm logged `M119.outbox_dispatch.eblast.read_failed` first. The row retries and usually
+clears; if every attempt fails it ends `permanently_failed` **as `read_failed`** (#400 item 4 —
+before PR #400 PR-B an exhausted read failure was labelled `no_template_handler`, which sent the
+operator looking for a missing template). The F114 change-request arms answer the same since
+#400 W3; three of their reads log a line naming the read
+(`…change_request.{replacement,roster,prefix}_read_failed`), the repository reads that return a
+Result (the request, member and contact reads, in both arms) do not log — `last_error` is the only trace there.
 
-1. **A transient read failed** — the arm logged `M119.outbox_dispatch.eblast.read_failed` first.
-   The row retries and usually clears.
-2. **Malformed `context_data`** — logged `M119.outbox_dispatch.eblast.malformed_context` with the
+**`last_error = 'no_template_handler'`** means the dispatcher's payload builder returned **null**
+— no arm rendered the row. All five `eblast_*` types have an arm (a contract test enumerates the
+enum with a positive control), so on a healthy deploy null means one of:
+
+1. **Malformed `context_data`** — logged `M119.outbox_dispatch.eblast.malformed_context` with the
    missing field. It will not clear; find what enqueued it.
-3. **PR-2 was reverted while `eblast_*` rows were pending** — the pre-PR-2 drainer neither skips
+2. **PR-2 was reverted while `eblast_*` rows were pending** — the pre-PR-2 drainer neither skips
    these types nor has an arm for them, so **every** held row lands here (§ Flag rollback,
    layer 2).
 
@@ -397,8 +405,8 @@ The ladder is five attempts: retries after 60 s, 5 min, 30 min and 3 h, and the 
 is terminal** — about **3.6 hours** from the first attempt, not the "~16 h" the contract states
 (the 12 h step of the shared backoff table is never waited, because attempt 5 does not retry).
 The terminal flip writes `status = 'permanently_failed'`, one `email_dispatch_failed` audit row
-(`reason: 'no_template_handler'`) and increments
-`outbox_permanent_failures_total{reason="no_template_handler"}`, which pages on a sustained rate
+(`reason: 'read_failed'` or `'no_template_handler'`, as above) and increments
+`outbox_permanent_failures_total{reason=…}` under the same label, which pages on a sustained rate
 (`docs/observability.md` § 14.3). `request_gone` and `recipient_gone` are terminal on the first
 tick with the same audit; `request_superseded` is terminal, silent (no audit) and counted on
 `outbox_superseded_total`.

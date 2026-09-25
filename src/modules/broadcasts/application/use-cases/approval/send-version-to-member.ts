@@ -189,7 +189,7 @@ export async function sendVersionToMember(
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
     // #400 item 5 — a refusal another use case raised is not ours to map.
     if (!isOwnRefusal(e, 'send-version-to-member')) throw e;
-    const refusal = e.refusal as SendVersionToMemberError;
+    const refusal = e.refusal;
     if (refusal.kind === 'not_found') {
       await emitCrossTenantProbe({
         audit: deps.audit,
@@ -217,5 +217,5 @@ export async function sendVersionToMember(
 
 /** Throw-to-rollback: the refusal leaves the tx, which rolls back (`_approval-tx.ts`). */
 function refuse(refusal: SendVersionToMemberError): never {
-  throw new ApprovalRefusal<SendVersionToMemberError>('send-version-to-member', refusal);
+  throw new ApprovalRefusal('send-version-to-member', refusal);
 }

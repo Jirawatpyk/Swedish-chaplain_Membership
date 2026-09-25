@@ -43,6 +43,18 @@ export interface CoverageLists {
   readonly exempt: readonly ExemptTable[];
 }
 
+/**
+ * The parse: every `tenant_id` table found, by name — and every `pgTable(`
+ * that declares `tenant_id` under a name that is NOT a string literal (a
+ * constant, a template), which cannot be matched against the registry and is
+ * a failure, never a silent skip (#400 W4).
+ */
+export interface ParsedTenantTables {
+  readonly tables: readonly string[];
+  /** The source path of each unnamed `tenant_id` table. */
+  readonly unnamed: readonly string[];
+}
+
 export interface CoverageResult {
   /** Every `tenant_id` table the parse found, sorted. */
   readonly parsed: readonly string[];
@@ -61,23 +73,33 @@ const TABLE_NAME = /^\s*['"]([a-z0-9_]+)['"]/;
 const TENANT_COLUMN = /['"]tenant_id['"]/;
 
 /** Every Drizzle table in `sources` whose definition declares a `tenant_id` column. */
-export function parseTenantScopedTables(sources: readonly SchemaSource[]): string[] {
+export function parseTenantScopedTables(sources: readonly SchemaSource[]): ParsedTenantTables {
   const found = new Set<string>();
-  for (const { text } of sources) {
+  const unnamed: string[] = [];
+  for (const { path, text } of sources) {
     const chunks = stripCommentsPreserveLines(text).split('pgTable(');
     // chunks[0] is everything before the first table.
     for (const chunk of chunks.slice(1)) {
+      if (!TENANT_COLUMN.test(chunk)) continue;
       const name = TABLE_NAME.exec(chunk)?.[1];
-      if (name !== undefined && TENANT_COLUMN.test(chunk)) found.add(name);
+      if (name === undefined) unnamed.push(path);
+      else found.add(name);
     }
   }
-  return [...found].sort();
+  return { tables: [...found].sort(), unnamed };
 }
 
 /** The positive control: every parsed table registered, and the parse not blind. */
-export function checkCoverage(parsed: readonly string[], lists: CoverageLists): CoverageResult {
+export function checkCoverage(parse: ParsedTenantTables, lists: CoverageLists): CoverageResult {
   const failures: string[] = [];
-  if (parsed.length === 0) {
+  const parsed = parse.tables;
+  for (const path of parse.unnamed) {
+    failures.push(
+      `a pgTable( in ${path} declares tenant_id but its name is not a string literal — ` +
+        'the control cannot match it against the registry; name the table with a literal',
+    );
+  }
+  if (parsed.length === 0 && parse.unnamed.length === 0) {
     failures.push('the schema parse found ZERO tenant_id tables — the parse is blind, not the schema clean');
   }
   for (const known of KNOWN_TENANT_TABLES) {

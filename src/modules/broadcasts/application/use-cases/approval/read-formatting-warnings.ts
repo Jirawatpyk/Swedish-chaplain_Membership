@@ -44,8 +44,10 @@ export interface ReadFormattingWarningsDeps {
 export interface ReadFormattingWarningsInput {
   /**
    * `broadcasts.requested_by_member_id` — the company that must approve. The
-   * caller re-brands the aggregate's plain-string field (`asMemberId`); see
-   * `Broadcast.requestedByMemberId` for why the Domain field is unbranded.
+   * caller (the staff E-Blast page, outside this module) re-brands the
+   * aggregate's plain-string field with `asMemberId`; see
+   * `Broadcast.requestedByMemberId` for why the Domain field is unbranded and
+   * how a caller INSIDE the module re-brands it.
    */
   readonly memberId: MemberId;
   /** The body the next hand-off would carry (working copy, approved version, or the record). */

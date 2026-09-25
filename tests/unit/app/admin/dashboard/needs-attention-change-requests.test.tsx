@@ -48,7 +48,12 @@ const h = vi.hoisted(() => ({
   count: vi.fn(),
   logError: vi.fn(),
   buildDeps: vi.fn(() => ({ tenant: { slug: 'tenant-a' } })),
+  // #400 U2 — the E-Blast waiting read (the nav badge's R18 rule) decides
+  // whether the card opens the waiting-on-marketing preset.
+  eblastWaiting: vi.fn(),
 }));
+
+vi.mock('@/lib/eblast-waiting-count', () => ({ readEblastWaitingCount: h.eblastWaiting }));
 
 vi.mock('@/lib/env', () => ({
   env: { features: h.features, tenant: { timezone: 'Asia/Bangkok' } },
@@ -140,6 +145,8 @@ beforeEach(() => {
   h.logError.mockReset();
   h.buildDeps.mockReset();
   h.buildDeps.mockReturnValue({ tenant: { slug: 'tenant-a' } });
+  h.eblastWaiting.mockReset();
+  h.eblastWaiting.mockResolvedValue({ kind: 'ok', count: 4 });
 });
 
 describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => {
@@ -265,6 +272,20 @@ describe('StaffHomePage — Needs attention: E-Blasts waiting on marketing (F119
       );
       expect(html).toContain('E-Blasts waiting on marketing');
       expect(html).not.toContain('href="/admin/broadcasts"');
+    } finally {
+      attention.broadcastsAwaitingApproval = 0;
+    }
+  });
+
+  it('#400 U2 — approval round NOT visible (flag off, no round row): the card opens the plain queue, not the empty preset', async () => {
+    h.count.mockResolvedValue({ ok: true, value: { count: 0, oldestAgeSeconds: null } });
+    h.eblastWaiting.mockResolvedValue({ kind: 'hidden', reason: 'flag_off' });
+    const attention = SNAPSHOT.needsAttention as { broadcastsAwaitingApproval: number };
+    attention.broadcastsAwaitingApproval = 2;
+    try {
+      const html = await renderPage();
+      expect(html).toContain('href="/admin/broadcasts"');
+      expect(html).not.toContain('href="/admin/broadcasts?status=');
     } finally {
       attention.broadcastsAwaitingApproval = 0;
     }

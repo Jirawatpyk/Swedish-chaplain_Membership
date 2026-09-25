@@ -13,13 +13,14 @@ import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ComposeFormSkeleton } from '@/components/broadcast/compose-form-skeleton';
+import { env } from '@/lib/env';
 
 export default async function Loading(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('pageSubtitle')} />
-      <ComposeFormSkeleton variant="staff" />
+      <ComposeFormSkeleton variant="staff" imageControls={env.features.f71aUs2Images} />
     </DetailContainer>
   );
 }

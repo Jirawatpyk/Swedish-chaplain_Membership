@@ -21,12 +21,11 @@ import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skelet
  * counter, logo preview + source + link — so the skeleton→content swap does
  * not shift layout.
  *
- * U12 (#400 PR-B) — including the two lines that render precisely on a FIRST
- * visit (nothing saved yet): the default-colour hint under the colour hint
- * (`colour.defaultHint`, shown while the field is empty) and the
- * missing-address warning under the counter (`address.missing`, an
- * `InlineAlert`). A later visit renders neither, so it shifts up by exactly
- * those rows — the rarer, returning reader, against the operator's first look.
+ * #400 U5 — it reserves the SAVED state. Two lines render only before the
+ * first save (the default-colour hint, `colour.defaultHint`, while the field
+ * is empty; the missing-address `InlineAlert`, `address.missing`), and every
+ * visit after that save is a returning one — so the common visit is the one
+ * that must not shift. The one-off first visit grows by those two rows.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.settings.broadcasts.brand');
@@ -51,8 +50,6 @@ export default async function Loading() {
                 </div>
                 {/* The colour hint (`text-sm`). */}
                 <SkeletonBlock className="h-4 w-2/3" />
-                {/* First visit: the default-colour hint. */}
-                <SkeletonBlock data-skeleton="colour-default-hint" className="h-4 w-1/2" />
               </div>
               {/* Contrast readout. */}
               <SkeletonBlock className="h-4 w-56" />
@@ -69,8 +66,6 @@ export default async function Loading() {
               <SkeletonBlock className="h-24 w-full" />
               {/* The counter (`text-sm`). */}
               <SkeletonBlock className="h-4 w-32" />
-              {/* First visit: the missing-address warning (an InlineAlert). */}
-              <SkeletonBlock data-skeleton="address-missing" className="h-12 w-full" />
             </CardContent>
           </Card>
 

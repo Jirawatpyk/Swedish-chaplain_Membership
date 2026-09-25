@@ -98,6 +98,11 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             broadcastsEnabled: env.features.f7Broadcasts,
             eventsEnabled: env.features.f6EventCreate,
             memberChangeApproval: env.features.memberChangeApproval,
+            // #400 U2 — `ok` is exactly R18's "flag on, or a row in the
+            // round" (the read answers `hidden`/flag_off otherwise). A failed
+            // or timed-out read cannot show the round is visible, so the
+            // Broadcasts link falls back to the plain queue.
+            eblastApprovalRoundVisible: eblastWaiting.kind === 'ok',
           }}
           navBadgeCounts={{
             // `hidden` and `unavailable` are both "no badge" here — a count we

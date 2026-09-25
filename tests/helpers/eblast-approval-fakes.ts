@@ -60,7 +60,12 @@ import type {
   NewBroadcastVersion,
   WorkingCopyWrite,
 } from '@/modules/broadcasts/application/ports/broadcast-versions-repo';
-import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import {
+  BroadcastConcurrentMutationError,
+  TRANSITION_FIELDS,
+  type BroadcastsRepo,
+  type TransitionFields,
+} from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { Hostname, ImageAllowlistPort } from '@/modules/broadcasts/application/ports/image-allowlist-port';
 import type { ApprovalBroadcastsRepo } from '@/modules/broadcasts/application/use-cases/approval/_approval-tx';
 import type {
@@ -648,7 +653,7 @@ export function makeFakeApprovalStore(
         tenantId: TenantSlug,
         broadcastId: BroadcastId,
         target: BroadcastStatus,
-        fields: Partial<Broadcast>,
+        fields: TransitionFields,
         expectedFromStatus: BroadcastStatus,
       ): Promise<Broadcast> => {
         const key = keyOf(tenantId as string, broadcastId);
@@ -656,7 +661,11 @@ export function makeFakeApprovalStore(
         if (row === undefined || row.status !== expectedFromStatus) {
           throw new BroadcastConcurrentMutationError(tenantId, broadcastId, expectedFromStatus);
         }
-        const defined = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+        // #400 T5 — the adapter's whitelist: only `TRANSITION_FIELDS` are
+        // written, so a suite cannot pass on a key production silently drops.
+        const defined = Object.fromEntries(
+          TRANSITION_FIELDS.filter((k) => fields[k] !== undefined).map((k) => [k, fields[k]]),
+        );
         // Mirrors the Drizzle adapter: a real status change stamps the stage
         // clock unless the caller passed one; a same-status write does not.
         const stamp = target !== expectedFromStatus && fields.stageEnteredAt === undefined ? { stageEnteredAt: store.now } : {};

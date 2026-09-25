@@ -112,7 +112,7 @@ export async function startFormattedVersion(
         await deps.broadcastsRepo.lockForUpdate(tx, slug, input.broadcastId);
         const broadcast = await deps.broadcastsRepo.findByIdInTx(tx, slug, input.broadcastId);
         if (broadcast === null) {
-          throw new ApprovalRefusal<StartFormattedVersionError>('start-formatted-version', { kind: 'not_found', reason: 'unknown' });
+          throw new ApprovalRefusal('start-formatted-version', { kind: 'not_found', reason: 'unknown' });
         }
         const voiding = admitStage(broadcast, deps.memberApprovalEnabled);
 
@@ -217,7 +217,7 @@ export async function startFormattedVersion(
     if (e instanceof ApprovalRefusal) {
       // #400 item 5 — a refusal another use case raised is not ours to map.
       if (!isOwnRefusal(e, 'start-formatted-version')) throw e;
-      const refusal = e.refusal as StartFormattedVersionError;
+      const refusal = e.refusal;
       if (refusal.kind === 'not_found' && refusal.reason === 'unknown') {
         await emitCrossTenantProbe({
           audit: deps.audit,
@@ -242,7 +242,7 @@ function admitStage(broadcast: Broadcast, memberApprovalEnabled: boolean): boole
     case 'submitted':
       // T152 — the only flagged edge: `submitted → in_design`.
       if (!memberApprovalEnabled) {
-        throw new ApprovalRefusal<StartFormattedVersionError>('start-formatted-version', { kind: 'not_found', reason: 'flag_off' });
+        throw new ApprovalRefusal('start-formatted-version', { kind: 'not_found', reason: 'flag_off' });
       }
       return false;
     case 'changes_requested':
@@ -251,19 +251,19 @@ function admitStage(broadcast: Broadcast, memberApprovalEnabled: boolean): boole
     case 'member_approved':
     case 'approved':
       if (broadcast.currentRound < 1) {
-        throw new ApprovalRefusal<StartFormattedVersionError>('start-formatted-version', { kind: 'round_zero' });
+        throw new ApprovalRefusal('start-formatted-version', { kind: 'round_zero' });
       }
       // T166 R-H1 — voiding an approval the dispatcher has already handed
       // over (its lock committed before the provider call) cannot stop that
       // send, and would leave its id for the next round to inherit.
       if (hasDispatchBegun(broadcast)) {
-        throw new ApprovalRefusal<StartFormattedVersionError>('start-formatted-version', { kind: 'sending_started', status: broadcast.status });
+        throw new ApprovalRefusal('start-formatted-version', { kind: 'sending_started', status: broadcast.status });
       }
       return true;
     default:
       // Fail-CLOSED: every other status (draft, sending, awaiting the member,
       // every closed one) is refused — never `return _exhaustive`.
-      throw new ApprovalRefusal<StartFormattedVersionError>('start-formatted-version', { kind: 'stage_changed', status: broadcast.status });
+      throw new ApprovalRefusal('start-formatted-version', { kind: 'stage_changed', status: broadcast.status });
   }
 }
 

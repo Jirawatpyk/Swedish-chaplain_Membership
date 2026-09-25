@@ -31,7 +31,7 @@
  */
 import type { Locale } from '@/i18n/config';
 import { logger } from '@/lib/logger';
-import type { PayloadMiss, PayloadTransient } from '@/lib/outbox-unbuilt-payload';
+import { READ_FAILED, type PayloadMiss, type PayloadTransient } from '@/lib/outbox-unbuilt-payload';
 import { memberPortalRecipients } from '@/lib/broadcast-approval-deps';
 import { resolveMarketingRoster } from '@/lib/broadcast-marketing-deps';
 import {
@@ -64,6 +64,9 @@ import {
   type MarketingRecipient,
   type MemberPortalRecipientPort,
 } from '@/modules/broadcasts';
+// A runtime members-barrel import is safe HERE (composition layer, imported by
+// neither barrel); an approval use case re-brands with `ownerMemberId` instead
+// (`_owner-member-id.ts` explains the cycle).
 import { asMemberId, drizzleMemberRepo } from '@/modules/members';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 
@@ -156,7 +159,6 @@ const GONE: EblastPayloadMiss = { miss: 'request_gone' };
 const RECIPIENT_GONE: EblastPayloadMiss = { miss: 'recipient_gone' };
 const SUPERSEDED: EblastPayloadMiss = { miss: 'request_superseded' };
 /** #400 item 4 — a read threw: the retry ladder, under its own reason (never `no_template_handler`). */
-const READ_FAILED: PayloadTransient = { transient: 'read_failed' };
 
 /**
  * Render one `eblast_*` outbox row. `readsFor` is injectable for the contract

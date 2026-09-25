@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
-import { asBroadcastId, asBroadcastVersionId } from '@/modules/broadcasts/domain/broadcast';
+import { asBroadcastId, asBroadcastVersionId, type Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import {
   TRANSITION_FIELDS,
   type BroadcastsRepo,
@@ -17,10 +17,21 @@ import type { BroadcastDecisionsRepo } from '@/modules/broadcasts/application/po
 import type { BroadcastApprovalScrubPort } from '@/modules/broadcasts/application/ports/broadcast-approval-scrub-port';
 import type { MemberPortalRecipientPort } from '@/modules/broadcasts/application/ports/member-portal-recipient-port';
 import type { BroadcastQueueReads } from '@/modules/broadcasts/application/ports/broadcast-queue-reads';
-import type { EblastNotificationEnqueue } from '@/modules/broadcasts/application/ports/eblast-notification-outbox-port';
+import type {
+  EblastApprovalLifecycleKind,
+  EblastNotificationEnqueue,
+} from '@/modules/broadcasts/application/ports/eblast-notification-outbox-port';
+import type { MemberDecisionKind } from '@/modules/broadcasts/domain/approval/member-decision';
+import {
+  EBLAST_LIFECYCLE_KINDS,
+  EBLAST_MEMBER_DECIDED_KINDS,
+  type EblastLifecycleKind,
+  type EblastMemberDecidedKind,
+} from '@/modules/broadcasts/infrastructure/email/broadcast-approval-emails';
 import type { RecordMemberDecisionInput } from '@/modules/broadcasts/application/use-cases/approval/record-member-decision';
 import type { GetMemberVersionThreadInput } from '@/modules/broadcasts/application/use-cases/approval/get-member-version-thread';
 import type { ReadFormattingWarningsInput } from '@/modules/broadcasts/application/use-cases/approval/read-formatting-warnings';
+import { makeApprovalBroadcast, makeFakeApprovalStore } from '../../../helpers/eblast-approval-fakes';
 
 type TransitionFields = Parameters<BroadcastsRepo['applyTransition']>[4];
 
@@ -41,6 +52,20 @@ describe('#400 item 1 — applyTransition accepts only the fields the adapter wr
     // @ts-expect-error — not in TRANSITION_FIELDS: identity columns are never a transition write
     const owner: TransitionFields = { requestedByMemberId: 'mem-1' };
     expect([audience, owner]).toHaveLength(2);
+  });
+
+  it('refuses a VARIABLE typed wider than the allowlist (excess-property checks only cover literals — #400 T1)', () => {
+    const repo = null as unknown as BroadcastsRepo;
+    const id = asBroadcastId('11111111-1111-4111-8111-111111111111');
+    // The `confirm-schedule` shape: a `let fields: Partial<Broadcast>` passed
+    // on. As a variable its extra keys were never checked, so a non-listed
+    // column would have compiled and been dropped by the adapter.
+    const loose: Partial<Broadcast> = { scheduledFor: null };
+    // @ts-expect-error — a Partial<Broadcast> variable may carry any column; the parameter refuses it
+    const call = () => repo.applyTransition(null, 'test-tenant' as TenantSlug, id, 'approved', loose, 'member_approved');
+    // @ts-expect-error — the same through an assignment
+    const widened: TransitionFields = loose;
+    expect([call, widened]).toHaveLength(2);
   });
 
   it('the tuple is the adapter allowlist: 26 distinct keys, as before #400 (runtime)', () => {
@@ -143,11 +168,46 @@ describe('#400 item 3 — an outbox enqueue carries exactly its type\'s context 
       { ...to, type: 'eblast_approval_lifecycle', contextData: { ...ids, versionId: 'v-1', round: 1, kind: 'reminder_day7', audience: 'staff' } },
       // @ts-expect-error — a recorded decision names the version it decided on
       { ...to, type: 'eblast_member_decided_marketing', contextData: { ...ids, versionId: null, round: 1, decision: 'approved', recipientUserId: 'u-1' } },
-      // @ts-expect-error — a submitted row carries no lifecycle context
-      { ...to, type: 'eblast_submitted_marketing', contextData: { ...ids, versionId: 'v-1', round: 1, kind: 'reminder_day3', audience: 'member' } },
+      // @ts-expect-error — a submitted row carries no lifecycle context (every REQUIRED key is present, so only the excess keys can fail it)
+      { ...to, type: 'eblast_submitted_marketing', contextData: { ...ids, recipientUserId: 'u-1', versionId: 'v-1', round: 1, kind: 'reminder_day3', audience: 'member' } },
       // @ts-expect-error — `kind` is one of the four lifecycle steps
       { ...to, type: 'eblast_approval_lifecycle', contextData: { ...ids, versionId: 'v-1', round: 1, kind: 'reminder_day5', audience: 'member' } },
     ];
     expect(bad).toHaveLength(5);
+  });
+});
+
+/** `true` only when A and B are the same set — each direction is an `Exclude<…>` that must be `never`. */
+type SameSet<A, B> = [Exclude<A, B>] extends [never] ? ([Exclude<B, A>] extends [never] ? true : false) : false;
+
+describe('#400 T3 — the dispatcher\'s kind tuples are the port\'s kinds, both ways', () => {
+  it('the member-decided kinds are exactly MemberDecisionKind | \'withdrawn\'', () => {
+    const tied: SameSet<EblastMemberDecidedKind, MemberDecisionKind | 'withdrawn'> = true;
+    expect(tied).toBe(true);
+    expect(new Set(EBLAST_MEMBER_DECIDED_KINDS)).toEqual(new Set(['approved', 'changes_requested', 'approval_withdrawn', 'withdrawn']));
+  });
+
+  it('the lifecycle kinds are exactly EblastApprovalLifecycleKind', () => {
+    const tied: SameSet<EblastLifecycleKind, EblastApprovalLifecycleKind> = true;
+    expect(tied).toBe(true);
+    expect(EBLAST_LIFECYCLE_KINDS).toHaveLength(4);
+  });
+});
+
+/**
+ * #400 T5 — the fake repo the approval suites run on writes what the Drizzle
+ * adapter writes: `TRANSITION_FIELDS` only. It used to merge every key, so a
+ * suite could pass on a field production silently drops.
+ */
+describe('#400 T5 — the approval fake applies only TRANSITION_FIELDS, like the adapter (runtime)', () => {
+  it('drops a key the adapter would drop, and keeps a listed one', async () => {
+    const row = makeApprovalBroadcast({ status: 'in_design' });
+    const store = makeFakeApprovalStore({ broadcasts: [row] });
+    const at = new Date('2026-09-25T00:00:00.000Z');
+    // Cast past the port type on purpose — the point is what the FAKE does with it.
+    const fields = { resendAudienceId: 'aud-1', stageEnteredAt: at } as unknown as TransitionFields;
+    const next = await store.broadcastsRepo.applyTransition(null, 'test-tenant' as TenantSlug, row.broadcastId, 'in_design', fields, 'in_design');
+    expect(next.resendAudienceId).toBeNull();
+    expect(next.stageEnteredAt).toEqual(at);
   });
 });

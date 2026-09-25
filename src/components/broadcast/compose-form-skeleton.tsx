@@ -18,21 +18,30 @@
  *     `text-xs` label) plus the progress bar — not one line;
  *   - the editor toolbar is a WRAP of 44 px controls (`tiptap-toolbar.tsx`:
  *     h-11 each, `gap-1 p-1`), one or two rows depending on the column width —
- *     not one h-9 bar. Thirteen are reserved: the count with the image flag on
- *     (eleven without); the wrap then decides the height the same way it does
- *     for the real toolbar.
+ *     not one h-9 bar. It reserves the count the toolbar renders: eleven, plus
+ *     the image and banner controls while `FEATURE_F71A_US2_IMAGES` is on
+ *     (#400 U4 — the caller's server `loading.tsx` reads the flag); the wrap
+ *     then decides the height the same way it does for the real toolbar.
+ *
+ * Help lines wider than a phone column are `w-full max-w-*` (#400 U3): at
+ * 320 px the card leaves ~240 px, so a bare `w-64`+ bar overflowed it.
  */
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const TOOLBAR_CONTROLS = 13;
+/** `tiptap-toolbar.tsx`: eleven controls, + image + banner with the image flag on. */
+const TOOLBAR_CONTROLS = 11;
+const IMAGE_CONTROLS = 2;
 
 export interface ComposeFormSkeletonProps {
   /** `member` shows the quota card above the form; `staff` starts the editor card with the member picker (no allowance until a member is picked). */
   readonly variant: 'member' | 'staff';
+  /** `env.features.f71aUs2Images` — the toolbar's image + banner controls render only with it on. */
+  readonly imageControls: boolean;
 }
 
-export function ComposeFormSkeleton({ variant }: ComposeFormSkeletonProps): React.ReactElement {
+export function ComposeFormSkeleton({ variant, imageControls }: ComposeFormSkeletonProps): React.ReactElement {
+  const toolbarControls = TOOLBAR_CONTROLS + (imageControls ? IMAGE_CONTROLS : 0);
   return (
     <div className="min-w-0 space-y-6">
       {variant === 'member' ? (
@@ -57,7 +66,7 @@ export function ComposeFormSkeleton({ variant }: ComposeFormSkeletonProps): Reac
       <div className="space-y-2">
         <Skeleton className="h-4 w-36" />
         <Skeleton className="h-9 w-full sm:w-80" />
-        <Skeleton className="h-3 w-72" />
+        <Skeleton className="h-3 w-full max-w-72" />
       </div>
 
       {/* T148 — editor beside the 600 px preview from `lg` up, stacked below. */}
@@ -90,7 +99,7 @@ export function ComposeFormSkeleton({ variant }: ComposeFormSkeletonProps): Reac
               <Skeleton className="h-4 w-20" />
               <div className="overflow-hidden rounded-md border">
                 <div className="flex flex-wrap items-center gap-1 border-b p-1">
-                  {Array.from({ length: TOOLBAR_CONTROLS }).map((_, i) => (
+                  {Array.from({ length: toolbarControls }).map((_, i) => (
                     <Skeleton key={i} data-skeleton="toolbar-control" className="h-11 w-11" />
                   ))}
                 </div>
@@ -105,7 +114,7 @@ export function ComposeFormSkeleton({ variant }: ComposeFormSkeletonProps): Reac
             </div>
 
             {/* The "you can still cancel" note. */}
-            <Skeleton className="h-3 w-80" />
+            <Skeleton className="h-3 w-full max-w-80" />
 
             <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
               {/* The real `<Button>`s are h-9 (36 px). */}
@@ -147,7 +156,7 @@ function RecipientsSkeleton(): React.ReactElement {
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-6 w-48" />
       </div>
-      <Skeleton className="h-3 w-64" />
+      <Skeleton className="h-3 w-full max-w-64" />
     </div>
   );
 }

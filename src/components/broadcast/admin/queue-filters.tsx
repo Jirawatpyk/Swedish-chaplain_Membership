@@ -38,6 +38,7 @@ import {
 // chain). Client components must stay free of those imports.
 import {
   APPROVAL_ROUND_ONLY_STATUSES,
+  APPROVAL_ROUND_STATUSES,
   OFFERED_BROADCAST_STATUSES,
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
@@ -152,6 +153,14 @@ export function QueueFilters({
     currentSort === UPCOMING_SORT && currentFrom === UPCOMING_FROM;
   // Explicit params only: the no-param default (`submitted`) is never the preset.
   const marketingActive = !currentStatusAll && !upcomingActive && isMarketingTurnView(urlStatus);
+  // #400 U2 — the preset is offered by the nav badge's R18 rule: the flag is
+  // on, or a row sits in an approval-round stage (unknown counts offer it,
+  // like every chip). With the round dark it would be `submitted` plus three
+  // stages that cannot hold rows. A preset that arrived by URL keeps its
+  // toggle, pressed, so it can still be turned off (the chips' own rule).
+  const approvalRoundVisible =
+    approvalRoundEnabled || stageCounts === null || APPROVAL_ROUND_STATUSES.some((s) => stageCounts[s] > 0);
+  const marketingPresetOffered = marketingActive || approvalRoundVisible;
 
   // VISUAL set — what the user sees ticked. When `status_all` sentinel
   // is active, every checkbox stays UNCHECKED so the user has an honest
@@ -356,8 +365,12 @@ export function QueueFilters({
   // marketing-turn stages (a status change drops the Upcoming bound, and the
   // member and date filters stay); off, back to the FR-010 default.
   const toggleMarketing = useCallback(() => {
+    // #400 U2 — turning off a preset that is on screen only because the URL
+    // named it (the round is not visible) unmounts the toggle under the user;
+    // hand focus on, like a URL-only chip (the effect below `isOffered`).
+    if (marketingActive && !approvalRoundVisible) restoreFocusRef.current = true;
     pushUrl(marketingActive ? { status: null, statusAll: null } : { status: MARKETING_TURN_STATUSES, statusAll: null });
-  }, [marketingActive, pushUrl]);
+  }, [marketingActive, approvalRoundVisible, pushUrl]);
 
   // Visual check uses the separate `visualStatus` set so sentinel-mode
   // (`status_all=1`) renders ALL chips unchecked — matching the user's
@@ -556,23 +569,25 @@ export function QueueFilters({
         {t('upcomingSends')}
       </Button>
 
-      <Button
-        type="button"
-        variant="outline"
-        aria-pressed={marketingActive}
-        onClick={toggleMarketing}
-        className={cn(
-          'whitespace-nowrap',
-          marketingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
-        )}
-      >
-        {marketingActive ? (
-          <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
-        ) : (
-          <InboxIcon className="size-4" aria-hidden="true" />
-        )}
-        {t('waitingOnMarketing')}
-      </Button>
+      {marketingPresetOffered && (
+        <Button
+          type="button"
+          variant="outline"
+          aria-pressed={marketingActive}
+          onClick={toggleMarketing}
+          className={cn(
+            'whitespace-nowrap',
+            marketingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
+          )}
+        >
+          {marketingActive ? (
+            <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
+          ) : (
+            <InboxIcon className="size-4" aria-hidden="true" />
+          )}
+          {t('waitingOnMarketing')}
+        </Button>
+      )}
 
       {/* UX review LOW — the default h-9, like the controls beside it (it
           was `size="sm"`, h-7). */}

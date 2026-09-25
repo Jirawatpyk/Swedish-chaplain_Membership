@@ -73,8 +73,19 @@ export const TRANSITION_FIELDS = [
   'bodySource',
 ] as const satisfies ReadonlyArray<keyof Broadcast>;
 
-/** The fields a transition may write — {@link TRANSITION_FIELDS}, nothing else. */
-export type TransitionFields = Partial<Pick<Broadcast, (typeof TRANSITION_FIELDS)[number]>>;
+type TransitionKey = (typeof TRANSITION_FIELDS)[number];
+
+/**
+ * The fields a transition may write — {@link TRANSITION_FIELDS}, nothing else.
+ *
+ * Every OTHER `Broadcast` key is typed `?: never` (#400 T1): excess-property
+ * checks cover object LITERALS only, so a `Partial<Broadcast>` variable passed
+ * as `fields` used to compile with any column on it — and the adapter dropped
+ * the unlisted ones. Now such a variable is refused wherever it is passed.
+ */
+export type TransitionFields = Partial<Pick<Broadcast, TransitionKey>> & {
+  readonly [K in Exclude<keyof Broadcast, TransitionKey>]?: never;
+};
 
 export interface NewBroadcastDraftInput {
   readonly tenantId: TenantSlug;

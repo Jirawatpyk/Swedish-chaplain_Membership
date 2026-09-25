@@ -97,6 +97,7 @@ import { runInTenant } from '@/lib/db';
 import {
   isPayloadMiss,
   isPayloadTransient,
+  READ_FAILED,
   unbuiltPayloadOutcome,
   type UnbuiltPayload,
 } from '@/lib/outbox-unbuilt-payload';
@@ -176,7 +177,8 @@ function isBuiltPayload(v: BuiltPayload | UnbuiltPayload): v is BuiltPayload {
  * renderable payload; the dispatcher then treats this as a permanent-
  * failure path with an explicit audit event so unrenderable rows do
  * not disappear silently. Returns a `PayloadMiss` for the F114 arms when
- * the referenced request / recipient is gone (see above).
+ * the referenced request / recipient is gone (see above), and `READ_FAILED`
+ * when one of their reads failed this tick (#400 W3).
  */
 async function buildPayload(
   row: NotificationsOutboxRow,
@@ -419,7 +421,7 @@ async function buildPayload(
       if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,63}$/.test(row.tenantId)) return null;
       const tenantCtx = asTenantContext(row.tenantId);
       const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
-      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : READ_FAILED;
       // A request replaced (or otherwise closed) before this row was sent must
       // not reach the reviewer AS IT IS — but a resubmit that COALESCED
       // (FR-011: inside 1 h it inherits `staff_notified_at` and queues no row
@@ -432,17 +434,15 @@ async function buildPayload(
       const target = await resolveStaffEmailTarget(request.value, (id) => drizzleChangeRequestRepo.findById(tenantCtx, id));
       if (target.kind === 'superseded') return { miss: 'request_superseded' };
       if (target.kind === 'gone') return { miss: 'request_gone' };
-      // A transient repo fault stays on the retry ladder — `null`, like the
-      // roster read below. It is NOT distinguishable there: if the ladder
-      // exhausts `MAX_ATTEMPTS` the row's `last_error` reads
-      // `no_template_handler`, the label every transient null ends under. The
-      // log line right here is what tells ops a replacement read failed
-      // rather than a template lookup (R-3 rule; the same trade-off the
-      // roster read takes) — a transient marker threaded out to the ladder
-      // would be the alternative, and is deliberately not taken.
+      // A transient repo fault stays on the retry ladder under its OWN label,
+      // `read_failed` (#400 W3 — the transient the `eblast_*` arms use, #400
+      // item 4): `last_error` says a read failed, and an exhausted row ends
+      // as `read_failed`, never `no_template_handler` ("no template for
+      // this"). Every transient read in the two F114 arms answers the same;
+      // the log line names WHICH read (R-3 rule).
       if (target.kind !== 'render') {
         logger.warn({ outboxRowId: row.id, tenantId: row.tenantId }, 'cron.outbox_dispatch.change_request.replacement_read_failed');
-        return null;
+        return READ_FAILED;
       }
       const current = target.request;
       // The recipient must STILL be an active reviewer at send time: an
@@ -458,11 +458,11 @@ async function buildPayload(
       try {
         reviewers = await listActiveUsersByRole(reviewerRoles());
       } catch (e) {
-        // R-3 rule (this file, the blob prefetch): log before returning null
-        // so ops can tell a roster read failure from every other transient
-        // null the ladder labels `no_template_handler` (round 5, silent-failure #2)
+        // R-3 rule (this file, the blob prefetch): the log line names the
+        // read that failed (round 5, silent-failure #2); the row retries
+        // under `read_failed` (#400 W3).
         logger.warn({ outboxRowId: row.id, tenantId: row.tenantId, err: errKind(e) }, 'cron.outbox_dispatch.change_request.roster_read_failed');
-        return null;
+        return READ_FAILED;
       }
       const reviewerUserId = typeof ctx.reviewerUserId === 'string' ? ctx.reviewerUserId : null;
       const reviewer =
@@ -471,9 +471,9 @@ async function buildPayload(
           : reviewers.find((r) => r.email.toLowerCase() === row.toEmail.toLowerCase());
       if (!reviewer) return { miss: 'recipient_gone' };
       const member = await drizzleMemberRepo.findById(tenantCtx, current.memberId);
-      if (!member.ok) return member.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      if (!member.ok) return member.error.code === 'repo.not_found' ? { miss: 'request_gone' } : READ_FAILED;
       const contact = await drizzleContactRepo.findById(tenantCtx, current.submittedByContactId);
-      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'request_gone' } : READ_FAILED;
       // The prefix read throws (no Result); a transient failure must stay on
       // the retry ladder, not escape the tick with `attempts` unbumped
       // (review: reliability I-3).
@@ -482,7 +482,7 @@ async function buildPayload(
         prefix = await resolveMemberNumberPrefix(tenantCtx, drizzleMemberSettingsRepo);
       } catch (e) {
         logger.warn({ outboxRowId: row.id, tenantId: row.tenantId, err: errKind(e) }, 'cron.outbox_dispatch.change_request.prefix_read_failed');
-        return null;
+        return READ_FAILED;
       }
       const staffEmail = buildChangeRequestSubmittedStaffEmail({
         locale,
@@ -512,7 +512,7 @@ async function buildPayload(
       if (!requestId || !row.tenantId || !/^[a-z0-9-]{1,63}$/.test(row.tenantId)) return null;
       const tenantCtx = asTenantContext(row.tenantId);
       const request = await drizzleChangeRequestRepo.findById(tenantCtx, requestId as ChangeRequestId);
-      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : null;
+      if (!request.ok) return request.error.code === 'repo.not_found' ? { miss: 'request_gone' } : READ_FAILED;
       // a decided row always carries outcome + decidedAt (F6 narrowing; a
       // contradicting row never reaches here — the repo throws on it). A
       // request that is NOT decided cannot happen (the row is enqueued inside
@@ -522,7 +522,7 @@ async function buildPayload(
       const decidedRequest = request.value;
       if (!isDecided(decidedRequest)) return { miss: 'request_not_decided' };
       const contact = await drizzleContactRepo.findById(tenantCtx, decidedRequest.submittedByContactId);
-      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'recipient_gone' } : null;
+      if (!contact.ok) return contact.error.code === 'repo.not_found' ? { miss: 'recipient_gone' } : READ_FAILED;
       if (contact.value.removedAt !== null || contact.value.linkedUserId === null) return { miss: 'recipient_gone' };
       const built = buildChangeRequestDecidedMemberEmail({
         locale,
@@ -1061,8 +1061,6 @@ async function dispatchOne(
     if (!isBuiltPayload(built)) {
       const nextAttempt = row.attempts + 1;
       const outcome = unbuiltPayloadOutcome(built, nextAttempt, MAX_ATTEMPTS);
-      const isPermanent = outcome.permanent;
-      const failReason: string = outcome.reason;
 
       // F114 — a staff row whose request left `pending` before it was sent
       // (replaced by a resubmit, or decided from the queue before this tick)
@@ -1072,14 +1070,14 @@ async function dispatchOne(
       // `email_dispatch_failed` audit (the replacement is already audited as
       // `member_change_request_withdrawn{replaced}`) — so the on-call alarm
       // on `outbox_permanent_failures_total` does not fire for a typo fix.
-      // (`request_superseded` — the one outcome with no failure-metric reason.)
-      if (outcome.metricReason === null) {
+      // (`request_superseded` — the one `skip` outcome: no failure reason.)
+      if (outcome.kind === 'skip') {
         await tx
           .update(notificationsOutbox)
           .set({
             attempts: nextAttempt,
             status: 'permanently_failed' as const,
-            lastError: failReason,
+            lastError: outcome.reason,
             updatedAt: now,
           })
           .where(eq(notificationsOutbox.id, row.id));
@@ -1087,7 +1085,8 @@ async function dispatchOne(
         return 'permanent';
       }
 
-      if (isPermanent) {
+      const failReason = outcome.reason;
+      if (outcome.permanent) {
         await tx
           .update(notificationsOutbox)
           .set({
@@ -1139,7 +1138,7 @@ async function dispatchOne(
             },
           });
         }
-        outboxMetrics.permanentFailure(row.notificationType, outcome.metricReason);
+        outboxMetrics.permanentFailure(row.notificationType, failReason);
         if (row.notificationType === 'invoice_auto_email') {
           invoicingMetrics.autoEmailBounce('no_template_handler');
         }
