@@ -540,11 +540,15 @@ export function EscalationTaskQueue({
           ? t('overdue_banner', { count: overdueCount })
           : ''}
       </span>
+      {/* Toggle button for `?overdue_only=`. Its name stays the same in
+          both states (the state rides `aria-pressed`, with a matching
+          pressed style), and the copy is device-neutral — no "Click", since
+          staff tap it on touch devices. */}
       {overdueCount > 0 && status === 'open' && (
         <>
           <button
             type="button"
-            className="mb-4 flex w-full items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-left transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
+            className="mb-4 flex w-full items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-left transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50 aria-pressed:border-destructive aria-pressed:bg-destructive/10"
             aria-pressed={overdueOnly}
             onClick={() =>
               setSearchParam('overdue_only', overdueOnly ? null : 'true')
@@ -559,7 +563,7 @@ export function EscalationTaskQueue({
                 {t('overdue_banner', { count: overdueCount })}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {t(overdueOnly ? 'overdue_banner_clear' : 'overdue_banner_cta')}
+                {t('overdue_banner_cta')}
               </p>
             </div>
           </button>
